@@ -10,10 +10,10 @@ no strict;
 --- raku stderr (exit 1) ---
 Use of uninitialized value $key of type Any in string context.
 Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16685.raku line 2
 Unable to call postcircumfix @array[ (Any) ] with a type object
 Indexing requires a defined object
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16685.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -25,7 +25,7 @@ Indexing requires a defined object
 FOO: goto FOO; # Label.goto() not yet implemented. Sorry.
 --- raku stderr (exit 1) ---
 Label.goto() not yet implemented. Sorry.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16685.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 124) ---

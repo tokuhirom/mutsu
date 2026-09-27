@@ -1,22 +1,8 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=67  matches-doc=0  mismatch=1  mutsu-accepts=2  mutsu-crash=0  no-oracle=63  silent-crash=0  silent-match=10  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=0  match=67  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=63  silent-crash=0  silent-match=10  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Type/Str.rakudoc:1119
---- program ---
-'b0'.pred;           # OUTPUT: «a9»
-'a0'.pred;           # OUTPUT: Failure
-'img002.png'.pred;   # OUTPUT: «img001.png»
---- raku stderr (exit 1) ---
-Decrement out of range
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18668.raku line 2
---- raku stdout ---
-(none)
---- mutsu stdout (exit 0) ---
-(none)
-
-==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Str.rakudoc:647
+[1] output-mismatch  raku-doc/doc/Type/Str.rakudoc:647
 --- program ---
 say "abc".comb.raku;                 # OUTPUT: «("a", "b", "c").Seq␤»
 say "abc".comb(:match).raku;         # OUTPUT: «(｢a｣ ｢b｣ ｢c｣)␤»
@@ -49,7 +35,7 @@ say comb(/.<(.)>/, "<>[]()").raku;   # OUTPUT: «(">", "]", ")").Seq␤»
 ("<>", "[]", "()").Seq
 
 ==============================================================================
-[3] mutsu-accepts  raku-doc/doc/Type/Str.rakudoc:677
+[2] mutsu-accepts  raku-doc/doc/Type/Str.rakudoc:677
 --- program ---
 say "abcde".comb(3 => -2);             # OUTPUT: «(abc bcd cde)␤»
 say "abcde".comb(3 => -2, :partial);   # OUTPUT: «(abc bcd cde de e)␤»
@@ -74,7 +60,7 @@ Cannot resolve caller comb(Str:D: Pair:D); none of these signatures matches:
     (Str:D $:: Str:D $pat, $limit, *%_ --> Seq:D)
     (Str:D $:: Regex:D $regex, $limit = *, :$match!, *%_ --> Seq:D)
     (Str:D $:: Regex:D $regex, *%_ --> Seq:D)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18668.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23876.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---

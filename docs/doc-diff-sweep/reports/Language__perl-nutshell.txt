@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=3  error-mismatch=9  match=21  matches-doc=0  mismatch=1  mutsu-accepts=8  mutsu-crash=0  no-oracle=5  silent-crash=1  silent-match=40  silent-noise=0  skipped-marker=84  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=3  error-mismatch=8  match=21  matches-doc=0  mismatch=1  mutsu-accepts=9  mutsu-crash=0  no-oracle=5  silent-crash=1  silent-match=40  silent-noise=0  skipped-marker=84  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-accepts  raku-doc/doc/Language/perl-nutshell.rakudoc:86
@@ -9,33 +9,31 @@ $person.name   # Raku
 --- raku stderr (exit 1) ---
 No such method 'name' for invocant of type 'Any'. Did you mean any of
 these: 'are', 'none', 'note', 'take'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
 (none)
 
 ==============================================================================
-[2] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:97
+[2] mutsu-accepts  raku-doc/doc/Language/perl-nutshell.rakudoc:97
 --- program ---
 no strict;
 $object."$methodname"(@args); # Raku
 --- raku stderr (exit 1) ---
 Use of uninitialized value $methodname of type Any in string context.
 Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 No such method '' for invocant of type 'Any'. Did you mean any of
 these: 'kv', 'so'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 1) ---
+--- mutsu stdout (exit 0) ---
 (none)
 --- mutsu stderr ---
 Use of Nil in string context
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
-No such method '' for invocant of type 'Nil'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 
 ==============================================================================
 [3] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:137
@@ -45,14 +43,14 @@ substr($s, 4, 1);  # Raku
 substr $s, 4, 1;   # Raku - alternative parentheses-less style
 --- raku stderr (exit 1) ---
 No such method 'substr' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::OutOfRange
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 
 ==============================================================================
 [4] mutsu-accepts  raku-doc/doc/Language/perl-nutshell.rakudoc:200
@@ -64,7 +62,7 @@ my @books = $xml
   .findnodes("/library/book");
 --- raku stderr (exit 1) ---
 No such method 'parse-file' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -82,14 +80,14 @@ my $in-file = open $path or die;
 my ($line1, $line2) = read-n($in-file, 2);
 --- raku stderr (exit 1) ---
 Impossible coercion from 'Any' into 'IO': no acceptable coercion method found
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 6
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 6
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Died
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 6
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 6
 
 ==============================================================================
 [6] mutsu-accepts  raku-doc/doc/Language/perl-nutshell.rakudoc:515
@@ -101,7 +99,7 @@ no strict;
 --- raku stderr (exit 1) ---
 Odd number of elements found where hash initializer expected:
 Only saw: type object 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 4
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -114,7 +112,7 @@ no strict;
 for $IN_FH.lines { } # Raku
 --- raku stderr (exit 1) ---
 No such method 'lines' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -128,7 +126,7 @@ my $deleted_value = @array[$i]:delete;  # Raku - use :delete adverb
 --- raku stderr (exit 1) ---
 Unable to call postcircumfix @array[ (Any) ] with a type object
 Indexing requires a defined object
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -142,7 +140,7 @@ say "element exists" if @array[$i]:exists;  # Raku - use :exists adverb
 --- raku stderr (exit 1) ---
 Unable to call postcircumfix @array[ (Any) ] with a type object
 Indexing requires a defined object
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -157,7 +155,7 @@ my $i_fh = open $input_path,  :r; # Returns Failure on error
 my $o_fh = open $output_path, :w; # Returns Failure on error
 --- raku stderr (exit 1) ---
 Impossible coercion from 'Any' into 'IO': no acceptable coercion method found
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -176,7 +174,7 @@ else {
 }
 --- raku stderr (exit 1) ---
 Impossible coercion from 'Any' into 'IO': no acceptable coercion method found
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -194,11 +192,11 @@ no strict;
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-11929.raku
+===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-16820.raku
 Confused. expected statement: expected expression statement or X::Syntax::Missing: Missing block
-at /home/user/mutsu/tmp/ddh/prog-11929.raku:2
+at /home/user/mutsu/tmp/ddh/prog-16820.raku:2
 ------>... if $x;
-       ^
+                ^
 
 ==============================================================================
 [13] output-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1771
@@ -221,88 +219,88 @@ my %hash = ( AAA => 1, BBB => 2 );
 get_the_loot( 'diamonds', { quiet_level => 'very', quantity => 9 }); # Note the curly braces
 --- raku stderr (exit 1) ---
 Too many positionals passed; expected 0 arguments but got 2
-  in sub get_the_loot at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 4
+  in sub get_the_loot at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 4
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Too many positionals passed; expected 0 arguments but got more
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 4
 
 ==============================================================================
 [15] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1455
 --- program ---
 my @lines = "file".IO.lines;  # auto-chomped
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-11929/file: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-16820/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to read 'file': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 
 ==============================================================================
 [16] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1475
 --- program ---
 my @lines = "test-file".IO.slurp.lines;  # also auto-chomps
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-11929/test-file: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-16820/test-file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to slurp 'test-file': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 
 ==============================================================================
 [17] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1483
 --- program ---
 my $fh = open('./bad/path/to/file', :w) or die $fh;
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-11929/bad/path/to/file: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-16820/bad/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failure()
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 
 ==============================================================================
 [18] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1488
 --- program ---
 my $fh = open('./bad/path/to/file', :w) orelse .die; # Raku
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-11929/bad/path/to/file: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-16820/bad/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'die' for invocant of type 'Failure'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 
 ==============================================================================
 [19] error-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1493
 --- program ---
 my $fh = open('./bad/path/to/file', :w).self;
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-11929/bad/path/to/file: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-16820/bad/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-Failed to open '/home/user/mutsu/tmp/ddh/run-11929/./bad/path/to/file': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11929.raku line 1
+Failed to open '/home/user/mutsu/tmp/ddh/run-16820/./bad/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16820.raku line 1
 

@@ -14,7 +14,7 @@ for 1..9 { say $^c, $^a, $^b; last }
 Ambiguous call to 'sort(Block, Int, Int, Int, Int, Int, Int)'; these signatures all match:
   (&by, +values, *%_) from SETTING::src/core.c/Any-iterable-methods.rakumod line 1701
   (+values, *%_) from SETTING::src/core.c/Any-iterable-methods.rakumod line 1703
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18169.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -63,15 +63,15 @@ for "foo".IO.lines.kv -> $n, $line {
 # 3: c
 # 4: d
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-13258/foo: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-18169/foo: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18169.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to read 'foo': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18169.raku line 1
 
 ==============================================================================
 [4] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:154
@@ -89,4 +89,43 @@ perl5#
 --- mutsu stdout (exit 0) ---
 file#.
 inst#/root/.local/share/mutsu/repo/site
+file#/home/user/mutsu/modules/Base64/lib
+file#/home/user/mutsu/modules/CBOR-Simple/lib
+file#/home/user/mutsu/modules/Cro-Core/lib
+file#/home/user/mutsu/modules/Cro-HTTP/lib
+file#/home/user/mutsu/modules/Cro-TLS/lib
+file#/home/user/mutsu/modules/Crypt-Random/lib
+file#/home/user/mutsu/modules/DBIish/lib
+file#/home/user/mutsu/modules/DateTime-Parse/lib
+file#/home/user/mutsu/modules/Digest-HMAC/lib
+file#/home/user/mutsu/modules/Digest/lib
+file#/home/user/mutsu/modules/Encode/lib
+file#/home/user/mutsu/modules/File-Directory-Tree/lib
+file#/home/user/mutsu/modules/File-Temp/lib
+file#/home/user/mutsu/modules/HTTP-HPACK/lib
+file#/home/user/mutsu/modules/HTTP-Status/lib
+file#/home/user/mutsu/modules/HTTP-UserAgent/lib
+file#/home/user/mutsu/modules/IO-Path-ChildSecure/lib
+file#/home/user/mutsu/modules/IO-Socket-Async-SSL/lib
+file#/home/user/mutsu/modules/IO-Socket-SSL/lib
+file#/home/user/mutsu/modules/JSON-Fast/lib
+file#/home/user/mutsu/modules/JSON-JWT/lib
+file#/home/user/mutsu/modules/JSON-Tiny/lib
+file#/home/user/mutsu/modules/Log-Async/lib
+file#/home/user/mutsu/modules/Log-Timeline/lib
+file#/home/user/mutsu/modules/MIME-Base64/lib
+file#/home/user/mutsu/modules/NativeHelpers-Blob/lib
+file#/home/user/mutsu/modules/NativeLibs/lib
+file#/home/user/mutsu/modules/OO-Monitors/lib
+file#/home/user/mutsu/modules/OpenSSL/lib
+file#/home/user/mutsu/modules/Rakudo-Core/lib
+file#/home/user/mutsu/modules/Slang-Tuxic/lib
+file#/home/user/mutsu/modules/Slangify/lib
+file#/home/user/mutsu/modules/Template-Mustache/lib
+file#/home/user/mutsu/modules/Terminal-ANSI/lib
+file#/home/user/mutsu/modules/Test-Util-ServerPort/lib
+file#/home/user/mutsu/modules/Text-CSV/lib
+file#/home/user/mutsu/modules/TinyFloats/lib
+file#/home/user/mutsu/modules/URI/lib
+... [truncated by doc-diff-harness: 4 more line(s) of 44]
 

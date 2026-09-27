@@ -10,14 +10,14 @@ say RepeatChar.parse('bbbbbb', :rule('start'), :args(\('b')), :pos(4)).Str;
 --- raku stderr (exit 1) ---
 No such method 'start' for invocant of type 'RepeatChar'. Did you mean
 any of these: 'STR', 'Str', 'sort', 'sqrt'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4962.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4962.raku line 2
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Type/Grammar.rakudoc:112
@@ -44,13 +44,13 @@ say Identifiers.parsefile('users.txt', :enc('UTF-8'))
 
 # OUTPUT: «TimToady,lizmat,jnthn,moritz,zoffixznet,MasterDuke17␤»
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-32365/users.txt: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 10
+Failed to open file /home/user/mutsu/tmp/ddh/run-4962/users.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4962.raku line 10
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4962.raku line 10
 

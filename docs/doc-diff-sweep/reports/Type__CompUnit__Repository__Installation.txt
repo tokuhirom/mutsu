@@ -9,7 +9,7 @@ my $dist = $inst-repo.candidates("Acme::Unused").head;
 $inst-repo.uninstall($dist);
 --- raku stderr (exit 1) ---
 Type check failed in binding to parameter '$distribution'; expected Distribution but got Any (Any)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1781.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -25,14 +25,14 @@ say "Test version: " ~ $dist.meta<ver>; # OUTPUT: «6.d␤»
 --- raku stderr (exit 1) ---
 Parameter '$prefix' of routine 'new' must be an object instance of type
 'Any', not a type object of type 'Any'. Did you forget a '.new'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1781.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'meta' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1781.raku line 4
 
 ==============================================================================
 [3] output-mismatch  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:71

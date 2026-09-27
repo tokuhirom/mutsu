@@ -1,30 +1,49 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=3  matches-doc=0  mismatch=0  mutsu-accepts=2  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=2  match=2  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=1  no-oracle=5  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Type/Associative.rakudoc:19
+[1] error-mismatch  raku-doc/doc/Type/Associative.rakudoc:19
 --- program ---
 class Whatever {};
 my %whatever := Whatever.new;
 # OUTPUT: «Type check failed in binding; expected Associative but got Whatever
 --- raku stderr (exit 1) ---
 Type check failed in binding; expected Associative but got Whatever
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25682.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30511.raku line 2
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
+--- mutsu stdout (exit 1) ---
 (none)
+--- mutsu stderr ---
+Type check failed in binding; expected Associative but got Any
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30511.raku line 2
 
 ==============================================================================
-[2] mutsu-accepts  raku-doc/doc/Type/Associative.rakudoc:98
+[2] mutsu-error  raku-doc/doc/Type/Associative.rakudoc:82
+--- program ---
+class What { method AT-KEY(\key) { 42 }};
+say What.new{33}; # OUTPUT: «42␤»
+--- raku stdout ---
+42
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Index out of range. Is: 33, should be in 0..0
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30511.raku line 2
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Type/Associative.rakudoc:98
 --- program ---
 role Foo {}
 my %h is Foo = a => 42, b => 666;
 --- raku stderr (exit 1) ---
 Cannot modify an immutable Foo (Foo.new)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25682.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30511.raku line 2
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
+--- mutsu stdout (exit 1) ---
 (none)
+--- mutsu stderr ---
+Cannot modify an immutable Foo (Foo())
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30511.raku line 1
 

@@ -30,5 +30,5 @@ role CompUnit::Repository {
 (none)
 --- mutsu stderr ---
 Invalid typename 'CompUnit::DependencySpecification' in parameter declaration.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2394.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7655.raku line 2
 

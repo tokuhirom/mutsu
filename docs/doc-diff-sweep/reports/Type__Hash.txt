@@ -1,8 +1,9 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=0  match=27  matches-doc=1  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=8  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=2
+# stats: error-match=1  error-mismatch=0  match=28  matches-doc=2  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=8  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:342
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 push my %h, f => 7;
 CATCH { default { put .message } };
@@ -12,26 +13,17 @@ Cannot resolve caller push(Hash:D, :f(Int)); none of these signatures matches:
     (\a, \b)
     (\a, **@b is raw)
 --- mutsu stdout (exit 0) ---
-Unknown call: push
+Unexpected named argument 'f' passed
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:528
+[2] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:350
 note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
-my %h1 = a => 1;
-my %h2 = a => 1, b => 2;
-say %h1<>:k; # OUTPUT: «(a)␤»
-say %h1<>:v; # OUTPUT: «(1)␤»
-say %h2<>:k; # OUTPUT: «(a b)␤»
-say %h2<>:v; # OUTPUT: «(1 2)␤»
+my %wc = 'hash' => 323, 'pair' => 322, 'pipe' => 323;
+(my %inv).push: %wc.invert;
+say %inv;                     # OUTPUT: «{322 => pair, 323 => [pipe hash]}␤»
 --- raku stdout ---
-(a)
-(1)
-(b a)
-(2 1)
+{322 => pair, 323 => [hash pipe]}
 --- mutsu stdout (exit 0) ---
-(a)
-(1)
-(a b)
-(1 2)
+{322 => pair, 323 => [pipe hash]}
 

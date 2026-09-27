@@ -1,24 +1,8 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=1  match=37  matches-doc=0  mismatch=5  mutsu-accepts=1  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=23  silent-noise=0  skipped-marker=4  skipped-nondet=2  skipped-oracle-nondet=0
+# stats: error-match=2  error-mismatch=1  match=39  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=1  no-oracle=4  silent-crash=0  silent-match=23  silent-noise=0  skipped-marker=4  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Language/objects.rakudoc:48
---- program ---
-my $formatted-text;
-my @words = "Abe", "Lincoln";
-@words.push("said", $formatted-text.comb(/\w+/));
-say @words;
-# OUTPUT: «[Abe Lincoln said (Fourscore and seven years ago)]␤»
---- raku stderr (exit 1) ---
-No such method 'comb' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 3
---- raku stdout ---
-(none)
---- mutsu stdout (exit 0) ---
-[Abe Lincoln said (Any)]
-
-==============================================================================
-[2] error-mismatch  raku-doc/doc/Language/objects.rakudoc:302
+[1] error-mismatch  raku-doc/doc/Language/objects.rakudoc:302
 --- program ---
 class Journey {}
 # Create a new instance of the class.
@@ -38,102 +22,49 @@ say $vacation.destination;    # OUTPUT: «Orlando␤»
 try { $vacation.status = 'Booked'; }  #ERROR
 --- raku stderr (exit 1) ---
 No such method 'destination' for invocant of type 'Journey'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15573.raku line 10
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No matching candidates for method: destination
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15573.raku line 10
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/objects.rakudoc:505
+[2] output-mismatch  raku-doc/doc/Language/objects.rakudoc:580
 --- program ---
-class Pizza {
-    has $!radius = 42;
-    has @.ingredients;
+class A {
+    has Int @.numbers;
+    has $.x = (1, 2, 3);
 
-    # class method: construct from a list of ingredients
-    method from-ingredients(::?CLASS:U $pizza: @ingredients) {
-        $pizza.new( ingredients => @ingredients );
-    }
+    method show-diff() { .say for self.x; .say for $.x }
 
-    # instance method
-    method get-radius(::?CLASS:D:) { $!radius }
-}
-my $p = Pizza.from-ingredients: <cheese pepperoni vegetables>;
-say $p.ingredients;     # OUTPUT: «[cheese pepperoni vegetables]␤»
-say $p.get-radius;      # OUTPUT: «42␤»
-say Pizza.get-radius;   # This will fail.
-CATCH { default { put .^name ~ ":\n" ~ .Str } };
-# OUTPUT: «X::Parameter::InvalidConcreteness:␤
-#          Invocant of method 'get-radius' must be
-#          an object instance of type 'Pizza',
-#          not a type object of type 'Pizza'.
-#          Did you forget a '.new'?»
+    method twice  { self.times: 2 }
+    method thrice { $.times: 3    }
+
+    method times($val = 1) { @!numbers.map(* * $val).list }
+};
+
+my $obj = A.new(numbers => [1, 2, 3]);
+$obj.show-diff;   # OUTPUT: «1␤2␤3␤(1 2 3)␤»
+say $obj.twice;   # OUTPUT: «(2 4 6)␤»
+say $obj.thrice;  # OUTPUT: «(3 6 9)␤»
 --- raku stdout ---
-[cheese pepperoni vegetables]
-42
-X::Parameter::InvalidConcreteness:
-Invocant of method 'get-radius' must be an object instance of type
-'Pizza', not a type object of type 'Pizza'. Did you forget a '.new'?
+1
+2
+3
+(1 2 3)
+(2 4 6)
+(3 6 9)
 --- mutsu stdout (exit 0) ---
-[cheese pepperoni vegetables]
-42
-X::Parameter::InvalidConcreteness:
-Invocant of method 'get-radius' must be an object instance of type
-'Pizza', not a type object of type 'Pizza'.  Did you forget a '.new'?
+(1 2 3)
+(1 2 3)
+(2 4 6)
+(3 6 9)
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/objects.rakudoc:561
---- program ---
-class C {
-    method g()            { 42     }
-    method f(::?CLASS:U:) { self.g }
-    method d(::?CLASS:D:) { self.f }
-}
-C.f;        # OUTPUT: «42␤»
-C.new.d;    # This will fail.
-CATCH { default { put .^name ~ ":\n" ~ .Str } };
-# OUTPUT: «X::Parameter::InvalidConcreteness:␤
-#          Invocant of method 'f' must be a type object of type 'C',
-#          not an object instance of type 'C'.  Did you forget a 'multi'?»
---- raku stdout ---
-X::Parameter::InvalidConcreteness:
-Invocant of method 'f' must be a type object of type 'C', not an object
-instance of type 'C'. Did you forget a 'multi'?
---- mutsu stdout (exit 0) ---
-X::Parameter::InvalidConcreteness:
-Invocant of method 'f' must be a type object of type
-'C', not an object instance of type 'C'.  Did you forget a '.new'?
-
-==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1067
---- program ---
-class Str-with-ID is Str {
-    my $counter = 0;
-    has Int $.ID  is rw = 0;
-
-    multi method new( $str ) {
-        self.bless( value => $str );
-    }
-    submethod BUILD( :$!ID = $counter++ ) {}
-}
-
-say Str-with-ID.new("1.1,2e2").ID;                  # OUTPUT: «0␤»
-my $enriched-str = Str-with-ID.new("3,4");
-say "$enriched-str, {$enriched-str.^name}, {$enriched-str.ID}";
-# OUTPUT: «3,4, Str-with-ID, 1␤»
---- raku stdout ---
-0
-3,4, Str-with-ID, 1
---- mutsu stdout (exit 0) ---
-0
-Str-with-ID(), Str-with-ID, 1
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1397
+[3] mutsu-error  raku-doc/doc/Language/objects.rakudoc:1397
 --- program ---
 role BinaryTree[::Type] {
     has BinaryTree[Type] $.left;
@@ -175,24 +106,15 @@ $t.visit-postorder(&say);   # OUTPUT: «4␤6␤5␤»
 4
 6
 5
---- mutsu stdout (exit 0) ---
-5
-4
-(Int)
-(Int)
-6
-(Int)
-(Int)
-(Int)
-(Int)
-4
-(Int)
-(Int)
-6
-5
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Invocant of method 'new-from-list' must be a type object of type 'BinaryTree[Int]', not an object
+instance of type 'BinaryTree[Int]'. Did you forget a 'multi'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15573.raku line 31
 
 ==============================================================================
-[7] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1457
+[4] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1457
 --- program ---
 role R { method Str() {'hidden!'} };
 my $i = 2 but R;

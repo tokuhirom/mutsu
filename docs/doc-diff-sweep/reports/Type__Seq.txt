@@ -8,15 +8,15 @@ for open('README.md').lines -> $line {
     say $line;
 }
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-17471/README.md: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-22733/README.md: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-Failed to open '/home/user/mutsu/tmp/ddh/run-17471/README.md': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+Failed to open '/home/user/mutsu/tmp/ddh/run-22733/README.md': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Seq.rakudoc:55
@@ -53,11 +53,11 @@ Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D); none of these signatures
     ($:: Whatever, *%_)
     ($:: Callable:D $w, *%_)
     ($:: Int(Any) $n, *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
-(3 4 5 6 7 8 9 10 11 12)
+(3 4 5 10 11 12)
 
 ==============================================================================
 [4] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:217
@@ -70,12 +70,12 @@ Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D, Int:D); none of these sig
     ($:: Whatever, *%_)
     ($:: Callable:D $w, *%_)
     ($:: Int(Any) $n, *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
-(3 4 5 6 7 8 9 10)
-(3 4 5 6 7 8 9 10)
+(3 4 5 7 8)
+(3 4 5 7 8 9 10)
 
 ==============================================================================
 [5] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:224
@@ -88,12 +88,12 @@ Cannot resolve caller skip(Seq:D: Int:D, Whatever:D); none of these signatures m
     ($:: Whatever, *%_)
     ($:: Callable:D $w, *%_)
     ($:: Int(Any) $n, *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
 (3 4 5 6 7 8 9 10)
-(3 4 5 6 7 8 9 10)
+(3 4 5)
 
 ==============================================================================
 [6] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:230
@@ -105,11 +105,11 @@ Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D); none of these signatures
     ($:: Whatever, *%_)
     ($:: Callable:D $w, *%_)
     ($:: Int(Any) $n, *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
-(1 2 3 4 5 6 7 8 9 10)
+(1 2 3 8 9 10)
 
 ==============================================================================
 [7] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:235
@@ -117,9 +117,9 @@ Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D); none of these signatures
 say (^20).Seq.skip(|(2,3) xx *); # OUTPUT: «(0 1 5 6 10 11 15 16)␤»
 --- raku stderr (exit 1) ---
 This type cannot unbox to a native integer: P6opaque, Failure
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22733.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
-(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19)
+(0 1 5 6 10 11 15 16)
 

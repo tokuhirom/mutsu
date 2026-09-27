@@ -18,20 +18,20 @@ say IO::Spec::Unix.rel2abs: '/foo/', 'bar'; # OUTPUT: «/foo␤»
 say IO::Spec::Unix.rel2abs: 'foo/../../', 'bar';
 # OUTPUT: «/home/camelia/bar/foo/../..␤»
 --- raku stdout ---
-"/home/user/mutsu/tmp/ddh/run-2669".IO
-/home/user/mutsu/tmp/ddh/run-2669/foo
-/home/user/mutsu/tmp/ddh/run-2669
-/home/user/mutsu/tmp/ddh/run-2669/foo/../..
+"/home/user/mutsu/tmp/ddh/run-7942".IO
+/home/user/mutsu/tmp/ddh/run-7942/foo
+/home/user/mutsu/tmp/ddh/run-7942
+/home/user/mutsu/tmp/ddh/run-7942/foo/../..
 /foo
-/home/user/mutsu/tmp/ddh/run-2669/bar/foo
+/home/user/mutsu/tmp/ddh/run-7942/bar/foo
 /bar
 /foo
-/home/user/mutsu/tmp/ddh/run-2669/bar/foo/../..
+/home/user/mutsu/tmp/ddh/run-7942/bar/foo/../..
 --- mutsu stdout (exit 0) ---
-"/home/user/mutsu/tmp/ddh/run-2669".IO
-/home/user/mutsu/tmp/ddh/run-2669/foo
-/home/user/mutsu/tmp/ddh/run-2669
-/home/user/mutsu/tmp/ddh/run-2669/foo/../..
+"/home/user/mutsu/tmp/ddh/run-7942".IO
+/home/user/mutsu/tmp/ddh/run-7942/foo
+/home/user/mutsu/tmp/ddh/run-7942
+/home/user/mutsu/tmp/ddh/run-7942/foo/../..
 /foo/
 bar/foo
 /bar

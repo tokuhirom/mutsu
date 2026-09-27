@@ -8,14 +8,14 @@ say ('א'..'ת').in-range('p', "Letter 'p'");
 # OUTPUT: «(exit code 1) Letter 'p' out of range. Is: "p", should be in "א".."ת"␤
 --- raku stderr (exit 1) ---
 Letter 'p' out of range. Is: "p", should be in "א".."ת"
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21432.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'in-range' for invocant of type 'Range'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21432.raku line 1
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Type/Range.rakudoc:359
@@ -25,7 +25,7 @@ say ('a'..'d').reverse;                         # OUTPUT: «(d c b a)␤»
 say (1..∞).reverse;                             # OUTPUT: «(Inf Inf Inf ...)␤»
 --- raku stderr (exit 1) ---
 Cannot .reverse a lazy list
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21432.raku line 3
 --- raku stdout ---
 (5 4 3 2)
 (d c b a)
@@ -34,5 +34,5 @@ Cannot .reverse a lazy list
 (d c b a)
 --- mutsu stderr ---
 No such method 'reverse' for invocant of type 'Range'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21432.raku line 3
 

@@ -11,8 +11,8 @@ repros" that [PLAN.md](../PLAN.md) §6 calls for — the QA-campaign analogue of
 ## How to refresh
 
 ```
-cargo build
-scripts/doc-diff-sweep.sh              # -j8 over Type/ + Language/, ~15 min
+cargo build --release
+scripts/doc-diff-sweep.sh -m target/release/mutsu   # -j8 over Type/ + Language/
 ```
 
 Outputs (all under `tmp/sweep/`, gitignored): `reports/<file>.txt` (per-file
@@ -58,13 +58,13 @@ means the corpus has more such examples, not that mutsu got worse.
 
 ## Corpus snapshot
 
-- **Date:** 2026-09-09b (full re-sweep, first run with error/silent parity) ·
-  debug `mutsu` at `a44bd28` · `raku` v2026.07
-- **443 files scanned · 148 have signal**
-- stdout parity: **match = 2416 · mismatch = 132 · crash = 22**
-- error parity: **same failure = 98 · different failure = 171 · mutsu-accepts = 70**
-- silent parity: **both quiet = 1009 · mutsu fails = 50 · mutsu chatters = 3**
-- dropped: oracle-nondet 60 · marker 837 · nondet heuristic 383 · no oracle 2537
+- **Date:** 2026-09-27 (full re-sweep) · release `mutsu` at `8458a31f` ·
+  `raku` v2026.07
+- **443 files scanned · 130 have signal**
+- stdout parity: **match = 2430 · mismatch = 120 · crash = 16**
+- error parity: **same failure = 120 · different failure = 175 · mutsu-accepts = 46**
+- silent parity: **both quiet = 1031 · mutsu fails = 29 · mutsu chatters = 2**
+- dropped: oracle-nondet 62 · marker 837 · nondet heuristic 383 · no oracle 2537
 
 ### The corpus is half again as large as it looked
 
@@ -111,7 +111,8 @@ that the nondeterminism heuristic used to drop before the oracle ever ran.
 | 2026-09-06 | 2376 | 74 | 34 | 119 | — | — |
 | 2026-09-07b | 2402 | 59 | 28 | 114 | — | — |
 | 2026-09-09 | 2409 | 129 | 21 | *(retired)* | — | 59 |
-| **2026-09-09b** | **2416** | **132** | **22** | *(retired)* | **294** | **60** |
+| 2026-09-09b | 2416 | 132 | 22 | *(retired)* | 294 | 60 |
+| **2026-09-27** | **2430** | **120** | **16** | *(retired)* | **252** | **62** |
 
 Two bucket changes have moved these numbers for reasons that are not mutsu
 regressions, and both are one-time: #7590 retired `raku-drift-from-doc` (its
@@ -292,74 +293,161 @@ Confirmed-real findings with a filed issue, not yet fixed. When the issue is
 resolved, write it up in `news/` (per `docs/issue-workflow.md`) and delete the
 row here.
 
-> The three rows filed from the 2026-09-07b sweep are **all fixed and closed**
-> as of 2026-09-08: `Language/traps:858`'s lazy-Seq-into-a-slurpy half
-> ([#7591](https://github.com/tokuhirom/mutsu/issues/7591), PR #7600),
-> `Language/objects:1397`'s negative-range slice hang
-> ([#7578](https://github.com/tokuhirom/mutsu/issues/7578), PR #7597), and
-> `Type/Code:140`'s code-object-in-a-list rendering
-> ([#7587](https://github.com/tokuhirom/mutsu/issues/7587), PR #7649). The
-> harness ticket [#7590](https://github.com/tokuhirom/mutsu/issues/7590) is
-> fixed too - this sweep is the first run with its output cap and oracle-nondet
-> gate.
+> Every issue filed from the 2026-09-09 and 2026-09-09b sweeps (#7746–#7759,
+> #7770–#7780) is **closed** as of 2026-09-27. Where the 2026-09-27 sweep still
+> reports one of their doc lines, the remainder was a different or incomplete
+> defect and was filed again below, cross-linked to the old issue (e.g. #9767 for
+> #7771, #9776 for #7772, #9798 for #7777, #9864 for #7748). The 2026-09-09
+> "triaged real, not yet filed" clusters are all filed below too.
 
-#### Filed from the 2026-09-09 sweep
+#### Filed from the 2026-09-27 sweep
 
-Each was reduced and re-run against `raku` v2026.07 before filing.
+All ~390 findings of the sweep were re-run against `raku` v2026.07 and a
+release `mutsu` at `8458a31f`, reduced to minimal repros, and clustered by root
+cause: 117 issues, #9766–#9882. Paths are under `raku-doc/doc/`.
 
 | file:line | one-line summary | issue |
 |---|---|---|
-| `Language/math:185` | a FatRat addition **panics the process** (`attempt to add with overflow`, `add_sub.rs:168` narrows FatRat parts to `i64`) | [#7746](https://github.com/tokuhirom/mutsu/issues/7746) |
-| `Language/structures:258` | a `but`-mixin on a Hash **silently loses the hash's contents** on the next store; the `%`-assign form corrupts the keys outright | [#7747](https://github.com/tokuhirom/mutsu/issues/7747) |
-| `Type/Proxy:17` | `Proxy.new(FETCH/STORE)` bound to a name is not assignable — the documented type is unusable (`todo:deep`) | [#7748](https://github.com/tokuhirom/mutsu/issues/7748) |
-| `Type/Pair:61` | adjacent colonpairs (`:a1:b2:c3`) stop parsing after the first one | [#7749](https://github.com/tokuhirom/mutsu/issues/7749) |
-| `Language/signatures:35,262,274,329` | runtime binding failures carry the compile-time "will never work with declared signature" wrapper, and one throws the wrong `X::` type | [#7750](https://github.com/tokuhirom/mutsu/issues/7750) |
-| `Type/PositionalBindFailover:34` | `does PositionalBindFailover` is ignored, so such an object cannot bind to `@a` | [#7751](https://github.com/tokuhirom/mutsu/issues/7751) |
-| `Language/experimental:144` | `%%` / `%` by zero throw eagerly where raku returns a soft `Failure` (`div` already does the right thing) | [#7752](https://github.com/tokuhirom/mutsu/issues/7752) |
-| `Language/traps:858` | a `...` sequence passed straight to a builtin listop collapses: `join` sees one element, `sum` sees none | [#7753](https://github.com/tokuhirom/mutsu/issues/7753) |
-| `Language/numerics:595` | native integer increment does not wrap — `my int $x = 2**63-1; ++$x` promotes to a big `Int` | [#7754](https://github.com/tokuhirom/mutsu/issues/7754) |
-| `Type/Junction:325`, `Type/List:351` | junctions do not flatten through infix `~`, and do not autothread out of a list into `join` | [#7755](https://github.com/tokuhirom/mutsu/issues/7755) |
-| `Type/IO/CatHandle:162,595,688` | binary mode via `.encoding: Nil` ignored, `.words` merges across the handle boundary, empty-cat `.slurp` prints nothing instead of `Nil` | [#7756](https://github.com/tokuhirom/mutsu/issues/7756) |
-| `Type/Metamodel/Mixins:18,63` | a parametric role with **named** parameters never matches (`role R[:$v]`) | [#7757](https://github.com/tokuhirom/mutsu/issues/7757) |
-| `Type/Sub:78` | a sub-signature on a **named** parameter is ignored — every sub-parameter gets the whole array | [#7758](https://github.com/tokuhirom/mutsu/issues/7758) |
-| `Language/objects:1067` | `.bless(value => …)` does not fill a `Str` subclass's payload (only `.new` does), so the instance stringifies as `S()` | [#7759](https://github.com/tokuhirom/mutsu/issues/7759) |
+| Type/independent-routines:263, Language/rb-nutshell:372, Type/Proc:50,193, Language/contexts:45, Language/perl-func:2310 | last mainline statement / sub-call result never sunk | [#9766](https://github.com/tokuhirom/mutsu/issues/9766) |
+| Language/control:178, Type/Promise:81 | unhandled exception in `start` does not terminate the process | [#9767](https://github.com/tokuhirom/mutsu/issues/9767) |
+| Type/Metamodel/EnumHOW:39 | undeclared bareword term evaluates to a `Str` | [#9768](https://github.com/tokuhirom/mutsu/issues/9768) |
+| Type/Iterator:88 | `=:=` ignores Scalar containers | [#9769](https://github.com/tokuhirom/mutsu/issues/9769) |
+| Type/independent-routines:238 | variable visible in its own initializer | [#9770](https://github.com/tokuhirom/mutsu/issues/9770) |
+| Type/Variable:76 | undeclared dynamic variable reads as `Nil`, not a Failure | [#9771](https://github.com/tokuhirom/mutsu/issues/9771) |
+| Language/signatures:299, Language/perl-nutshell:1011,1027 | Cool/Str methods on a type object stringify it as `(Str)` | [#9772](https://github.com/tokuhirom/mutsu/issues/9772) |
+| Language/perl-nutshell:137,515, Language/subscripts:194 | positional subscript with a type-object / Callable / Failure index returns Nil | [#9773](https://github.com/tokuhirom/mutsu/issues/9773) |
+| Language/perl-func:507 | `my %h = Any` builds `{(Any) => (Any)}` | [#9774](https://github.com/tokuhirom/mutsu/issues/9774) |
+| Language/perl-nutshell:86,97,200,816,1260,1268,1771, Language/structures:233, Type/atomicint:158,193 | `no strict` / undeclared package variables are `Nil`, not `Any` | [#9775](https://github.com/tokuhirom/mutsu/issues/9775) |
+| Language/perl-nutshell:86 | `.name` / `.package` answer on every object | [#9776](https://github.com/tokuhirom/mutsu/issues/9776) |
+| Language/perl-nutshell:1483,1488, Language/quoting:317, Type/Junction:164 | `Exception.die` / handled `Failure.die` missing; `die $failure` prints `Failure()` | [#9777](https://github.com/tokuhirom/mutsu/issues/9777) |
+| Language/variables:1938 | `$*RAT-OVERFLOW` not defined | [#9778](https://github.com/tokuhirom/mutsu/issues/9778) |
+| Type/Nil:72, Language/variables:1172, Language/faq:492 | `Nil` into `Int:D` throws the wrong exception; `use variables :D` not enforced | [#9779](https://github.com/tokuhirom/mutsu/issues/9779) |
+| Language/perl-nutshell:1570, Type/Test:777 | stub listops `...`/`???` parse wrong (`... if $x`, `??? $x or …`) | [#9780](https://github.com/tokuhirom/mutsu/issues/9780) |
+| Language/control:48 | `{ … } or die` fails to parse | [#9781](https://github.com/tokuhirom/mutsu/issues/9781) |
+| Type/List:43 | anonymous `$` in a list literal is not a container | [#9782](https://github.com/tokuhirom/mutsu/issues/9782) |
+| Type/List:417 | `(1..∞).List` returns the Range | [#9783](https://github.com/tokuhirom/mutsu/issues/9783) |
+| Type/List:874 | `sort` with no arguments does not die | [#9784](https://github.com/tokuhirom/mutsu/issues/9784) |
+| Type/Junction:205 | lazily-read `gather` with `».take` yields only the first value | [#9785](https://github.com/tokuhirom/mutsu/issues/9785) |
+| Type/Junction:64 | `%h{junction}:exists` always False | [#9786](https://github.com/tokuhirom/mutsu/issues/9786) |
+| Language/objects:1457, Language/perl-func:2281 | `but role` on a List becomes `Array+{R}` and stops flattening | [#9787](https://github.com/tokuhirom/mutsu/issues/9787) |
+| Language/quoting:546 | placeholder sub accepts unexpected named args | [#9788](https://github.com/tokuhirom/mutsu/issues/9788) |
+| Type/Sequence:69 | `.lazy` Seq can be iterated twice | [#9789](https://github.com/tokuhirom/mutsu/issues/9789) |
+| Type/Whatever:90 | `Any ... *` produces values | [#9790](https://github.com/tokuhirom/mutsu/issues/9790) |
+| Type/Whatever:78, Language/haskell-to-p6:455,464 | numeric ops on `Whatever`/`Block` throw X::AdHoc or return a number | [#9791](https://github.com/tokuhirom/mutsu/issues/9791) |
+| Language/regexes:3212 | regex `a:?` quantifier modifier rejected | [#9792](https://github.com/tokuhirom/mutsu/issues/9792) |
+| Language/regexes:2014 | regex parameter type constraints unchecked | [#9793](https://github.com/tokuhirom/mutsu/issues/9793) |
+| Type/Method:30 | `my method m(Int:D: $b)` miscounts positionals | [#9794](https://github.com/tokuhirom/mutsu/issues/9794) |
+| Type/Grammar:64, Language/grammars:167,323,364, Language/grammar_tutorial:54,181,413, Type/CompUnit/Repository/FileSystem:94, Language/packages:64, Type/Rational:16 | internal "Unknown method value dispatch" message leaks | [#9795](https://github.com/tokuhirom/mutsu/issues/9795) |
+| Language/create-cli:122,172,201,273,355,481,611, Language/variables:1832 | generated `USAGE` differs from Rakudo's format | [#9796](https://github.com/tokuhirom/mutsu/issues/9796) |
+| Type/Metamodel/Primitives:18,31 | `install_method_cache` / `set_parameterizer` missing | [#9797](https://github.com/tokuhirom/mutsu/issues/9797) |
+| Type/Seq:208,217,224,230,235 | `Seq.skip` multi-arg order disagrees with Rakudo | [#9798](https://github.com/tokuhirom/mutsu/issues/9798) |
+| Type/Cool:737 | stale `uniprop("Grapheme_Cluster_Break")` | [#9799](https://github.com/tokuhirom/mutsu/issues/9799) |
+| Type/Cool:422,433,535 | `log10`/`atanh`/`tanh` last-ulp differences | [#9800](https://github.com/tokuhirom/mutsu/issues/9800) |
+| Language/grammars:289 | non-capturing `<.rule>` action runs out of order | [#9801](https://github.com/tokuhirom/mutsu/issues/9801) |
+| Language/grammars:289 | a `Match` used as a positional index returns Nil | [#9802](https://github.com/tokuhirom/mutsu/issues/9802) |
+| Language/grammars:387 | grammar attributes set during the parse lost on the Match (deep) | [#9803](https://github.com/tokuhirom/mutsu/issues/9803) |
+| Language/grammars:387 | interpolation drops `"$m.<x>"` / `"@a.[1]"` postfixes | [#9804](https://github.com/tokuhirom/mutsu/issues/9804) |
+| Language/py-nutshell:541 | sigilless `\i` in a `for` sub-signature is the imaginary unit | [#9805](https://github.com/tokuhirom/mutsu/issues/9805) |
+| Language/objects:1397 | `::?CLASS:U:` invocant rejects a parameterized role's type object | [#9806](https://github.com/tokuhirom/mutsu/issues/9806) |
+| Language/objects:580, Type/Attribute:186 | attribute container itemization (`self.x` vs `$!x`) | [#9807](https://github.com/tokuhirom/mutsu/issues/9807) |
+| Type/Iterator:277 | bound user `Iterable` not iterated by list assignment | [#9808](https://github.com/tokuhirom/mutsu/issues/9808) |
+| Type/Iterator:69,115 | `IterationEnd` is a `Str`; iteration does not stop at it (deep) | [#9809](https://github.com/tokuhirom/mutsu/issues/9809) |
+| Language/signatures:299 | `min(2, Int)` returns `(Int)` | [#9810](https://github.com/tokuhirom/mutsu/issues/9810) |
+| Language/subscripts:697 | `@a[i]:v = x` leaks `__mutsu_subscript_adverb` | [#9811](https://github.com/tokuhirom/mutsu/issues/9811) |
+| Type/Any:1307,311 | `.tree(1)` / `».List.flat` add one item level | [#9812](https://github.com/tokuhirom/mutsu/issues/9812) |
+| Type/Any:1549 | `.snitch(&dd)` rejects a Callable | [#9813](https://github.com/tokuhirom/mutsu/issues/9813) |
+| Type/X/Numeric/Real:15 | `(1+2i).Int` truncates | [#9814](https://github.com/tokuhirom/mutsu/issues/9814) |
+| Language/exceptions:464 | `X::AdHoc` subclass loses `payload` | [#9815](https://github.com/tokuhirom/mutsu/issues/9815) |
+| Type/Failure:187 | exceptions carry a backtrace before being thrown | [#9816](https://github.com/tokuhirom/mutsu/issues/9816) |
+| Type/Backtrace:72,96 | `next-interesting-index(:named)` / `nice(:oneline)` wrong frame | [#9817](https://github.com/tokuhirom/mutsu/issues/9817) |
+| Type/Routine:58, Type/Code:195, Language/traits:135 | Routine/Code introspection gaps | [#9818](https://github.com/tokuhirom/mutsu/issues/9818) |
+| Type/IntStr:7, Type/RatStr:7, Type/NumStr:7, Type/ComplexStr:7 | `Allomorph` / `IntStr` cannot be subclassed | [#9819](https://github.com/tokuhirom/mutsu/issues/9819) |
+| Type/IO/Path/Parts:71 | `IO::Path::Parts` `$p[0]` empty | [#9820](https://github.com/tokuhirom/mutsu/issues/9820) |
+| Type/Thread:90 | `Thread.yield` missing | [#9821](https://github.com/tokuhirom/mutsu/issues/9821) |
+| Type/IO/Handle:231 | `IO::Handle.new.gist` empty path | [#9822](https://github.com/tokuhirom/mutsu/issues/9822) |
+| Language/objects:302 | assigning to a missing method throws X::Multi::NoMatch | [#9823](https://github.com/tokuhirom/mutsu/issues/9823) |
+| Type/Telemetry:148 | `use Telemetry` fails (deep) | [#9824](https://github.com/tokuhirom/mutsu/issues/9824) |
+| Language/traps:1989 | inner `.map` in a map block is evaluated eagerly | [#9825](https://github.com/tokuhirom/mutsu/issues/9825) |
+| Language/traps:1076 | `for` over a Match iterates the wrong things | [#9826](https://github.com/tokuhirom/mutsu/issues/9826) |
+| Language/traps:2028,2044 | `grep(True)` throws a bare `X::Match::Bool` | [#9827](https://github.com/tokuhirom/mutsu/issues/9827) |
+| Type/Test:725 | `Str.ACCEPTS` ignores a user `.Str` | [#9828](https://github.com/tokuhirom/mutsu/issues/9828) |
+| Type/Test:725 | `~$*KERNEL` / `eq` give `Kernel()` | [#9829](https://github.com/tokuhirom/mutsu/issues/9829) |
+| Type/Parameter:176 | `f(my $x)` into `\x` is not writable | [#9830](https://github.com/tokuhirom/mutsu/issues/9830) |
+| Type/Nil:118 | `Nil` through an rw alias ignores the container default | [#9831](https://github.com/tokuhirom/mutsu/issues/9831) |
+| Language/traps:63 | `%h is default(Nil)` stores `(Any)` | [#9832](https://github.com/tokuhirom/mutsu/issues/9832) |
+| Language/numerics:609 | native array declared inside an expression loses its type | [#9833](https://github.com/tokuhirom/mutsu/issues/9833) |
+| Language/typesystem:657 | role attribute default lost through role inheritance | [#9834](https://github.com/tokuhirom/mutsu/issues/9834) |
+| Language/compilation:159 | role method params reject some core type names | [#9835](https://github.com/tokuhirom/mutsu/issues/9835) |
+| Language/nativecall:1024,327 | `Pointer[T]` parameter type; `CArray.allocate` missing | [#9836](https://github.com/tokuhirom/mutsu/issues/9836) |
+| Type/independent-routines:561,289 | `spurt` without content; `chmod` on a list | [#9837](https://github.com/tokuhirom/mutsu/issues/9837) |
+| Type/independent-routines:312 | `».` on a lazy Seq returns `()`; `indir` makes a gather lazy | [#9838](https://github.com/tokuhirom/mutsu/issues/9838) |
+| Type/IO/Spec/Unix:201, Type/IO/Spec/Win32:126,162,190,251 | `IO::Spec` `rel2abs` / Win32 split/join edge cases | [#9839](https://github.com/tokuhirom/mutsu/issues/9839) |
+| Language/syntax:307 | `infix:<+>` as a term is not a listop call | [#9840](https://github.com/tokuhirom/mutsu/issues/9840) |
+| Type/Test:294 | "Cannot resolve caller" message formatting | [#9841](https://github.com/tokuhirom/mutsu/issues/9841) |
+| Type/Match:261, Type/Range:110,359, Type/Format:58 | missing `replace-with`, `in-range(v, what)`, lazy `Range.reverse`, `Format.directives` | [#9842](https://github.com/tokuhirom/mutsu/issues/9842) |
+| Type/Metamodel/ConcreteRoleHOW:26 | `ConcreteRoleHOW` `.^compose` missing | [#9843](https://github.com/tokuhirom/mutsu/issues/9843) |
+| Type/Match:150 | `make` without a Match in `$/` succeeds | [#9844](https://github.com/tokuhirom/mutsu/issues/9844) |
+| Language/packages:80, Language/using-modules/code:452 | lookups in a non-existent package succeed | [#9845](https://github.com/tokuhirom/mutsu/issues/9845) |
+| Type/CallFrame:76 | `callframe` in a `for` block has undefined `.code` | [#9846](https://github.com/tokuhirom/mutsu/issues/9846) |
+| Language/io:217 | `dir` Seq gist not truncated at 100 | [#9847](https://github.com/tokuhirom/mutsu/issues/9847) |
+| Type/IO/CatHandle:75,98 | thunked `xx` returns a List | [#9848](https://github.com/tokuhirom/mutsu/issues/9848) |
+| Type/independent-routines:598, Language/traps:1543,1646 | `X::Proc::Unsuccessful` names the whole command line | [#9849](https://github.com/tokuhirom/mutsu/issues/9849) |
+| Language/control:484 | `when X {…}` treated as a function call | [#9850](https://github.com/tokuhirom/mutsu/issues/9850) |
+| Type/Associative:82 | `$obj{33}` with `AT-KEY` dispatched positionally | [#9851](https://github.com/tokuhirom/mutsu/issues/9851) |
+| Language/list:604,583 | typed-array rebinding narrows `@a`; `eqv` ignores element type | [#9852](https://github.com/tokuhirom/mutsu/issues/9852) |
+| Language/list:250, Type/PositionalBindFailover:15 | Seq bind to `my @s` accepted; infinite Seq to `@` param hangs | [#9853](https://github.com/tokuhirom/mutsu/issues/9853) |
+| Language/list:382,496 | `:delete` on a List succeeds; a Pair in a slice index ignored | [#9854](https://github.com/tokuhirom/mutsu/issues/9854) |
+| Language/math:185 | lazy-array slice with a nested index list returns Nil | [#9855](https://github.com/tokuhirom/mutsu/issues/9855) |
+| Language/list:338 | geometric sequence overflows to Num | [#9856](https://github.com/tokuhirom/mutsu/issues/9856) |
+| Language/functions:720 | `infix:<X>(…)` call form flattens itemized args | [#9857](https://github.com/tokuhirom/mutsu/issues/9857) |
+| Language/list:707, Type/Positional:25 | enum-valued shape dims; `(my int @).of` | [#9858](https://github.com/tokuhirom/mutsu/issues/9858) |
+| Type/Str:647,677 | `Str.comb(Regex)` ignores `<( )>` | [#9859](https://github.com/tokuhirom/mutsu/issues/9859) |
+| Language/using-modules/code:408 | `::T` capture not visible in nested sub signatures | [#9860](https://github.com/tokuhirom/mutsu/issues/9860) |
+| Language/using-modules/code:175 | false redeclaration for `class M::MyClass` inside `unit module M` | [#9861](https://github.com/tokuhirom/mutsu/issues/9861) |
+| Type/Mu:435 | trailing `#=` after a multi-line sub dropped | [#9862](https://github.com/tokuhirom/mutsu/issues/9862) |
+| Language/functions:447 | `multi f(LOG;; $x)` fails to parse | [#9863](https://github.com/tokuhirom/mutsu/issues/9863) |
+| Language/containers:397 | Proxy bound to a typed scalar checked as `Proxy` | [#9864](https://github.com/tokuhirom/mutsu/issues/9864) |
+| Language/containers:373 (+ Type/Associative:98, Type/Positional:59, …) | assignment type-check reports the previous line | [#9865](https://github.com/tokuhirom/mutsu/issues/9865) |
+| Type/Metamodel/EnumHOW:39 | `Metamodel::EnumHOW` MOP API missing (deep) | [#9866](https://github.com/tokuhirom/mutsu/issues/9866) |
+| Type/SetHash:129 | `SetHash[Pair].new(pairs)` treats Pairs as weights | [#9867](https://github.com/tokuhirom/mutsu/issues/9867) |
+| Type/X/NYI:32 | `X::NYI.message` omits did-you-mean / workaround | [#9868](https://github.com/tokuhirom/mutsu/issues/9868) |
+| Language/structures:458 | `.^can` returns one method, not one per MRO class | [#9869](https://github.com/tokuhirom/mutsu/issues/9869) |
+| Type/IO/Path:970,1090,1101,1112,1051,113 | `IO::Path` `inode`/`dev`/`devtype`/`chown` missing | [#9870](https://github.com/tokuhirom/mutsu/issues/9870) |
+| Language/rb-nutshell:1046 | `[+].^name` is "Two terms in a row" | [#9871](https://github.com/tokuhirom/mutsu/issues/9871) |
+| Language/terms:343 | anonymous `constant = …` rejected | [#9872](https://github.com/tokuhirom/mutsu/issues/9872) |
+| Language/using-modules/code:123 | `try require Foo` installs no stub package | [#9873](https://github.com/tokuhirom/mutsu/issues/9873) |
+| Type/Attribute:418 | attribute `is DEPRECATED` not exposed | [#9874](https://github.com/tokuhirom/mutsu/issues/9874) |
+| Language/rb-nutshell:324 | `&g:($)` rejects a pointy block | [#9875](https://github.com/tokuhirom/mutsu/issues/9875) |
+| Type/List:29 | binding to a List element rejected at compile time | [#9876](https://github.com/tokuhirom/mutsu/issues/9876) |
+| Language/signatures:362, Language/functions:1316 | binding messages leak `$__ANON_STATE__` / "got Package" | [#9877](https://github.com/tokuhirom/mutsu/issues/9877) |
+| Language/io-guide ×6, Language/io, Type/IO/Handle, Type/IO/Path, … (~30 blocks) | file-open error wording | [#9878](https://github.com/tokuhirom/mutsu/issues/9878) |
+| Type/Distribution/Resource:127, Language/variables:1440 | `%?RESOURCES` outside a distribution is `{}` | [#9879](https://github.com/tokuhirom/mutsu/issues/9879) |
+| Type/Baggy:355 | `Baggy.hash` is a plain `Hash` | [#9880](https://github.com/tokuhirom/mutsu/issues/9880) |
+| Type/independent-routines:246 | `PROCESS::<&chdir> = …` accepted | [#9881](https://github.com/tokuhirom/mutsu/issues/9881) |
+| Type/Capture:70, Language/control:647,1368, … | arity message count / missing candidate list | [#9882](https://github.com/tokuhirom/mutsu/issues/9882) |
 
-#### Filed from the 2026-09-09b error/silent-parity sweep
-
-The first eleven findings from oracle modes no previous sweep had. Each was
-reduced and re-run against `raku` v2026.07 before filing.
-
-| file:line | one-line summary | issue |
-|---|---|---|
-| `Type/IO/Handle:139,478` | a method call on an **unhandled `Failure`** returns a value instead of rethrowing, so a failed `open` silently yields empty data | [#7770](https://github.com/tokuhirom/mutsu/issues/7770) |
-| `Type/Promise:81` | an exception thrown inside `start` is **swallowed** — the program exits 0 | [#7771](https://github.com/tokuhirom/mutsu/issues/7771) |
-| `Language/py-nutshell:582` | every instance answers a phantom `.name` method no class declared | [#7772](https://github.com/tokuhirom/mutsu/issues/7772) |
-| `Language/objects:48` + 7 `perl-nutshell` rows | a known method name on an **undefined** value returns `(Any)` instead of throwing | [#7773](https://github.com/tokuhirom/mutsu/issues/7773) |
-| `Language/traps:567`, `Language/list:604` | a typed-array parameter (`Int @a`) accepts an untyped `Array` | [#7774](https://github.com/tokuhirom/mutsu/issues/7774) |
-| `Language/subscripts:955,1138`, `Type/Positional:59`, `Type/Associative:19,98`, `Language/variables:73` | `my @a is Foo` accepts a non-container role, then ignores it | [#7775](https://github.com/tokuhirom/mutsu/issues/7775) |
-| `Type/X/IO/Chdir:14`, `Type/independent-routines:231,263,339` | `chdir` into a nonexistent directory succeeds when its parent exists | [#7776](https://github.com/tokuhirom/mutsu/issues/7776) |
-| `Type/Seq:208-235` | `.skip` silently ignores every argument after the first | [#7777](https://github.com/tokuhirom/mutsu/issues/7777) |
-| `Language/numerics:678,716` | native-type multi candidates are not distinguished: an `int` candidate takes an `Int`, two widths never look ambiguous | [#7778](https://github.com/tokuhirom/mutsu/issues/7778) |
-| `Type/Mu:211` | `.clone(:attr)` on a type object returns the type object instead of throwing | [#7779](https://github.com/tokuhirom/mutsu/issues/7779) |
-| 15 `Type/*:7` synopsis lines | the roles structuring the built-in hierarchy are undeclared: `QuantHash`, `Stringy`, `Systemic`, `Baggy`, `PositionalBindFailover`, `Blob[T]` | [#7780](https://github.com/tokuhirom/mutsu/issues/7780) |
-
-#### Triaged real, not yet filed (2026-09-09)
-
-Re-run and confirmed during this sweep's triage but not filed one-by-one, so
-the verification work is not lost. **File a ticket when you pick one up**, and
-move its row above. The minimal repro for each is in the committed report under
-[doc-diff-sweep/reports/](doc-diff-sweep/reports/).
-
-| cluster | rows | shape |
-|---|---|---|
-| **Mixins lose the base value's identity** | `Language/objects:1457` (`(<a b> but R).^name` → `Array+{R}`, raku `List+{R}`), `Language/perl-func:2281`, `:2310` | the built-in payload is unreachable from the mixed/derived object |
-| **Itemization depth** | `Type/Any:1307` (`.tree(1).flat.elems` → 2, raku 6), `Type/Any:311` (`».List.flat` keeps one level of nesting) | an extra level exactly one deep; `.tree` with no arg and `.tree(2)` are correct |
-| **MOP metadata** | `Type/Code:195` (an auto-generated accessor `Method` has no `.line`), `Type/Code:166` (`&infix:<+>.file` → `Nil`), `Language/structures:458` (`ClassHOW.can("uc")` finds 1 candidate, raku 2), `Type/Metamodel/ConcreteRoleHOW:26` (`.^compose` missing), `Type/Metamodel/MethodContainer:15,40` | the metaobject exists but carries no source / inherited-method metadata |
-| **Macros unimplemented** | `Language/experimental:78,93,104`, `Type/X/TypeCheck/Splice:30` | `use experimental :macros` — `quasi` does not parse at all |
-| **Custom iterator protocol** | `Type/Iterator:277` (a class doing `Iterable`+`Iterator` binds as itself), `Type/Iterable:52`, `Type/Iterator:69` (`IterationEnd` in a list does not stop iteration), `:115` (`IterationEnd.raku` is `"IterationEnd"`), `:88` (`=:= IterationEnd` through a container) | see the deferred cluster below |
-| **Grammar action side effects** | `Language/grammars:289` (`<.lit>` never fires the action method), `:387` (`"$a.[1]"` / `"$h.<k>"` emitted literally in interpolation) | the capturing `<lit>` form is correct |
-| **Transcendental accuracy** | `Type/Cool:433` (`atanh(0.5)` → `...548`, raku `...549`), `:535` (`log10(1001)`), `:422` (`tanh(atanh(0.5))` → `0.49999999999999994`, raku `0.5000000000000001`) | last-ulp; mutsu evidently derives these rather than calling libm |
-| **Standalone** | `Language/control:48` (a bare block before an infix must be a term — `{ ... } or die` dies), `Language/traps:63` (`%h is default(Nil)` stores `(Any)` for an explicit `Nil`), `Language/traps:1076` (`for "x" ~~ /(.)/ {...}` iterates nothing), `Type/List:417` (`(1..∞).List.gist` → `1..Inf`, raku `(...)`), `Type/Any:1549` (`.snitch(&dd)` → "Callable expected"), `Type/Format:58` (`Format.directives` missing), `Type/independent-routines:1429` (`append`/`push` with a Hash → "Unknown call"), `:473` (`.readchars` + `SeekFromCurrent` mixes bytes and characters), `:312` (`indir` + a lazy `gather` yields `()`), `Language/haskell-to-p6:475` (the reduction metaoperator over a user sub), `Language/py-nutshell:541`, `Language/perl-var:198` (`$*DISTRO` is a copy of `$*KERNEL`), `Language/subscripts:51` | |
+**Triaged, deliberately not filed (2026-09-27).**
+- Macros (`Language/experimental:66,78,93,104`, `Type/X/TypeCheck/Splice:30`):
+  `quasi` does not parse at all; tracked as ADR-0011 Phase 6, not as an issue.
+- `use v6.c; my Int:D $x .= new: 42` (`Language/signatures:445`) and
+  `repository-for-name("site").uninstall(Any)`
+  (`Type/CompUnit/Repository/Installation:46`): mutsu accepts what raku rejects,
+  in corners too narrow to be worth a ticket yet.
+- Rakudo 2026.07 disagrees with its own doc and mutsu follows the doc:
+  `Type/Int:134,150` (`polymod`), `Type/Any:817` (argument-less `.first`),
+  `Type/Any:617,628` (`minpairs`/`maxpairs` return type),
+  `Type/independent-routines:473` and `Type/IO/CatHandle:162` (`readchars`
+  read-ahead). Revisit only if roast pins Rakudo's behaviour.
+- Rakudo internals leaking into docs: `Type/Code:166,175,211`,
+  `Type/Iterable:52`, `Type/Match:7`, `Type/Metamodel/MethodContainer:15,40`,
+  `Language/classtut:805`, `Type/CallFrame:122`, `Type/ForeignCode:18`,
+  `Language/perl-var:110`, `Language/traps:1260` (MoarVM's 65535-argument limit).
+- `Language/perl-func:778`: mutsu implements `goto`, so `FOO: goto FOO` really
+  loops; Rakudo has no `goto`.
+- The remaining `error-mismatch` rows are message wording with the same failure
+  kind; the systematic ones are filed (#9877, #9878, #9882), the rest are
+  one-offs (`⏏` vs `<HERE>` in X::Str::Numeric, "Did you mean" lists, NativeCall
+  `dlopen` text).
 
 **Environment noise, not findings.** `Language/variables:1719,1725,1737,1745,1756`
 compare `$*DISTRO` / `$*VM` / `$*RAKU.compiler.version` against the reference
@@ -369,7 +457,7 @@ concurrency-interleaving example whose oracle happened to reproduce twice.
 
 **Known harness false positive (not ticketed):** any block whose expected output
 embeds an unordered-container iteration order, an object address, a `WHICH` id,
-or a thread id. The twice-run oracle gate drops most of these (59 this sweep);
+or a thread id. The twice-run oracle gate drops most of these (62 on 2026-09-27);
 the survivors are ones raku happened to reproduce, e.g.
 `Language/structures:108` (`<a b c d>.Hash.kv`) and `Type/List:695`
 (`.Capture.keys`).
@@ -493,7 +581,7 @@ intentionally deferred; see PLAN.md §6 and the ADRs (the old §8.5 pointer was 
 
 ### Untriaged
 Everything in the survey below not listed above. The per-file minimal repros for the
-2026-09-09 sweep are committed under [doc-diff-sweep/reports/](doc-diff-sweep/reports/)
+2026-09-27 sweep are committed under [doc-diff-sweep/reports/](doc-diff-sweep/reports/)
 (captured output truncated to 40 lines per section) — read those first; re-run
 `scripts/doc-diff-sweep.sh` into `tmp/sweep/` only when you need a truncated block in
 full or the tree has moved. Re-verify each block against `raku` before writing a fix.
@@ -512,146 +600,128 @@ meaning so their counts stay comparable with earlier sweeps. Regenerated from
 
 | file (under raku-doc/doc/) | mism | crash | err | nondet |
 |---|---:|---:|---:|---:|
-| Type/independent-routines.rakudoc | 4 | 0 | 17 | 1 |
+| Type/independent-routines.rakudoc | 4 | 0 | 15 | 1 |
 | Language/perl-nutshell.rakudoc | 1 | 0 | 18 | 0 |
-| Type/IO/Handle.rakudoc | 1 | 0 | 13 | 1 |
-| Type/IO/Path.rakudoc | 1 | 0 | 13 | 0 |
-| Language/signatures.rakudoc | 5 | 0 | 8 | 1 |
-| Language/traps.rakudoc | 3 | 0 | 10 | 1 |
-| Language/variables.rakudoc | 6 | 0 | 5 | 0 |
-| Type/Test.rakudoc | 0 | 0 | 11 | 3 |
+| Type/IO/Handle.rakudoc | 0 | 0 | 13 | 1 |
+| Language/traps.rakudoc | 2 | 0 | 10 | 0 |
+| Type/IO/Path.rakudoc | 1 | 0 | 11 | 0 |
+| Language/variables.rakudoc | 4 | 0 | 5 | 0 |
 | Language/list.rakudoc | 3 | 0 | 6 | 0 |
-| Language/numerics.rakudoc | 3 | 0 | 5 | 0 |
+| Language/signatures.rakudoc | 2 | 0 | 7 | 1 |
 | Language/nativecall.rakudoc | 0 | 0 | 8 | 1 |
-| Type/Any.rakudoc | 5 | 1 | 1 | 4 |
-| Language/objects.rakudoc | 5 | 0 | 2 | 0 |
-| Language/structures.rakudoc | 2 | 1 | 4 | 4 |
+| Language/subscripts.rakudoc | 2 | 0 | 5 | 0 |
 | Type/Seq.rakudoc | 1 | 0 | 6 | 0 |
 | Language/io.rakudoc | 1 | 0 | 6 | 0 |
-| Language/haskell-to-p6.rakudoc | 0 | 1 | 6 | 0 |
 | Language/rb-nutshell.rakudoc | 0 | 0 | 7 | 1 |
 | Language/create-cli.rakudoc | 0 | 0 | 7 | 0 |
-| Type/IO/CatHandle.rakudoc | 6 | 0 | 0 | 0 |
-| Type/List.rakudoc | 3 | 0 | 3 | 0 |
+| Type/Any.rakudoc | 4 | 1 | 1 | 4 |
+| Language/numerics.rakudoc | 3 | 0 | 3 | 0 |
 | Language/control.rakudoc | 2 | 1 | 3 | 0 |
-| Language/subscripts.rakudoc | 1 | 0 | 5 | 2 |
+| Language/structures.rakudoc | 1 | 1 | 4 | 3 |
 | Language/io-guide.rakudoc | 0 | 0 | 6 | 0 |
+| Language/haskell-to-p6.rakudoc | 0 | 0 | 6 | 0 |
 | Type/Cool.rakudoc | 4 | 0 | 1 | 0 |
 | Language/grammars.rakudoc | 1 | 1 | 3 | 0 |
-| Language/experimental.rakudoc | 0 | 4 | 1 | 0 |
-| Language/faq.rakudoc | 0 | 1 | 4 | 0 |
-| Type/Junction.rakudoc | 4 | 0 | 0 | 0 |
+| Type/Test.rakudoc | 0 | 0 | 5 | 2 |
+| Type/Map.rakudoc | 4 | 0 | 0 | 3 |
 | Type/Iterator.rakudoc | 4 | 0 | 0 | 0 |
 | Type/IO/Spec/Win32.rakudoc | 4 | 0 | 0 | 0 |
+| Type/IO/CatHandle.rakudoc | 4 | 0 | 0 | 0 |
+| Type/Enumeration.rakudoc | 3 | 0 | 1 | 0 |
 | Type/Code.rakudoc | 2 | 1 | 1 | 2 |
+| Language/objects.rakudoc | 2 | 1 | 1 | 0 |
 | Language/perl-var.rakudoc | 2 | 0 | 2 | 0 |
 | Language/perl-func.rakudoc | 2 | 0 | 2 | 0 |
-| Language/regexes.rakudoc | 1 | 0 | 3 | 0 |
+| Type/List.rakudoc | 1 | 0 | 3 | 1 |
+| Language/experimental.rakudoc | 0 | 3 | 1 | 0 |
+| Language/using-modules/code.rakudoc | 0 | 0 | 4 | 2 |
 | Type/atomicint.rakudoc | 0 | 0 | 4 | 0 |
-| Type/Map.rakudoc | 3 | 0 | 0 | 2 |
-| Language/typesystem.rakudoc | 2 | 0 | 1 | 2 |
-| Type/Enumeration.rakudoc | 2 | 0 | 1 | 1 |
-| Type/Compiler.rakudoc | 2 | 0 | 1 | 0 |
-| Language/concurrency.rakudoc | 2 | 0 | 1 | 0 |
-| Language/containers.rakudoc | 1 | 0 | 2 | 1 |
-| Type/Str.rakudoc | 1 | 0 | 2 | 0 |
+| Type/Junction.rakudoc | 3 | 0 | 0 | 0 |
+| Language/typesystem.rakudoc | 2 | 0 | 1 | 3 |
+| Language/concurrency.rakudoc | 2 | 0 | 1 | 1 |
 | Type/CompUnit/Repository/Installation.rakudoc | 1 | 0 | 2 | 0 |
-| Language/syntax.rakudoc | 1 | 0 | 2 | 0 |
+| Language/regexes.rakudoc | 1 | 0 | 2 | 0 |
 | Language/functions.rakudoc | 1 | 0 | 2 | 0 |
-| Language/using-modules/code.rakudoc | 0 | 0 | 3 | 2 |
+| Type/Associative.rakudoc | 0 | 1 | 2 | 0 |
 | Type/Match.rakudoc | 0 | 0 | 3 | 0 |
 | Language/grammar_tutorial.rakudoc | 0 | 0 | 3 | 0 |
-| Type/Hash.rakudoc | 2 | 0 | 0 | 2 |
+| Type/Baggy.rakudoc | 2 | 0 | 0 | 2 |
 | Type/Metamodel/MethodContainer.rakudoc | 2 | 0 | 0 | 1 |
+| Type/Hash.rakudoc | 2 | 0 | 0 | 1 |
 | Type/Backtrace.rakudoc | 2 | 0 | 0 | 1 |
+| Type/Nil.rakudoc | 2 | 0 | 0 | 0 |
 | Type/Int.rakudoc | 2 | 0 | 0 | 0 |
+| Type/Compiler.rakudoc | 2 | 0 | 0 | 0 |
 | Type/CallFrame.rakudoc | 2 | 0 | 0 | 0 |
 | Type/Attribute.rakudoc | 2 | 0 | 0 | 0 |
-| Type/Baggy.rakudoc | 1 | 0 | 1 | 2 |
 | Language/py-nutshell.rakudoc | 1 | 0 | 1 | 1 |
 | Language/contexts.rakudoc | 1 | 0 | 1 | 1 |
+| Language/containers.rakudoc | 1 | 0 | 1 | 1 |
 | Type/Whatever.rakudoc | 1 | 0 | 1 | 0 |
 | Type/Thread.rakudoc | 1 | 0 | 1 | 0 |
-| Type/Sequence.rakudoc | 1 | 0 | 1 | 0 |
-| Type/Routine.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Str.rakudoc | 1 | 0 | 1 | 0 |
 | Type/Promise.rakudoc | 1 | 0 | 1 | 0 |
-| Type/Proc/Async.rakudoc | 1 | 0 | 1 | 0 |
 | Type/Positional.rakudoc | 1 | 0 | 1 | 0 |
 | Type/Metamodel/Primitives.rakudoc | 1 | 0 | 1 | 0 |
-| Type/Bag.rakudoc | 1 | 0 | 1 | 0 |
 | Language/classtut.rakudoc | 1 | 0 | 1 | 0 |
-| Type/Metamodel/Mixins.rakudoc | 0 | 2 | 0 | 0 |
-| Language/hashmap.rakudoc | 0 | 0 | 2 | 1 |
-| Type/Variable.rakudoc | 0 | 0 | 2 | 0 |
+| Language/syntax.rakudoc | 0 | 0 | 2 | 1 |
 | Type/Range.rakudoc | 0 | 0 | 2 | 0 |
 | Type/Proc.rakudoc | 0 | 0 | 2 | 0 |
 | Type/Grammar.rakudoc | 0 | 0 | 2 | 0 |
 | Type/ComplexStr.rakudoc | 0 | 0 | 2 | 0 |
-| Type/Associative.rakudoc | 0 | 0 | 2 | 0 |
-| Language/testing.rakudoc | 0 | 0 | 2 | 0 |
 | Language/quoting.rakudoc | 0 | 0 | 2 | 0 |
 | Language/perl-op.rakudoc | 0 | 0 | 2 | 0 |
 | Language/packages.rakudoc | 0 | 0 | 2 | 0 |
-| Type/BagHash.rakudoc | 1 | 0 | 0 | 3 |
+| Language/faq.rakudoc | 0 | 0 | 2 | 0 |
+| Type/Mu.rakudoc | 1 | 0 | 0 | 2 |
+| Type/Mix.rakudoc | 1 | 0 | 0 | 1 |
 | Type/IO/Spec/Unix.rakudoc | 1 | 0 | 0 | 1 |
 | Type/X/Str/Numeric.rakudoc | 1 | 0 | 0 | 0 |
-| Type/X/Proc/Async/TapBeforeSpawn.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Proc/Async/OpenForWriting.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Proc/Async/AlreadyStarted.rakudoc | 1 | 0 | 0 | 0 |
 | Type/X/Numeric/Real.rakudoc | 1 | 0 | 0 | 0 |
-| Type/X/Numeric/DivideByZero.rakudoc | 1 | 0 | 0 | 0 |
 | Type/X/Assignment/RO.rakudoc | 1 | 0 | 0 | 0 |
-| Type/Nil.rakudoc | 1 | 0 | 0 | 0 |
-| Type/Lock/ConditionVariable.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Sequence.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Routine.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Parameter.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Pair.rakudoc | 1 | 0 | 0 | 0 |
 | Type/Iterable.rakudoc | 1 | 0 | 0 | 0 |
 | Type/IO/Path/Parts.rakudoc | 1 | 0 | 0 | 0 |
 | Type/ForeignCode.rakudoc | 1 | 0 | 0 | 0 |
 | Type/Failure.rakudoc | 1 | 0 | 0 | 0 |
 | Type/Exception.rakudoc | 1 | 0 | 0 | 0 |
-| Type/Sub.rakudoc | 0 | 1 | 0 | 1 |
+| Language/math.rakudoc | 1 | 0 | 0 | 0 |
 | Type/X/TypeCheck/Splice.rakudoc | 0 | 1 | 0 | 0 |
-| Type/Proxy.rakudoc | 0 | 1 | 0 | 0 |
 | Type/PositionalBindFailover.rakudoc | 0 | 1 | 0 | 0 |
-| Type/Pair.rakudoc | 0 | 1 | 0 | 0 |
+| Type/Method.rakudoc | 0 | 1 | 0 | 0 |
 | Type/Metamodel/ConcreteRoleHOW.rakudoc | 0 | 1 | 0 | 0 |
 | Type/Format.rakudoc | 0 | 1 | 0 | 0 |
-| Language/optut.rakudoc | 0 | 1 | 0 | 0 |
-| Language/math.rakudoc | 0 | 1 | 0 | 0 |
-| Type/SetHash.rakudoc | 0 | 0 | 1 | 3 |
-| Type/Setty.rakudoc | 0 | 0 | 1 | 2 |
-| Type/Mu.rakudoc | 0 | 0 | 1 | 2 |
-| Type/ValueObjAt.rakudoc | 0 | 0 | 1 | 1 |
-| Type/Set.rakudoc | 0 | 0 | 1 | 1 |
+| Language/traits.rakudoc | 0 | 1 | 0 | 0 |
+| Type/SetHash.rakudoc | 0 | 0 | 1 | 2 |
+| Type/Set.rakudoc | 0 | 0 | 1 | 2 |
+| Type/Bag.rakudoc | 0 | 0 | 1 | 1 |
 | Language/nativetypes.rakudoc | 0 | 0 | 1 | 1 |
-| Type/utf8.rakudoc | 0 | 0 | 1 | 0 |
+| Language/hashmap.rakudoc | 0 | 0 | 1 | 1 |
 | Type/X/Scheduler/CueInNaNSeconds.rakudoc | 0 | 0 | 1 | 0 |
 | Type/X/NYI.rakudoc | 0 | 0 | 1 | 0 |
-| Type/X/IO/Chdir.rakudoc | 0 | 0 | 1 | 0 |
-| Type/VM.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Variable.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Telemetry.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Supply.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Rational.rakudoc | 0 | 0 | 1 | 0 |
 | Type/RatStr.rakudoc | 0 | 0 | 1 | 0 |
 | Type/RakuAST/Doc/Markup.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Raku.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Proc/Async.rakudoc | 0 | 0 | 1 | 0 |
 | Type/NumStr.rakudoc | 0 | 0 | 1 | 0 |
-| Type/NFKD.rakudoc | 0 | 0 | 1 | 0 |
-| Type/NFKC.rakudoc | 0 | 0 | 1 | 0 |
-| Type/NFD.rakudoc | 0 | 0 | 1 | 0 |
-| Type/NFC.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Mixy.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Metamodel/PackageHOW.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Metamodel/EnumHOW.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Metamodel/AttributeContainer.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Kernel.rakudoc | 0 | 0 | 1 | 0 |
 | Type/IntStr.rakudoc | 0 | 0 | 1 | 0 |
 | Type/IO/Socket/INET.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Distro.rakudoc | 0 | 0 | 1 | 0 |
+| Type/IO/Notification.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Distribution/Resource.rakudoc | 0 | 0 | 1 | 0 |
 | Type/CompUnit/Repository/FileSystem.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Capture.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Cancellation.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Buf.rakudoc | 0 | 0 | 1 | 0 |
 | Type/Bool.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Blob.rakudoc | 0 | 0 | 1 | 0 |
-| Type/Array.rakudoc | 0 | 0 | 1 | 0 |
 | Language/terms.rakudoc | 0 | 0 | 1 | 0 |
 | Language/phasers.rakudoc | 0 | 0 | 1 | 0 |
 | Language/operators.rakudoc | 0 | 0 | 1 | 0 |

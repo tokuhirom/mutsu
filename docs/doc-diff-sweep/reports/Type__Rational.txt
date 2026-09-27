@@ -10,13 +10,13 @@ say $one-third;                         # OUTPUT: «0.333333␤»
 my Positive $fail =Positive.new(-2,3);  # OUTPUT: «Type check failed in binding to parameter 'nu'; expected UInt but got Int (-2)␤»
 --- raku stderr (exit 1) ---
 Type check failed in binding to parameter 'nu'; expected UInt but got Int (-2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16454.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21660.raku line 4
 --- raku stdout ---
 0.333333
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on UInt
-  in sub new at /home/user/mutsu/tmp/ddh/prog-16454.raku line 10
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16454.raku line 2
+  in sub new at /home/user/mutsu/tmp/ddh/prog-21660.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21660.raku line 2
 

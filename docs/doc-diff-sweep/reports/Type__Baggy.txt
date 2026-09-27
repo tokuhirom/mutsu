@@ -1,19 +1,28 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=17  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=23  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=0  skipped-nondet=3  skipped-oracle-nondet=2
+# stats: error-match=0  error-mismatch=0  match=16  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=23  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=3  skipped-oracle-nondet=2
 
 ==============================================================================
-[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Baggy.rakudoc:7
+[1] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:43
 --- program ---
-role Baggy does QuantHash { }
---- raku stderr (exit 0) ---
-(none)
+my $cars = ('Ford' => 2, 'Rover' => 3).BagHash;
+say $cars.grab;                                   # OUTPUT: «Ford␤»
+say $cars.grab(2);                                # OUTPUT: «(Rover Rover)␤»
+say $cars.grab(*);                                # OUTPUT: «(Rover Ford)␤»
+
+my $breakfast = ('eggs' => 2, 'bacon' => 3).Bag;
+say $breakfast.grab;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Immutable: Cannot call 'grab' on an immutable 'Bag'␤»
 --- raku stdout ---
-(none)
---- mutsu stdout (exit 1) ---
-(none)
---- mutsu stderr ---
-Unknown role: QuantHash
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-26987.raku line 1
+Ford
+(Ford Rover)
+(Rover Rover)
+X::Immutable: Cannot call 'grab' on an immutable 'Bag'
+--- mutsu stdout (exit 0) ---
+Rover
+(Ford Rover)
+(Rover Ford)
+X::Immutable: Cannot call 'grab' on an immutable 'Bag'
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:355

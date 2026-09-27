@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=8  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=1  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=3
+# stats: error-match=0  error-mismatch=0  match=9  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=1  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=2
 
 ==============================================================================
 [1] mutsu-error-on-silent-success  raku-doc/doc/Type/SetHash.rakudoc:129
@@ -14,5 +14,5 @@ my $n = SetHash[Pair].new: "zero" => 0, "one" => 1, "two" => 2;
 (none)
 --- mutsu stderr ---
 Type check failed in binding; expected Pair but got Int ("0")
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18006.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23258.raku line 2
 

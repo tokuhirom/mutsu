@@ -1,35 +1,49 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=11  matches-doc=2  mismatch=3  mutsu-accepts=0  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=2
+# stats: error-match=0  error-mismatch=0  match=9  matches-doc=2  mismatch=4  mutsu-accepts=0  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=3
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Map.rakudoc:131
+[1] output-mismatch  raku-doc/doc/Type/Map.rakudoc:18
 --- program ---
-my $m = Map.new('a' => (2, 3), 'b' => 17);
-say $m.values; # OUTPUT: «((2 3) 17)␤»
+my %e := Map.new('a', 1, 'b', 2);
+say %e.keys;    # can print «a b␤» or «b a␤»
+say %e.values;  # prints «1 2␤» if the previous line
+                # printed «a b␤», «2 1␤» otherwise
 --- raku stdout ---
-((2 3) 17)
+(a b)
+(1 2)
 --- mutsu stdout (exit 0) ---
-(17 (2 3))
+(b a)
+(2 1)
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Map.rakudoc:153
+[2] output-mismatch  raku-doc/doc/Type/Map.rakudoc:122
 note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my $m = Map.new('a' => (2, 3), 'b' => 17);
-say $m.antipairs;                        # OUTPUT: «((2 3) => a 17 => b)␤»
+say $m.keys; # OUTPUT: «(a b)␤»
 --- raku stdout ---
-(17 => b (2 3) => a)
+(b a)
 --- mutsu stdout (exit 0) ---
-((2 3) => a 17 => b)
+(a b)
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/Map.rakudoc:165
+[3] output-mismatch  raku-doc/doc/Type/Map.rakudoc:140
 note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my $m = Map.new('a' => (2, 3), 'b' => 17);
-say $m.invert;                          # OUTPUT: «(2 => a 3 => a 17 => b)␤»
+say $m.pairs; # OUTPUT: «(a => (2 3) b => 17)␤»
 --- raku stdout ---
-(17 => b 2 => a 3 => a)
+(b => 17 a => (2 3))
 --- mutsu stdout (exit 0) ---
-(2 => a 3 => a 17 => b)
+(a => (2 3) b => 17)
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/Map.rakudoc:182
+--- program ---
+my $m = Map.new('a' => (2, 3), 'b' => 17);
+say $m.list;                            # OUTPUT: «(b => 17 a => (2 3))␤»
+--- raku stdout ---
+(b => 17 a => (2 3))
+--- mutsu stdout (exit 0) ---
+(a => (2 3) b => 17)
 

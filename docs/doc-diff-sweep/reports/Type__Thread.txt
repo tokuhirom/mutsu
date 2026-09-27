@@ -13,7 +13,7 @@ Thread.yield;
 (none)
 --- mutsu stderr ---
 No such method 'yield' for invocant of type 'Thread'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19514.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24702.raku line 1
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Thread.rakudoc:134

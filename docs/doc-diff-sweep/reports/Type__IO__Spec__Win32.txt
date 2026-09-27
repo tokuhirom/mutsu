@@ -18,20 +18,20 @@ say IO::Spec::Win32.rel2abs: '/foo/', 'bar'; # OUTPUT: «C:\foo␤»
 say IO::Spec::Win32.rel2abs: 'foo/../../', 'bar';
 # OUTPUT: «C:\Users\camelia\bar\foo\..\..␤»
 --- raku stdout ---
-"/home/user/mutsu/tmp/ddh/run-2839".IO
-\home\user\mutsu\tmp\ddh\run-2839\foo
-\home\user\mutsu\tmp\ddh\run-2839
-\home\user\mutsu\tmp\ddh\run-2839\foo\..\..
+"/home/user/mutsu/tmp/ddh/run-8075".IO
+\home\user\mutsu\tmp\ddh\run-8075\foo
+\home\user\mutsu\tmp\ddh\run-8075
+\home\user\mutsu\tmp\ddh\run-8075\foo\..\..
 \foo
-\home\user\mutsu\tmp\ddh\run-2839\bar\foo
+\home\user\mutsu\tmp\ddh\run-8075\bar\foo
 \bar
 \foo
-\home\user\mutsu\tmp\ddh\run-2839\bar\foo\..\..
+\home\user\mutsu\tmp\ddh\run-8075\bar\foo\..\..
 --- mutsu stdout (exit 0) ---
-"/home/user/mutsu/tmp/ddh/run-2839".IO
-\home\user\mutsu\tmp\ddh\run-2839\foo
-\home\user\mutsu\tmp\ddh\run-2839
-\home\user\mutsu\tmp\ddh\run-2839\foo\..\..
+"/home/user/mutsu/tmp/ddh/run-8075".IO
+\home\user\mutsu\tmp\ddh\run-8075\foo
+\home\user\mutsu\tmp\ddh\run-8075
+\home\user\mutsu\tmp\ddh\run-8075\foo\..\..
 \foo
 bar\foo
 \bar

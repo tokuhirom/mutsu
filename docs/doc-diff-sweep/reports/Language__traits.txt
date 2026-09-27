@@ -1,0 +1,24 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=3  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=1  no-oracle=1  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/traits.rakudoc:135
+--- program ---
+my &fail-routine = &fail;
+unless &fail-routine.is-implementation-detail {
+    say "&fail is not an implementation detail, can expect backward compatibility";
+}
+
+sub PRIVATE-CALCULATION is implementation-detail { #`(Not safe to rely on this) }
+if &PRIVATE-CALCULATION.is-implementation-detail {
+    say "You better not to rely on &PRIVATE-CALCULATION unless you really know what you are doing";
+}
+--- raku stdout ---
+&fail is not an implementation detail, can expect backward compatibility
+You better not to rely on &PRIVATE-CALCULATION unless you really know what you are doing
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'is-implementation-detail' for invocant of type 'Sub'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25684.raku line 2
+

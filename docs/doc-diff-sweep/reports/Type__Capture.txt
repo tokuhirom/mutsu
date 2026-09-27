@@ -9,13 +9,13 @@ say greet |$d;                # OUTPUT: «Mugen, 19␤»
 say greet |$e;                # OUTPUT: «Jin, 20␤»
 --- raku stderr (exit 1) ---
 Too many positionals passed; expected 0 arguments but got 1
-  in sub greet at /home/user/mutsu/tmp/ddh/prog-28556.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28556.raku line 2
+  in sub greet at /home/user/mutsu/tmp/ddh/prog-1043.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1043.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Too many positionals passed; expected 0 arguments but got more
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28556.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1043.raku line 2
 

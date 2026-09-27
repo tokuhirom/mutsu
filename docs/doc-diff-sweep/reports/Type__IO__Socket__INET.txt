@@ -11,12 +11,12 @@ say $conn.recv;
 $conn.close;
 --- raku stderr (exit 1) ---
 Could not connect to socket: Connection refused
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2415.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7700.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to connect to 'localhost:3333': Connection refused (os error 111)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2415.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7700.raku line 1
 

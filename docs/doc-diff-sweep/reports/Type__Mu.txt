@@ -1,16 +1,20 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=30  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=2
+# stats: error-match=1  error-mismatch=0  match=29  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=2
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Type/Mu.rakudoc:211
+[1] output-mismatch  raku-doc/doc/Type/Mu.rakudoc:435
 --- program ---
-say Num.clone( :yes )
-# OUTPUT: «(exit code 1) Cannot set attribute values when cloning a type object␤  in block <unit>␤␤»
---- raku stderr (exit 1) ---
-Cannot set attribute values when cloning a type object
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12829.raku line 1
+class Spell {};sub do-raw-magic(Spell) {};
+#| Initiate a specified spell normally
+sub cast(Spell $s) {
+  do-raw-magic($s);
+}
+#= (do not use for class 7 spells)
+say &cast.WHY;
+# OUTPUT: «Initiate a specified spell normally␤(do not use for class 7 spells)␤»
 --- raku stdout ---
-(none)
+Initiate a specified spell normally
+(do not use for class 7 spells)
 --- mutsu stdout (exit 0) ---
-(Num)
+Initiate a specified spell normally
 

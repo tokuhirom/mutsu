@@ -26,10 +26,10 @@ my $series = known-lower-limit() ... $max;
 --- raku stderr (exit 1) ---
 Potential difficulties:
     Useless use of ... in sink context
-    at /home/user/mutsu/tmp/ddh/prog-20415.raku:3
+    at /home/user/mutsu/tmp/ddh/prog-25585.raku:3
     ------> my $series = known-lower-limit() ...<HERE> $max;
 No such method 'succ' for invocant of type 'Any'. Did you mean 'sum'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20415.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25585.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---

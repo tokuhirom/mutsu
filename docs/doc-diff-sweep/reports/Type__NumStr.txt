@@ -13,5 +13,5 @@ class NumStr is Allomorph is Num { }
 (none)
 --- mutsu stderr ---
 'NumStr' cannot inherit from 'Allomorph' because it is unknown.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13122.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18299.raku line 1
 

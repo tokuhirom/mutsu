@@ -19,14 +19,14 @@ say BetterCalculator.parse('2 * 3', actions => BetterCalculations).made;
 --- raku stderr (exit 1) ---
 No such method 'TOP' for invocant of type 'BetterCalculator'. Did you
 mean 'to'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 10
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 10
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Language/grammars.rakudoc:323
@@ -40,14 +40,14 @@ say +DigitMatcher.subparse: '12७१७९०९', args => \(:!full-unicode);
 --- raku stderr (exit 1) ---
 No such method 'TOP' for invocant of type 'DigitMatcher'. Did you mean
 'to'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): subparse
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 2
 
 ==============================================================================
 [3] error-mismatch  raku-doc/doc/Language/grammars.rakudoc:364
@@ -67,14 +67,14 @@ say GrammarAdvice.subparse("use regexes for significant whitespace by default");
 --- raku stderr (exit 1) ---
 No such method 'TOP' for invocant of type 'GrammarAdvice'. Did you mean
 'to'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): subparse
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 2
 
 ==============================================================================
 [4] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:387
@@ -164,9 +164,9 @@ say Digifier.parse('255 435 777', actions => Devanagari.new).made;
 
 --- mutsu stderr ---
 Use of Nil in string context
-  in sub digit at /home/user/mutsu/tmp/ddh/prog-6155.raku line 11
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-11348.raku line 11
+  in sub TOP at /home/user/mutsu/tmp/ddh/prog-11348.raku line 16
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11348.raku line 16
 X::Assignment::RO: cannot assign through .tail on non-instance
-  in sub digit at /home/user/mutsu/tmp/ddh/prog-6155.raku line 11
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-11348.raku line 11
 

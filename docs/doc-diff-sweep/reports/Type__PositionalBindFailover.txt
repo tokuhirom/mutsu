@@ -2,27 +2,17 @@
 # stats: error-match=0  error-mismatch=0  match=1  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=1  no-oracle=2  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Type/PositionalBindFailover.rakudoc:34
+[1] mutsu-error  raku-doc/doc/Type/PositionalBindFailover.rakudoc:15
 --- program ---
-class Foo does PositionalBindFailover {
-    method iterator {
-        class :: does Iterator {
-            method pull-one {
-                return 42 unless $++;
-                IterationEnd
-            }
-        }.new
-    }
+sub fifths(@a) {        # @a is constraint to Positional
+    @a[4];
 }
-
-sub first-five (@a) { @a[^5].say }
-first-five Foo.new; # OUTPUT: # OUTPUT: «(42 Nil Nil Nil Nil)␤»
+my $seq := gather {     # a Seq, which is not Positional
+    take $_ for 1..*;
+}
+say fifths($seq);       # OUTPUT: «5␤»
 --- raku stdout ---
-(42 Nil Nil Nil Nil)
---- mutsu stdout (exit 1) ---
+5
+--- mutsu stdout (exit 124) ---
 
---- mutsu stderr ---
-Calling first-five(Any) will never work with declared signature (@a)
-  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@a'; expected Positional but got Any (Foo())
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14824.raku line 13
 

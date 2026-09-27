@@ -12,14 +12,14 @@ if $seen == $expected {
 return $seen;
 --- raku stderr (exit 1) ---
 Cannot unbox a type object (Any) to int.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot unbox a type object (Nil) to int.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 2
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Type/atomicint.rakudoc:193
@@ -28,14 +28,14 @@ no strict;
 cas $i, -> int $current { $current * 2 }
 --- raku stderr (exit 1) ---
 Cannot unbox a type object (Any) to int.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Type check failed in binding to parameter '$current'; expected int but got Nil (Nil)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 2
 
 ==============================================================================
 [3] mutsu-accepts  raku-doc/doc/Type/atomicint.rakudoc:17
@@ -54,13 +54,13 @@ $active⚛++;
 --- raku stderr (exit 1) ---
 Potential difficulties:
     Redeclaration of symbol '$active'.
-    at /home/user/mutsu/tmp/ddh/prog-24545.raku:6
+    at /home/user/mutsu/tmp/ddh/prog-29785.raku:6
     ------> my int32 $active<HERE> = 0;
     Redeclaration of symbol '$active'.
-    at /home/user/mutsu/tmp/ddh/prog-24545.raku:10
+    at /home/user/mutsu/tmp/ddh/prog-29785.raku:10
     ------> my atomicint $active<HERE> = 0;
 Cannot assign to an immutable value
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 6
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 6
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -87,13 +87,13 @@ say $total;
 --- raku stderr (exit 1) ---
 Potential difficulties:
     Redeclaration of symbol '$total'.
-    at /home/user/mutsu/tmp/ddh/prog-24545.raku:8
+    at /home/user/mutsu/tmp/ddh/prog-29785.raku:8
     ------> my int $total<HERE> = 0;
     Redeclaration of symbol '$total'.
-    at /home/user/mutsu/tmp/ddh/prog-24545.raku:13
+    at /home/user/mutsu/tmp/ddh/prog-29785.raku:13
     ------> my atomicint $total<HERE> = 0;
 Cannot assign to an immutable value
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24545.raku line 8
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29785.raku line 8
 --- raku stdout ---
 80000
 --- mutsu stdout (exit 0) ---

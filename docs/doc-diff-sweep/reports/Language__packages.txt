@@ -11,14 +11,14 @@ say Foo.^auth;
 --- raku stderr (exit 1) ---
 No such method 'auth' for invocant of type
 'Perl6::Metamodel::PackageHOW'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16397.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16397.raku line 2
 
 ==============================================================================
 [2] mutsu-accepts  raku-doc/doc/Language/packages.rakudoc:80
@@ -26,7 +26,7 @@ X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth
 Foo::Bar::<$quux>
 --- raku stderr (exit 1) ---
 Could not find symbol '&Bar' in 'GLOBAL::Foo'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16397.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
