@@ -5,6 +5,9 @@
 //! function's original visibility through explicit named re-exports so
 //! external callers (`arith::<name>`) keep working unchanged.
 
+use crate::value::{Value, ValueView};
+use num_traits::Zero;
+
 mod add_sub;
 mod int_ops;
 mod mul_div_mod;
@@ -26,6 +29,28 @@ pub(crate) use int_ops::{
     int_mod_i64, int_negate, int_operand, int_shift_left, int_shift_right,
 };
 pub(crate) use succ::{value_pred, value_succ};
+
+// Cost: O(1) for fixed-width numeric inputs; O(d) for BigRat, d = numerator
+// and denominator limb count, due to the conversion to f64.
+pub(crate) fn sqrt_numeric(value: &Value) -> Option<Value> {
+    match value.view() {
+        ValueView::Int(i) => Some(Value::num((i as f64).sqrt())),
+        ValueView::Num(f) => Some(Value::num(f.sqrt())),
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
+            Some(Value::num((n as f64 / d as f64).sqrt()))
+        }
+        ValueView::BigRat(n, d) if !d.is_zero() => {
+            Some(Value::num(crate::value::bigrat_to_f64(n, d).sqrt()))
+        }
+        ValueView::Complex(r, i) => {
+            let mag = (r * r + i * i).sqrt();
+            let re = ((mag + r) / 2.0).sqrt();
+            let im = i.signum() * ((mag - r) / 2.0).sqrt();
+            Some(Value::complex(re, im))
+        }
+        _ => None,
+    }
+}
 
 // Helpers used by external callers (vm/, runtime/).
 pub(crate) use rat::{

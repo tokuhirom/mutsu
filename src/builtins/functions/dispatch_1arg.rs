@@ -439,19 +439,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             };
             crate::builtins::methods_0arg::native_method_0arg(&n, Symbol::intern("abs"))
         }
-        "sqrt" => Some(Ok(match arg.view() {
-            ValueView::Int(i) => Value::num((i as f64).sqrt()),
-            ValueView::Num(f) => Value::num(f.sqrt()),
-            ValueView::Rat(n, d) if d != 0 => Value::num((n as f64 / d as f64).sqrt()),
-            ValueView::Complex(r, i) => {
-                // sqrt(a+bi) = sqrt((|z|+a)/2) + i*sign(b)*sqrt((|z|-a)/2)
-                let mag = (r * r + i * i).sqrt();
-                let re = ((mag + r) / 2.0).sqrt();
-                let im = i.signum() * ((mag - r) / 2.0).sqrt();
-                Value::complex(re, im)
-            }
-            _ => Value::num(f64::NAN),
-        })),
+        // Cost: O(1) for fixed-width numeric inputs; O(d) for BigRat, d =
+        // numerator and denominator limb count.
+        "sqrt" => Some(Ok(
+            crate::builtins::arith::sqrt_numeric(arg).unwrap_or_else(|| Value::num(f64::NAN))
+        )),
         "floor" => {
             if matches!(arg.view(), ValueView::Instance { .. }) {
                 return None;
