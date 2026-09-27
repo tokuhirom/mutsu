@@ -1,8 +1,9 @@
 # ADR-0043: The scheduled-delivery hop belongs to the *tapped* Supply — every derived live operator carries `"scheduler"` forward
 
-- Status: Proposed (design complete; Decision 1 verified by probe patch and
-  ready for direct implementation, Decision 2 deliberately deferred behind a
-  recorded trigger)
+- Status: Accepted — Decision 1 implemented
+  (`news/2026-08/scheduled-supply-derived-transform-ops-copy-scheduler-forward.md`);
+  Decision 2 deliberately deferred behind a recorded trigger, tracked as
+  [#9932](https://github.com/tokuhirom/mutsu/issues/9932) (2026-09-27 status review, #9913)
 - Date: 2026-08-20
 - Related: [ADR-0028](0028-supply-schedule-on-deferred-tap-delivery.md) (the
   `schedule-on` deferral mechanism this ADR places; its §4 "Propagation

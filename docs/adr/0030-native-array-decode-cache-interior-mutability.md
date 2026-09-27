@@ -414,5 +414,5 @@ simulate the C write with a direct write to `node.bytes`, exactly as
 
 ---
 
-*This ADR is `Proposed`. If the mechanism judgment changes after implementation begins, supersede
-it rather than rewriting it.*
+*This ADR was drafted as `Proposed`; it is now `Accepted` and implemented in full (see the Status
+line). If the mechanism judgment changes, supersede it rather than rewriting it.*

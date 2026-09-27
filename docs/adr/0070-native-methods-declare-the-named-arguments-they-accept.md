@@ -1,6 +1,8 @@
 # ADR-0070: A builtin method declares the named arguments it accepts, and the arity cascade drops the rest
 
-- Status: **Proposed** (slices 1–3 implemented 2026-09-09)
+- Status: **Accepted** (slices 1–3 implemented 2026-09-09; campaign issue #7544 closed. The
+  `new` constructor and plain-call sweep residue is
+  [#9905](https://github.com/tokuhirom/mutsu/issues/9905) — 2026-09-27 status review, #9913)
 - Date: 2026-09-07
 - Related: [ADR-0021](0021-argument-namedness-is-a-call-site-property.md)
   (argument named-ness is a call-site property),

@@ -403,7 +403,8 @@ only the costs it is shaped to see, and this one was shaped around one-shot cost
 
 ## 8. Implementation status
 
-Stage 0 is fully filed and not yet implemented, ordered as in §4:
+Stage 0 is fully implemented — all five issues below closed on 2026-09-13 (PRs #8277–#8281; noted
+in the 2026-09-27 status review, #9913). Ordered as in §4:
 
 | item | issue | measured cost |
 |---|---|---|

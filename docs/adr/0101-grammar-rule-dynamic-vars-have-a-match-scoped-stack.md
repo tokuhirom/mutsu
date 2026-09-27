@@ -1,6 +1,7 @@
 # ADR-0101: Grammar rule dynamic variables have a match-scoped stack
 
-- **Status**: Proposed
+- **Status**: Accepted — implemented (#8148 closed; `news/2026-09/grammar-dynvar-rule-scope.md`,
+  `t/grammar/grammar-dynvar-rule-scope.t`) (2026-09-27 status review, #9913)
 - **Date**: 2026-09-13
 - **Issue**: [#8148](https://github.com/tokuhirom/mutsu/issues/8148)
 - **Builds on**: [ADR-0007](0007-grammar-parse-trail-matcher.md), [ADR-0009](0009-regex-code-assertion-execution-model.md), [ADR-0016](0016-span-based-captures-and-lazy-match.md), [ADR-0046](0046-proto-token-ltm-shares-one-ranking-mechanism.md), and [ADR-0073](0073-regex-atom-candidates-are-demand-driven.md)

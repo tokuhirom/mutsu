@@ -1,6 +1,9 @@
 # ADR-0047: A type's identity is its declaration site, not its current registry name — retiring `subtest`'s registry rollback
 
-- Status: Partially adopted — P1 and P2 landed (PR #6757); P3/P4 not started
+- Status: Partially adopted — P1 and P2 landed (PR #6757). P3/P4 are obsolete rather than pending:
+  `SubtestDeclSnapshot` no longer exists and `subtest` now comes from the vendored
+  `Test.rakumod`. The P1 remainder (lexical `role`/`subset` identity) is
+  [#9894](https://github.com/tokuhirom/mutsu/issues/9894) (2026-09-27 status review, #9913)
 - Date: 2026-08-20
 - Supersedes: nothing
 - Related: [ADR-0024](0024-mainline-lexicals-for-named-subs.md) (name-vs-lexical resolution),
