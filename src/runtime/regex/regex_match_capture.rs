@@ -1,11 +1,12 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, alternation_capture_slots, is_word_char, matches_named_builtin,
+    LTM_DECLARATIVE_MODE, alternation_list_flags, is_word_char, matches_named_builtin,
     merge_regex_captures,
 };
 use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
+use super::regex_match_delta::alternation_branch_delta;
 
 impl Interpreter {
     /// Is this atom an inline sub-pattern — part of the *same* regex, just matched
@@ -323,23 +324,11 @@ impl Interpreter {
                 // branch on a tie — no index needs to travel alongside the
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
-                let capture_slots = alternation_capture_slots(alternatives);
+                let flags = alternation_list_flags(alternatives);
                 for alt in alternatives {
                     let matched = self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg);
-                    if let Some((next, mut inner_caps)) = matched {
-                        if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-                            inner_caps
-                                .positional
-                                .resize(capture_slots, PosSlot::alternation_padding());
-                        }
-                        let mut new_caps = RegexCaptures::default();
-                        for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().merge(v);
-                        }
-                        new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
-                        new_caps.positional.append(&mut inner_caps.positional);
-                        super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                        new_caps.extend_regex_vars(inner_caps.take_regex_vars());
+                    if let Some((next, inner_caps)) = matched {
+                        let new_caps = alternation_branch_delta(&flags, inner_caps);
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
                             .as_ref()
@@ -371,25 +360,12 @@ impl Interpreter {
                     .next_back();
             }
             RegexAtom::SequentialAlternation(alternatives) => {
-                let capture_slots = alternation_capture_slots(alternatives);
+                let flags = alternation_list_flags(alternatives);
                 for alt in alternatives {
-                    if let Some((next, mut inner_caps)) =
+                    if let Some((next, inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-                            inner_caps
-                                .positional
-                                .resize(capture_slots, PosSlot::alternation_padding());
-                        }
-                        let mut new_caps = RegexCaptures::default();
-                        for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().merge(v);
-                        }
-                        new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
-                        new_caps.positional.append(&mut inner_caps.positional);
-                        super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                        new_caps.extend_regex_vars(inner_caps.take_regex_vars());
-                        return Some((next, new_caps));
+                        return Some((next, alternation_branch_delta(&flags, inner_caps)));
                     }
                 }
                 return None;

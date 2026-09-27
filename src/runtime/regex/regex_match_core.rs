@@ -10,7 +10,7 @@
 
 use super::super::*;
 use super::regex_helpers::{
-    alternation_capture_slots, atom_contains_alternation, capture_group_list_flags,
+    alternation_list_flags, atom_contains_alternation, capture_group_list_flags,
     count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
 };
 use super::regex_trail::CapStore;
@@ -1084,7 +1084,7 @@ impl Interpreter {
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let pos_base = store.caps().positional.len();
-        let capture_slots = alternation_capture_slots(alternatives);
+        let flags = alternation_list_flags(alternatives);
         let zero_or_one = matches!(token.quant, RegexQuant::ZeroOrOne);
         let zo_flags = if zero_or_one {
             capture_group_list_flags(&token.atom, false)
@@ -1121,7 +1121,7 @@ impl Interpreter {
             // the continuation descends.
             let mut candidates = {
                 let _seed = Self::arm_inline_vars_seed(&token.atom, store.caps());
-                self.seqalt_branch_candidates(alt, capture_slots, ctx.chars, pos, ctx.pkg)
+                self.seqalt_branch_candidates(alt, &flags, ctx.chars, pos, ctx.pkg)
             };
             if candidates.is_empty() {
                 continue;

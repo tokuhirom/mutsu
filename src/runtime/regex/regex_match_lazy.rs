@@ -20,7 +20,7 @@
 //! is what confines the change to the atoms that can contain code.
 
 use super::super::*;
-use super::regex_helpers::{LTM_DECLARATIVE_MODE, alternation_capture_slots, merge_regex_captures};
+use super::regex_helpers::{LTM_DECLARATIVE_MODE, alternation_list_flags, merge_regex_captures};
 use super::regex_match_core::MatchSink;
 use super::regex_match_delta::{GroupShape, alternation_branch_delta};
 use super::regex_trail::CapStore;
@@ -340,7 +340,7 @@ impl Interpreter {
         ratchet: bool,
         on: &mut AtomCandidateCont<'_>,
     ) -> bool {
-        let capture_slots = alternation_capture_slots(alternatives);
+        let flags = alternation_list_flags(alternatives);
         // Ranking is measurement, so it executes nothing (ADR-0009): the whole
         // point is to decide the branch ORDER without entering any of them.
         // A side-effect-only alternative (`| { die ... }`) matches zero-width,
@@ -361,7 +361,7 @@ impl Interpreter {
             let (matched, unwind) = self.drive_alternation_branch(
                 atom,
                 &alternatives[i],
-                capture_slots,
+                &flags,
                 chars,
                 pos,
                 store,
@@ -386,17 +386,8 @@ impl Interpreter {
             if !Self::is_pure_code_block_alt(alt) {
                 continue;
             }
-            let (_, unwind) = self.drive_alternation_branch(
-                atom,
-                alt,
-                capture_slots,
-                chars,
-                pos,
-                store,
-                pkg,
-                ratchet,
-                on,
-            );
+            let (_, unwind) = self
+                .drive_alternation_branch(atom, alt, &flags, chars, pos, store, pkg, ratchet, on);
             if unwind {
                 return true;
             }
@@ -412,7 +403,7 @@ impl Interpreter {
         &mut self,
         atom: &RegexAtom,
         alt: &RegexPattern,
-        capture_slots: usize,
+        flags: &super::regex_helpers::AlternationListFlags,
         chars: &[char],
         pos: usize,
         store: &mut CapStore,
@@ -428,7 +419,7 @@ impl Interpreter {
             let unwind = &mut unwind;
             let mut cont = |interp: &mut Interpreter, end: usize, inner: RegexCaptures| -> bool {
                 *matched = true;
-                let delta = alternation_branch_delta(capture_slots, inner);
+                let delta = alternation_branch_delta(flags, inner);
                 if on(interp, store, end, delta) {
                     *unwind = true;
                     return true;

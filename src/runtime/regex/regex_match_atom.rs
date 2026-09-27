@@ -1,10 +1,12 @@
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, alternation_capture_slots, merge_regex_captures,
+    AlternationListFlags, LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, alternation_list_flags,
+    merge_regex_captures,
 };
 use super::regex_lr_state::{LrKey, lr_end_activation, lr_seed_was_consulted, lr_store_seed};
 use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
+use super::regex_match_delta::alternation_branch_delta;
 
 /// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
 /// with its PLURAL ends (highest-priority-first).
@@ -35,7 +37,7 @@ impl Interpreter {
     pub(super) fn seqalt_branch_candidates(
         &mut self,
         alt: &RegexPattern,
-        capture_slots: usize,
+        flags: &AlternationListFlags,
         chars: &[char],
         pos: usize,
         pkg: Symbol,
@@ -43,21 +45,8 @@ impl Interpreter {
         // HIGHEST FIRST from the walk; reverse to LOWEST FIRST below.
         let inner_matches = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
         let mut group = Vec::with_capacity(inner_matches.len());
-        for (next, mut inner_caps) in inner_matches {
-            if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-                inner_caps
-                    .positional
-                    .resize(capture_slots, PosSlot::alternation_padding());
-            }
-            let mut new_caps = RegexCaptures::default();
-            for (k, v) in inner_caps.named.drain() {
-                new_caps.named.entry(k).or_default().merge(v);
-            }
-            new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
-            new_caps.positional.append(&mut inner_caps.positional);
-            super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-            new_caps.extend_regex_vars(inner_caps.take_regex_vars());
-            group.push((next, new_caps));
+        for (next, inner_caps) in inner_matches {
+            group.push((next, alternation_branch_delta(flags, inner_caps)));
         }
         group.reverse();
         group
@@ -109,7 +98,7 @@ impl Interpreter {
     fn ltm_rank_and_collect_branches<'a>(
         &mut self,
         alts: impl Iterator<Item = &'a RegexPattern>,
-        capture_slots: usize,
+        flags: &AlternationListFlags,
         chars: &[char],
         pos: usize,
         pkg: Symbol,
@@ -122,22 +111,7 @@ impl Interpreter {
             }
             let ends: Vec<(usize, RegexCaptures)> = raw_ends
                 .into_iter()
-                .map(|(end, mut inner_caps)| {
-                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-                        inner_caps
-                            .positional
-                            .resize(capture_slots, PosSlot::alternation_padding());
-                    }
-                    let mut new_caps = RegexCaptures::default();
-                    for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
-                    }
-                    new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
-                    new_caps.positional.append(&mut inner_caps.positional);
-                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
-                    (end, new_caps)
-                })
+                .map(|(end, inner_caps)| (end, alternation_branch_delta(flags, inner_caps)))
                 .collect();
             let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
             out.push((rank, ends));
@@ -345,12 +319,12 @@ impl Interpreter {
             // code block) is deferred: it matches zero-width, so it can only
             // win when NOTHING else matched, and running it eagerly would fire
             // its side effects (a `die`!) on paths raku never executes.
-            let capture_slots = alternation_capture_slots(alternatives);
+            let flags = alternation_list_flags(alternatives);
             let mut branches = self.ltm_rank_and_collect_branches(
                 alternatives
                     .iter()
                     .filter(|alt| !Self::is_pure_code_block_alt(alt)),
-                capture_slots,
+                &flags,
                 chars,
                 pos,
                 pkg,
@@ -360,7 +334,7 @@ impl Interpreter {
                     alternatives
                         .iter()
                         .filter(|alt| Self::is_pure_code_block_alt(alt)),
-                    capture_slots,
+                    &flags,
                     chars,
                     pos,
                     pkg,
@@ -388,7 +362,7 @@ impl Interpreter {
             //    alt_0 matches (reversed)]
             // After pushing to LIFO: alt_0's highest-priority match is on top.
             let mut groups: Vec<Vec<(usize, RegexCaptures)>> = Vec::new();
-            let capture_slots = alternation_capture_slots(alternatives);
+            let flags = alternation_list_flags(alternatives);
             for alt in alternatives {
                 let earlier_matched = groups.iter().any(|g| !g.is_empty());
                 // Defer a side-effect-only alternative (`|| { die ... }`): once
@@ -402,7 +376,7 @@ impl Interpreter {
                     groups.push(Vec::new());
                     continue;
                 }
-                groups.push(self.seqalt_branch_candidates(alt, capture_slots, chars, pos, pkg));
+                groups.push(self.seqalt_branch_candidates(alt, &flags, chars, pos, pkg));
             }
             // groups[0] = alt0 (highest priority), groups[N] = altN (lowest priority).
             // We want lower-priority alts first in the output (pushed first = bottom of LIFO).

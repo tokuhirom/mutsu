@@ -87,6 +87,16 @@ pub(crate) struct PatternDerived {
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
     /// as `contains_backref` above.
     pub(crate) capture_group_count: std::sync::OnceLock<usize>,
+    /// This pattern's own capture-name multiplicity map, entered with no
+    /// ambient list context (`pattern_name_mult`'s per-pattern memo, used to
+    /// seed an untaken `|` branch's list-valued names as empty lists rather
+    /// than leaving them absent — #9675). A pure function of the pattern
+    /// shape, otherwise re-walked, and every `$<name>=` alias re-interned, on
+    /// every alternation-branch attempt — same #8510 backtrack-retry cost
+    /// shape as `contains_backref` above.
+    pub(crate) name_mult: std::sync::OnceLock<
+        Arc<HashMap<crate::symbol::Symbol, crate::runtime::regex::regex_helpers::NameMult>>,
+    >,
     /// The declarative-prefix NFA of this pattern as a `|` branch (ADR-0125),
     /// one entry per package it was ranked from. Building one resolves rule
     /// names, so, like `prefilter_in_pkg`, the entries are keyed by package
