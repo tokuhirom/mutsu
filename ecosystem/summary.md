@@ -7,19 +7,19 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **67.2%** (822/1223) |
-| file parity | 73.8% (3151/4272) |
-| assertion parity | 84.1% |
+| **dist parity** (published headline) | **67.2%** (822/1224) |
+| file parity | 73.7% (3151/4276) |
+| assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
-| `blocked_load` | 108 |
+| `blocked_load` | 107 |
 | `green` | 822 |
 | `no_baseline` | 289 |
 | `partial` | 233 |
-| `red` | 168 |
+| `red` | 169 |
 | `skipped` | 10 |
 
 ## Distributions
@@ -459,7 +459,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Duck::CSV` | 0.0.2 | green | 1/1 |
 | `Duckie` | 0.0.12 | green | 1/1 |
 | `EBNF::Grammar` | 0.1.6 | green | 5/5 |
-| `EC` | 0.6.6 | blocked_load | — |
+| `EC` | 0.6.6 | red | 0/4 |
 | `ECMA262Regex` | 1.2 | green | 3/3 |
 | `Ecosystem` | 0.0.34 | no_baseline | — |
 | `Ecosystem::Archive` | 0.0.5 | no_baseline | — |
