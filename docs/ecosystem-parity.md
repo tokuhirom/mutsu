@@ -87,6 +87,7 @@ Per-file comparison verdicts (`cmp` in the record):
 | `partial` | rakudo passes, mutsu reaches the plan but fails some assertions | yes (denominator only) |
 | `regression` | rakudo passes, mutsu fails / dies / times out | yes (denominator only) — **the actionable bucket** |
 | `no_baseline` | rakudo does not pass cleanly | no |
+| `accepted` | rakudo passes; mutsu fails in exactly the shape an `ecosystem/accepted-divergences.toml` entry records (a decided divergence, ADR-0130) | no (counted as `accepted_files`) |
 | `mutsu_better` | rakudo fails, mutsu passes | no (recorded, reported separately) |
 
 Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_load`
@@ -98,6 +99,14 @@ distribution lands there once, and only once, a run has shown its record can nev
 passes, mutsu deliberately and permanently cannot) without reversing a decision already made
 elsewhere (an ADR, or a call `AGENTS.md` reserves for the user) — never for "looks hard" or for
 `no_baseline`, which is already excluded from the KPI on its own.
+
+`ecosystem/accepted-divergences.toml` is the per-file counterpart
+([ADR-0130](adr/0130-ecosystem-accepted-divergences.md)): one test file whose rakudo pass rests on
+an implementation artefact the project decided not to copy, pinned to mutsu's exact failure shape.
+The sweep grades a match `accepted`, so it leaves the KPI and every "what to fix next" tool while
+the rest of the distribution stays measured. A file that starts failing any other way is graded
+normally again. `scripts/ecosystem-sweep.py --regrade` applies an edit to the list to the stored
+records without re-measuring.
 
 ## 2. The fairness contract
 

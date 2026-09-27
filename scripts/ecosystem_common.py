@@ -658,6 +658,61 @@ def load_exclude(path: str) -> dict[str, str]:
     return out
 
 
+# The keys of a `shape` in `ecosystem/accepted-divergences.toml`: the fields of
+# a record's per-side `mutsu` result that pin down *how* the file fails.
+_SHAPE_KEYS = ("verdict", "ok", "nok", "plan", "first_failure")
+
+
+def load_accepted(path: str) -> dict[tuple[str, str], dict]:
+    """Per-file divergences the project accepted, keyed by `(dist, file)`.
+
+    A `[[divergence]]` entry names a distribution, one of its test files and
+    the exact `shape` of mutsu's failure on it (a subset of `_SHAPE_KEYS`,
+    with `verdict` and `first_failure` mandatory), plus the `issue` recording
+    the decision and a `reason`. `ecosystem-sweep.py`'s `grade_file` turns a
+    matching `partial` / `regression` file into `accepted`, which the KPI and every "what to fix
+    next" tool skip -- see ADR-0130. A missing file means no entries.
+
+    The shape is what keeps an entry honest: a file that starts failing in any
+    other way (another assertion, a die) is graded normally again, so the
+    entry can never hide a new bug behind an old decision.
+    """
+    if not os.path.isfile(path):
+        return {}
+    import tomllib
+    with open(path, "rb") as fh:
+        data = tomllib.load(fh)
+    out: dict[tuple[str, str], dict] = {}
+    for i, entry in enumerate(data.get("divergence", []), 1):
+        where = f"{path}: divergence #{i}"
+        missing = [k for k in ("dist", "file", "shape", "issue", "reason")
+                   if k not in entry]
+        if missing:
+            raise SystemExit(f"{where}: missing {', '.join(missing)}")
+        shape = entry["shape"]
+        unknown = sorted(set(shape) - set(_SHAPE_KEYS))
+        if unknown:
+            raise SystemExit(f"{where}: unknown shape key(s) {', '.join(unknown)}")
+        if "verdict" not in shape or "first_failure" not in shape:
+            raise SystemExit(f"{where}: shape needs at least verdict and first_failure")
+        key = (entry["dist"], entry["file"])
+        if key in out:
+            raise SystemExit(f"{where}: {key[0]} {key[1]} is listed twice")
+        out[key] = entry
+    return out
+
+
+def accepted_entry(accepted: dict, dist: str, path: str, mutsu: dict | None):
+    """The accepted-divergence entry `mutsu`'s result on `dist`/`path` matches
+    exactly, or None."""
+    entry = accepted.get((dist, path))
+    if entry is None or mutsu is None:
+        return None
+    if all(mutsu.get(k) == v for k, v in entry["shape"].items()):
+        return entry
+    return None
+
+
 def load_records(dists_dir: str) -> list[dict]:
     """Every record in the ledger, keyed by nothing but its own `dist` field.
 
@@ -879,6 +934,50 @@ def _self_test() -> int:
 
         if load_exclude(os.path.join(tmp, "does-not-exist.txt")) != {}:
             print("load_exclude: a missing file must mean no exclusions", file=sys.stderr)
+            failures += 1
+
+    # load_accepted / accepted_entry: a file matches only in exactly the
+    # recorded shape, so an entry can never hide a different failure; a
+    # malformed or duplicate entry is a hard error.
+    with tempfile.TemporaryDirectory() as tmp:
+        acc = os.path.join(tmp, "accepted.toml")
+        entry_text = ('[[divergence]]\ndist = "A::B"\nfile = "t/x.t"\nissue = 1\n'
+                      'reason = "r"\n'
+                      'shape = { verdict = "fail", nok = 1, first_failure = "not ok 6 -" }\n')
+        with open(acc, "w", encoding="utf-8") as fh:
+            fh.write(entry_text)
+        got = load_accepted(acc)
+        same = {"verdict": "fail", "ok": 6, "nok": 1, "first_failure": "not ok 6 -"}
+        cases = [
+            ("the recorded shape matches", ("A::B", "t/x.t", same), True),
+            ("another failing assertion does not match",
+             ("A::B", "t/x.t", {**same, "first_failure": "not ok 5 -"}), False),
+            ("an extra failure does not match", ("A::B", "t/x.t", {**same, "nok": 2}), False),
+            ("a die does not match", ("A::B", "t/x.t", {**same, "verdict": "die"}), False),
+            ("another file does not match", ("A::B", "t/y.t", same), False),
+            ("another dist does not match", ("A::C", "t/x.t", same), False),
+            ("no mutsu side does not match", ("A::B", "t/x.t", None), False),
+        ]
+        for name, args, want in cases:
+            if (accepted_entry(got, *args) is not None) != want:
+                print(f"accepted_entry: {name}: want {want}", file=sys.stderr)
+                failures += 1
+
+        for bad, why in ((entry_text + entry_text, "a duplicate entry"),
+                         (entry_text.replace('issue = 1\n', ''), "a missing issue"),
+                         (entry_text.replace('verdict = "fail", ', ''), "a shape without verdict"),
+                         (entry_text.replace('nok = 1', 'nokk = 1'), "an unknown shape key")):
+            with open(acc, "w", encoding="utf-8") as fh:
+                fh.write(bad)
+            try:
+                load_accepted(acc)
+                print(f"load_accepted: {why} did not raise", file=sys.stderr)
+                failures += 1
+            except SystemExit:
+                pass
+
+        if load_accepted(os.path.join(tmp, "does-not-exist.toml")) != {}:
+            print("load_accepted: a missing file must mean no entries", file=sys.stderr)
             failures += 1
 
     # sandbox_wrap must set NO_NETWORK_TESTING=1 for both interpreters so a

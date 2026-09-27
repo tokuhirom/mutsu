@@ -20,6 +20,7 @@ with rakudo as the denominator.
 | `summary.json` / `summary.md` | generated rollup — **do not edit**, regenerate with `--rollup` |
 | `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
 | `exclude.txt` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering |
+| `accepted-divergences.toml` | hand-maintained — single test files whose rakudo pass rests on an artefact mutsu decided not to copy, pinned to the exact failure shape (ADR-0130) |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
 not an ASCII letter). The rest of the filename is
@@ -62,7 +63,10 @@ distribution a one-file change.
 `cmp` is the per-file comparison. **`regression` and `partial` are the
 actionable ones**: rakudo passes the file and mutsu does not. `no_baseline`
 means rakudo did not pass it either, so it is excluded from the KPI — it is
-never charged to mutsu.
+never charged to mutsu. `accepted` means rakudo passes it and mutsu fails it in
+exactly the shape an `accepted-divergences.toml` entry records — a decided
+divergence, also out of the KPI and out of every "what to fix next" tool
+([ADR-0130](../docs/adr/0130-ecosystem-accepted-divergences.md)).
 
 `status` rolls that up per distribution: `green` (every baseline file passes) ·
 `partial` · `red` · `no_baseline` · `blocked_load` (a provided module does not
@@ -83,6 +87,7 @@ scripts/ecosystem-sweep.py --only BTree          # one distribution
 scripts/ecosystem-sweep.py --prefix A --jobs 8   # everything starting with A
 scripts/ecosystem-sweep.py --status partial      # everything currently red
 scripts/ecosystem-sweep.py --rollup              # regenerate summary.* and the chart
+scripts/ecosystem-sweep.py --regrade             # re-apply accepted-divergences.toml, then roll up
 ```
 
 Requires `bubblewrap` (the sweep runs unaudited test suites and refuses to run a
@@ -148,6 +153,15 @@ already rejected outright ever spoofing `.name`) — add it to `exclude.txt` wit
 a one-line reason citing the issue/ADR, alongside filing the finding as a
 `tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the next
 random draw re-investigates the same dead end from scratch.
+
+**When it is one test file, not the distribution** — rakudo passes it only
+because of an implementation artefact the project decided not to copy (the
+worked example is DSL::Shared's `t/Array-of-regexes-matches.rakutest` and
+[#9746](https://github.com/tokuhirom/mutsu/issues/9746): rakudo's regex cache
+mixes a role into an interpolated Str) — add a `[[divergence]]` entry to
+`accepted-divergences.toml` with the exact failure shape from the record, run
+`scripts/ecosystem-sweep.py --regrade`, and commit the regraded record with it.
+The rest of the distribution stays measured and drawable.
 
 ## Current state — the corpus, measured at one commit
 

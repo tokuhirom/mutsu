@@ -1,0 +1,33 @@
+# ecosystem/accepted-divergences.toml
+#
+# Test files where mutsu fails and rakudo passes, and the project decided
+# mutsu should NOT change -- because rakudo's pass rests on an implementation
+# artefact (not a language rule roast or raku-doc specify) that mutsu will not
+# copy. Decision: docs/adr/0130-ecosystem-accepted-divergences.md.
+#
+# `scripts/ecosystem-sweep.py` grades a file that matches an entry `accepted`
+# instead of `partial` / `regression`: it leaves the KPI's denominator (like
+# `no_baseline`), and every "what to fix next" tool -- ecosystem-dist-roulette's
+# pick-dist.py, ecosystem-tickets.py, the site manifest -- stops offering it.
+# `--regrade` re-applies this file to the stored records without measuring.
+#
+# An entry matches only when mutsu fails the file in EXACTLY the recorded
+# `shape` -- the fields of the record's `mutsu` side: `verdict` and
+# `first_failure` are required, `ok` / `nok` / `plan` optional. A file that
+# starts failing any other way (another assertion, a die, one more failure) is
+# graded normally again, so an entry can never hide a new bug.
+#
+# This is per FILE, unlike `exclude.txt` (per distribution): the rest of the
+# distribution stays measured and drawable. An entry needs the issue that
+# records the decision, and that decision must be the user's (AGENTS.md) or an
+# ADR's -- never "looks hard". Keep entries sorted by dist, then file.
+
+[[divergence]]
+dist = "DSL::Shared"
+file = "t/Array-of-regexes-matches.rakutest"
+shape = { verdict = "fail", ok = 6, nok = 1, plan = 7, first_failure = "not ok 6 -" }
+issue = 9746
+reason = """rakudo caches a Str interpolated as <$rx> by mixing Match::CachedCompiledRegex \
+into that Str object in place, changing its .WHICH; a later `'string' (elem) @knownRegexes` \
+is then False and test 6 takes the :all path. mutsu does not reproduce the cache artefact \
+(user decision 2026-09-27)."""

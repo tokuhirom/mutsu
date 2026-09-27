@@ -27,7 +27,7 @@
   "dist": "DSL::Shared",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "accepted",
       "mutsu": {
         "first_failure": "not ok 6 -",
         "nok": 1,
@@ -341,11 +341,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 33,
-    "baseline_files": 5,
-    "mutsu_assertions": 28,
+    "baseline_assertions": 26,
+    "baseline_files": 4,
+    "mutsu_assertions": 22,
     "parity_files": 3,
-    "regressed_files": 2
+    "regressed_files": 1
   },
   "version": "0.2.11"
 }

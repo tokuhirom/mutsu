@@ -13,10 +13,15 @@ A bulk selection (--all / --prefix / --status / --stale) skips whatever
 ecosystem/exclude.txt lists -- distributions already confirmed permanently
 unfixable. --only <name> always measures the name given, exclude list or not.
 
+A file whose failure matches an entry of ecosystem/accepted-divergences.toml
+exactly is graded `accepted` and left out of the KPI (ADR-0130). --regrade
+re-applies that list to the stored records without measuring anything.
+
     scripts/ecosystem-sweep.py --only String::Utils
     scripts/ecosystem-sweep.py --prefix A --jobs 8
     scripts/ecosystem-sweep.py --all --jobs 8
     scripts/ecosystem-sweep.py --rollup
+    scripts/ecosystem-sweep.py --regrade
 
 Env: MUTSU_BIN (default target/release/mutsu), RAKU_BIN (default raku),
 MUTSU_ECO_HOST (what `measured.host` records; default `<uname>-<machine>`).
@@ -43,6 +48,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(REPO, "ecosystem")
 DISTS_DIR = os.path.join(DATA_DIR, "dists")
 EXCLUDE_LIST = os.path.join(DATA_DIR, "exclude.txt")
+ACCEPTED_LIST = os.path.join(DATA_DIR, "accepted-divergences.toml")
 SCHEMA = 1
 HARNESS = 2
 
@@ -160,6 +166,20 @@ def compare(raku, mutsu):
     return "regression"
 
 
+def grade_file(dist, entry, accepted):
+    """`entry["cmp"]` for one measured file: `compare()`'s verdict, `no_baseline`
+    for a flaky one, or `accepted` when mutsu fails it in exactly the shape an
+    `accepted-divergences.toml` entry records. Recomputed from the stored sides
+    alone, so `--regrade` and a fresh measurement always agree."""
+    if "mutsu" not in entry or entry.get("flaky"):
+        return "no_baseline"
+    cmp = compare(entry["raku"], entry["mutsu"])
+    if cmp in ("partial", "regression") and eco.accepted_entry(
+            accepted, dist, entry["path"], entry["mutsu"]):
+        return "accepted"
+    return cmp
+
+
 # --- one distribution --------------------------------------------------------
 
 def sweep_dist(name, index, opts, bundled) -> dict:
@@ -255,11 +275,10 @@ def sweep_dist(name, index, opts, bundled) -> dict:
                 continue
             mutsu, flaky = measure([opts.mutsu] + libs + [path],
                                    attempts=opts.attempts, **common)
-            entry = {"path": rel, "raku": raku, "mutsu": mutsu,
-                     "cmp": compare(raku, mutsu)}
+            entry = {"path": rel, "raku": raku, "mutsu": mutsu}
             if flaky or raku_flaky:
                 entry["flaky"] = True
-                entry["cmp"] = "no_baseline"
+            entry["cmp"] = grade_file(name, entry, opts.accepted)
             record["files"].append(entry)
     finally:
         eco.rmtree(workdir)
@@ -309,7 +328,9 @@ def empty_totals():
 def totals_of(files):
     t = empty_totals()
     for f in files:
-        if f["cmp"] in ("no_baseline",):
+        # `accepted` is out of the denominator like `no_baseline`: rakudo's
+        # pass rests on behaviour the project decided not to copy (ADR-0130).
+        if f["cmp"] in ("no_baseline", "accepted"):
             continue
         t["baseline_files"] += 1
         t["baseline_assertions"] += f["raku"]["ok"]
@@ -393,6 +414,29 @@ def write_index_snapshot(index, args):
         fh.write("\n")
 
 
+def regrade():
+    """Re-grade every stored record against accepted-divergences.toml and
+    rewrite the ones whose grades moved. Nothing is measured: an entry added
+    (or removed) takes effect on the ledger in the same PR that decides it,
+    instead of waiting for the next sweep of that distribution."""
+    accepted = eco.load_accepted(ACCEPTED_LIST)
+    changed = []
+    for record in load_records():
+        files = record.get("files") or []
+        if not files or record.get("status") in ("blocked_dep", "blocked_load", "skipped"):
+            continue
+        for f in files:
+            f["cmp"] = grade_file(record["dist"], f, accepted)
+        record["totals"] = totals_of(files)
+        record["status"] = status_of(record["totals"])
+        if write_record(record):
+            changed.append(record["dist"])
+    for dist in changed:
+        log(f"regraded: {dist}")
+    log(f"{len(changed)} record(s) changed")
+    return changed
+
+
 # --- rollup ------------------------------------------------------------------
 
 def rollup(append_history=False):
@@ -406,6 +450,8 @@ def rollup(append_history=False):
     m_assert = sum(r["totals"]["mutsu_assertions"] for r in records)
     graded = [r for r in records if r["totals"]["baseline_files"] > 0]
     green = [r for r in graded if r["status"] == "green"]
+    accepted = sum(1 for r in records for f in r.get("files", [])
+                   if f.get("cmp") == "accepted")
 
     def pct(num, den):
         return round(100.0 * num / den, 1) if den else 0.0
@@ -421,6 +467,7 @@ def rollup(append_history=False):
         "baseline_files": baseline, "parity_files": parity,
         "baseline_assertions": b_assert, "mutsu_assertions": m_assert,
         "graded_distributions": len(graded), "green_distributions": len(green),
+        "accepted_files": accepted,
     }
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(os.path.join(DATA_DIR, "summary.json"), "w", encoding="utf-8") as fh:
@@ -449,6 +496,8 @@ def write_summary_md(summary, records):
         f"| file parity | {summary['file_parity']}% "
         f"({summary['parity_files']}/{summary['baseline_files']}) |",
         f"| assertion parity | {summary['assertion_parity']}% |",
+        f"| accepted divergences (out of the KPI, ADR-0130) | "
+        f"{summary['accepted_files']} file(s) |",
         "",
         "| status | distributions |",
         "|---|---|",
@@ -553,6 +602,7 @@ def preflight(args):
     os.makedirs(args.tmp_root, exist_ok=True)
     args.dep_roots = {}
     args.dep_lock = threading.Lock()
+    args.accepted = eco.load_accepted(ACCEPTED_LIST)
     return args
 
 
@@ -607,6 +657,9 @@ def main():
                     help="only records measured at another mutsu commit or rakudo version")
     ap.add_argument("--rollup", action="store_true",
                     help="regenerate summary.json / summary.md / history.svg and exit")
+    ap.add_argument("--regrade", action="store_true",
+                    help="re-apply ecosystem/accepted-divergences.toml to the stored "
+                         "records, then --rollup; measures nothing")
     ap.add_argument("--history", action="store_true",
                     help="with --rollup, also append a history.tsv row (full sweeps only)")
     ap.add_argument("--jobs", type=int, default=1)
@@ -623,7 +676,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="resolve and print the plan only")
     args = ap.parse_args()
 
-    if args.rollup:
+    if args.regrade:
+        regrade()
+    if args.rollup or args.regrade:
         summary = rollup(append_history=args.history)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
@@ -815,6 +870,32 @@ def _self_test() -> int:
         check("--only still measures an excluded distribution",
               got == ["Excluded::Dist"])
     EXCLUDE_LIST = real_exclude_list
+
+    # grade_file(): only a partial/regression file in exactly an accepted
+    # shape becomes `accepted`, and totals_of() leaves it out of the KPI.
+    passing_side = {"verdict": "pass", "ok": 7, "nok": 0, "plan": 7}
+    failing_side = {"verdict": "fail", "ok": 6, "nok": 1, "plan": 7,
+                    "first_failure": "not ok 6 -"}
+    accepted = {("A::B", "t/x.t"): {"shape": {"verdict": "fail", "nok": 1,
+                                              "first_failure": "not ok 6 -"}}}
+
+    def graded(path, mutsu, **extra):
+        return grade_file("A::B", {"path": path, "raku": passing_side,
+                                   "mutsu": mutsu, **extra}, accepted)
+    check("an accepted shape grades `accepted`", graded("t/x.t", failing_side) == "accepted")
+    check("another failure in that file stays `partial`",
+          graded("t/x.t", {**failing_side, "first_failure": "not ok 2 -"}) == "partial")
+    check("a die in that file stays `regression`",
+          graded("t/x.t", {**failing_side, "verdict": "die"}) == "regression")
+    check("a pass in that file is `parity`", graded("t/x.t", passing_side) == "parity")
+    check("a flaky file stays `no_baseline`",
+          graded("t/x.t", failing_side, flaky=True) == "no_baseline")
+    check("another file is not accepted", graded("t/y.t", failing_side) == "partial")
+    totals = totals_of([
+        {"cmp": "accepted", "raku": passing_side, "mutsu": failing_side},
+        {"cmp": "parity", "raku": passing_side, "mutsu": passing_side}])
+    check("an accepted file is out of the denominator",
+          totals["baseline_files"] == 1 and status_of(totals) == "green")
 
     run = real_run
     print(f"ecosystem-sweep self-test: "
