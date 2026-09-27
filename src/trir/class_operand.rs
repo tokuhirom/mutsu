@@ -17,9 +17,11 @@
 //! - Everywhere else the value is used, so only a type object named by the
 //!   bareword's own spelling is remembered. That is the answer of the
 //!   type-name branch of the resolution chain, which reads nothing but the
-//!   registry. A name that answered through a binding (a sigilless `\T`
-//!   bound to `Int`, an imported routine, a nested class's qualified name) is
-//!   re-resolved on every execution, as before.
+//!   registry, and only while `env` binds nothing else under the name: a
+//!   type capture bound to the same-named class answers the spelling too,
+//!   and rebinds without a registry write. A name that answered through a
+//!   binding (a sigilless `\T` bound to `Int`, an imported routine, a nested
+//!   class's qualified name) is re-resolved on every execution, as before.
 
 use crate::symbol::Symbol;
 
@@ -98,16 +100,31 @@ impl crate::runtime::Interpreter {
     ) -> Result<crate::value::Value, crate::value::RuntimeError> {
         use crate::value::{Value, ValueView};
         let generation = self.registry_write_generation();
-        if let Some(sym) = site.cached(generation) {
+        if let Some(sym) = site.cached(generation)
+            && self.class_operand_unbound(site)
+        {
             return Ok(Value::package(sym));
         }
         self.push_bare_word_value(site.name.as_str(), compiled_fns)?;
         let v = self.stack.pop().unwrap_or(Value::NIL);
         if let ValueView::Package(sym) = v.view()
             && site.rememberable(sym)
+            && self.class_operand_unbound(site)
         {
             site.remember(generation, sym);
         }
         Ok(v)
+    }
+
+    /// Whether a remembered answer may stand for `site` right now. A term's
+    /// value is used, and a type capture (`sub f(::T $x) { nqp::create(T) }`)
+    /// or a role's type parameter rebinds the name in `env` without writing
+    /// the registry, so a term is only remembered, and its memo only used,
+    /// while `env` leaves the name to its type object
+    /// ([`Self::env_leaves_type_name`]). An attribute op's operand
+    /// is owed only for its effect, which such a binding does not change.
+    // Cost: O(1), one `env` probe for a term.
+    fn class_operand_unbound(&self, site: &ClassOperandSite) -> bool {
+        site.effect_only || self.env_leaves_type_name(site.name)
     }
 }

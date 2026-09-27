@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr`, `nqp::create` and default-construction parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr`, `nqp::create`, default-construction and bareword-term parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -290,6 +290,19 @@ probe and the lock.
   attribute count). `P.new(x => .., y => ..)` went from 17,579 to 11,580
   instructions above a `$s = $i` loop. See
   `news/2026-09/class-new-skips-the-dispatch-probe-chain.md`.
+- **D3, bareword terms on the untyped VM (landed).** `OpCode::GetBareWord`
+  remembers, per string constant of its chunk, a type object named by the
+  bareword's own spelling, for one registry write generation, and uses the
+  memo only while `env` binds nothing else under the name: a type capture
+  or a role's type parameter rebinds the name without a registry write. The
+  same guard was missing from TRIR's `ClassOperandSite` terms, which made
+  `sub f(::T $x) { nqp::create(T) }` keep creating a same-named class `T`
+  after its first call. Every interpreter's generation counter now starts in
+  a range of its own, so a memo a thread wrote into a shared chunk never
+  reads as current to another interpreter. A bareword read went from ~2,150
+  to ~190 instructions, `P.new(x => .., y => ..)` from 17,447 to 15,500 per
+  loop iteration. See
+  `news/2026-09/bareword-type-names-resolve-once-per-generation.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
   the attribute ops, and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.

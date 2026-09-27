@@ -509,6 +509,7 @@ mod array_data_ops;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
+mod bareword_site;
 pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
@@ -593,6 +594,7 @@ pub(crate) use attr_map::{
     AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
 };
 pub(crate) use attr_site::AttrSiteCaches;
+pub(crate) use bareword_site::BarewordSiteCaches;
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;

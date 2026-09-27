@@ -3215,7 +3215,7 @@ impl Interpreter {
             } else {
                 Self::shared_builtin_registry()
             })),
-            registry_write_gen: std::sync::atomic::AtomicU64::new(0),
+            registry_write_gen: Self::fresh_registry_write_gen(),
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
             proto_dispatch_stack: Vec::new(),

@@ -939,8 +939,9 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(p*|name|), p = packages on the bare-name search path (each probe formats
-            // a qualified key); independent of the registry size (measured).
+            // Cost: O(1) on a type-object memo hit (ADR-0121 D3); otherwise O(p*|name|),
+            // p = packages on the bare-name search path (each probe formats a qualified key);
+            // independent of the registry size (measured).
             OpCode::GetBareWord(name_idx) => {
                 self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
                 // Slice F: a bareword that resolved to a qualified/`our` sub call
