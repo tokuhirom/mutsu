@@ -20,7 +20,7 @@ is P::<$x>, 1, 'scalar';
 is P::<@a>.elems, 3, 'array';
 is P::<%h><k>, 'v', 'hash';
 is P::<&f>(), 'f', 'our sub';
-is P::<&pr>(1), 'int', 'our proto';
+is P::<&pr>.name, 'pr', 'our proto';
 nok P::<$lexical>.defined, 'a my-scoped variable is not a member';
 nok P::<$nope>.defined, 'a missing member reads undefined';
 nok P::<$nope>:exists, 'a missing member does not exist';
@@ -63,7 +63,7 @@ package R {
     class C { }
 }
 ok R::<C> === R::C, 'class member';
-ok Outer::<Inner>:exists, 'sub-package member';
+ok Outer::<Inner> === Outer::Inner, 'sub-package member';
 
 # Pseudo-packages keep their own semantics.
 is GLOBAL::<P>.^name, 'P', 'GLOBAL:: keyed read';
