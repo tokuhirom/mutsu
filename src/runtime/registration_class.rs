@@ -48,7 +48,6 @@ pub(super) fn builtin_role_def() -> RoleDef {
         methods: HashMap::new(),
         is_stub_role: false,
         is_hidden: false,
-        is_rw: false,
         captured_env: None,
         wildcard_handles: Vec::new(),
         role_id: 0,

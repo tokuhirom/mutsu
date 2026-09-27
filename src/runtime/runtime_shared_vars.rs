@@ -258,7 +258,6 @@ impl Interpreter {
 
     /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
-    #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
         self.shared_vars.get(key)
     }

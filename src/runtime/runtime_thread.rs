@@ -931,7 +931,6 @@ impl Interpreter {
             rebless_map: self.rebless_map.clone(),
             action_made: None,
             current_grammar_actions: None,
-            pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
 

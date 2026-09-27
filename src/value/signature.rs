@@ -1222,12 +1222,6 @@ pub(crate) fn make_parameter_value_from_param_def(
     sig_param_to_parameter_instance(&param_def_to_sig_param(p), interp)
 }
 
-#[allow(dead_code)]
-pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
-    let sig_params: Vec<SigParam> = params.iter().map(param_def_to_sig_param).collect();
-    make_params_value_from_sig_params(&sig_params, None)
-}
-
 /// Extract SigInfo from a Signature Instance value.
 pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
     if let ValueView::Instance { class_name, id, .. } = val.view() {

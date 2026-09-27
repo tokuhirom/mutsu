@@ -60,7 +60,7 @@ test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magi
 # exists in the configuration you actually compile, so the default host build
 # (the `test` job) misses both the Cranelift-less feature set the Miri job and
 # the release fallback use, and the wasm32 lib the npm package is built from
-# (the `lint-configs` job), plus rustdoc, whose intra-doc link resolution and
+# (the `lint-configs` job), the opt-in `alloc-stats` measurement build, plus rustdoc, whose intra-doc link resolution and
 # Markdown parse no other configuration performs. The wasm32 pass runs only
 # when the target is installed (`rustup target add wasm32-unknown-unknown`):
 # it recompiles the whole dependency tree for another triple, which is the
@@ -74,6 +74,7 @@ lint:
 	else \
 	  echo "lint: wasm32-unknown-unknown target not installed; skipping the wasm32 clippy pass (CI lint-configs runs it)"; \
 	fi
+	cargo clippy --features alloc-stats --all-targets -- -D warnings
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 check-value-wall:

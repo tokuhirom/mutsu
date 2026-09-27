@@ -113,7 +113,6 @@ pub(crate) fn parse_split_limit(value: &Value) -> Result<Option<usize>, RuntimeE
 }
 
 /// A split match: the matched separator text and which splitter index matched.
-#[allow(dead_code)]
 pub(crate) struct SplitMatch {
     pub from: usize,
     pub to: usize,

@@ -23,6 +23,11 @@
 //! (as plain `Interpreter::new().run(..)` leaves it, the shape the other
 //! budget tests in this directory use), `unit_of_source_sym`'s `Some(prog)`
 //! guard never matches and the allocating branch is never reached at all.
+//!
+//! Compiled out under the `alloc-stats` feature: that build installs its own
+//! counting `#[global_allocator]` in the library, and a crate may link only one.
+
+#![cfg(not(feature = "alloc-stats"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

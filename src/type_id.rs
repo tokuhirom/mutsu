@@ -43,7 +43,6 @@ impl TypeId {
     /// The underlying interned symbol. Unused by E1a's shadow probes (which only
     /// compare names); kept for E2's `MethodEntryKey { owner: Symbol, .. }` lookups,
     /// which will want the raw symbol rather than a re-resolved string.
-    #[allow(dead_code)]
     pub(crate) fn symbol(self) -> Symbol {
         self.0
     }

@@ -943,8 +943,6 @@ pub(crate) use self::locals::Locals;
 pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
-#[allow(unused_imports)]
-pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
 pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::Registry;
@@ -1768,7 +1766,6 @@ pub(crate) struct IoHandleState {
     closed: bool,
     out_buffer_capacity: Option<usize>,
     out_buffer_pending: Vec<u8>,
-    #[allow(dead_code)]
     bin: bool,
     nl_out: String,
     bytes_written: i64,
@@ -4023,9 +4020,6 @@ pub struct Interpreter {
     /// time; mutsu otherwise only runs them post-parse). Saved/restored around
     /// nested/re-entrant parses.
     pub(crate) current_grammar_actions: Option<Value>,
-    /// Pending error from regex security validation, to be propagated by the caller.
-    #[allow(dead_code)]
-    pending_regex_error: Option<RuntimeError>,
     /// When true, module precompilation cache is enabled.
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
@@ -4969,9 +4963,6 @@ pub(crate) struct CustomTypeData {
     pub(crate) call_accepts: bool,
     /// Whether compose_type has been called.
     pub(crate) composed: bool,
-    /// Whether this type was created with :mixin flag.
-    #[allow(dead_code)]
-    pub(crate) is_mixin: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

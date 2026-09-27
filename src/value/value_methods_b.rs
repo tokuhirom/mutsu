@@ -685,21 +685,8 @@ impl Value {
     /// Hands out a `&SubData` borrowed from `self`, which a `view()` guard
     /// cannot do (the guard is a by-value temporary scoped to the match);
     /// implemented inside the seam as a payload-pointee deref.
-    #[allow(dead_code)]
     pub(crate) fn as_sub(&self) -> Option<&SubData> {
         self.0.as_sub_data()
-    }
-
-    /// Upgrade a WeakSub to a Sub, or return Nil if expired.
-    #[allow(dead_code)]
-    pub(crate) fn upgrade_weak(&self) -> Value {
-        match self.view() {
-            ValueView::WeakSub(weak) => match weak.upgrade() {
-                Some(strong) => Value::Sub(strong),
-                None => Value::Nil,
-            },
-            _ => self.clone(),
-        }
     }
 
     /// Build a fresh instance. `attributes` is an [`AttrMap`] (the `Symbol`-keyed

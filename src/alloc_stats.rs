@@ -271,7 +271,7 @@ mod imp {
             let _ = ALLOCS.try_with(|a| a.set(a.get().wrapping_add(1)));
             let _ = BYTES.try_with(|b| b.set(b.get().wrapping_add(size as u64)));
             if line_attribution_enabled() {
-                let _ = CURRENT_LINE.with(|line| {
+                CURRENT_LINE.with(|line| {
                     if line.get().is_some() {
                         CURRENT_LINE_ALLOCS.with(|count| count.set(count.get().wrapping_add(1)));
                         CURRENT_LINE_BYTES

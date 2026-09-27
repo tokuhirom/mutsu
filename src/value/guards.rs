@@ -37,7 +37,6 @@ impl<'a, P> RefGuard<'a, P> {
     /// borrowed from the `Value`. Post-flip, `view()` instead reconstructs
     /// the pointer from the packed payload address.
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn borrowed(source: &'a P) -> Self {
         // SAFETY: the copy is wrapped in ManuallyDrop and never dropped, so
         // the source keeps its unique ownership of the reference; the

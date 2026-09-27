@@ -150,7 +150,6 @@ pub(crate) use lvalue::{
     method_lvalue_assign_expr, method_lvalue_roundtrip_assign_expr, named_sub_lvalue_assign_expr,
     subscript_adverb_lvalue_assign_expr,
 };
-#[allow(unused_imports)]
 pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{
     autoviv_set_compound_lhs, compound_assign_op_from_name, compound_assigned_value_expr,

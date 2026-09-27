@@ -10862,7 +10862,6 @@ impl CompiledCode {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn current_pos(&self) -> usize {
         self.ops.len()
     }
@@ -12041,7 +12040,6 @@ pub(crate) struct CompiledFunction {
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
     /// When true, this sub is declared `is rw`.
-    #[allow(dead_code)]
     pub(crate) is_rw: bool,
     /// When true, calls memoize successful results by argument values.
     pub(crate) is_cached: bool,

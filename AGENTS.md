@@ -133,8 +133,9 @@ work, so free space with the `reclaim-disk` skill and continue.
   `tmp/make-test.log` / `tmp/make-roast.log` hold the output. Never re-run a suite just to see its
   output, and never run the same suite twice concurrently (they share build locks, logs and harness
   state; `scripts/dev` refuses a second job of the same name).
-- `make lint` runs the four configurations CI's `lint-configs` gates on: default clippy, clippy with
-  `jit` off, clippy for wasm32, and rustdoc with `-D warnings`. The lefthook pre-commit hook runs
+- `make lint` runs the five lint configurations CI gates on: default clippy, clippy with `jit` off,
+  clippy for wasm32, clippy with the `alloc-stats` measurement feature, and rustdoc with
+  `-D warnings`. The lefthook pre-commit hook runs
   `cargo fmt` and the *default* clippy only, so **a green hook is not a green CI**: rustdoc alone
   checks intra-doc links (resolved against the enclosing *module* — inside `impl Compiler` write
   ``[`Compiler::method`]``), and a type whose shape differs per feature can make any file lint

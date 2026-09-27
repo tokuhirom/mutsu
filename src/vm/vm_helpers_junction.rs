@@ -59,20 +59,6 @@ impl Interpreter {
         f(self, left, right)
     }
 
-    /// Smartmatch with junction threading but WITHOUT forcing lazy values.
-    /// For `!~~` (negate=true), we compute `~~` first and then negate the
-    /// collapsed result.  Raku defines `$x !~~ $y` as `not ($x ~~ $y)`,
-    /// where `not` collapses junctions before negating.
-    #[allow(dead_code)]
-    pub(super) fn eval_smartmatch_with_junctions(
-        &mut self,
-        left: Value,
-        right: Value,
-        negate: bool,
-    ) -> Result<Value, RuntimeError> {
-        self.eval_smartmatch_with_junctions_ex(left, right, negate, false)
-    }
-
     /// Extended smartmatch with junction threading.
     /// `rhs_is_match_regex` indicates the RHS was originally `m//`, which
     /// changes the failure return from Nil to False.

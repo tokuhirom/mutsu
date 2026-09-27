@@ -1217,14 +1217,6 @@ pub(crate) fn is_failure_handled(id: u64) -> Option<bool> {
     FAILURE_HANDLED_REGISTRY.with(|reg| reg.borrow().get(&id).copied())
 }
 
-/// Remove a Failure from the handled registry (cleanup).
-#[allow(dead_code)]
-pub(crate) fn remove_failure_handled(id: u64) {
-    FAILURE_HANDLED_REGISTRY.with(|reg| {
-        reg.borrow_mut().remove(&id);
-    });
-}
-
 // Global registry of all live Failure values, used to implement $!.pending.
 // Maps Failure instance IDs to the Failure Value itself.
 thread_local! {

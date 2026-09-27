@@ -468,14 +468,6 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     }
 }
 
-/// Clear all cached precompilation files.
-#[allow(dead_code)]
-pub(crate) fn clear_cache() {
-    if let Ok(dir) = cache_dir() {
-        let _ = fs::remove_dir_all(&dir);
-    }
-}
-
 /// Upper bound on cache entries before the oldest are evicted.
 const MAX_CACHE_ENTRIES: usize = 4096;
 

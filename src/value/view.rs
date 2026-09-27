@@ -337,7 +337,6 @@ impl Value {
 
     /// Construct an itemized `ContainerRef` holder from an existing cell.
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn container_ref_itemized(cell: Gc<crate::value::ContainerCell>) -> Self {
         Value::ContainerRefItemized(cell)
     }
