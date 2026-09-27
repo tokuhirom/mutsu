@@ -122,6 +122,9 @@ impl Interpreter {
         for phaser in &self.end_phasers {
             phaser.env.visit_values(visitor);
         }
+        for code in self.attached_leave_phasers() {
+            visitor.visit_value(code);
+        }
         for env in self.closure_env_overrides.values() {
             env.visit_values(visitor);
         }

@@ -1069,7 +1069,7 @@ impl Interpreter {
             // `12pt` died with "Bogus postfix".
             let saved_import_target = self.import_target_package.take();
             let result = match self.establish_pod_variables_from_stmts(&module_source, &stmts) {
-                Ok(()) => self.run_block(&stmts),
+                Ok(()) => self.run_compunit(|interp| interp.run_block(&stmts)),
                 Err(err) => Err(err),
             };
             self.import_target_package = saved_import_target;

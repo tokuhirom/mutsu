@@ -4236,10 +4236,6 @@ pub(crate) enum OpCode {
     /// string throws `X::LibEmpty`; a path already at the front is skipped. A bare
     /// `use lib` compiles to nothing.
     UseLibPath,
-    /// Save current function/class registries for lexical import scoping.
-    PushImportScope,
-    /// Restore function/class registries to the last saved snapshot.
-    PopImportScope,
 
     // -- Type checking --
     /// Check that the value on top of stack matches the given type constraint.
@@ -7819,6 +7815,18 @@ impl CompiledCode {
     ///
     /// `extract` yields the body for the two closure-declaring statement kinds;
     /// any other pool entry (never asked for here) shares an empty body.
+    /// Whether `body` is the shared body of a closure literal of this chunk
+    /// (one [`Self::closure_body_arc`] handed out), i.e. whether a code object
+    /// with that body was written inside this chunk's source.
+    // Cost: O(p), p = `stmt_pool` slots.
+    pub(crate) fn owns_closure_body(&self, body: &std::sync::Arc<Vec<Stmt>>) -> bool {
+        self.stmt_pool_bodies.get().is_some_and(|slots| {
+            slots
+                .iter()
+                .any(|slot| slot.get().is_some_and(|b| std::sync::Arc::ptr_eq(b, body)))
+        })
+    }
+
     pub(crate) fn closure_body_arc(&self, idx: usize) -> std::sync::Arc<Vec<Stmt>> {
         let extract = |i: usize| -> std::sync::Arc<Vec<Stmt>> {
             match self.stmt_pool.get(i) {

@@ -1146,7 +1146,7 @@ impl Interpreter {
         // not normally part of `free_var_syms`. Preserve an existing lexical
         // code binding for each callee the closure (or a nested closure it may
         // create later) actually references. This is the escape gate for an
-        // imported sub installed by `use` inside EVAL: PopImportScope may remove
+        // imported sub installed by `use` inside EVAL: closing its ImportScope may remove
         // the registry alias, while the escaping closure still owns `&name`.
         self.capture_bare_callees(cc, env);
         self.materialize_frame_self_into_capture(code, env);
@@ -1197,7 +1197,7 @@ impl Interpreter {
                 .map(|def| (*def).clone())
             else {
                 // No registry entry left to classify: the import alias this
-                // gate exists for has already been popped (`PopImportScope`),
+                // gate exists for has already been popped (its `ImportScope` closed),
                 // which is exactly the state a closure created by an OUTER
                 // EVAL-returned closure runs in. A live lexical `&name` — the
                 // one this very gate pinned into the outer closure — is then

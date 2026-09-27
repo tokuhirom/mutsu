@@ -67,7 +67,9 @@ impl Compiler {
                 // A tail block with ENTER/LEAVE/... phasers must run them through a
                 // real `BlockScope` rather than being inlined (which drops them).
                 if Self::has_block_enter_leave_phasers(inner) {
-                    self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                    self.with_import_scope_region(inner, |c| {
+                        c.compile_phaser_block_scope(inner, PhaserBlockResult::Push)
+                    });
                 } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                     // A parser wrapper (e.g. a tail `my $*x := ...` bind used
                     // as a `given`/`when` body's last statement), not a real
@@ -205,6 +207,14 @@ impl Compiler {
 
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
+        // An inlined block still owns the imports (and the LEAVE phasers a
+        // module attaches through `$*R`) of a `use` written directly in it.
+        self.with_import_scope_region(stmts, |c| c.compile_block_inline_body(stmts));
+    }
+
+    /// [`Compiler::compile_block_inline`] for a caller that has already
+    /// opened the block's import scope itself.
+    pub(super) fn compile_block_inline_body(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
         if stmts.is_empty() {
             self.code.emit(OpCode::LoadNil);

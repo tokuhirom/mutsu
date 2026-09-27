@@ -211,6 +211,13 @@ impl Interpreter {
                 if BUILTIN_INHERITABLE_TYPES.contains(&base_parent) {
                     continue;
                 }
+                // A RakuAST node class (`is RakuAST::StatementPrefix::Phaser::Leave`)
+                // is a real, subclassable type in raku. mutsu models these as
+                // type objects rather than registered `ClassDef`s (ADR-0011), and
+                // `Registry::compute_class_mro` splices their model hierarchy in.
+                if crate::rakuast::is_registered_type_object(base_parent) {
+                    continue;
+                }
                 // A name that is declared as a `package` (or module) exists but
                 // does not support inheritance: `package A {}; class B is A {}`
                 // is X::Inheritance::Unsupported, not an unknown-parent error.

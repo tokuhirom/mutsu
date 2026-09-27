@@ -6246,16 +6246,6 @@ impl Interpreter {
                 self.exec_use_lib_path_op(code)?;
                 *ip += 1;
             }
-            // Cost: O(F + C), F/C = registered routines/classes (the whole registry key set is snapshotted). Rakudo: O(1) -- see #9170.
-            OpCode::PushImportScope => {
-                self.push_import_scope();
-                *ip += 1;
-            }
-            // Cost: O(F + C), F/C = registered routines/classes (diffed against the snapshot). Rakudo: O(1) -- see #9170.
-            OpCode::PopImportScope => {
-                self.pop_import_scope();
-                *ip += 1;
-            }
             // Cost: O(k), k = enum values registered.
             OpCode::RegisterEnum(idx) => {
                 self.sync_source_line(code, *ip);

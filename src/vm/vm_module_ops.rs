@@ -51,7 +51,7 @@ impl Interpreter {
         // module with nothing to install. See the box's progress notes in
         // `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`.
         let f5_gen_before = self.registry().method_generation;
-        self.vm_use_module_with_tags(module, &tags)?;
+        self.with_use_attach_depth(|vm| vm.vm_use_module_with_tags(module, &tags))?;
         // Shadow-only: confirms the claim above holds; does not affect
         // dispatch (see `record_module_reg_gen_shadow_check`'s doc comment).
         {
@@ -162,7 +162,7 @@ impl Interpreter {
         // classes it declares — which is the whole point of the preload — and the
         // in-position `use` re-aliases from those.
         self.push_preload_scope();
-        let _ = self.preload_module(&module);
+        let _ = self.without_use_attach_depth(|vm| vm.preload_module(&module));
         self.pop_import_scope();
     }
 

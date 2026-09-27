@@ -652,7 +652,9 @@ impl Compiler {
         source_body: &[Stmt],
     ) {
         let mark = self.loop_body_decl_reset_mark();
-        self.compile_scope_restored_loop_body_inner(stmts);
+        // Each iteration is its own block entry, so a `use` in the body opens
+        // (and closes) its import scope once per iteration.
+        self.with_import_scope_region(stmts, |c| c.compile_scope_restored_loop_body_inner(stmts));
         self.relax_loop_body_decl_resets(mark, source_body, stmts);
     }
 
@@ -722,11 +724,13 @@ impl Compiler {
                 value_on_stack: true,
             })
         });
-        self.in_scope_restored_body(|c| {
-            // Same block-start declaration visibility as the statement-position
-            // loop body above (`compile_body_with_implicit_try_inner`).
-            c.hoist_typed_var_decls(stmts);
-            c.compile_stmts_value(stmts)
+        self.with_import_scope_region(stmts, |c| {
+            c.in_scope_restored_body(|c| {
+                // Same block-start declaration visibility as the statement-position
+                // loop body above (`compile_body_with_implicit_try_inner`).
+                c.hoist_typed_var_decls(stmts);
+                c.compile_stmts_value(stmts)
+            })
         });
         if let Some(idx) = let_frame {
             self.code.patch_let_block_end(idx);

@@ -271,6 +271,13 @@ impl Interpreter {
     }
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
+        // An EVAL is a compunit of its own: a top-level `use` in it attaches
+        // its LEAVE phasers to the EVAL, not to the enclosing program
+        // (`runtime::attach_target`).
+        self.run_compunit(|interp| interp.eval_eval_string_unit(code))
+    }
+
+    fn eval_eval_string_unit(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately

@@ -1388,6 +1388,14 @@ impl Interpreter {
         // shared buffer; at program exit it must reach real stdout, matching Raku
         // where completed thread output is not lost.
         self.drain_shared_thread_output();
+        // LEAVE phasers a top-level `use` attached to the main compunit
+        // (`runtime::attach_target`): the mainline is left before END runs.
+        // An `exit` leaves no scope in raku, so it skips them.
+        let mainline_leave = if self.halted {
+            Ok(())
+        } else {
+            self.run_mainline_leave_phasers()
+        };
         if !self.end_phasers.is_empty() {
             // Rakudo latches the process status at the *first* `exit`
             // (`the-end-is-nigh`): an `exit` raised while one is already
@@ -1487,7 +1495,7 @@ impl Interpreter {
             self.output_sink_mut().stderr_output.push_str(&report);
             self.output_sink_mut().stderr_output.push('\n');
         }
-        Ok(())
+        mainline_leave
     }
 
     /// See the VM-side twin, `Interpreter::should_run_success_queue`

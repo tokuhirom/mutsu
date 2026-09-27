@@ -109,6 +109,17 @@ impl Interpreter {
         let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings) = match code_val
             .view()
         {
+            // Running the block inline in THIS frame is only sound for a block
+            // literal of this frame (`$lock.protect: { ... }`): its captured
+            // names are this frame's locals. A block created elsewhere and
+            // passed in (`method !protect(&code) { $!lock.protect: &code }`)
+            // closes over ITS creator's lexicals, and seeding them from this
+            // frame read the parameter `&code` — the block itself — for the
+            // block's own free `&code` (FINALIZER's `register`). Call it as
+            // the closure it is instead.
+            ValueView::Sub(data) if !outer_code.owns_closure_body(&data.body) => {
+                return self.call_sub_value(code_val.clone(), Vec::new(), false);
+            }
             ValueView::Sub(data) => {
                 let (block_cc, block_fns, captured_bindings, writeback_bindings, captured_names) =
                     self.get_or_compile_protect_block_with_slots(&data);

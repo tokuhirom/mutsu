@@ -1136,6 +1136,17 @@ impl Interpreter {
             {
                 return result;
             }
+            // The compile-time resolver `$*R` and its attach targets
+            // (`runtime::attach_target`).
+            if matches!(
+                class_name.resolve().as_str(),
+                crate::runtime::attach_target::RESOLVER_CLASS
+                    | crate::runtime::attach_target::ATTACH_TARGET_CLASS
+            ) && let Some(result) =
+                self.dispatch_attach_target_method(&class_name.resolve(), &target, method, &args)
+            {
+                return result;
+            }
             // The compile-time $*LANG object graph (ADR-0026 slang activation):
             // slang_grammar/slang_actions/define_slang on Mutsu::Slang::CompLang.
             if class_name.resolve().starts_with("Mutsu::Slang::")

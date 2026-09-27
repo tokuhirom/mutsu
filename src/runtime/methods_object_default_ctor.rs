@@ -194,6 +194,7 @@ impl Interpreter {
         // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
+        let mut early_inv: Option<Value> = None;
         for ((attr, &attr_sym), attr_type_constraint) in class_attrs
             .iter()
             .zip(plan.attr_syms.iter())
@@ -232,12 +233,21 @@ impl Interpreter {
                     // the class package for class-scoped sub lookups, evaluate,
                     // then restore everything — the shared per-default env-setup
                     // (ADR-0019 D2c-5) also used by `dispatch_new`/`dispatch_bless`.
-                    let temp_self = Value::make_instance(class_name, attrs.clone());
+                    // `self` in an initializer IS the object being built (see
+                    // `dispatch_new`), made on the first initializer that can
+                    // observe it and kept current with the attributes settled
+                    // so far.
+                    let early = early_inv
+                        .get_or_insert_with(|| Value::make_instance(class_name, attrs.clone()));
+                    if let Some(cell) = Self::self_instance_attrs(early) {
+                        cell.commit_attrs(attrs.clone());
+                    }
+                    let early = early.clone();
                     let result = self.eval_attr_default_expr(
                         cn_resolved,
                         class_name,
                         arg,
-                        &temp_self,
+                        &early,
                         &attrs,
                         crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                     );
@@ -430,7 +440,15 @@ impl Interpreter {
         // Build the instance BEFORE BUILD/TWEAK and thread its shared attribute
         // cell through them (raku semantics: `self` inside BUILD/TWEAK IS the
         // constructed object). The post-phase checks re-snapshot the live cell.
-        let inv = Value::make_instance(class_name, attrs);
+        let inv = match early_inv {
+            Some(inv) => {
+                if let Some(cell) = Self::self_instance_attrs(&inv) {
+                    cell.commit_attrs(attrs);
+                }
+                inv
+            }
+            None => Value::make_instance(class_name, attrs),
+        };
         if has_build {
             // Pass the original constructor args so `submethod BUILD(:$x)` binds
             // them. A `fail` inside BUILD yields a `Failure` instance to return.

@@ -1018,6 +1018,10 @@ impl Registry {
                     seq.push(base.to_string());
                 }
                 seqs.push(seq);
+            } else if let Some(mro) = crate::rakuast::type_object_mro(parent) {
+                // A RakuAST node class parent contributes its model-layer
+                // hierarchy (ADR-0011), up to and including `Any`/`Mu`.
+                seqs.push(mro);
             } else if let Some(info) =
                 crate::builtins::builtin_type_catalog::builtin_type_info(parent)
             {
