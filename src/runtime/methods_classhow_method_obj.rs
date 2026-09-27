@@ -1032,7 +1032,7 @@ impl Interpreter {
         // MRO walk above misses them — probe the grammar-ness of the target.
         if results.is_empty()
             && matches!(method_name, "parse" | "subparse" | "parsefile")
-            && self.package_looks_like_grammar(&class_name)
+            && self.class_is_grammar(&class_name)
         {
             results.push(Value::routine_parts(
                 Symbol::intern(&class_name),
