@@ -438,6 +438,20 @@ impl Interpreter {
                         } else {
                             Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
                         };
+                        // Raku: assigning `Nil` to a scalar container resets it
+                        // to the container's declared type default, exactly
+                        // like `has $.x = Nil` and plain `$x = Nil` do — not
+                        // the provided `Nil` itself.
+                        let coerced = if attr.sigil == '$' && coerced.is_nil() {
+                            self.seed_attr_value(
+                                cn_resolved,
+                                &attr.name,
+                                attr.sigil,
+                                &plan.type_constraints,
+                            )
+                        } else {
+                            coerced
+                        };
                         Some(coerced)
                     })
                     .last()
@@ -584,6 +598,19 @@ impl Interpreter {
                             self.coerce_value_to_is_type(type_name, sigil, value.clone())?
                         } else {
                             Self::coerce_provided_attr_value_by_sigil(value.clone(), sigil)
+                        };
+                        // Raku: assigning `Nil` to a scalar container resets it
+                        // to the container's declared type default (see the
+                        // matching seed in `provided_attrs` above).
+                        let coerced = if sigil == '$' && coerced.is_nil() {
+                            self.seed_attr_value(
+                                cn_resolved,
+                                &plan.class_attrs[i].name,
+                                sigil,
+                                &plan.type_constraints,
+                            )
+                        } else {
+                            coerced
                         };
                         attributes.insert(plan.attr_syms[i], coerced)
                     }

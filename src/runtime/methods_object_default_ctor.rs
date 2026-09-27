@@ -94,6 +94,16 @@ impl Interpreter {
                         };
                     }
                     _ => {
+                        // Raku: assigning `Nil` to a scalar container resets it
+                        // to the container's declared type default, exactly
+                        // like `has $.x = Nil` and plain `$x = Nil` do — not
+                        // the provided `Nil` itself. Seed it here so the check
+                        // below (and the stored value) sees that default, not
+                        // a value that could spuriously fail the type check.
+                        let seeded = val
+                            .is_nil()
+                            .then(|| self.seed_attr_value(cn_resolved, key, '$', type_constraints));
+                        let val = seeded.as_ref().unwrap_or(val);
                         // A provided value that does not already match its
                         // attribute's type constraint needs the interpreter
                         // (coercion or a proper X::TypeCheck::Assignment) — fall

@@ -331,15 +331,34 @@ impl Interpreter {
             // through to the error below exactly as before.
             let try_new = self.class_has_new_accepting_positional(&remapped_base_target, &value)
                 || !self.class_declares_user_new(&remapped_base_target);
-            if try_new
-                && let Ok(coerced) = self.call_method_with_values(
+            if try_new {
+                // Rakudo exposes the coercion's target type to a user `new`
+                // candidate invoked as the coercion fallback via the dynamic
+                // variable `$*COERCION-TYPE` (roast
+                // `S12-coercion/coercion-methods.t`'s "method new has its
+                // context set"). Bind it for the duration of this one call —
+                // the same save/insert/restore shape `indir`'s `$*CWD`
+                // (`builtins_io_dir.rs`) uses for a builtin dynamic variable
+                // no user code lexically declares.
+                let saved_coercion_type = self.env.get("*COERCION-TYPE").cloned();
+                self.env.insert(
+                    "*COERCION-TYPE".to_string(),
+                    Value::package(Symbol::intern(&remapped_base_target)),
+                );
+                let new_result = self.call_method_with_values(
                     Value::package(Symbol::intern(&remapped_base_target)),
                     "new",
                     vec![coerce_arg],
-                )
-                && self.type_matches_value(&remapped_base_target, &coerced)
-            {
-                return Ok(coerced);
+                );
+                match saved_coercion_type {
+                    Some(prev) => self.env.insert("*COERCION-TYPE".to_string(), prev),
+                    None => self.env.remove("*COERCION-TYPE"),
+                };
+                if let Ok(coerced) = new_result
+                    && self.type_matches_value(&remapped_base_target, &coerced)
+                {
+                    return Ok(coerced);
+                }
             }
         }
         if let Some(coerced) = self.coerce_into_builtin_inheriting_class(base_target, &value) {
