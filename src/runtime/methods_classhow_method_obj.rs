@@ -985,11 +985,13 @@ impl Interpreter {
                 })
                 // Keep the historical ClassHOW fallback for package and
                 // primitive receivers. An ordinary instance must not inherit
-                // the metaobject API (for example, `Row.new.^can('name')`),
-                // but upstream code such as zef probes a failed `when` value
-                // with `False.^can('name')` before calling the harmless Nil
-                // fallback. The package path also needs ClassHOW's own names.
-                || !matches!(
+                // the metaobject API (for example, `Row.new.^can('name')`).
+                // `name` is excluded for every receiver: only `Code` has a
+                // `name` method (`Int.^can('name')` and `False.^can('name')`
+                // are empty in rakudo), and the call itself now raises
+                // X::Method::NotFound (#9776), so `.^can` must agree with it.
+                || method_name != "name"
+                    && !matches!(
                     target.view(),
                     ValueView::Instance { .. } | ValueView::Mixin(..)
                 ) && {
