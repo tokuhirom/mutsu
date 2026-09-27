@@ -835,8 +835,8 @@ impl Interpreter {
     /// Get a variable from an outer lexical scope.
     /// `depth` is the number of OUTER:: prefixes (1 = immediate outer, 2 = two levels up).
     /// Uses the `outer_scope_locals` stack which is populated by BlockScope operations.
-    // Cost: O(1) through a baked shadow slot or the captured env; O(L) when no slot was
-    // baked, L = frame locals (by-name scan). Rakudo: O(1) -- see #9171.
+    // Cost: O(1) amortized: a baked shadow slot, the chunk's name index, or the
+    // captured env.
     pub(super) fn get_outer_var(
         &self,
         code: &CompiledCode,
@@ -887,11 +887,14 @@ impl Interpreter {
         if stack_len > 0 && depth <= stack_len {
             let idx = stack_len - depth;
             let saved = &self.outer_scope_locals[idx];
-            // Find the local slot for this variable name.
-            for (slot, local_name) in code.locals.iter().enumerate() {
-                if local_name == name && slot < saved.len() {
-                    return saved[slot].clone();
-                }
+            // The first slot named `name` that the saved scope covers, through
+            // the chunk's name index (slots come back in slot order).
+            if let Some(&slot) = code
+                .local_slots_named(name)
+                .iter()
+                .find(|&&slot| (slot as usize) < saved.len())
+            {
+                return saved[slot as usize].clone();
             }
         }
         // Stored-closure path: when a closure is invoked later (after its defining

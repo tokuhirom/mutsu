@@ -23,10 +23,10 @@ impl Interpreter {
         if code.our_locals.is_empty() || !self.our_link_owner_in_scope(qualified_name) {
             return;
         }
-        for (slot, our_name) in &code.our_locals {
-            if our_name == qualified_name && *slot < self.locals.len() {
-                self.locals[*slot] = val.clone();
-                if let Some(local_name) = code.locals.get(*slot) {
+        for &slot in code.our_slots_of(qualified_name) {
+            if slot < self.locals.len() {
+                self.locals[slot] = val.clone();
+                if let Some(local_name) = code.locals.get(slot) {
                     let ln = local_name.clone();
                     self.env_mut().insert(ln, val.clone());
                 }
