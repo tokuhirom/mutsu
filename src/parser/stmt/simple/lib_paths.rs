@@ -13,6 +13,26 @@ pub(in crate::parser) fn parser_lib_paths() -> Vec<String> {
     LIB_PATHS.with(|p| p.borrow().clone())
 }
 
+/// Hand the parser the `-M` modules for the *next* compilation unit it parses
+/// — the mainline. Rakudo treats `-MFoo` as a `use Foo;` at the top of the
+/// program, so their exports are in scope for the whole parse: an exported
+/// `multi sub die` must shadow the `die` statement form exactly as it would
+/// after a written `use`. The runtime loads the modules itself before running;
+/// this only lets the parser see the names they import.
+pub fn set_parser_preload_modules(modules: Vec<String>) {
+    PRELOAD_MODULES.with(|p| *p.borrow_mut() = modules);
+}
+
+/// Register the exports of the pending `-M` modules into the current scope,
+/// consuming the list so a nested parse (a module the program `use`s, an
+/// `EVAL`) does not import them again.
+pub(in crate::parser) fn register_preload_module_exports() {
+    let modules = PRELOAD_MODULES.with(|p| std::mem::take(&mut *p.borrow_mut()));
+    for module in &modules {
+        register_module_exports(module);
+    }
+}
+
 /// Set the program path for module resolution relative to the script.
 pub fn set_parser_program_path(path: Option<String>) {
     PROGRAM_PATH.with(|p| {

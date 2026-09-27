@@ -732,6 +732,7 @@ impl Interpreter {
         if !lib_paths.is_empty() {
             options.insert("I".to_string(), one_or_list(lib_paths));
         }
+        self.preload_modules = preload_modules.to_vec();
         if !preload_modules.is_empty() {
             options.insert("M".to_string(), one_or_list(preload_modules));
         }

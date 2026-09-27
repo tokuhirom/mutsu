@@ -184,6 +184,16 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         let r = keyword("die", input).ok_or_else(|| PError::expected("die/fail statement"))?;
         (r, false)
     };
+    // A `sub`/`multi sub` named `die`/`fail`, declared here or imported (the
+    // `Die` distribution exports `multi sub die(Cool:D $ where .ends-with("\n"))`),
+    // shadows the builtin in its lexical scope. Bail out so statement dispatch
+    // falls through to the general listop-call parser, which resolves the name
+    // like any other call (and falls back to the builtin when no user candidate
+    // matches) — exactly what the expression form of `die`/`fail` already does.
+    let listop_name = if is_fail { "fail" } else { "die" };
+    if is_user_declared_sub(listop_name) || is_imported_function(listop_name) {
+        return Err(PError::expected("die/fail shadowed by user sub"));
+    }
     let (rest, _) = ws(rest)?;
     // `die`/`fail` with no argument: followed by `;`, end, `}`, or a statement modifier
     let no_arg = rest.starts_with(';')
@@ -210,7 +220,6 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     // Neither method exists on `Str`, so Rakudo raises X::Method::NotFound —
     // which is the whole point. Dropping the colon and dying with `$x` instead
     // would turn a loud parse error into a quiet wrong answer.
-    let listop_name = if is_fail { "fail" } else { "die" };
     let (after_invocant, invocant_stmt) = try_invocant_colon_stmt(listop_name, &expr, rest)?;
     if let Some(stmt) = invocant_stmt {
         return parse_statement_modifier(after_invocant, stmt);

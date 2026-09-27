@@ -3219,6 +3219,7 @@ impl Interpreter {
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
             skip_postcircumfix_overload: false,
+            preload_modules: Vec::new(),
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
             pending_sigilless_store: None,

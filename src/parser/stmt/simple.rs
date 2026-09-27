@@ -40,7 +40,8 @@ mod user_ops;
 
 // `pub` re-exports.
 pub use lib_paths::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
+    set_parser_program_path, set_parser_source_file,
 };
 pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file};
 
@@ -79,7 +80,9 @@ pub(in crate::parser) use compile_consts::{
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
-pub(in crate::parser) use lib_paths::{parser_lib_paths, try_add_parse_time_lib_path};
+pub(in crate::parser) use lib_paths::{
+    parser_lib_paths, register_preload_module_exports, try_add_parse_time_lib_path,
+};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
     register_module_exports, register_module_exports_with_tags, register_module_type_names,
@@ -247,6 +250,9 @@ thread_local! {
 
     /// Library search paths set before parsing, mirroring the runtime's lib_paths.
     static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+
+    /// `-M` modules awaiting the mainline parse (see `set_parser_preload_modules`).
+    static PRELOAD_MODULES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 
     /// Tracks which modules are currently being scanned to avoid infinite recursion.
     static LOADING_MODULES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
