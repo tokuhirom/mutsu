@@ -26,6 +26,10 @@
   `prefix_len` is taken from the walk that collected its ends
   (`src/runtime/regex/regex_ltm_rank_reuse.rs`) instead of from a second walk. The
   two are the same walk, so the ranking is unchanged.
+- **Superseded in part by**: [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md)
+  (2026-09-27) — every measurement runs the NFA; §4.1-§4.2's walker (the matcher under
+  `LTM_DECLARATIVE_MODE`) and the memo, recursion-stack and rank-reuse notes above are
+  retired. What the prefix is, and the `litlen` tie-break, are unchanged.
 - **Amended by**: [ADR-0125](0125-ltm-declarative-prefix-nfa.md) (2026-09-26) — a `|` branch
   ranked from a real match is measured by a compiled NFA instead of the walker.
 - **Amended by**: [ADR-0111](0111-ltm-stoppers-end-one-path.md) (2026-09-23) — a

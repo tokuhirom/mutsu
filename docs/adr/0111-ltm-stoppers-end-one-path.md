@@ -1,6 +1,10 @@
 # ADR-0111: An LTM stopper ends one path of the measurement, not the whole walk
 
 - **Status**: Accepted (2026-09-23); implemented in the same PR as the decision.
+  §2's mechanism (the walker recording fates, the flag and scan rules under
+  `LTM_DECLARATIVE_MODE`) is superseded by
+  [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md): measurements run the NFA, whose
+  fates end one path by construction. §1's semantics and §3/§3a stand.
 - **Amends**: [ADR-0022](0022-regex-alternation-ltm-ranking.md) §4.2, the meaning of
   `LtmAtomMode::Terminate`. The rest of ADR-0022 (what counts as a stopper, the
   `litlen` tie-break, the "a terminated measurement can order but never filter"

@@ -53,8 +53,8 @@ impl Interpreter {
         ratchet: bool,
         on: &mut AtomCandidateCont<'_>,
     ) -> bool {
-        // Measurement mode has no continuation to be driven by, and must stay
-        // side-effect free (ADR-0009); leave it on the eager producer.
+        // A match nested in an LTM NFA leaf must stay side-effect free
+        // (ADR-0009, ADR-0125); leave it on the eager producer.
         if !LTM_DECLARATIVE_MODE.with(Cell::get) {
             match atom {
                 RegexAtom::Group(pattern) => {
@@ -153,9 +153,7 @@ impl Interpreter {
             // ADR-0073 Slice 2: under a ratcheted token the walk cannot come
             // back for a second candidate, so a `<subrule>` atom is asked for
             // its highest-priority end alone instead of its whole end set.
-            // Measurement is exempt (ADR-0073 Decision 5): LTM ranking wants the
-            // declarative prefix of the WHOLE atom, not of one chosen end.
-            ratchet && !LTM_DECLARATIVE_MODE.with(Cell::get),
+            ratchet,
         );
         if ratchet && candidates.len() > 1 {
             // Ratchet (`:`) commits to the atom's highest-priority match and

@@ -226,11 +226,6 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Option<usize> {
-        // #9617: under measurement a recursive subrule call is a fate.
-        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
-            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return None,
-            entry => entry,
-        };
         let mut dyn_saved = None;
         // Ratcheted grammar tokens use this no-capture matcher for their
         // subrules. Keep the same grammar-rule dynamic-variable frame as the
@@ -339,11 +334,8 @@ impl Interpreter {
                 // desc), ties broken by declaration order (iterating in
                 // written order, replacing only on a strict improvement).
                 let mut best: Option<((usize, usize), usize)> = None;
-                let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
                 for alt in alternatives {
-                    ltm_alternatives.before_alternative();
                     let matched = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg);
-                    ltm_alternatives.after_alternative(matched.is_some());
                     if let Some(end) = matched {
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
@@ -358,12 +350,6 @@ impl Interpreter {
                 return best.map(|(_, end)| end);
             }
             RegexAtom::SequentialAlternation(alternatives) => {
-                if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-                    // ADR-0022 §4.2: the no-capture counterpart of the plural
-                    // matcher's ε-bypass — see `ltm_seqalt_best`.
-                    let (end, _) = self.ltm_seqalt_best(alternatives, chars, pos, pkg);
-                    return Some(end);
-                }
                 for alt in alternatives {
                     if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
                         return Some(end);

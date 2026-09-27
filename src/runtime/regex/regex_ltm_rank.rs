@@ -1,22 +1,13 @@
-//! ADR-0022 Slice 1: declarative-prefix LTM measurement infrastructure.
+//! ADR-0022: LTM ranking of `|` branches and proto candidates.
 //!
-//! This module adds the *measurement* primitive (`ltm_prefix_len_at`) and the
-//! shared atom classifier (`ltm_atom_mode`) that the three atom matchers
-//! consult under `LTM_DECLARATIVE_MODE`. It intentionally does NOT change how
-//! `|` alternation ranks its branches — that is ADR-0022 Slice 3. Nothing in
-//! this file is wired into the alternation-ranking consumer arms yet; the new
-//! API is exercised only by this module's own unit tests, plus indirectly by
-//! whatever already calls into `LTM_DECLARATIVE_MODE` (protoregex dispatch's
-//! `declarative_prefix_match_len`, `regex_resolve.rs`), whose *measurements*
-//! now see through more atom kinds than before (ADR-0009 previously handled
-//! only code atoms).
+//! The measurement primitive (`ltm_prefix_len_at`) runs the pattern's NFA
+//! (ADR-0125, `regex_ltm_nfa`); `ltm_atom_mode` is the shared classifier the
+//! NFA builder, and the atom matchers answering its leaves, consult for what
+//! is a fate. The `litlen` tie-break (ADR-0022 §4.3) and the rank key that
+//! combines the two live here too.
 
 use super::super::*;
-use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, LTM_SEQALT_EPSILON, named_lookup_is_ws,
-};
-use super::regex_ltm_fate::{ltm_fate_frame_close, ltm_fate_frame_open};
-use std::cell::Cell;
+use super::regex_helpers::named_lookup_is_ws;
 use std::collections::HashSet;
 
 /// Recursion cap for `ltm_litlen_at`'s subrule/group descent (ADR-0022 §4.3),
@@ -26,16 +17,13 @@ const LTM_LITLEN_MAX_DEPTH: usize = 16;
 
 /// How an atom participates in LTM declarative-prefix measurement
 /// (ADR-0022 §4.2's prefix-construction table). `CodeAssertion` and
-/// `SequentialAlternation` are deliberately NOT covered here: `CodeAssertion`
-/// already has its own inline mode handling (ADR-0009), and
-/// `SequentialAlternation` needs a full ε-bypass measurement (candidates =
-/// ends(first branch) ∪ {pos}), not a single yes/no verdict — see
-/// `Interpreter::ltm_seqalt_candidates` / `ltm_seqalt_best`.
+/// `SequentialAlternation` are deliberately NOT covered here: the NFA builder
+/// gives each its own construction (a plain block is a fate, `<?{ }>` a pass,
+/// `||` its first branch plus an ε bypass).
 pub(super) enum LtmAtomMode<'a> {
     /// Measure exactly as a real match would (consuming/transparent).
     Normal,
-    /// Zero-width success; the caller must set `LTM_PREFIX_TERMINATED` so the
-    /// walk unwinds and the length measured so far stands.
+    /// A fate: the path ends here, and here counts toward the prefix.
     Terminate,
     /// Measure the inner pattern's ends from the current position as if
     /// consuming (positive lookahead: `<?before X>` inlines `X` then stops),
@@ -48,10 +36,10 @@ pub(super) enum LtmAtomMode<'a> {
     SkipZeroWidth,
 }
 
-/// Classify `atom` for LTM declarative-prefix measurement. Only meaningful
-/// while `LTM_DECLARATIVE_MODE` is set; callers must check that themselves
-/// (this function does not consult the thread-local) so the check happens
-/// once per atom match, not once per classification.
+/// Classify `atom` for LTM declarative-prefix measurement: by the NFA builder,
+/// and by the atom matchers while they answer an NFA leaf under
+/// `LTM_DECLARATIVE_MODE` (callers check the mode themselves, so the check
+/// happens once per atom match, not once per classification).
 pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
     match atom {
         // <.ws> / <ws> / implicit sigspace: Rakudo's NFA special-cases `ws` ->
@@ -152,21 +140,11 @@ pub(super) fn ltm_leading_ws_is_transparent(atom: &RegexAtom, pos: usize) -> boo
 
 impl Interpreter {
     /// ADR-0022 §4.1: the longest declarative-prefix match of `pattern` at
-    /// `pos`, plus whether the measurement was cut short by a
-    /// non-declarative atom (`true` => the `None`/short length proves
-    /// nothing about whether the real match would go further, so a caller
-    /// may use the length to ORDER branches but must never use it to FILTER
-    /// one out — same contract as `declarative_prefix_match_len`).
-    ///
-    /// Saves/restores `LTM_DECLARATIVE_MODE` / `LTM_PREFIX_TERMINATED`
-    /// exactly like `declarative_prefix_match_len` (`regex_resolve.rs`) —
-    /// they must nest, since a measurement can occur inside a real match
-    /// inside another measurement (a subrule's own pattern may be measured
-    /// while an outer measurement is still live). Never executes user code
-    /// (ADR-0009 discipline): every code-bearing / non-declarative atom kind
-    /// is neutralized by `ltm_atom_mode` or the `CodeAssertion` arm's
-    /// existing mode check.
-    ///
+    /// `pos`, plus whether a `None` length is unsound to filter on (see
+    /// [`super::regex_ltm_nfa::LtmMeasure::stopped`]): a caller may drop a
+    /// candidate on `(None, false)` only. Measured by the pattern's NFA
+    /// (ADR-0125), which never executes user code (ADR-0009).
+    // Cost: see `ltm_measure`.
     pub(crate) fn ltm_prefix_len_at(
         &mut self,
         pattern: &RegexPattern,
@@ -174,89 +152,8 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (Option<usize>, bool) {
-        // #9617: a measurement started from a real match walks from an empty
-        // subrule stack (`regex_ltm_recursion`).
-        let _stack = super::regex_ltm_recursion::LtmMeasurementStack::open(
-            LTM_DECLARATIVE_MODE.with(Cell::get),
-        );
-        // #9579: one measurement per (branch, position) per outermost
-        // measurement — see `regex_ltm_memo` for why the key is sound.
-        let slot = match super::regex_ltm_memo::ltm_memo_enter(pattern, chars, pos, pkg) {
-            Ok(slot) => slot,
-            Err(cached) => return cached,
-        };
-        let lr_before = super::regex_lr_state::lr_consult_count();
-        let result = self.ltm_prefix_len_uncached(pattern, chars, pos, pkg);
-        let consulted_lr = super::regex_lr_state::lr_consult_count() != lr_before;
-        super::regex_ltm_memo::ltm_memo_store(&slot, pattern, consulted_lr, result);
-        result
-    }
-
-    /// [`Self::ltm_prefix_len_at`] without the memo: the measurement itself.
-    fn ltm_prefix_len_uncached(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-    ) -> (Option<usize>, bool) {
-        let saved_mode = LTM_DECLARATIVE_MODE.with(|f| f.replace(true));
-        let saved_terminated = LTM_PREFIX_TERMINATED.with(|f| f.replace(false));
-        let saved_epsilon = LTM_SEQALT_EPSILON.with(|f| f.replace(false));
-        let enclosing_fate = ltm_fate_frame_open();
-        let ends = self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg);
-        let fate = ltm_fate_frame_close(enclosing_fate);
-        // A `||` epsilon bypass anywhere in the walk makes a `None` unsound to
-        // filter on — see `LTM_SEQALT_EPSILON`.
-        let stopped_at_non_declarative =
-            LTM_PREFIX_TERMINATED.with(Cell::get) || LTM_SEQALT_EPSILON.with(Cell::get);
-        LTM_DECLARATIVE_MODE.with(|f| f.set(saved_mode));
-        LTM_PREFIX_TERMINATED.with(|f| f.set(saved_terminated));
-        LTM_SEQALT_EPSILON.with(|f| f.set(saved_epsilon));
-        // The prefix is the furthest place any path got: the end of the
-        // pattern, or a fate (`regex_ltm_fate`).
-        let max_end = ends.into_iter().map(|(end, _)| end).chain(fate).max();
-        (max_end.map(|end| end - pos), stopped_at_non_declarative)
-    }
-
-    /// ADR-0022 §4.2's `SequentialAlternation` special case for the PLURAL
-    /// (all-candidates) atom matcher: in LTM mode, only the FIRST branch of
-    /// `X || Y ...` participates in the declarative prefix, plus a
-    /// zero-width epsilon bypass at `pos` (Rakudo `NFA.nqp::method altseq`
-    /// builds child 0, then an epsilon edge straight from entry to exit).
-    /// Deliberately does NOT set `LTM_PREFIX_TERMINATED` itself — the
-    /// epsilon keeps the measurement alive past the group, so `X || Y` can
-    /// never be the SOLE reason a fully-declarative measurement returns
-    /// `None` (a caller filtering on `(None, false)` must not drop a branch
-    /// just because its `||` group's first branch failed to match).
-    ///
-    /// Returned lowest-priority-first (the plural atom-matcher convention:
-    /// the engine iterates the result in reverse): the epsilon first, then
-    /// the first branch's own ends from lowest to highest.
-    pub(super) fn ltm_seqalt_candidates(
-        &mut self,
-        alternatives: &[RegexPattern],
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-    ) -> Vec<(usize, RegexCaptures)> {
-        LTM_SEQALT_EPSILON.with(|f| f.set(true));
-        let mut out = vec![(pos, RegexCaptures::default())];
-        if let Some(first) = alternatives.first() {
-            let mut ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
-            ends.reverse(); // highest-first -> lowest-first
-            for (end, mut inner_caps) in ends {
-                let mut new_caps = RegexCaptures::default();
-                for (k, v) in inner_caps.named.drain() {
-                    new_caps.named.entry(k).or_default().merge(v);
-                }
-                new_caps.positional.append(&mut inner_caps.positional);
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                new_caps.extend_regex_vars(inner_caps.take_regex_vars());
-                out.push((end, new_caps));
-            }
-        }
-        out
+        let measured = self.ltm_measure(pattern, chars, pos, pkg);
+        (measured.len, measured.stopped)
     }
 
     /// ADR-0022 §4.3: length of the leading-literal region of `pattern` at
@@ -270,7 +167,7 @@ impl Interpreter {
     /// alternation extends only when every branch is itself pure-literal).
     /// `seen` cycle-guards subrule recursion by lookup name; `depth` is capped
     /// by `LTM_LITLEN_MAX_DEPTH`. Never executes user code and never runs the
-    /// real matcher (so it cannot itself set `LTM_PREFIX_TERMINATED`).
+    /// real matcher.
     pub(crate) fn ltm_litlen_at(
         &mut self,
         pattern: &RegexPattern,
@@ -401,7 +298,12 @@ impl Interpreter {
                         return (acc, false);
                     }
                     let spec = name.spec();
-                    if !spec.arg_exprs.is_empty() {
+                    // What the NFA makes a fate ends litlen too: a call of a
+                    // code object (`<&re>`, `<$re>`) or a qualified name.
+                    if !spec.arg_exprs.is_empty()
+                        || Self::may_name_lexical_regex(spec)
+                        || crate::qualified::is_qualified(spec.lookup_sym)
+                    {
                         return (acc, false);
                     }
                     let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
@@ -453,12 +355,7 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (usize, usize) {
-        // ADR-0125: a measurement started from a real match runs the branch's
-        // NFA when it has one.
-        let plen = match self.ltm_nfa_prefix_len(alt, chars, pos, pkg) {
-            Some(plen) => plen,
-            None => self.ltm_prefix_len_at(alt, chars, pos, pkg).0,
-        };
+        let plen = self.ltm_prefix_len_at(alt, chars, pos, pkg).0;
         let mut seen = HashSet::new();
         let litlen = self.ltm_litlen_at(alt, chars, pos, pkg, &mut seen, 0);
         // A nested sequential alternation can expose its epsilon bypass to the
@@ -482,70 +379,30 @@ impl Interpreter {
     /// rank with `stopped == false` is a sound "cannot match here" verdict the
     /// caller may filter on, while `stopped == true` means the measurement was
     /// cut short and proves nothing.
-    ///
-    /// Falls back to the string-based `declarative_prefix_match_len` (with a
-    /// zero litlen) when the source does not parse — that path also covers the
-    /// `parse_anchored_single_subrule` shortcut, which only `regex_match_with_captures`
-    /// implements.
     pub(in crate::runtime) fn ltm_rank_token_candidate_source(
         &mut self,
         pattern: &str,
         text: &str,
     ) -> (Option<(usize, usize)>, bool) {
+        // A source that does not parse proves nothing: the real match
+        // reports it.
         let Some(parsed) = self.parse_regex(pattern) else {
-            let (plen, stopped) = self.declarative_prefix_match_len(pattern, text);
-            return (plen.map(|p| (p, 0)), stopped);
+            return (None, true);
         };
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let chars = target.chars();
         let pkg = self.current_package_sym();
         let (plen, stopped) = self.ltm_prefix_len_at(&parsed, chars, 0, pkg);
-        // A stopped measurement is useful only as a keep-alive signal: its
-        // observed prefix cannot rank this candidate against a fully measured
-        // sibling. Let the proto dispatcher place it in the declaration-order
-        // fallback bucket and decide with the real matcher.
-        if stopped {
-            return (None, true);
-        }
+        // A prefix that ends in a fate ranks by where the fate is, as in
+        // Rakudo: `t:sym<a> { 'abc' {} 'd' }` (prefix 3) outranks
+        // `t:sym<b> { 'ab' }` on "abcd".
         let Some(plen) = plen else {
             return (None, stopped);
         };
         let mut seen = HashSet::new();
         let litlen = self.ltm_litlen_at(&parsed, chars, 0, pkg, &mut seen, 0);
         (Some((plen, litlen)), stopped)
-    }
-
-    /// [`Self::ltm_seqalt_candidates`] collapsed to the single longest
-    /// candidate, for atom matchers that return one candidate rather than a
-    /// backtracking set (the singular capture-bearing matcher and the
-    /// no-capture prober).
-    pub(super) fn ltm_seqalt_best(
-        &mut self,
-        alternatives: &[RegexPattern],
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-    ) -> (usize, RegexCaptures) {
-        LTM_SEQALT_EPSILON.with(|f| f.set(true));
-        let mut best: (usize, RegexCaptures) = (pos, RegexCaptures::default());
-        if let Some(first) = alternatives.first() {
-            for (end, mut inner_caps) in
-                self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg)
-            {
-                if end > best.0 {
-                    let mut new_caps = RegexCaptures::default();
-                    for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
-                    }
-                    new_caps.positional.append(&mut inner_caps.positional);
-                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
-                    best = (end, new_caps);
-                }
-            }
-        }
-        best
     }
 }
 
@@ -690,8 +547,8 @@ mod tests {
         // continues the walk at the group's START position, so anything after
         // the group is measured against text the real match would have
         // consumed and can fail spuriously — the whole measurement is
-        // therefore unsound to filter on (ADR-0046 Slice 4,
-        // `LTM_SEQALT_EPSILON`). It does not truncate the measured length.
+        // therefore unsound to filter on (ADR-0046 Slice 4). It does not
+        // truncate the measured length.
         assert!(stopped);
         assert_eq!(len, Some(0));
     }

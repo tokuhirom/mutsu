@@ -10,42 +10,16 @@ use unicode_segmentation::UnicodeSegmentation;
 
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
-    /// Declarative-prefix (LTM) mode. While set, the matcher is measuring *how far
-    /// a candidate declaratively matches*, not producing a match — so a code atom
-    /// (`{ … }`, `<?{ … }>`, `<!{ … }>`) must NOT be executed. Rakudo builds its LTM
-    /// NFA from the declarative prefix and a code atom terminates that prefix, so
-    /// on reaching one the matcher sets `LTM_PREFIX_TERMINATED` and unwinds,
-    /// reporting the position it reached. Running the code instead would duplicate
-    /// its side effects once per candidate measurement (ADR-0009).
-    ///
-    /// Set only around `declarative_prefix_match_len`, which restores the previous
-    /// value afterwards (a subrule's pattern may itself be measured while an outer
-    /// measurement is live).
+    /// Declarative-prefix (LTM) mode: set while an LTM NFA (ADR-0125) asks
+    /// the matcher about one of its leaves. Nothing the matcher reaches then
+    /// may run user code (ADR-0009): a code block, a `** {code}` count, a
+    /// `<{ }>` interpolation or any other non-declarative atom is a fate
+    /// (`regex_ltm_fate`), and a `:my` initializer, a `$*` rule frame, a
+    /// token's `.wrap`per and the action replay log are all skipped.
     pub(crate) static LTM_DECLARATIVE_MODE: Cell<bool> = const { Cell::new(false) };
     /// A quantified alternation folds only captures it actually produces.
     /// Its unmatched branches must not manufacture extra iterations.
     pub(super) static IN_QUANTIFIED_ALTERNATION_MATCH: Cell<bool> = const { Cell::new(false) };
-    /// Set by the matcher when `LTM_DECLARATIVE_MODE` made it stop at a code atom.
-    /// `walk_tokens` checks it after every token and stops walking, so the
-    /// termination propagates out through nested subrules.
-    pub(crate) static LTM_PREFIX_TERMINATED: Cell<bool> = const { Cell::new(false) };
-    /// Set by the `SequentialAlternation` (`X || Y`) measurement when its
-    /// zero-width epsilon bypass was offered (ADR-0022 §4.2). It marks the
-    /// measurement's `None` result as UNSOUND to filter on, without truncating
-    /// the measured prefix the way `LTM_PREFIX_TERMINATED` does.
-    ///
-    /// Why the distinction matters: the epsilon lets the walk continue past a
-    /// `||` group whose first branch did not match, but it continues at the
-    /// group's *start* position, so every atom after the group is then measured
-    /// against text the real match would have consumed. Such an atom can fail
-    /// and drive the whole measurement to `None` even though the candidate
-    /// matches perfectly well — Cro::Uri's `regex host:sym<IPv6address>
-    /// { '[' <( <.IPv6address> )> ']' }`, whose `IPv6address` is one big `||`
-    /// chain, measured `None` and was wrongly dropped as "cannot match here".
-    /// Ranking on the (short) measured length is still fine; only the
-    /// `(None, false)` FILTER is unsound, which is exactly what this flag
-    /// suppresses (ADR-0046 Slice 4).
-    pub(crate) static LTM_SEQALT_EPSILON: Cell<bool> = const { Cell::new(false) };
     /// Code atoms are inert: not executed, and treated as a zero-width pass.
     ///
     /// Set around `longest_complete_prefix_end`, which re-matches the pattern
@@ -137,52 +111,6 @@ thread_local! {
     /// need to fold that atom's captures into the quantifier's already-built
     /// positional slots for `$ /` and code assertions.
     pub(crate) static INLINE_CAPTURE_SCOPE: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
-}
-
-/// Isolate declarative-prefix termination while an alternation measures its
-/// alternatives one by one. A stopper in one sibling must not make the next
-/// sibling look already stopped, but the enclosing measurement still needs to
-/// observe that at least one path terminated.
-pub(crate) struct LtmAlternativeScope {
-    active: bool,
-    inherited: bool,
-    stopped: bool,
-    continued: bool,
-}
-
-impl LtmAlternativeScope {
-    pub(crate) fn new() -> Self {
-        let active = LTM_DECLARATIVE_MODE.with(Cell::get);
-        let inherited = active && LTM_PREFIX_TERMINATED.with(|flag| flag.replace(false));
-        Self {
-            active,
-            inherited,
-            stopped: false,
-            continued: false,
-        }
-    }
-
-    pub(crate) fn before_alternative(&mut self) {
-        if self.active {
-            LTM_PREFIX_TERMINATED.with(|flag| flag.set(false));
-        }
-    }
-
-    pub(crate) fn after_alternative(&mut self, continued: bool) {
-        self.continued |= continued;
-        if self.active && LTM_PREFIX_TERMINATED.with(|flag| flag.replace(false)) {
-            self.stopped = true;
-        }
-    }
-}
-
-impl Drop for LtmAlternativeScope {
-    fn drop(&mut self) {
-        if self.active {
-            LTM_PREFIX_TERMINATED
-                .with(|flag| flag.set(self.inherited || (self.stopped && !self.continued)));
-        }
-    }
 }
 
 /// Track the furthest cursor position visited by a regex walk.

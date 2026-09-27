@@ -1,7 +1,10 @@
 # ADR-0125: Measure an LTM declarative prefix with a compiled NFA
 
 - **Status**: Accepted (2026-09-26, user decision). Phase 1 is implemented in the same PR
-  as this decision (see §6).
+  as this decision (see §6). Completed by [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md)
+  (#9644): every measurement runs the NFA, which compiles subrule calls as procedure calls
+  and no longer declines anything (§3 and the "where it is used" rule of §2 are superseded
+  there).
 - **Amends**: [ADR-0022](0022-regex-alternation-ltm-ranking.md) §4.1, *how* a branch's
   `prefix_len` is computed. What counts as a fate, the recursion cut
   ([#9617](https://github.com/tokuhirom/mutsu/issues/9617)), the `litlen` tie-break and
@@ -129,8 +132,8 @@ reading code.
 - Phase 1 merged in [#9641](https://github.com/tokuhirom/mutsu/pull/9641).
 - Open:
   - protos: done in #9643 (§3.1);
-  - the other measurement entry points (`ltm_prefix_len_at`'s other callers need the
-    "stopped" flag), then retiring the walker's measurement mode once every entry point
-    is on the NFA: [#9644](https://github.com/tokuhirom/mutsu/issues/9644);
+  - the other measurement entry points, then retiring the walker's measurement mode:
+    done in [#9644](https://github.com/tokuhirom/mutsu/issues/9644), see
+    [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md);
   - a bounded `** m..n` measures longer than Rakudo in both engines:
     [#9637](https://github.com/tokuhirom/mutsu/issues/9637).

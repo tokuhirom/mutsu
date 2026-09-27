@@ -155,11 +155,6 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
-        // #9617: under measurement a recursive subrule call is a fate.
-        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
-            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return None,
-            entry => entry,
-        };
         let mut dyn_saved = None;
         let mut preinstalled_arg_values = None;
         // The single-candidate matcher is used by quantified named subrules
@@ -225,12 +220,8 @@ impl Interpreter {
     ) -> Option<(usize, RegexCaptures)> {
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
-        // ADR-0022 §4.2: see the identical guard in
-        // `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`) —
-        // the two matchers must stay in sync via the shared `ltm_atom_mode`
-        // classifier. `SequentialAlternation` and `CodeAssertion` are not
-        // covered by `ltm_atom_mode` (see its doc comment) and fall through
-        // to their existing arms below, unaffected by this guard.
+        // An LTM NFA leaf's nested match (ADR-0125): see the identical guard
+        // in `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`).
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
                 LtmAtomMode::Terminate
@@ -333,11 +324,8 @@ impl Interpreter {
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
                 let capture_slots = alternation_capture_slots(alternatives);
-                let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
                 for alt in alternatives {
-                    ltm_alternatives.before_alternative();
                     let matched = self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg);
-                    ltm_alternatives.after_alternative(matched.is_some());
                     if let Some((next, mut inner_caps)) = matched {
                         if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                             inner_caps
@@ -383,12 +371,6 @@ impl Interpreter {
                     .next_back();
             }
             RegexAtom::SequentialAlternation(alternatives) => {
-                if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-                    // ADR-0022 §4.2: the single-candidate counterpart of the
-                    // plural matcher's ε-bypass — see `ltm_seqalt_best`.
-                    let best = self.ltm_seqalt_best(alternatives, chars, pos, pkg);
-                    return Some(best);
-                }
                 let capture_slots = alternation_capture_slots(alternatives);
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =

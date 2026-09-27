@@ -1,37 +1,36 @@
-//! A `|` branch's declarative prefix, measured by a compiled NFA
+//! A declarative prefix, measured by a compiled NFA
 //! ([ADR-0125](../../../docs/adr/0125-ltm-declarative-prefix-nfa.md)).
 //!
-//! The walker measures a prefix by running the backtracking matcher under
-//! `LTM_DECLARATIVE_MODE`, paying for everything a real match needs and a
-//! measurement does not (capture stores, candidate continuations, one
-//! allocation per set of ends). That made `regex A { '{' [ <A> | . ]*? '}' }`
-//! about 45 times slower than Rakudo (#9617). Rakudo compiles each rule's
-//! declarative prefix into an NFA once and runs it; so does this module:
+//! Every LTM measurement in mutsu runs here: the rank of a `|` branch, the
+//! ranking of a proto's candidates, and the `:rule<...>` / outermost proto
+//! entry point. Rakudo compiles each rule's declarative prefix into an NFA
+//! once and runs it; so does this module:
 //!
-//! - [`super::regex_ltm_nfa_build`] compiles a branch, inlining the subrules it
-//!   calls, into [`LtmNfa`];
-//! - [`super::regex_ltm_nfa_run`] simulates it over the subject;
-//! - the result is cached on the pattern per `(package, TOKEN_DEFS_GEN)`,
-//!   declines included.
+//! - [`super::regex_ltm_nfa_build`] compiles a pattern into [`LtmNfa`]. A
+//!   subrule call compiles to a [`NfaNode::Call`] into the callee's body,
+//!   compiled once per NFA, so the NFA grows with the grammar and not with the
+//!   number of paths through it;
+//! - [`super::regex_ltm_nfa_run`] simulates it over the subject, keeping the
+//!   call stack of each thread;
+//! - the result is cached on the pattern per `(package, :i, TOKEN_DEFS_GEN)`.
 //!
-//! Only a measurement started from a real match uses it, and only for
-//! `ltm_branch_rank_key`, which needs the length but not the walker's
-//! "stopped" flag. Anything else, and anything the builder declines, is
-//! measured by the walker as before.
-//!
-//! `MUTSU_LTM_NFA_VERIFY=1` measures every NFA ranking with the walker too and
-//! reports each difference on stderr (ADR-0125 §4).
+//! The backtracking matcher takes no part in a measurement beyond answering
+//! single atoms (the NFA's leaves), which it does under
+//! `LTM_DECLARATIVE_MODE` so that nothing it reaches runs user code
+//! (ADR-0009).
 
 use super::super::*;
-use super::regex_helpers::LTM_DECLARATIVE_MODE;
-use std::cell::Cell;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 /// One node of the NFA. Edges point at node indices.
 pub(super) enum NfaNode {
-    /// ε-edges to every target. A placeholder loop head is an empty split
-    /// until the builder patches it.
+    /// ε-edges to every target. A placeholder (a procedure's entry, a loop
+    /// head) is an empty split until the builder patches it.
     Split(Vec<u32>),
+    /// The entry of an ordered alternation (`||`): ε-edges like a split, but
+    /// reaching it makes a `None` measurement unsound to filter on (see
+    /// [`LtmMeasure::stopped`]).
+    SeqAlt(Vec<u32>),
     /// One atom, answered by the existing matcher (see [`LeafKind`]).
     Leaf {
         atom: Box<RegexAtom>,
@@ -52,13 +51,33 @@ pub(super) enum NfaNode {
     AtStart(u32),
     /// A pattern's trailing `$`: only at the end of the subject.
     AtEnd(u32),
-    /// Entering an inlined rule. A left-recursion activation live for the same
-    /// call would make the walker read its seed instead of the body, so the
-    /// whole simulation hands the measurement back to the walker.
-    Enter { name: Symbol, next: u32 },
+    /// A `<name>` call: push `ret` and continue at `body`, the callee's
+    /// procedure. A call to a rule already on the thread's stack is a fate
+    /// (Rakudo's `%seen`, #9617); a call whose left-recursion activation is
+    /// live reads that activation's seed instead of the body, as the matcher
+    /// would.
+    Call { name: Symbol, body: u32, ret: u32 },
+    /// The end of a procedure: pop the stack and continue at its return node.
+    Return,
+    /// A `<name>` call whose callee can only be found at run time: a rule
+    /// whose body's parse depends on runtime values. Each candidate found is
+    /// measured by its own NFA.
+    DynCall {
+        atom: Box<RegexAtom>,
+        pkg: Symbol,
+        ic: bool,
+        next: u32,
+    },
+    /// A region measured by an NFA of its own, over a different subject or
+    /// in a different scope.
+    Sub {
+        nfa: Arc<LtmNfa>,
+        kind: SubKind,
+        next: u32,
+    },
     /// A fate: the path ends here, and here counts toward the prefix.
     Fate,
-    /// The end of the branch.
+    /// The end of the measured pattern.
     Accept,
 }
 
@@ -76,82 +95,98 @@ pub(super) enum LeafKind {
     Plural,
 }
 
+/// Why a [`NfaNode::Sub`] region is measured on its own.
+pub(super) enum SubKind {
+    /// `:m` (ignoremark): the region runs over the subject with its combining
+    /// marks stripped, and its positions are mapped back.
+    StripMarks,
+    /// An interpolated regex that closed over its defining scope (#8951):
+    /// the scope is installed while the region runs.
+    Scoped(Arc<crate::value::ValueMap>),
+}
+
 pub(crate) struct LtmNfa {
     pub(super) nodes: Vec<NfaNode>,
     pub(super) start: u32,
 }
 
-/// One package's entry in `PatternDerived::ltm_nfa`: the NFA, or `None` when
-/// the builder declined the pattern.
+/// One entry of `PatternDerived::ltm_nfa`.
 pub(crate) struct LtmNfaSlot {
     pkg: Symbol,
+    ignore_case: bool,
     generation: u64,
-    nfa: Option<Arc<LtmNfa>>,
+    nfa: Arc<LtmNfa>,
 }
 
-/// `MUTSU_LTM_NFA_VERIFY`, read once.
-fn verify_enabled() -> bool {
-    static VERIFY: OnceLock<bool> = OnceLock::new();
-    *VERIFY.get_or_init(|| std::env::var_os("MUTSU_LTM_NFA_VERIFY").is_some_and(|v| v != "0"))
+/// What a measurement found.
+pub(crate) struct LtmMeasure {
+    /// The furthest place any path got, an accept or a fate, as a length
+    /// from the start position; `None` when no path got anywhere.
+    pub(crate) len: Option<usize>,
+    /// `true` when the measurement was cut short: some path ended in a fate,
+    /// or went through a `||`. A `None` length then proves nothing, because
+    /// a `||`'s ε bypass continues at the group's start, so an atom after the
+    /// group can fail where the real match (taking a later branch) would not
+    /// (ADR-0022 §4.2; Cro::Uri's `IPv6address`, ADR-0046 Slice 4). A `None`
+    /// with `false` is a sound "cannot match here" verdict.
+    pub(crate) stopped: bool,
 }
 
 impl Interpreter {
-    /// The prefix length of `pattern` at `pos`, measured by its NFA; `None`
-    /// when the NFA does not apply here and the walker must measure.
+    /// The declarative prefix of `pattern` at `pos`, walked in `pkg` from a
+    /// real match (no inherited `:i`, nothing on the call stack).
     // Cost: O(n * s) for the simulation, n = characters the prefix can reach
-    // past `pos`, s = NFA nodes; plus one build per (pattern, package,
-    // generation). Rakudo: the same order (an NFA run per ranking).
-    pub(super) fn ltm_nfa_prefix_len(
+    // past `pos`, s = NFA states live at a position (a node and a call stack);
+    // plus one build per (pattern, package, generation). Rakudo: the same
+    // order (an NFA run per ranking).
+    pub(crate) fn ltm_measure(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         pos: usize,
         pkg: Symbol,
-    ) -> Option<Option<usize>> {
-        if LTM_DECLARATIVE_MODE.with(Cell::get)
-            || self.has_any_wrap_chains()
-            || !self.registry().grammar_custom_how.is_empty()
-        {
-            return None;
+    ) -> LtmMeasure {
+        let nfa = self.ltm_nfa_for(pattern, pkg, false);
+        let run = nfa.run(self, chars, pos, &[]);
+        let furthest = run.ends.iter().copied().max().max(run.fate);
+        LtmMeasure {
+            len: furthest.map(|end| end - pos),
+            stopped: run.seqalt || run.fate.is_some(),
         }
-        let nfa = self.ltm_nfa_for(pattern, pkg)?;
-        let measured = nfa.run(self, chars, pos)?;
-        if verify_enabled() {
-            let (walked, _) = self.ltm_prefix_len_at(pattern, chars, pos, pkg);
-            if walked.unwrap_or(0) != measured.unwrap_or(0) {
-                let from = pos.saturating_sub(10);
-                let to = (pos + 30).min(chars.len());
-                let context: String = chars[from..to].iter().collect();
-                eprintln!(
-                    "LTM-NFA-VERIFY: nfa={measured:?} walker={walked:?} pos={pos} pkg={} near {context:?}",
-                    pkg.as_str()
-                );
-            }
-        }
-        Some(measured)
     }
 
-    /// The cached NFA of `pattern` in `pkg`, building it on first use.
-    // Cost: O(k) for a cached hit, k = packages the pattern was ranked from;
-    // a miss costs one build.
-    fn ltm_nfa_for(&mut self, pattern: &RegexPattern, pkg: Symbol) -> Option<Arc<LtmNfa>> {
+    /// The cached NFA of `pattern` in `pkg` (with an inherited `:i` when
+    /// `ignore_case`), building it on first use.
+    // Cost: O(k) for a cached hit, k = (package, :i) pairs the pattern was
+    // measured under; a miss costs one build.
+    pub(super) fn ltm_nfa_for(
+        &mut self,
+        pattern: &RegexPattern,
+        pkg: Symbol,
+        ignore_case: bool,
+    ) -> Arc<LtmNfa> {
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        {
-            let mut slots = pattern.derived.ltm_nfa.lock().ok()?;
+        if let Ok(mut slots) = pattern.derived.ltm_nfa.lock() {
             if slots.iter().any(|slot| slot.generation != generation) {
                 slots.clear();
             }
-            if let Some(slot) = slots.iter().find(|slot| slot.pkg == pkg) {
+            if let Some(slot) = slots
+                .iter()
+                .find(|slot| slot.pkg == pkg && slot.ignore_case == ignore_case)
+            {
                 return slot.nfa.clone();
             }
         }
-        let nfa = super::regex_ltm_nfa_build::NfaBuilder::new(self)
-            .build(pattern, pkg)
-            .map(Arc::new);
+        let nfa = Arc::new(super::regex_ltm_nfa_build::NfaBuilder::new(self, 0).build(
+            pattern,
+            pkg,
+            ignore_case,
+        ));
         if let Ok(mut slots) = pattern.derived.ltm_nfa.lock() {
             slots.push(LtmNfaSlot {
                 pkg,
+                ignore_case,
                 generation,
                 nfa: nfa.clone(),
             });
