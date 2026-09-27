@@ -42,6 +42,12 @@ fn method_lvalue_assign_expr_with_intent(
     value: Expr,
     preserve_hash_entries: bool,
 ) -> Expr {
+    // Assignment RHS parsing normally plants a WhateverCurry marker, but the
+    // method-lvalue lowering is reached after the lvalue parser has consumed
+    // the accessor call. Preserve that language-level value here so
+    // `$obj.rw-accessor = * + 1` stores a WhateverCode rather than evaluating
+    // `Whatever + 1` immediately.
+    let value = force_positional_pairs(crate::parser::expr::wrap_finished_expr(value));
     // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
     // contextualizer is transparent as an lvalue: it names the same container as
     // `EXPR`. Assign straight through to `EXPR` (`$(@a[0]) = ...` writes `@a[0]`)
@@ -66,6 +72,31 @@ fn method_lvalue_assign_expr_with_intent(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+    }
+}
+
+/// A method-lvalue writeback is an internal positional call, not a user call
+/// whose RHS pairs are named arguments. Preserve hash-assignment pairs as data
+/// while the generated `__mutsu_assign_method_lvalue` call is compiled.
+fn force_positional_pairs(expr: Expr) -> Expr {
+    match expr {
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+        } => Expr::PositionalPair(Box::new(Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+        })),
+        Expr::ArrayLiteral(items) => {
+            Expr::ArrayLiteral(items.into_iter().map(force_positional_pairs).collect())
+        }
+        Expr::BracketArray(items, is_flat) => Expr::BracketArray(
+            items.into_iter().map(force_positional_pairs).collect(),
+            is_flat,
+        ),
+        other => other,
     }
 }
 

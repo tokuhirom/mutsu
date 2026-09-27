@@ -393,6 +393,11 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         }
                 ) =>
                 {
+                    // Indexed bind RHSs are values too: preserve a compound
+                    // `*` expression as WhateverCode instead of evaluating it
+                    // as Numeric(Whatever). This expression-context path is
+                    // reached before the statement-level indexed-bind parser.
+                    let rhs = crate::parser::expr::wrap_finished_expr(rhs);
                     let bind_value = Expr::Call {
                         name: crate::symbol::Symbol::intern("__mutsu_bind_index_value"),
                         args: vec![

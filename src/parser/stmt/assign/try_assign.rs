@@ -288,6 +288,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             // this, an expression-context indexed bind such as
             // `(@a[lazy 1,2,(4,5),4,5] := "a"...*)` (roast S09-subscript/slice.t
             // #54-55) was silently treated as `=`.
+            // Indexed bind RHSs are values too: preserve a compound `*`
+            // expression as WhateverCode instead of evaluating it as
+            // Numeric(Whatever).
+            let rhs = crate::parser::expr::wrap_finished_expr(rhs);
             let source_meta =
                 crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(&rhs);
             let bind_value = Expr::Call {

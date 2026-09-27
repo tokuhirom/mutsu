@@ -1386,6 +1386,9 @@ impl Interpreter {
                     && *t != "default"
                     && !t.starts_with("DEPRECATED")
                     && *t != "deep"
+                    // `is cached` is a built-in routine trait, not a
+                    // user-defined trait_mod:<is> application.
+                    && *t != "cached"
             }) {
                 if !has_trait_mod {
                     return Err(RuntimeError::new(format!(
