@@ -21,3 +21,10 @@ Four cases keep an answer:
 
 One local test had pinned the old behaviour (`Plain.name` living); it now
 expects `X::Method::NotFound`.
+
+`.^can('name')` now agrees with the call and is empty for every receiver except
+`Code`, where it used to list the ClassHOW method. Removing the fallback exposed
+an older bug that the `Nil` answer had been hiding: a `Match` smartmatched
+against a `Str` (`$/[0] ~~ 'distro'`, and so `given $/[0] { when 'distro' { ... } }`)
+was always `False`. It now compares the matched text, which zef's
+`SystemQuery` relies on.

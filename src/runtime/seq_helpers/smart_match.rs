@@ -2010,6 +2010,12 @@ impl Interpreter {
             {
                 result
             }
+            // Match ~~ Str: `Str.ACCEPTS` compares the matched text, so a
+            // capture smartmatches the string it captured (`$/[0] ~~ "b"`;
+            // zef's `given $/[0] { when 'distro' { ... } }`).
+            (ValueView::Instance { .. }, ValueView::Str(s)) if left.is_match_instance() => {
+                **s == left.to_string_value()
+            }
             // Instance ~~ Str for a class with a user `.Stringy` or `.Str`
             // (own or inherited): `Str.ACCEPTS(Any:D)` compares against the
             // object's stringification -- `.Stringy`, whose default is `.Str`
