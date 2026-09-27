@@ -96,13 +96,8 @@ impl Interpreter {
         if Self::caller_stash_depth(name).is_some() {
             return None;
         }
-        if matches!(
-            name.strip_suffix("::"),
-            Some("OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
-        ) {
-            return None;
-        }
         if let Some(package) = name.strip_suffix("::")
+            && !matches!(package, "OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
             && package != "MY"
             && package != "LEXICAL"
             // `UNIT::` is a LEXICAL pseudo-package — the compilation unit's

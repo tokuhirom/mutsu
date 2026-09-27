@@ -203,8 +203,9 @@ impl Interpreter {
         let bare = &key[1..];
         // The index cuts a spelling at its first `/` and never records one
         // that is still qualified, so such a member name must take the whole
-        // build to be found.
-        if bare.is_empty() || bare.contains("::") || bare.contains('/') {
+        // build to be found. Any `:` (a qualifier, or an operator name like
+        // `&infix:<+>`) sends the key there too.
+        if bare.is_empty() || bare.contains(':') || bare.contains('/') {
             return None;
         }
         let candidates = crate::qualified_tail_index::names_ending_in(bare);
