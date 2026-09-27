@@ -328,9 +328,14 @@ def judge_stage(stage: str, code: int, text: str, known: list, conditions: set) 
             unexpected.append(describe_failure(f))
     if code != 0 and not failures:
         # The suite died before (or outside) prove: a build error, a cargo
-        # unit test, a check-* guard. There is no per-file verdict to classify.
-        unexpected.append(f"`make {stage}` exited {code} without a TAP failure summary; "
-                          f"see stage-{stage}.log")
+        # unit test, a check-* guard. There is no per-file verdict to classify,
+        # but a failing cargo test names itself; report those names.
+        cargo = cargo_test_failures(text)
+        if cargo:
+            unexpected.extend(cargo)
+        else:
+            unexpected.append(f"`make {stage}` exited {code} without a TAP failure summary; "
+                              f"see stage-{stage}.log")
     files = parse_prove_file_count(text)
     result = {"status": "pass" if not unexpected else "fail", "known_env": known_env,
               "unexpected": unexpected}
@@ -378,6 +383,19 @@ def parse_prove_summary(text: str) -> list[dict]:
         else:
             field = None
     return [f for f in failures if f["failed"] or f["wstat"] != 0 or f["parse_errors"]]
+
+
+def cargo_test_failures(text: str) -> list[str]:
+    """`cargo test` failures named in its output: each failed `#[test]`, and
+    each test binary that aborted (a stack overflow names no test)."""
+    out = [f"cargo test: {m}" for m in re.findall(r"^test (\S+) \.\.\. FAILED$", text, re.M)]
+    for target in re.findall(r"to rerun pass `([^`]+)`", text):
+        overflow = re.search(r"^thread '([^']+)' \(\d+\) has overflowed its stack", text, re.M)
+        if overflow and not out:
+            out.append(f"cargo test {target}: {overflow[1]} overflowed its stack")
+        elif not out:
+            out.append(f"cargo test {target}: failed")
+    return out
 
 
 def parse_prove_file_count(text: str) -> int | None:
@@ -669,6 +687,14 @@ def self_test(root: str) -> int:
     result = judge_stage("test", 2, "error: could not compile\n", SAMPLE_KNOWN, conds)
     check("judge: suite died before prove", result["status"] == "fail"
           and "without a TAP failure summary" in result["unexpected"][0])
+    overflow = ("thread 'big_test' (123) has overflowed its stack\n"
+                "error: test failed, to rerun pass `--test budget`\n")
+    result = judge_stage("test", 2, overflow, SAMPLE_KNOWN, conds)
+    check("judge: aborted cargo test binary is named",
+          result["unexpected"] == ["cargo test --test budget: big_test overflowed its stack"])
+    result = judge_stage("test", 2, "test a::b ... FAILED\nerror: test failed, to rerun pass "
+                         "`--lib`\n", SAMPLE_KNOWN, conds)
+    check("judge: failed cargo test is named", result["unexpected"] == ["cargo test: a::b"])
     result = judge_stage("test", 0, "All tests successful.\nFiles=3, Tests=9\nResult: PASS\n",
                          SAMPLE_KNOWN, conds)
     check("judge: clean pass", result["status"] == "pass" and result.get("files") == 3)
