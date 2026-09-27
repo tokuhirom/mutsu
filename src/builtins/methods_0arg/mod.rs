@@ -1252,6 +1252,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // `Instant`/`Duration` do `Real`: `succ`/`pred` step by one second.
+    if matches!(method, "succ" | "pred")
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && (class_name == "Instant" || class_name == "Duration")
+    {
+        return Some(temporal_dispatch::real_role_step(
+            class_name,
+            attributes.to_map(),
+            method == "succ",
+        ));
+    }
+
     // Instant methods: to-posix, DateTime, Date, tai
     if let ValueView::Instance {
         class_name,

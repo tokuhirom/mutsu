@@ -1547,6 +1547,14 @@ impl Interpreter {
             {
                 return true;
             }
+            // A built-in type's composed roles are catalog data (ADR-0051 P2):
+            // `Distribution::Path` does `Distribution` without inheriting it.
+            if crate::builtins::builtin_type_catalog::builtin_type_has_role(
+                &registry_key,
+                effective_constraint,
+            ) {
+                return true;
+            }
             // A composed *built-in* role brings its own parents (`Real does
             // Numeric`), and neither the parent nor the constraint naming it is
             // a user-declared role, so the registry walk below — gated on
@@ -1750,6 +1758,11 @@ impl Interpreter {
                 .iter()
                 .any(|parent| Self::type_matches(constraint, parent.as_str()))
             {
+                return true;
+            }
+            // Catalog roles of a built-in class (ADR-0051 P2), see the
+            // type-object twin above.
+            if crate::builtins::builtin_type_catalog::builtin_type_has_role(cn, constraint) {
                 return true;
             }
             // Check composed roles for the instance's class (and its MRO),

@@ -322,3 +322,23 @@ pub fn datetime_method_0arg(
         _ => None,
     }
 }
+
+/// `succ`/`pred` for `Instant`/`Duration`: both do `Real`, whose `succ`/`pred`
+/// step the value by one second and keep the receiver's type (raku:
+/// `Instant.from-posix(1).succ` is `Instant:12`, `Duration.new(3).succ` is `4`).
+// Cost: O(1).
+pub(crate) fn real_role_step(
+    class_name: Symbol,
+    attributes: AttrMap,
+    forward: bool,
+) -> Result<Value, RuntimeError> {
+    let mut attributes = attributes;
+    let value = attributes.get("value").cloned().unwrap_or(Value::int(0));
+    let stepped = if forward {
+        crate::builtins::arith::arith_add(value, Value::int(1))?
+    } else {
+        crate::builtins::arith::arith_sub(value, Value::int(1))
+    };
+    attributes.insert("value", stepped);
+    Ok(Value::make_instance(class_name, attributes))
+}

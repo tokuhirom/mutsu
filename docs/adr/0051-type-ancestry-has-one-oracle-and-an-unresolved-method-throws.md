@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Accepted (P1/P3/P4 landed; P2/P5 not started)
+- Status: Accepted (P1/P3/P4/P5 landed; P2 partially landed — source 2 deleted, sources 4-11 remain)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -281,7 +281,7 @@ Each phase is independently landable and independently valuable.
   regression test's `Pair` assertions both still pass, confirming the false-positive shape did not
   reappear.
 
-- P2/P5 below are unchanged from the original design and remain not started.
+- P2 is partially landed and P5 landed (#9893, 2026-09-27); see each entry.
 
 - **P2 — Collapse the remaining sources onto the catalog.** Delete `Registry::builtin_mro_table`
   and the three hardcoded narrowness chains (sources 7-9); re-point `class_mro_readonly`,
@@ -294,6 +294,27 @@ Each phase is independently landable and independently valuable.
   phase is expected to also fix pre-existing false positives P3's audit found but did not touch (see
   P3's note below) — `e2_native_method_exists`/`.^can` wrongly saying `Match.succ`/`.pred`/`.base`/
   `.polymod`/`.parse-base` and `Any.lazy` exist, when real Rakudo says they do not.
+
+  **Partially landed (#9893, 2026-09-27).** `Registry::builtin_mro_table` (source 2) is
+  deleted: `class_mro_readonly` reads the catalog for every unregistered builtin. The table's
+  two divergences from Rakudo went with it — it gave `Distribution::{Path,Hash,Installation}`
+  a `Distribution` parent and `CompUnit::Repository::Installation` three `CompUnit::Repository*`
+  parents, all of which are roles in Rakudo. Those facts now live in the catalog's `roles`
+  (the `CompUnit::Repository::{FileSystem,Installation}` role lists were swapped and are
+  corrected), and type matching (`type_matches_value`, `class_does_role`) consults
+  `builtin_type_has_role`, which also makes `CompUnit::Repository::FileSystem ~~
+  CompUnit::Repository::Locally` true as in Rakudo.
+
+  The `.^can` false positives listed above turned out NOT to be ancestry: they were
+  native-method rows claiming methods on the wrong owner — `("Cool", succ|pred|base|polymod)`,
+  `("Match", succ|pred|parse-base)`, `("Any", "lazy")`, `("Complex", base|polymod)`,
+  `("Pair"|"Block", "lazy")`. Those rows are gone; the genuine owners that reached them only
+  through `Cool`/`Any` got their own rows (`Instant`/`Duration` `succ`/`pred`/`base`/`polymod`
+  via `Real`, `Map.lazy` via `Iterable`), and `Instant`/`Duration` `.succ`/`.pred`, which had
+  never been implemented, now are.
+
+  Not done yet: the narrowness chains (sources 7-9), the `Cool` allowlist (4), `isa_check`'s
+  table (5), `is_supertype_of` (6) and `are()`'s denylist (10) — tracked in #9948.
 
 - **P3 — Fill the two genuine missing rows. LANDED (PR #6795, 2026-08-21).** Added
   `("Instant","DateTime",1,0)` and `("Date","IO",8,12)` to `RAW_ROWS`
@@ -379,7 +400,17 @@ Each phase is independently landable and independently valuable.
   method dispatch — confirmed passing via the proper runner). The blast radius stayed contained to
   the two fixes above; no further scoping-down of P4 was needed.
 
-- **P5 — Retire `cool_only_builtin_method`.** Once P4's existence check is authoritative, the
+- **P5 — Retire `cool_only_builtin_method`. LANDED (#9893, 2026-09-27).** The 94-name list is
+  gone; `any_cool_method_gate::is_cool_only_method` derives the set once from the row catalog
+  ("a name with an introspectable `Cool` row but none on `Any`/`Mu`", minus the two `Any`
+  protos `match`/`split`), plus a 12-name `COOL_SUBTYPE_ONLY` list for names Rakudo declares on
+  a `Cool` subtype but not on `Cool` itself (`succ`, `base`, `lazy`, `parse-base`, ...), which the
+  receiver-blind cascades still answer. The derivation adds 16 names the hand list had missed
+  (`printf`, `is-prime`, `indices`, the native-int coercions, ...), so the P4 gates now also
+  reject `G.new.printf` on a plain class, as Rakudo does. Pinned by
+  `t/vm/codegen/adr0051-one-ancestry-oracle.t`.
+
+  Original plan text: Once P4's existence check is authoritative, the
   94-name list is derivable: "a name with a row under `Cool` but not under `Any`/`Mu`". Deleting it
   removes the seventh table.
 
