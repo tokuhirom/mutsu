@@ -13,11 +13,35 @@ pub(crate) fn dateish_io_concreteness_error(name: &str) -> Option<RuntimeError> 
     ))
 }
 
+// Cost: O(n), n = operand count after slipping.
 pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
-    // Infix junction operators (|, &, ^) always create a new 2-element
-    // junction without flattening. List-associative flattening is handled
-    // at compile time via JunctionAnyN/AllN/OneN opcodes.
-    Value::junction(kind, vec![left, right])
+    // Infix junction operators (|, &, ^) always create a new junction
+    // without flattening a junction operand. List-associative flattening is
+    // handled at compile time via JunctionAnyN/AllN/OneN opcodes.
+    Value::junction(kind, junction_operands(vec![left, right]))
+}
+
+/// The eigenstates an infix junction operator builds from its operands.
+/// Rakudo's `infix:<|>`/`&`/`^` take `+values`, whose slurpy slips a
+/// (non-itemized) `Slip` operand into the list: `|(1, 2) | 3` is
+/// `any(1, 2, 3)`, not `any((1 2), 3)`.
+// Cost: O(n), n = operand count after slipping.
+pub(crate) fn junction_operands(values: Vec<Value>) -> Vec<Value> {
+    if !values.iter().any(is_bare_slip) {
+        return values;
+    }
+    let mut out = Vec::with_capacity(values.len());
+    for v in values {
+        match v.view() {
+            ValueView::Slip(items) if !v.slip_is_itemized() => out.extend(items.iter().cloned()),
+            _ => out.push(v),
+        }
+    }
+    out
+}
+
+fn is_bare_slip(v: &Value) -> bool {
+    matches!(v.view(), ValueView::Slip(_)) && !v.slip_is_itemized()
 }
 
 /// Format a short representation of a value for type-check error messages,

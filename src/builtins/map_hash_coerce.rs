@@ -46,6 +46,45 @@ fn make_odd_number_error(items: &[Value]) -> RuntimeError {
     }
 }
 
+/// The `X::Hash::Store::OddNumber` a `Hash()` coercion type (`my Hash() $h =
+/// 'a'`, `sub f(Hash() $h)`) raises for `value`, or `None` when the value is a
+/// valid hash initializer. The coercion calls `.Hash`, which dies on a lone
+/// scalar and on a list with an odd number of non-Pair elements — exactly as
+/// `to_hash(_, true)` does. A Hash item inside the list contributes its pairs,
+/// as it does in list assignment to a hash.
+// Cost: O(n), n = element count of a list value; O(1) otherwise.
+pub(crate) fn hash_coercion_odd_error(value: &Value) -> Option<RuntimeError> {
+    let value = value.clone().into_descalarized();
+    match value.view() {
+        ValueView::Array(items, ..) => list_odd_error(items.as_ref()),
+        ValueView::Seq(items) => list_odd_error(&items),
+        ValueView::Slip(items) => list_odd_error(items.as_ref()),
+        ValueView::Str(_)
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(..)
+        | ValueView::BigRat(..)
+        | ValueView::FatRat(..)
+        | ValueView::Bool(_) => Some(make_odd_number_error(std::slice::from_ref(&value))),
+        _ => None,
+    }
+}
+
+fn list_odd_error(items: &[Value]) -> Option<RuntimeError> {
+    let items: Vec<Value> = items.iter().map(unwrap_contained_pair).collect();
+    let singles = items
+        .iter()
+        .filter(|v| {
+            !matches!(
+                v.view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(_)
+            )
+        })
+        .count();
+    (singles % 2 != 0).then(|| make_odd_number_error(&items))
+}
+
 /// Unwrap an itemized Pair (`Scalar`) or a Pair held in a `:=` element cell
 /// (`ContainerRef`) for hash-initializer purposes. Non-Pair contents (e.g. an
 /// itemized hash, which must die "Odd number" like raku) pass through as-is.

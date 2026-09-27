@@ -68,11 +68,18 @@ impl Interpreter {
             format!("&{bare}")
         };
         let value = self.env.get(&key)?.clone().into_deref();
-        matches!(
-            value.view(),
-            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-        )
-        .then_some(value)
+        match value.view() {
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => Some(value),
+            // `my &c = &re` / a `&class` parameter bound to a `my regex`:
+            // the `&re` reference captured that declaration's Regex value
+            // (`Value::routine_token_capture`), which is what `<&c>` calls.
+            ValueView::Routine {
+                is_regex: true,
+                captured_regex: Some(regex),
+                ..
+            } => Some((**regex).clone()),
+            _ => None,
+        }
     }
 
     /// Whether this reference actually resolves to a caller-scope Regex.

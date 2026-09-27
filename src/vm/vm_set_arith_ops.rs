@@ -79,7 +79,7 @@ impl Interpreter {
         }
 
         // No user override: build junction from all values
-        let result = Value::junction(kind, values);
+        let result = Value::junction(kind, runtime::junction_operands(values));
         self.stack.push(result);
         Ok(())
     }
