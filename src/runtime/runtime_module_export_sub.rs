@@ -352,6 +352,15 @@ impl Interpreter {
         value: Value,
         inner_export_importer: Option<&str>,
     ) {
+        // A `&name` binds the routine itself. An EXPORT map built from `:p`
+        // pairs (`UNIT::{"&$_"}:p`, String::Utils' selective import) carries
+        // each value in the stash element's container, and a bare call of the
+        // imported name would otherwise try to invoke that Scalar.
+        let value = if key.starts_with('&') {
+            value.into_deref()
+        } else {
+            value
+        };
         // An exported `&EXPORT` imported *by a module being loaded* becomes
         // that module's own EXPORT for its importers (the Slangify pattern),
         // not an env-visible callable — EXPORT is special and never leaks.

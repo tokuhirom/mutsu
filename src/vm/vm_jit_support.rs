@@ -65,6 +65,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetBareWord(_)
             | OpCode::GetCaptureVar(_)
             | OpCode::GetCodeVar(_)
+            | OpCode::GetCodeVarLocal { .. }
             | OpCode::GetSelfOrNoSelf(_)
             | OpCode::GetUpvalue { .. }
             // Variable writes / declarations

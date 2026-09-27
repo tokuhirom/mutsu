@@ -8,6 +8,7 @@
 mod escapes;
 mod helpers;
 mod heredoc;
+mod interp_code_call;
 mod interp_content;
 mod interp_helpers;
 mod interp_var;

@@ -283,7 +283,7 @@ impl Interpreter {
     }
 
     /// Every routine name any loaded module has exported, in any form.
-    fn exported_routine_names(&self) -> std::collections::HashSet<String> {
+    pub(super) fn exported_routine_names(&self) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
         for table in self.exported_subs.values() {
             names.extend(table.keys().cloned());

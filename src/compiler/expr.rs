@@ -939,7 +939,13 @@ impl Compiler {
             Expr::CodeVar(name) => {
                 self.fold_lexical_sub_free_vars_for_code_var(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::GetCodeVar(name_idx));
+                // A `&name` local in scope here is read through ITS slot: the
+                // frame may hold several same-named slots (see
+                // `OpCode::GetCodeVarLocal`).
+                match self.local_map.get(format!("&{name}").as_str()) {
+                    Some(&slot) => self.code.emit(OpCode::GetCodeVarLocal { name_idx, slot }),
+                    None => self.code.emit(OpCode::GetCodeVar(name_idx)),
+                };
             }
             // Hash literal
             Expr::Hash(pairs) => {

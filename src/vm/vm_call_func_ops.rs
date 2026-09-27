@@ -1620,11 +1620,15 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in CallOnValue target".to_string())
         })?;
 
-        // Resolve slot refs to their underlying values before dispatch
-        let target = if matches!(target.view(), ValueView::HashEntryRef { .. }) {
-            target.hash_entry_read()
-        } else {
-            target
+        // Resolve slot refs to their underlying values before dispatch. A
+        // Scalar container is invoked through what it holds: a `:p` pair's
+        // value is bound to the element's container, so
+        // `(%h<f>:p).value.(...)` -- String::Utils' `UNIT::{"&$_"}:p` export
+        // map -- reaches here as the cell, not the Sub.
+        let target = match target.view() {
+            ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+            ValueView::ContainerRef(_) => target.into_deref(),
+            _ => target,
         };
 
         // Upgrade WeakSub (e.g., &?BLOCK) to strong Sub before dispatch

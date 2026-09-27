@@ -62,13 +62,29 @@ impl Interpreter {
     /// Cost: O(1), one hashed `find_local_slot` probe plus one
     /// `lexical_routine` probe.
     pub(super) fn frame_amp_callable(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        self.frame_amp_callable_at(code, name, None)
+    }
+
+    /// [`Self::frame_amp_callable`] with the `&name` slot already resolved by
+    /// the compiler (`OpCode::GetCodeVarLocal`), which replaces the by-name
+    /// probe: that probe answers the FIRST same-named slot, not the one in
+    /// scope at the read.
+    ///
+    /// Cost: O(1).
+    pub(super) fn frame_amp_callable_at(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        slot: Option<usize>,
+    ) -> Option<Value> {
         // `&cb` reads a `&`-sigil LEXICAL first when this frame has one — a
         // `&f` parameter lives in a local slot under its sigiled name, and
         // `resolve_code_var` only ever consults the env, which a slot-only bind
         // never reaches (a `:&cb` named param read back as Nil). Checked
         // against the executing frame's own `code.locals`, so it can never
         // pick up an enclosing frame's slot numbering.
-        if let Some(slot) = self.find_local_slot(code, &format!("&{}", name)) {
+        let slot = slot.or_else(|| self.find_local_slot(code, &format!("&{}", name)));
+        if let Some(slot) = slot.filter(|&slot| slot < self.locals.len()) {
             // Read through a shared cell (ADR-0055 §7.3): `&cb` as a VALUE
             // (`.defined`, `~~ Callable`, passed as an argument) must be the
             // callable, not the cell holding it.
@@ -96,9 +112,10 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<usize>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
-        if let Some(val) = self.frame_amp_callable(code, name) {
+        if let Some(val) = self.frame_amp_callable_at(code, name, slot) {
             self.stack.push(val);
             return Ok(());
         }
