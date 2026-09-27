@@ -1188,6 +1188,18 @@ pub(crate) struct Compiler {
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
     local_scopes: Vec<HashMap<String, Option<u32>>>,
+    /// Declarations the NEXT [`Self::push_local_scope`] starts its frame with.
+    /// A multi-parameter `for` loop declares its parameters before its body's
+    /// scope frame is pushed; they belong to that frame (Raku puts a block's
+    /// signature in the block's own scope), so they are parked here instead of
+    /// getting a frame of their own, which would add a spurious level to every
+    /// `OUTER::`/`CALLER::` resolved in the body.
+    pending_scope_frame: Option<HashMap<String, Option<u32>>>,
+    /// Slots of multi-param `for` loop parameters whose names had no slot
+    /// before their loop and were removed from `local_map` when it ended, so
+    /// the name resolves by name again after the loop. Reused by
+    /// [`Self::alloc_local`] for the next binding of the same name.
+    retired_loop_param_slots: HashMap<String, u32>,
     /// The ENCLOSING compilation's scope chain (outermost first), for compilers
     /// that are compiling a nested body. `local_scopes` stops at the routine /
     /// closure boundary because slot allocation does, but the *lexical* chain does
@@ -1790,6 +1802,8 @@ impl Compiler {
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
+            pending_scope_frame: None,
+            retired_loop_param_slots: HashMap::new(),
             enclosing_scopes: Vec::new(),
             role_param_scope: None,
             unit_root_scope: 0,
@@ -2111,6 +2125,14 @@ impl Compiler {
 
     fn alloc_local(&mut self, name: &str) -> u32 {
         if let Some(&slot) = self.local_map.get(name) {
+            return slot;
+        }
+        // A multi-param `for` loop took this name back out of `local_map` when
+        // it ended (see `retired_loop_param_slots`); a later binding of the
+        // same name takes the same slot rather than minting a second
+        // same-named one that the VM's by-name slot resolvers cannot tell apart.
+        if let Some(slot) = self.retired_loop_param_slots.remove(name) {
+            self.local_map.insert(name.to_string(), slot);
             return slot;
         }
         self.alloc_fresh_local(name)
@@ -2730,7 +2752,8 @@ impl Compiler {
     /// [`Self::pop_local_scope`]; driven by the block-boundary hooks
     /// (`push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical`).
     fn push_local_scope(&mut self) {
-        self.local_scopes.push(HashMap::new());
+        let frame = self.pending_scope_frame.take().unwrap_or_default();
+        self.local_scopes.push(frame);
     }
 
     /// Leave the innermost lexical scope. Behavior-preserving today: it only drops
@@ -3527,8 +3550,10 @@ impl Compiler {
                     Stmt::MarkBind,
                     decl_stmt(actual_name.clone(), value_expr),
                 ])
-            } else {
+            } else if actual_name == "_" {
                 bind_stmt(actual_name.clone(), value_expr)
+            } else {
+                decl_stmt(actual_name.clone(), value_expr)
             };
             if actual_name == "_" {
                 deferred_topic = Some(stmt);

@@ -378,13 +378,13 @@ impl Compiler {
                     .and_then(|bare| self.local_map.get(bare).copied())
             })
         });
-        // The local slot each multi-param bind will land in, captured BEFORE
-        // `bind_prefix` is compiled (see the field doc on
-        // `ForLoopSpec::multi_param_locals`): `build_for_bind_stmts` binds via
-        // `Stmt::Assign`, which never allocates a new slot — it resolves to
-        // whatever `local_map` already maps the name to right now, or falls
-        // through to a global write if there is none. Reading `local_map` at
-        // this exact point mirrors that resolution exactly.
+        // The slot each multi-param name resolves to BEFORE the loop (see the
+        // field doc on `ForLoopSpec::multi_param_locals`), captured before
+        // `bind_prefix` is compiled. `build_for_bind_stmts` declares the params,
+        // so a name an enclosing scope declared gets a fresh shadow slot and
+        // this outer slot is untouched; but a name that is in `local_map`
+        // without an enclosing declaration (a free variable's slot) is reused
+        // by the declaration, and the VM restores it from this snapshot.
         let multi_param_locals: Vec<Option<u32>> = params
             .iter()
             .map(|p| {
@@ -498,9 +498,34 @@ impl Compiler {
                 .chain(params.iter())
                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string()),
         );
+        // The loop's multi-parameters are declarations of the loop block
+        // (`build_for_bind_stmts` emits them as `my`-style decls), so they are
+        // declared in a frame that becomes the body's own scope frame (see
+        // `pending_scope_frame`): a same-named parameter of a nested loop then
+        // shadows with a fresh slot instead of landing in (and clobbering) the
+        // enclosing loop's body frame, and the body's scope exit restores the
+        // outer bindings. A name an ENCLOSING loop binds by name (a
+        // single-param `for ... -> $i` has no slot) and that had no slot
+        // before this loop must go back to that by-name binding after the
+        // loop, so it is dropped from `local_map` again at the end rather than
+        // left pointing at this loop's last-iteration value. (A routine's
+        // outer lexical is already handled the same way by `declare_local`'s
+        // cross-frame sentinel.)
+        let fresh_param_names: Vec<String> = params
+            .iter()
+            .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+            .filter(|p| {
+                !self.local_map.contains_key(p)
+                    && self.for_param_names[..for_param_mark].contains(p)
+            })
+            .collect();
+        self.push_local_scope();
         for s in &bind_prefix {
             self.compile_stmt(s);
         }
+        // Hand the declarations to the body's frame without restoring anything
+        // yet: the bindings stay visible until the body's scope exits.
+        self.pending_scope_frame = self.local_scopes.pop();
         self.hoist_sub_decls(&loop_body, true);
         // A `for` body is its own Raku call frame; count it so a
         // `callframe`/`caller` inside sees the enclosing routine one level
@@ -562,8 +587,20 @@ impl Compiler {
             self.sigilless_locals.remove(n);
         }
         self.code.patch_loop_end(loop_idx);
+        // A body that pushed no frame of its own leaves the declarations
+        // parked; close them here so they neither leak into the next scope
+        // nor keep shadowing after the loop.
+        if let Some(frame) = self.pending_scope_frame.take() {
+            self.local_scopes.push(frame);
+            self.pop_local_scope();
+        }
         for s in &post_stmts {
             self.compile_stmt(s);
+        }
+        for name in &fresh_param_names {
+            if let Some(slot) = self.local_map.remove(name) {
+                self.retired_loop_param_slots.insert(name.clone(), slot);
+            }
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)
