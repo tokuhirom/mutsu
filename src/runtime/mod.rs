@@ -788,6 +788,7 @@ mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
+mod why_docee;
 pub(crate) use native_io::{io_file_test, path_is_readable};
 pub(crate) mod attach_target;
 mod dispatcher_wrap;

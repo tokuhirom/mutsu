@@ -3,10 +3,6 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    pub(crate) fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
-        Self::make_pod_named_with_config(name, contents, ValueMap::default())
-    }
-
     pub(crate) fn make_pod_named_with_config(
         name: &str,
         contents: Vec<Value>,
@@ -17,10 +13,6 @@ impl Interpreter {
         attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Named"), attrs)
-    }
-
-    pub(crate) fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
-        Self::make_pod_heading_with_config(level, contents, ValueMap::default())
     }
 
     pub(crate) fn make_pod_heading_with_config(
@@ -192,11 +184,56 @@ impl Interpreter {
     }
 
     pub(crate) fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
+        Self::make_pod_item_with_config(level, contents, ValueMap::default())
+    }
+
+    pub(crate) fn make_pod_item_with_config(
+        level: i64,
+        contents: Vec<Value>,
+        config: ValueMap,
+    ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::real_array(contents));
-        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
+        attrs.insert("config".to_string(), Value::hash(config));
         attrs.insert("level".to_string(), Value::int(level));
         Value::make_instance(Symbol::intern("Pod::Item"), attrs)
+    }
+
+    /// Build the block a paragraph (`=for <target>`) or delimited
+    /// (`=begin <target>`) directive names, for the targets whose class is
+    /// decided by the name alone: `headN` is a `Pod::Heading`, `item` /
+    /// `itemN` a `Pod::Item`, anything else a `Pod::Block::Named`.
+    pub(crate) fn make_pod_block_for_target(
+        target: &str,
+        contents: Vec<Value>,
+        config: ValueMap,
+    ) -> Value {
+        if let Some(level) = Self::parse_heading_level(target) {
+            Self::make_pod_heading_with_config(level, contents, config)
+        } else if let Some(level) = Self::parse_item_level(target) {
+            Self::make_pod_item_with_config(level, contents, config)
+        } else {
+            Self::make_pod_named_with_config(target, contents, config)
+        }
+    }
+
+    /// Collect an abbreviated (`=comment text`) or paragraph
+    /// (`=for comment text`) comment block starting at directive line `idx`:
+    /// the text after the directive, then the following lines up to a blank
+    /// line or directive, each newline-terminated.
+    pub(crate) fn collect_pod_comment_paragraph(
+        lines: &[&str],
+        idx: usize,
+        inline: &str,
+    ) -> (Value, usize) {
+        let mut text = String::new();
+        if !inline.is_empty() {
+            text.push_str(inline);
+            text.push('\n');
+        }
+        let (tail, next_idx) = Self::collect_paragraph(lines, idx + 1);
+        text.push_str(&tail);
+        (Self::make_pod_comment(text), next_idx.max(idx + 1))
     }
 
     fn make_pod_defn(term: String, contents: Vec<Value>, config: ValueMap) -> Value {
