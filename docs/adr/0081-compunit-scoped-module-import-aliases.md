@@ -1,6 +1,7 @@
 # ADR-0081: A unit module's imported aliases are scoped to its compilation unit
 
-- Status: Proposed
+- Status: Accepted — implemented by PR #7743 (#7692 closed); the §6 open checks that were never
+  pinned by a test are [#9925](https://github.com/tokuhirom/mutsu/issues/9925) (2026-09-27 status review, #9913)
 - Date: 2026-09-09
 - Related: [ADR-0024](0024-mainline-lexicals-for-named-subs.md) (a mainline
   routine carries the lexical store of its compilation unit),

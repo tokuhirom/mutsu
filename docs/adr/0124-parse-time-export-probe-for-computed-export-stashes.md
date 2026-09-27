@@ -1,6 +1,6 @@
 # ADR-0124: A module that binds its export stash under computed keys is run at parse time to learn the names
 
-- Status: Proposed (implemented with #9500)
+- Status: Accepted (implemented with #9500; 2026-09-27 status review, #9913)
 - Date: 2026-09-26
 - Deciders: tokuhirom, Claude
 - Extends: [ADR-0026](0026-slang-activation-architecture.md) §2.1 (compile-time

@@ -1,7 +1,8 @@
 # ADR-0120: A `Str` payload may be a lazily flattened strand list
 
-- **Status**: Proposed (2026-09-24; user decision to take the strand representation first and
-  the neighbouring string issues on top of it).
+- **Status**: Accepted — the payload switch is implemented (`StrBody::Lazy` in
+  `src/value/str_body.rs`; see §5). Proposed 2026-09-24 on the user decision to take the strand
+  representation first and the neighbouring string issues on top of it (2026-09-27 status review, #9913).
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9253](https://github.com/tokuhirom/mutsu/issues/9253) (`x` builds the repeated
   string eagerly), [#9209](https://github.com/tokuhirom/mutsu/issues/9209) (infix `~` copies a
