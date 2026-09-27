@@ -222,6 +222,14 @@ rejection of spoofing `.name`). File the issue as above, and — if you arrived 
 `ecosystem-dist-roulette` — also add one line to `ecosystem/exclude.txt` per that skill's "the
 dead-end case", so a future random draw does not re-spend an investigation on the same distribution.
 
+**The per-file version of that case**: one test file passes on rakudo only because of an
+implementation artefact (not a language rule roast or raku-doc specify), and the user or an ADR
+decided mutsu will not copy it. Do not exclude the whole distribution. Add a `[[divergence]]` entry
+to `ecosystem/accepted-divergences.toml` with the issue number and the record's exact `mutsu` failure
+shape, run `scripts/ecosystem-sweep.py --regrade`, and commit the regraded record with the entry
+([ADR-0130](../../../docs/adr/0130-ecosystem-accepted-divergences.md); #9746 is the worked
+example). A file the ledger already grades `accepted` has been decided, so do not reinvestigate it.
+
 ## 6. Fix, and pin it in `t/`
 
 The change goes where `AGENTS.md` says it goes: implement in `compiler/` and `vm/`, never a new

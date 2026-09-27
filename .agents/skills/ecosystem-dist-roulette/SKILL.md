@@ -180,6 +180,11 @@ the issue you filed per `ecosystem-dist-fix` step 5. `pick-dist.py` reads that f
 the next draw never re-spends an investigation on the same dead end. Do this before releasing the
 lock, and mention the exclude-list entry in the unlock comment.
 
+When the dead end is **one test file** rather than the whole distribution (rakudo's pass rests on
+an implementation artefact the project decided not to copy), add a per-file entry to
+`ecosystem/accepted-divergences.toml` instead, following `ecosystem-dist-fix` step 5. The file is
+graded `accepted` and drops out of the draw, while the rest of the distribution stays in it.
+
 ## Done means
 
 One distribution: locked, worked to `ecosystem-dist-fix`'s finish line (record `green`, or every

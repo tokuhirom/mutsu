@@ -1,14 +1,15 @@
 {
+  "accepted_files": 1,
   "assertion_parity": 84.0,
-  "baseline_assertions": 172908,
-  "baseline_files": 4269,
+  "baseline_assertions": 172901,
+  "baseline_files": 4268,
   "dist_parity": 66.5,
   "distributions": 1637,
   "file_parity": 73.4,
   "generated": "2026-09-27",
   "graded_distributions": 1221,
   "green_distributions": 812,
-  "mutsu_assertions": 145194,
+  "mutsu_assertions": 145188,
   "parity_files": 3134,
   "schema": 1,
   "status": {
