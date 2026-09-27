@@ -283,6 +283,32 @@ impl Interpreter {
         // `.pairs` over a multi-dimensional shaped array is keyed by index tuple
         // and takes the recursive path, which walks down to the leaves itself;
         // the other producers keep whatever they do today.
+        // The positional views are lazy: one slot is promoted per element
+        // pulled, through a live index cursor (`ListGen::Positional` with
+        // `cells`), so `@a.pairs.head(3)` promotes three slots, not all of
+        // `@a`. The same gate as `array_element_cells` decides whether the
+        // slots may be handed out at all.
+        let lazy_mode = match method {
+            // `.Seq` has the same element-producing contract as `.values`: it
+            // preserves an Array element's Scalar container rather than
+            // snapshotting its current value. `.List` deliberately remains
+            // outside this routing because it decontainerizes Array elements.
+            "Seq" | "values" => Some(crate::value::PositionalMode::Values),
+            "pairs" => Some(crate::value::PositionalMode::Pairs),
+            // A flat `index, cell, index, cell, ...` list -- the loop chunks it
+            // by two, so the value slot of each chunk is the element's own
+            // container and `-> $i, $v is rw` aliases it (ADR-0045 row 16).
+            "kv" => Some(crate::value::PositionalMode::Kv),
+            _ => None,
+        };
+        if let Some(mode) = lazy_mode
+            && Self::promotable_array_len(target).is_some()
+        {
+            return Some(Value::seq_list_gen(
+                crate::value::ListGen::positional(target.clone(), mode, true),
+                true,
+            ));
+        }
         let Some(cells) = Self::array_element_cells(target) else {
             return match (target.view(), method) {
                 (ValueView::Array(data, crate::value::ArrayKind::Shaped), "pairs")
@@ -295,30 +321,6 @@ impl Interpreter {
             };
         };
         Some(match method {
-            // `.Seq` has the same element-producing contract as the derived
-            // sequence methods below: it preserves an Array element's Scalar
-            // container rather than snapshotting its current value. `.List`
-            // deliberately remains outside this routing because it
-            // decontainerizes Array elements.
-            "Seq" => Value::seq_element_containers(cells),
-            "values" => Value::seq_element_containers(cells),
-            "pairs" => Value::seq_element_containers(
-                cells
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, c)| Value::value_pair(Value::int(i as i64), c))
-                    .collect(),
-            ),
-            // A flat `index, cell, index, cell, ...` list -- the loop chunks it
-            // by two, so the value slot of each chunk is the element's own
-            // container and `-> $i, $v is rw` aliases it (ADR-0045 row 16).
-            "kv" => Value::seq_element_containers(
-                cells
-                    .into_iter()
-                    .enumerate()
-                    .flat_map(|(i, c)| [Value::int(i as i64), c])
-                    .collect(),
-            ),
             "reverse" => {
                 let mut cells = cells;
                 cells.reverse();

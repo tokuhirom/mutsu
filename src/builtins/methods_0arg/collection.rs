@@ -1,7 +1,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{ListGen, PositionalMode, RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
 
 /// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.
@@ -49,6 +49,14 @@ fn positional_pairs(values: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// The lazy `.keys` / `.values` / `.kv` / `.pairs` / `.antipairs` Seq of an
+/// Array or List `target`: a counting iterator over its live length, which
+/// Rakudo's `Seq.new(Rakudo::Iterator.<...>)` versions of these methods are.
+// Cost: O(1).
+fn positional_view(target: &Value, mode: PositionalMode) -> Value {
+    Value::seq_list_gen(ListGen::positional(target.clone(), mode, false), false)
+}
+
 fn positional_keys(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -70,23 +78,7 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        // ADR-0040: `.antipairs` is `self.pairs.map: *.antipair`, and
-        // `Pair.antipair` READS `$!value` to build the new key -- an attribute
-        // read decontainerizes. So an element that is itemized because it is a
-        // real `Array`/`Hash` element (slices 1-2) becomes a BARE key here,
-        // while `.pairs` keeps it itemized as the pair's value. Measured:
-        // `my @c; @c[0]=[1,2]; @c.antipairs.raku` is `([1, 2] => 0,).Seq` but
-        // `@c.pairs.raku` is `(0 => $[1, 2],).Seq`.
-        .map(|(idx, value)| {
-            // `deref_container` first: an element promoted to its own `Scalar`
-            // container (ADR-0036 slice 3 hands these out from `.pairs`, so a
-            // later `.antipairs` over the same array sees them) must be seen
-            // through before the de-itemization above can apply.
-            Value::value_pair(
-                value.deref_container().deitemize_element(),
-                Value::int(idx as i64),
-            )
-        })
+        .map(|(idx, value)| crate::value::list_gen::positional_antipair(value, idx))
         .collect()
 }
 
@@ -221,96 +213,17 @@ fn invert_value(target: &Value) -> Option<Value> {
     Some(Value::seq(result))
 }
 
-fn push_permutations(
-    items: &[Value],
-    used: &mut [bool],
-    current: &mut Vec<Value>,
-    out: &mut Vec<Value>,
-) {
-    if current.len() == items.len() {
-        out.push(Value::array(current.clone()));
-        return;
-    }
-    for idx in 0..items.len() {
-        if used[idx] {
-            continue;
-        }
-        used[idx] = true;
-        current.push(items[idx].clone());
-        push_permutations(items, used, current, out);
-        current.pop();
-        used[idx] = false;
-    }
+/// The lazy Seq of every combination of `items` whose size lies in
+/// `k_min..=k_max` (clamped to `0..=items.len()`), in Rakudo's order.
+// Cost: O(1) beyond the `items` snapshot; O(k) per combination of size k pulled.
+pub(crate) fn combinations_seq(items: Vec<Value>, k_min: i64, k_max: i64) -> Value {
+    Value::seq_list_gen(ListGen::combinations(items, k_min, k_max), false)
 }
 
-/// Cost: O(e! * e), e = elements of `items` (every permutation materialized).
-pub(crate) fn all_permutations(items: &[Value]) -> Vec<Value> {
-    if items.is_empty() {
-        return vec![Value::array(Vec::new())];
-    }
-    let mut out = Vec::new();
-    let mut used = vec![false; items.len()];
-    let mut current = Vec::with_capacity(items.len());
-    push_permutations(items, &mut used, &mut current, &mut out);
-    out
-}
-
-/// Generate all combinations of `k` items from `items`.
-/// Cost: O(C(e, k) * k), e = elements of `items`: linear in the output size,
-/// all of it materialized up front.
-pub(crate) fn combinations_k(items: &[Value], k: usize) -> Vec<Value> {
-    let n = items.len();
-    if k == 0 {
-        return vec![Value::array(Vec::new())];
-    }
-    if k > n {
-        return Vec::new();
-    }
-    let mut result = Vec::new();
-    let mut indices: Vec<usize> = (0..k).collect();
-    loop {
-        let combo: Vec<Value> = indices.iter().map(|&i| items[i].clone()).collect();
-        result.push(Value::array(combo));
-        // Find rightmost index that can be incremented
-        let mut i = k;
-        while i > 0 {
-            i -= 1;
-            if indices[i] != i + n - k {
-                break;
-            }
-            if i == 0 && indices[0] == n - k {
-                return result;
-            }
-        }
-        indices[i] += 1;
-        for j in (i + 1)..k {
-            indices[j] = indices[j - 1] + 1;
-        }
-    }
-}
-
-/// Generate powerset (all combinations for k=0..n).
-pub(crate) fn combinations_all(items: &[Value]) -> Vec<Value> {
-    let mut result = Vec::new();
-    for k in 0..=items.len() {
-        result.extend(combinations_k(items, k));
-    }
-    result
-}
-
-/// Generate combinations for a range of k values, clamped to [0, n].
-pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec<Value> {
-    let n = items.len() as i64;
-    let lo = min_k.max(0);
-    let hi = max_k.min(n);
-    if lo > hi {
-        return Vec::new();
-    }
-    let mut result = Vec::new();
-    for k in (lo as usize)..=(hi as usize) {
-        result.extend(combinations_k(items, k));
-    }
-    result
+/// The lazy Seq of every permutation of `items`, in Rakudo's order.
+// Cost: O(e), e = elements of `items`; O(e) per permutation pulled.
+pub(crate) fn permutations_seq(items: Vec<Value>) -> Value {
+    Value::seq_list_gen(ListGen::permutations(items), false)
 }
 
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
@@ -438,9 +351,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "keys" | "values" | "kv" | "pairs" | "antipairs" | "invert" if target.is_nil() => {
             Some(Ok(Value::array(Vec::new())))
         }
-        // Cost: O(e), e = elements (or pairs) of the invocant, built eagerly even when
-        // only a prefix is consumed. Rakudo: O(1) per call (lazy; an Array's keys are a
-        // counting iterator) -- see #9158.
+        // Cost: O(1) per call on an Array or List (a lazy counting iterator over its
+        // live length, `ListGen::Positional`), O(1) per key pulled; O(e) on any other
+        // invocant, e = elements (or pairs), built eagerly.
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -478,7 +391,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // `items` directly avoids `value_to_list`, which (correctly, for
                 // flattening) collapses an itemized array to one element and would
                 // make `.keys` yield only `(0,)`.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_keys(&items)))),
+                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Keys))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
                 }
@@ -497,9 +410,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))),
             }
         }
-        // Cost: O(e), e = elements (or pairs) of the invocant, copied eagerly even when
-        // only a prefix is consumed. Rakudo: O(1) per call, O(1) per value pulled --
-        // see #9158.
+        // Cost: O(1) per call on an Array or List (lazy, `ListGen::Positional`), O(1)
+        // per value pulled; O(e) on any other invocant, e = elements (or pairs),
+        // copied eagerly.
         "values" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -524,9 +437,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // must yield the inner value, not the cell — otherwise a typed
                 // `my SomeRole @x = @a.values` element check sees the raw cell
                 // instead of the instance and rejects it.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(
-                    items.iter().map(|v| v.deref_container()).collect(),
-                ))),
+                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Values))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
                 }
@@ -546,9 +457,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 _ => Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target)))),
             }
         }
-        // Cost: O(e), e = elements (or pairs) of the invocant: all 2e keys and values
-        // are built eagerly, so `for @a.kv -> $i, $v { last }` still pays O(e).
-        // Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
+        // Cost: O(1) per call on an Array or List (lazy, `ListGen::Positional`), O(1)
+        // per key or value pulled; O(e) on any other invocant, e = elements (or
+        // pairs), all built eagerly.
         "kv" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -586,7 +497,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_kv(&items)))),
+                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Kv))),
                 ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
@@ -643,8 +554,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))),
             }
         }
-        // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
-        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
+        // Cost: O(1) per call on an Array or List (lazy, `ListGen::Positional`), O(1)
+        // per pair pulled; O(e) on any other invocant, e = elements (or pairs), one
+        // Pair allocated per element eagerly.
         "pairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -715,7 +627,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(vec![target.clone()])))
                 }
                 // Index => value pairs of the array's own elements, itemization-agnostic.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_pairs(&items)))),
+                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Pairs))),
                 ValueView::Instance { class_name, .. }
                     if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
                 {
@@ -769,8 +681,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::seq(pairs)))
             }
         },
-        // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
-        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
+        // Cost: O(1) per call on an Array or List (lazy, `ListGen::Positional`), O(1)
+        // per pair pulled; O(e) on any other invocant, e = elements (or pairs), one
+        // Pair allocated per element eagerly.
         "antipairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -836,7 +749,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(pairs)))
                 }
                 // Value => index pairs of the array's own elements, itemization-agnostic.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_antipairs(&items)))),
+                ValueView::Array(..) => {
+                    Some(Ok(positional_view(target, PositionalMode::Antipairs)))
+                }
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => {
                     let values = crate::runtime::utils::value_to_list(target);
@@ -1212,9 +1127,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
-        // Cost: O(e! * e), e = elements, generated eagerly for e <= 20 even when only
-        // a prefix is consumed (`(^10).permutations.head` builds 3.6M arrays); e > 20
-        // returns a count-only lazy list. Rakudo: O(e) per permutation pulled -- see #9158.
+        // Cost: O(e) per call, e = elements (the invocant is snapshotted), then
+        // O(e) per permutation pulled (`ListGen::Permutations`); e > 20 returns a
+        // count-only lazy list.
         "permutations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
@@ -1250,10 +1165,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
-            Some(Ok(Value::seq(all_permutations(&items))))
+            Some(Ok(permutations_seq(items)))
         }
-        // Cost: O(2^e * e), e = elements (the whole powerset, eager). Rakudo: O(e) per
-        // combination pulled -- see #9158.
+        // Cost: O(e) per call, e = elements (the invocant is snapshotted), then O(k)
+        // per combination of size k pulled (`ListGen::Combinations`).
         "combinations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
@@ -1263,7 +1178,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|items| items.to_vec())
                     .unwrap_or_else(|| runtime::value_to_list(target))
             };
-            Some(Ok(Value::seq(combinations_all(&items))))
+            let n = items.len() as i64;
+            Some(Ok(combinations_seq(items, 0, n)))
         }
         // Cost: O(1) on an Array, a List or a Seq (a reified or unpulled Seq is
         // handed back as a List view over its own body); O(e) on any other

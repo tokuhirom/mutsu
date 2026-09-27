@@ -13,7 +13,7 @@
 //! [`StrIterSpec`] is that iterator. It is a byte cursor over the shared
 //! `Arc<StrBody>` payload of the invocant, so building one copies nothing. It
 //! needs no interpreter state, which means any layer can drive it: the
-//! `Seq` holding it (`SeqSource::StrIter`) is cut on its first read by
+//! `Seq` holding it (`SeqSource::Pure`) is cut on its first read by
 //! whoever reads it, so every existing consumer keeps seeing an ordinary
 //! eager `Seq`, and only a consuming `.head(n)` / `.first` on an unread one
 //! stops after the prefix.
@@ -226,13 +226,15 @@ fn shared_text(target: &Value) -> Arc<StrBody> {
 }
 
 /// The `Seq` that `Str.comb` / `.lines` / `.words` return: a deferred body
-/// ([`crate::value::SeqSource::StrIter`]) holding a [`StrIterSpec`] over
+/// ([`crate::value::SeqSource::Pure`]) holding a [`StrIterSpec`] over
 /// `target`'s string. Nothing is cut until the Seq is read, and a consuming
 /// `.head(n)` / `.first` cuts only the prefix it needs.
 // Cost: O(1) for a `Str` invocant.
 pub(crate) fn str_iter_seq(target: &Value, mode: StrIterMode, limit: Option<usize>) -> Value {
     let spec = StrIterSpec::new(shared_text(target), mode, limit);
-    Value::seq_deferred(crate::value::SeqSource::StrIter(spec))
+    Value::seq_deferred(crate::value::SeqSource::Pure(
+        crate::value::PureCursor::Str(spec),
+    ))
 }
 
 /// How many elements `str_iter_seq(target, mode, limit)` would produce,
