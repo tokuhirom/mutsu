@@ -3,7 +3,6 @@ use super::methods_signature_errors::{
 };
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
-use crate::runtime::types::NATIVE_BACKING_ATTR;
 use crate::symbol::Symbol;
 
 /// Byte offset of the first extended-name adverb in a method name (`:sym<…>`,
@@ -81,10 +80,10 @@ impl Interpreter {
             Ok(instance) => instance,
             Err(error) => return Some(Err(error)),
         };
-        let ValueView::Instance { attributes, .. } = instance.view() else {
+        if !matches!(instance.view(), ValueView::Instance { .. }) {
             return None;
-        };
-        attributes.insert(NATIVE_BACKING_ATTR, built.clone());
+        }
+        crate::runtime::types::box_native_backing(&instance, built.clone());
         Some(Ok(instance))
     }
 

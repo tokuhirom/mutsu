@@ -1,6 +1,6 @@
 use Test;
 
-plan 26;
+plan 28;
 
 # An instance of a user subclass of Int inherits Int's methods and Int's
 # `++` / `--` candidates (#9906).
@@ -48,6 +48,9 @@ class MyInt is Int {}
     isa-ok MyInt.new(1) / MyInt.new(0), Rat, 'dividing by a zero Int subclass is a Rat, not a Num failure';
     is abs(MyInt.new(-6)), 6, 'the abs() routine takes the payload';
     is ($x max 3).WHAT.^name, 'MyInt', 'max returns the Int subclass operand';
+    my $c = MyInt(42);
+    is $c.succ, 43, 'an instance built by coercion (MyInt(42)) answers on its payload';
+    is $c + 1, 43, '... and operates as it';
 }
 
 # Rakudo's `++` on an Int subclass takes the Int candidate, so a user `.succ`

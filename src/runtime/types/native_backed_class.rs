@@ -144,9 +144,31 @@ impl Interpreter {
             "new",
             vec![],
         )?;
-        if let ValueView::Instance { attributes, .. } = instance.view() {
-            attributes.insert(NATIVE_BACKING_ATTR, coerced);
-        }
+        box_native_backing(&instance, coerced);
         Ok(instance)
     }
+}
+
+/// Box a coerced built-in `payload` into a native-scalar-backed `instance`.
+///
+/// The instance was built by the class's own argument-less construction, which
+/// seeded the `Int` / `Str` subclass payload keys
+/// (`runtime::seed_native_subclass_payloads`) from no argument -- `0` / `""`.
+/// Those keys are what value-level coercion, rendering and the native method
+/// layer (`builtins::int_subclass`) read, so they are overwritten with the same
+/// payload: otherwise `Counted(42)` (`class Counted is Int`) carried `42` under
+/// one key and `0` under the other, and arithmetic saw the `0`.
+pub(crate) fn box_native_backing(instance: &Value, payload: Value) {
+    let ValueView::Instance { attributes, .. } = instance.view() else {
+        return;
+    };
+    if matches!(payload.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && attributes.contains_key("__mutsu_int_value")
+    {
+        attributes.insert("__mutsu_int_value", payload.clone());
+    }
+    if matches!(payload.view(), ValueView::Str(_)) && attributes.contains_key("__mutsu_str_value") {
+        attributes.insert("__mutsu_str_value", payload.clone());
+    }
+    attributes.insert(NATIVE_BACKING_ATTR, payload);
 }
