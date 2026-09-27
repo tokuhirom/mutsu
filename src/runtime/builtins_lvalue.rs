@@ -68,7 +68,19 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let result = self.call_sub_value(fetcher.clone(), vec![current.clone()], true);
             self.env = saved_env;
+            // A FETCH that ends in a call to an `is rw` routine answers that
+            // routine's container (`FETCH => method { $obj.rw-accessor }`,
+            // Tinky's `state` Proxy over `$SELF!state`). A value-context read
+            // wants what is IN it: left as the cell, the next method call
+            // dispatched on the cell and found none of the value's methods.
             let fetched = result?;
+            let contents = match fetched.view() {
+                ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+                    Some(cell.lock().unwrap().clone())
+                }
+                _ => None,
+            };
+            let fetched = contents.unwrap_or(fetched);
             if !fetched.is_proxy_value() {
                 return Ok(fetched);
             }

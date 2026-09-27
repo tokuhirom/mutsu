@@ -98,6 +98,7 @@ impl Interpreter {
                 | "add_multi_method"
                 | "add_role"
                 | "add_fallback"
+                | "set_body_block"
                 | "add_parent"
                 | "compose"
                 | "mixin"

@@ -687,7 +687,9 @@ impl Interpreter {
         // values and never reaches the override.
         let right_has_user_accepts = match right.view() {
             ValueView::Instance { class_name, .. } => {
-                self.has_user_method(&class_name.resolve(), "ACCEPTS")
+                let class_name = class_name.resolve();
+                self.has_user_method(&class_name, "ACCEPTS")
+                    && self.user_accepts_applies(&class_name, right, left)
             }
             ValueView::Mixin(..) => self.mixin_composes_method(right, "ACCEPTS"),
             ValueView::Enum { .. } | ValueView::Package(_) => {

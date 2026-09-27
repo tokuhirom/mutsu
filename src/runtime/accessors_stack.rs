@@ -142,18 +142,25 @@ impl Interpreter {
     /// must win over an enclosing method's dispatch class: an exported
     /// operator sub in `Number` can call ` $value!native-int ` even when the
     /// operator was invoked from a different class's method.
+    ///
+    /// A closure's frame names the package it was WRITTEN in, and that wins
+    /// over whichever method happens to be running it: a `Proxy` FETCH
+    /// `method () { $SELF!state }` declared in a role keeps its access to the
+    /// role's private methods when some other class's `ACCEPTS` reads the
+    /// Proxy (Tinky's `State.ACCEPTS(Object)`).
     pub(crate) fn private_calling_package(&self) -> Option<String> {
-        if let Some(package) = self
-            .routine_stack
-            .last()
-            .and_then(|frame| frame.lexical_package)
-            .filter(|package| {
-                let package = package.as_str();
-                self.registry().classes.contains_key(package)
-                    || self.registry().roles.contains_key(package)
-            })
-        {
-            return Some(package.resolve());
+        let is_type = |package: &Symbol| {
+            let package = package.as_str();
+            self.registry().classes.contains_key(package)
+                || self.registry().roles.contains_key(package)
+        };
+        if let Some(frame) = self.routine_stack.last() {
+            if let Some(package) = frame.lexical_package.filter(is_type) {
+                return Some(package.resolve());
+            }
+            if frame.is_block && is_type(&frame.package) {
+                return Some(frame.package.resolve());
+            }
         }
         self.method_class_stack
             .last()

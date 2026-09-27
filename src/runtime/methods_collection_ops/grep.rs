@@ -20,6 +20,19 @@ impl Interpreter {
         // A role mixin over a list-ish value greps the inner elements (see
         // mixin_iteration_target on the map dispatch).
         let target = Self::mixin_iteration_target(target);
+        // The matcher binds to grep's `Mu $test` parameter, which reads a
+        // `Proxy` once: `@t.grep($obj.state)` with an `is rw` `state` returning
+        // a Proxy (Tinky) greps by the value FETCH answers, not by the Proxy.
+        let fetched_args;
+        let args = match args.split_first() {
+            Some((first, rest)) if first.is_proxy_value() => {
+                fetched_args = std::iter::once(self.auto_fetch_proxy(first)?)
+                    .chain(rest.iter().cloned())
+                    .collect::<Vec<_>>();
+                fetched_args.as_slice()
+            }
+            _ => args,
+        };
         fn stmt_contains_last(stmt: &Stmt) -> bool {
             match stmt {
                 Stmt::Last(_) => true,

@@ -248,4 +248,14 @@ impl Interpreter {
 
         Ok(())
     }
+
+    /// Is the type named `sub` the type named `sup` or one of its subtypes?
+    /// Resolves user classes, roles and subsets through the registry; used by
+    /// `Signature ~~ Signature` to compare parameter types the pure-value
+    /// helper in `value::signature_smartmatch` cannot decide.
+    // Cost: O(m), m = size of `sub`'s MRO and composed-role set.
+    pub(crate) fn type_name_accepts_type_name(&mut self, sup: &str, sub: &str) -> bool {
+        let sub_type = self.type_arg_value_from_name(sub);
+        self.type_matches_value(sup, &sub_type)
+    }
 }

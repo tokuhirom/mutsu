@@ -36,14 +36,6 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_else(|| "Anon".to_string());
-        if !self.registry().classes.contains_key(&name) {
-            self.registry_mut()
-                .classes
-                .insert(name.clone(), Default::default());
-        }
-        // A run-time-minted type is not a lexical import: it must outlive a
-        // `use`-containing routine that created it (#9532).
-        crate::runtime::cow_table_mut(&mut self.persistent_classes).insert(name.clone());
         // The builtin metamodel class this call ultimately goes through: the
         // receiver itself when it is one, else the first one on its MRO.
         let native_how = if how_class.starts_with("Metamodel::") {
@@ -54,11 +46,26 @@ impl Interpreter {
                 .map(|c| c.to_string())
                 .find(|c| Self::is_metamodel_class_name(c))
         };
-        if let Some(native) = native_how {
-            let short = native
+        let native_short = native_how.as_deref().map(|native| {
+            native
                 .strip_prefix("Perl6::Metamodel::")
                 .or_else(|| native.strip_prefix("Metamodel::"))
-                .unwrap_or(native.as_str());
+                .unwrap_or(native)
+        });
+        // A role metaclass mints a ROLE: its methods, added with `.^add_method`,
+        // must reach whatever composes it (`.^mixin`, `does`, `but`), and
+        // composition reads a role's `RoleDef`, not a class definition.
+        if native_short == Some("ParametricRoleHOW") {
+            self.register_metamodel_role(&name);
+        } else if !self.registry().classes.contains_key(&name) {
+            self.registry_mut()
+                .classes
+                .insert(name.clone(), Default::default());
+        }
+        // A run-time-minted type is not a lexical import: it must outlive a
+        // `use`-containing routine that created it (#9532).
+        crate::runtime::cow_table_mut(&mut self.persistent_classes).insert(name.clone());
+        if let Some(short) = native_short {
             self.registry_mut()
                 .declared_native_how
                 .insert(name.clone(), format!("Perl6::Metamodel::{short}"));
