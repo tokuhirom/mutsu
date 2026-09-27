@@ -308,7 +308,7 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx);
                 if self.rw_return_context
                     && !name.starts_with(['@', '%', '&', '*', '!', '?'])
-                    && !name.contains("::")
+                    && !crate::qualified::is_qualified(code.const_sym(*name_idx))
                 {
                     self.exec_get_scalar_container_op(code, *name_idx, None);
                     *ip += 1;
