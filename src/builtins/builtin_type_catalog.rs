@@ -6,11 +6,12 @@
 //! in `todo/deep/adr0019-e1-typeid-receiver-owner.md`. One of those,
 //! `builtin_type_methods::builtin_type_parents`, has since been deleted
 //! (ADR-0051 P1): `classhow_mro_names` (`crate::runtime::methods_classhow_mro`)
-//! now reads this catalog directly instead. The other legacy tables —
-//! `Registry::builtin_mro_table` (`crate::runtime::registry`),
+//! now reads this catalog directly instead, and `Registry::builtin_mro_table`
+//! was deleted in ADR-0051 P2 (`Registry::class_mro_readonly` reads this
+//! catalog). The other legacy tables —
 //! `Interpreter::builtin_type_mro_chain` (`crate::runtime::methods_call_helpers`), and
 //! `builtin_type_distance`'s inline table (`crate::runtime::resolution_method`) —
-//! are collapsed onto this catalog in ADR-0051 P2, not yet done.
+//! are still to be collapsed onto this catalog (ADR-0051 P2).
 //!
 //! **Authority is raku, not the union of the legacy tables.** Every row below
 //! was captured from `raku -e 'say <Type>.^mro.map(*.^name); say <Type>.^roles.map(*.^name)'`
@@ -446,7 +447,7 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Whatever", mro: ["Whatever", "Any", "Mu"], roles: [], owner: ""),
     row!("HyperWhatever", mro: ["HyperWhatever", "Any", "Mu"], roles: [], owner: ""),
     row!("Proxy", mro: ["Proxy", "Any", "Mu"], roles: [], owner: ""),
-    // ---- Match/Capture (Registry::builtin_mro_table family) ----
+    // ---- Match/Capture ----
     row!(
         "Match",
         mro: ["Match", "Capture", "Cool", "Any", "Mu"],
@@ -510,7 +511,7 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: [],
         owner: "",
     ),
-    // ---- IO::Spec family (Registry::builtin_mro_table; matches raku exactly) ----
+    // ---- IO::Spec family (matches raku exactly) ----
     row!("IO::Spec", mro: ["IO::Spec", "Any", "Mu"], roles: [], owner: ""),
     row!(
         "IO::Spec::Unix",
@@ -538,11 +539,30 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     ),
     // ---- Distribution family ----
     // raku: NEITHER `Distribution::Path` NOR `Distribution::Hash` has `Distribution`
-    // in their `.^mro` (verified 2026-08-10: both are `(Type, Any, Mu)`) — the legacy
-    // `Registry::builtin_mro_table` inserts a `Distribution` ancestor that does not
-    // exist in raku (V1 divergence; accepted-mismatch, not fixed here).
-    row!("Distribution::Path", mro: ["Distribution::Path", "Any", "Mu"], roles: [], owner: ""),
-    row!("Distribution::Hash", mro: ["Distribution::Hash", "Any", "Mu"], roles: [], owner: ""),
+    // in their `.^mro` (verified 2026-08-10: both are `(Type, Any, Mu)`); both
+    // compose `Distribution::Locally` and `Distribution` as roles (verified
+    // 2026-09-27: `.^roles` is `(Distribution::Locally Distribution)`).
+    // `Distribution::Installation` is the class mutsu hands back for an installed
+    // distribution (rakudo keeps its equivalent private); it is shaped like its
+    // two public siblings.
+    row!(
+        "Distribution::Path",
+        mro: ["Distribution::Path", "Any", "Mu"],
+        roles: ["Distribution::Locally", "Distribution"],
+        owner: "",
+    ),
+    row!(
+        "Distribution::Hash",
+        mro: ["Distribution::Hash", "Any", "Mu"],
+        roles: ["Distribution::Locally", "Distribution"],
+        owner: "",
+    ),
+    row!(
+        "Distribution::Installation",
+        mro: ["Distribution::Installation", "Any", "Mu"],
+        roles: ["Distribution::Locally", "Distribution"],
+        owner: "",
+    ),
     // ---- CompUnit family ----
     row!("CompUnit", mro: ["CompUnit", "Any", "Mu"], roles: [], owner: ""),
     row!("CompUnit::Handle", mro: ["CompUnit::Handle", "Any", "Mu"], roles: [], owner: ""),
@@ -555,13 +575,13 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!(
         "CompUnit::Repository::FileSystem",
         mro: ["CompUnit::Repository::FileSystem", "Any", "Mu"],
-        roles: ["CompUnit::Repository::Installable", "CompUnit::Repository", "CompUnit::Repository::Locally"],
+        roles: ["CompUnit::Repository", "CompUnit::Repository::Locally"],
         owner: "",
     ),
     row!(
         "CompUnit::Repository::Installation",
         mro: ["CompUnit::Repository::Installation", "Any", "Mu"],
-        roles: ["CompUnit::Repository", "CompUnit::Repository::Locally"],
+        roles: ["CompUnit::Repository::Installable", "CompUnit::Repository", "CompUnit::Repository::Locally"],
         owner: "",
     ),
 ];
@@ -783,8 +803,8 @@ mod tests {
 
     #[test]
     fn distribution_rows_have_no_distribution_ancestor() {
-        // V1 divergence #4: the legacy Registry::builtin_mro_table inserts a
-        // `Distribution` ancestor absent from real raku.
+        // V1 divergence #4: the deleted legacy `Registry::builtin_mro_table`
+        // inserted a `Distribution` ancestor absent from real raku.
         assert_eq!(
             builtin_type_info("Distribution::Path").unwrap().mro,
             &["Distribution::Path", "Any", "Mu"]

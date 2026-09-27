@@ -21,9 +21,8 @@
 //! only for a `ValueView::Instance`, so the `Any`/`Mu` type object walked
 //! straight past them into the cascades.
 
-use crate::runtime::Interpreter;
 use crate::value::{Value, ValueView};
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use std::sync::OnceLock;
 
 /// `Cool` names raku ALSO declares on `Any`, which must NOT be gated.
@@ -35,18 +34,43 @@ use std::sync::OnceLock;
 /// answer for another, so they keep the behaviour they have.
 const ALSO_DECLARED_ON_ANY: &[&str] = &["match", "split"];
 
-/// The `Cool` rows an `Any`/`Mu` invocant does not inherit, derived from the
-/// same catalog `.^can` answers from (`builtins::native_method_row`) so the two
-/// cannot drift apart -- `Any.^can("comb")` was already empty while the call
-/// itself succeeded, which is exactly the disagreement fixed here.
+/// Names raku declares on a `Cool` *subtype* (`Str`, `Int`, `List`, ...) but
+/// not on `Cool` itself, which the receiver-class-blind arity cascades
+/// nevertheless answer by coercing the receiver: `succ`/`pred` (`Str`, `Int`,
+/// ...), `base`/`polymod` (`Int`, `Num`, `Rat`), `parse-base`/`samespace`/
+/// `Date`/`DateTime`/`bytes` (`Str`, `Blob`), `lazy`/`hyper`/`race` (the
+/// `Iterable` family). raku v2026.07 answers `Cool.^can` and `Any.^can` with
+/// nothing for every one of them (verified 2026-09-27).
+const COOL_SUBTYPE_ONLY: &[&str] = &[
+    "Date",
+    "DateTime",
+    "base",
+    "bytes",
+    "hyper",
+    "lazy",
+    "parse-base",
+    "polymod",
+    "pred",
+    "race",
+    "samespace",
+    "succ",
+];
+
+/// The builtin method names an `Any`/`Mu` invocant -- or an instance of a
+/// class with no `Cool` ancestor -- does not resolve (ADR-0051 P5, which
+/// retired the 94-name hand-maintained list this replaces): every `Cool` row
+/// of the catalog `.^can` answers from (`builtins::native_method_row`) that
+/// `Any`/`Mu` do not also carry, plus [`COOL_SUBTYPE_ONLY`]. Reading the same
+/// rows keeps the gate and `.^can` from drifting apart -- `Any.^can("comb")`
+/// was already empty while the call itself succeeded (#7773).
 ///
 /// Verified against rakudo v2026.07 on 2026-09-10: `Any.^can` is empty for
 /// every name this yields.
-fn cool_rows_absent_from_any() -> &'static HashSet<&'static str> {
-    static NAMES: OnceLock<HashSet<&'static str>> = OnceLock::new();
+fn cool_only_names() -> &'static FxHashSet<&'static str> {
+    static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
     NAMES.get_or_init(|| {
         use crate::builtins::builtin_type_methods::builtin_type_method_names;
-        let inherited: HashSet<&'static str> = builtin_type_method_names("Any")
+        let inherited: FxHashSet<&'static str> = builtin_type_method_names("Any")
             .into_iter()
             .chain(builtin_type_method_names("Mu"))
             .chain(ALSO_DECLARED_ON_ANY.iter().copied())
@@ -54,8 +78,16 @@ fn cool_rows_absent_from_any() -> &'static HashSet<&'static str> {
         builtin_type_method_names("Cool")
             .into_iter()
             .filter(|name| !inherited.contains(name))
+            .chain(COOL_SUBTYPE_ONLY.iter().copied())
             .collect()
     })
+}
+
+/// Whether `method` is resolvable only through `Cool` or one of its subtypes
+/// (see [`cool_only_names`]).
+// Cost: O(|method|), hash lookup in a set built once per process.
+pub(crate) fn is_cool_only_method(method: &str) -> bool {
+    cool_only_names().contains(method)
 }
 
 /// The structured `X::Method::NotFound` for a `Cool`-only method called on the
@@ -69,13 +101,7 @@ pub(crate) fn cool_method_not_found(
     method: &str,
 ) -> Option<crate::value::RuntimeError> {
     let owner = undefined_owner(target)?;
-    // Two independently raku-verified sources of "resolvable only through
-    // `Cool`": ADR-0051's hand-curated list, and the generated row catalog.
-    // Neither subsumes the other -- the curated list carries names with no
-    // `Cool` row of their own (`bytes`, `lazy`, `race`, `Date`), the catalog
-    // carries rows the list predates (`printf`, `is-prime`, the native-int
-    // coercion family) -- and `Any.^can` is empty for every name in either.
-    (Interpreter::cool_only_builtin_method(method) || cool_rows_absent_from_any().contains(method))
+    is_cool_only_method(method)
         .then(|| super::methods_signature_errors::make_method_not_found_error(method, owner, false))
 }
 
@@ -124,7 +150,7 @@ mod tests {
             "Version",
             "NFC",
             "int8",
-            // curated-list-only names with no `Cool` row of their own
+            // `COOL_SUBTYPE_ONLY` names with no `Cool` row of their own
             "bytes",
             "lazy",
             "race",

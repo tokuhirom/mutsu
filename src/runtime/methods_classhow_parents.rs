@@ -140,9 +140,10 @@ impl Interpreter {
         if class_name == role {
             return true;
         }
-        if role == "Awaitable"
-            && crate::builtins::builtin_type_catalog::builtin_type_has_role(class_name, role)
-        {
+        // A built-in type's roles are catalog data (ADR-0051: one ancestry
+        // oracle), e.g. `Distribution::Path` does `Distribution` and
+        // `Promise` does `Awaitable` without either being an MRO ancestor.
+        if crate::builtins::builtin_type_catalog::builtin_type_has_role(class_name, role) {
             return true;
         }
         self.collect_roles_for_class(class_name, false, false, false)

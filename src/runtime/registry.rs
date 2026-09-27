@@ -1100,84 +1100,8 @@ impl Registry {
         }
     }
 
-    /// [`Self::builtin_mro_table`]'s chain as `Symbol`s, interned once per
-    /// thread instead of once per call.
-    ///
-    /// `$/.from` on a `Match` asks for this chain on every call (the fast
-    /// accessor probe walks the receiver's MRO), and building it fresh meant
-    /// five `Symbol::intern`s plus an `Arc` allocation per method call: about
-    /// a fifth of a `$/.from + $0.Str.chars` loop (#8888). The catalog branch
-    /// below already caches its chains the same way (#7766).
-    ///
-    /// Keyed on the table slice's address and length: each arm of the `match`
-    /// is a promoted `'static` constant, so one arm always hands back the same
-    /// slice. The key is only ever shared by two arms whose constants the
-    /// compiler merged, i.e. whose chains are identical, so it cannot answer
-    /// the wrong MRO.
-    fn interned_builtin_mro(mro: &'static [&'static str]) -> std::sync::Arc<[Symbol]> {
-        /// `(slice address, slice length)` -> the interned chain.
-        type MroMemo = HashMap<(usize, usize), std::sync::Arc<[Symbol]>>;
-        thread_local! {
-            static CACHE: std::cell::RefCell<MroMemo> = std::cell::RefCell::new(HashMap::default());
-        }
-        CACHE.with(|cache| {
-            cache
-                .borrow_mut()
-                .entry((mro.as_ptr() as usize, mro.len()))
-                .or_insert_with(|| mro.iter().map(|s| Symbol::intern(s)).collect())
-                .clone()
-        })
-    }
-
-    /// Hardcoded MRO for built-in types that are not user-defined classes.
-    fn builtin_mro_table(class_name: &str) -> Option<&'static [&'static str]> {
-        match class_name {
-            "Match" => Some(&["Match", "Capture", "Cool", "Any", "Mu"]),
-            "Capture" => Some(&["Capture", "Any", "Mu"]),
-            "IO::Spec" => Some(&["IO::Spec", "Any", "Mu"]),
-            "IO::Spec::Unix" => Some(&["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
-            // Win32/Cygwin/QNX specialize the Unix spec (Raku MRO).
-            "IO::Spec::Win32" => {
-                Some(&["IO::Spec::Win32", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
-            }
-            "IO::Spec::Cygwin" => Some(&[
-                "IO::Spec::Cygwin",
-                "IO::Spec::Unix",
-                "IO::Spec",
-                "Any",
-                "Mu",
-            ]),
-            "IO::Spec::QNX" => Some(&["IO::Spec::QNX", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
-            "Distribution::Path" => Some(&["Distribution::Path", "Distribution", "Any", "Mu"]),
-            "Distribution::Hash" => Some(&["Distribution::Hash", "Distribution", "Any", "Mu"]),
-            "Distribution::Installation" => {
-                Some(&["Distribution::Installation", "Distribution", "Any", "Mu"])
-            }
-            "CompUnit" => Some(&["CompUnit", "Any", "Mu"]),
-            "CompUnit::Handle" => Some(&["CompUnit::Handle", "Any", "Mu"]),
-            "CompUnit::DependencySpecification" => {
-                Some(&["CompUnit::DependencySpecification", "Any", "Mu"])
-            }
-            "CompUnit::Repository::FileSystem" => Some(&[
-                "CompUnit::Repository::FileSystem",
-                "CompUnit::Repository",
-                "Any",
-                "Mu",
-            ]),
-            "CompUnit::Repository::Installation" => Some(&[
-                "CompUnit::Repository::Installation",
-                "CompUnit::Repository::Installable",
-                "CompUnit::Repository::Locally",
-                "CompUnit::Repository",
-                "Any",
-                "Mu",
-            ]),
-            _ => None,
-        }
-    }
-
     /// Resolve the MRO for `class_name`, returning the cached `ClassDef::mro`
-    /// when present, the hardcoded hierarchy for built-in types that are not
+    /// when present, the `builtin_type_catalog` chain for built-in types that are not
     /// user-defined classes, and otherwise computing + caching via
     /// [`Registry::compute_class_mro`]. Single write guard for the whole op.
     pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
@@ -1226,7 +1150,7 @@ impl Registry {
     }
 
     /// Read-only twin of [`Registry::class_mro`]: resolves every MRO shape that
-    /// needs no cache write — the builtin table, parametrized names
+    /// needs no cache write — the builtin type catalog, parametrized names
     /// (`Blob[uint32]`), an already-cached `ClassDef::mro` — and returns `None`
     /// exactly when the write side would compute AND cache (a registered class
     /// whose `mro` is still empty). Callers holding only a read guard use this
@@ -1234,9 +1158,6 @@ impl Registry {
     /// first mutable deref pays a full-registry COW clone after a spawn share).
     pub(crate) fn class_mro_readonly(&self, class_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
         if !self.classes.contains_key(class_name) {
-            if let Some(mro) = Self::builtin_mro_table(class_name) {
-                return Some(Self::interned_builtin_mro(mro));
-            }
             if let Some((base, _)) = class_name.split_once('[')
                 && class_name.ends_with(']')
             {

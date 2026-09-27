@@ -343,113 +343,14 @@ impl Interpreter {
                     || matches!(target.view(), ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)))))
     }
 
-    /// The builtin method names rakudo resolves *only* through `Cool` — i.e.
-    /// the set a plain `Any`-derived instance (no `Cool` in its MRO) cannot
-    /// resolve at all, so `handles *` / `FALLBACK` must be given the chance
-    /// to intercept them (`todo/tickets/wildcard-handles-loses-to-builtin-cool-methods.md`'s
-    /// oracle-verified table). Any/Mu methods (`.gist`, `.list`, `.elems`,
-    /// ...) always resolve on a plain instance and must NOT be in this set.
-    /// A name with an Any/Mu *proto* but no matching candidate (`split`,
-    /// `fmt`, `Int`, `Numeric`, `Real`) counts as resolved (it errors, it
-    /// does not delegate) and is also excluded.
+    /// The builtin method names a plain `Any`-derived instance (no `Cool` in
+    /// its MRO) cannot resolve, so `handles *` / `FALLBACK` must be given the
+    /// chance to intercept them and the receiver-class-blind arity cascades
+    /// must not answer them for an instance whose ancestry lacks them.
+    /// Derived from the native-method row catalog (ADR-0051 P5), see
+    /// [`crate::runtime::any_cool_method_gate::is_cool_only_method`].
     pub(crate) fn cool_only_builtin_method(method: &str) -> bool {
-        matches!(
-            method,
-            "uc" | "lc"
-                | "fc"
-                | "tc"
-                | "tclc"
-                | "wordcase"
-                | "chars"
-                | "codes"
-                | "bytes"
-                | "chomp"
-                | "chop"
-                | "trim"
-                | "trim-leading"
-                | "trim-trailing"
-                | "flip"
-                | "comb"
-                | "words"
-                | "lines"
-                | "substr"
-                | "index"
-                | "rindex"
-                | "starts-with"
-                | "ends-with"
-                | "contains"
-                | "subst"
-                | "sprintf"
-                | "ord"
-                | "chr"
-                | "ords"
-                | "Num"
-                | "Rat"
-                | "succ"
-                | "pred"
-                | "abs"
-                | "sqrt"
-                | "sign"
-                | "round"
-                | "floor"
-                | "ceiling"
-                | "truncate"
-                | "base"
-                | "exp"
-                | "log"
-                | "log10"
-                | "log2"
-                | "sin"
-                | "cos"
-                | "tan"
-                | "asin"
-                | "acos"
-                | "atan"
-                | "atan2"
-                | "sinh"
-                | "cosh"
-                | "tanh"
-                | "asinh"
-                | "acosh"
-                | "atanh"
-                | "sec"
-                | "cosec"
-                | "cotan"
-                | "sech"
-                | "cosech"
-                | "cotanh"
-                | "cis"
-                | "unpolar"
-                | "roots"
-                | "polymod"
-                | "IO"
-                | "lazy"
-                | "race"
-                | "hyper"
-                | "samecase"
-                | "samemark"
-                | "samespace"
-                | "trans"
-                | "indent"
-                | "uniname"
-                | "uninames"
-                | "unival"
-                | "univals"
-                | "uniprop"
-                | "uniprops"
-                | "uniparse"
-                | "parse-base"
-                | "parse-names"
-                | "NFC"
-                | "NFD"
-                | "NFKC"
-                | "NFKD"
-                | "encode"
-                | "Date"
-                | "DateTime"
-                | "UInt"
-                | "Version"
-        )
+        crate::runtime::any_cool_method_gate::is_cool_only_method(method)
     }
 
     /// Whether `class_name` (or any ancestor in its MRO) declares `handles *`
