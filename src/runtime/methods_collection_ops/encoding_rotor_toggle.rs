@@ -98,10 +98,11 @@ impl Interpreter {
         err
     }
 
-    /// Cost: O(e + s), e = elements of the invocant (decomposed eagerly), s = total
-    /// elements of the produced sublists (overlapping specs copy an element more
-    /// than once). A lazy invocant throws X::Cannot::Lazy before reaching here.
-    /// Rakudo: O(1) per call, O(n) per sublist pulled -- see #9158.
+    /// Cost: O(1) per call on a non-shaped Array whose specs cannot step before
+    /// the start (a lazy Seq, `ListGen::Rotor`), then O(n) per sublist of n
+    /// pulled; otherwise O(e + s), e = elements of the invocant (decomposed
+    /// eagerly), s = total elements of the produced sublists. A lazy invocant
+    /// throws X::Cannot::Lazy before reaching here.
     pub(in crate::runtime) fn dispatch_rotor(
         &mut self,
         target: Value,
@@ -137,18 +138,7 @@ impl Interpreter {
         // Parse each spec into (count, gap) pairs
         // count can be: Int, Whatever (*), Inf, Range
         // gap is from Pair's value
-        struct RotorSpec {
-            count: RotorCount,
-            gap: i64,
-        }
-        #[derive(Clone)]
-        enum RotorCount {
-            Fixed(usize),
-            Whatever, // * — take everything remaining
-            Inf,      // Inf — take everything remaining
-            // `a..b` / `a..*` — counts a, a+1, ... (`len` None: unbounded)
-            Range { start: i64, len: Option<usize> },
-        }
+        use crate::value::list_gen_rotor::{RotorCount, RotorSpec, RotorState};
 
         // Flatten any nested Seq/Array specs into a flat list
         let mut flat_specs: Vec<Value> = Vec::new();
@@ -189,13 +179,13 @@ impl Interpreter {
                 }
                 ValueView::Whatever => {
                     rotor_specs.push(RotorSpec {
-                        count: RotorCount::Inf,
+                        count: RotorCount::Rest,
                         gap: 0,
                     });
                 }
                 ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => {
                     rotor_specs.push(RotorSpec {
-                        count: RotorCount::Inf,
+                        count: RotorCount::Rest,
                         gap: 0,
                     });
                 }
@@ -240,7 +230,7 @@ impl Interpreter {
                 }
                 ValueView::HyperWhatever => {
                     rotor_specs.push(RotorSpec {
-                        count: RotorCount::Whatever,
+                        count: RotorCount::Rest,
                         gap: 0,
                     });
                 }
@@ -269,7 +259,7 @@ impl Interpreter {
                     if let Some(n) = to_float_value(spec) {
                         if n.is_infinite() && n.is_sign_positive() {
                             rotor_specs.push(RotorSpec {
-                                count: RotorCount::Inf,
+                                count: RotorCount::Rest,
                                 gap: 0,
                             });
                         } else {
@@ -297,115 +287,47 @@ impl Interpreter {
             Some(items) => Value::array(items),
             None => target,
         };
+        // A (non-shaped) Array rotors lazily over its live elements, as
+        // Rakudo's does -- unless a negative gap could step before the start
+        // of the list, which throws mid-iteration and a pure iterator cannot.
+        if !RotorState::can_underflow(&rotor_specs) {
+            let items = crate::value::MapGrepItems::of(&target, Vec::new);
+            if matches!(items, crate::value::MapGrepItems::Live(_)) {
+                return Ok(Value::seq_list_gen(
+                    crate::value::ListGen::rotor(items, RotorState::new(rotor_specs, partial)),
+                    false,
+                ));
+            }
+        }
         let items = if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else {
             Self::value_to_list(&target)
         };
-
-        if items.is_empty() {
-            return Ok(Value::seq(Vec::new()));
-        }
-
+        let mut state = RotorState::new(rotor_specs, partial);
         let mut result: Vec<Value> = Vec::new();
-        let mut pos = 0usize;
-        let mut spec_idx = 0usize;
-        let mut range_sub_idx = 0usize; // for Range specs
-        // Cursor position at the start of the current spec cycle. If a full pass
-        // through every spec advances the cursor by zero (e.g. a lone `rotor(0)`,
-        // `rotor(0, 0)`, or `rotor(2 => -2)` where count+gap == 0 for every
-        // spec), the loop would never terminate — stop instead of hanging. A
-        // mixed cycle that does advance somewhere (`rotor(0, 1, *)`) is fine.
-        let mut cycle_start_pos = pos;
-
         loop {
-            if pos >= items.len() {
-                break;
-            }
-
-            // Detect a non-advancing full cycle at each cycle boundary.
-            if spec_idx > 0 && spec_idx.is_multiple_of(rotor_specs.len()) {
-                if pos == cycle_start_pos {
-                    break;
-                }
-                cycle_start_pos = pos;
-            }
-
-            let spec = &rotor_specs[spec_idx % rotor_specs.len()];
-
-            let count = match &spec.count {
-                RotorCount::Fixed(n) => *n,
-                RotorCount::Whatever | RotorCount::Inf => items.len() - pos,
-                RotorCount::Range { start, len } => {
-                    let sub = match len {
-                        Some(n) if *n > 0 => range_sub_idx % n,
-                        _ => range_sub_idx,
-                    };
-                    match start.checked_add(sub as i64) {
-                        Some(c) if c >= 0 => c as usize,
-                        Some(_) => 0,
-                        None => items.len() - pos,
-                    }
-                }
-            };
-
-            let gap = spec.gap;
-
-            // Take `count` items starting at pos
-            let end = std::cmp::min(pos.saturating_add(count), items.len());
-            let chunk_len = end - pos;
-            let chunk: Vec<Value> = items[pos..end].to_vec();
-
-            if chunk_len == count || (partial && (!chunk.is_empty() || count == 0)) {
-                // When gap is negative and chunk is partial (not first chunk),
-                // only emit if the chunk has enough elements to contain at least
-                // one new element not already covered by the previous chunk's overlap.
-                let skip_partial =
-                    chunk_len < count && gap < 0 && !result.is_empty() && (chunk_len as i64) < -gap;
-                if !skip_partial {
-                    result.push(Value::array(chunk));
-                }
-            }
-
-            if chunk_len < count {
-                break;
-            }
-
-            // Advance position: count + gap (gap can be negative for overlap)
-            let new_pos = (pos as i64).saturating_add((count as i64).saturating_add(gap));
-            if new_pos < 0 {
-                // Negative gap past start of list
-                let mut attrs = HashMap::new();
-                attrs.insert("got".to_string(), Value::int(new_pos));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(
-                        "Rotoring gap is too large and causes an index below zero".to_string(),
-                    ),
-                );
-                let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                let mut err =
-                    RuntimeError::new("X::OutOfRange: Rotoring gap is too large".to_string());
-                err.exception = Some(Box::new(ex));
-                return Err(err);
-            }
-            pos = new_pos as usize;
-
-            // Advance spec index
-            match &spec.count {
-                RotorCount::Range { len, .. } => {
-                    range_sub_idx += 1;
-                    if len.is_some_and(|n| range_sub_idx >= n) {
-                        range_sub_idx = 0;
-                        spec_idx += 1;
-                    }
-                }
-                _ => {
-                    spec_idx += 1;
+            match state.step(&items) {
+                Ok(Some(chunk)) => result.push(chunk),
+                Ok(None) => break,
+                Err(underflow) => {
+                    // Negative gap past start of list
+                    let mut attrs = HashMap::new();
+                    attrs.insert("got".to_string(), Value::int(underflow.new_pos));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(
+                            "Rotoring gap is too large and causes an index below zero".to_string(),
+                        ),
+                    );
+                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+                    let mut err =
+                        RuntimeError::new("X::OutOfRange: Rotoring gap is too large".to_string());
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
                 }
             }
         }
-
         Ok(Value::seq(result))
     }
 

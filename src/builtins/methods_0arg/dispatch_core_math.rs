@@ -92,14 +92,20 @@ fn str_to_rat(s: &str) -> Value {
 /// top node and leaves its children as they are, `.tree(0)` is the identity,
 /// and `.tree` / `.tree(*)` are `usize::MAX`. Shared with the `.tree(...)`
 /// argument forms in `runtime::…::dispatch_tree`.
-/// Cost: O(t), t = nodes within `depth` levels, built eagerly on every call.
-/// Rakudo: O(1) per call, O(1) per element pulled (a lazy `.map`) -- see #9158.
+/// Cost: O(1) on an Array (each level is a lazy Seq, `ListGen::Tree`, that
+/// trees an element as it is pulled); O(e) on a Seq/Slip/Hash/Range, e =
+/// elements of that level.
 pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
     if depth == 0 {
         return v.clone();
     }
     let children = match v.view() {
-        ValueView::Array(inner, ..) => inner.to_vec(),
+        ValueView::Array(..) => {
+            return Value::scalar(Value::seq_list_gen(
+                crate::value::ListGen::tree(v.clone(), depth),
+                false,
+            ));
+        }
         ValueView::Seq(inner) => inner.to_vec(),
         ValueView::Slip(inner) => inner.to_vec(),
         ValueView::Hash(_)

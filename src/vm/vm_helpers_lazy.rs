@@ -936,7 +936,14 @@ impl Interpreter {
                 None => return Ok(None),
             },
         };
-        let ValueView::Seq(body) = target.view() else {
+        // A Seq in a Scalar cell (`.tree`'s `$(...)`, a Seq read out of an
+        // element) is taken through the cell, as `reify_or_consume_seq_target`
+        // does for every other method.
+        let inner = match target.view() {
+            ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => inner.clone(),
+            _ => target.clone(),
+        };
+        let ValueView::Seq(body) = inner.view() else {
             return Ok(None);
         };
         let items = match body.take_prefix_source() {
