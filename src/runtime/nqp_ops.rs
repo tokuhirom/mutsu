@@ -115,10 +115,9 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
         for ch in chars {
             if let Some(digit) = crate::builtins::parse_base::char_digit_value(ch, radix) {
                 // Digit accumulation into a native int, wrapping as MoarVM's does.
+                let (base, digit_i) = (i64::from(radix), i64::from(digit));
                 // native-prim: allow
-                acc = acc
-                    .wrapping_mul(radix as i64)
-                    .wrapping_add(i64::from(digit));
+                acc = acc.wrapping_mul(base).wrapping_add(digit_i);
                 count += 1;
                 if digit != 0 {
                     kept = (acc, count);
