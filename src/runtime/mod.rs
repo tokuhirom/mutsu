@@ -601,6 +601,7 @@ mod builtins_unbase;
 mod call_helpers;
 mod calls;
 mod class;
+mod class_attr_table;
 mod class_dispatch;
 mod class_introspection;
 mod code_frame;
@@ -1411,6 +1412,11 @@ impl MethodClassFrame {
 pub(crate) struct NativeCtorPlan {
     pub(crate) is_cunion: bool,
     pub(crate) eligible: bool,
+    /// Not `eligible` only because the class (or an ancestor) declares a
+    /// user `new`: when no such candidate accepts a call's arguments, the
+    /// call falls back to the default constructor, which the native builder
+    /// then serves exactly as for an `eligible` class.
+    pub(crate) eligible_when_user_new_declines: bool,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
@@ -3594,6 +3600,14 @@ pub struct Interpreter {
     sigilless_alias_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: ValueMap,
+    /// Bumped on every change to `var_defaults`; see
+    /// `Interpreter::attr_var_defaults_are_current`.
+    var_defaults_epoch: u64,
+    /// `(owner class, receiver class)` -> the `(var_defaults_epoch, method
+    /// generation)` at which method dispatch last registered that pair's
+    /// attribute defaults. See `Interpreter::attr_var_defaults_are_current`.
+    attr_var_defaults_current:
+        rustc_hash::FxHashMap<(crate::symbol::Symbol, crate::symbol::Symbol), (u64, u64)>,
     // Array/Hash element defaults are embedded in `ArrayData.default` /
     // `HashData.default`.
     // An object hash's key type (`%h{Str}`) is carried by `HashData::key_type`

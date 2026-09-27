@@ -656,6 +656,70 @@ impl Interpreter {
     /// Set the default value for a variable declared with `is default(...)`.
     pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
         self.var_defaults.insert(name.to_string(), value);
+        self.var_defaults_epoch += 1;
+    }
+
+    /// Whether method dispatch's attribute-default registration for
+    /// `(owner_class, receiver_class)` is still in effect: nothing has
+    /// changed `var_defaults` or the class tables since it last ran. The
+    /// registration re-derives the same values on every call otherwise —
+    /// two table probes per attribute plus the six-name check per defaulted
+    /// one, on each of the dozens of calls a Text::CSV field makes (#9494).
+    // Cost: O(1) expected.
+    pub(crate) fn attr_var_defaults_are_current(
+        &self,
+        owner_class: &str,
+        receiver_class: &str,
+    ) -> bool {
+        let key = (
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(receiver_class),
+        );
+        self.attr_var_defaults_current.get(&key)
+            == Some(&(self.var_defaults_epoch, self.registry().method_generation))
+    }
+
+    /// Record that `(owner_class, receiver_class)`'s attribute defaults were
+    /// just registered (see [`Self::attr_var_defaults_are_current`]).
+    // Cost: O(1) expected.
+    pub(crate) fn note_attr_var_defaults_current(
+        &mut self,
+        owner_class: &str,
+        receiver_class: &str,
+    ) {
+        let key = (
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(receiver_class),
+        );
+        let stamp = (self.var_defaults_epoch, self.registry().method_generation);
+        self.attr_var_defaults_current.insert(key, stamp);
+    }
+
+    /// Register `value` as the `is default(...)` of attribute `attr_name` under
+    /// every name a method body reads it by (`$!x`, `$.x`, and the `@`/`%`
+    /// forms, so `.VAR.default` works on container attributes too).
+    ///
+    /// Method dispatch re-registers the receiver class's attribute defaults on
+    /// every call, and the value is nearly always the one already registered,
+    /// so an unchanged entry is left alone: re-inserting it built and dropped
+    /// six key strings per defaulted attribute per call — Text::CSV's
+    /// `CSV::Field` (five `is default` attributes) paid ~30 of them on each of
+    /// the dozens of method calls a parsed CSV field makes (#9494).
+    // Cost: O(1) expected (six hash probes; an insert only on a changed value).
+    pub(crate) fn set_attr_var_defaults(&mut self, attr_name: &str, value: Value) {
+        let names = crate::qualified::attr_twigil_names(crate::symbol::Symbol::intern(attr_name));
+        for name in names {
+            let name = name.as_str();
+            if self
+                .var_defaults
+                .get(name)
+                .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, &value))
+            {
+                continue;
+            }
+            self.var_defaults.insert(name.to_string(), value.clone());
+            self.var_defaults_epoch += 1;
+        }
     }
 
     /// Whether any variable in this program carries an `is default(...)` trait.
@@ -684,7 +748,9 @@ impl Interpreter {
         if self.var_defaults.is_empty() {
             return;
         }
-        self.var_defaults.remove(name);
+        if self.var_defaults.remove(name).is_some() {
+            self.var_defaults_epoch += 1;
+        }
     }
 
     /// Get the evaluated `is default(...)` value for a class attribute.
@@ -695,7 +761,7 @@ impl Interpreter {
     ) -> Option<Value> {
         self.registry()
             .class_attribute_defaults
-            .get(&(class_name.to_string(), attr_name.to_string()))
+            .get(class_name, attr_name)
             .cloned()
     }
 
@@ -723,7 +789,7 @@ impl Interpreter {
                 let arg = self
                     .registry()
                     .class_attribute_default_exprs
-                    .get(&(class_name.to_string(), attr_name.to_string()))
+                    .get(class_name, attr_name)
                     .cloned()?;
                 self.eval_decl_trait_arg(&arg).ok()
             })
@@ -809,7 +875,7 @@ impl Interpreter {
                     let arg = self
                         .registry()
                         .class_attribute_default_exprs
-                        .get(&(class_name.to_string(), attr_name.clone()))
+                        .get(class_name, attr_name)
                         .cloned()?;
                     self.eval_decl_trait_arg(&arg).ok()
                 });

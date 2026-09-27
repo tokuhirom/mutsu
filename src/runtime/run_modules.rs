@@ -526,6 +526,9 @@ impl Interpreter {
             RuntimeError::new(format!("Failed to read module {}: {}", module, err))
         })?;
 
+        // A cache hit skips the parse, which is where a unit's mention of a
+        // deferral builtin is noted (`parser::parse_program`); note it here.
+        crate::opcode::note_dispatcher_mention(&code);
         let has_no_precompilation = Self::source_has_no_precompilation(&code);
         let dependency_disables_precomp = self.dependency_disables_precomp(&code);
         let precomp_eligible =

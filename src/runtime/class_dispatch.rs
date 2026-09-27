@@ -222,16 +222,7 @@ impl Interpreter {
         // Distinguish X::Multi::NoMatch (method exists but no candidate
         // matched) from X::Method::NotFound (method does not exist at all,
         // e.g. submethod on ancestor only).
-        let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
-            self.registry()
-                .user_method_overloads(cn.as_str(), method_name)
-                .is_some_and(|ovs| {
-                    let is_ancestor = cn.as_str() != receiver_class_name;
-                    ovs.iter()
-                        .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
-                })
-        });
-        if has_visible_method {
+        if self.has_visible_user_method(receiver_class_name, method_name) {
             // `self.new(:named)` on a concrete invocant whose class declares
             // user multi `new` candidates that don't match: Mu.new(*%attrinit)
             // is always available as a fallback multi candidate, exactly as
@@ -294,6 +285,28 @@ impl Interpreter {
                 false,
             ),
         )
+    }
+
+    /// Whether `receiver_class_name` sees a user-declared, public `method_name`
+    /// candidate anywhere in its MRO (a `my` method only on the class itself).
+    /// It is what tells a failed dispatch apart as X::Multi::NoMatch (the
+    /// method exists, no candidate took the arguments) rather than
+    /// X::Method::NotFound.
+    // Cost: O(m * c), m = MRO length, c = `method_name` candidates per class.
+    pub(crate) fn has_visible_user_method(
+        &self,
+        receiver_class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        self.class_mro(receiver_class_name).iter().any(|cn| {
+            self.registry()
+                .user_method_overloads(cn.as_str(), method_name)
+                .is_some_and(|ovs| {
+                    let is_ancestor = cn.as_str() != receiver_class_name;
+                    ovs.iter()
+                        .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
+                })
+        })
     }
 
     /// The `resolved == Some((owner_class, method_def))` leg of
