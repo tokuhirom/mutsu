@@ -14,6 +14,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         mut val: Value,
+        is_bind: bool,
     ) -> Result<Value, RuntimeError> {
         if !(name.starts_with('@') || name.starts_with('%')) {
             return Ok(val);
@@ -34,8 +35,21 @@ impl Interpreter {
         // assignment paths never clear inherited metadata themselves for an
         // attribute twigil, and the general fall-through below only clears
         // it for a value type of "Mu"/"Any", not for "no constraint at all".
+        //
+        // A `:=` BIND is excluded: it installs the source container itself,
+        // not a copy, so its own type identity must survive regardless of
+        // the target attribute's declared type — `has @!provides-specs;
+        // @!provides-specs := my DependencySpecification @x;` (Zef::Distribution)
+        // must keep `Array[DependencySpecification]`, not collapse to a bare
+        // `Array`. Only the SetGlobal call site (attribute assignment reached
+        // by name) can even see a bind here; the others are gated to plain
+        // `=`/AssignExpr forms already.
         let Some(tc) = self.self_attr_type_constraint(name) else {
-            return Ok(Self::clear_hash_type_metadata(val));
+            return Ok(if is_bind {
+                val
+            } else {
+                Self::clear_hash_type_metadata(val)
+            });
         };
         // An object-hash declaration stores its key constraint alongside the
         // value constraint (`has %!h{Key}` is recorded as `Any{Key}`).  The
@@ -48,7 +62,11 @@ impl Interpreter {
             (tc.as_str(), None)
         };
         if matches!(value_type, "Mu" | "Any") && key_type.is_none() {
-            return Ok(Self::clear_hash_type_metadata(val));
+            return Ok(if is_bind {
+                val
+            } else {
+                Self::clear_hash_type_metadata(val)
+            });
         }
         let elems: Option<Vec<Value>> = match val.view() {
             ValueView::Array(items, _) => Some(items.iter().cloned().collect()),
@@ -463,7 +481,7 @@ impl Interpreter {
         } else {
             Self::itemize_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_val))
         };
-        val = self.apply_attr_container_element_type(&name, val)?;
+        val = self.apply_attr_container_element_type(&name, val, false)?;
         if val.is_nil()
             && let Some(def) = self.var_default(&name)
         {

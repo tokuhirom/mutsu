@@ -1981,7 +1981,7 @@ impl Interpreter {
             // which the name-keyed coercion above cannot see (`has Str @!c;
             // @!c = @x` as a statement lands here).
             let name = name.to_string();
-            val = self.apply_attr_container_element_type(&name, val)?;
+            val = self.apply_attr_container_element_type(&name, val, false)?;
         }
         // Raku `@array = ...` / `%hash = ...` assigns INTO the existing container,
         // so its `is default(...)` element default survives the reassignment

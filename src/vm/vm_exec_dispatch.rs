@@ -1760,7 +1760,8 @@ impl Interpreter {
                 // An attribute twigil (`@!c = ...` as a statement lands on
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
-                val = self.apply_attr_container_element_type(&name, val)?;
+                val =
+                    self.apply_attr_container_element_type(&name, val, is_bind_ctx || is_rebind)?;
                 // Record/clear the `:=`-bound decont marker exactly as the
                 // SetLocal path does: an expression-position bind with no local
                 // slot (`(my $p := (1,2))` in the mainline) lands here, and

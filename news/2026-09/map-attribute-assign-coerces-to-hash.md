@@ -25,4 +25,19 @@ assignment does. Found via the CSS::TagSet ecosystem distribution, whose
 `CSS::Module` TWEAK does the equivalent of `%!prop-names = $_ ~~ Enumeration
 ?? .enums !! $_`.
 
-Pinned by `t/oo/attribute/hash-attribute-map-assign-coerces-to-hash.t`.
+The same call site also handles a `:=` **bind** into an attribute (the
+SetGlobal opcode is shared by `=` and `:=`), and clearing unconditionally
+broke that case: a bind installs the source container itself rather than
+copying it, so its own type identity must survive regardless of the target
+attribute's declared type. `apply_attr_container_element_type` now takes an
+`is_bind` flag and skips the new clearing for a bind. Found by the
+Zef::Distribution ecosystem battery's own test suite, which does
+`has @!provides-specs; ...; @!provides-specs := @provides-specs` where
+`@provides-specs` is `my DependencySpecification @provides-specs` — the
+first version of this fix collapsed it to a bare `Array`, breaking a
+`--> Array[DependencySpecification]` return check ordinarily satisfied 35/35
+by `t/distribution-depends-parsing.rakutest`.
+
+Pinned by `t/oo/attribute/hash-attribute-map-assign-coerces-to-hash.t`, which
+now also covers a `:=` bind into an untyped `@`/`%` attribute keeping its
+source's `Array[T]`/`Hash[T]` identity.
