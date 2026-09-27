@@ -627,10 +627,18 @@ impl Interpreter {
             }
             let declared_method_capture = Symbol::intern("__mutsu_declared_method_capture");
             env.insert_sym(declared_method_capture, Value::int(1));
+            // `capture_syms` is already restricted to names that the method
+            // reads and that the declaring frame owns as lexical slots. Keep
+            // uppercase user variables too (`my constant %META`); the
+            // lowercase-only predicate would discard their captures.
             env.retain(|sym, _| {
                 *sym == declared_method_capture
                     || (capture_syms.contains(sym)
-                        && sym.with_str(crate::env::is_plain_user_lexical))
+                        && sym.with_str(|name| {
+                            crate::env::is_plain_user_lexical(name)
+                                || (name.starts_with(['@', '%', '&', '$'])
+                                    && crate::env::is_user_variable_key(name))
+                        }))
             });
             if !env.is_empty() {
                 captures
