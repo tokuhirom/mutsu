@@ -838,7 +838,14 @@ impl Interpreter {
         // `as_index_i64` (not `as_i64`) so a STRING-valued enum is left alone
         // rather than folded to element 0: raku numifies it through `Str.Int`
         // and dies with X::Str::Numeric.
+        //
+        // Never on a type-object target: `R[More]` / `R[True]` on a role is a
+        // PARAMETERIZATION, whose argument is the enum value itself (rakudo:
+        // `role R[$b] { }; R[More]` binds `$b` to `Order::More`, named
+        // `R[Order]`). Numifying it there bound the role parameter to `1`.
+        let target_is_type_object = matches!(target.view(), ValueView::Package(_));
         if is_positional
+            && !target_is_type_object
             && let ValueView::Enum { value, .. } = index.view()
             && let Some(i) = value.as_index_i64()
         {
@@ -848,7 +855,10 @@ impl Interpreter {
         // `@a[True] == @a[1]` and `@a[False] == @a[0]`. It is a distinct
         // `ValueView`, never `ValueView::Enum`, so it needs its own arm.
         // Positional-only for the same reason: `%h{True}` is keyed by the Bool.
-        if is_positional && let ValueView::Bool(b) = index.view() {
+        if is_positional
+            && !target_is_type_object
+            && let ValueView::Bool(b) = index.view()
+        {
             index = Value::int(i64::from(b));
         }
         // A user object used as a positional subscript coerces via its `.Int`
@@ -3020,11 +3030,31 @@ impl Interpreter {
                 // `R[[1, 2]]` parameterises `role R[@l]` with `[1, 2]`, and
                 // spreading it made that two arguments, which then matched no
                 // candidate's arity at all.
-                let type_args = match index.view() {
-                    ValueView::Array(items, crate::value::ArrayKind::List) => items.to_vec(),
-                    _ => vec![index.clone()],
+                //
+                // A Slip spreads into the argument list, wherever it appears:
+                // `R[|@a]` is `R[1, 2]`, and `R[|()]` passes no arguments at all
+                // and is `R` itself, so the role's parameter defaults apply
+                // (MergeOrderedSeqs builds `R[|($_ with $before)]`). Leaving the
+                // empty Slip as one argument bound it to the role's `$before`
+                // and every attribute default derived from it went missing.
+                let spread = |v: &Value, out: &mut Vec<Value>| match v.view() {
+                    ValueView::Slip(items) => out.extend(items.iter().cloned()),
+                    _ => out.push(v.clone()),
                 };
-                Value::parametric_role(name, type_args)
+                let mut type_args = Vec::new();
+                match index.view() {
+                    ValueView::Array(items, crate::value::ArrayKind::List) => {
+                        for item in items.iter() {
+                            spread(item, &mut type_args);
+                        }
+                    }
+                    _ => spread(&index, &mut type_args),
+                }
+                if type_args.is_empty() {
+                    Value::package(name)
+                } else {
+                    Value::parametric_role(name, type_args)
+                }
             }
             // Non-positional subscript (`<key>` / word-list `<a b c>`) of ANY
             // bare type object -- not just `Any` -- returns Any per Raku spec

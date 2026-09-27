@@ -418,6 +418,11 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         // unique only among LIVE objects, and this string outlives them.
         ValueView::Array(items, ..) => format!("Array|{}", items.which_id.get()),
         ValueView::Hash(map) => format!("Hash|{}", map.which_id.get()),
+        // A code object is a reference type: its identity is its id, exactly
+        // as its `.WHICH` (`Block|16`) reports. The text fallback below renders
+        // every Block alike, so two different closures collided as one
+        // object-hash key and as one curried-role argument.
+        ValueView::Sub(sub_data) => format!("{}|{}", value_type_name(value), sub_data.id),
         // A Pair with a plain string key and a ValuePair holding a Str key are
         // the same identity (`("x" => 1) === (:x(1))`), so both render the key
         // through its own `.WHICH` (`Pair|Str|x|Int|1`, raku's format).

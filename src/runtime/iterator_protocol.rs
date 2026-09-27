@@ -5,9 +5,10 @@
 //!
 //! Two dispatch paths consume this single implementation: the mutating path
 //! (`methods_mut_dispatch.rs`, variable receiver — writes the advanced `index`
-//! back into the instance) and the read-only path (`methods_call_dispatch.rs`,
-//! temporary receiver — the cursor is discarded, but the `push-*` family still
-//! mutates its array argument by identity).
+//! back into the instance) and the non-variable receiver path
+//! (`methods_call_dispatch.rs` — an array element or a temporary; it commits
+//! the advanced cursor through the instance's shared attribute cell, so every
+//! alias of the iterator sees it).
 //!
 //! Spec: <https://docs.raku.org/type/Iterator>
 
