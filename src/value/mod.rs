@@ -1548,6 +1548,30 @@ impl SubData {
             .as_ref()
             .is_none_or(|cf| cf.returns_container())
     }
+
+    /// The strict twin of [`Self::returns_container`]: whether this code
+    /// object's *own declaration* says it hands back a container, answering
+    /// "decontainerizes" for a routine whose traits are unknown instead of
+    /// "container".
+    ///
+    /// For a gate that *grants* a container (a wrapped accessor asked for its
+    /// attribute's Scalar through the wrapper chain), over-approximating would
+    /// make a plain `method ($s: |c) { callsame }` wrapper assignable, which
+    /// raku refuses. An anonymous routine carries its `is rw` / `is raw`
+    /// traits here, and an explicit `return-rw` is read off the body.
+    // Cost: O(1) for a declared-rw / raw routine or a block; otherwise O(b),
+    // b = body AST nodes (the `return-rw` scan).
+    pub(crate) fn declares_container_return(&self) -> bool {
+        self.is_raw
+            || self.is_rw
+            || self.is_bare_block
+            || self.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine)
+            || self
+                .compiled_routine
+                .as_ref()
+                .is_some_and(|cf| cf.returns_container())
+            || crate::opcode::body_uses_return_rw(&self.body)
+    }
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {

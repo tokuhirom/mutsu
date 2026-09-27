@@ -1321,6 +1321,7 @@ impl Interpreter {
         invocant: Value,
         owner_class: Symbol,
         chain: &[(u64, Value)],
+        want_container: bool,
     ) {
         let arg_sources = self.pending_call_arg_sources().cloned();
         let mut remaining: Vec<super::DeferralEntry> = Vec::with_capacity(chain.len());
@@ -1330,6 +1331,7 @@ impl Interpreter {
         remaining.push(super::DeferralEntry::Accessor {
             owner: owner_class,
             name: method_name.to_string(),
+            want_container,
         });
         let dispatch_token = self.next_dispatch_token();
         self.method_dispatch_stack.push(super::MethodDispatchFrame {
@@ -1563,6 +1565,7 @@ impl Interpreter {
                 remaining.push(super::DeferralEntry::Accessor {
                     owner,
                     name: method_name.to_string(),
+                    want_container: false,
                 });
             }
             self.method_dispatch_stack.push(super::MethodDispatchFrame {

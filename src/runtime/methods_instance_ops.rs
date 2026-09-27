@@ -440,7 +440,11 @@ impl Interpreter {
     /// Dispatch an auto-generated accessor through its method-wrap chain.
     /// `callsame` in the wrapper advances to the terminal accessor entry that
     /// `dispatch_next_candidate` consumes without re-entering this chain.
-    fn dispatch_wrapped_attribute_accessor(
+    ///
+    /// `want_container` asks the terminal for the attribute's container rather
+    /// than its value (see `DeferralEntry::Accessor`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn dispatch_wrapped_attribute_accessor(
         &mut self,
         target: Value,
         receiver_class: &str,
@@ -448,7 +452,17 @@ impl Interpreter {
         args: Vec<Value>,
         owner: crate::symbol::Symbol,
         chain: Vec<(u64, Value)>,
+        want_container: bool,
     ) -> Result<Value, RuntimeError> {
+        // Every wrapper sits between the terminal and the caller, and a plain
+        // (non-rw) one decontainerizes its return in raku — `B.v = 5` through
+        // `method ($s: |c) { callsame }` is `X::Assignment::RO`. So the
+        // container request reaches the terminal only when the whole chain
+        // hands its result back as a container.
+        let want_container = want_container
+            && chain
+                .iter()
+                .all(|(_, w)| matches!(w.view(), ValueView::Sub(data) if data.declares_container_return()));
         self.push_method_samewith_context(receiver_class, method, &args, Some(target.clone()));
         self.push_wrapped_accessor_dispatch_frame(
             receiver_class,
@@ -457,6 +471,7 @@ impl Interpreter {
             target.clone(),
             owner,
             &chain,
+            want_container,
         );
         let outermost = chain.last().expect("accessor wrap chain is non-empty");
         let wrapper_id = match outermost.1.view() {
@@ -1904,6 +1919,7 @@ impl Interpreter {
                         args,
                         owner,
                         chain,
+                        false,
                     );
                 }
                 // An `is repr('CStruct')` handle stores no Raku attributes: its
@@ -3334,6 +3350,7 @@ impl Interpreter {
                             args,
                             owner,
                             chain,
+                            false,
                         );
                     }
                     return Err(RuntimeError::new(format!(

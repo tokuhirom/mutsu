@@ -83,6 +83,22 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(attr));
                 self.code.emit(OpCode::AttrContainerRef(idx));
             }
+            // `sub f() is rw { $obj.acc }`: a public `is rw` auto-accessor
+            // names the attribute's Scalar, so the rw routine hands that
+            // container back (raku: `f() = 4` writes `$obj.acc`). The request
+            // is the same `MarkAccessorRefContext` a `:=` bind RHS emits; its
+            // consumer (`try_fast_accessor_read`'s `want_ref` branch, or the
+            // wrapped-accessor terminal) answers with the promoted attribute
+            // cell only for a zero-argument read of a public `is rw` scalar
+            // accessor and hands every other callee's value back unchanged.
+            Expr::MethodCall {
+                args,
+                modifier: None,
+                ..
+            } if args.is_empty() && self.return_rw_container_name(arg).is_none() => {
+                self.compile_expr(arg);
+                self.mark_trailing_method_call_as_accessor_ref();
+            }
             _ => {
                 let cell_name = self.return_rw_container_name(arg);
                 self.compile_expr(arg);

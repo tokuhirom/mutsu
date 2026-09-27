@@ -526,7 +526,14 @@ impl Interpreter {
             || name == "lastcall"
         {
             // CARRIER: call-chain introspection (interpreter MOP dispatch stack). See ledger §C.
-            self.vm_call_function(name, Vec::new())?
+            //
+            // The next candidate's result is handed back as-is, like the
+            // parenthesized `callsame()` call form: an `is rw` candidate (a
+            // wrapped accessor's terminal asked for its container) returns a
+            // container, and the deref below would detach it.
+            let result = self.vm_call_function(name, Vec::new())?;
+            self.stack.push(result);
+            return Ok(());
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))

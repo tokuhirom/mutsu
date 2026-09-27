@@ -176,6 +176,80 @@ impl Interpreter {
             .map(Some)
     }
 
+    /// The container a `.wrap`ped public auto-accessor's chain hands back when
+    /// it is asked for one: `target.method` runs its wrappers exactly as a read
+    /// does, and the terminal (`DeferralEntry::Accessor { want_container }`)
+    /// answers with the attribute's promoted Scalar (`rw_accessor_container`)
+    /// instead of a value copy. An `is rw` wrapper returns that cell unchanged,
+    /// so the caller can bind or write through it.
+    ///
+    /// `target` may be a type object: the wrapper may supply the instance
+    /// itself (`callwith($singleton, |c)`, Staticish's singleton wrapper), and
+    /// only the terminal needs one.
+    ///
+    /// `None` when `method` is not a wrapped auto-accessor of `target`'s class
+    /// (an explicit method that shadows the accessor included), leaving the
+    /// caller's ordinary path untouched.
+    pub(crate) fn try_wrapped_accessor_container(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_name = Self::lvalue_invocant_class_name(target)?;
+        if !matches!(
+            self.resolve_user_method_or_accessor_sym(
+                &class_name,
+                crate::symbol::Symbol::intern(method)
+            ),
+            Some(super::UserMethodOrAccessor::Accessor)
+        ) {
+            return None;
+        }
+        let owner = self.attribute_accessor_owner(&class_name, method)?;
+        let chain = self.get_method_wrap_chain(owner.resolve().as_str(), method, 0)?;
+        let saved_sources = self.take_pending_call_arg_sources();
+        let result = self.dispatch_wrapped_attribute_accessor(
+            target.clone(),
+            &class_name,
+            method,
+            Vec::new(),
+            owner,
+            chain,
+            true,
+        );
+        self.set_pending_call_arg_sources(saved_sources);
+        Some(result)
+    }
+
+    /// `$obj.acc = $v` / `Class.acc = $v` where `acc` is a `.wrap`ped public
+    /// auto-accessor: raku runs the wrapper chain and assigns into whatever it
+    /// returns, which for an `is rw` wrapper ending in the accessor is the
+    /// attribute's Scalar. The direct attribute store the rest of
+    /// `assign_method_lvalue_with_values` performs would skip the wrappers, and
+    /// for a type object it has no instance to store into at all.
+    pub(crate) fn try_wrapped_accessor_lvalue(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !method_args.is_empty() {
+            return Ok(None);
+        }
+        let target = Self::unwrap_lvalue_invocant(target);
+        let target = if target.is_container_ref() {
+            target.deref_container()
+        } else {
+            target
+        };
+        let Some(result) = self.try_wrapped_accessor_container(&target, method) else {
+            return Ok(None);
+        };
+        self.assign_through_rw_result(result?, value.clone())
+            .map(Some)
+    }
+
     /// `Class.m($arg) = $v` where `m` is a declared method that is **not**
     /// rw-capable: raku dies (`Cannot modify an immutable Int (42)`) after
     /// calling `m` with its real arguments.
