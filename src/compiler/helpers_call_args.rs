@@ -961,7 +961,7 @@ impl Compiler {
             callee: crate::opcode::RwArgCallee::Named { name_idx },
         };
         let nested = matches!(arg, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::Index { .. }));
-        if !nested {
+        if !nested || !Self::index_chain_is_single_element(arg) {
             self.compile_call_arg_with_escape(arg, escaping);
             self.mark_arg_index_as_container_candidate_callee(
                 mark.callee,
@@ -979,8 +979,41 @@ impl Compiler {
         self.compile_call_arg_with_escape(arg, escaping);
         let to_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(to_container);
+        // An immutable `List`'s element is handed over raw, as a `return-rw`
+        // operand's is: the parameter's writability then follows the element
+        // (a `List` of values is not a set of containers), and the `List`
+        // itself is never mutated to hold a promoted cell.
+        let saved_raw_list_elem = self.raw_list_elem_terminal;
+        self.raw_list_elem_terminal = true;
         self.compile_rw_chain_index_arg(arg);
+        self.raw_list_elem_terminal = saved_raw_list_elem;
         self.code.patch_jump(to_end);
+    }
+
+    /// Whether every subscript of a nested chain (`%h<a><b>`, `@a[$i][0]`)
+    /// statically addresses ONE element: a literal key or index, or a scalar
+    /// variable. Only such a chain is compiled in container mode by
+    /// [`Self::compile_named_callee_arg`] — a slice or a `WhateverCode` index
+    /// at any level (`@alpha[$res[*]][0..*-1]`) is a list of values, which the
+    /// deferred-path walk cannot describe, so it keeps the one-op producer on
+    /// its last subscript.
+    fn index_chain_is_single_element(arg: &Expr) -> bool {
+        let mut cur = arg;
+        while let Expr::Index { target, index, .. } = cur {
+            let single = match index.as_ref() {
+                Expr::Literal(v) => matches!(
+                    v.view(),
+                    crate::value::ValueView::Int(_) | crate::value::ValueView::Str(_)
+                ),
+                Expr::Var(name) => crate::value::attr_twigil_base(name).is_none(),
+                _ => false,
+            };
+            if !single {
+                return false;
+            }
+            cur = target.as_ref();
+        }
+        true
     }
 
     /// The signature-positional index of each syntactic argument, or `None`
