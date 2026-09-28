@@ -94,12 +94,17 @@ impl Interpreter {
         // `module M { my subset F ... }` still does not resolve. The bare
         // name is bound to the storage name in the declaring scope's env.
         if is_my && decl_id != 0 {
-            let qualified =
-                if already_qualified || pkg.is_empty() || pkg == "GLOBAL" || pkg == "Main" {
-                    name.to_string()
-                } else {
-                    format!("{}::{}", pkg, name)
-                };
+            let pkg_sym = self.current_package_sym();
+            let qualified = if already_qualified
+                || crate::qualified::is_global_package(pkg_sym)
+                || pkg_sym == Symbol::intern("Main")
+            {
+                name.to_string()
+            } else {
+                crate::qualified::qualified(pkg_sym, Symbol::intern(name))
+                    .as_str()
+                    .to_string()
+            };
             let storage = format!("{qualified}\u{0}{decl_id}");
             self.subset_predicate_cache.remove(&storage);
             self.registry_mut()
