@@ -13,14 +13,15 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
-/// Global set tracking consumed LazyList instances (gather-based Seqs).
+/// Global set tracking consumed LazyList instances (gather-based Seqs, and —
+/// via [`claim_lazy_seq_touch`] — a finite `.lazy`-tagged Seq).
 static CONSUMED_LAZYLISTS: OnceLock<Mutex<Vec<crate::gc::WeakGc<LazyList>>>> = OnceLock::new();
 
 fn consumed_lazylists() -> &'static Mutex<Vec<crate::gc::WeakGc<LazyList>>> {
     CONSUMED_LAZYLISTS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// Mark a LazyList (from gather) as consumed.
+/// Mark a LazyList (from gather, or a finite `.lazy` Seq) as consumed.
 pub(crate) fn lazylist_consume(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let mut list = consumed_lazylists().lock().unwrap();
     let target_ptr = crate::gc::Gc::as_ptr(gc_ptr);
@@ -39,6 +40,42 @@ pub(crate) fn lazylist_is_consumed(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let list = consumed_lazylists().lock().unwrap();
     let target_ptr = crate::gc::Gc::as_ptr(gc_ptr);
     list.iter().any(|w| w.as_ptr() == target_ptr)
+}
+
+/// Claim a single-pass `.lazy` Seq's one materializing touch.
+///
+/// `.lazy` on an already-finite source (`(1..5).lazy`, `(1,2,3).lazy`) is
+/// stored as a `LazyList` whose `cache` is pre-filled and which carries no
+/// generator at all (`is_cache_only`) plus the `lazy` prefix/method marker
+/// (`is_lazy_marked`) — the same shape [`docs/seq-single-pass-consumption.md`]
+/// describes for an uncached `Value::Seq`, just represented as a `LazyList`
+/// instead so the array-assign laziness-preserving machinery
+/// (`__mutsu_preserve_lazy_on_array_assign`) can see it. Left untracked, every
+/// forcing method read it as if `.cache` had been called, so `$s.eager`
+/// answered correctly-but-repeatably instead of throwing `X::Seq::Consumed`
+/// on a second read (#9789).
+///
+/// A LazyList in this exact shape is single-pass like any other Seq: the
+/// first `seq_method_consumes` touch claims it here, and a second throws.
+/// Three shapes are exempt: a genuinely infinite/lazy source (still pulling
+/// on demand, so not `is_cache_only`) is guarded by `X::Cannot::Lazy`
+/// instead; one bound into an `@` array (`in_array_context`) is that array's
+/// own backing store, not a Seq — reading it repeatedly is Array semantics;
+/// and an explicit `.cache` call already re-tagged the list
+/// `is_cached_no_sink` ([`LazyList::cache_lazy_view`], which a `.lazy`-marked
+/// list reaches too since `is_lazy_marked` alone makes `is_genuinely_lazy`
+/// true) — that IS the raku-visible "add `.cache`" fix a `X::Seq::Consumed`
+/// message suggests, so it must actually grant multi-pass reads.
+pub(crate) fn claim_lazy_seq_touch(list: &crate::gc::Gc<LazyList>) -> Result<(), RuntimeError> {
+    if list.is_cache_only()
+        && list.is_lazy_marked()
+        && !list.in_array_context()
+        && !list.is_cached_no_sink()
+        && !lazylist_consume(list)
+    {
+        return Err(seq_consumed_error());
+    }
+    Ok(())
 }
 
 /// Build a structured X::Seq::Consumed error.

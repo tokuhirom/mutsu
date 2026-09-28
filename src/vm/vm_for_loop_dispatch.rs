@@ -274,6 +274,12 @@ impl Interpreter {
         {
             Vec::new()
         } else if let ValueView::LazyList(ll) = iterable.view() {
+            // A single-pass `.lazy` Seq that reaches this raw-items force
+            // must claim its one touch here too, same as `.eager`/the
+            // generic force-and-redispatch bridge (#9789, see
+            // `claim_lazy_seq_touch`'s doc comment); genuinely infinite/lazy
+            // and array-bound lists are exempt.
+            crate::value::claim_lazy_seq_touch(&ll)?;
             self.force_lazy_list_vm(&ll)?
         } else if let ValueView::Channel(ch) = iterable.view() {
             // Drain the channel synchronously, blocking on receive until the
