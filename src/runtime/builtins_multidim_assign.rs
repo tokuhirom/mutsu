@@ -90,6 +90,9 @@ impl Interpreter {
             Vec::new()
         };
         let offset = usize::from(has_method_args);
+        if let Some(keys) = Self::method_lvalue_slice_keys(&args[2 + offset]) {
+            return self.index_assign_method_lvalue_slice(args, 2 + offset, keys);
+        }
         let index = args[2 + offset].clone();
         let value = args[3 + offset].clone();
         let var_name = args[4 + offset].to_string_value();
@@ -416,16 +419,6 @@ impl Interpreter {
             _ => None,
         };
 
-        // Check if index is multi-dimensional (array of indices like [2, 1] from [2;1])
-        let dims: Vec<usize> = if let ValueView::Array(items, ..) = index.view() {
-            items
-                .iter()
-                .map(|v| crate::runtime::to_int(v) as usize)
-                .collect()
-        } else {
-            Vec::new()
-        };
-
         // When assigning Nil to a container element with `is default(...)`,
         // restore the default value instead of Nil.
         let effective_value = if value.is_nil() {
@@ -535,7 +528,6 @@ impl Interpreter {
                 target.view(),
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             )
-            && dims.len() < 2
         {
             match current.view() {
                 ValueView::Hash(h) if h.key_type.is_none() => {
@@ -568,7 +560,7 @@ impl Interpreter {
         // receiver is unchanged (#9208). An immutable `List` (and any
         // non-container return) falls through and is refused, as raku does.
         let plain_receiver = Self::is_plain_method_receiver(&target);
-        if plain_receiver && dims.len() < 2 && Self::is_mutable_store_container(&current) {
+        if plain_receiver && Self::is_mutable_store_container(&current) {
             match current.view() {
                 ValueView::Hash(h) if h.key_type.is_none() => {
                     let key = index.to_string_value();
@@ -614,17 +606,13 @@ impl Interpreter {
         // indexing." -- instead of the copy-and-write-back below silently
         // doing nothing (#9256).
         if plain_receiver
-            && dims.len() < 2
             && let Some(err) = self.scalar_subscript_protocol_error(&current, index_is_positional)
         {
             return Err(err);
         }
 
         // Modify the container
-        let updated = if dims.len() >= 2 {
-            // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)
-            Self::multidim_assign_nested(current, &dims, effective_value.clone())?
-        } else {
+        let updated = {
             let is_object_hash =
                 matches!(current.view(), ValueView::Hash(h) if h.key_type.is_some());
             let key = if !is_object_hash && matches!(index.view(), ValueView::Package(_)) {
@@ -823,63 +811,6 @@ impl Interpreter {
             true,
         )?;
         Ok(removed)
-    }
-
-    /// Assign a value into a nested multi-dimensional array structure.
-    /// `dims` contains the indices for each dimension, e.g. `[2, 1]` for `@a[2;1]`.
-    /// Checks bounds against the shaped array dimensions.
-    pub(super) fn multidim_assign_nested(
-        container: Value,
-        dims: &[usize],
-        value: Value,
-    ) -> Result<Value, RuntimeError> {
-        if dims.is_empty() {
-            return Ok(value);
-        }
-        // Check bounds against shape if this is a shaped array
-        let shape = crate::runtime::utils::shaped_array_shape(&container);
-        if let Some(ref shape) = shape {
-            for (i, &idx) in dims.iter().enumerate() {
-                if i < shape.len() && idx >= shape[i] {
-                    return Err(RuntimeError::new("Index out of bounds"));
-                }
-            }
-        }
-        match container.view() {
-            ValueView::Array(items, kind) => {
-                let idx = dims[0];
-                let mut new_items = (**items).clone();
-                if idx >= new_items.len() {
-                    new_items.resize(idx + 1, Value::package(crate::symbol::wk::any()));
-                }
-                if dims.len() == 1 {
-                    new_items[idx] = value;
-                } else {
-                    let inner = new_items[idx].clone();
-                    new_items[idx] = Self::multidim_assign_nested(inner, &dims[1..], value)?;
-                }
-                let result = Value::array_with_kind(crate::gc::Gc::new(new_items), kind);
-                // Preserve the shape registration on the new Arc so subsequent
-                // bounds checks (via shaped_array_shape) still work.
-                if let Some(ref shape) = shape {
-                    crate::runtime::utils::mark_shaped_array(&result, Some(shape));
-                }
-                Ok(result)
-            }
-            _ => {
-                // If it's not an array, wrap the assignment in a fresh array
-                if dims.len() == 1 {
-                    let idx = dims[0];
-                    let mut new_items = vec![Value::package(crate::symbol::wk::any()); idx + 1];
-                    new_items[idx] = value;
-                    Ok(Value::real_array(new_items))
-                } else {
-                    Err(RuntimeError::new(
-                        "Multi-dimensional index on non-array container",
-                    ))
-                }
-            }
-        }
     }
 
     pub(super) fn builtin_assign_method_lvalue(

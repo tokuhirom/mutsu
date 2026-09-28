@@ -56,20 +56,15 @@ impl Interpreter {
         mut idx: usize,
         end_target: Option<&str>,
     ) -> (Value, usize) {
-        let allows_code_blocks = matches!(end_target, Some("pod"))
-            || end_target.is_some_and(|t| Self::parse_item_level(t).is_some());
+        // Only a paragraph's FIRST line is measured against the margin (by the
+        // caller); rakudo runs its continuation lines on to the next blank line
+        // or directive whatever their indentation (`A` then `    B` is one
+        // `Para` "A B", not a `Para` and a `Code`).
         let mut para_lines = Vec::new();
         while idx < lines.len() {
             let trimmed = lines[idx].trim_start();
             if trimmed.is_empty() || Self::active_pod_directive(lines[idx], end_target).is_some() {
                 break;
-            }
-            // Stop if line is indented (code block follows) — only in pod/item blocks
-            if allows_code_blocks {
-                let indent = lines[idx].len() - trimmed.len();
-                if indent > 0 {
-                    break;
-                }
             }
             para_lines.push(lines[idx].trim().to_string());
             idx += 1;
@@ -250,10 +245,44 @@ impl Interpreter {
         Some(level)
     }
 
+    /// The column a Pod line's text starts at.
+    // Cost: O(n), n = line length.
+    pub(crate) fn pod_line_indent(line: &str) -> usize {
+        line.len() - line.trim_start().len()
+    }
+
+    /// Whether a directive moves the enclosing block's *virtual margin* -- the
+    /// indentation an implicit code block must exceed (rakudo's `$*VMARGIN`).
+    ///
+    /// rakudo resets it to the directive's own indentation for every block
+    /// whose body is ordinary Pod text: `=head1`, `=item`, `=defn`, an
+    /// arbitrary named block, and the `=for` form of each. The verbatim and
+    /// structural directives leave it alone: `=begin`/`=end` (a delimited
+    /// block keeps its own margin), `=comment`, `=config`, `=code` and
+    /// `=table`, abbreviated or `=for`. So after an indented `    =head1 X`,
+    /// a following paragraph at that same indentation is a `Para`, not a
+    /// `Code` block.
+    // Cost: O(1).
+    fn pod_directive_sets_vmargin(directive: &str, rest: &str) -> bool {
+        let block = if directive == "for" {
+            rest.split_whitespace().next().unwrap_or_default()
+        } else {
+            directive
+        };
+        !matches!(
+            block,
+            "begin" | "end" | "comment" | "config" | "code" | "table" | ""
+        )
+    }
+
+    /// `vmargin` is the indentation of the delimited block's `=begin` line: an
+    /// indented line in its body is an implicit code block only when it is
+    /// indented further than that (or than the last margin-setting directive).
     pub(crate) fn collect_pod_entries(
         lines: &[&str],
         mut idx: usize,
         end_target: Option<&str>,
+        mut vmargin: usize,
     ) -> (Vec<Value>, usize) {
         let mut entries = Vec::new();
         while idx < lines.len() {
@@ -263,6 +292,9 @@ impl Interpreter {
                 continue;
             }
             if let Some((directive, rest)) = Self::active_pod_directive(lines[idx], end_target) {
+                if Self::pod_directive_sets_vmargin(directive, rest) {
+                    vmargin = Self::pod_line_indent(lines[idx]);
+                }
                 if directive == "end" {
                     let target = rest.split_whitespace().next().unwrap_or_default();
                     if end_target.is_some_and(|expected| expected == target) {
@@ -480,8 +512,12 @@ impl Interpreter {
                         entries.push(Self::make_pod_table_full(headers, rows, tbl_config));
                         continue;
                     }
-                    let (contents, next_idx) =
-                        Self::collect_pod_entries(lines, idx + 1, Some(target));
+                    let (contents, next_idx) = Self::collect_pod_entries(
+                        lines,
+                        idx + 1,
+                        Some(target),
+                        Self::pod_line_indent(lines[idx]),
+                    );
                     let after_target = rest.strip_prefix(target).unwrap_or("");
                     let (config, _) = Self::parse_pod_config(after_target);
                     entries.push(Self::make_pod_block_for_target(target, contents, config));
@@ -552,7 +588,7 @@ impl Interpreter {
             let indent = lines[idx].len() - lines[idx].trim_start().len();
             let allows_code_blocks = matches!(end_target, Some("pod"))
                 || end_target.is_some_and(|t| Self::parse_item_level(t).is_some());
-            if indent > 0 && allows_code_blocks {
+            if indent > vmargin && allows_code_blocks {
                 let (code, next_idx) = Self::collect_pod_code_block(lines, idx, end_target);
                 entries.push(code);
                 idx = next_idx.max(idx + 1);
