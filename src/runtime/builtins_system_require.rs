@@ -641,6 +641,14 @@ impl Interpreter {
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             return true;
         }
+        // A sigil-less constant the module declared is a term (#9962): it is
+        // imported as one, under its term key.
+        let term = crate::runtime::term_names::term_key(symbol);
+        if let Some(value) = self.env.get(&term).cloned() {
+            let is_nil = value.is_nil();
+            self.env.insert(term, value);
+            return !is_nil;
+        }
         if let Some(value) = self.env.get(symbol).cloned() {
             let is_nil = value.is_nil();
             self.env.insert(symbol.to_string(), value);

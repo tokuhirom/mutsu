@@ -840,7 +840,10 @@ impl Interpreter {
         }
         let (prefix, variant) = name.rsplit_once("::")?;
         // The prefix must resolve through the lexical env to an enum type object.
-        let Some(ValueView::Package(pkg)) = self.env().get(prefix).map(Value::view) else {
+        // The prefix is most often a `constant`, a term (#9962).
+        let Some(ValueView::Package(pkg)) =
+            self.type_name_binding(prefix).as_ref().map(Value::view)
+        else {
             return None;
         };
         let pkg = pkg.resolve();
