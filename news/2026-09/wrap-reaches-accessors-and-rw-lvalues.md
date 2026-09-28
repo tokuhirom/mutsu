@@ -29,6 +29,6 @@ caused this:
   `Method`/`Submethod`/`Regex`.
 
 Object::Permission goes from 4/6 to 6/6 baseline files at parity. The
-regression test is `t/oo/method/wrap-reaches-accessor-and-rw-lvalue.t`. A
+regression test is `t/oo/attribute/wrap-reaches-accessor-and-rw-lvalue.t`. A
 related gap turned up along the way: calling a `.^lookup` Method object
 directly does not bind `self` for attribute reads. It is filed as #10083.
