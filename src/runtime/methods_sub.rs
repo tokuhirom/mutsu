@@ -245,6 +245,18 @@ impl Interpreter {
                 .unwrap_or(Value::NIL)
             }));
         }
+        // `is implementation-detail` -- see the matching arm in
+        // `dispatch_sub_method` below (a bare `&name` reference reaches this
+        // function instead, as a `ValueView::Routine`, so both need the arm).
+        if method == "is-implementation-detail" && args.is_empty() {
+            let key = format!("{package}::{name}");
+            let is_impl_detail = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&key))
+                .is_some_and(|def| def.is_implementation_detail);
+            return Some(Ok(Value::truth(is_impl_detail)));
+        }
         if method == "cando" && args.len() == 1 {
             let call_args = Self::capture_to_call_args(&args[0]);
             let matching = self
@@ -1027,6 +1039,20 @@ impl Interpreter {
                 })
                 .unwrap_or(Value::NIL)
             }));
+        }
+        // `is implementation-detail` -- read back from the registered
+        // `FunctionDef` (see `registration_sub.rs`'s `is_implementation_detail:
+        // custom_traits.iter().any(...)`). A builtin like `&say` has no
+        // registry entry under its own name and answers `False`, matching
+        // real Raku rather than raising "No such method".
+        if method == "is-implementation-detail" && args.is_empty() {
+            let key = format!("{}::{}", data.package.resolve(), data.name.resolve());
+            let is_impl_detail = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&key))
+                .is_some_and(|def| def.is_implementation_detail);
+            return Some(Ok(Value::truth(is_impl_detail)));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {
             let type_name = self

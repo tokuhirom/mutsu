@@ -145,6 +145,7 @@ impl Interpreter {
             param_defs: sub_param_defs.clone(),
             body,
             is_test_assertion: false,
+            is_implementation_detail: false,
             is_rw: false,
             is_raw: false,
             // The importable function form still reports as a Method in Raku

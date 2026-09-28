@@ -7,7 +7,7 @@ use Test;
 # ordering, basename) so the file can gain a header or move without breaking.
 # The file must pass under both `raku` and `mutsu`.
 
-plan 27;
+plan 28;
 
 # ---------------------------------------------------------------- named subs
 
@@ -51,6 +51,8 @@ class Bistro is Eatery { }
 
 is Eatery.^lookup('eat').line, $class-anchor + 3,
         'a method .line is its declarator line';
+is Eatery.^lookup('ingredients').line, $class-anchor + 2,
+        'an auto-generated accessor .line is its `has` declaration line';
 is Eatery.^lookup('drink').line - Eatery.^lookup('eat').line, 1,
         'two methods declared one line apart differ by one';
 is Eatery.^lookup('eat').file, &first-sub.file,

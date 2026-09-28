@@ -492,6 +492,13 @@ pub(crate) struct CompiledAttrDecl {
     /// registration path stores the right-hand container itself instead of a
     /// copy. See `Stmt::HasDecl::default_is_bind`.
     pub(crate) default_is_bind: bool,
+    /// The line the `has` keyword sits on, filled in by the class-body walk
+    /// (`Compiler::compile_class_attr_decls`) that tracks `Stmt::SetLine`
+    /// markers as it visits each declaration -- `from_stmt` itself has no
+    /// line history to draw on, so this starts `None` and is set by the
+    /// caller afterward, the same two-step `decl_line` already used for
+    /// `compile_method_body_keys`.
+    pub(crate) decl_line: Option<i64>,
 }
 
 impl CompiledAttrDecl {
@@ -569,6 +576,7 @@ impl CompiledAttrDecl {
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
+            decl_line: None,
         }
     }
 }

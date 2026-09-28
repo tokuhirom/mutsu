@@ -200,12 +200,17 @@ impl Interpreter {
         let registry = self.registry();
         for (key, def) in registry.functions.iter() {
             let key_s = key.resolve();
-            if key_s == exact_local
-                || key_s == exact_global
-                || key_s.starts_with(&prefix_local)
-                || key_s.starts_with(&prefix_global)
-            {
-                candidates.push(def);
+            // A plain (non-multi) sub is registered only under the exact
+            // `pkg::name` key; a `multi sub`'s candidates -- even a single
+            // one, with no sibling yet in this compilation unit -- are always
+            // keyed `pkg::name/<mangled-signature>` (`registration_sub.rs`'s
+            // `multi_prefix`), so the key SHAPE itself is `Code.multi`'s
+            // source of truth, not how many candidates happened to survive
+            // the dedup below.
+            let is_multi_key =
+                key_s.starts_with(&prefix_local) || key_s.starts_with(&prefix_global);
+            if key_s == exact_local || key_s == exact_global || is_multi_key {
+                candidates.push((def, is_multi_key));
             }
         }
         // Rakudo returns `.candidates` in DECLARATION order. Each candidate is
@@ -231,24 +236,27 @@ impl Interpreter {
         // candidates (`token_key_decl_order`, `sort_sym_keys_by_decl_order` in
         // `resolution.rs`). See
         // todo/tickets/multi-candidates-declaration-order.md.
-        candidates.sort_by_key(|def| def.decl_order);
+        candidates.sort_by_key(|(def, _)| def.decl_order);
         let mut seen = std::collections::HashSet::new();
         let mut defs = Vec::new();
-        for def in candidates {
+        for (def, is_multi_key) in candidates {
             let fp = def.body_fingerprint();
             if seen.insert(fp) {
-                defs.push(def);
+                defs.push((def, is_multi_key));
             }
         }
         defs.into_iter()
             .enumerate()
-            .map(|(multi_idx, def)| {
+            .map(|(multi_idx, (def, is_multi_key))| {
                 let mut env = self.env.clone();
                 // Store the multi index for doc comment lookup
                 env.insert(
                     "__mutsu_multi_index".to_string(),
                     Value::int(multi_idx as i64),
                 );
+                if is_multi_key {
+                    env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
+                }
                 Value::make_sub_for_routine(
                     def.package,
                     def.name,

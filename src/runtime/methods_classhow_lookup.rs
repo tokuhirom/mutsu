@@ -255,6 +255,7 @@ impl Interpreter {
             for attr in &class_def.attributes {
                 let (attr_name, is_public, is_rw) = (&attr.name, attr.is_public, attr.is_rw);
                 if is_public && attr_name == method_name {
+                    let (source_line, source_file) = (attr.source_line, attr.source_file.clone());
                     let mut env = crate::env::Env::new();
                     env.insert(
                         "__mutsu_callable_type".to_string(),
@@ -269,11 +270,13 @@ impl Interpreter {
                         is_rw,
                         env,
                     );
-                    return Some(Self::wrap_accessor_method_object(
+                    return Some(self.wrap_accessor_method_object(
                         method_name,
                         &class_name_str,
                         is_rw,
                         callable,
+                        source_line,
+                        source_file.as_deref(),
                     ));
                 }
             }
@@ -305,11 +308,13 @@ impl Interpreter {
                 false,
                 env,
             );
-            return Some(Self::wrap_accessor_method_object(
+            return Some(self.wrap_accessor_method_object(
                 method_name,
                 &class_name_str,
                 false,
                 callable,
+                None,
+                None,
             ));
         }
         // Check grammar token/rule/regex definitions -- walks the MRO like the
@@ -385,7 +390,23 @@ impl Interpreter {
     /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
     /// accessor is synthesized, not declared), so this does not go through
     /// `make_method_object_with_owner`.
-    fn wrap_accessor_method_object(name: &str, owner: &str, is_rw: bool, callable: Value) -> Value {
+    ///
+    /// `source_line`/`source_file` are the attribute's own `has`-declaration
+    /// site (`ClassAttributeDef::source_line`/`source_file`, threaded from
+    /// `CompiledAttrDecl::decl_line` -- see `Compiler::compile_class_attr_decls`),
+    /// mirroring how `make_method_object_with_owner_ex` reports `Code.line`/
+    /// `.file` for a user-declared method. `None` (reported as `Nil`, never a
+    /// fabricated location) for a class-level `our`/`my` attribute or a
+    /// non-plan-backed construction site that does not track it yet.
+    fn wrap_accessor_method_object(
+        &self,
+        name: &str,
+        owner: &str,
+        is_rw: bool,
+        callable: Value,
+        source_line: Option<i64>,
+        source_file: Option<&str>,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
@@ -402,6 +423,19 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
+        attrs.insert(
+            "line".to_string(),
+            source_line.map_or(Value::NIL, Value::int),
+        );
+        attrs.insert(
+            "file".to_string(),
+            source_file
+                .map(|f| {
+                    let source_file_sym = Symbol::intern(f);
+                    Value::str(self.format_routine_file(f.to_string(), Some(source_file_sym)))
+                })
+                .unwrap_or(Value::NIL),
+        );
         attrs.insert("__mutsu_method_callable".to_string(), callable);
         Value::make_instance(Symbol::intern("Method"), attrs)
     }

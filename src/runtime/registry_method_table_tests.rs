@@ -175,6 +175,8 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
         type_constraint: None,
         where_constraint: None,
         declared_shape: None,
+        source_line: None,
+        source_file: None,
     });
     registry.classes.insert("Point".to_string(), class);
     registry.sync_accessor_entries(owner);

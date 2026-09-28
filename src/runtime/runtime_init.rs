@@ -474,6 +474,8 @@ impl Interpreter {
                     type_constraint: None,
                     where_constraint: None,
                     declared_shape: None,
+                    source_line: None,
+                    source_file: None,
                 }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));
@@ -1560,6 +1562,8 @@ impl Interpreter {
                             type_constraint: None,
                             where_constraint: None,
                             declared_shape: None,
+                            source_line: None,
+                            source_file: None,
                         })
                         .collect(),
                     native_methods: HashSet::new(),
