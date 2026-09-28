@@ -219,12 +219,6 @@ pub(crate) fn destructure_binds(
                 op: crate::token_kind::TokenKind::Pipe,
                 expr: Box::new(slice_expr),
             }]);
-            // Positional destructure targets keep `Stmt::Assign` binding:
-            // a fresh `my` declaration would copy an `is raw` / `is default`
-            // container and drop its `.VAR.default` (roast
-            // S02-names/is_default.t `-> (..., %a is raw, ...)`). Only the
-            // NAMED branch above declares (to shadow an outer same-named
-            // var, which positional destructure does not need).
             bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
             // No need to increment positional_index; capture consumes all remaining
         } else {
@@ -287,10 +281,43 @@ pub(crate) fn destructure_binds(
                 bind_stmts.push(decl_stmt(temp.clone(), value_expr));
                 destructure_binds(&temp, nested, bind_stmts);
             } else {
-                bind_stmts.push(bind_stmt(sub.name.clone(), value_expr));
+                bind_stmts.push(positional_decl_stmt(sub, value_expr));
             }
             positional_index += 1;
         }
+    }
+}
+
+/// Declare one positional destructure target (`-> ($a, @b, %c)`).
+///
+/// A sub-signature parameter is a fresh lexical of the block, so it is
+/// declared rather than assigned. A bare `Stmt::Assign` resolved the name
+/// dynamically instead: inside a routine it wrote an undeclared env name, and
+/// a same-named readonly binding of the *caller* (a `for <x> -> $f { f() }`
+/// loop alias) made the callee's `-> ($f, $w)` die with "Cannot assign to a
+/// readonly variable or a value" (Prettier::Table's `!stringify-hrule`,
+/// called from a test looping `-> $field`).
+///
+/// This follows the multi-parameter pointy-block rule in
+/// `Compiler::build_for_bind_stmts`: an `@`/`%` target (or an `is rw` scalar)
+/// BINDS the element, keeping its container -- a `%a is raw` sub-parameter
+/// must keep the bound hash's `is default` (roast S02-names/is_default.t) --
+/// while a plain scalar declares a fresh variable holding the element.
+fn positional_decl_stmt(sub: &crate::ast::ParamDef, value_expr: Expr) -> Stmt {
+    let name = &sub.name;
+    let is_dynamic_target = name
+        .trim_start_matches(['$', '@', '%', '&'])
+        .starts_with('*');
+    if name.starts_with('&') || is_dynamic_target {
+        return bind_stmt(name.clone(), value_expr);
+    }
+    let binds_container = name.starts_with(['@', '%'])
+        || sub.sigilless
+        || sub.traits.iter().any(|t| t == "rw" || t == "raw");
+    if binds_container {
+        Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl_stmt(name.clone(), value_expr)])
+    } else {
+        decl_stmt(name.clone(), value_expr)
     }
 }
 
