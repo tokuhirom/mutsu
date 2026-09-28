@@ -5067,6 +5067,10 @@ impl Interpreter {
             // reports. The pure `value_to_capture` dumped the raw attribute
             // store instead, which both ignored the override and leaked
             // private (`$!x`) attributes into the Capture.
+            // Exact native IO::Handle instances carry additional native
+            // settings outside the declared path attribute; their Capture
+            // exposes the stored settings through the pure path.
+            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 let attrs = self.collect_class_attributes(&cn);

@@ -197,17 +197,23 @@ impl Interpreter {
                     .unwrap_or(false);
                 let state = if opened { "opened" } else { "closed" };
                 if let Some(path_val) = target.get("path") {
-                    let path_raku = self
-                        .call_method_with_values(path_val.clone(), "raku", vec![])
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|_| {
+                    let path_raku = match path_val.view() {
+                        ValueView::Package(name) => {
+                            format!("({})", crate::qualified::unqualified_part(name).as_str())
+                        }
+                        ValueView::Instance { class_name, .. } if class_name == "IO::Path" => {
                             format!(
                                 "{}.IO",
                                 crate::builtins::methods_0arg::raku_repr::escape_raku_str(
                                     &path_val.to_string_value()
                                 )
                             )
-                        });
+                        }
+                        _ => self
+                            .call_method_with_values(path_val.clone(), "raku", vec![])
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|_| path_val.to_string_value()),
+                    };
                     return Ok(Value::str(format!("IO::Handle<{path_raku}>({state})")));
                 }
                 Ok(Value::str(format!("IO::Handle<>({state})")))
