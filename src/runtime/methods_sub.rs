@@ -249,11 +249,11 @@ impl Interpreter {
         // `dispatch_sub_method` below (a bare `&name` reference reaches this
         // function instead, as a `ValueView::Routine`, so both need the arm).
         if method == "is-implementation-detail" && args.is_empty() {
-            let key = format!("{package}::{name}");
+            let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
             let is_impl_detail = self
                 .registry()
                 .functions
-                .get(&Symbol::intern(&key))
+                .get(&key)
                 .is_some_and(|def| def.is_implementation_detail);
             return Some(Ok(Value::truth(is_impl_detail)));
         }
@@ -1046,11 +1046,11 @@ impl Interpreter {
         // registry entry under its own name and answers `False`, matching
         // real Raku rather than raising "No such method".
         if method == "is-implementation-detail" && args.is_empty() {
-            let key = format!("{}::{}", data.package.resolve(), data.name.resolve());
+            let key = crate::qualified::qualified(data.package, data.name);
             let is_impl_detail = self
                 .registry()
                 .functions
-                .get(&Symbol::intern(&key))
+                .get(&key)
                 .is_some_and(|def| def.is_implementation_detail);
             return Some(Ok(Value::truth(is_impl_detail)));
         }
