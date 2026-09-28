@@ -969,16 +969,8 @@ impl Interpreter {
 
         let mut body = String::new();
         let mut depth = 1u32;
-        let mut in_comment = false;
         let mut angles: Vec<AngleFrame> = Vec::new();
         while let Some(ch) = chars.next() {
-            if in_comment {
-                body.push(ch);
-                if ch == '\n' {
-                    in_comment = false;
-                }
-                continue;
-            }
             if ch == '\\' {
                 body.push(ch);
                 if let Some(next) = chars.next() {
@@ -1018,9 +1010,12 @@ impl Interpreter {
                 body.push(ch);
                 continue;
             }
-            if ch == '#' && angles.is_empty() {
-                in_comment = true;
-                body.push(ch);
+            // A comment, line or bracketed, is copied through whole: a bracket
+            // or quote inside it is not structure.
+            if ch == '#'
+                && angles.is_empty()
+                && super::regex_parse::consume_regex_comment(ch, chars, &mut body)
+            {
                 continue;
             }
             if ch == '\'' || ch == '"' {

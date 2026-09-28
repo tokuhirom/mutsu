@@ -729,8 +729,8 @@ impl Interpreter {
                         // in declaration order.
                         let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
                         for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
-                            let (plen, stopped) =
-                                self.ltm_prefix_len_at(parsed, chars, pos, *sub_pkg);
+                            let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
+                            let (plen, stopped) = (measured.len, measured.stopped);
                             // ADR-0022 §4.1's contract: `(None, false)` is a sound
                             // "this candidate cannot match here" verdict and may
                             // filter; `(None, true)` only means the measurement was
@@ -738,10 +738,7 @@ impl Interpreter {
                             if plen.is_none() && !stopped {
                                 continue;
                             }
-                            let mut seen = std::collections::HashSet::new();
-                            let litlen =
-                                self.ltm_litlen_at(parsed, chars, pos, *sub_pkg, &mut seen, 0);
-                            ranked.push((idx, (plen.unwrap_or(0), litlen)));
+                            ranked.push((idx, (plen.unwrap_or(0), measured.litlen)));
                         }
                         ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
                         // Attempt the ranked candidates in order and stop at the

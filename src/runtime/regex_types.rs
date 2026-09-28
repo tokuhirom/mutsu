@@ -913,7 +913,7 @@ pub(crate) struct RegexToken {
     /// from a `constant`-declared value (which Rakudo inlines at compile
     /// time and so still participates in LTM ranking like a hand-written
     /// literal — ADR-0022 §2's "non-constant `$var` interpolation" row).
-    /// `ltm_atom_mode`'s callers and `ltm_litlen_at` treat a token with this
+    /// `ltm_atom_mode`'s callers and `regex_ltm_litend` treat a token with this
     /// set as a `Terminate` stopper: it neither extends the declarative
     /// prefix nor contributes to litlen. Always `false` outside
     /// `LTM_DECLARATIVE_MODE` measurement — it does not affect ordinary
@@ -958,12 +958,6 @@ pub(crate) struct NamedAtom {
 }
 
 impl NamedAtom {
-    /// The atom exactly as written between the angle brackets.
-    #[inline]
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
     /// This atom's parsed lookup spec, derived once.
     #[inline]
     pub(crate) fn spec(&self) -> &Arc<crate::runtime::regex::regex_helpers::NamedRegexLookupSpec> {

@@ -23,8 +23,8 @@
 //!
 //! Per ADR-0099 §4 constraint 1, none of this may become a second definition
 //! of what the engine matches. [`required_literal_prefix`] satisfies that by
-//! recognizing a strict *subset* of `regex_ltm_rank.rs`'s `ltm_litlen_walk`
-//! cases rather than re-deriving its table (see its own doc comment), and the
+//! recognizing a strict *subset* of the literals `regex_ltm_litend.rs` marks
+//! as counting toward `litlen` rather than re-deriving its table (see its own doc comment), and the
 //! first-set analysis satisfies it by calling the engine's own class
 //! evaluator instead of restating it.
 //!
@@ -148,11 +148,11 @@ impl Prefilter {
 /// declarative-leading-literal construction table — a top-level run of
 /// `RegexQuant::One`, uncaptured, non-interpolated `RegexAtom::Literal`
 /// tokens — and declines on everything else. That is what makes it the
-/// memoized static form of `ltm_litlen_at` rather than a second definition of
-/// it (ADR-0099 §4 constraint 1): every pattern shape this calls "prefix P"
-/// is one `regex_ltm_rank.rs`'s `ltm_litlen_walk` would also walk as pure
-/// literal for exactly `P.len()` characters, because this recognizes a strict
-/// subset of that walk's cases rather than an independent reading of the same
+/// memoized static form of the NFA's `litlen` rather than a second definition
+/// of it (ADR-0099 §4 constraint 1): every pattern shape this calls "prefix P"
+/// is one whose first `P.len()` characters `regex_ltm_litend.rs` marks as
+/// counting toward `litlen`, because this recognizes a strict
+/// subset of that module's cases rather than an independent reading of the same
 /// pattern.
 ///
 /// `:i` / `:m` decline: a case-folded literal is *variable-length* thanks to
@@ -173,15 +173,15 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
 ///
 /// A transparent group can contribute a required prefix, but the enclosing
 /// level may continue after it only when its entire body was a literal run.
-/// This is the same distinction `ltm_litlen_walk` makes for a `Group`.
+/// This is the same distinction `regex_ltm_litend` makes for a `Group`.
 fn required_literal_prefix_walk(pattern: &RegexPattern) -> (String, bool) {
     if pattern.ignore_case || pattern.ignore_mark {
         return (String::new(), false);
     }
     let mut prefix = String::new();
     for token in &pattern.tokens {
-        // Mirrors `ltm_litlen_walk`'s own chain-ending conditions exactly
-        // (regex_ltm_rank.rs) for the plain-literal case: a non-constant
+        // Mirrors `regex_ltm_litend`'s own chain-ending conditions exactly
+        // (`token_keeps_open`) for the plain-literal case: a non-constant
         // interpolated literal, any non-`One` quantifier (with or without a
         // separator), or a capture alias all end the declarative chain there,
         // whatever accumulated before it stays valid as a required prefix.
