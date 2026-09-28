@@ -72,7 +72,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SetGlobal(_)
             | OpCode::SetGlobalRaw(_)
             | OpCode::SetCallTemp(_)
-            | OpCode::GetCallTemp(_)
             | OpCode::GetCallTempRaw(_)
             | OpCode::SetVarDynamic { .. }
             | OpCode::SetVarType { .. }
@@ -144,6 +143,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::IndexVarRef { .. }
             | OpCode::IndexInvocantRef { .. }
             | OpCode::IndexArgRef(..)
+            | OpCode::RwArgCalleeBindsContainer(..)
             | OpCode::IndexAutovivifyLazy { .. }
             // String / bool / numeric helpers
             | OpCode::StringConcat(_)

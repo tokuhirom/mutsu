@@ -1201,23 +1201,6 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
-            OpCode::GetCallTemp(name_idx) => {
-                let val = self
-                    .env()
-                    .get_sym(code.const_sym(*name_idx))
-                    .cloned()
-                    .unwrap_or(Value::NIL);
-                let val = if val.is_lazy_thunk_value()
-                    && let ValueView::LazyThunk(thunk_data) = val.view()
-                {
-                    self.force_lazy_thunk(&thunk_data)?
-                } else {
-                    val
-                };
-                self.stack.push(val.into_deref());
-                *ip += 1;
-            }
-            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
             OpCode::GetCallTempRaw(name_idx) => {
                 let val = self
                     .env()
@@ -4721,6 +4704,12 @@ impl Interpreter {
             // Cost: O(1) (element cell for a single index), otherwise as Index.
             OpCode::IndexArgRef(mark) => {
                 self.exec_index_arg_ref_op(code, mark)?;
+                *ip += 1;
+            }
+            // Cost: O(c), c = registered candidates of the callee's name.
+            OpCode::RwArgCalleeBindsContainer(mark) => {
+                let binds = self.rw_arg_callee_binds_container(code, mark);
+                self.stack.push(Value::truth(binds));
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices.

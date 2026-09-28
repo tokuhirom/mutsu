@@ -1047,22 +1047,14 @@ pub(crate) enum OpCode {
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
-    /// Store a call-site temporary of the subscript-argument `is rw`
-    /// writeback (`__mutsu_index_rw_arg_N` / `_orig_N` / `__mutsu_call_result_N`,
-    /// see `compile_call_arg_with_escape`) into the frame env under its
-    /// pre-interned name. Stack: `[value] -> []`.
+    /// Store a compiler-internal call-site temporary into the frame env under
+    /// its pre-interned name. Stack: `[value] -> []`.
     ///
     /// A raw replace: the temp is compiler-internal, so none of
     /// [`Self::SetGlobal`]'s user-variable semantics (readonly/type/strict
     /// checks, `our`/shared-store mirroring, write-through into a cell a
-    /// previous execution left there) apply. It still lives in `env`, because
-    /// an `is rw` callee writes its parameter back by that name
-    /// (`apply_rw_bindings_to_env`).
+    /// previous execution left there) apply.
     SetCallTemp(u32),
-    /// Read a temporary stored by [`Self::SetCallTemp`] (or written back into
-    /// it by an `is rw` callee), decontainerized exactly as [`Self::GetGlobal`]
-    /// hands back a variable's value. Stack: `[] -> [value]`.
-    GetCallTemp(u32),
     /// Read a call temporary without dereferencing its lvalue payload. This is
     /// used when a compiler-generated temporary carries a `ContainerRef` or a
     /// deferred `HashEntryRef` into another bind operation. Stack: `[] -> [raw]`.
@@ -2827,13 +2819,18 @@ pub(crate) enum OpCode {
     /// a callee that binds that argument to the caller's location — an
     /// `is rw`/`is raw`/sigil-less parameter, or a bare block's implicit `$_`.
     ///
-    /// The named-callee spelling `g(@a[0])` does not need this: `CallFunc`
-    /// carries the copy-in/copy-out temp protocol
-    /// (`Compiler::emit_index_rw_writebacks`). The three nameless-callee
-    /// spellings have no such protocol, and a plain `Index` has already read the
-    /// element's *value* by the time the call op runs, so there is nothing left
-    /// to write back — the write was silently dropped, or (for an explicit
-    /// `is rw`) refused with "expects a writable container".
+    /// The named-callee spelling `g(@a[0])` uses it too
+    /// ([`RwArgCallee::Named`], ADR-0059 Slice 3): it retired the
+    /// copy-in/copy-out `__mutsu_index_rw_arg_*` temps `CallFunc` used to
+    /// carry. A plain `Index` has already read the element's *value* by the
+    /// time the call op runs, so without this producer there is nothing left
+    /// to write back to.
+    ///
+    /// A subscript past the end of an array, or a missing hash key, produces
+    /// the deferred vivification token (`HashEntryRef`) rather than growing
+    /// the container: a `\x` parameter that only reads leaves the container
+    /// untouched, and the first write through the parameter creates the
+    /// element, as in rakudo.
     ///
     /// Gated at run time on the real callee, exactly as
     /// [`Self::MarkRwArgRefContextCallee`] is — a signature is not knowable at
@@ -2844,6 +2841,14 @@ pub(crate) enum OpCode {
     /// and index still on the stack, so the callee sits one slot deeper than it
     /// does for the accessor marker.
     IndexArgRef(Box<IndexArgRefMark>),
+    /// [`Self::IndexArgRef`]'s gate on its own, for an argument whose location
+    /// one op cannot produce: a *nested* subscript passed to a named routine
+    /// (`g(%h<a><b>)`, ADR-0059 Slice 3). Pushes whether the callee binds that
+    /// positional to the caller's container, and the compiler branches to a
+    /// container-mode compile of the argument or an ordinary read. Only
+    /// emitted with [`RwArgCallee::Named`], which reads nothing off the stack.
+    /// Stack: `[] -> [Bool]`.
+    RwArgCalleeBindsContainer(Box<RwArgCalleeMark>),
     /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
@@ -11868,6 +11873,8 @@ impl<'a> IntoIterator for &'a CompiledFns {
 pub(crate) struct RwArgCalleeMark {
     /// Which positional parameter of the callee's *signature* this argument
     /// binds to — named arguments earlier in the list do not consume one.
+    /// [`RWARG_POSITIONAL_UNKNOWN`] when an earlier `|slip` makes the index
+    /// unknowable at compile time (only [`RwArgCallee::Named`] emits it).
     pub(crate) positional: u32,
     /// How many argument values sit above the callee on the stack when this op
     /// runs (its index in the syntactic argument list, named arguments
@@ -11901,7 +11908,18 @@ pub(crate) enum RwArgCallee {
     /// `&g(...)` — nothing is pushed; the callee is the code variable this
     /// constant names, resolved exactly as `CallOnCodeVar` resolves it.
     CodeVar { name_idx: u32 },
+    /// `g(...)` — a named routine call (`CallFunc` / `CallFuncNamed`, or a
+    /// user-defined operator's `CallFunc`-shaped dispatch); nothing is pushed
+    /// for the callee. Answered over every registered candidate of the name,
+    /// then, when none is registered, over the lexical `&g` a `my &g = sub
+    /// ...` binds.
+    Named { name_idx: u32 },
 }
+
+/// [`RwArgCalleeMark::positional`] for an argument after a `|slip`: its
+/// signature index is only known at run time, so the gate asks whether *any*
+/// positional parameter binds the caller's container.
+pub(crate) const RWARG_POSITIONAL_UNKNOWN: u32 = u32::MAX;
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
 /// call's stack values are named-arg values, and under which keys.

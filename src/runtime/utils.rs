@@ -99,21 +99,6 @@ pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
     MetaNs::ScalarBindNoContainer.owned_key_for_str(name.trim_start_matches('$'))
 }
 
-/// True for the per-call-site internal temp names of the Index-argument `is rw`
-/// writeback machinery (`__mutsu_index_rw_arg_N` / `__mutsu_index_rw_orig_N` /
-/// `__mutsu_call_result_N`, see `compile_call_arg_with_escape` /
-/// `emit_index_rw_writebacks`). The names are compile-time-fixed, so a callee
-/// that executes a same-named call site of its own (recursion, or an accidental
-/// cross-chunk numbering collision) holds entries under the SAME names — the
-/// cross-frame env merges must never copy them back into the caller, or the
-/// caller's pending post-call compare reads the callee's values and fires a
-/// bogus writeback (`g(@xs[1..*])` recursion assigning into an immutable List,
-/// 99problems-21-to-30.t P26/P27). The designed writeback channel
-/// (`apply_rw_bindings_to_env`) is separate and unaffected.
-pub(crate) fn is_index_rw_call_temp(name: &str) -> bool {
-    name.starts_with("__mutsu_index_rw_") || name.starts_with("__mutsu_call_result_")
-}
-
 /// True for the env keys of `$!` and `$/`. Both are scoped **per routine** in
 /// raku — every sub and method gets its own implicit `my $!` / `my $/` — so the
 /// CALLER's value must survive the call, and the return-side env merge has to

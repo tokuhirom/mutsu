@@ -709,68 +709,19 @@ impl Compiler {
             },
             _ => None,
         };
-        // For Index expressions, create temp variables for `is rw` writeback
-        // and wrap with VarRef so `is rw` parameters can bind through.
         if matches!(arg, Expr::Index { .. }) && is_bind_target {
             // `:=` bind to an Index expression (`my $x := @a[$i]`): the Index
             // compile already promoted the element to a first-class
             // `ContainerRef` cell on the stack (IndexAutovivifyLazyTerminal /
             // array_slot_ref). Just wrap it with VarRef so SetLocal's
-            // `extract_varref_binding` sees `is_bind = true`. Skip the is-rw
-            // *call-argument* writeback temps entirely: there is no function
-            // call to writeback after here, and those temps are
-            // compile-time-fixed global names — reused verbatim on every
-            // iteration of a loop wrapping this same bind statement, whose
-            // "write through an existing ContainerRef" semantics would
-            // corrupt the *previous* iteration's bound cell instead of
-            // storing a fresh reference to this one.
-            let tmp = format!("__mutsu_bind_index_ref_{}", self.code.constants.len());
-            let name_idx = self.code.add_constant(Value::str(tmp));
-            self.code.emit(OpCode::WrapVarRef {
-                name_idx,
-                slot: u32::MAX,
-            });
-        } else if matches!(arg, Expr::Index { .. }) && Self::index_arg_is_static_slice(arg) {
-            // A *slice* subscript argument (`f(@a[1..*])`, `f(@a[0,1])`,
-            // `f(%h{1..3})`) is a list of VALUES, not a storage location, so no
-            // `is rw` parameter can ever bind to it — rakudo rejects the bind
-            // outright with `X::Parameter::RW` ("Parameter '$x' expects a
-            // writable container (variable) as an argument"). Queueing the
-            // snapshot/writeback temps for it is therefore never right, and it
-            // is actively harmful twice over: `sub f($x is rw) { $x = 9 }; my
-            // @a = 1,2,3; f(@a[1..*])` wrote the scalar back over the slice and
-            // left `@a` as `(1, 9)` where rakudo leaves it untouched, and the
-            // writeback's own guards (a `===`/`eqv` pair over compile-time-fixed
-            // global temps) are defeated whenever the call site re-executes
-            // later than it was compiled for — a recursive descent whose result
-            // is a deferred `.map` Seq reified after the frame is gone, which
-            // is `roast/integration/99problems-21-to-30.t`'s P26 `group` under
-            // the vendored `Test` module ("Cannot modify an immutable List").
-            // Compile the argument as the plain value read it is.
-        } else if matches!(arg, Expr::Index { .. }) && !self.index_arg_is_non_lvalue_bareword(arg) {
-            let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
-            let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
-            let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
-            let orig_idx = self.code.add_constant(Value::str(orig.clone()));
-            // RAW stores: these compile-time-fixed temp names are re-used on
-            // every execution of this call site (each loop iteration). The
-            // element snapshot may be a promoted `ContainerRef` cell; a plain
-            // SetGlobal would then WRITE THROUGH the previous execution's cell
-            // (corrupting that element in its source hash/array — the
-            // `%args{$k} := f(%j{$k})` loop clobbered `%j` at the first key
-            // with each later iteration's value) instead of replacing the temp.
+            // `extract_varref_binding` sees `is_bind = true`.
             //
-            // `SetCallTemp`, not `SetGlobalRaw`: both replace rather than write
-            // through, but the latter runs the whole user-variable store
-            // (readonly/type/strict checks, `our`/shared-store mirroring) for a
-            // name no user code can see — ~19k instructions per subscript
-            // argument per call (#9505).
-            self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetCallTemp(tmp_idx));
-            self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetCallTemp(orig_idx));
-            self.pending_index_rw_writebacks
-                .push((arg.clone(), tmp.clone(), orig));
+            // An ordinary subscript ARGUMENT gets nothing here: it compiles to
+            // a plain `Index`, which the call emitter swaps for
+            // `IndexArgRef` so a callee that binds the caller's container
+            // receives the element's own location (ADR-0059 Slice 3, which
+            // retired the copy-in/copy-out `__mutsu_index_rw_arg_*` temps).
+            let tmp = format!("__mutsu_bind_index_ref_{}", self.code.constants.len());
             let name_idx = self.code.add_constant(Value::str(tmp));
             self.code.emit(OpCode::WrapVarRef {
                 name_idx,
@@ -812,23 +763,6 @@ impl Compiler {
             // flag and the bind degrades to today's bind-by-value.
             self.mark_trailing_method_call_as_accessor_ref();
         }
-    }
-
-    /// A bareword subscript can be a parameterized type or role (`R[Int]`),
-    /// whose argument is a value, not a writable element. It must not enter
-    /// the generic index-argument writeback path: that path is for an lvalue
-    /// such as `@a[$i]`, and would append a store back into `R[Int]` after the
-    /// call. Only a sigilless lexical is a bareword lvalue here; all other
-    /// bareword targets are resolved by the VM as types, packages or ordinary
-    /// values.
-    fn index_arg_is_non_lvalue_bareword(&self, arg: &Expr) -> bool {
-        let Expr::Index { target, .. } = arg else {
-            return false;
-        };
-        let Expr::BareWord(name) = target.as_ref() else {
-            return false;
-        };
-        !self.sigilless_locals.contains(name) && !self.enclosing_sigilless.contains(name)
     }
 
     /// Insert a `MarkAccessorRefContext` immediately before the trailing
@@ -975,6 +909,113 @@ impl Compiler {
         self.code.op_lines[last] = line;
     }
 
+    /// ADR-0059 Slice 3: compile one argument of a *named* routine call
+    /// (`g(@a[0])`, or a user-defined infix operator's operand), whose callee
+    /// is looked up by name at run time ([`crate::opcode::RwArgCallee::Named`]).
+    /// `callee` is `None` when no subscript producer applies, and the argument
+    /// is then compiled exactly as [`Self::compile_call_arg_with_escape`] does.
+    ///
+    /// A single-level subscript compiles to a plain `Index` swapped for
+    /// ADR-0067's `IndexArgRef`, which hands over the element's location when a
+    /// candidate of the callee binds that positional to the caller's container.
+    ///
+    /// A *nested* subscript (`g(%h<a><b>)`) cannot be answered by one op: the
+    /// inner `%h<a>` has already been read as a value by the time the last
+    /// subscript runs, and a missing intermediate level reads as `Any`, which
+    /// has no location. So the same gate is asked up front
+    /// ([`OpCode::RwArgCalleeBindsContainer`]) and the argument is compiled
+    /// twice: the ordinary read, and the `return-rw` operand's container-mode
+    /// chain ([`Self::compile_rw_chain_index_arg`]), whose missing levels are
+    /// the deferred vivification token — so binding creates nothing, and the
+    /// first write through the parameter creates the whole path (roast
+    /// `S02-types/autovivification.t`).
+    ///
+    /// `positional` is the argument's entry of [`Self::arg_positional_indices`];
+    /// `None` there means either a named argument (never marked: a named
+    /// parameter is not what this gate reads) or an argument after a `|slip`,
+    /// whose signature index is only known at run time and is asked as
+    /// [`crate::opcode::RWARG_POSITIONAL_UNKNOWN`].
+    pub(super) fn compile_named_callee_arg(
+        &mut self,
+        callee: Option<&str>,
+        positional: Option<u32>,
+        arg: &Expr,
+        escaping: bool,
+    ) {
+        let callee = callee.filter(|callee| {
+            matches!(arg, Expr::Index { .. })
+                && !Self::index_arg_is_static_slice(arg)
+                && !Self::is_named_arg_expr(arg)
+                // A `__mutsu_*` helper is not a user routine and has no
+                // registered signature, so the gate could only answer "no".
+                && !callee.starts_with("__mutsu_")
+        });
+        let Some(callee) = callee else {
+            self.compile_call_arg_with_escape(arg, escaping);
+            return;
+        };
+        let name_idx = self.code.add_constant(Value::str(callee.to_string()));
+        let mark = crate::opcode::RwArgCalleeMark {
+            positional: positional.unwrap_or(crate::opcode::RWARG_POSITIONAL_UNKNOWN),
+            stack_offset: 0,
+            callee: crate::opcode::RwArgCallee::Named { name_idx },
+        };
+        let nested = matches!(arg, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::Index { .. }));
+        if !nested || !Self::index_chain_is_single_element(arg) {
+            self.compile_call_arg_with_escape(arg, escaping);
+            self.mark_arg_index_as_container_candidate_callee(
+                mark.callee,
+                Some(mark.positional),
+                0,
+                arg,
+            );
+            return;
+        }
+        self.code
+            .emit(OpCode::RwArgCalleeBindsContainer(Box::new(mark)));
+        let to_container = self.code.emit(OpCode::JumpIfTrue(0));
+        // The ordinary read first, so it is the compile that consumes the
+        // one-shot argument flags `compile_call_arg_with_escape` reads.
+        self.compile_call_arg_with_escape(arg, escaping);
+        let to_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(to_container);
+        // An immutable `List`'s element is handed over raw, as a `return-rw`
+        // operand's is: the parameter's writability then follows the element
+        // (a `List` of values is not a set of containers), and the `List`
+        // itself is never mutated to hold a promoted cell.
+        let saved_raw_list_elem = self.raw_list_elem_terminal;
+        self.raw_list_elem_terminal = true;
+        self.compile_rw_chain_index_arg(arg);
+        self.raw_list_elem_terminal = saved_raw_list_elem;
+        self.code.patch_jump(to_end);
+    }
+
+    /// Whether every subscript of a nested chain (`%h<a><b>`, `@a[$i][0]`)
+    /// statically addresses ONE element: a literal key or index, or a scalar
+    /// variable. Only such a chain is compiled in container mode by
+    /// [`Self::compile_named_callee_arg`] — a slice or a `WhateverCode` index
+    /// at any level (`@alpha[$res[*]][0..*-1]`) is a list of values, which the
+    /// deferred-path walk cannot describe, so it keeps the one-op producer on
+    /// its last subscript.
+    fn index_chain_is_single_element(arg: &Expr) -> bool {
+        let mut cur = arg;
+        while let Expr::Index { target, index, .. } = cur {
+            let single = match index.as_ref() {
+                Expr::Literal(v) => matches!(
+                    v.view(),
+                    crate::value::ValueView::Int(_) | crate::value::ValueView::Str(_)
+                ),
+                Expr::Var(name) => crate::value::attr_twigil_base(name).is_none(),
+                _ => false,
+            };
+            if !single {
+                return false;
+            }
+            cur = target.as_ref();
+        }
+        true
+    }
+
     /// The signature-positional index of each syntactic argument, or `None`
     /// where there is none to name: a named argument (`:k(v)` / `k => v`)
     /// consumes no positional slot, and a `|EXPR` slip spreads an unknown
@@ -1085,10 +1126,12 @@ impl Compiler {
     /// `*`/`**`, or a literal index list (`@a[0,1]`, `%h<a b>`).
     ///
     /// Such a subscript yields a list of values rather than one element's
-    /// container, so it can neither bind to an `is rw` parameter nor receive a
-    /// writeback. Only the shapes visible in the AST are recognized: a subscript
-    /// whose index only turns out to be a Range at runtime (`@a[$r]`) keeps the
-    /// existing treatment.
+    /// container, so it can never bind to an `is rw` parameter (rakudo:
+    /// `X::Parameter::RW`), and the named-call emitter leaves it a plain
+    /// `Index` instead of an `IndexArgRef` whose gate could only decline it.
+    /// Only the shapes visible in the AST are recognized: a subscript whose
+    /// index only turns out to be a Range at runtime (`@a[$r]`) reaches the
+    /// producer, which declines any non-integer index at run time.
     pub(super) fn index_arg_is_static_slice(arg: &Expr) -> bool {
         let Expr::Index { index, .. } = arg else {
             return false;
@@ -1105,106 +1148,6 @@ impl Compiler {
             ),
             Expr::Whatever | Expr::HyperWhatever | Expr::ArrayLiteral(_) => true,
             _ => false,
-        }
-    }
-
-    /// The current depth of the pending-writeback queue, to be captured by a
-    /// call emitter BEFORE it compiles its arguments and handed back to
-    /// [`Self::emit_index_rw_writebacks`] afterwards.
-    ///
-    /// A call must only emit the writebacks *its own* arguments queued. The
-    /// queue is filled by `compile_call_arg_with_escape` and drained by the one
-    /// emitter below, but not every dispatch shape had a drain point: the
-    /// retired statement-call opcode `ExecCallPairs` (the shape `is @q[1], 2,
-    /// "x"` took) never had one. Draining the whole queue therefore let an
-    /// older, unrelated call's writeback attach itself to the NEXT call in the
-    /// compilation unit — and since the writeback brackets that call's result
-    /// with `SetGlobalRaw`/`GetGlobal`, and `GetGlobal` decontainerizes, the
-    /// later call silently lost an lvalue-return container. `use Test; { my @q =
-    /// 1, 2; is @q[1], 2, "x" }` followed by `my $r := f()` on an `is rw`
-    /// routine died with "Cannot assign to an immutable value", in a statement
-    /// that had nothing to do with either.
-    ///
-    /// Entries left below the base belong to a shape with no drain point; they
-    /// stay unemitted, exactly as before, rather than corrupting a later call.
-    /// ADR-0059 Slice 3 retires these temps altogether.
-    pub(super) fn index_rw_writeback_base(&self) -> usize {
-        self.pending_index_rw_writebacks.len()
-    }
-
-    /// Emit writeback code for Index expressions passed as function arguments.
-    /// After a function call, if any `is rw` parameter modified the temp
-    /// variable, we write the new value back to the original hash/array slot.
-    /// Only writes back when the temp value differs from the original value
-    /// (using `===` identity check). `base` is this call's own
-    /// [`Self::index_rw_writeback_base`].
-    pub(super) fn emit_index_rw_writebacks(&mut self, base: usize) {
-        if base >= self.pending_index_rw_writebacks.len() {
-            return;
-        }
-        let writebacks: Vec<_> = self.pending_index_rw_writebacks.drain(base..).collect();
-        for (index_expr, tmp_name, orig_name) in writebacks {
-            if let Expr::Index {
-                target,
-                index,
-                is_positional,
-            } = &index_expr
-            {
-                // Save the call result. RAW store — same fixed-name reuse
-                // hazard as the arg/orig temps above: a cell-valued result
-                // must replace the temp, not write through a stale cell.
-                let result_tmp = format!("__mutsu_call_result_{}", self.code.constants.len());
-                let result_idx = self.code.add_constant(Value::str(result_tmp));
-                self.code.emit(OpCode::SetCallTemp(result_idx));
-
-                // Compare current temp value with original value.
-                // If they're identical (===), skip writeback.
-                let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
-                let orig_idx = self.code.add_constant(Value::str(orig_name));
-                self.code.emit(OpCode::GetCallTemp(tmp_idx));
-                self.code.emit(OpCode::GetCallTemp(orig_idx));
-                self.code.emit(OpCode::StrictEq);
-                // If equal (True), skip writeback
-                let skip_idx = self.code.emit(OpCode::JumpIfTrue(0));
-                // Values differ: pop comparison result
-                self.code.emit(OpCode::Pop); // pop False from StrictEq
-                // Second guard: the tmp/orig globals are compile-time-fixed
-                // names, so a RECURSIVE execution of this same call site inside
-                // the callee clobbers them (and the callee's plain-@-param exit
-                // merge writes its final param value into tmp). If tmp is
-                // structurally `eqv` to what the source slot holds RIGHT NOW,
-                // there is no real mutation to apply — writing back would
-                // re-assign the slot with its own value, which explodes on an
-                // immutable List source (`g(@xs[1..*])` recursion,
-                // 99problems-21-to-30.t P26). A genuine `is rw` mutation leaves
-                // tmp differing from the (not-yet-updated) slot, so it still
-                // writes back.
-                self.code.emit(OpCode::GetCallTemp(tmp_idx));
-                self.compile_expr(&Expr::Index {
-                    target: target.clone(),
-                    index: index.clone(),
-                    is_positional: *is_positional,
-                });
-                self.code.emit(OpCode::Eqv);
-                let skip2_idx = self.code.emit(OpCode::JumpIfTrue(0));
-                self.code.emit(OpCode::Pop); // pop False from Eqv
-                let writeback = Expr::IndexAssign {
-                    target: target.clone(),
-                    index: index.clone(),
-                    value: Box::new(Expr::Var(tmp_name)),
-                    is_positional: *is_positional,
-                };
-                self.compile_expr(&writeback);
-                self.code.emit(OpCode::Pop); // discard assignment result
-                let jump_to_restore = self.code.emit(OpCode::Jump(0));
-                // Skip targets: pop the True left by StrictEq / Eqv
-                self.code.patch_jump(skip_idx);
-                self.code.patch_jump(skip2_idx);
-                self.code.emit(OpCode::Pop); // pop True
-                // Restore point
-                self.code.patch_jump(jump_to_restore);
-                self.code.emit(OpCode::GetCallTemp(result_idx));
-            }
         }
     }
 

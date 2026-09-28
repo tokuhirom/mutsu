@@ -1,8 +1,9 @@
 # ADR-0059: An `is rw` routine returns a container — retiring caller-side tail re-interpretation
 
-- Status: Accepted (Slices 1-2 implemented — the bare-`is rw`-tail half
+- Status: Accepted (Slices 1-3 implemented — the bare-`is rw`-tail half
   landed 2026-09-01, see `news/2026-09/is-rw-bare-tail-returns-container.md`;
-  Slice 3 open)
+  Slice 3 landed 2026-09-28, see
+  `news/2026-09/index-call-args-in-container-mode.md`)
 - Date: 2026-08-22
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline
   lexicals), ADR-0036 (element-container Pairs from subscripts)
@@ -181,13 +182,21 @@ location a routine hands back.**
   machinery keeps. Along the way the promoted element cell learned its
   array's/hash's `value_type` (the core of ADR-0036 slice 4), and a return
   type constraint now checks through the container it receives.
-- **Slice 3 (open):** extend container mode to *every* single-dimension
-  subscript call argument, matching what `MultiDimIndex` arguments already do
-  unconditionally, and retire the `__mutsu_index_rw_arg_*` snapshot/writeback
-  temps in `compile_call_arg_with_escape`. Blocked on read-safety of the array
-  half: `array_slot_ref(idx, true)` grows the array past the end, so an
-  out-of-bounds index in a *read-only* argument position would vivify. The hash
-  half is already safe (a missing key stays a lazy token).
+- **Slice 3 (shipped 2026-09-28):** extend container mode to *every*
+  single-dimension subscript call argument, and retire the
+  `__mutsu_index_rw_arg_*` snapshot/writeback temps in
+  `compile_call_arg_with_escape`. The read-safety blocker was already gone —
+  `array_slot_ref(idx, true)` hands back the deferred vivification token past
+  the end (the array twin of the missing-key token) — so the argument half of
+  ADR-0067's `IndexArgRef` producer now asks for that token instead of growing
+  eagerly, and a new `RwArgCallee::Named` gate lets a named call (`g(@a[0])`,
+  and a user-defined infix operator's operands) use the same producer. The
+  element's location is produced only when some candidate of the callee binds
+  that positional to the caller's container (`is rw`, `is raw`, `\x`); every
+  other argument stays a plain `Index`. Removing the temps also fixed three
+  bugs they carried: the writeback re-evaluated the index expression
+  (`rw(@a[$i++])` wrote `@a[1]`), an argument after a `|slip` was never written
+  back, and a sigilless parameter could not write a missing hash key.
 
 ## Alternatives considered
 
@@ -200,9 +209,9 @@ location a routine hands back.**
   only as a fallback.** Rejected: it leaves two mechanisms disagreeing about
   which one owns a given shape, and keeps the *wrong* one authoritative. It also
   keeps the observable bug that an `is rw` routine's body is never executed.
-- **Extend container mode to all call arguments immediately** (Slice 3 now).
-  Rejected for this slice on read-safety grounds above, not on principle — it is
-  the intended end state.
+- **Extend container mode to all call arguments immediately** (Slice 3 in
+  the first slice). Rejected then on read-safety grounds, not on principle; it
+  shipped as Slice 3 once the deferred array token existed.
 
 ## Verification
 

@@ -448,6 +448,25 @@ impl Interpreter {
                     return self.exec_index_autovivify_op(is_positional);
                 }
             }
+            // An intermediate step PAST THE END of a mutable array is the
+            // array twin of a missing hash key: hand back the deferred token
+            // (`array_slot_ref`'s terminal arm), which the next step extends,
+            // instead of growing the array for a level that may never be
+            // written. `my @a; my $x := @a[1][2]` — or a nested subscript
+            // argument bound by a `\x` parameter that only reads it — leaves
+            // `@a` empty, as in rakudo; the first write walk-creates the path.
+            ValueView::Array(ref items, kind)
+                if matches!(
+                    kind,
+                    crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
+                ) && Self::index_to_usize(&index).is_some_and(|idx| idx >= items.len()) =>
+            {
+                let idx = Self::index_to_usize(&index).unwrap();
+                match resolved.array_slot_ref(idx, true) {
+                    Some(token) => self.stack.push(token),
+                    None => self.stack.push(Value::NIL),
+                }
+            }
             // When resolved is an Array (e.g. reached through a HashEntryRef),
             // descend via the non-lazy autoviv op so nested binding like
             // `$struct[1]<key><subkey>[1]` works (it promotes the element to a

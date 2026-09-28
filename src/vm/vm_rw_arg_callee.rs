@@ -106,6 +106,23 @@ impl Interpreter {
                     _ => self.named_routine_binds_container_at(&name, positional),
                 }
             }
+            RwArgCallee::Named { name_idx } => {
+                // The mirror image of the `CodeVar` arm's order: a named call
+                // is overwhelmingly a registered routine, so the registry is
+                // asked first and the code-variable resolution (an env walk)
+                // is paid only for a name no routine is registered under —
+                // `my &g = sub ($x is rw) { ... }; g(@a[0])`.
+                let name = Self::const_str(code, *name_idx);
+                let name_sym = code.const_sym(*name_idx);
+                if let Some(answer) =
+                    self.registered_routine_binds_container_at_sym(name, name_sym, positional)
+                {
+                    return answer;
+                }
+                let name = name.to_string();
+                self.resolve_rw_arg_code_var(code, &name)
+                    .is_some_and(|callee| Self::code_value_binds_container_at(&callee, positional))
+            }
         }
     }
 
@@ -141,8 +158,10 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.resolve_rw_arg_code_var(code, &name)
             }
-            // A method never binds an argument to the topic.
-            crate::opcode::RwArgCallee::Method { .. } => None,
+            // A method never binds an argument to the topic, and neither does
+            // a named routine (a bare block has no name to call it by).
+            crate::opcode::RwArgCallee::Method { .. }
+            | crate::opcode::RwArgCallee::Named { .. } => None,
         };
         callee.is_some_and(|c| Self::code_value_binds_topic_raw(&c))
     }
@@ -205,11 +224,12 @@ impl Interpreter {
         let ValueView::Sub(data) = callee.view() else {
             return false;
         };
-        data.param_defs
-            .iter()
-            .filter(|p| !p.named && (counts_invocant || !p.is_invocant))
-            .nth(positional)
-            .is_some_and(|p| p.binds_caller_container())
+        crate::runtime::rw_arg_container::positional_binds_container_at(
+            data.param_defs
+                .iter()
+                .filter(|p| !p.named && (counts_invocant || !p.is_invocant)),
+            positional,
+        )
     }
 
     /// Whether any candidate reachable from `invocant`'s MRO under `method`

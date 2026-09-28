@@ -1501,13 +1501,9 @@ pub(crate) struct Compiler {
     /// argument. `compile_call_arg` reads this once at entry and clears it
     /// before any nested compilation, so a call nested inside the bind RHS
     /// (`my $x := f(@a[$i])`) still sees `false` for its own arguments and
-    /// keeps the normal `is rw` writeback machinery. Guards against reusing the
-    /// call-argument `is rw` Index writeback temps (`__mutsu_index_rw_*`) for a
-    /// bind: those temps are compile-time-fixed global names, and inside a loop
-    /// body the same bind statement re-executes every iteration, so the
-    /// call-argument writeback's "write through an existing ContainerRef"
-    /// semantics corrupt the *previous* iteration's bound cell instead of
-    /// storing a fresh one (see the `lock.t` array-corruption investigation).
+    /// keeps the ordinary argument compile. A direct bind target wraps the
+    /// subscript's promoted cell in a per-site `__mutsu_bind_index_ref_N`
+    /// `VarRef`, so `SetLocal` sees a bind.
     bind_target_direct: bool,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
@@ -1695,11 +1691,6 @@ pub(crate) struct Compiler {
     /// `augment_site_id`. A separate map so an augment site and an unrelated
     /// BEGIN that happened to hash to the same base never share a counter.
     augment_site_seq: std::collections::HashMap<u64, u32>,
-    /// Pending writebacks for Index expressions passed to function calls.
-    /// After the call returns, if the `is rw` parameter was written to,
-    /// we need to write the temp variable value back to the original hash/array slot.
-    /// Each entry is (original Index Expr, temp variable name).
-    pub(super) pending_index_rw_writebacks: Vec<(Expr, String, String)>,
     /// The current distribution context for $?DISTRIBUTION.
     pub(crate) current_distribution: Option<Value>,
     /// True while compiling a sub-expression whose VALUE is stored/returned/bound
@@ -1899,7 +1890,6 @@ impl Compiler {
             last_source_line: None,
             begin_site_seq: std::collections::HashMap::new(),
             augment_site_seq: std::collections::HashMap::new(),
-            pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
             dot_twigil_rmw_assign: false,
