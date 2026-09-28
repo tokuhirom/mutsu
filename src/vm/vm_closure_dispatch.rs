@@ -766,7 +766,8 @@ impl Interpreter {
                     &data.params,
                     &param_name_syms.params,
                     &args,
-                    Some(cc.reads_args_array)
+                    Some(cc.reads_args_array),
+                    Some(cc.reads_args_hash)
                 )
             ) {
                 Ok(bindings) => bindings,

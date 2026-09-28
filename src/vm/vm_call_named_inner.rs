@@ -227,7 +227,7 @@ impl Interpreter {
                     &cf.param_defs,
                     &cf.params,
                     &args,
-                    None,
+                    Some((true, cf.code.reads_args_hash)),
                     &cf.param_name_syms,
                     &[]
                 )

@@ -297,6 +297,17 @@ impl Interpreter {
             &def.params,
             arg_values,
             Some(crate::ast::body_reads_args_array(&def.body)),
+            Some(
+                def.param_defs.is_empty()
+                    && !def.params.is_empty()
+                    && arg_values.iter().any(|arg| {
+                        matches!(
+                            crate::runtime::types::unwrap_varref_value(arg.clone()).view(),
+                            ValueView::Pair(..)
+                        )
+                    })
+                    && crate::ast::body_reads_args_hash(&def.body),
+            ),
         ) {
             Ok(bindings) => bindings,
             Err(e) => {

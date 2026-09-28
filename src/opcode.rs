@@ -6538,6 +6538,9 @@ pub(crate) struct CompiledCode {
     /// the alternative it rejected (reserving a synthetic `params` entry) leaks
     /// into every site that reads a Sub's raw `params`.
     pub(crate) reads_args_array: bool,
+    /// Whether this code reads the implicit named-argument hash `%_`.
+    /// Placeholder signatures accept leftover named arguments only in that case.
+    pub(crate) reads_args_hash: bool,
     /// Whether this code contains opcodes that write to env (SetGlobal,
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
@@ -7677,6 +7680,7 @@ impl CompiledCode {
             immutable_topic: false,
             writes_topic: false,
             reads_args_array: false,
+            reads_args_hash: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
@@ -10706,6 +10710,13 @@ impl CompiledCode {
             && matches!(name.as_str(), "@_" | "_")
         {
             self.reads_args_array = true;
+        }
+        if !self.reads_args_hash
+            && let OpCode::GetHashVar(idx) = &op
+            && let Some(ValueView::Str(name)) = self.constants.get(*idx as usize).map(Value::view)
+            && matches!(name.as_str(), "%_" | "_")
+        {
+            self.reads_args_hash = true;
         }
         if !self.has_env_writes {
             self.has_env_writes = matches!(

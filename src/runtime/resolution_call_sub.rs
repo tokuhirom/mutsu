@@ -818,6 +818,7 @@ impl Interpreter {
                 &data.params,
                 &call_args,
                 Self::routine_reads_args_array(&data),
+                Self::routine_reads_args_hash(&data, &call_args),
             ) {
                 Ok(bindings) => bindings,
                 Err(e) => {
