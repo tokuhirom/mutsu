@@ -2964,12 +2964,13 @@ impl Interpreter {
                         ..
                     } if class_name.resolve() == "IO::Path::Parts" => {
                         let attrs = attributes.as_map();
+                        // ADR-0021 I2: a data-minted pair defaults positional.
                         Value::array(
                             crate::runtime::utils::io_path_parts_keys()
                                 .iter()
                                 .map(|key| {
-                                    Value::pair(
-                                        (*key).to_string(),
+                                    Value::value_pair(
+                                        Value::str((*key).to_string()),
                                         attrs.get(*key).cloned().unwrap_or(Value::NIL),
                                     )
                                 })

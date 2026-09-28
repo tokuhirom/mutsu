@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 30;
+plan 31;
 
 # IO::Path::Parts.new(\volume, \dirname, \basename) — direct construction.
 my $p = IO::Path::Parts.new('C:', '/some/dir', 'foo.txt');
@@ -25,6 +25,17 @@ is $p[0].^name, 'Pair', '[0] is a Pair';
 is $p[0].gist, 'volume => C:', '[0] is the volume pair';
 is $p[1].gist, 'dirname => /some/dir', '[1] is the dirname pair';
 is $p[2].gist, 'basename => foo.txt', '[2] is the basename pair';
+
+# #9820: `say $p[0]` (the Pair handed directly to say/put/print/note, not
+# through a variable or a method call) must print the pair, not silently
+# vanish. AT-POS previously minted the NAMED-argument Pair flavour
+# (`Value::pair`), which `say`'s in-band-named-marker filter (ADR-0021)
+# mistook for a call-site colonpair and dropped.
+my $out = run $*EXECUTABLE, '-e',
+    'my $p = IO::Path::Parts.new("C:", "/d", "f.txt"); say $p[0]; say $p[1]; say $p[2];',
+    :out;
+is $out.out.slurp(:close), "volume => C:\ndirname => /d\nbasename => f.txt\n",
+    'say $p[i] prints the positional pair directly, not filtered as a named arg';
 
 # Rakudo's inherited single-item fallbacks deliberately itemize the object,
 # despite IO::Path::Parts also exposing its three parts positionally.
