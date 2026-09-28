@@ -1458,23 +1458,42 @@ impl Interpreter {
                         }
                     } else {
                         let last = result.last().unwrap();
-                        // For non-numeric values (e.g. custom objects), try .succ/.pred
-                        if matches!(last.view(), ValueView::Instance { .. }) {
+                        if let ValueView::Package(name) = last.view() {
                             let method = if *step >= 0.0 { "succ" } else { "pred" };
-                            let saved = self.env.clone();
-                            let saved_vb = self.var_bindings.clone();
-                            let v = match self.call_method_with_values(last.clone(), method, vec![])
-                            {
-                                Ok(v) => v,
-                                Err(_) => Self::seq_add(last, *step),
-                            };
-                            self.env = saved;
-                            self.var_bindings = saved_vb;
-                            v
-                        } else if let Some((sn, sd)) = rat_step {
-                            Self::seq_add_rat(last, sn, sd)
+                            // A type object cannot be numified into the next element.
+                            // Dispatch a user method through compiled bytecode when
+                            // present, and report the missing method otherwise.
+                            match self.try_dispatch_compiled_method_direct(last, method, &[]) {
+                                Some(result) => result?,
+                                None => {
+                                    return Err(RuntimeError::method_not_found(
+                                        method,
+                                        &name.resolve(),
+                                    ));
+                                }
+                            }
                         } else {
-                            Self::seq_add(last, *step)
+                            // For non-numeric values (e.g. custom objects), try .succ/.pred
+                            if matches!(last.view(), ValueView::Instance { .. }) {
+                                let method = if *step >= 0.0 { "succ" } else { "pred" };
+                                let saved = self.env.clone();
+                                let saved_vb = self.var_bindings.clone();
+                                let v = match self.call_method_with_values(
+                                    last.clone(),
+                                    method,
+                                    vec![],
+                                ) {
+                                    Ok(v) => v,
+                                    Err(_) => Self::seq_add(last, *step),
+                                };
+                                self.env = saved;
+                                self.var_bindings = saved_vb;
+                                v
+                            } else if let Some((sn, sd)) = rat_step {
+                                Self::seq_add_rat(last, sn, sd)
+                            } else {
+                                Self::seq_add(last, *step)
+                            }
                         }
                     }
                 }
