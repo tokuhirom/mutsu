@@ -3,6 +3,15 @@ use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let topic = self.env.get("/").cloned().unwrap_or(Value::NIL);
+        if !topic.is_match_instance() {
+            let what = self
+                .call_method_with_values(topic, "gist", vec![])?
+                .to_string_value();
+            return Err(RuntimeError::new(format!(
+                "The make function expects $/ to contain a Match, but it contains {what}"
+            )));
+        }
         let value = if args.len() > 1 {
             Value::slip_arc(std::sync::Arc::new(args.to_vec()))
         } else {
