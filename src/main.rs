@@ -225,6 +225,10 @@ fn run_main() {
         std::process::exit(1);
     }
 
+    // `%*COMPILING<%?OPTIONS><I>` (and so `Rakudo::Internals.INCLUDE`) holds
+    // the command-line `-I` paths only, as rakudo's does: RAKULIB is not a
+    // command-line option.
+    let cli_include_count = lib_paths.len();
     // MUTSULIB env var: colon-separated paths appended AFTER the -I paths.
     // Search order is first-listed-first, so this is what makes an explicit
     // `-I` win over an inherited MUTSULIB entry, as raku's -I does over RAKULIB.
@@ -341,7 +345,7 @@ fn run_main() {
         interpreter.set_precomp_enabled(false);
     }
     let e_source = (program_name == "-e").then_some(input.as_str());
-    interpreter.set_compiling_options(e_source, &lib_paths, &preload_modules);
+    interpreter.set_compiling_options(e_source, &lib_paths[..cli_include_count], &preload_modules);
     // `-I` and `MUTSULIB` repositories head `$*REPO`'s chain in search order,
     // as Rakudo's `-I` and `RAKULIB` do, so `$*REPO.repo-chain` reports them
     // (a test forwards `$*REPO.repo-chain.map(*.path-spec)` to a child `-I`).

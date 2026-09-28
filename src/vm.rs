@@ -271,6 +271,7 @@ mod vm_numeric_uninit_warn;
 mod vm_our_package_vars;
 pub(crate) mod vm_poll;
 mod vm_pseudo_stash_ops;
+mod vm_rakudo_internals;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;

@@ -994,18 +994,10 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
-        // `Rakudo::Internals.IS-WIN` / `.IS-MACOS`: platform predicates used by
-        // low-level native modules (e.g. NativeLibs picks the library name by
-        // `Rakudo::Internals.IS-WIN()`). Resolved from the host build target.
-        if matches!(target.view(), ValueView::Package(name) if name.resolve() == "Rakudo::Internals")
-            && matches!(method, "IS-WIN" | "IS-MACOS")
-        {
-            let val = match method {
-                "IS-WIN" => cfg!(target_os = "windows"),
-                "IS-MACOS" => cfg!(target_os = "macos"),
-                _ => unreachable!(),
-            };
-            return Ok(Value::truth(val));
+        // `Rakudo::Internals.IS-WIN` / `.IS-MACOS` / `.INCLUDE`: the same
+        // helper the VM's native method path answers them with.
+        if let Some(result) = self.try_rakudo_internals_method(&target, method, &args) {
+            return result;
         }
         // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
         // default for a process dynamic variable by running the initializer
