@@ -182,10 +182,10 @@ impl Interpreter {
         if let Some(result) = self.try_user_infix(name, &left, &right)? {
             return Ok(result);
         }
-        if matches!(left.view(), ValueView::Package(name) if name == "Any") {
+        if !crate::runtime::types::value_is_defined(&left) {
             return Ok(right);
         }
-        if matches!(right.view(), ValueView::Package(name) if name == "Any") {
+        if !crate::runtime::types::value_is_defined(&right) {
             return Ok(left);
         }
         let is_failure = |v: &Value| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
