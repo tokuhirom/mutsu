@@ -348,6 +348,12 @@ pub(crate) fn native_method_0arg(
         return None;
     }
 
+    // Cost: O(1), one scheduler yield for the calling OS thread.
+    if method == "yield" && matches!(target.view(), ValueView::Package(name) if name == "Thread") {
+        std::thread::yield_now();
+        return Some(Ok(Value::NIL));
+    }
+
     // Unicode's query methods are class methods over the Unicode data shipped
     // with this runtime. `unicode-normalization` exports the authoritative
     // version tuple for the tables mutsu actually uses.
