@@ -1018,7 +1018,7 @@ pub(crate) struct ClassAttributeDef {
     /// ever compiler-generated shaped-array defaults.
     pub(crate) declared_shape: Option<Vec<usize>>,
     /// `Code.line`/`Code.file` for the auto-generated accessor method this
-    /// attribute produces (`wrap_accessor_method_object`), mirroring
+    /// attribute produces (`instance_accessor_method_object`), mirroring
     /// `MethodDef::source_file`/`compiled_code.source_line` for a
     /// user-declared method. `None` when the declaration line was not
     /// tracked at registration time (a non-plan-backed construction site, or

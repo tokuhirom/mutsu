@@ -293,15 +293,15 @@ impl Interpreter {
                 false,
                 env,
             );
-            return Some(self.wrap_accessor_method_object(
+            let attrs = self.accessor_method_attrs(
                 method_name,
                 &class_name_str,
-                false,
                 false,
                 callable,
                 None,
                 None,
-            ));
+            );
+            return Some(Value::make_instance(Symbol::intern("Method"), attrs));
         }
         // Check grammar token/rule/regex definitions -- walks the MRO like the
         // class-methods loop above, so a `token`/`rule` declared only on an
@@ -397,18 +397,30 @@ impl Interpreter {
             is_rw,
             env,
         );
-        self.wrap_accessor_method_object(
-            name,
-            owner,
-            is_rw,
-            true,
-            callable,
-            source_line,
-            source_file,
-        )
+        let mut attrs =
+            self.accessor_method_attrs(name, owner, is_rw, callable, source_line, source_file);
+        // An instance attribute's accessor is candidate slot zero of the
+        // method-wrap registry, exactly like the accessor objects
+        // `.^method_table` hands out, so `.^find_method('x').wrap(...)` /
+        // `.^lookup('x').wrap(...)` installs a wrapper that later reads and
+        // assignments run (Object::Permission's `is authorised-by` wraps an
+        // attribute's accessor from its `compose`). A class-level `my $.x`
+        // accessor has no dispatch that consults that registry, so it gets no
+        // wrap identity and `.wrap` on it stays unsupported rather than
+        // silently ineffective.
+        attrs.insert(
+            "__mutsu_lookup_class".to_string(),
+            Value::str(owner.to_string()),
+        );
+        attrs.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(name.to_string()),
+        );
+        attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+        Value::make_instance(Symbol::intern("Method"), attrs)
     }
 
-    /// Build a minimal Method `Instance` for an auto-generated attribute
+    /// The attributes of a minimal Method `Instance` for an auto-generated attribute
     /// accessor (`has $.x`), wrapping the pre-built accessor `Sub` as
     /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
     /// accessor is synthesized, not declared), so this does not go through
@@ -421,16 +433,15 @@ impl Interpreter {
     /// `.file` for a user-declared method. `None` (reported as `Nil`, never a
     /// fabricated location) for a class-level `our`/`my` attribute or a
     /// non-plan-backed construction site that does not track it yet.
-    fn wrap_accessor_method_object(
+    fn accessor_method_attrs(
         &self,
         name: &str,
         owner: &str,
         is_rw: bool,
-        wrappable: bool,
         callable: Value,
         source_line: Option<i64>,
         source_file: Option<&str>,
-    ) -> Value {
+    ) -> std::collections::HashMap<String, Value> {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
@@ -461,27 +472,7 @@ impl Interpreter {
                 .unwrap_or(Value::NIL),
         );
         attrs.insert("__mutsu_method_callable".to_string(), callable);
-        // An instance attribute's accessor is candidate slot zero of the
-        // method-wrap registry, exactly like the accessor objects
-        // `.^method_table` hands out, so `.^find_method('x').wrap(...)` /
-        // `.^lookup('x').wrap(...)` installs a wrapper that later reads and
-        // assignments run (Object::Permission's `is authorised-by` wraps an
-        // attribute's accessor from its `compose`). A class-level `my $.x`
-        // accessor has no dispatch that consults that registry, so it gets no
-        // wrap identity and `.wrap` on it stays unsupported rather than
-        // silently ineffective.
-        if wrappable {
-            attrs.insert(
-                "__mutsu_lookup_class".to_string(),
-                Value::str(owner.to_string()),
-            );
-            attrs.insert(
-                "__mutsu_lookup_method".to_string(),
-                Value::str(name.to_string()),
-            );
-            attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
-        }
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        attrs
     }
 
     /// Build the callable `Sub` value for a single (non-dispatcher) method
