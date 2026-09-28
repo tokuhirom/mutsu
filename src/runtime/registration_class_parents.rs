@@ -212,7 +212,12 @@ impl Interpreter {
             let lexical_class_shadows_package_type = storage_name.contains('\u{0}')
                 && (self.registry().classes.contains_key(name.as_ref())
                     || self.registry().roles.contains_key(name.as_ref())
-                    || self.registry().enum_types.contains_key(name.as_ref()));
+                    || self.registry().enum_types.contains_key(name.as_ref())
+                    // A core type mutsu models natively (`my class DateTime
+                    // is DateTime { }`, DateTime::strftime's refinement):
+                    // the parent is the outer CORE type, not the new class.
+                    || BUILTIN_TYPES.contains(&name.as_ref())
+                    || BUILTIN_INHERITABLE_TYPES.contains(&name.as_ref()));
             if resolved_parent == name.as_ref() && !lexical_class_shadows_package_type {
                 let mut attrs = ValueMap::default();
                 attrs.insert("name".to_string(), Value::str(name.to_string()));
