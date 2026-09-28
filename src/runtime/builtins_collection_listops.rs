@@ -193,30 +193,17 @@ impl Interpreter {
                 }
                 Ok(changed.then(|| Value::array(mapped)))
             }
-            // A container-inner mixin (`@a but R`) flattens through its INNER
-            // value for a slurpy, exactly as `flat_val`'s own `Mixin` arm does
-            // — the role's `Str` override applies to the value as a whole, not
-            // to the elements a flattening slurpy exposes instead of it. Only
-            // recurse into the container looking for a NESTED user
-            // stringifier; a non-container inner (`1 but R`) is itself the
-            // flattened element, so its own `.Str` still applies.
-            ValueView::Mixin(inner, _)
-                if matches!(
-                    inner.as_ref().view(),
-                    ValueView::Array(..)
-                        | ValueView::Seq(_)
-                        | ValueView::HyperSeq(_)
-                        | ValueView::RaceSeq(_)
-                        | ValueView::LazyList(_)
-                        | ValueView::Range(..)
-                        | ValueView::RangeExcl(..)
-                        | ValueView::RangeExclStart(..)
-                        | ValueView::RangeExclBoth(..)
-                        | ValueView::GenericRange { .. }
-                        | ValueView::Hash(_)
-                        | ValueView::Slip(_)
-                ) =>
-            {
+            // A NON-ITEMIZED Array-inner mixin (`@a but R`, `@a` a real
+            // Positional) flattens through its inner elements for a slurpy,
+            // exactly as `flat_val`'s own `Array`-inner `Mixin` arm does — the
+            // role's `Str` override applies to the value as a whole, not to
+            // the elements a flattening slurpy exposes instead of it. Only
+            // recurse looking for a NESTED user stringifier; an ITEMIZED inner
+            // (`my $r = @a but R` boxes it in a Scalar, `$r.raku` reads
+            // `$[...]`) does NOT flatten — a scalar container never crosses a
+            // slurpy boundary — so it stays the flattened element and keeps
+            // its own `.Str`, same as any other non-container inner below.
+            ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Array(_, kind) if !kind.is_itemized()) => {
                 self.join_prerender_user_stringifier(inner)
             }
             ValueView::Mixin(..) => {
