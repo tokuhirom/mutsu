@@ -11,7 +11,7 @@ lines against a plan of 1.
 imported into a nested import scope. It now does the same for an imported
 `only` sub, and restores the outer family when the block exits, just as it does
 for a proto. Pinned by
-`t/modules/import-export/block-import-only-sub-shadows-outer-multi.t`.
+`t/modules/import-export/import-only-sub-hides-outer-family.t`.
 
 The same distribution exposed two larger gaps, filed as issues rather than
 patched:
