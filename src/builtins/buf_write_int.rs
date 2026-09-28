@@ -59,8 +59,10 @@ fn to_u128_value(value: &Value) -> u128 {
         ValueView::Enum { value, .. } => to_u128_value(&value.to_value()),
         // An instance of a user subclass of `Int` (BSON::Simple's
         // `class Int64 is Int`) writes its integer payload, not 0.
-        ValueView::Instance { .. } => crate::builtins::int_subclass::int_subclass_payload(value)
-            .map_or(0, |payload| to_u128_value(&payload)),
+        ValueView::Instance { .. } => {
+            crate::builtins::numeric_subclass::numeric_subclass_payload(value)
+                .map_or(0, |payload| to_u128_value(&payload))
+        }
         _ => 0,
     }
 }

@@ -211,7 +211,7 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_str_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
-        if let Some(payload) = attributes.as_map().get("__mutsu_int_value").cloned() {
+        if let Some(payload) = crate::builtins::numeric_subclass::numeric_payload_of(&attributes) {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         // An `is Version` subclass (#8070) delegates any method it does not

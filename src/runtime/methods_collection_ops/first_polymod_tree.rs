@@ -229,7 +229,7 @@ impl Interpreter {
                 ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
                 // An `Int` subclass instance divides its `Int` payload.
                 ValueView::Instance { .. } => {
-                    crate::builtins::int_subclass::int_subclass_payload(v)
+                    crate::builtins::numeric_subclass::numeric_subclass_payload(v)
                         .map_or(0.0, |payload| val_to_f64(&payload))
                 }
                 _ => 0.0,

@@ -504,7 +504,9 @@ impl Interpreter {
             let mut coerced_args: Vec<Value> = Vec::with_capacity(args.len());
             let mut all_ok = true;
             for arg in args {
-                if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(arg) {
+                if let Some(payload) =
+                    crate::builtins::numeric_subclass::numeric_subclass_payload(arg)
+                {
                     // An `Int` subclass's `.Numeric` is the instance itself;
                     // the builtin takes its `Int` payload.
                     coerced_args.push(payload);

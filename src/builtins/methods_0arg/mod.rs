@@ -554,8 +554,8 @@ pub(crate) fn native_method_0arg(
     }
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::int_subclass`).
-    if let Some(result) = super::int_subclass::dispatch(target, method_sym, &[]) {
+    // payload (`builtins::numeric_subclass`).
+    if let Some(result) = super::numeric_subclass::dispatch(target, method_sym, &[]) {
         return Some(result);
     }
 
@@ -784,12 +784,12 @@ pub(crate) fn native_method_0arg(
             | "msb" | "is-int" | "re" | "im" => {
                 let coerced = if let Ok(i) = s.parse::<i64>() {
                     Value::int(i)
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Value::num(f)
                 } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                    // A Str that numifies to a Complex/Rat (`"6+8i"`, `"1/2"`)
-                    // must coerce fully before the numeric method runs, so
-                    // `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
+                    // A Str numifies the way `.Numeric` does before the numeric
+                    // method runs: a decimal is a Rat (`"-5.9".abs` is the Rat
+                    // 5.9, not the Num 5.9000000000000004 an `f64` parse gave),
+                    // and a Complex/Rat string (`"6+8i"`, `"1/2"`) coerces
+                    // fully, so `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
                     v
                 } else {
                     parse_raku_int_from_str(&s)?

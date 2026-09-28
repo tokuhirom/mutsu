@@ -561,13 +561,13 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .map(crate::value::Value::to_string_value)
                 .unwrap_or_default()
         }
-        // An `is Int` subclass gists as its integer payload, just like Int.
-        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_int_value") => {
-            attributes
-                .as_map()
-                .get("__mutsu_int_value")
-                .map(crate::value::Value::to_string_value)
-                .unwrap_or_default()
+        // An `is Int` / `is Num` subclass gists as its payload, just like
+        // Int / Num.
+        ValueView::Instance { attributes, .. }
+            if let Some(payload) =
+                crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
+        {
+            payload.to_string_value()
         }
         // An `is Version` subclass gists as its Version payload, just like
         // Version (#8070).
