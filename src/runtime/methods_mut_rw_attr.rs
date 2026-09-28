@@ -173,6 +173,32 @@ impl Interpreter {
         Self::itemize_scalar_store_value(value)
     }
 
+    /// Read-side counterpart of [`Self::itemize_attr_store_value`]: the value
+    /// a GENERATED public accessor call (`self.x`, `$obj.x`) hands back for a
+    /// `$`-sigil attribute.
+    ///
+    /// Raku's generated accessor decontainerizes its result — `self.a` is
+    /// NOT itemized, only `$.a` (defined as `self.a.item`) is
+    /// (`Language/objects.rakudoc`: "there is a difference between `self.a`
+    /// and `$.a`, since the latter will itemize"). So `has $.x = (1, 2, 3)`
+    /// iterates three times under `.say for self.x` but once under `.say for
+    /// $.x`. A hand-written method that returns `$!attr` directly is
+    /// unaffected — it is not the generated accessor, and preserves whatever
+    /// item-ness the store put there (`method y { $!x }` on a constructor-set
+    /// `has $.x` sees the Scalar the store itemized).
+    pub(crate) fn accessor_read_value(attr_sigil: char, value: Value) -> Value {
+        if attr_sigil != '$' {
+            return value;
+        }
+        match value.view() {
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
+            }
+            ValueView::Hash(_) if value.hash_is_itemized() => value.with_hash_itemized(false),
+            _ => value,
+        }
+    }
+
     /// Whether `target.method` (about to be assigned through, e.g.
     /// `$obj.method = value`) is a `$`-sigil attribute accessor -- either the
     /// generated public accessor for `has $.method`, or a hand-written

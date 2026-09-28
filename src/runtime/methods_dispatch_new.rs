@@ -617,7 +617,7 @@ impl Interpreter {
                                 coerced,
                             )
                         } else {
-                            coerced
+                            Self::itemize_attr_store_value(sigil, coerced)
                         };
                         attributes.insert(plan.attr_syms[i], coerced)
                     }
