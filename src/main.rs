@@ -31,6 +31,10 @@ fn main() {
     // (tmp/crash/<pid>.txt) naming the signal, fault address, pid and argv,
     // then re-raises. Two syscalls now, no files created until a crash.
     mutsu::crash_report::install();
+    // Before any thread exists: under `ulimit -v`, bound glibc's per-thread
+    // malloc arenas so they cannot eat the address space the heap and the
+    // worker stacks share (ADR-0123 §5).
+    mutsu::cap_malloc_arenas();
 
     // Spawn the real entry point on a thread with a larger stack to avoid
     // stack overflows during deeply-recursive grammar matching and deep user

@@ -120,15 +120,26 @@ impl Interpreter {
             // block keeps its sigil and gets a real `ParamDef`) is just as
             // fresh per invocation, and leaving it on the once-seeded name lane
             // froze every worker at the first call's argument.
-            for sym in cc.free_var_syms.iter() {
-                let name = sym.resolve();
-                if let Some(bound) = self.param_bound_aggregates.get(name.as_str())
-                    && self
-                        .env
-                        .get(&name)
-                        .is_some_and(|cur| Self::same_container_arc(cur, bound))
+            //
+            // Nor does it require the block to NAME the parameter (#10031).
+            // A parameter the block never mentions was still seeded, as an
+            // ADR-0039 §8.6 transient entry, and the spawning frame's own later
+            // `%g{$k} = ...` then saw the name in the store and took the atomic
+            // hash lane, which writes a COPY and rebinds `%g` to it — detaching
+            // the parameter from the caller's container it aliases:
+            // `sub mk(%g) { -> $k { %g{$k} = 1; start { 1 } } }` lost every
+            // store after the first spawn. Being a per-invocation binding does
+            // not depend on who names it, and the parameter's own container is
+            // already what every alias holds, so no lane is needed to reach it.
+            // The frame's env may hold the parameter boxed in the closure
+            // machinery's `ContainerRef` cell, so compare through it.
+            for (name, bound) in self.param_bound_aggregates.iter() {
+                if self
+                    .env
+                    .get(name)
+                    .is_some_and(|cur| Self::same_container_arc(&cur.deref_container(), bound))
                 {
-                    out.insert(name.to_string());
+                    out.insert(name.clone());
                 }
             }
         }

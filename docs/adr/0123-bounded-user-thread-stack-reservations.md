@@ -136,3 +136,32 @@ callback) is dropped with a diagnostic on stderr.
 - **A supervisor thread (rakudo-style) that grows on stalled queues.** Unneeded for correctness:
   every blocking wait is already observed at the chokepoint. ADR-0105 D4 plans a 10 ms tick for an
   unrelated ordering reason; it can take over that role if the busy-wait case ever matters.
+
+## 5. Amendment (2026-09-28): `Required` growth steps down inside the budget, and malloc arenas are capped
+
+§3's first consequence, "any `start` burst under `ulimit -v` completes", did not hold for a burst
+of workers that all **block**. The JobQueue distribution's `t/01-queue` parks 32 `start` callers
+on one `await`. Under the ecosystem sandbox's 6 GB limit it died with `memory allocation of N bytes
+failed`. A 48-worker variant broke about a third of its promises with `Could not create a new
+Thread: Resource temporarily unavailable`. Two things spent the address space that D1 leaves for
+the heap:
+
+1. **The step-down retried the full tier past the budget.** When the budget, not the OS, refused
+   the 256 MiB stack, a `Required` thread took 256 MiB anyway (`reserve_over_budget(256 MiB)`), so
+   every blocked-pool thread was full-size until the OS itself said no. A measured process held 18
+   such stacks, 4.6 GB against a 3 GB budget. D2 now reads as its text says: a `Required` thread
+   takes the largest *smaller* tier that still fits the budget, and only when none fits does it
+   go past the budget, with the **smallest** tier (32 MiB). `Budgeted` growth is unchanged and
+   still takes only the full tier.
+2. **glibc's per-thread arenas.** Each arena reserves 64 MiB of address space, glibc creates up to
+   `8 × cores` of them as threads contend, and D1's "the rest is for the heap, the JIT, malloc's
+   per-thread arenas" had no bound on the arena share. With the step-down fixed, 48 parked workers
+   still failed on arenas alone (33/48 kept; `MALLOC_ARENA_MAX=4` or `8` made it 48/48). When
+   `RLIMIT_AS` is set, `stack_budget::cap_malloc_arenas` now runs once at startup and sets
+   `M_ARENA_MAX` to `limit / 16 / 64 MiB`, never below 2 (5 arenas under 6 GB). An explicit
+   `MALLOC_ARENA_MAX` from the user wins, and nothing changes without a limit. Threads past the
+   cap share arenas, which costs some allocator contention inside a sandbox and nothing else.
+
+Pinned by `t/concurrency/thread-lock/thread-pool-stack-budget.t`, which gains the 48-parked-worker
+case under a 6 GB `ulimit -v`. Measured, it fails both before this amendment and with only the
+step-down fix (without the arena cap).

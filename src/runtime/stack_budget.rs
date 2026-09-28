@@ -74,6 +74,45 @@ fn address_space_limit() -> Option<usize> {
     None
 }
 
+/// Address space one glibc malloc arena reserves: `HEAP_MAX_SIZE`, which is
+/// `2 * DEFAULT_MMAP_THRESHOLD_MAX` = 64 MiB on a 64-bit target.
+#[cfg(all(target_os = "linux", target_env = "gnu", feature = "native"))]
+const MALLOC_ARENA_BYTES: usize = 64 * MIB;
+
+/// Cap glibc's malloc arenas when the address space is limited.
+///
+/// glibc gives a thread that meets contention its own arena, up to `8 x cores`
+/// of them, and every arena reserves 64 MiB of address space up front. Under
+/// `RLIMIT_AS` those reservations come out of the half D1 leaves the heap, and
+/// they scale with the thread count exactly as the stacks do: 48 `start`
+/// workers parked on one `await` under the ecosystem sandbox's 6 GB limit
+/// spent ~2 GB on arenas alone, and the next thread's `pthread_create` or the
+/// next `malloc` failed (ADR-0123 §5). The cap keeps the arenas to about a
+/// sixteenth of the limit, never fewer than two; threads beyond it share
+/// arenas, which costs some allocator contention and nothing else.
+///
+/// Does nothing without a limit, or when the user set `MALLOC_ARENA_MAX`
+/// themselves. Call it once, before any worker thread exists.
+// Cost: O(1).
+pub(crate) fn cap_malloc_arenas() {
+    #[cfg(all(target_os = "linux", target_env = "gnu", feature = "native"))]
+    {
+        if std::env::var_os("MALLOC_ARENA_MAX").is_some() {
+            return;
+        }
+        let Some(limit) = address_space_limit() else {
+            return;
+        };
+        let arenas = (limit / 16 / MALLOC_ARENA_BYTES).max(2);
+        let arenas = libc::c_int::try_from(arenas).unwrap_or(libc::c_int::MAX);
+        // SAFETY: `mallopt` only adjusts allocator tuning; M_ARENA_MAX takes
+        // effect for arenas created after the call.
+        unsafe {
+            libc::mallopt(libc::M_ARENA_MAX, arenas);
+        }
+    }
+}
+
 /// A stack reservation, released when dropped (the thread that owns the stack
 /// holds it until it exits).
 pub(crate) struct StackReservation {

@@ -97,17 +97,28 @@ where
         }
     }
     if policy == StackPolicy::Required {
-        // A thread that has to exist steps down through the tiers, past the
-        // budget if it must; the full size is retried only if the budget,
-        // not the OS, refused it above.
-        let first = usize::from(last_os_error.is_some());
-        for &size in &STACK_TIERS[first..] {
-            let reservation = try_reserve(size).unwrap_or_else(|| reserve_over_budget(size));
-            match spawn_registered_thread(name, Some(reservation), slot.clone()) {
-                Ok(handle) => return Ok(handle),
-                Err(e) => last_os_error = Some(e),
+        // A thread that has to exist steps down through the smaller tiers
+        // while one still fits the budget, and only past the budget if none
+        // does -- then with the SMALLEST tier (ADR-0123 D2). Retrying the full
+        // size past the budget let a burst of blocked `start` workers (32
+        // callers parked on one `await`) take a 256 MiB stack each until the
+        // OS refused, spending the heap's half of `RLIMIT_AS`: the next
+        // `malloc` aborted the process, or a later spawn broke its promise
+        // with EAGAIN (the JobQueue distribution's t/01-queue under the
+        // ecosystem sandbox's 6 GB limit).
+        for &size in &STACK_TIERS[1..] {
+            let Some(reservation) = try_reserve(size) else {
+                continue;
+            };
+            // An OS refusal here falls through to the smallest tier below,
+            // whose own error is the one reported.
+            if let Ok(handle) = spawn_registered_thread(name, Some(reservation), slot.clone()) {
+                return Ok(handle);
             }
         }
+        let smallest = *STACK_TIERS.last().expect("STACK_TIERS is non-empty");
+        return spawn_registered_thread(name, Some(reserve_over_budget(smallest)), slot)
+            .map_err(SpawnError::Os);
     }
     Err(match last_os_error {
         Some(e) => SpawnError::Os(e),
