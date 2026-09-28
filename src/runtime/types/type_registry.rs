@@ -1377,6 +1377,17 @@ impl Interpreter {
         if crate::runtime::utils::is_known_type_constraint(base) {
             return true;
         }
+        // A well-known compound (`::`-qualified) core type name — pinned in
+        // raku-doc's type graph but not yet backed by a registry entry, the
+        // same gap `is_known_type_constraint` above closes for unqualified
+        // names. Without this, a role method's parameter validation (the
+        // only caller strict enough to notice) rejected `CompUnit::
+        // DependencySpecification` and `Distribution::Resource` as
+        // "Invalid typename" even though the identical signature on a sub
+        // or class method resolves them fine (#9835).
+        if crate::runtime::utils::is_known_compound_type(base) {
+            return true;
+        }
         // Check user-defined classes
         if self.has_class(base) {
             return true;

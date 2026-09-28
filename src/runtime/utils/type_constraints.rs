@@ -290,6 +290,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "Distribution::Hash"
             | "Distribution::Installation"
             | "Distribution::Path"
+            | "Distribution::Resource"
             | "IO::ArgFiles"
             | "IO::CatHandle"
             | "IO::Handle"
