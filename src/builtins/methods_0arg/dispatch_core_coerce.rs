@@ -105,6 +105,66 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// Render a Complex's literal form (`1+2i`, `1-2i`) for an `X::Numeric::Real`
+/// message, matching how raku prints the source value.
+fn render_complex_literal(re: f64, im: f64) -> String {
+    if im >= 0.0 {
+        format!("{re}+{im}i")
+    } else {
+        format!("{re}{im}i")
+    }
+}
+
+/// Build the `X::Numeric::Real` exception raised when a Complex with a
+/// non-zero imaginary part is coerced to a type that requires a Real value
+/// (`.Int`, `.UInt`, `.Num`, `.Rat`, `.FatRat`, `.Real`, `.sign`, ...).
+/// `target_type` is the type reported by `.target` — the type the coercion
+/// actually attempted, e.g. `"Int"` for `.Int` — matching raku's per-method
+/// message (`Cannot convert 1+2i to Int: imaginary part not zero`).
+pub(crate) fn complex_not_real_exception(
+    re: f64,
+    im: f64,
+    target_type: &str,
+    source: &Value,
+) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        Value::str(format!(
+            "Cannot convert {} to {target_type}: imaginary part not zero",
+            render_complex_literal(re, im)
+        )),
+    );
+    attrs.insert(
+        "target".to_string(),
+        Value::package(Symbol::intern(target_type)),
+    );
+    attrs.insert("source".to_string(), source.clone());
+    Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs)
+}
+
+/// The eager-throw form of [`complex_not_real_exception`], for coercions that
+/// fail immediately rather than returning a lazy `Failure`.
+pub(crate) fn complex_not_real_error(
+    re: f64,
+    im: f64,
+    target_type: &str,
+    source: &Value,
+) -> RuntimeError {
+    let msg = format!(
+        "Cannot convert {} to {target_type}: imaginary part not zero",
+        render_complex_literal(re, im)
+    );
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(complex_not_real_exception(
+        re,
+        im,
+        target_type,
+        source,
+    )));
+    err
+}
+
 /// Build the `X::Numeric::CannotConvert` Failure raised when a non-finite Num
 /// (`NaN`/`Inf`/`-Inf`) is coerced to `Int`.
 fn cannot_convert_to_int_failure(source: &Value, f: f64) -> Value {
@@ -929,7 +989,16 @@ pub(super) fn dispatch(
                     }
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                ValueView::Complex(r, _) => Value::int(r as i64),
+                // A Complex coerces to Int via its real part; a non-zero
+                // imaginary part is not Real and throws X::Numeric::Real
+                // (raku: `(1+2i).Int` → "Cannot convert 1+2i to Int:
+                // imaginary part not zero").
+                ValueView::Complex(re, im) => {
+                    if im != 0.0 {
+                        return Some(Some(Err(complex_not_real_error(re, im, "Int", target))));
+                    }
+                    Value::int(re as i64)
+                }
                 ValueView::Hash(h) => Value::int(h.len() as i64),
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Instance {
@@ -960,29 +1029,10 @@ pub(super) fn dispatch(
                 ValueView::Rat(n, d) if d != 0 => Some(Value::int(n / d)),
                 // A Complex coerces to UInt via its real part (`(5+0i).UInt` is 5);
                 // a non-zero imaginary part is not Real and throws X::Numeric::Real
-                // (mirroring the `sign`/`.Int` Complex coercion).
+                // (mirroring the `.Int` Complex coercion).
                 ValueView::Complex(re, im) => {
                     if im != 0.0 {
-                        let rendered = if im >= 0.0 {
-                            format!("{re}+{im}i")
-                        } else {
-                            format!("{re}{im}i")
-                        };
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Cannot convert {rendered} to Real: imaginary part not zero"
-                            )),
-                        );
-                        attrs.insert("target".to_string(), Value::package(Symbol::intern("Real")));
-                        attrs.insert("source".to_string(), target.clone());
-                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
-                        let mut err = RuntimeError::new(
-                            "Cannot convert Complex to Real: imaginary part not zero",
-                        );
-                        err.exception = Some(Box::new(ex));
-                        return Some(Some(Err(err)));
+                        return Some(Some(Err(complex_not_real_error(re, im, "UInt", target))));
                     }
                     if re.is_finite() {
                         Some(Value::int(re.trunc() as i64))
@@ -1195,17 +1245,7 @@ pub(super) fn dispatch(
                     if im.abs() <= 1e-15 {
                         Value::num(r)
                     } else {
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str_from(
-                                "Cannot convert Complex to Real: imaginary part not zero",
-                            ),
-                        );
-                        ex_attrs
-                            .insert("target".to_string(), Value::package(Symbol::intern("Real")));
-                        ex_attrs.insert("source".to_string(), target.clone());
-                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), ex_attrs);
+                        let ex = complex_not_real_exception(r, im, "Real", target);
                         let mut failure_attrs = std::collections::HashMap::new();
                         failure_attrs.insert("exception".to_string(), ex);
                         return Some(Some(Ok(Value::make_instance(
