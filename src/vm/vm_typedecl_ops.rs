@@ -1180,6 +1180,7 @@ impl Interpreter {
             is_export,
             export_tags,
             is_my,
+            decl_id,
             // Only the RakuAST converter cares whether the base type was
             // written out; execution treats an implied `Any` as an `Any`.
             base_is_explicit: _,
@@ -1192,7 +1193,14 @@ impl Interpreter {
             let subset_package = self.current_package();
             loan_env!(
                 self,
-                register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my)
+                register_subset_decl(
+                    &resolved_name,
+                    base,
+                    predicate.as_ref(),
+                    version,
+                    *is_my,
+                    *decl_id
+                )
             );
             // A subset declared in a CLASS body (`class Req { subset Method of
             // Str … }`) is scoped to that class, exactly like a nested `my class`.

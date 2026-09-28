@@ -459,7 +459,7 @@ impl Interpreter {
                 } => Some((base.clone(), predicate.clone(), version.clone())),
                 _ => None,
             })?;
-        self.register_subset_decl(&name, &base, predicate.as_ref(), &version, true);
+        self.register_subset_decl(&name, &base, predicate.as_ref(), &version, true, 0);
         self.inline_subset_constraints
             .insert(constraint.to_string(), name.clone());
         Some(name)

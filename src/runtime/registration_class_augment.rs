@@ -810,6 +810,7 @@ impl Interpreter {
         predicate: Option<&Expr>,
         version: &str,
         is_my: bool,
+        decl_id: u64,
     ) {
         // When the predicate is `* ~~ <expr>` (Whatever on LHS of SmartMatch),
         // the parser doesn't wrap it as WhateverCode (to avoid breaking other
@@ -878,6 +879,31 @@ impl Interpreter {
                 Value::package(Symbol::intern(&qualified)),
             );
             canonical = qualified;
+        }
+        // A `my subset` has declaration-site identity (ADR-0047 P1, #9894),
+        // exactly like a `my class`: it is stored under `Name\u{0}<site-id>`,
+        // so two same-named lexical subsets (`my subset Op` in three sibling
+        // class bodies, Java::Generate) no longer collapse into whichever was
+        // registered last. Like raku's `fully_qualified_with($package)`, the
+        // storage name is package-qualified, so `.^name` and type-check
+        // messages report `Owner::Op` and `resolve_lexical_type_key` finds it
+        // from the owning class's attribute and method type checks. The
+        // mangled key is unreachable by spelling, so `M::F` from outside
+        // `module M { my subset F ... }` still does not resolve. The bare
+        // name is bound to the storage name in the declaring scope's env.
+        if is_my && decl_id != 0 {
+            let qualified =
+                if already_qualified || pkg.is_empty() || pkg == "GLOBAL" || pkg == "Main" {
+                    name.to_string()
+                } else {
+                    format!("{}::{}", pkg, name)
+                };
+            let storage = format!("{qualified}\u{0}{decl_id}");
+            self.subset_predicate_cache.remove(&storage);
+            self.registry_mut()
+                .subsets
+                .insert(storage.clone(), def.clone());
+            canonical = storage;
         }
         // Keep the final name available by its leaf inside the declaring
         // package.  Method signatures use that short spelling (`Position` in

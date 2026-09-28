@@ -1058,6 +1058,17 @@ impl Interpreter {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());
+            // The return constraint is recorded by its source spelling; a
+            // lexical type (`my subset ofTest ...; --> ofTest`) lives under a
+            // mangled storage name (ADR-0047), so answer the type object the
+            // spelling is bound to in the closure's scope, which is the one
+            // the bare `ofTest` term evaluates to.
+            let type_name = match data.env.get(&type_name).map(Value::view) {
+                Some(ValueView::Package(p)) if p.resolve().contains('\u{0}') => {
+                    p.resolve().to_string()
+                }
+                _ => self.lexical_env_remap_name(&type_name),
+            };
             return Some(Ok(Value::package(Symbol::intern(&type_name))));
         }
         if method == "rw" && args.is_empty() {
