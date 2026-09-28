@@ -177,6 +177,41 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
     }
 }
 
+/// The typed `X::Multi::NoMatch` a value with no `.Numeric` candidate at all
+/// raises when forced into a numeric context: every one of Rakudo's generic
+/// numeric infix candidates ends in `.Numeric`, so an operand whose type
+/// declares none fails that dispatch rather than numifying to some default.
+/// `type_name` is the operand's own Raku type (`Whatever`, `Block`, `Sub`, a
+/// user class name, ...).
+pub(crate) fn numeric_no_match_error(type_name: &str) -> RuntimeError {
+    RuntimeError::typed_msg(
+        "X::Multi::NoMatch",
+        format!(
+            "Cannot resolve caller Numeric({type_name}:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)"
+        ),
+    )
+}
+
+/// `Err` when `value` has no `.Numeric` candidate at all and would otherwise
+/// silently numify to a wrong default: a bare `Whatever`/`HyperWhatever` held
+/// in a variable (a curried `WhateverCode` is built at parse time and never
+/// reaches here as itself) and a bare `Sub`/`Block`/`Method`/... (#9791). Every
+/// other operand — including an `Instance`, whose own `.Numeric`/`.Bridge`
+/// bridging lives in `coerce_infix_operand_numeric` — is `Ok(())`.
+pub(crate) fn require_numeric_candidate(value: &Value) -> Result<(), RuntimeError> {
+    if matches!(
+        value.view(),
+        ValueView::Whatever
+            | ValueView::HyperWhatever
+            | ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Routine { .. }
+    ) {
+        return Err(numeric_no_match_error(value_type_name(value)));
+    }
+    Ok(())
+}
+
 /// The type name to *show the user* in a type-check error.
 ///
 /// [`value_type_name`] answers a `&'static str` drawn from the `Value` tag

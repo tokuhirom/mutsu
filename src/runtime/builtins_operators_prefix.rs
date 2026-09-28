@@ -23,7 +23,8 @@ impl Interpreter {
         let arg = arg.unwrap_varref();
         Some(match op {
             "!" => Ok(Value::truth(!arg.truthy())),
-            "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
+            "+" => crate::runtime::require_numeric_candidate(arg)
+                .map(|()| crate::runtime::coerce_to_numeric(arg.clone())),
             "-" | "−" => crate::builtins::arith_negate(arg.clone()),
             "~" => {
                 if let Some(err) = self.failure_to_runtime_error_if_unhandled(arg) {

@@ -665,6 +665,14 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // A bare `Whatever`/`HyperWhatever` (a curried `WhateverCode` is built
+        // at parse time and never reaches here as itself) or a bare
+        // `Sub`/`Block`/`Method`/... has no `.Numeric` candidate at all
+        // (#9791). Checked here rather than in the shared
+        // `coerce_infix_operand_numeric` bridge (used by comparisons too,
+        // which must keep treating such an operand as simply unequal — see
+        // the note in `coerce_numeric_bridge_pair_strict`).
+        crate::runtime::require_numeric_candidate(&val)?;
         let val = self.coerce_numeric_bridge_value(val)?;
         self.stack.push(crate::builtins::arith_negate(val)?);
         Ok(())

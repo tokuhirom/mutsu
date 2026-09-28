@@ -116,15 +116,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => unreachable!("non-instance values return before numeric coercion"),
             };
-            let message = format!(
-                "Cannot resolve caller Numeric({class_name}:D: ); none of these signatures matches:\n    (Mu:U \\v:: *%_)"
-            );
-            return Err(RuntimeError::typed(
-                "X::Multi::NoMatch",
-                [("message".to_string(), Value::str(message))]
-                    .into_iter()
-                    .collect(),
-            ));
+            return Err(crate::runtime::numeric_no_match_error(&class_name));
         }
         // For an object that does `Real`, rakudo's generic infix candidates are
         // written in terms of `.Bridge` (`multi sub infix:<+>(Real \a, Real \b)
