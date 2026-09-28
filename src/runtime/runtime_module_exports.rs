@@ -289,9 +289,15 @@ impl Interpreter {
             return;
         };
         // `exported_var_value` reads the sigil-leading spelling, so the
-        // module-qualified key is `&Mod::f`, not `Mod::&f`.
-        self.env_mut()
-            .insert(format!("{sigil}{module}::{bare}"), value.clone());
+        // module-qualified key is `&Mod::f`, not `Mod::&f`. The `env` entry
+        // is dropped when the module's scope is restored after loading, so
+        // the value also goes to the durable `our_vars` store that
+        // `exported_var_value` falls back to; without it an import found the
+        // symbol only when its name happened to resolve through the routine
+        // registry, and a `:SYMBOL`-renamed export was never imported.
+        let module_key = format!("{sigil}{module}::{bare}");
+        self.set_our_var(module_key.clone(), value.clone());
+        self.env_mut().insert(module_key, value.clone());
         self.register_exported_var(module, format!("{sigil}{bare}"), vec![tag]);
     }
 
