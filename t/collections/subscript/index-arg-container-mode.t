@@ -5,7 +5,7 @@ use Test;
 # gated on the callee's signature), instead of the retired copy-in/copy-out
 # `__mutsu_index_rw_arg_*` temps. Every expectation matches rakudo.
 
-plan 21;
+plan 28;
 
 sub rw($x is rw) { $x = 9 }
 sub raw(\x) { x = 8 }
@@ -127,4 +127,34 @@ sub rc(\x) { x.VAR.^name }
     my @a = 1, 2, 3;
     rw(@a[$_]) for 0, 2;
     is @a.raku, '[9, 2, 9]', 'a looped call site writes each element';
+}
+
+# A NESTED subscript: a missing intermediate level has no location of its
+# own, so the argument is compiled in container mode when the callee binds it
+# (roast S02-types/autovivification.t).
+{
+    my %h;
+    rd(%h<a><b>);
+    rrd(%h<a><b>);
+    is %h.elems, 0, 'reading a nested missing path creates nothing';
+    rw(%h<a><b>);
+    is-deeply %h, {a => {b => 9}}, 'writing it creates the whole path';
+    my @a;
+    rrd(@a[1][2]);
+    is @a.elems, 0, 'reading a nested path past the end grows nothing';
+    rw(@a[1][2]);
+    is @a.raku, '[Any, [Any, Any, 9]]', 'writing it grows each level';
+}
+{
+    my @a;
+    my $x := @a[1][2];
+    is @a.elems, 0, 'a nested past-the-end bind grows nothing';
+}
+
+# A missing key reads as the hash's default through its deferred token.
+{
+    my %h is default(42);
+    is rrd(%h<a>), 42, 'is default is honoured for a missing key';
+    my Int %t;
+    is rrd(%t<a>).raku, 'Int', 'so is the value type';
 }

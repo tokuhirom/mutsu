@@ -23,6 +23,15 @@ over. Past the end it passes the deferred vivification token that `my $r :=
 element and a read creates nothing — the read-safety the ADR had recorded as
 Slice 3's blocker.
 
+A *nested* subscript (`g(%h<a><b>)`) cannot be answered by one op — its
+missing intermediate level has already been read as `Any` — so the same gate
+runs up front (`RwArgCalleeBindsContainer`) and branches to the `return-rw`
+operand's container-mode chain, whose missing levels are deferred. Such a
+chain now also defers an intermediate array step past the end instead of
+growing the array (`my @a; my $x := @a[1][2]` leaves `@a` empty), and the
+deferred token of a missing hash key reads as the hash's `is default` value or
+value type, as the array half already did.
+
 Removing the temps fixed three bugs they carried, all now matching rakudo:
 
 - `rw(@a[$i++])` wrote `@a[1]` and left `$i` at 3: the writeback re-evaluated

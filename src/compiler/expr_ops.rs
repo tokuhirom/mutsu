@@ -906,10 +906,7 @@ impl Compiler {
             && (matches!(left, Expr::Index { .. })
                 || right.iter().any(|r| matches!(r, Expr::Index { .. }))))
         .then(|| format!("infix:<{name}>"));
-        self.compile_call_arg(left);
-        if let Some(callee) = infix_callee.as_deref() {
-            self.mark_arg_index_for_named_callee(callee, Some(0), left);
-        }
+        self.compile_named_callee_arg(infix_callee.as_deref(), Some(0), left, false);
         for (i, r) in right.iter().enumerate() {
             // ADR-0021 I2/I3: a trailing colonpair adverb (`1 / 3 :round`,
             // appended into `right` by `attach_trailing_adverbs`) is a
@@ -923,10 +920,7 @@ impl Compiler {
             {
                 self.mint_named_pair = true;
             }
-            self.compile_call_arg(r);
-            if let Some(callee) = infix_callee.as_deref() {
-                self.mark_arg_index_for_named_callee(callee, Some(i as u32 + 1), r);
-            }
+            self.compile_named_callee_arg(infix_callee.as_deref(), Some(i as u32 + 1), r, false);
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let modifier_idx = modifier

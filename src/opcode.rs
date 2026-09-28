@@ -2841,6 +2841,14 @@ pub(crate) enum OpCode {
     /// and index still on the stack, so the callee sits one slot deeper than it
     /// does for the accessor marker.
     IndexArgRef(Box<IndexArgRefMark>),
+    /// [`Self::IndexArgRef`]'s gate on its own, for an argument whose location
+    /// one op cannot produce: a *nested* subscript passed to a named routine
+    /// (`g(%h<a><b>)`, ADR-0059 Slice 3). Pushes whether the callee binds that
+    /// positional to the caller's container, and the compiler branches to a
+    /// container-mode compile of the argument or an ordinary read. Only
+    /// emitted with [`RwArgCallee::Named`], which reads nothing off the stack.
+    /// Stack: `[] -> [Bool]`.
+    RwArgCalleeBindsContainer(Box<RwArgCalleeMark>),
     /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone

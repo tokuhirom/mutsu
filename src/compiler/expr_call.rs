@@ -1955,11 +1955,11 @@ impl Compiler {
                         self.compile_expr(expr);
                         self.code.emit(OpCode::MakeSlip);
                     } else {
-                        self.compile_call_arg(arg);
-                        self.mark_arg_index_for_named_callee(
-                            &callee_name,
+                        self.compile_named_callee_arg(
+                            Some(&callee_name),
                             positional_indices[i],
                             arg,
+                            false,
                         );
                     }
                 }
@@ -2044,16 +2044,17 @@ impl Compiler {
                         self.pending_rw_arg_list_callee =
                             Self::relayed_rw_arg_callee(*name, args, i);
                         self.suppress_multidim_bind_ref_arg = is_list_assign_rhs_helper;
-                        self.compile_call_arg_with_escape(arg, escaping_args);
                         // The shape test is repeated here so the common
                         // argument pays no `Symbol::resolve` allocation.
-                        if accessor_ref_invocant.is_none() && matches!(arg, Expr::Index { .. }) {
-                            self.mark_arg_index_for_named_callee(
-                                &name.resolve(),
-                                positional_indices[i],
-                                arg,
-                            );
-                        }
+                        let callee = (accessor_ref_invocant.is_none()
+                            && matches!(arg, Expr::Index { .. }))
+                        .then(|| name.resolve());
+                        self.compile_named_callee_arg(
+                            callee.as_deref(),
+                            positional_indices[i],
+                            arg,
+                            escaping_args,
+                        );
                         self.pending_rw_arg_list_callee = None;
                         self.pending_immutable_topic_block = false;
                         if i == 0

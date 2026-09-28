@@ -143,6 +143,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::IndexVarRef { .. }
             | OpCode::IndexInvocantRef { .. }
             | OpCode::IndexArgRef(..)
+            | OpCode::RwArgCalleeBindsContainer(..)
             | OpCode::IndexAutovivifyLazy { .. }
             // String / bool / numeric helpers
             | OpCode::StringConcat(_)

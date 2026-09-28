@@ -909,37 +909,78 @@ impl Compiler {
         self.code.op_lines[last] = line;
     }
 
-    /// ADR-0059 Slice 3: [`Self::mark_arg_index_as_container_candidate_callee`]
-    /// for a *named* routine call (`g(@a[0])`), whose callee is looked up by
-    /// name at run time ([`crate::opcode::RwArgCallee::Named`]).
+    /// ADR-0059 Slice 3: compile one argument of a *named* routine call
+    /// (`g(@a[0])`, or a user-defined infix operator's operand), whose callee
+    /// is looked up by name at run time ([`crate::opcode::RwArgCallee::Named`]).
+    /// `callee` is `None` when no subscript producer applies, and the argument
+    /// is then compiled exactly as [`Self::compile_call_arg_with_escape`] does.
+    ///
+    /// A single-level subscript compiles to a plain `Index` swapped for
+    /// ADR-0067's `IndexArgRef`, which hands over the element's location when a
+    /// candidate of the callee binds that positional to the caller's container.
+    ///
+    /// A *nested* subscript (`g(%h<a><b>)`) cannot be answered by one op: the
+    /// inner `%h<a>` has already been read as a value by the time the last
+    /// subscript runs, and a missing intermediate level reads as `Any`, which
+    /// has no location. So the same gate is asked up front
+    /// ([`OpCode::RwArgCalleeBindsContainer`]) and the argument is compiled
+    /// twice: the ordinary read, and the `return-rw` operand's container-mode
+    /// chain ([`Self::compile_rw_chain_index_arg`]), whose missing levels are
+    /// the deferred vivification token — so binding creates nothing, and the
+    /// first write through the parameter creates the whole path (roast
+    /// `S02-types/autovivification.t`).
     ///
     /// `positional` is the argument's entry of [`Self::arg_positional_indices`];
     /// `None` there means either a named argument (never marked: a named
     /// parameter is not what this gate reads) or an argument after a `|slip`,
     /// whose signature index is only known at run time and is asked as
     /// [`crate::opcode::RWARG_POSITIONAL_UNKNOWN`].
-    pub(super) fn mark_arg_index_for_named_callee(
+    pub(super) fn compile_named_callee_arg(
         &mut self,
-        callee: &str,
+        callee: Option<&str>,
         positional: Option<u32>,
         arg: &Expr,
+        escaping: bool,
     ) {
-        if !matches!(arg, Expr::Index { .. })
-            || Self::index_arg_is_static_slice(arg)
-            || Self::is_named_arg_expr(arg)
-            // A `__mutsu_*` helper is not a user routine and has no
-            // registered signature, so the gate could only ever answer "no".
-            || callee.starts_with("__mutsu_")
-        {
+        let callee = callee.filter(|callee| {
+            matches!(arg, Expr::Index { .. })
+                && !Self::index_arg_is_static_slice(arg)
+                && !Self::is_named_arg_expr(arg)
+                // A `__mutsu_*` helper is not a user routine and has no
+                // registered signature, so the gate could only answer "no".
+                && !callee.starts_with("__mutsu_")
+        });
+        let Some(callee) = callee else {
+            self.compile_call_arg_with_escape(arg, escaping);
+            return;
+        };
+        let name_idx = self.code.add_constant(Value::str(callee.to_string()));
+        let mark = crate::opcode::RwArgCalleeMark {
+            positional: positional.unwrap_or(crate::opcode::RWARG_POSITIONAL_UNKNOWN),
+            stack_offset: 0,
+            callee: crate::opcode::RwArgCallee::Named { name_idx },
+        };
+        let nested = matches!(arg, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::Index { .. }));
+        if !nested {
+            self.compile_call_arg_with_escape(arg, escaping);
+            self.mark_arg_index_as_container_candidate_callee(
+                mark.callee,
+                Some(mark.positional),
+                0,
+                arg,
+            );
             return;
         }
-        let name_idx = self.code.add_constant(Value::str(callee.to_string()));
-        self.mark_arg_index_as_container_candidate_callee(
-            crate::opcode::RwArgCallee::Named { name_idx },
-            Some(positional.unwrap_or(crate::opcode::RWARG_POSITIONAL_UNKNOWN)),
-            0,
-            arg,
-        );
+        self.code
+            .emit(OpCode::RwArgCalleeBindsContainer(Box::new(mark)));
+        let to_container = self.code.emit(OpCode::JumpIfTrue(0));
+        // The ordinary read first, so it is the compile that consumes the
+        // one-shot argument flags `compile_call_arg_with_escape` reads.
+        self.compile_call_arg_with_escape(arg, escaping);
+        let to_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(to_container);
+        self.compile_rw_chain_index_arg(arg);
+        self.code.patch_jump(to_end);
     }
 
     /// The signature-positional index of each syntactic argument, or `None`

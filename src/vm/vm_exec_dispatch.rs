@@ -4706,6 +4706,12 @@ impl Interpreter {
                 self.exec_index_arg_ref_op(code, mark)?;
                 *ip += 1;
             }
+            // Cost: O(c), c = registered candidates of the callee's name.
+            OpCode::RwArgCalleeBindsContainer(mark) => {
+                let binds = self.rw_arg_callee_binds_container(code, mark);
+                self.stack.push(Value::truth(binds));
+                *ip += 1;
+            }
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices.
             OpCode::IndexAutovivifyLazy { is_positional } => {
                 self.exec_index_autovivify_lazy_op(false, *is_positional)?;
