@@ -201,6 +201,13 @@ OVERRIDES: dict[str, str] = {
     # The object-hash key identity regression belongs with associative
     # collection behavior, despite the basename's stringification wording.
     "object-hash-distinct-stringification": "collections/hash",
+    # `indir` (a cwd-changing directory routine, IO::Spec-adjacent) matches no
+    # `io` rule pattern on its own -- none of `(^|-)io(-|$)`/`^dir-`/`^chdir`/
+    # etc. sees "indir" as a prefix or substring token. It belongs with the
+    # other chdir/cwd tests in `io/`, not `collections` (the bug pinned is
+    # `indir`'s return-value handling, not Seq/laziness as a collection
+    # property).
+    "indir-return-value-laziness": "io",
 }
 
 
