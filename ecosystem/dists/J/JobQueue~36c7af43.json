@@ -13,46 +13,44 @@
   "dist": "JobQueue",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/01-queue.rakutest",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 13.13,
+        "secs": 6.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.05,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/02-coordinator.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.88,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +62,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.12,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,23 +72,22 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.92,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.07,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/04-injection.rakutest",
       "raku": {
@@ -115,10 +112,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-27",
+    "date": "2026-09-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2f3b7d6",
+    "mutsu_commit": "aab843a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -129,13 +126,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/OB/JOBQUEUE/7ddc5816bf1db6f0ccd69c417dd354229fa003f3.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 51,
     "baseline_files": 4,
-    "mutsu_assertions": 7,
-    "parity_files": 1,
-    "regressed_files": 3
+    "mutsu_assertions": 51,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }
