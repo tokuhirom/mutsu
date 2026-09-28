@@ -670,6 +670,10 @@ pub(crate) fn native_method_1arg(
                     }
                     // IO::Path::Parts does Positional: `$parts[0]` is `volume => C:`,
                     // `[1]` the dirname pair, `[2]` the basename pair (fixed order).
+                    // ADR-0021 I2: a data-minted pair defaults positional, not the
+                    // named-argument marker flavour `Value::pair` mints — else `say
+                    // $parts[0]` (no call-site fat-arrow) silently filters it out as
+                    // an in-band named marker (#9820).
                     ValueView::Instance {
                         class_name,
                         attributes,
@@ -680,7 +684,7 @@ pub(crate) fn native_method_1arg(
                             .map(|key| {
                                 let v =
                                     attributes.as_map().get(*key).cloned().unwrap_or(Value::NIL);
-                                Value::pair((*key).to_string(), v)
+                                Value::value_pair(Value::str((*key).to_string()), v)
                             })
                             .unwrap_or(Value::NIL)))
                     }
