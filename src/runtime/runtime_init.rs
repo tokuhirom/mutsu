@@ -930,7 +930,27 @@ impl Interpreter {
             "IO::Handle".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                // Rakudo seeds $!path with the IO type object. Keeping this as
+                // an attribute default also covers IO::Handle.bless and derived
+                // classes, instead of only patching the rendered gist.
+                attributes: vec![ClassAttributeDef {
+                    name: "path".to_string(),
+                    is_public: true,
+                    default: Some(crate::opcode::DeclTraitArg::Ast(Box::new(Expr::Literal(
+                        Value::package(Symbol::intern("IO")),
+                    )))),
+                    captured_env: None,
+                    captured_unit: None,
+                    declaring_package: None,
+                    is_rw: false,
+                    is_required: None,
+                    sigil: '$',
+                    type_constraint: None,
+                    where_constraint: None,
+                    declared_shape: None,
+                    source_line: None,
+                    source_file: None,
+                }],
                 native_methods: [
                     "path",
                     "IO",
