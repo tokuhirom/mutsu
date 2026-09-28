@@ -346,12 +346,19 @@ impl Interpreter {
             // including the type-only `(Base of T)` param named `__type_only__`)
             // on a non-parametric type (a plain class or a package/module) is
             // X::NotParametric. Built-in containers and roles are parametric and
-            // not in these statically-collected sets. (Runtime `is_non_parametric_type`
-            // can't be used here: this pre-pass runs before the type is registered.)
-            // This is checked before the synthetic-param skip below because a
-            // `(Base of T)` term param IS named `__type_only__`.
+            // mostly not in these statically-collected sets -- but a few
+            // (NativeCall's `Pointer`, ...) ARE spliced in as genuine `class`
+            // preludes and so DO land in `declared_classes`; `is_parametric_builtin_type_name`
+            // is the same allowlist the runtime `is_non_parametric_type` check
+            // uses, kept in one place so a type parameterizes consistently
+            // whether or not its own declaration happens to be visible yet.
+            // (Runtime `is_non_parametric_type` can't be used here: this
+            // pre-pass runs before the type is registered.) This is checked
+            // before the synthetic-param skip below because a `(Base of T)`
+            // term param IS named `__type_only__`.
             if let Some(base) = tc.split_once('[').map(|(b, _)| b.trim())
                 && !base.is_empty()
+                && !crate::runtime::runtime_class_query::is_parametric_builtin_type_name(base)
                 && (declared_packages.contains(base) || declared_classes.contains(base))
             {
                 let mut attrs = ValueMap::default();
