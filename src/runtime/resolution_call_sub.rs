@@ -1399,58 +1399,16 @@ impl Interpreter {
             // `is rw` routines and non-Routine blocks hand the container back
             // as-is, and the FETCH happens at the next use (#7748).
             let fetch_rw = !data.returns_container();
-            return finalized.and_then(|v| {
-                let v = if let ValueView::LazyList(list) = v.view() {
-                    let mut env = list.env.clone();
-                    env.insert(
-                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                        Value::TRUE,
-                    );
-                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList {
-                        body: list.body.clone(),
-                        env,
-                        cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
-                        generation_state: std::sync::Mutex::new(
-                            list.generation_state.lock().unwrap().clone(),
-                        ),
-                        compiled_code: list.compiled_code.clone(),
-                        compiled_fns: list.compiled_fns.clone(),
-                        elems_count: list.elems_count.clone(),
-                        scan_spec: list
-                            .scan_spec
-                            .as_ref()
-                            .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
-                        sequence_spec: list.sequence_spec.clone(),
-                        coroutine: list
-                            .coroutine
-                            .as_ref()
-                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                        lazy_pipe: list
-                            .lazy_pipe
-                            .as_ref()
-                            .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
-                        closure_seq: list
-                            .closure_seq
-                            .as_ref()
-                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                        walk_pending: list
-                            .walk_pending
-                            .as_ref()
-                            .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
-                        cat_pull: list
-                            .cat_pull
-                            .as_ref()
-                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                        array_context: list.array_context,
-                        list_context: list.list_context,
-                        cached_no_sink: list.cached_no_sink,
-                        itemized: list.itemized,
-                    }))
-                } else {
-                    v
-                };
-                self.maybe_fetch_rw_proxy(v, fetch_rw)
-            });
+            // A returned `LazyList` does NOT need `__mutsu_preserve_lazy_on_array_assign`
+            // re-stamped here: the marker is set once, on the list's own `env`, at the
+            // point `lazy`/`.lazy` is evaluated, and travels with every clone of the
+            // `Value` regardless of call path (confirmed dead/redundant by the
+            // call_compiled_closure parity audit,
+            // news/2026-08/call-compiled-closure-rw-lazylist-gap-closed-no-live-bug.md).
+            // Stamping it unconditionally here instead marked EVERY LazyList a
+            // `call_sub_value`-mediated call returned as `.is-lazy` True, even a plain
+            // unmarked `gather` -- breaking `indir "/tmp", { gather { take 3 } }` (#9838).
+            return finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, fetch_rw));
         }
         Err(RuntimeError::new("Callable expected"))
     }
