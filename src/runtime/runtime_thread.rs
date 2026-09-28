@@ -46,6 +46,19 @@ impl Interpreter {
                     out.insert(bare.to_string());
                     continue;
                 }
+                // The same holds for any other readonly binding live in the
+                // spawning frame — a routine, method or pointy-block parameter
+                // (`-> $job { start { await $g; $job.id } }`): it can never be
+                // reassigned, so the spawn-time clone cannot miss a write, and
+                // leaving it on the lane let an unrelated same-named lexical (a
+                // caller's loop `my $job`) be pulled over it at the worker's
+                // next sync point. `mask_thread_redeclared_params` covers this
+                // only once the shared store is active; the first spawn of a
+                // program happens before that, so the mask alone misses it.
+                if self.is_readonly(&name) || self.is_readonly(bare) {
+                    out.insert(bare.to_string());
+                    continue;
+                }
                 // Only a genuinely PLAIN scalar is owned per binding by the
                 // closure machinery — either boxed into a shared cell by
                 // `box_captured_lexicals` or correctly frozen by value. An
