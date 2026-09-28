@@ -397,12 +397,25 @@ impl Interpreter {
             // Store the resolved param bindings so they are
             // available when the child role is punned to a class
             // and methods referencing role params are dispatched.
+            // Also inherit any bindings the PARENT role itself picked up from
+            // a role IT composed (`role Kg does U["g"] {}` records "unit" ->
+            // "g" under "Kg"; a further `role E does Kg {}` must carry that
+            // binding forward under "E", or it is orphaned the moment a class
+            // reaches U through two levels of `does` instead of one -- #9834).
             {
                 let mut registry = self.registry_mut();
+                let inherited = registry
+                    .class_role_param_bindings
+                    .get(base_role_name)
+                    .cloned()
+                    .unwrap_or_default();
                 let bindings = registry
                     .class_role_param_bindings
                     .entry(name.to_string())
                     .or_default();
+                for (p, v) in inherited {
+                    bindings.entry(p).or_insert(v);
+                }
                 for (p, v) in resolved_param_names.iter().zip(resolved_values.iter()) {
                     bindings.insert(p.clone(), v.clone());
                 }
