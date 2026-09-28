@@ -70,14 +70,11 @@ impl Interpreter {
             self.stack.push(resumed);
             return Ok(());
         }
-        if matches!(
-            val.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        ) {
-            return Err(RuntimeError::new(
-                "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
-            ));
-        }
+        // A bare `Whatever`/`HyperWhatever` (a curried `WhateverCode` is built
+        // at parse time and never reaches here as itself) or a bare
+        // `Sub`/`Block`/`Method`/... has no `.Numeric` candidate at all
+        // (#9791).
+        crate::runtime::require_numeric_candidate(&val)?;
         let is_range_instance = if let ValueView::Instance { class_name, .. } = val.view() {
             self.class_mro(&class_name.resolve())
                 .iter()

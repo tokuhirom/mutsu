@@ -28,15 +28,13 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         return Ok(sum);
     }
     // A bare Whatever value reaching `+` is NOT a curry point (those are wrapped
-    // into a WhateverCode at parse time). Numifying it dies in Raku, e.g.
-    // `&infix:<+>(*, 42)` invokes `+` with a Whatever argument.
-    if matches!(left.view(), ValueView::Whatever | ValueView::HyperWhatever)
-        || matches!(right.view(), ValueView::Whatever | ValueView::HyperWhatever)
-    {
-        return Err(RuntimeError::new(
-            "Cannot resolve caller Numeric(Whatever:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)".to_string(),
-        ));
-    }
+    // into a WhateverCode at parse time), and a bare Sub/Block has no `.Numeric`
+    // candidate either. Numifying either dies in Raku, e.g. `&infix:<+>(*, 42)`
+    // invokes `+` with a Whatever argument (#9791). Checked here (not just in
+    // the VM opcode's coercion bridge) because a reduction fold
+    // (`[+] $b, $c`, `$b Z+ $c`) calls this directly with 2+ elements.
+    crate::runtime::require_numeric_candidate(&left)?;
+    crate::runtime::require_numeric_candidate(&right)?;
     // Mixin-wrapped Range + Real (or Real + Mixin Range): perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith(left.clone(), right.clone(), arith_add)
         .or_else(|| mixin_range_arith(right.clone(), left.clone(), arith_add))

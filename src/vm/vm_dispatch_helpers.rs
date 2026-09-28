@@ -457,6 +457,18 @@ impl Interpreter {
         // has already substituted the operator's zero-argument value.
         crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&left)?;
         crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&right)?;
+        // A bare `Whatever`/`HyperWhatever` (not curried into a WhateverCode,
+        // which is built at parse time) or a bare `Sub`/`Block`/`Method`/...
+        // has no `.Numeric` candidate at all (#9791). Scoped to this strict
+        // (arithmetic) bridge, NOT the plain `coerce_numeric_bridge_pair`
+        // comparisons also share: a chained comparison's desugaring can reuse
+        // a SmartMatch-autoprimed compound Whatever operand as a later link's
+        // shared value (`t/lang/operators/chained-compare-ast-node.t`'s
+        // `"foo" ~~ *.chars == 3`), and that later `==` must keep its existing
+        // (pre-#9791, out of this ticket's scope) type-mismatch-is-unequal
+        // fallback rather than erroring on the still-uninvoked WhateverCode.
+        crate::runtime::require_numeric_candidate(&left)?;
+        crate::runtime::require_numeric_candidate(&right)?;
         if let Some(failure) = crate::runtime::utils::str_numeric_operand_failure(&left)
             .or_else(|| crate::runtime::utils::str_numeric_operand_failure(&right))
         {
