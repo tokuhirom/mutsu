@@ -1244,10 +1244,6 @@ impl Interpreter {
             // Shadow an imported proto in a lexical scope, or a preloaded
             // GLOBAL family for a bare-file module, but do not shadow a
             // package-qualified proto merely because the source has one.
-            if (imported_proto && !self.import_scope_stack.is_empty()) || global_family_present {
-                self.shadow_imported_proto_family(&target_single);
-            }
-
             let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
@@ -1335,6 +1331,20 @@ impl Interpreter {
                         break;
                     }
                 }
+            }
+            // An imported `only` sub (no multi candidates) is a single lexical
+            // symbol: inside a nested scope it hides every outer candidate of
+            // the name, exactly as a locally declared `sub` would. Without
+            // this, `{ use Green :harness; ok ... }` merged Green's `ok` next to
+            // Test's outer `multi ok` and dispatch picked Test's.
+            let imports_only_sub = !function_entries.is_empty()
+                && function_entries
+                    .iter()
+                    .all(|(key, _)| !key.resolve().contains('/'));
+            if ((imported_proto || imports_only_sub) && !self.import_scope_stack.is_empty())
+                || global_family_present
+            {
+                self.shadow_imported_proto_family(&target_single);
             }
             if is_operator {
                 self.record_operator_import(&name, function_entries.iter().map(|(_, def)| def));
