@@ -1,5 +1,64 @@
 use super::*;
 
+/// Built-in parametric container/role-like type names that accept `[T]` (or
+/// `of T`) even though some of them (`Buf`, `Blob`, NativeCall's `Pointer`,
+/// ...) are registered as plain classes rather than roles. Shared between the
+/// runtime `is_non_parametric_type` check and the compile-time signature
+/// pre-pass (`registration_sub::validate_param_type_constraints`) so a type
+/// parameterizes consistently whether it is checked before or during
+/// execution.
+pub(crate) fn is_parametric_builtin_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Array"
+            // Lowercase `array` (the native shaped/typed array declarator
+            // used as a term, e.g. `array[int32]`) accepts `[T]` too — but
+            // only the compile-time-literal spelling was special-cased
+            // (the compiler synthesizes the `array[T]` type name
+            // directly); a runtime/dynamic index expression
+            // (`array[$cond ?? int8 !! uint8]`, RFC 8746 typed-array
+            // decoding in `CBOR::Simple`) fell through to this generic
+            // Package-indexing path, which didn't know `array` was
+            // parametric, and threw X::NotParametric.
+            | "array"
+            | "Hash"
+            | "Map"
+            | "List"
+            | "Slip"
+            | "Seq"
+            | "Range"
+            | "Set"
+            | "Bag"
+            | "Mix"
+            | "SetHash"
+            | "BagHash"
+            | "MixHash"
+            | "Buf"
+            | "Blob"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+            | "Positional"
+            | "Associative"
+            | "Iterable"
+            // NativeCall's `Pointer[T]` — a pointer that remembers what it
+            // points at, so `.of` can report it and `.deref` can read it. It
+            // is spliced in as a genuine `class GLOBAL::Pointer` prelude
+            // (`run::NATIVECALL_POINTER_PRELUDE`), so it is collected into
+            // the compile-time pre-pass's `declared_classes` just like any
+            // user class -- this allowlist is what keeps that pre-pass from
+            // reading its own collection as "a non-parametric class named
+            // Pointer" and rejecting `Pointer[uint16]` as X::NotParametric
+            // (#9836).
+            | "Pointer"
+    )
+}
+
 impl Interpreter {
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.registry().classes.contains_key(name)
@@ -114,51 +173,7 @@ impl Interpreter {
     /// (X::NotParametric). Roles, built-in container types (Array/Hash/Buf/Blob/
     /// ...), and subclasses of containers ARE parametric and return false.
     pub(crate) fn is_non_parametric_type(&self, name: &str) -> bool {
-        // Built-in parametric container types accept `[T]`. Some (Buf, Blob, ...)
-        // are registered as classes, so they must be allow-listed here.
-        let parametric_builtin = matches!(
-            name,
-            "Array"
-                // Lowercase `array` (the native shaped/typed array declarator
-                // used as a term, e.g. `array[int32]`) accepts `[T]` too — but
-                // only the compile-time-literal spelling was special-cased
-                // (the compiler synthesizes the `array[T]` type name
-                // directly); a runtime/dynamic index expression
-                // (`array[$cond ?? int8 !! uint8]`, RFC 8746 typed-array
-                // decoding in `CBOR::Simple`) fell through to this generic
-                // Package-indexing path, which didn't know `array` was
-                // parametric, and threw X::NotParametric.
-                | "array"
-                | "Hash"
-                | "Map"
-                | "List"
-                | "Slip"
-                | "Seq"
-                | "Range"
-                | "Set"
-                | "Bag"
-                | "Mix"
-                | "SetHash"
-                | "BagHash"
-                | "MixHash"
-                | "Buf"
-                | "Blob"
-                | "buf8"
-                | "buf16"
-                | "buf32"
-                | "buf64"
-                | "blob8"
-                | "blob16"
-                | "blob32"
-                | "blob64"
-                | "Positional"
-                | "Associative"
-                | "Iterable"
-                // NativeCall's `Pointer[T]` — a pointer that remembers what it
-                // points at, so `.of` can report it and `.deref` can read it.
-                | "Pointer"
-        );
-        !parametric_builtin
+        !is_parametric_builtin_type_name(name)
             && !self.is_role(name)
             && !self.is_container_subclass(name)
             && (self.has_class(name) || self.is_declared_package(name))
