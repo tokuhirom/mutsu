@@ -1357,6 +1357,8 @@ impl Compiler {
                             // Anonymous where-subsets are internal; never
                             // alias them under the enclosing package.
                             is_my: true,
+                            // The generated name is already unique per site.
+                            decl_id: 0,
                         };
                         let idx = self.code.add_stmt(subset_stmt);
                         self.code.emit(OpCode::RegisterSubset(idx));

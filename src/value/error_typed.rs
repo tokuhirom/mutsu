@@ -508,6 +508,14 @@ impl RuntimeError {
         // message uses the declared name, as rakudo does (#9654).
         let expected_display = crate::value::enum_display_name(expected);
         let shown_expected = expected_display.as_deref().unwrap_or(expected);
+        // Demangle a lexical type's storage name (ADR-0047).
+        let demangled;
+        let shown_expected = if shown_expected.contains('\u{0}') {
+            demangled = crate::value::user_facing_type_name(shown_expected).into_owned();
+            demangled.as_str()
+        } else {
+            shown_expected
+        };
         // Rakudo's wording is `expected X but got Y (repr)` — the `(repr)` tail
         // is present for any value with a short representation. Kept identical
         // to `runtime::utils::type_check_assignment_error`, which builds the

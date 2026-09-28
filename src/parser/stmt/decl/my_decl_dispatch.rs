@@ -129,6 +129,7 @@ pub(super) fn try_keyword_dispatch(
                     is_export: false,
                     export_tags: Vec::new(),
                     is_my: !is_our,
+                    decl_id: crate::ast::next_class_decl_id(),
                 },
             )));
         }

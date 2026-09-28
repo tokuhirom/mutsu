@@ -361,6 +361,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             is_export,
             export_tags,
             is_my: false,
+            decl_id: crate::ast::next_class_decl_id(),
         },
     ))
 }
@@ -425,6 +426,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         is_export: false,
         export_tags: Vec::new(),
         is_my: false,
+        decl_id: crate::ast::next_class_decl_id(),
     };
     Ok((
         rest,

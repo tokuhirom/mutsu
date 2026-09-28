@@ -2051,6 +2051,12 @@ pub(crate) enum Stmt {
         /// `my subset F ...` — lexically scoped: NOT reachable (nor
         /// registered) under the enclosing package's qualified name.
         is_my: bool,
+        /// Stable per-declaration-site id, exactly as `ClassDecl::decl_id`: a
+        /// `my subset` is stored under `Name\u{0}<decl_id>` so two same-named
+        /// lexical subsets in different scopes keep their own identity
+        /// (ADR-0047 P1). 0 means "no stable site" (a synthesized node).
+        #[serde(skip, default = "crate::ast::next_class_decl_id")]
+        decl_id: u64,
     },
     Phaser {
         kind: PhaserKind,
