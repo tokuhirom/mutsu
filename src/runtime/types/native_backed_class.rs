@@ -155,7 +155,7 @@ impl Interpreter {
 /// seeded the `Int` / `Str` subclass payload keys
 /// (`runtime::seed_native_subclass_payloads`) from no argument -- `0` / `""`.
 /// Those keys are what value-level coercion, rendering and the native method
-/// layer (`builtins::int_subclass`) read, so they are overwritten with the same
+/// layer (`builtins::numeric_subclass`) read, so they are overwritten with the same
 /// payload: otherwise `Counted(42)` (`class Counted is Int`) carried `42` under
 /// one key and `0` under the other, and arithmetic saw the `0`.
 pub(crate) fn box_native_backing(instance: &Value, payload: Value) {

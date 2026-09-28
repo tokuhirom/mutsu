@@ -91,7 +91,7 @@ pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeErro
 /// Seed the representation payload carried by a subclass of a native scalar.
 ///
 /// `Mu.new` and `Mu.bless` both construct an ordinary instance, but the native
-/// `Int`/`Str` implementations need their scalar value in a reserved attribute
+/// `Int`/`Num`/`Str` implementations need their scalar value in a reserved attribute
 /// so value-level coercion and rendering can see it without consulting the
 /// class registry. Keep the convention in one place so the two constructor
 /// paths cannot drift again.
@@ -101,9 +101,17 @@ pub(crate) fn seed_native_subclass_payloads(
     args: &[Value],
     positional_args: &[Value],
 ) {
-    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key("__mutsu_int_value") {
+    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD};
+    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
-        attrs.insert("__mutsu_int_value", Value::int(payload));
+        attrs.insert(INT_PAYLOAD, Value::int(payload));
+    } else if class_mro.iter().any(|name| name == "Num") && !attrs.contains_key(NUM_PAYLOAD) {
+        // raku: `Num.new(\value)` boxes `value.Num` into the subclass; no
+        // argument is `0e0`.
+        let payload = positional_args.first().map_or(0.0, |v| {
+            crate::runtime::coerce_to_numeric(v.clone()).to_f64()
+        });
+        attrs.insert(NUM_PAYLOAD, Value::num(payload));
     }
     if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
         let payload = args

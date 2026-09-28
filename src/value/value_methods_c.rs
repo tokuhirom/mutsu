@@ -193,16 +193,13 @@ impl Value {
                 .get("value")
                 .map(|v| v.to_f64())
                 .unwrap_or(0.0),
-            // A subclass of native Int (e.g. `class Foo is Int`) carries its
-            // integer payload in the reserved `__mutsu_int_value` attribute.
+            // A subclass of native Int or Num (e.g. `class Foo is Int`)
+            // carries its payload in a reserved attribute.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_int_value") =>
+                if let Some(payload) =
+                    crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
             {
-                attributes
-                    .as_map()
-                    .get("__mutsu_int_value")
-                    .map(|v| v.to_f64())
-                    .unwrap_or(0.0)
+                payload.to_f64()
             }
             // Match coerces to Numeric via its matched string
             ValueView::Instance { .. } if self.is_match_instance() => self
@@ -238,13 +235,13 @@ impl Value {
             ValueView::Str(s) => s
                 .parse::<NumBigInt>()
                 .unwrap_or_else(|_| NumBigInt::from(0)),
-            // A subclass of native Int (e.g. `class Foo is Int`) carries its
-            // integer payload in the reserved `__mutsu_int_value` attribute.
-            ValueView::Instance { attributes, .. } => attributes
-                .as_map()
-                .get("__mutsu_int_value")
-                .map(|v| v.to_bigint())
-                .unwrap_or_else(|| NumBigInt::from(0)),
+            // A subclass of native Int or Num (e.g. `class Foo is Int`)
+            // carries its payload in a reserved attribute.
+            ValueView::Instance { attributes, .. } => {
+                crate::builtins::numeric_subclass::numeric_payload_of(&attributes)
+                    .map(|v| v.to_bigint())
+                    .unwrap_or_else(|| NumBigInt::from(0))
+            }
             ValueView::Mixin(inner, _) => inner.to_bigint(),
             _ => NumBigInt::from(0),
         }

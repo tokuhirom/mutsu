@@ -414,7 +414,7 @@ impl Interpreter {
     /// an `Int` subclass instance, which takes the `Int` candidates.
     pub(crate) fn is_real_role_object(&mut self, value: &Value) -> bool {
         matches!(value.view(), ValueView::Instance { .. })
-            && crate::builtins::int_subclass::int_subclass_payload(value).is_none()
+            && crate::builtins::numeric_subclass::numeric_subclass_payload(value).is_none()
             && !Self::is_buf_value(value)
             && value.match_str_value().is_none()
             && self.type_matches_value("Real", value)

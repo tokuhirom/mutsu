@@ -1087,16 +1087,13 @@ impl Value {
                     .map(Value::to_string_value)
                     .unwrap_or_default()
             }
-            // A subclass of native `Int` carries its numeric payload in the
-            // reserved slot seeded by both `new` and `bless`.
+            // A subclass of native `Int` or `Num` carries its numeric payload
+            // in the reserved slot seeded by both `new` and `bless`.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_int_value") =>
+                if let Some(payload) =
+                    crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
             {
-                attributes
-                    .as_map()
-                    .get("__mutsu_int_value")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default()
+                payload.to_string_value()
             }
             // A subclass of native `Version` (`class Foo is Version {}`) carries
             // its built `Version` in `__mutsu_version_value` (#8070); stringify
