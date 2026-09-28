@@ -272,9 +272,9 @@ impl Interpreter {
                     continue;
                 }
                 if directive == "comment" {
-                    let (text, next_idx) = Self::collect_paragraph(lines, idx + 1);
-                    entries.push(Self::make_pod_comment(text));
-                    idx = next_idx.max(idx + 1);
+                    let (comment, next_idx) = Self::collect_pod_comment_paragraph(lines, idx, rest);
+                    entries.push(comment);
+                    idx = next_idx;
                     continue;
                 }
                 if directive == "config" {
@@ -313,15 +313,10 @@ impl Interpreter {
                         .map(str::trim_start)
                         .unwrap_or_default();
                     if target == "comment" {
-                        let mut text = String::new();
-                        if !inline.is_empty() {
-                            text.push_str(inline);
-                            text.push('\n');
-                        }
-                        let (tail, next_idx) = Self::collect_paragraph(lines, idx + 1);
-                        text.push_str(&tail);
-                        entries.push(Self::make_pod_comment(text));
-                        idx = next_idx.max(idx + 1);
+                        let (comment, next_idx) =
+                            Self::collect_pod_comment_paragraph(lines, idx, inline);
+                        entries.push(comment);
+                        idx = next_idx;
                         continue;
                     }
                     if target == "defn" {
@@ -386,11 +381,7 @@ impl Interpreter {
                     if let Some(para) = para {
                         contents.push(para);
                     }
-                    if let Some(level) = Self::parse_heading_level(target) {
-                        entries.push(Self::make_pod_heading_with_config(level, contents, config));
-                    } else {
-                        entries.push(Self::make_pod_named_with_config(target, contents, config));
-                    }
+                    entries.push(Self::make_pod_block_for_target(target, contents, config));
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
@@ -489,24 +480,11 @@ impl Interpreter {
                         entries.push(Self::make_pod_table_full(headers, rows, tbl_config));
                         continue;
                     }
-                    if let Some(level) = Self::parse_item_level(target) {
-                        let (item_contents, next_idx) =
-                            Self::collect_pod_entries(lines, idx + 1, Some(target));
-                        entries.push(Self::make_pod_item(level, item_contents));
-                        idx = next_idx.max(idx + 1);
-                        continue;
-                    }
                     let (contents, next_idx) =
                         Self::collect_pod_entries(lines, idx + 1, Some(target));
-                    if target == "pod" {
-                        let after_target = rest.strip_prefix(target).unwrap_or("");
-                        let (config, _) = Self::parse_pod_config(after_target);
-                        entries.push(Self::make_pod_named_with_config("pod", contents, config));
-                    } else if let Some(level) = Self::parse_heading_level(target) {
-                        entries.push(Self::make_pod_heading(level, contents));
-                    } else {
-                        entries.push(Self::make_pod_named(target, contents));
-                    }
+                    let after_target = rest.strip_prefix(target).unwrap_or("");
+                    let (config, _) = Self::parse_pod_config(after_target);
+                    entries.push(Self::make_pod_block_for_target(target, contents, config));
                     idx = next_idx.max(idx + 1);
                     continue;
                 }

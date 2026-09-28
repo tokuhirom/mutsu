@@ -588,6 +588,23 @@ impl Interpreter {
         {
             return Ok(pod.clone());
         }
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name == "Attribute"
+        {
+            let am = attributes.as_map();
+            let owner = am.get("__mutsu_attr_owner").map(Value::to_string_value);
+            let name = am.get("name").map(Value::to_string_value);
+            drop(am);
+            if let (Some(owner), Some(name)) = (owner, name)
+                && let Some(pod) = self.attribute_why_set_docee(target, &owner, &name)
+            {
+                return Ok(pod);
+            }
+        }
         // A pod object attached at the meta level with `.^set_why`
         // (`Metamodel::Documenting`) is what the type object's own `.WHY`
         // reports too -- `Documented.HOW.WHY` and `Documented.WHY` are the
