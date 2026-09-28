@@ -3789,7 +3789,6 @@ impl Interpreter {
                         .iter()
                         .any(|a| a.is_public && a.name == method);
                 if (role.methods.contains_key(method) || has_public_accessor)
-                    && role.methods.contains_key("new")
                     && let Some(punned) = self.ensure_parametric_role_pun_class(&base, type_args)?
                 {
                     return self.call_method_with_values(
