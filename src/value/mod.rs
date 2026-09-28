@@ -47,7 +47,7 @@ pub(crate) fn lazylist_is_consumed(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
 /// `.lazy` on an already-finite source (`(1..5).lazy`, `(1,2,3).lazy`) is
 /// stored as a `LazyList` whose `cache` is pre-filled and which carries no
 /// generator at all (`is_cache_only`) plus the `lazy` prefix/method marker
-/// (`is_lazy_marked`) — the same shape [`docs/seq-single-pass-consumption.md`]
+/// (`is_lazy_marked`) — the same shape `docs/seq-single-pass-consumption.md`
 /// describes for an uncached `Value::Seq`, just represented as a `LazyList`
 /// instead so the array-assign laziness-preserving machinery
 /// (`__mutsu_preserve_lazy_on_array_assign`) can see it. Left untracked, every
