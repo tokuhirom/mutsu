@@ -173,9 +173,13 @@ fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
         {
             let ex = crate::runtime::Interpreter::as_exception_value(ex);
             let mut err = RuntimeError::new(ex.to_string_value());
-            // Fail-site backtrace for the dual-backtrace rendering (see
-            // `failure_value_to_error`).
-            if let Some(orig) = crate::runtime::Interpreter::exception_backtrace_text(&ex) {
+            // Keep the Failure's origin separate from its unthrown exception.
+            if let Some(orig) = crate::runtime::Interpreter::attach_failure_origin_on_throw(
+                &ex,
+                attributes
+                    .as_map()
+                    .get(crate::runtime::Interpreter::FAILURE_ORIGIN_BACKTRACE_ATTR),
+            ) {
                 err.set_failure_original_backtrace(Some(orig));
             }
             err.exception = Some(Box::new(ex));

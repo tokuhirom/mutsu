@@ -66,8 +66,8 @@ plan 22;
     is nqp::shift($l), 4, 'nqp::unshift puts each element at the front';
 }
 
-# The consuming loop itself, timed at two sizes. The assertion is a *ratio*
-# between two runs in one process, so machine speed and CI load cancel out.
+# The consuming loop itself, timed at two sizes. Use the fastest of three runs
+# at each size so a scheduler pause in one sample does not distort the ratio.
 # Quadratic would be ~16x for a 4x longer input; linear is ~4x.
 sub drain-time(int $n --> Num) {
     my $codes := ('x' x $n).NFD;
@@ -79,7 +79,11 @@ sub drain-time(int $n --> Num) {
 }
 
 drain-time(5000);   # warm up, so the first timed run pays no one-off cost
-my $small = drain-time(5000);
-my $large = drain-time(20000);
+my $small = Inf;
+my $large = Inf;
+for ^3 {
+    $small = min($small, drain-time(5000));
+    $large = min($large, drain-time(20000));
+}
 my $ratio = $large / ($small || 1e-9);
 ok $ratio < 9, "draining 4x the codepoints costs ~4x, not ~16x (ratio $ratio.fmt('%.2f'))";

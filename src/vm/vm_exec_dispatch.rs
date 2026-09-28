@@ -5542,7 +5542,7 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             }
-            // Cost: O(s), s = routine-stack depth (eager backtrace, as Rakudo's Failure).
+            // Cost: O(s), s = routine-stack depth (Failure origin capture).
             OpCode::Fail => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
@@ -5563,13 +5563,16 @@ impl Interpreter {
                 } else {
                     val
                 };
-                // Build a backtrace from the routine stack so that
-                // Exception.gist can show where the fail originated.
+                // A CATCH of `fail` needs the full structured call stack. If
+                // this signal becomes a Failure instead, conversion moves the
+                // backtrace off the exception and onto the Failure.
                 let backtrace_val = self.build_backtrace_value();
+                let failure_origin = self.build_backtrace_string();
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
-                let err = self.runtime_error_from_exception_value(val, "Failed", true);
-                // Attach backtrace, line, and file to the exception value
+                let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
+                // A direct CATCH sees the fail-site Backtrace. A soft Failure
+                // moves it off the exception in fail_error_to_failure_value.
                 if let Some(ref exc_box) = err.exception
                     && let ValueView::Instance { attributes, .. } = exc_box.view()
                 {
@@ -5581,6 +5584,7 @@ impl Interpreter {
                         attributes.insert_if_absent("file".to_string(), Value::str_from(file));
                     }
                 }
+                err.set_failure_original_backtrace(Some(failure_origin));
                 return Err(err);
             }
             // Cost: O(1).

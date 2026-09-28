@@ -1646,11 +1646,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     return Some(Ok(Value::NIL));
                 }
+                // Cost: O(1).
                 "backtrace" => {
                     if let Some(bt) = attributes.as_map().get("backtrace") {
                         return Some(Ok(bt.clone()));
                     }
-                    return Some(Ok(Value::str(String::new())));
+                    return Some(Ok(Value::NIL));
                 }
                 _ => {}
             }
