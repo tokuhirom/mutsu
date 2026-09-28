@@ -508,8 +508,13 @@ impl Interpreter {
         // The topic is excluded for the reason `is_magic_sigilless_key` records:
         // `$_` lives under the bare key `_` and holds `Any` inside a routine, so
         // without the guard `my _ $x` would accept `_` as a type name.
+        // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
+        // namespace (#9962) and is consulted first.
         if !crate::env::is_magic_sigilless_key(name)
-            && let Some(ValueView::Package(target)) = self.env.get(name).map(Value::view)
+            && let Some(ValueView::Package(target)) = self
+                .term_value(name)
+                .or_else(|| self.env.get(name))
+                .map(Value::view)
         {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
@@ -522,7 +527,11 @@ impl Interpreter {
         // public class's own package still needs that lexical at instantiation
         // time. Consult the package-keyed module scope when the running code
         // belongs to that package.
-        if let Some(ValueView::Package(target)) = self.module_scope_lexical(name).map(Value::view) {
+        if let Some(ValueView::Package(target)) = self
+            .module_scope_lexical(&crate::runtime::term_names::term_key(name))
+            .or_else(|| self.module_scope_lexical(name))
+            .map(Value::view)
+        {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return true;
@@ -989,7 +998,8 @@ impl Interpreter {
                 }
             }
             if let Some(ValueView::Package(target)) = self
-                .module_scope_lexical_for_owner(owner, &name)
+                .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
+                .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
                 .map(Value::view)
             {
                 let resolved = target.resolve();
@@ -1017,7 +1027,8 @@ impl Interpreter {
             }
         }
         if let Some(ValueView::Package(target)) = self
-            .module_scope_lexical_for_owner(owner, &name)
+            .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
+            .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
             .map(Value::view)
         {
             let resolved = target.resolve();
@@ -1473,12 +1484,15 @@ impl Interpreter {
         }
         let mut current = name.to_string();
         for _ in 0..16 {
-            let next =
-                self.get_env_with_main_alias(&current)
-                    .and_then(|value| match value.view() {
-                        crate::value::ValueView::Package(target) => Some(target.resolve()),
-                        _ => None,
-                    });
+            // A sigil-less `constant Foo = Int` is a term (#9962); a
+            // same-named `$Foo` holding a type object is not an alias.
+            let next = self
+                .term_binding(&current)
+                .or_else(|| self.get_env_with_main_alias(&current))
+                .and_then(|value| match value.view() {
+                    crate::value::ValueView::Package(target) => Some(target.resolve()),
+                    _ => None,
+                });
             match next {
                 Some(target) if target != current => current = target,
                 // Settled: either the name is not bound to a type object at

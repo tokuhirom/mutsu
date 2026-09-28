@@ -390,6 +390,8 @@ impl Interpreter {
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
                 || self.is_type_alias_constant(tc)
+                // A sigil-less value constant is a value constraint (#9962).
+                || self.term_value(tc).is_some()
                 || matches!(tc, "Inf" | "NaN" | "True" | "False" | "Empty")
                 || crate::env::global_base_contains(tc)
             {

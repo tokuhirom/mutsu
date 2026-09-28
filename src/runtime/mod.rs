@@ -636,6 +636,7 @@ mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
 pub(crate) mod nativecall_fnptr;
+pub(crate) mod term_names;
 pub(crate) use self::decl_types::*;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;

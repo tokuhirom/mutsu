@@ -106,6 +106,7 @@ impl Interpreter {
         };
         matches!(result.view(), ValueView::Str(s) if s.as_str() == name)
             && !self.env().contains_key(name)
+            && self.term_binding(name).is_none()
             && !self.has_class(name)
             && !self.has_function(name)
             && !self.has_multi_function_unindexed(name)
@@ -250,6 +251,8 @@ impl Interpreter {
             .filter_map(|key| {
                 let name = key.resolve();
                 let bare = name.strip_prefix(MARKER)?;
+                // A sigil-less constant's marker names its term key (#9962).
+                let bare = crate::runtime::term_names::term_spelling(bare).unwrap_or(bare);
                 let first = bare.chars().next()?;
                 (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
                     .then(|| bare.to_string())

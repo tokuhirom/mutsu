@@ -201,10 +201,12 @@ impl Compiler {
                         }
                     }
                     Stmt::SyntheticBlock(inner) => self.compile_synthetic_block_inline(inner),
-                    Stmt::VarDecl { name, .. } => {
+                    Stmt::VarDecl { .. } => {
                         self.compile_stmt(stmt);
                         // VarDecl returns the variable value (like Raku)
-                        if let Some(&slot) = self.local_map.get(name) {
+                        let name = crate::runtime::term_names::stmt_decl_storage_name(stmt)
+                            .unwrap_or_default();
+                        if let Some(&slot) = self.local_map.get(name.as_str()) {
                             self.code.emit(OpCode::GetLocal(slot));
                         } else {
                             self.emit_nil_value();

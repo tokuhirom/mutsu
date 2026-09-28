@@ -118,6 +118,8 @@ impl Interpreter {
                     // value constraint, not a type name (`multi method
                     // encode(Text, ...)` where Text is an enum member).
                     || self.enum_bare_value(tc_base).is_some()
+                    // ... and so is a sigil-less value constant (#9962).
+                    || self.term_value(tc_base).is_some()
                     || crate::env::global_base_contains(tc_base)
                     || self.is_resolvable_type(tc)
                     // Qualify with each enclosing package. `tc_base`, not

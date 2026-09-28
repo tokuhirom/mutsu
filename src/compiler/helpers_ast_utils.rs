@@ -244,7 +244,8 @@ impl Compiler {
             Expr::AssignExpr { name, .. } => Some(name.clone()),
             Expr::CompoundAssign { expanded, .. } => Self::postfix_index_name(expanded),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+                Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
+                Stmt::Assign { name, .. } => Some(name.clone()),
                 _ => None,
             },
             _ => None,

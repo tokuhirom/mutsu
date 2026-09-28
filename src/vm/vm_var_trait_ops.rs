@@ -993,7 +993,10 @@ impl Interpreter {
         {
             return None;
         }
-        let bound = self.get_env_with_main_alias(trait_name)?;
+        // A local `constant Alias = SomeType` is a term (#9962).
+        let bound = self
+            .term_binding(trait_name)
+            .or_else(|| self.get_env_with_main_alias(trait_name))?;
         let ValueView::Package(p) = bound.view() else {
             return None;
         };

@@ -224,11 +224,13 @@ impl Interpreter {
             }
         }
         // 2. Code-valued `our constant &alias is export(...)` declarations.
-        if self
-            .exported_vars
-            .get(package_name.as_str())
-            .is_some_and(|vars| vars.contains_key(key))
-            && let Some(value) = self.exported_var_value(&package_name, key)
+        // A term export is recorded under its term key (#9962).
+        let term_key = crate::runtime::term_names::term_key(key);
+        if let Some(vars) = self.exported_vars.get(package_name.as_str())
+            && let Some(export_name) = [key, term_key.as_str()]
+                .into_iter()
+                .find(|name| vars.contains_key(*name))
+            && let Some(value) = self.exported_var_value(&package_name, export_name)
         {
             return Some(Some(value));
         }

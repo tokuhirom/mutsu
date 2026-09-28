@@ -64,6 +64,28 @@ impl Compiler {
 
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            // A sigil-less constant in expression position (`f((constant
+            // FOO = EXPR))`, a block-final `constant FOO = EXPR`) is stored in
+            // the term namespace (#9962), which only the statement-position
+            // declaration knows how to set up. Declare it there and yield the
+            // value back from its term slot.
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) => {
+                self.compile_stmt(stmt);
+                let key = crate::runtime::term_names::term_key(name);
+                match self.local_map.get(key.as_str()).copied() {
+                    Some(slot) => {
+                        self.code.emit(OpCode::GetLocal(slot));
+                    }
+                    None => {
+                        let name_idx = self.code.add_constant(Value::str(key));
+                        self.code.emit(OpCode::GetGlobal(name_idx));
+                    }
+                }
+            }
             Stmt::If {
                 cond,
                 then_branch,

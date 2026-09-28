@@ -1269,6 +1269,22 @@ impl Compiler {
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // A sigil-less `constant b` is a TERM, a different symbol from
+                // a same-named `$b`; it is stored under its term-namespace key
+                // (`runtime::term_names`, #9962) so the two never share a local
+                // slot or an `env` entry. `spelled` keeps the name the program
+                // writes, for everything that tracks the constant BY that name
+                // (bareword resolution, redeclaration, exports, the package
+                // store); `name` is the storage key from here on.
+                let spelled = name;
+                let term_storage;
+                let name = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                {
+                    term_storage = crate::runtime::term_names::term_key(name);
+                    &term_storage
+                } else {
+                    name
+                };
                 // Snapshot-and-clear `bind_vardecl` immediately: it is a
                 // one-shot signal meant for THIS declaration's own store
                 // (set by an enclosing `SyntheticBlock`/inline-block for a
@@ -1370,13 +1386,13 @@ impl Compiler {
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl
-                    && !name.starts_with(['$', '@', '%', '&'])
+                    && !spelled.starts_with(['$', '@', '%', '&'])
                     && let Expr::BareWord(target) = expr
                 {
                     // A bare type object on the RHS makes this constant a
                     // type alias. Keep the spelling for runtime diagnostics,
                     // but let native storage and arithmetic use its target.
-                    self.type_aliases.insert(name.clone(), target.clone());
+                    self.type_aliases.insert(spelled.clone(), target.clone());
                 }
                 // A `constant` that shadows an outer constant of the same name
                 // (in an enclosing block or closure) is a fresh lexical binding,
@@ -1387,8 +1403,8 @@ impl Compiler {
                 // same-scope duplicate errors as X::Redeclaration below, so a hit
                 // here is always an outer shadow.
                 let shadows_outer_constant = is_constant_decl
-                    && (self.constant_vars_in_scope.contains(name.as_str())
-                        || self.outer_constant_names.contains(name.as_str()));
+                    && (self.constant_vars_in_scope.contains(spelled.as_str())
+                        || self.outer_constant_names.contains(spelled.as_str()));
                 if is_constant_decl {
                     // X::Redeclaration on a duplicate same-scope `constant` is only
                     // fired when the *sigil* matches. mutsu's AST strips the `$`
@@ -1409,9 +1425,9 @@ impl Compiler {
                             _ => None,
                         })
                         .unwrap_or_default();
-                    let redecl_key = format!("{}{}", constant_sigil, name);
+                    let redecl_key = format!("{}{}", constant_sigil, spelled);
                     if !self.constant_vars_current_scope.insert(redecl_key) {
-                        let sym = name.trim_start_matches(['$', '@', '%', '&']).to_string();
+                        let sym = spelled.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("symbol".to_string(), Value::str(sym));
                         attrs.insert("what".to_string(), Value::str_from("symbol"));
@@ -1421,15 +1437,22 @@ impl Compiler {
                         self.code.emit(OpCode::Die { user_throw: false });
                         return;
                     }
-                    self.constant_vars.insert(name.clone());
-                    self.constant_vars_in_scope.insert(name.clone());
+                    self.constant_vars.insert(spelled.clone());
+                    self.constant_vars_in_scope.insert(spelled.clone());
                     // A `constant` with a compile-time-constant scalar value is
                     // inlined at its read sites (ADR-0006 §2.2).
-                    self.note_constant_decl(name, expr);
-                } else {
-                    // An ordinary `my`/`state` of the same bare name shadows the
-                    // constant — mutsu strips sigils, so `my $DEBUG` and a
-                    // sigilless `constant DEBUG` collide. Stop inlining it.
+                    self.note_constant_decl(spelled, expr);
+                } else if !self
+                    .local_map
+                    .contains_key(crate::runtime::term_names::term_key(name).as_str())
+                {
+                    // An ordinary `my`/`state` of the same spelling shadows a
+                    // same-sigil constant (`constant $DEBUG` / `my $DEBUG`):
+                    // stop inlining it. A sigil-less `constant DEBUG` of THIS
+                    // unit is a different symbol from `$DEBUG` (#9962) and
+                    // keeps its value; one inherited from an enclosing unit is
+                    // conservatively forgotten, which only costs the inlining —
+                    // the bareword still resolves to the term at run time.
                     self.forget_constant(name);
                 }
                 // X::ParametricConstant: typed @/% constants are forbidden
@@ -1629,7 +1652,7 @@ impl Compiler {
                     None
                 };
                 if is_our_bare_decl {
-                    let qualified = self.qualify_our_variable_name(name);
+                    let qualified = self.qualify_our_storage_name(spelled, name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
                 } else if bind_vardecl
@@ -1911,7 +1934,7 @@ impl Compiler {
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
                     if use_our_cell {
-                        let qualified = self.qualify_our_variable_name(name);
+                        let qualified = self.qualify_our_storage_name(spelled, name);
                         self.code
                             .our_locals
                             .push((slot as usize, qualified.clone()));
@@ -2016,7 +2039,7 @@ impl Compiler {
                         // an `our` var declared inside a closure leaks the shadowing
                         // value back to the caller.
                         if *is_our && !shadows_outer_constant {
-                            let qualified = self.qualify_our_variable_name(name);
+                            let qualified = self.qualify_our_storage_name(spelled, name);
                             // Track this slot as `our`-scoped so BlockScope restoration
                             // can sync the local from its global after block exit.
                             self.code
@@ -2050,6 +2073,7 @@ impl Compiler {
                     && crate::runtime::Interpreter::export_stash_tag(&self.current_package)
                         .is_some()
                 {
+                    let name_idx = self.code.add_constant(Value::str(spelled.clone()));
                     self.code.emit(OpCode::PublishExportStashVar { name_idx });
                 }
                 if *is_export {
@@ -2063,6 +2087,10 @@ impl Compiler {
                             .collect::<Vec<Value>>();
                         Some(self.code.add_constant(Value::array(entries)))
                     };
+                    // The export is recorded under the declaration's storage
+                    // key: a sigil-less constant's term key (#9962) is what
+                    // tells the importer it is a term and not a sigil-stripped
+                    // `$`-scalar export (`our $x is export` records `x`).
                     self.code
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
@@ -2215,6 +2243,20 @@ impl Compiler {
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // `b = 5` on an in-scope sigil-less constant targets the term,
+                // stored under its term key (#9962), not a same-named `$b`. So
+                // does one whose target this unit cannot see at all (`EVAL
+                // 'b = 5'`); the VM falls back to the plain name when no term
+                // of that spelling is in scope.
+                let term_target;
+                let name = if *target_is_sigilless
+                    && (self.names_term_constant(name) || self.sigilless_target_is_unknown(name))
+                {
+                    term_target = crate::runtime::term_names::term_key(name);
+                    &term_target
+                } else {
+                    name
+                };
                 // Keep `provably_bare_receiver_vars` (see its doc, and the
                 // matching `Stmt::VarDecl` arm) live across a REASSIGNMENT
                 // too, not just the declaration: a plain scalar `=`/`:=` and a

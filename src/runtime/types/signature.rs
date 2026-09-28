@@ -1443,7 +1443,11 @@ pub(in crate::runtime) fn code_signature_matches_value(
         {
             return name.resolve();
         }
-        if let Some(ValueView::Package(name)) = interpreter.env.get(constraint).map(Value::view) {
+        if let Some(ValueView::Package(name)) = interpreter
+            .type_name_binding(constraint)
+            .as_ref()
+            .map(Value::view)
+        {
             return name.resolve();
         }
         constraint.to_string()

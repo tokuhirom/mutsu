@@ -241,6 +241,15 @@ impl Interpreter {
             if self.scalar_name_has_no_container(target_var) {
                 return Ok(target);
             }
+            // A sigil-less constant — a term, reached here by its spelling when
+            // the compiler could not see it (a `require`d import) — has no
+            // container either (#9962).
+            if !target_var.starts_with(['$', '@', '%', '&'])
+                && !self.env.contains_key(target_var)
+                && self.term_value(target_var).is_some()
+            {
+                return Ok(target);
+            }
             // Also a live property of the CURRENT binding, so probed before the
             // name-keyed cache as well: `sub h(\p) { p.VAR }; h($x); h(1)` must
             // answer `Int` for the second call, not the first call's cached

@@ -539,7 +539,11 @@ impl Interpreter {
     }
 
     pub(crate) fn add_sigil_prefix(name: &str) -> String {
-        if name.starts_with('$')
+        if let Some(term) = crate::runtime::term_names::term_spelling(name) {
+            // A sigil-less constant's term-namespace key (#9962) is displayed
+            // as the term it spells.
+            term.to_string()
+        } else if name.starts_with('$')
             || name.starts_with('@')
             || name.starts_with('%')
             || name.starts_with('&')

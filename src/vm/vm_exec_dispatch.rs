@@ -1352,6 +1352,21 @@ impl Interpreter {
                         }
                     }
                 }
+                // A sigil-less write the compiler could not resolve to a binding
+                // it knows (`EVAL 'b = 3'`) is emitted against the TERM key
+                // (#9962): it is an in-scope constant's binding when there is
+                // one — whose readonly mark then refuses the write — and the
+                // plain sigil-less name (an outer `my \x`) otherwise.
+                if !raw_mode
+                    && let Some(spelled) = crate::runtime::term_names::term_spelling(&name)
+                    && (!self.env().contains_key(&name)
+                        // A type name keeps meaning the type here, exactly as
+                        // it does for a run-time bareword read.
+                        || self.has_type_direct(spelled)
+                        || Self::is_builtin_type(spelled))
+                {
+                    name = spelled.to_string();
+                }
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
                 let name_sym = crate::symbol::Symbol::intern(&name);

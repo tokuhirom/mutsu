@@ -77,7 +77,9 @@ impl Interpreter {
                         continue;
                     }
                     let val = self.exported_var_value(module, name).unwrap_or(Value::NIL);
-                    symbols.insert(name.clone(), val);
+                    // A term export is published under its spelling (#9962).
+                    let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
+                    symbols.insert(key.to_string(), val);
                 }
             }
             return Self::make_stash_instance(package, symbols);
@@ -192,7 +194,8 @@ impl Interpreter {
         if let Some(vars) = self.exported_vars.get(package_name.as_str()) {
             for name in vars.keys() {
                 if let Some(value) = self.exported_var_value(&package_name, name) {
-                    symbols.entry(name.clone()).or_insert(value);
+                    let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
+                    symbols.entry(key.to_string()).or_insert(value);
                 }
             }
         }
@@ -279,7 +282,8 @@ impl Interpreter {
                         } else {
                             value
                         };
-                        symbols.entry(name.clone()).or_insert(value);
+                        let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
+                        symbols.entry(key.to_string()).or_insert(value);
                     }
                 }
             }

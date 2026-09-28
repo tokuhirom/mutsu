@@ -868,6 +868,26 @@ impl Interpreter {
     /// is persisted in that class's package-lexical store when its body exits.
     /// Keep both import-time and EXPORT-stash reads on the same lookup path.
     pub(crate) fn exported_var_value(&self, module: &str, name: &str) -> Option<Value> {
+        // A sigil-less constant's export name is its term key (#9962): its
+        // package store is keyed by the spelling, its lexical copies by the key.
+        if let Some(spelled) = crate::runtime::term_names::term_spelling(name) {
+            let qualified = crate::qualified::qualified(
+                crate::symbol::Symbol::intern(module),
+                crate::symbol::Symbol::intern(spelled),
+            );
+            return self
+                .env
+                .get_sym(qualified)
+                .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
+                .or_else(|| self.our_vars.get(qualified.as_str()))
+                .or_else(|| {
+                    self.module_scope_lexicals
+                        .get(module)
+                        .and_then(|e| e.get(name))
+                })
+                .or_else(|| self.env.get(name))
+                .cloned();
+        }
         let (sigil, bare) = match name.chars().next() {
             Some(sigil @ ('$' | '@' | '%' | '&')) => (Some(sigil), &name[1..]),
             _ => (None, name),
@@ -1450,7 +1470,14 @@ impl Interpreter {
                 // `my $s` lives (#7914). Importing `:s<time>` from
                 // `CSS::Grammar::Defs` otherwise replaced the importing scope's
                 // `$s` wholesale. See `runtime::enum_bare_names`.
-                let is_enum_key = !target.contains("::")
+                // A sigil-less constant is exported under its term key
+                // (#9962), and is imported under it too: a `my $b` in the
+                // importing scope is a different symbol. See
+                // `runtime::term_names`.
+                let term_spelling = crate::runtime::term_names::term_spelling(&target);
+                let is_term = term_spelling.is_some();
+                let is_enum_key = !is_term
+                    && !target.contains("::")
                     && !target.starts_with(['$', '@', '%', '&'])
                     && matches!(value.view(), ValueView::Enum { .. });
                 let env_target = if is_enum_key {
@@ -1459,7 +1486,7 @@ impl Interpreter {
                     target.clone()
                 };
                 if !target.contains("::") {
-                    self.unsuppress_name(&target);
+                    self.unsuppress_name(term_spelling.unwrap_or(&target));
                 }
                 // Slice F (env<->locals coherence): `import` writes the symbol
                 // into env by name, but a later bare reference (e.g. an imported
@@ -1472,7 +1499,7 @@ impl Interpreter {
                 // recording it made the importing frame pull `env[<key>]` over a
                 // same-named lexical's slot on the next frame reconcile — the
                 // half of #7914 that turned the caller's `my $s` into `Any`.
-                if !target.contains("::") && !is_enum_key {
+                if !target.contains("::") && !is_enum_key && !is_term {
                     let slot_name = match target.chars().next() {
                         Some('$' | '@' | '%') => target[1..].to_string(),
                         _ => target.clone(),

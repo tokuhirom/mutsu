@@ -185,6 +185,10 @@ impl Compiler {
             Expr::ArrayVar(n) => format!("@{}", n),
             Expr::HashVar(n) => format!("%{}", n),
             Expr::CodeVar(n) => format!("&{}", n),
+            // A sigil-less constant is reached through its term key (#9962).
+            Expr::BareWord(n) if self.names_term_constant(n) => {
+                crate::runtime::term_names::term_key(n)
+            }
             Expr::BareWord(n) => n.clone(),
             Expr::DoStmt(stmt) => {
                 if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
