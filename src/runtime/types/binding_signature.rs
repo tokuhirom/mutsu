@@ -1959,7 +1959,15 @@ impl Interpreter {
                         // A sigiled `**@` slurpy is an Array in Raku. Keep the
                         // real Array kind here, while preserving the raw
                         // binding through the common parameter bookkeeping.
-                        let slurpy_value = Value::real_array(items);
+                        // `**@x is raw` binds the un-itemized List instead:
+                        // rakudo's `sub f(**@x is raw) { @x.raku }; f(())` is
+                        // `((),)`, whose `()` a later `*@` slurpy flattens
+                        // away (Hash::Agnostic's `new(**@values is raw)`).
+                        let slurpy_value = if pd.traits.iter().any(|t| t == "raw") {
+                            Value::array(items)
+                        } else {
+                            Value::real_array(items)
+                        };
                         self.bind_param_value(&key, slurpy_value.clone());
                         self.env.insert(key.clone(), slurpy_value.clone());
                         self.note_param_bound_aggregate(&key, &slurpy_value);
