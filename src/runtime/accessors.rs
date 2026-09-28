@@ -2,6 +2,8 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    pub(crate) const FAILURE_ORIGIN_BACKTRACE_ATTR: &'static str = "failure-origin-backtrace";
+
     pub(super) fn normalize_categorical_operator_name(name: &str) -> String {
         // Keep categorical operator names as-written. Parenthesized operators
         // like infix:<(==)> are distinct from infix:<==>.
@@ -137,7 +139,7 @@ impl Interpreter {
         true
     }
 
-    fn failure_value_to_error(exception: &Value) -> RuntimeError {
+    fn failure_value_to_error(exception: &Value, origin: Option<&Value>) -> RuntimeError {
         let message = if let ValueView::Instance { attributes, .. } = exception.view() {
             attributes
                 .as_map()
@@ -148,13 +150,43 @@ impl Interpreter {
             "Died".to_string()
         };
         let mut err = RuntimeError::new(message);
-        // Carry the fail-site backtrace (recorded on the exception when `fail`
-        // ran) so the throw site renders rakudo's dual-backtrace form.
-        if let Some(orig) = Self::exception_backtrace_text(exception) {
+        // The Failure stores its origin separately from the unthrown exception.
+        if let Some(orig) = Self::attach_failure_origin_on_throw(exception, origin) {
             err.set_failure_original_backtrace(Some(orig));
         }
         err.exception = Some(Box::new(exception.clone()));
         err
+    }
+
+    /// Keep a Failure's origin off its exception until the Failure is thrown.
+    /// At the throw, expose the original frames through `.backtrace`.
+    pub(crate) fn attach_failure_origin_on_throw(
+        exception: &Value,
+        origin: Option<&Value>,
+    ) -> Option<String> {
+        let Some(origin) = origin else {
+            return Self::exception_backtrace_text(exception);
+        };
+        let text = if let ValueView::Instance { attributes, .. } = origin.view() {
+            attributes
+                .as_map()
+                .get("text")
+                .map(Value::to_string_value)
+                .unwrap_or_default()
+        } else {
+            origin.to_string_value()
+        };
+        if let ValueView::Instance { attributes, .. } = exception.view() {
+            attributes.insert_if_absent(
+                "backtrace".to_string(),
+                if matches!(origin.view(), ValueView::Instance { .. }) {
+                    origin.clone()
+                } else {
+                    Self::backtrace_value_from_string_with_runtime(&text, true)
+                },
+            );
+        }
+        Some(text)
     }
 
     /// The `.text` of a `Backtrace` stored on an exception instance's
@@ -204,7 +236,10 @@ impl Interpreter {
             return None;
         }
         if let Some(exception) = attributes.as_map().get("exception") {
-            return Some(Self::failure_value_to_error(exception));
+            return Some(Self::failure_value_to_error(
+                exception,
+                attributes.as_map().get(Self::FAILURE_ORIGIN_BACKTRACE_ATTR),
+            ));
         }
         Some(RuntimeError::new("Failed"))
     }
@@ -380,7 +415,32 @@ impl Interpreter {
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception_value();
         let mut failure_attrs = std::collections::HashMap::new();
+        // A soft Failure has not thrown its exception. Move the structured
+        // fail-site Backtrace onto the Failure so a later sink can restore it.
+        let structured_origin = if err.is_fail() {
+            match exception.view() {
+                ValueView::Instance { attributes, .. } => {
+                    let mut map = attributes.to_map();
+                    let backtrace = map.remove("backtrace");
+                    if backtrace.is_some() {
+                        attributes.commit_attrs(map);
+                    }
+                    backtrace
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         failure_attrs.insert("exception".to_string(), exception);
+        if let Some(origin) = structured_origin {
+            failure_attrs.insert(Self::FAILURE_ORIGIN_BACKTRACE_ATTR.to_string(), origin);
+        } else if let Some(origin) = err.failure_original_backtrace() {
+            failure_attrs.insert(
+                Self::FAILURE_ORIGIN_BACKTRACE_ATTR.to_string(),
+                Value::str_from(origin),
+            );
+        }
         // When UNDO phasers ran for this fail, the Failure is marked as handled
         // (Raku semantics: UNDO acts as a handler, so sinking the Failure won't throw).
         failure_attrs.insert("handled".to_string(), Value::truth(err.fail_handled));
@@ -401,7 +461,10 @@ impl Interpreter {
             && class_name == "Failure"
             && let Some(ex) = attributes.as_map().get("exception")
         {
-            return Self::failure_value_to_error(ex);
+            return Self::failure_value_to_error(
+                ex,
+                attributes.as_map().get(Self::FAILURE_ORIGIN_BACKTRACE_ATTR),
+            );
         }
         // rakudo names both the returned value and the pinned return value here
         // ("Cannot return 27 with .return when return value 42 is already
