@@ -48,8 +48,11 @@ impl Interpreter {
         // the exact name it was referenced with. A `my subset` is lexical and
         // must NOT get the package-qualified alias (S12-subset/type-subset.t).
         let pkg = self.current_package();
+        // `my subset SI2 of S-Int` refines the `S-Int` visible HERE: a lexical
+        // base lives under its declaration-site storage name (ADR-0047), so
+        // record that identity rather than the spelling.
         let def = SubsetDef {
-            base: base.to_string(),
+            base: self.lexical_env_remap_name(base),
             predicate,
             version: version.to_string(),
             decl_package: pkg.clone(),

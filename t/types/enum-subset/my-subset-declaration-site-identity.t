@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 15;
 
 # A `my subset` has declaration-site identity (ADR-0047 P1, #9894): two
 # same-named lexical subsets in different scopes are two different types.
@@ -53,4 +53,20 @@ is Holder.name, 'Holder::Small', '.^name of a class-body `my subset`';
 {
     my subset ofTest where True;
     ok (-> () --> ofTest {}).of =:= ofTest, '.of of `--> my-subset` is the subset itself';
+}
+
+# A lexical subset refining another lexical subset refines that type object.
+{
+    my subset S-Int of Int;
+    my subset SI2 of S-Int;
+    ok SI2.isa(S-Int), 'a lexical subset of a lexical subset isa its base';
+}
+
+# Type-check messages name a lexical subset by its source spelling.
+{
+    my subset Tiny of Int where * < 10;
+    my Tiny $t;
+    throws-like { $t = 99 }, X::TypeCheck::Assignment,
+        message => 'Type check failed in assignment to $t; expected Tiny but got Int (99)',
+        'the assignment error names the lexical subset';
 }
