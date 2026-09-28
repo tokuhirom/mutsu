@@ -1651,7 +1651,8 @@ impl Interpreter {
             Vec::new()
         };
 
-        // First, recursively process child named captures (bottom-up order).
+        // Recursively process child named captures and hidden subrules in
+        // reduction order (bottom-up within each child).
         // Keep the parent frame installed for that entire walk so child action
         // methods can read and mutate parent-owned dynamic variables.
         let updated_attrs = attributes.clone();
@@ -1677,7 +1678,7 @@ impl Interpreter {
             // parsers that maintain scope or interpolation variables) observe
             // the wrong order. Flatten the individual captures before sorting
             // so sibling capture types are interleaved by source position.
-            let mut children: Vec<(String, Option<usize>, Value)> = Vec::new();
+            let mut children: Vec<(Option<String>, Option<usize>, Value)> = Vec::new();
             let mut array_children: std::collections::HashMap<
                 String,
                 (crate::value::ArrayKind, Vec<Value>),
@@ -1686,16 +1687,28 @@ impl Interpreter {
                 if let ValueView::Array(items, kind) = child_match.view() {
                     let values = items.to_vec();
                     for (index, item) in values.iter().enumerate() {
-                        children.push((child_name.clone(), Some(index), item.clone()));
+                        children.push((Some(child_name.clone()), Some(index), item.clone()));
                     }
                     array_children.insert(child_name.clone(), (kind, values));
                 } else {
-                    children.push((child_name.clone(), None, child_match.clone()));
+                    children.push((Some(child_name.clone()), None, child_match.clone()));
                 }
             }
-            // `match_from` is the non-materializing seam read — a lazy child
-            // is not forced just to be sorted.
-            children.sort_by_key(|(_, _, v)| v.match_from().unwrap_or(0));
+            // A silent subrule still reduces at its position in the pattern.
+            // It has no named slot, but its action must run among the named
+            // captures rather than after all of them.
+            if let Some(ValueView::Array(silent, _)) =
+                attributes.as_map().get("silent_caps").map(Value::view)
+            {
+                for item in silent.iter() {
+                    children.push((None, None, item.clone()));
+                }
+            }
+            // A zero-width hidden subrule and the following capture can share
+            // a start position. The earlier reduction has the earlier end;
+            // both seam reads leave lazy Match children unmaterialized.
+            children
+                .sort_by_key(|(_, _, v)| (v.match_to().unwrap_or(0), v.match_from().unwrap_or(0)));
             // A non-suppressing alias (`<x=rule>`) files ONE capture node under
             // both `x` and `rule`, so the same cursor appears twice among these
             // siblings. Rakudo dispatches an action per reduced cursor, not per
@@ -1706,6 +1719,15 @@ impl Interpreter {
             // `$<x> === $<rule>` means.
             let mut seen: Vec<(usize, Value)> = Vec::new();
             for (child_name, array_index, child_match) in children {
+                let Some(child_name) = child_name else {
+                    let dispatch_name = Self::get_action_name(&child_match).unwrap_or_default();
+                    restore_on_error!(self.invoke_grammar_actions(
+                        child_match,
+                        actions,
+                        &dispatch_name,
+                    ));
+                    continue;
+                };
                 // Probe Match first (non-materializing); only non-Match values
                 // (arrays of per-iteration Matches) go through `view()`.
                 if child_match.is_match_instance() {
@@ -1819,18 +1841,15 @@ impl Interpreter {
             }
         }
 
-        // Dispatch actions for silent-action captures: hidden `<.foo>` subrule
-        // matches that carry nested captures. The subrule is absent from `.hash`,
-        // but Rakudo fires its action method (and its descendants') at reduce time
-        // regardless of capture — so recurse into each (bottom-up, in source order)
-        // to dispatch them. Each subcap's `action_name` names the method to call.
-        // This also descends through positional `( )` groups, since a silent
-        // subrule matched inside a group has its marker stored on the GROUP's
-        // match. Only `silent_caps` are dispatched — never the groups' named
-        // children (the named-children walk above already handles those; firing
-        // them again double-dispatches, see t/grammar-reduce-time-dynvar.t).
-        // Results are not stored back: silent captures are never read by user code.
-        restore_on_error!(self.dispatch_silent_action_caps(&attributes.as_map(), actions));
+        // A node without a named-capture hash still needs to dispatch its
+        // hidden subrules. Nodes with that hash handled them above, interleaved
+        // with the captured children. Silent results have no public slot.
+        if !matches!(
+            attributes.as_map().get("named").map(Value::view),
+            Some(ValueView::Hash(_))
+        ) {
+            restore_on_error!(self.dispatch_silent_action_caps(&attributes.as_map(), actions));
+        }
 
         // Rebuild match_obj with updated children
         let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
