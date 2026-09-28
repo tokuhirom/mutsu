@@ -5621,7 +5621,8 @@ impl Interpreter {
                 self.exec_exists_expr_op();
                 *ip += 1;
             }
-            // Cost: O(1) for a single index/key; O(k) for a slice (see exec_exists_index_adv_op).
+            // Cost: O(1) for a single key; O(k) for a slice, k = indices;
+            // O(j) for a Junction key, j = eigenstates.
             OpCode::ExistsIndexAdv(flags) => {
                 self.exec_exists_index_adv_op(*flags, None)?;
                 *ip += 1;

@@ -6,7 +6,7 @@ impl Interpreter {
     /// Rich :exists adverb handler supporting negation, parameterized arg,
     /// zen slice, and secondary adverbs (:kv, :!kv, :p, :!p, :!v).
     // Cost: O(1) for a single index (bounds check plus hole probe); O(k) for a slice,
-    // k = indices.
+    // k = indices; O(j) for a Junction key, j = eigenstates.
     pub(super) fn exec_exists_index_adv_op(
         &mut self,
         flags: u32,
@@ -47,6 +47,36 @@ impl Interpreter {
                 ));
             }
             _ => {}
+        }
+
+        // Plain :exists returns a Bool, even when a Junction key threads the
+        // lookup. Apply the ordinary existence check to each eigenstate and
+        // collapse using the Junction's own Bool rule. Secondary adverbs keep
+        // their key/value result shape and are handled below.
+        if !is_zen
+            && adverb_bits == 0
+            && self.stack.len() >= 2
+            && let ValueView::Junction {
+                kind: junction_kind,
+                values,
+            } = self.stack[self.stack.len() - 1].view()
+        {
+            let values = values.to_vec();
+            let target = self.stack[self.stack.len() - 2].clone();
+            self.stack.truncate(self.stack.len() - 2);
+            let mut results = Vec::with_capacity(values.len());
+            for key in values {
+                self.stack.push(target.clone());
+                self.stack.push(key);
+                // Negation belongs to the final Bool, after Junction
+                // collapse; `:!exists` on `any(hit, miss)` is False.
+                self.exec_exists_index_adv_op(flags & !3, array_var_name.clone())?;
+                results.push(self.stack.pop().unwrap_or(Value::FALSE));
+            }
+            self.stack.push(Value::truth(
+                Value::junction(junction_kind, results).truthy() ^ effective_negated,
+            ));
+            return Ok(());
         }
 
         // Whether the *index form* is a slice (list, Range, zen, `*`), as opposed
