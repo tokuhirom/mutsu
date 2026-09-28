@@ -540,12 +540,23 @@ impl Interpreter {
         } else {
             None
         };
+        // An alias on anything but a subrule call (`$<x>=(…)`, `$<x>=[…]`,
+        // `$<x>=<:!Cc>*`, `$<x>=\S+`) names a capture, not a rule: no cursor
+        // reduces there, so the grammar action walk must not dispatch an
+        // action method named after the alias (rakudo calls `method x` only
+        // for `<x>`). An empty rule name marks that — the same name the walk
+        // already gives a positional `( )` group — while the walk still
+        // descends into the node's own captures.
+        let no_rule = || Some(String::new());
         let mut sub = if let Some(mut gs) = group_subcap.take() {
             // Keep the group's nested captures, but pin the span to the
             // aliased group's extent.
             let gsm = std::sync::Arc::make_mut(&mut gs);
             gsm.from = from;
             gsm.to = to;
+            if gsm.action_name.is_none() {
+                gsm.action_name = no_rule();
+            }
             gs
         } else if let Some(sc) = subrule_subcap {
             sc
@@ -553,6 +564,11 @@ impl Interpreter {
             std::sync::Arc::new(CapNode {
                 from,
                 to,
+                action_name: if matches!(token.atom, RegexAtom::Named(_)) {
+                    None
+                } else {
+                    no_rule()
+                },
                 ..Default::default()
             })
         };

@@ -743,13 +743,18 @@ fn is_hash_literal_start(input: &str) -> bool {
                 return true;
             }
         }
-        // :$var / :@var / :%var / :&var, including twigils such as
-        // :$!attr.  The full colon-pair parser accepts these forms; keep the
-        // brace classifier in step so a private-attribute autopair is parsed
-        // as a Hash rather than as an anonymous Block.
+        // :$var / :@var / :%var / :&var, including every twigil the full
+        // colon-pair parser (`colonpair_expr`) accepts — :$!attr, :$.attr,
+        // :%*dynamic, :$?LINE, ... Keep the brace classifier in step with
+        // it, so `{ :%*DIRECTIVES, :@*ROWS }` is a Hash rather than an
+        // anonymous Block.
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
             let after_sigil = &r[1..];
-            let after_twigil = after_sigil.strip_prefix('!').unwrap_or(after_sigil);
+            let after_twigil = match after_sigil.chars().next() {
+                Some('*' | '?' | '^' | '=' | '~' | '!' | '.') => &after_sigil[1..],
+                Some(':') if !after_sigil.starts_with("::") => &after_sigil[1..],
+                _ => after_sigil,
+            };
             if crate::parser::stmt::ident_pub(after_twigil).is_ok() {
                 return true;
             }

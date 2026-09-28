@@ -223,6 +223,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "Capture" => Some(value_to_capture(target)),
+        // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
         "Slip" => match target.view() {
             ValueView::Seq(items) => {
                 if items.is_consumed() && !items.is_cached() {
@@ -279,8 +280,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => Some(Ok(Value::slip(
-                crate::runtime::utils::value_to_list(target),
+            | ValueView::GenericRange { .. }
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..) => Some(Ok(Value::slip(crate::runtime::utils::value_to_list(
+                target,
+            )))),
+            // `Any.Slip` is `self.list.Slip`, so an associative slips its
+            // pairs (`{:a(1)}.Slip` is `slip(:a(1),)`). A method call sees
+            // through the `$` item container, so an itemized hash does too.
+            ValueView::Hash(items) => Some(Ok(Value::slip(
+                items
+                    .iter()
+                    .map(|(k, v)| items.typed_pair(k, v.clone()))
+                    .collect(),
             ))),
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
