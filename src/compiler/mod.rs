@@ -1118,6 +1118,7 @@ mod decl_reset;
 mod expr;
 mod expr_binary;
 mod expr_block;
+mod expr_block_decl_helpers;
 mod expr_call;
 mod expr_closure;
 mod expr_data;
