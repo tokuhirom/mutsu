@@ -892,28 +892,24 @@ impl Interpreter {
         {
             index = Value::int(i64::from(b));
         }
-        // A user object used as a positional subscript coerces via its `.Int`
-        // method (`@a[$obj]` where `$obj` defines `method Int`, Raku subscript
-        // protocol). Gate on an array-like target so an associative `%h{...}`
-        // key Instance is left alone, and on the class actually defining a user
-        // `Int` method so built-in instances (Match, Failure, …) fall through to
-        // their own handling. Slice F: this op-level redispatch has no surrounding
+        // An object used as a positional subscript coerces via its `.Int`
+        // method. This includes native Cool objects such as Match as well as
+        // user-defined Int methods. Associative keys retain the object itself.
+        // Slice F: this op-level redispatch has no surrounding
         // CallMethod op, so drain the captured-outer writeback (`my $i; method Int
         // { $i++; ... }`) into the caller's slot via `current_code` +
         // `reconcile_caller_after_internal_dispatch` (retain-on-miss).
-        if let ValueView::Instance { class_name, .. } = index.view()
+        if matches!(index.view(), ValueView::Instance { .. })
+            && is_positional
             && matches!(
                 target.view(),
                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
             )
-            && self.has_user_method(&class_name.resolve(), "Int")
         {
             let caller_code = self.current_code;
             let coerced = self.try_compiled_method_or_interpret(index.clone(), "Int", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
-            if let Ok(v) = coerced {
-                index = v;
-            }
+            index = coerced?;
         }
         // If target is a Failure, propagate it (// will catch it as undefined)
         if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
