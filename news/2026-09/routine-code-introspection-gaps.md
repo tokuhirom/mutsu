@@ -37,4 +37,4 @@ registry lookup — answering `False`, not an error, for anything with no
 FunctionDef of its own.
 
 Pinned by `t/routines/dispatch/routine-candidates-multi-flag.t`,
-`t/lang/code-line-file-reflection.t`, and `t/oo/trait/is-implementation-detail.t`.
+`t/lang/code-line-file-reflection.t`, and `t/oo/trait/is-implementation-detail-trait.t`.
