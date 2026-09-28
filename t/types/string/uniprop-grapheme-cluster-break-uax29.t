@@ -4,7 +4,7 @@ use Test;
 # distinguished CR/LF/ZWJ/Extend/Control/Other; verify the full set of
 # classes against Rakudo / the Unicode spec.
 
-plan 26;
+plan 28;
 
 # Basic
 is 'a'.uniprop('Grapheme_Cluster_Break'), 'Other', 'letter is Other';
@@ -47,3 +47,8 @@ is "\x1A61".uniprop('Grapheme_Cluster_Break'), 'Other', 'TAI THAM VOWEL SIGN A i
 
 # Format
 is "\xAD".uniprop('Grapheme_Cluster_Break'), 'Control', 'soft hyphen (Cf) is Control';
+
+# Emoji modifiers (gc=Sk) moved from E_Modifier/Other to Extend in Unicode 11
+# (#9799): mutsu's mapping was reading an older classification.
+is "\x1F3FB".uniprop('Grapheme_Cluster_Break'), 'Extend', 'emoji modifier type 1-2 is Extend';
+is "\x1F3FF".uniprop('Grapheme_Cluster_Break'), 'Extend', 'emoji modifier type 6 is Extend';
