@@ -2864,10 +2864,13 @@ impl Interpreter {
                         // apart from a genuinely unknown *method* on a real
                         // type -- raku reports the former as a missing global
                         // symbol, not a missing method (#9795).
-                        if let Some((pkg_prefix, short)) = resolved.rsplit_once("::")
-                            && !self.is_known_package(pkg_prefix)
+                        if let Some(pkg_prefix) = crate::qualified::package_parent(name)
+                            && !self.is_known_package(pkg_prefix.as_str())
                         {
-                            return Err(self.no_such_qualified_symbol(pkg_prefix, short));
+                            let short = crate::qualified::unqualified_part(name);
+                            return Err(
+                                self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
+                            );
                         }
                         Err(RuntimeError::method_not_found("new", &resolved))
                     }
