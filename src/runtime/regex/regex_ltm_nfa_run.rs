@@ -35,6 +35,26 @@ pub(super) struct NfaRun {
     pub(super) fate: Option<usize>,
     /// Some path went through a `||` (see `LtmMeasure::stopped`).
     pub(super) seqalt: bool,
+    /// Where each `_LL` literal a path crossed ended (see
+    /// `LtmMeasure::litlen`), without repeating the previous entry.
+    pub(super) ll_ends: Vec<usize>,
+}
+
+impl NfaRun {
+    fn empty() -> Self {
+        NfaRun {
+            ends: Vec::new(),
+            fate: None,
+            seqalt: false,
+            ll_ends: Vec::new(),
+        }
+    }
+
+    fn cross_ll(&mut self, end: usize) {
+        if self.ll_ends.last() != Some(&end) {
+            self.ll_ends.push(end);
+        }
+    }
 }
 
 /// The call stacks of one run. Id 0 is the empty stack; every other id is a
@@ -161,11 +181,7 @@ impl LtmNfa {
         start: usize,
         outer: &[Symbol],
     ) -> NfaRun {
-        let mut out = NfaRun {
-            ends: Vec::new(),
-            fate: None,
-            seqalt: false,
-        };
+        let mut out = NfaRun::empty();
         let mut stacks = Stacks::new(outer);
         let mut seen = Seen::new(self.nodes.len());
         // Threads still to expand at `pos`, threads reached at `pos + 1`
@@ -201,12 +217,16 @@ impl LtmNfa {
                         pkg,
                         ic,
                         kind,
+                        ll,
                         next,
                     } => match kind {
                         LeafKind::Consume => {
                             if let Some(end) =
                                 interp.match_consuming_atom(atom, chars, pos, *pkg, *ic)
                             {
+                                if *ll {
+                                    out.cross_ll(end);
+                                }
                                 reach(end, *next, stack, &mut work);
                             }
                         }
@@ -282,6 +302,11 @@ impl LtmNfa {
                         let region = dyn_call(interp, atom, chars, pos, *pkg, *ic, &names);
                         out.seqalt |= region.seqalt;
                         out.fate = out.fate.max(region.fate);
+                        // A subrule's own `_LL` literals count, as they do
+                        // for a call compiled into this NFA.
+                        for end in region.ll_ends {
+                            out.cross_ll(end);
+                        }
                         for end in region.ends {
                             reach(end, *next, stack, &mut work);
                         }
@@ -343,19 +368,21 @@ fn run_sub(
                 .filter(|target| target.chars().len() == chars.len());
             let Some(target) = target else {
                 return NfaRun {
-                    ends: Vec::new(),
                     fate: Some(pos),
-                    seqalt: false,
+                    ..NfaRun::empty()
                 };
             };
             let stripped = target.stripped();
             let from = stripped.original_to_stripped(pos);
             let run = nfa.run(interp, stripped.chars(), from, names);
             let back = |end: usize| stripped.stripped_to_original(end).max(pos);
+            // An ignoremark literal has no `_LL` form: nothing in the region
+            // counts toward `litlen`.
             NfaRun {
                 ends: run.ends.into_iter().map(back).collect(),
                 fate: run.fate.map(back),
                 seqalt: run.seqalt,
+                ll_ends: Vec::new(),
             }
         }
     }
@@ -372,11 +399,7 @@ fn dyn_call(
     ic: bool,
     names: &[Symbol],
 ) -> NfaRun {
-    let mut out = NfaRun {
-        ends: Vec::new(),
-        fate: None,
-        seqalt: false,
-    };
+    let mut out = NfaRun::empty();
     let RegexAtom::Named(name) = atom else {
         return out;
     };
@@ -407,6 +430,7 @@ fn dyn_call(
         out.ends.extend(run.ends);
         out.fate = out.fate.max(run.fate);
         out.seqalt |= run.seqalt;
+        out.ll_ends.extend(run.ll_ends);
     }
     out
 }

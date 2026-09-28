@@ -13,6 +13,7 @@ mod regex_lexical_ref;
 mod regex_lookbehind;
 mod regex_lr_state;
 mod regex_ltm_fate;
+mod regex_ltm_litend;
 pub(crate) mod regex_ltm_nfa;
 mod regex_ltm_nfa_build;
 mod regex_ltm_nfa_run;

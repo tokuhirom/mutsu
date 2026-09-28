@@ -1101,8 +1101,8 @@ impl Interpreter {
                 // a bounded repeat never exceeds `min(min+1, max)`, and
                 // never contributes to `litlen` at all (#9637) — both of
                 // which the native `RegexQuant::Repeat` parser already
-                // gets right (`build_counted`, `ltm_litlen_walk`'s
-                // "quantifiers end litlen" rule), so defer to it for any
+                // gets right (`build_counted`, and `regex_ltm_litend`'s
+                // "a quantifier closes `litlen`" rule), so defer to it for any
                 // BOUNDED count instead of string-unrolling. The unbounded
                 // `**min..*` shape below is unaffected by #9637 and keeps
                 // the string expansion.
