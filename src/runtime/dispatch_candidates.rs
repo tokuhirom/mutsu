@@ -1093,7 +1093,7 @@ impl Interpreter {
         // #8566, cross-module case).
         let resolved_base;
         let base = if !crate::runtime::utils::is_known_type_constraint(base)
-            && let Some(bound_val) = self.env.get(base)
+            && let Some(bound_val) = self.type_name_binding(base)
             && let ValueView::Package(bound) = bound_val.view()
             && bound.with_str(|b| b != base)
         {
@@ -1121,9 +1121,9 @@ impl Interpreter {
         // narrow as the argument that bound to it. Only a candidate that
         // already matched is ranked, so equality here is that match.
         if !crate::runtime::utils::is_known_type_constraint(base)
-            && let Some(bound_val) = self.env.get(base)
+            && let Some(bound_val) = self.type_name_binding(base)
             && !matches!(bound_val.view(), ValueView::Package(_))
-            && crate::runtime::values_identical(bound_val, value)
+            && crate::runtime::values_identical(&bound_val, value)
         {
             return 0;
         }

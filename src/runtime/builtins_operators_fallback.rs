@@ -1159,7 +1159,7 @@ impl Interpreter {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(name);
             // A bound generic type parameter (`T()` / `T:D()` inside a role method
             // where `T` -> `Int`) forms `Int(Any)` / `Int:D(Any)`.
-            if let Some(v) = self.env.get(base)
+            if let Some(v) = self.type_name_binding(base)
                 && let ValueView::Package(pkg) = v.view()
             {
                 let resolved = format!("{}{}(Any)", pkg.resolve(), smiley.unwrap_or(""));

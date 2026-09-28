@@ -687,6 +687,10 @@ impl Compiler {
             Expr::ArrayVar(n) => Some(format!("@{}", n)),
             Expr::HashVar(n) => Some(format!("%{}", n)),
             Expr::CodeVar(n) => Some(format!("&{}", n)),
+            // A sigil-less constant's binding is its term key (#9962).
+            Expr::BareWord(n) if self.names_term_constant(n) => {
+                Some(crate::runtime::term_names::term_key(n))
+            }
             Expr::BareWord(n) => Some(n.clone()),
             // Anonymous scalar assignment (`$ = value`) produces a writable
             // container, so wrap it with VarRef so `is rw` dispatch can match.
@@ -703,10 +707,7 @@ impl Compiler {
             // new container rather than snapshotting its value. The `VarDecl`
             // `name` already carries the sigil convention WrapVarRef expects
             // ("x" for `$x`, "@x" for `@x`, "%y" for `%y`).
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { name, .. } => Some(name.clone()),
-                _ => None,
-            },
+            Expr::DoStmt(stmt) => crate::runtime::term_names::stmt_decl_storage_name(stmt),
             _ => None,
         };
         if matches!(arg, Expr::Index { .. }) && is_bind_target {

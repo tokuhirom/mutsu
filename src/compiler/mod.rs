@@ -1149,6 +1149,7 @@ pub(crate) mod nqp_forms;
 mod numeric_operand_names;
 mod regex_qq_thunks;
 mod stmt;
+mod term_constants;
 mod trir_call;
 
 #[derive(Clone)]
@@ -2459,13 +2460,17 @@ impl Compiler {
                     lex_scope::OuterResolution::Read { slot, .. } => slot,
                     lex_scope::OuterResolution::NotDeclared => None,
                 };
-                let display_name = if var_name.starts_with(['$', '@', '%', '&'])
-                    || var_name.chars().next().is_some_and(|c| c.is_uppercase())
-                {
-                    var_name.clone()
-                } else {
-                    format!("${var_name}")
-                };
+                let display_name =
+                    if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
+                        // A sigil-less constant is listed under its spelling (#9962).
+                        term.to_string()
+                    } else if var_name.starts_with(['$', '@', '%', '&'])
+                        || var_name.chars().next().is_some_and(|c| c.is_uppercase())
+                    {
+                        var_name.clone()
+                    } else {
+                        format!("${var_name}")
+                    };
                 Value::array(vec![
                     Value::str(display_name),
                     Value::str(var_name.clone()),
@@ -3094,7 +3099,8 @@ impl Compiler {
     /// Extract variable name from a statement, handling VarDecl and SyntheticBlock.
     fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
         match stmt {
-            Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+            Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
+            Stmt::Assign { name, .. } => Some(name.clone()),
             Stmt::SyntheticBlock(stmts) => {
                 for s in stmts {
                     if let Some(name) = Self::extract_varname_from_stmt(s) {
@@ -4407,11 +4413,12 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
-                        Stmt::VarDecl { name, .. } => {
+                        Stmt::VarDecl { .. } => {
                             // VarDecl as last statement: compile normally, then
                             // load the declared variable back and set as topic
                             // so that implicit return works correctly.
-                            let var_name = name.clone();
+                            let var_name = crate::runtime::term_names::stmt_decl_storage_name(stmt)
+                                .unwrap_or_default();
                             self.compile_stmt(stmt);
                             let slot = self.alloc_local(&var_name);
                             self.code.emit(OpCode::GetLocal(slot));

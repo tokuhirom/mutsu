@@ -1831,7 +1831,9 @@ impl Interpreter {
             if name.contains("::") || name.contains("__ANON") {
                 return;
             }
-            let bare = name.strip_prefix(['@', '%', '&', '$']).unwrap_or(name);
+            let bare = name
+                .strip_prefix(['@', '%', '&', '$', crate::runtime::term_names::TERM_PREFIX])
+                .unwrap_or(name);
             if !bare
                 .chars()
                 .next()
@@ -1862,7 +1864,13 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    push(name);
+                    // A sigil-less constant is stored under its term key
+                    // (#9962); that is the `env` entry to drop.
+                    if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                        push(&crate::runtime::term_names::term_key(name));
+                    } else {
+                        push(name);
+                    }
                 }
                 crate::ast::Stmt::EnumDecl {
                     name,
@@ -1913,8 +1921,12 @@ impl Interpreter {
             // A `my constant &name` is a code value rather than a registered
             // routine, so retain its `&`-sigiled binding too: a later tagged
             // re-import needs a durable source after the module restores the
-            // importer's plain environment.
-            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name.as_str());
+            // importer's plain environment. A sigil-less constant keeps its
+            // term-namespace key (#9962), where the module's routines look it
+            // up and a same-named module `$x` cannot collide with it.
+            let bare = name
+                .strip_prefix(['@', '%', '&', crate::runtime::term_names::TERM_PREFIX])
+                .unwrap_or(name.as_str());
             if name.contains("::")
                 || !bare
                     .chars()

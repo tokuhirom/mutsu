@@ -1,0 +1,47 @@
+//! Compile-time side of the term namespace for sigil-less constants
+//! (`runtime::term_names`, #9962).
+//!
+//! A sigil-less `constant b` owns its local slot under the term key `\b`, so a
+//! same-named `$b` (a `my`, a parameter) gets a slot of its own and neither
+//! declaration can shadow the other. These helpers are the only places the
+//! compiler maps between a constant's spelling and its storage key.
+
+use super::Compiler;
+
+impl Compiler {
+    /// The package-store name of an `our` declaration spelled `spelled` whose
+    /// lexical storage key is `storage`. A qualified store (`Pkg::b`) is keyed
+    /// by the spelling; an unqualified one (a GLOBAL-scope `constant b`) IS the
+    /// lexical key, so it stays in the term namespace.
+    pub(super) fn qualify_our_storage_name(&self, spelled: &str, storage: &str) -> String {
+        let qualified = self.qualify_our_variable_name(spelled);
+        if qualified == spelled {
+            storage.to_string()
+        } else {
+            qualified
+        }
+    }
+
+    /// The local slot of the in-scope sigil-less constant spelled `name`, when
+    /// the bareword `name` reads it: the constant is in scope and no sigil-less
+    /// binding of the same spelling (`my \b`, a `\b` parameter) is.
+    // Cost: O(1) expected.
+    pub(super) fn term_constant_slot(&self, name: &str) -> Option<u32> {
+        if !self.constant_vars_in_scope.contains(name) || self.sigilless_locals.contains(name) {
+            return None;
+        }
+        self.local_map
+            .get(crate::runtime::term_names::term_key(name).as_str())
+            .copied()
+    }
+
+    /// Whether the bareword `name` names a sigil-less constant visible here —
+    /// declared in this unit or an enclosing one — rather than a sigil-less
+    /// binding (`my \b`, a `\b` parameter) of the same spelling.
+    // Cost: O(1) expected.
+    pub(super) fn names_term_constant(&self, name: &str) -> bool {
+        (self.constant_vars_in_scope.contains(name) || self.outer_constant_names.contains(name))
+            && !self.sigilless_locals.contains(name)
+            && !self.enclosing_sigilless.contains(name)
+    }
+}

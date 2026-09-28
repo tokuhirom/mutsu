@@ -396,7 +396,7 @@ impl Interpreter {
     /// Callers use this AFTER the live env misses, so an in-scope binding
     /// always wins. Never falls through to the bare (GLOBAL) name — the
     /// lexical alias for `our` is block-scoped.
-    pub(super) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
+    pub(crate) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
         if crate::runtime::utils::has_double_colon(name) {
             return None;
         }

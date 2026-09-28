@@ -550,7 +550,7 @@ impl Interpreter {
                                 return false;
                             }
                         } else if let Some(expected_val) =
-                            self.env.get(&resolved_constraint).cloned()
+                            self.type_name_binding(&resolved_constraint)
                         {
                             // A `constant` bound to a value (`multi f(G)`):
                             // rakudo smartmatches the argument against it,

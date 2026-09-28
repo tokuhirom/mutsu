@@ -326,7 +326,13 @@ impl Compiler {
                 // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
                 // stripped share the same key in local_map but must NOT shadow type
                 // names, so they go through GetBareWord which checks the type registry.
-                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                if let Some(slot) = self.term_constant_slot(name) {
+                    // An in-scope sigil-less constant lives in its own
+                    // term-namespace slot (#9962): a same-named `$b` — even one
+                    // declared later, or a parameter of this very routine —
+                    // cannot shadow it.
+                    self.code.emit(OpCode::GetLocal(slot));
+                } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if self.sigilless_locals.contains(name.as_str())
                         || self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"

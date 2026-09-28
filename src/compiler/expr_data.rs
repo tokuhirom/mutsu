@@ -862,10 +862,18 @@ impl Compiler {
         if self.constant_value(name).is_some() {
             return false;
         }
-        match self.local_map.get(name).copied() {
+        // A sigil-less constant reads its term-namespace slot (#9962).
+        let term_slot = matches!(target, Expr::BareWord(_))
+            .then(|| self.term_constant_slot(name))
+            .flatten();
+        let storage = match term_slot {
+            Some(_) => crate::runtime::term_names::term_key(name),
+            None => name.to_string(),
+        };
+        match term_slot.or_else(|| self.local_map.get(name).copied()) {
             Some(slot) => {
                 if self.compile_nested_index_bind_source {
-                    let name_idx = self.code.add_constant(Value::str(name.to_string()));
+                    let name_idx = self.code.add_constant(Value::str(storage));
                     self.code.emit(OpCode::GetScalarContainer {
                         name_idx,
                         local_idx: Some(slot),

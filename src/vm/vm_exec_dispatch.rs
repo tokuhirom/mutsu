@@ -1513,6 +1513,21 @@ impl Interpreter {
                         self.unmark_readonly_sym(name_sym);
                     } else {
                         self.check_readonly_for_modify_sym(&name, name_sym)?;
+                        // A write to a sigil-less name with no binding of its
+                        // own, compiled where the compiler could not see the
+                        // constant it spells (`EVAL 'baka := 23'`), targets
+                        // that constant's term-namespace binding (#9962), whose
+                        // readonly mark must refuse it.
+                        if !name.starts_with(['$', '@', '%', '&', '!', '.', '*'])
+                            && !self.env().contains_key_sym(name_sym)
+                        {
+                            let term_sym = crate::runtime::term_names::term_key_sym(name_sym);
+                            if self.env().contains_key_sym(term_sym) {
+                                term_sym.with_str(|term| {
+                                    self.check_readonly_for_modify_sym(term, term_sym)
+                                })?;
+                            }
+                        }
                     }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant

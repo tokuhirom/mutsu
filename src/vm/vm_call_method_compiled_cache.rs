@@ -313,8 +313,7 @@ impl Interpreter {
         // stays nominal.
         !crate::runtime::utils::is_known_type_constraint(base)
             && self
-                .env()
-                .get(base)
+                .type_name_binding(base)
                 .is_some_and(|bound| !matches!(bound.view(), crate::value::ValueView::Package(_)))
     }
 

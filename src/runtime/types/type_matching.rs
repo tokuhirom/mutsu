@@ -1206,7 +1206,7 @@ impl Interpreter {
         // the user `Foo::Any` and wrongly fail. Core type names always mean the
         // core type in type matching.
         if !crate::runtime::utils::is_known_type_constraint(constraint)
-            && let Some(bound_val) = self.env.get(constraint).cloned()
+            && let Some(bound_val) = self.type_name_binding(constraint)
             && let ValueView::Package(bound) = bound_val.view()
             && bound != *constraint
         {
@@ -1923,7 +1923,7 @@ impl Interpreter {
         // resort, for the same reason as above -- a real type name never
         // reaches here with a match still possible.
         if !crate::runtime::utils::is_known_type_constraint(constraint)
-            && let Some(bound) = self.env().get(constraint).cloned()
+            && let Some(bound) = self.type_name_binding(constraint)
             && !matches!(bound.view(), ValueView::Package(_))
         {
             self.warm_which_identity_for_identity(value);

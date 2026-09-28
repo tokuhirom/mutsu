@@ -1244,14 +1244,22 @@ impl Interpreter {
             if CType::from_type_name(&current).is_some() {
                 return current;
             }
-            let value = self.get_env_with_main_alias(&current).or_else(|| {
-                if owner.is_empty() {
-                    None
-                } else {
-                    self.module_scope_lexical_for_owner(owner, &current)
-                        .cloned()
-                }
-            });
+            // A `constant Foo = int8` alias is a term, stored in the term
+            // namespace (#9962) — in the live env and in the owner's module
+            // scope alike.
+            let term = crate::runtime::term_names::term_key(&current);
+            let value = self
+                .term_binding(&current)
+                .or_else(|| self.get_env_with_main_alias(&current))
+                .or_else(|| {
+                    if owner.is_empty() {
+                        None
+                    } else {
+                        self.module_scope_lexical_for_owner(owner, &term)
+                            .or_else(|| self.module_scope_lexical_for_owner(owner, &current))
+                            .cloned()
+                    }
+                });
             let Some(value) = value else {
                 break;
             };

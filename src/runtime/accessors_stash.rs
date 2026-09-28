@@ -6,6 +6,11 @@ use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     pub(super) fn stash_symbol_key_from_env_tail(rest: &str) -> String {
+        // A sigil-less constant's term-namespace key (#9962) is the term it
+        // spells, never a `$`-scalar.
+        if let Some(term) = crate::runtime::term_names::term_spelling(rest) {
+            return term.to_string();
+        }
         if rest.starts_with('$')
             || rest.starts_with('@')
             || rest.starts_with('%')
@@ -62,7 +67,10 @@ impl Interpreter {
     /// a `my` lexical (genuine `our` scalars are covered separately, via the
     /// dedicated `our_vars` loop in `package_stash_value`).
     pub(super) fn is_global_root_symbol(rest: &str) -> bool {
-        if rest.starts_with("__mutsu_") {
+        // A root-scope constant's term key is published by the `our_vars`
+        // loop, like any other `our`; the env copy is its lexical alias.
+        if rest.starts_with("__mutsu_") || crate::runtime::term_names::term_spelling(rest).is_some()
+        {
             return false;
         }
         // A dynamic var / compile-time magical is mirrored into the env
@@ -591,6 +599,12 @@ impl Interpreter {
         {
             return value.clone();
         }
+        // Likewise a sigil-less constant, in the term namespace (#9962).
+        if let Some(value) = self.term_value(name)
+            && !value.is_nil()
+        {
+            return value.clone();
+        }
         if let Some(value) = self.env.get(name)
             && !value.is_nil()
             // Skip `my`-scoped package items for indirect type lookup (::())
@@ -604,6 +618,14 @@ impl Interpreter {
         // which may have been removed from the lexical env by block-scope restoration.
         if let Some(bare) = name.strip_prefix('$')
             && let Some(value) = self.our_vars.get(bare)
+            && !value.is_nil()
+        {
+            return value.clone();
+        }
+        if !name.starts_with(['$', '@', '%', '&'])
+            && let Some(value) = self
+                .our_vars
+                .get(&crate::runtime::term_names::term_key(name))
             && !value.is_nil()
         {
             return value.clone();
