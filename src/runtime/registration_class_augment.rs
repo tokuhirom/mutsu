@@ -362,6 +362,7 @@ impl Interpreter {
                             param_defs: our_param_defs,
                             body: decl.body.clone(),
                             is_test_assertion: false,
+                            is_implementation_detail: false,
                             is_rw: decl.is_rw,
                             is_raw: decl.is_raw,
                             declarator: crate::ast::RoutineDeclarator::Method,
@@ -394,6 +395,7 @@ impl Interpreter {
                             param_defs: my_param_defs,
                             body: decl.body.clone(),
                             is_test_assertion: false,
+                            is_implementation_detail: false,
                             is_rw: decl.is_rw,
                             is_raw: decl.is_raw,
                             declarator: crate::ast::RoutineDeclarator::Method,
@@ -601,6 +603,8 @@ impl Interpreter {
                             type_constraint: decl.type_constraint.clone(),
                             where_constraint: decl.where_constraint.clone(),
                             declared_shape,
+                            source_line: None,
+                            source_file: None,
                         });
                         if decl.where_constraint.is_some() {
                             Self::mark_attr_where_constraint_seen();

@@ -95,6 +95,8 @@ impl Interpreter {
                 .map(|tc| tc.replace("::?CLASS", class_name)),
             where_constraint: None,
             declared_shape,
+            source_line: decl.decl_line,
+            source_file: self.current_source_file(),
         });
         if let Some(tc) = &decl.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
@@ -306,6 +308,8 @@ impl Interpreter {
                 .map(|tc| tc.replace("::?CLASS", cx.name)),
             where_constraint: decl.where_constraint.clone(),
             declared_shape,
+            source_line: decl.decl_line,
+            source_file: self.current_source_file(),
         });
         if decl.where_constraint.is_some() {
             Self::mark_attr_where_constraint_seen();

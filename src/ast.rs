@@ -408,6 +408,12 @@ pub(crate) struct FunctionDef {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
+    /// `is implementation-detail` -- read back via `Code.is-implementation-detail`
+    /// (`dispatch_sub_method`'s `"line" | "file"` neighbor arm). `false` for
+    /// anything with no declaration to carry the trait (a builtin like `&say`),
+    /// matching real Raku.
+    #[serde(default)]
+    pub(crate) is_implementation_detail: bool,
     #[serde(default)]
     pub(crate) is_cached: bool,
     pub(crate) is_rw: bool,

@@ -1016,6 +1016,15 @@ pub(crate) struct ClassAttributeDef {
     /// (`.^add_attribute`, builtin `Proc` attributes) — none of those are
     /// ever compiler-generated shaped-array defaults.
     pub(crate) declared_shape: Option<Vec<usize>>,
+    /// `Code.line`/`Code.file` for the auto-generated accessor method this
+    /// attribute produces (`wrap_accessor_method_object`), mirroring
+    /// `MethodDef::source_file`/`compiled_code.source_line` for a
+    /// user-declared method. `None` when the declaration line was not
+    /// tracked at registration time (a non-plan-backed construction site, or
+    /// a mainline/EVAL `has`) -- the accessor then reports `Nil`, matching a
+    /// synthetic method with no declaration site to point at.
+    pub(crate) source_line: Option<i64>,
+    pub(crate) source_file: Option<String>,
 }
 
 /// Attribute declarations with the same bare name but different sigils are

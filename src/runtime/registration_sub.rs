@@ -1181,6 +1181,9 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_implementation_detail: custom_traits
+                .iter()
+                .any(|(t, _)| t == "implementation-detail"),
             is_cached: custom_traits.iter().any(|(t, _)| t == "cached"),
             is_rw,
             is_raw,
@@ -1779,6 +1782,10 @@ impl Interpreter {
                     // user `trait_mod:<is>` handler (or reported as unknown
                     // when the declaration is loaded from EVAL).
                     && *t != "cached"
+                    // `is implementation-detail` is likewise a built-in
+                    // routine trait now recorded on the def via
+                    // `is_implementation_detail` (`Code.is-implementation-detail`).
+                    && *t != "implementation-detail"
                     // NativeCall traits are consumed by `register_native_call_sub`
                     // above, not by `trait_mod:<is>`.
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
@@ -1992,6 +1999,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            is_implementation_detail: false,
             is_rw: false,
             is_raw: false,
             declarator: crate::ast::RoutineDeclarator::Sub,
@@ -2187,6 +2195,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
@@ -2261,6 +2270,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
