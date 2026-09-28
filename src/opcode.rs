@@ -2370,6 +2370,10 @@ pub(crate) enum OpCode {
     /// and a lone lazy element keeps the list lazy. See
     /// [`Self::MakeRealArray`] for the `[...]` form.
     MakeArray(u32),
+    /// Re-wrap the List on top of the stack as a `Seq` with the same items
+    /// (an inline-unrolled `xx`, whose result is a `Seq` like the thunk form).
+    /// `[List] → [Seq]`.
+    ListToSeq,
     /// Like MakeArray but creates a true Array (from [...] literals) instead of a List.
     MakeRealArray(u32),
     /// Like MakeRealArray but never flattens a single element (from `[x,]` trailing comma).

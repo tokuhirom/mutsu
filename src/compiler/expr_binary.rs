@@ -287,6 +287,7 @@ impl Compiler {
                     self.compile_expr(left);
                 }
                 self.code.emit(OpCode::MakeArray(n as u32));
+                self.code.emit(OpCode::ListToSeq);
                 return;
             }
             // Raku's list repeat reevaluates call-like lhs expressions on each

@@ -4432,6 +4432,16 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(k), k = items of the list (moved into the Seq).
+            OpCode::ListToSeq => {
+                let list = self.stack.pop().unwrap();
+                let items = list.as_list_items().map(<[Value]>::to_vec);
+                self.stack.push(match items {
+                    Some(items) => Value::seq(items),
+                    None => list,
+                });
+                *ip += 1;
+            }
             // Cost: O(n + k), n = operands, k = elements produced (as MakeArray).
             OpCode::MakeRealArray(n) => {
                 self.exec_make_array_op(code, *n, true)?;
