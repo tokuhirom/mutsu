@@ -353,10 +353,6 @@ pub(crate) struct ForLoopSpec {
     /// so an aliasing loop parameter must be allowed to bind that container
     /// even when the scalar holds a plain value rather than an Array.
     pub(crate) scalar_list_source: bool,
-    /// The source expression is a direct smartmatch. A successful Match has
-    /// an empty list value in this context; an itemized scalar variable still
-    /// yields the Match as one item.
-    pub(crate) direct_smartmatch: bool,
     /// The bare source array variable name for `for @a` (without sigil), when
     /// the iterable is a single plain array variable. Enables live-array
     /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding

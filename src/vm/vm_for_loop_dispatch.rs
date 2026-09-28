@@ -2,6 +2,8 @@ use super::vm_control_ops::ForLoopSpec;
 use super::*;
 
 impl Interpreter {
+    // Cost: O(1) per iteration on a Range, lazy source or plain Array; O(e) at
+    // entry otherwise, e = elements copied from the iterable.
     pub(super) fn exec_for_loop_op(
         &mut self,
         code: &CompiledCode,
@@ -268,11 +270,15 @@ impl Interpreter {
             *ip = loop_end;
             return Ok(());
         }
-        let raw_items = if spec.direct_smartmatch
-            && matches!(iterable.view(), ValueView::Instance { .. })
-            && iterable.is_match_instance()
-        {
-            Vec::new()
+        // Match's Iterable value is its positional captures. This applies to
+        // every source expression that produces a Match; a scalar item
+        // container was wrapped by normalize_for_iterable and stays one item.
+        let raw_items = if iterable.is_match_instance() {
+            iterable
+                .match_list()
+                .as_ref()
+                .map(runtime::value_to_list)
+                .unwrap_or_default()
         } else if let ValueView::LazyList(ll) = iterable.view() {
             // A single-pass `.lazy` Seq that reaches this raw-items force
             // must claim its one touch here too, same as `.eager`/the
