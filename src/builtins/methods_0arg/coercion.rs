@@ -302,15 +302,27 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     )))
                 }
             }
+            // An infinite Range's `.List` is a genuinely lazy List (Rakudo:
+            // `(1..Inf).List.^name` is `List`, `.gist` is `(...)`, `.is-lazy`
+            // is `True`) — not the Range itself. A `LazyList` carrying an
+            // `Arithmetic` sequence spec already backs `1, 2, 3 ... *`, so
+            // reuse it here rather than inventing a second lazy representation.
+            // Cost: O(1) for the infinite arm (builds a one-element seed);
+            // O(e), e = elements, for the finite arm.
             ValueView::Range(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
+                if b == i64::MAX {
+                    Some(Ok(infinite_arithmetic_list(a)))
+                } else if a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
                     Some(Ok(Value::array((a..=b).map(Value::int).collect())))
                 }
             }
+            // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExcl(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
+                if b == i64::MAX {
+                    Some(Ok(infinite_arithmetic_list(a)))
+                } else if a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
                     Some(Ok(Value::array((a..b).map(Value::int).collect())))
@@ -413,16 +425,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array(items)))
                 }
             }
+            // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExclStart(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(target.clone()))
+                    Some(Ok(infinite_arithmetic_list(a + 1)))
                 } else {
                     Some(Ok(Value::array((a + 1..=b).map(Value::int).collect())))
                 }
             }
+            // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExclBoth(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(target.clone()))
+                    Some(Ok(infinite_arithmetic_list(a + 1)))
                 } else {
                     Some(Ok(Value::array((a + 1..b).map(Value::int).collect())))
                 }
@@ -1217,4 +1231,21 @@ fn cannot_capture(type_name: &str) -> RuntimeError {
         Value::str(format!("Cannot unpack or Capture {}", type_name)),
     );
     RuntimeError::typed("X::Cannot::Capture", attrs)
+}
+
+/// Build the genuinely-lazy `List` an infinite ascending `Range.List` coerces
+/// to (`(1..Inf).List`): a `LazyList` carrying the same `Arithmetic`
+/// sequence spec that backs `1, 2, 3 ... *`, seeded at `start` with step 1,
+/// tagged as list context so `.^name` reads `List` and `.gist` renders
+/// `(...)` rather than the Array's `[...]`.
+/// Cost: O(1) (allocates a one-element seed vector and the LazyList shell).
+fn infinite_arithmetic_list(start: i64) -> Value {
+    let ll = crate::value::LazyList::new_sequence(
+        vec![Value::int(start)],
+        crate::value::SequenceSpec::Arithmetic {
+            step: 1,
+            all_int: true,
+        },
+    );
+    Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
 }
