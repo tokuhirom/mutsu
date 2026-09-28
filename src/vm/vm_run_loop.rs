@@ -30,10 +30,13 @@ impl Interpreter {
     /// merely satisfied that type -- so `has Numeric $.lat where { -90 <= $_
     /// <= 90 }; method lat(Numeric $v) { $!lat = $v }` never rejected an
     /// out-of-range `$v` (ecosystem `Date::Event` t/5-lat-lon.t).
+    ///
+    /// Returns the predicate together with the scope its declaration was
+    /// written in (`attribute_decl_scope`), which the check must run under.
     pub(crate) fn self_attr_where_constraint(
         &self,
         attr_name: &str,
-    ) -> Option<crate::opcode::DeclTraitArg> {
+    ) -> Option<(crate::opcode::DeclTraitArg, crate::runtime::AttrWhereScope)> {
         if !ATTR_WHERE_CONSTRAINT_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
             return None;
         }
@@ -54,6 +57,22 @@ impl Interpreter {
         } else {
             (attr_name, '$')
         };
+        self.class_attr_where_constraint(class_name, bare, sigil)
+    }
+
+    /// The declared `where` constraint of `class_name`'s attribute `bare`
+    /// (with `sigil`), searched along the MRO, with the scope it was declared
+    /// in. Gated like [`Self::self_attr_where_constraint`].
+    // Cost: O(M + A), M = MRO length, A = attributes declared along it.
+    pub(crate) fn class_attr_where_constraint(
+        &self,
+        class_name: &str,
+        bare: &str,
+        sigil: char,
+    ) -> Option<(crate::opcode::DeclTraitArg, crate::runtime::AttrWhereScope)> {
+        if !ATTR_WHERE_CONSTRAINT_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
         self.mro_syms_readonly(class_name).iter().find_map(|cls| {
             self.registry()
                 .classes
@@ -63,7 +82,10 @@ impl Interpreter {
                         .attributes
                         .iter()
                         .find(|attr| attr.name == bare && attr.sigil == sigil)
-                        .and_then(|attr| attr.where_constraint.clone())
+                        .and_then(|attr| {
+                            let pred = attr.where_constraint.clone()?;
+                            Some((pred, self.attribute_decl_scope(attr, cls.as_str())))
+                        })
                 })
         })
     }
@@ -84,10 +106,10 @@ impl Interpreter {
         if val.is_nil() {
             return Ok(());
         }
-        let Some(pred) = self.self_attr_where_constraint(name) else {
+        let Some((pred, scope)) = self.self_attr_where_constraint(name) else {
             return Ok(());
         };
-        if self.check_attribute_where_constraint(&pred, val) {
+        if self.check_attribute_where_constraint(&pred, val, scope) {
             return Ok(());
         }
         Err(crate::runtime::utils::type_check_assignment_typed_error(

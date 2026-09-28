@@ -103,17 +103,42 @@ impl Interpreter {
             return Ok(value);
         }
         let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr) else {
-            return Ok(value);
+            return self.check_attr_store_where(class_name, attr, value);
         };
         if self.type_matches_value(&type_constraint, &value)
             || self.is_container_subclass(&type_constraint)
         {
-            return Self::wrap_native_int_by_constraint(&type_constraint, value);
+            let value = Self::wrap_native_int_by_constraint(&type_constraint, value)?;
+            return self.check_attr_store_where(class_name, attr, value);
         }
         Err(RuntimeError::typecheck_assignment(
             &type_constraint,
             &value,
             Some(&format!("$!{}", attr)),
+        ))
+    }
+
+    /// The attribute's own `where` clause, checked after its type accepted the
+    /// value: `has Int $.x is rw where * > 0; $o.x = -3` dies with rakudo's
+    /// `expected <anon> but got Int (-3)`, the same check a `$!x = v` inside a
+    /// method gets (`check_scalar_attr_where_on_assign`).
+    // Cost: O(M + P), M = MRO length, P = cost of the predicate.
+    fn check_attr_store_where(
+        &mut self,
+        class_name: &str,
+        attr: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let Some((pred, scope)) = self.class_attr_where_constraint(class_name, attr, '$') else {
+            return Ok(value);
+        };
+        if self.check_attribute_where_constraint(&pred, &value, scope) {
+            return Ok(value);
+        }
+        Err(crate::runtime::utils::type_check_assignment_typed_error(
+            &format!("$!{}", attr),
+            "<anon>",
+            &value,
         ))
     }
 
