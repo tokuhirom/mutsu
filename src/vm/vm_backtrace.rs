@@ -29,6 +29,10 @@ pub(crate) struct BacktraceCapture {
     bottom_is_mainline: bool,
 }
 
+fn is_anonymous_block(frame: &RoutineFrame) -> bool {
+    frame.is_block && (frame.name.is_empty() || frame.name == "<pointy-block>")
+}
+
 impl Interpreter {
     /// Does the bottom of `stack` already account for the mainline `<unit>`,
     /// so that no synthetic `<unit>` frame should be appended beneath it?
@@ -61,9 +65,7 @@ impl Interpreter {
     /// bottom frame. A named entry block already renders its own location and
     /// must not receive another frame (the Promise.start duplicate-frame case).
     fn thread_origin_frame(&self, stack: &[crate::runtime::RoutineFrame]) -> Option<(String, u32)> {
-        let bottom_is_anon_block = stack
-            .first()
-            .is_some_and(|frame| frame.is_block && frame.name.is_empty());
+        let bottom_is_anon_block = stack.first().is_some_and(is_anonymous_block);
         (self.is_thread_clone() && bottom_is_anon_block)
             .then_some(self.thread_spawn_origin.as_ref())
             .flatten()
@@ -155,11 +157,11 @@ impl BacktraceCapture {
         let reversed: Vec<_> = stack.iter().rev().collect();
         let mut lines = Vec::new();
         for (i, frame) in reversed.iter().enumerate() {
-            // A genuine bare-block callframe (empty-named `is_block`) is omitted
+            // An anonymous block callframe is omitted
             // from this concise rendering — the enclosing `<unit>` line covers it
             // (matching Raku's `.nice`). It still appears in the structured
             // `.list` built by `build_backtrace_value`.
-            if frame.is_block && frame.name.is_empty() {
+            if is_anonymous_block(frame) {
                 continue;
             }
             let (line, file) = if i == 0 {
@@ -275,11 +277,11 @@ impl BacktraceCapture {
             // Module routines display at their defining file (see
             // `build_backtrace_string`).
             let file = frame.def_file.map(|s| s.resolve()).or(file);
-            // A genuine bare-block callframe (is_block + empty name) is an
+            // An anonymous block callframe (including `<pointy-block>`) is an
             // anonymous block in Raku: its `.subname` is the empty string (so
             // `.is-routine` is False and `.code.name` is empty), distinct from
             // the synthetic `<unit>` bottom frame.
-            let is_anon_block = frame.is_block && frame.name.is_empty();
+            let is_anon_block = is_anonymous_block(frame);
             let subname = if is_anon_block {
                 String::new()
             } else if frame.name.is_empty()
@@ -364,9 +366,7 @@ impl BacktraceCapture {
             // If every live frame is an anonymous block (not rendered above),
             // the synthetic unit line is the only visible location and must
             // retain the actual throw site rather than the block-entry line.
-            let only_anonymous_blocks = stack
-                .iter()
-                .all(|frame| frame.is_block && frame.name.is_empty());
+            let only_anonymous_blocks = stack.iter().all(is_anonymous_block);
             let location = if only_anonymous_blocks {
                 Self::format_location(current_file.as_deref(), current_line)
             } else {
