@@ -37,8 +37,8 @@ optimistic protocol can do, and all it needs to do.
 single open issue labelled `ecosystem:lock`. If that number is ever wrong, the label is the
 authority: `gh issue list --repo tokuhirom/mutsu --label ecosystem:lock` (remote: `list_issues` with
 `labels: ["ecosystem:lock"]`), and there is exactly one. (The board rotates to a fresh issue once
-its comment log grows too large for a single `get_comments` call to return — see "Rotation" on the
-board issue itself. #7884 was the first board, closed 2026-09-21 at 318 comments.)
+its comment log grows too large for a single `get_comments` call to return — the procedure is the
+[`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) skill. #7884 was the first board, closed 2026-09-21 at 318 comments.)
 
 ## 1. Read the board first
 
@@ -49,7 +49,8 @@ gh issue view 10045 --repo tokuhirom/mutsu --comments
 Remote container: `issue_read` with `method: "get_comments"`, `owner: tokuhirom`, `repo: mutsu`,
 `issue_number: 10045`. Page to the end — the log is oldest-first and the live locks are spread
 through it, not only at the bottom. If a single `get_comments` call now exceeds the tool's response
-size limit, the board needs rotating again — see "Rotation" on the board issue.
+size limit, the board needs rotating again — follow
+[`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) before locking.
 
 Build the held set: a `Locking: <dist> <branch>` line is **live** until a matching
 `Unlocking: <dist> <branch>` (same distribution, same branch) appears after it. Keep the comment id
