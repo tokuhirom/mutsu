@@ -574,6 +574,7 @@ mod builtins_io_dir;
 mod builtins_io_fs;
 mod builtins_io_stream;
 mod builtins_lvalue;
+mod builtins_method_lvalue_slice;
 mod builtins_multidim;
 mod builtins_multidim_assign;
 mod builtins_multidim_assign_storage;
