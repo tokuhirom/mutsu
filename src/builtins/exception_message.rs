@@ -175,7 +175,7 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
         "X::Match::Bool" => {
             let type_name = attr_str_or(attrs, "type", "");
             Some(format!(
-                "Cannot use Bool as Matcher with '{}'. Did you mean to use $_ inside a block?",
+                "Cannot use Bool as Matcher with '{}'.  Did you mean to use $_ inside a block?",
                 type_name
             ))
         }

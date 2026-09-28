@@ -116,12 +116,7 @@ impl Interpreter {
             positional.first().map(Value::view),
             Some(ValueView::Bool(_))
         ) {
-            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Match::Bool"),
-                std::collections::HashMap::new(),
-            )));
-            return Err(err);
+            return Err(RuntimeError::match_bool(".first"));
         }
         let func = positional.first().cloned();
 

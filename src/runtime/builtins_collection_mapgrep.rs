@@ -151,10 +151,7 @@ impl Interpreter {
         // Check if the matcher is a Bool — this is always an error.
         // `grep $_ == 1, 1,2,3` passes a Bool as the matcher.
         if let Some(ValueView::Bool(_)) = func.as_ref().map(Value::view) {
-            return Err(RuntimeError::typed_msg(
-                "X::Match::Bool",
-                "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
-            ));
+            return Err(RuntimeError::match_bool(".grep"));
         }
         if args.len() == 1
             && matches!(
@@ -496,12 +493,7 @@ impl Interpreter {
             positional.first().map(Value::view),
             Some(ValueView::Bool(_))
         ) {
-            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Match::Bool"),
-                std::collections::HashMap::new(),
-            )));
-            return Err(err);
+            return Err(RuntimeError::match_bool(".first"));
         }
         let func = positional.first().cloned();
         // A gather-sourced / infinite-pipe target (same test `map`/`grep` use
