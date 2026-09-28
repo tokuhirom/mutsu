@@ -1318,6 +1318,9 @@ pub(crate) struct Compiler {
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
+    /// Inline scalar declarations currently compiled as call arguments need
+    /// a lexical slot so their VarRef can identify a writable container.
+    call_arg_decl_slots: HashSet<String>,
     /// The kind of package (`module`/`package`/`grammar`) whose body is
     /// currently being compiled, or `None` in the mainline. Used to raise
     /// X::Attribute::Package when a `has` attribute is declared in a
@@ -1841,6 +1844,7 @@ impl Compiler {
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
             promoted_expr_decl_names: HashSet::new(),
+            call_arg_decl_slots: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,

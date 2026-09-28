@@ -671,10 +671,39 @@ impl Compiler {
         }
         // See `compile_method_arg_with_escape`: a `PositionalPair` argument is
         // data, not a named argument, so its value keeps its container.
+        // An inline scalar declaration passed directly to a call must have a
+        // lexical slot. Its VarRef then identifies a writable container even
+        // when the initial value is the Any type object (`h(my $z)`). Keep the
+        // request scoped to this argument; other expression declarations use
+        // their existing env-only path.
+        let call_arg_decl = if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl {
+                name,
+                is_our: false,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+            && !name.starts_with(['@', '%', '&'])
+            && !name.starts_with("__ANON")
+            && !custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__constant")
+            && !self.promoted_expr_decl_names.contains(name)
+        {
+            Some(name.clone())
+        } else {
+            None
+        };
+        let inserted = call_arg_decl
+            .as_ref()
+            .is_some_and(|name| self.call_arg_decl_slots.insert(name.clone()));
         let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });
+        if inserted && let Some(name) = call_arg_decl.as_ref() {
+            self.call_arg_decl_slots.remove(name);
+        }
         self.maybe_promote_attr_arg_read(arg);
         if Self::needs_decont(arg) || (is_bind_target && Self::bind_target_returns_aggregate(arg)) {
             self.code.emit(OpCode::Decont);
