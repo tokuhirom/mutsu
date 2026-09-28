@@ -2,8 +2,64 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
+/// Where an attribute declaration was written -- see
+/// [`Interpreter::attribute_decl_scope`].
+#[derive(Clone, Copy)]
+pub(crate) struct AttrWhereScope {
+    pub(crate) unit: Option<Symbol>,
+    pub(crate) package: Symbol,
+}
+
 impl Interpreter {
+    /// The scope an attribute declaration was written in: its compunit (the
+    /// captured unit of a role-composed declaration, else the unit that
+    /// declared its owning package) and that owning package, falling back to
+    /// `fallback_class` for a declaration that does not record its package.
+    // Cost: O(1) hash lookups.
+    pub(crate) fn attribute_decl_scope(
+        &self,
+        attr: &ClassAttributeDef,
+        fallback_class: &str,
+    ) -> AttrWhereScope {
+        let package = attr
+            .declaring_package
+            .unwrap_or_else(|| Symbol::intern(fallback_class));
+        let unit = attr
+            .captured_unit
+            .or_else(|| self.class_declaring_units.get(package.as_str()).copied())
+            .or_else(|| self.class_declaring_units.get(fallback_class).copied());
+        AttrWhereScope { unit, package }
+    }
+
+    /// Does `value` satisfy an attribute's `where` predicate? `scope` is where
+    /// the declaration was written (see [`Self::attribute_decl_scope`]): the
+    /// predicate is checked during construction or through an accessor called
+    /// from another compunit, so -- like an attribute default
+    /// (`eval_attr_default_expr`) -- it has to run with its own unit and
+    /// package in effect, or a bare call to a sub declared beside a `unit
+    /// class` (`where { check-locale($_) }`) dies with "Unknown function" and
+    /// the constraint reads as failed (ecosystem `Date::Calendar::Gregorian`).
+    // Cost: O(P), P = cost of evaluating and invoking the predicate.
     pub(crate) fn check_attribute_where_constraint(
+        &mut self,
+        pred: &crate::opcode::DeclTraitArg,
+        value: &Value,
+        scope: AttrWhereScope,
+    ) -> bool {
+        let saved_unit = self.current_unit;
+        if let Some(unit) = scope.unit {
+            self.current_unit = unit;
+        }
+        let saved_package = self.current_package();
+        let saved_package_sym = self.current_package_sym();
+        self.set_current_package_with_sym(scope.package.as_str().to_string(), scope.package);
+        let ok = self.check_attribute_where_constraint_in_scope(pred, value);
+        self.set_current_package_with_sym(saved_package, saved_package_sym);
+        self.current_unit = saved_unit;
+        ok
+    }
+
+    fn check_attribute_where_constraint_in_scope(
         &mut self,
         pred: &crate::opcode::DeclTraitArg,
         value: &Value,
@@ -257,7 +313,8 @@ impl Interpreter {
             if value.is_nil() {
                 continue;
             }
-            if !self.check_attribute_where_constraint(pred, value) {
+            let scope = self.attribute_decl_scope(attr, class_name);
+            if !self.check_attribute_where_constraint(pred, value, scope) {
                 return Err(RuntimeError::new(format!(
                     "Type check failed in assignment to $!{}; where constraint failed",
                     attr_name

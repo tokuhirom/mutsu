@@ -746,6 +746,7 @@ mod methods_mut_substr_buf;
 mod methods_native_bypass;
 mod methods_object;
 mod methods_object_attr_constraints;
+pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 mod methods_object_default_ctor;
 mod methods_object_dispatch_new;
 mod methods_object_native_ctors_buf_num;
