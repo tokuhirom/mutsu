@@ -602,7 +602,7 @@ impl Interpreter {
     ///
     /// A subset of a subset (`subset Top of Mid of Int`) resolves through the
     /// chain; the iteration bound keeps a cyclic declaration from spinning.
-    fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
+    pub(super) fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
         use std::borrow::Cow;
         // `UInt` is `subset UInt of Int where * >= 0` in rakudo, but mutsu
         // implements it as a type-matching special case rather than a registry

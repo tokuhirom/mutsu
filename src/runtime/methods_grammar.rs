@@ -622,10 +622,11 @@ impl Interpreter {
             } else {
                 self.env.remove("_");
             }
-            return Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                method
-            )));
+            // The missing thing is the *start rule* (`TOP` by default, or
+            // whatever `:rule<...>` named), not the outer `.parse`/`.parsefile`
+            // call -- raku reports it as a plain missing method on the grammar
+            // (#9795).
+            return Err(RuntimeError::method_not_found(&start_rule, package_name));
         }
         // A `.wrap` on the start rule itself (`G.^find_method('TOP').wrap(...)`)
         // must see the call `.parse` makes into it, just as a wrapped subrule
