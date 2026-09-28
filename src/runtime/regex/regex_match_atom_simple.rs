@@ -502,6 +502,10 @@ impl Interpreter {
             // Named rule not found — report error for valid identifier names.
             // Skip error for names containing special chars (likely parser
             // artifacts from character class syntax like `<[...]>`).
+            if super::super::regex_parse::PENDING_REGEX_ERROR.with(|error| error.borrow().is_some())
+            {
+                return None;
+            }
             if !spec.silent
                 && !spec.lookup_name.is_empty()
                 && !self.has_proto_token_in_pkg(&spec.lookup_name, pkg)

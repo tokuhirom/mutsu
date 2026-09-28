@@ -429,6 +429,8 @@ impl Interpreter {
         } else {
             literal_matches
         };
+        let mut first_binding_error = None;
+        let mut bound_candidate = false;
         for def in defs {
             let params: Vec<String> = def
                 .param_defs
@@ -455,7 +457,26 @@ impl Interpreter {
                 }
                 self.resolve_one_token_pattern_with_args(&def, arg_values)
             });
-            out.extend(resolved);
+            match resolved {
+                Ok(candidates) => {
+                    bound_candidate = true;
+                    out.extend(candidates);
+                }
+                Err(err) => {
+                    if first_binding_error.is_none() {
+                        first_binding_error = Some(err);
+                    }
+                }
+            }
+        }
+        if !bound_candidate && let Some(err) = first_binding_error {
+            // An empty candidate list alone means "no match" to the regex
+            // engine. Preserve a binding error for the match entry point, and
+            // do not memoize this error as an ordinary empty candidate list.
+            super::regex_arg_purity::note_opaque_read();
+            super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                *slot.borrow_mut() = Some(err);
+            });
         }
         out
     }
@@ -479,7 +500,7 @@ impl Interpreter {
         &mut self,
         def: &Arc<FunctionDef>,
         arg_values: &[Value],
-    ) -> Vec<(String, Symbol, Option<String>)> {
+    ) -> Result<Vec<(String, Symbol, Option<String>)>, RuntimeError> {
         let mut out = Vec::new();
         {
             let mut interp = Interpreter {
@@ -496,9 +517,7 @@ impl Interpreter {
             };
             self.copy_decl_registry_into(&mut interp);
             let saved_env = interp.env.clone();
-            if interp
-                .bind_function_args_values(&def.param_defs, &def.params, arg_values)
-                .is_ok()
+            interp.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
             {
                 let invocation_id = interp.take_invocation_id();
                 let frame = super::super::RoutineFrame {
@@ -555,7 +574,7 @@ impl Interpreter {
             }
             interp.env = saved_env;
         }
-        out
+        Ok(out)
     }
 
     pub(super) fn resolve_named_regex_candidates_in_pkg(
