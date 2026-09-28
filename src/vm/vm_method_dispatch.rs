@@ -2825,10 +2825,6 @@ fn merge_method_env(
                     // merging it would shadow the caller's same-named package sub
                     // with the argument value (`sub in` vs `csv(in => ...)`).
                     || s.strip_prefix('&').is_some_and(is_method_local)
-                    // Per-call-site index-rw temps are frame-internal; merging a
-                    // callee's same-named entries corrupts the caller's pending
-                    // post-call writeback compare (see is_index_rw_call_temp).
-                    || crate::runtime::utils::is_index_rw_call_temp(s)
                     // `$!` is scoped per routine: the method frame reset it to
                     // Nil on entry, so merging it back would wipe the caller's
                     // error variable (`$!.message; $!.rc` must both see it).

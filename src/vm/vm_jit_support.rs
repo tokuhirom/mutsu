@@ -72,7 +72,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SetGlobal(_)
             | OpCode::SetGlobalRaw(_)
             | OpCode::SetCallTemp(_)
-            | OpCode::GetCallTemp(_)
             | OpCode::GetCallTempRaw(_)
             | OpCode::SetVarDynamic { .. }
             | OpCode::SetVarType { .. }

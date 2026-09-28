@@ -1201,23 +1201,6 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
-            OpCode::GetCallTemp(name_idx) => {
-                let val = self
-                    .env()
-                    .get_sym(code.const_sym(*name_idx))
-                    .cloned()
-                    .unwrap_or(Value::NIL);
-                let val = if val.is_lazy_thunk_value()
-                    && let ValueView::LazyThunk(thunk_data) = val.view()
-                {
-                    self.force_lazy_thunk(&thunk_data)?
-                } else {
-                    val
-                };
-                self.stack.push(val.into_deref());
-                *ip += 1;
-            }
-            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
             OpCode::GetCallTempRaw(name_idx) => {
                 let val = self
                     .env()

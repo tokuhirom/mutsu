@@ -55,7 +55,24 @@ impl Interpreter {
         self.keys_bind_container_at(&keys, positional)
     }
 
-    /// Shared body of the two entry points above.
+    /// [`Self::named_routine_binds_container_at_sym`] that tells "no routine
+    /// of this name is registered" (`None`) apart from "none binds a
+    /// container" (`Some(false)`), for a caller with a fallback of its own —
+    /// `RwArgCallee::Named`, which then asks the lexical `&name`.
+    pub(crate) fn registered_routine_binds_container_at_sym(
+        &mut self,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+        positional: usize,
+    ) -> Option<bool> {
+        let keys = self.fn_keys_for_base_sym(name, name_sym);
+        if keys.is_empty() {
+            return None;
+        }
+        Some(self.keys_bind_container_at(&keys, positional))
+    }
+
+    /// Shared body of the entry points above.
     fn keys_bind_container_at(
         &mut self,
         keys: &[crate::symbol::Symbol],
@@ -67,12 +84,28 @@ impl Interpreter {
         let registry = self.registry();
         keys.iter().any(|k| {
             registry.functions.get(k).is_some_and(|def| {
-                def.param_defs
-                    .iter()
-                    .filter(|p| !p.named)
-                    .nth(positional)
-                    .is_some_and(|p| p.binds_caller_container())
+                positional_binds_container_at(
+                    def.param_defs.iter().filter(|p| !p.named),
+                    positional,
+                )
             })
         })
     }
+}
+
+/// Whether the `positional`-th of `params` (a signature's positional
+/// parameters, in order) binds the caller's container. For
+/// [`crate::opcode::RWARG_POSITIONAL_UNKNOWN`] — an argument after a `|slip`,
+/// whose index is only known at run time — whether *any* of them does: the
+/// over-approximating direction, as for a `multi`'s candidates.
+pub(crate) fn positional_binds_container_at<'a>(
+    mut params: impl Iterator<Item = &'a crate::ast::ParamDef>,
+    positional: usize,
+) -> bool {
+    if positional == crate::opcode::RWARG_POSITIONAL_UNKNOWN as usize {
+        return params.any(|p| p.binds_caller_container());
+    }
+    params
+        .nth(positional)
+        .is_some_and(|p| p.binds_caller_container())
 }

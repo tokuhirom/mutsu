@@ -1944,7 +1944,9 @@ impl Compiler {
                 // (`spread_call_args_by_syntax`) spreads exactly these
                 // positions, not every Slip-shaped runtime value.
                 let arg_sources_idx = self.add_arg_sources_constant(args);
-                for arg in args {
+                let positional_indices = Self::arg_positional_indices(args);
+                let callee_name = name.resolve();
+                for (i, arg) in args.iter().enumerate() {
                     if let Expr::Unary {
                         op: TokenKind::Pipe,
                         expr,
@@ -1954,6 +1956,11 @@ impl Compiler {
                         self.code.emit(OpCode::MakeSlip);
                     } else {
                         self.compile_call_arg(arg);
+                        self.mark_arg_index_for_named_callee(
+                            &callee_name,
+                            positional_indices[i],
+                            arg,
+                        );
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
@@ -1996,7 +2003,7 @@ impl Compiler {
                     && matches!(name.resolve().as_str(), "map" | "grep")
                     && Self::is_bare_block_arg(&args[0])
                     && args[1..].iter().all(Self::for_iterable_yields_bare_items);
-                let wb_base = self.index_rw_writeback_base();
+                let positional_indices = Self::arg_positional_indices(args);
                 // ADR-0067, the E6 producer: an lvalue method call whose
                 // INVOCANT is itself a bare attribute-accessor read
                 // (`$c.v.snitch = 9`) must hand the callee the attribute's
@@ -2038,6 +2045,15 @@ impl Compiler {
                             Self::relayed_rw_arg_callee(*name, args, i);
                         self.suppress_multidim_bind_ref_arg = is_list_assign_rhs_helper;
                         self.compile_call_arg_with_escape(arg, escaping_args);
+                        // The shape test is repeated here so the common
+                        // argument pays no `Symbol::resolve` allocation.
+                        if accessor_ref_invocant.is_none() && matches!(arg, Expr::Index { .. }) {
+                            self.mark_arg_index_for_named_callee(
+                                &name.resolve(),
+                                positional_indices[i],
+                                arg,
+                            );
+                        }
                         self.pending_rw_arg_list_callee = None;
                         self.pending_immutable_topic_block = false;
                         if i == 0
@@ -2085,9 +2101,6 @@ impl Compiler {
                         literal_native_args: 0,
                     });
                 }
-                // Emit writeback for any Index expressions that THIS call
-                // passed as `is rw` arguments (temp variable -> original slot).
-                self.emit_index_rw_writebacks(wb_base);
             }
         }
     }

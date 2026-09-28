@@ -74,7 +74,20 @@ impl Compiler {
             }
             // Signal rebind context for cleanup of old bind pairs / aliases.
             self.code.emit(OpCode::MarkRebindContext);
-            self.compile_call_arg(expr);
+            if !name.starts_with(['@', '%', '&']) && matches!(expr, Expr::Index { .. }) {
+                // `($x := @a[0])`: alias the element's own cell, exactly as the
+                // statement form (`Stmt::Assign`'s `scalar_elem_bind`) does.
+                let saved_av = self.scalar_bind_autovivify;
+                let saved_terminal = self.bind_terminal;
+                self.scalar_bind_autovivify = true;
+                self.bind_terminal = true;
+                self.bind_target_direct = true;
+                self.compile_call_arg(expr);
+                self.scalar_bind_autovivify = saved_av;
+                self.bind_terminal = saved_terminal;
+            } else {
+                self.compile_call_arg(expr);
+            }
             self.emit_set_named_var(name);
             // Leave the assigned value on the stack (expression context).
             if let Some(&slot) = self.local_map.get(name) {

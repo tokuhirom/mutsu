@@ -3006,14 +3006,20 @@ impl Interpreter {
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(source_name));
                             self.sigilless_alias_seen = true;
-                        } else if matches!(args[positional_idx].view(), ValueView::ContainerRef(_))
-                        {
+                        } else if matches!(
+                            args[positional_idx].view(),
+                            ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+                        ) {
                             // A bare `ContainerRef` cell (e.g. the leaf container
                             // `deepmap`/hyper passes by reference) IS a writable
                             // lvalue even without a source variable name: the raw
                             // param binds the shared cell and mutations through it
                             // (`*++`, `*--`) write to the source slot. Keep it
-                            // mutable (do NOT mark readonly).
+                            // mutable (do NOT mark readonly). So is the deferred
+                            // vivification token a subscript argument past the
+                            // end / at a missing key arrives as (`$r(@a[5])`,
+                            // ADR-0059 Slice 3): the first write creates the
+                            // element.
                         } else if is_rw {
                             return Err(RuntimeError::parameter_rw_not_container(
                                 &param_display_name(pd),

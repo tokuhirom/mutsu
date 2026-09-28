@@ -784,7 +784,7 @@ pub(crate) mod native_increment_dispatch;
 pub(crate) mod native_infix_dispatch;
 mod native_io;
 pub(crate) mod raw_invocant;
-mod rw_arg_container;
+pub(crate) mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
