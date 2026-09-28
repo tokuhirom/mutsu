@@ -3978,40 +3978,71 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             is_block: true,
         }
     } else {
+        let uses_hash_underscore = body_reads_args_hash(&stmts);
+        let mut params = placeholders.clone();
+        let mut param_defs: Vec<ParamDef> = placeholders
+            .iter()
+            .map(|name| {
+                // Named placeholders use `:` twigil: $:f, @:f, %:f
+                let is_named = name.contains(':');
+                ParamDef {
+                    type_capture: None,
+                    name: name.clone(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: is_named,
+                    named_alias: false,
+                    slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    double_slurpy: false,
+                    onearg: false,
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                    shape_constraints: None,
+                    block_param: false,
+                    trait_args: Vec::new(),
+                }
+            })
+            .collect();
+        if uses_hash_underscore {
+            params.push("%_".to_string());
+            param_defs.push(ParamDef {
+                type_capture: None,
+                name: "%_".to_string(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                named_alias: false,
+                slurpy: true,
+                double_slurpy: false,
+                onearg: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+                block_param: true,
+                trait_args: Vec::new(),
+            });
+        }
         Expr::AnonSubParams {
-            params: placeholders.clone(),
-            param_defs: placeholders
-                .iter()
-                .map(|name| {
-                    // Named placeholders use `:` twigil: $:f, @:f, %:f
-                    let is_named = name.contains(':');
-                    ParamDef {
-                        type_capture: None,
-                        name: name.clone(),
-                        default: None,
-                        multi_invocant: true,
-                        required: false,
-                        named: is_named,
-                        named_alias: false,
-                        slurpy: false,
-                        sigilless: false,
-                        type_constraint: None,
-                        literal_value: None,
-                        sub_signature: None,
-                        where_constraint: None,
-                        traits: Vec::new(),
-                        double_slurpy: false,
-                        onearg: false,
-                        optional_marker: false,
-                        outer_sub_signature: None,
-                        code_signature: None,
-                        is_invocant: false,
-                        shape_constraints: None,
-                        block_param: false,
-                        trait_args: Vec::new(),
-                    }
-                })
-                .collect(),
+            params,
+            param_defs,
             return_type: None,
             body: stmts,
             is_rw: false,

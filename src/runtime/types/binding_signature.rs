@@ -83,6 +83,7 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
 
 struct FunctionBindingOptions<'a> {
     reads_args_array: Option<bool>,
+    reads_args_hash: Option<bool>,
     param_name_syms: &'a [Symbol],
     params_syms: &'a [Symbol],
     bind_self_lexical: bool,
@@ -894,26 +895,49 @@ impl Interpreter {
         Some(crate::ast::body_reads_args_array(&data.body))
     }
 
-    /// [`Interpreter::bind_function_args_values`] plus the one fact about the
-    /// routine the params list cannot carry: whether its body reads the legacy
-    /// argument array `@_`.
+    /// Whether a routine reads its implicit named argument hash `%_`.
+    /// Compiled closures need the flag because their AST body is empty.
+    pub(crate) fn routine_reads_args_hash(
+        data: &crate::value::SubData,
+        args: &[Value],
+    ) -> Option<bool> {
+        if !data.param_defs.is_empty()
+            || data.params.is_empty()
+            || !args
+                .iter()
+                .any(|arg| matches!(unwrap_varref_value(arg.clone()).view(), ValueView::Pair(..)))
+        {
+            return Some(false);
+        }
+        if let Some(cc) = data.compiled_code.as_ref() {
+            return Some(cc.reads_args_hash);
+        }
+        if data.body.is_empty() {
+            return None;
+        }
+        Some(crate::ast::body_reads_args_hash(&data.body))
+    }
+
+    /// [`Interpreter::bind_function_args_values`] plus whether the routine
+    /// reads the legacy argument array `@_` and named argument hash `%_`.
     ///
     /// That decides whether a `^`-placeholder routine may be over-supplied with
     /// positionals — see [`crate::opcode::CompiledCode::reads_args_array`] and
     /// #7619. `None` means the caller cannot tell, and keeps the historical
-    /// lenient behaviour.
+    /// lenient behaviour. A `%_` read similarly allows surplus named args.
     pub(crate) fn bind_function_args_values_with_argspec(
         &mut self,
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
         reads_args_array: Option<bool>,
+        reads_args_hash: Option<bool>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         self.bind_function_args_values_with_syms(
             param_defs,
             params,
             args,
-            reads_args_array,
+            reads_args_array.zip(reads_args_hash),
             &[],
             &[],
         )
@@ -937,12 +961,13 @@ impl Interpreter {
         params_syms: &[Symbol],
         args: &[Value],
         reads_args_array: Option<bool>,
+        reads_args_hash: Option<bool>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         self.bind_function_args_values_with_syms(
             param_defs,
             params,
             args,
-            reads_args_array,
+            reads_args_array.zip(reads_args_hash),
             &[],
             params_syms,
         )
@@ -970,7 +995,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
-        reads_args_array: Option<bool>,
+        args_usage: Option<(bool, bool)>,
         param_name_syms: &[Symbol],
         params_syms: &[Symbol],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
@@ -979,7 +1004,8 @@ impl Interpreter {
             params,
             args,
             FunctionBindingOptions {
-                reads_args_array,
+                reads_args_array: args_usage.map(|usage| usage.0),
+                reads_args_hash: args_usage.map(|usage| usage.1),
                 param_name_syms,
                 params_syms,
                 bind_self_lexical: false,
@@ -1011,6 +1037,7 @@ impl Interpreter {
             args,
             FunctionBindingOptions {
                 reads_args_array: None,
+                reads_args_hash: None,
                 param_name_syms: &[],
                 params_syms: &[],
                 bind_self_lexical: true,
@@ -1039,6 +1066,7 @@ impl Interpreter {
         let skip_where_recheck = std::mem::take(&mut self.pending_skip_where_recheck);
         let FunctionBindingOptions {
             reads_args_array,
+            reads_args_hash,
             param_name_syms,
             params_syms,
             bind_self_lexical,
@@ -1483,11 +1511,30 @@ impl Interpreter {
                 crate::symbol::wk::positional_slurpy(),
                 Value::array(positional_args[positional_idx..].to_vec()),
             );
+            // An implicit placeholder signature has a named slurpy only when
+            // its body reads `%_`. A named placeholder consumes its own key,
+            // but does not accept other names by itself.
+            if !named_args.is_empty()
+                && reads_args_hash == Some(false)
+                && !params.iter().any(|p| p == "%_")
+                // A ValuePair is a positional Pair value (for example an
+                // element passed to a WhateverCode by `.sort`), even though
+                // the legacy named-placeholder binder can match its key.
+                && let Some(key) = plain_args
+                    .iter()
+                    .filter_map(|arg| match arg.view() {
+                        ValueView::Pair(key, _) => Some(key),
+                        _ => None,
+                    })
+                    .find(|key| !key.is_empty() && !consumed_named.contains(*key))
+            {
+                return Err(RuntimeError::new(format!(
+                    "Unexpected named argument '{}' passed",
+                    key
+                )));
+            }
             // Insert %_ if explicitly listed in params, if named placeholders
-            // ($:Name) are present, or if the sub uses any `^`-twigil placeholder
-            // ($^a / @^arr / %^h / &^cb): such a sub also exposes the implicit
-            // %_ slurpy, so leftover named args must be captured there (mirrors
-            // the unconditional @_ capture above).
+            // ($:Name) are present, or if the sub uses any `^`-twigil placeholder.
             // WhateverCode closures use this legacy path with params like ["_"]
             // (no `^`), and must NOT overwrite the caller's %_ hash.
             if params
