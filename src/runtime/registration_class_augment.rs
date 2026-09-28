@@ -1400,6 +1400,15 @@ impl Interpreter {
         // A role pun materializes a new dispatch owner. Compile its copied
         // declarations once at that boundary so VM dispatch sees them in the
         // canonical method-entry table immediately.
+        // A pun is a composition like `class R does R { }`, so a role that
+        // still requires a method (`method m { ... }`) cannot be punned:
+        // Rakudo refuses `R.new` with the same "must be implemented by R
+        // because it is required by roles: R." error. Withdraw the half-built
+        // pun so the name stays a plain role.
+        if let Err(e) = self.resolve_class_stub_requirements(role_name) {
+            self.withdraw_role_pun(role_name);
+            return Err(e);
+        }
         self.compile_class_methods(role_name);
         // When punning a bare role (no type params), update the language
         // revision metadata from the matching candidate so that
