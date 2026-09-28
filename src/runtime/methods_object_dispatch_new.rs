@@ -2856,22 +2856,6 @@ impl Interpreter {
                         Ok(Value::make_instance(name, attrs))
                     }
                     _ => {
-                        // A subset type (`UInt`, or a user `subset ... of ...`)
-                        // is not itself constructible -- rakudo dispatches
-                        // `.new` through the base type it refines (`UInt.new(5)`
-                        // really runs `Int.new(5)`), same as every other method
-                        // call on a subset already does via
-                        // `constraint_is_subset`/`dispatch_nominal_base`. Without
-                        // this, a role parameterized over `UInt` (e.g. the
-                        // builtin `Rational[NuT]`) could never construct its
-                        // `NuT.new(...)` attribute (#9795).
-                        if self.constraint_is_subset(&resolved) {
-                            let base = self.dispatch_nominal_base(&resolved).into_owned();
-                            if base != resolved {
-                                return self
-                                    .dispatch_new(Value::package(Symbol::intern(&base)), args);
-                            }
-                        }
                         // A qualified type nobody ever declared (`Foo::Bar.new`
                         // where `Foo` was never a class/role/module/package)
                         // auto-vivifies as a bare `Package` value at the term
