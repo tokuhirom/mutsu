@@ -173,7 +173,16 @@ pub(crate) fn what_type_name(val: &Value) -> String {
                     None => name,
                 }
             } else {
-                let base = what_type_name(inner);
+                // `what_type_name` collapses every `ArrayKind` to "Array", so a
+                // `List but R` would misreport as `Array+{R}`. Only the
+                // Array/List split needs correcting here — every other branch
+                // (notably `Package`, which `what_type_name` resolves to the
+                // actual type name while `value_type_name` answers the generic
+                // "Package") must keep going through `what_type_name`.
+                let base = match inner.view() {
+                    ValueView::Array(_, kind) if !kind.is_real_array() => "List".to_string(),
+                    _ => what_type_name(inner),
+                };
                 // A punned role (`R.new`) is `Mixin(Instance{R}, {__mutsu_role__R})`
                 // — the role composed onto its OWN same-named (empty) instance, not
                 // a mixin onto a different base. Raku names that plain `R`, so drop

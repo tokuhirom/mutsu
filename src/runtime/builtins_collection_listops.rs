@@ -193,6 +193,32 @@ impl Interpreter {
                 }
                 Ok(changed.then(|| Value::array(mapped)))
             }
+            // A container-inner mixin (`@a but R`) flattens through its INNER
+            // value for a slurpy, exactly as `flat_val`'s own `Mixin` arm does
+            // — the role's `Str` override applies to the value as a whole, not
+            // to the elements a flattening slurpy exposes instead of it. Only
+            // recurse into the container looking for a NESTED user
+            // stringifier; a non-container inner (`1 but R`) is itself the
+            // flattened element, so its own `.Str` still applies.
+            ValueView::Mixin(inner, _)
+                if matches!(
+                    inner.as_ref().view(),
+                    ValueView::Array(..)
+                        | ValueView::Seq(_)
+                        | ValueView::HyperSeq(_)
+                        | ValueView::RaceSeq(_)
+                        | ValueView::LazyList(_)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                        | ValueView::Hash(_)
+                        | ValueView::Slip(_)
+                ) =>
+            {
+                self.join_prerender_user_stringifier(inner)
+            }
             ValueView::Mixin(..) => {
                 // `join` stringifies elements through `.Str`, not through the
                 // Stringy-first string-context helper used by `~`.
