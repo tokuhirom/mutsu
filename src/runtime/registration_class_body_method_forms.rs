@@ -9,9 +9,9 @@ use crate::symbol::Symbol;
 
 /// Compute the function-form parameter lists for an `our method` / `my
 /// method` registered as a package-scoped / lexically-scoped function: with
-/// an explicit invocant (`$self:`) the signature is kept (minus a literal
-/// `self` param def); otherwise a `self` parameter is prepended so the first
-/// argument gets bound as `self` when calling this as a function.
+/// an explicit invocant (`$self:` or `Int:D:`) the signature is kept;
+/// otherwise a `self` parameter is prepended so the first argument gets
+/// bound as `self` when calling this as a function.
 pub(crate) fn method_sub_form_params(
     effective_params: &[String],
     effective_param_defs: &[ParamDef],
@@ -20,14 +20,7 @@ pub(crate) fn method_sub_form_params(
         .iter()
         .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
     if has_explicit_invocant {
-        (
-            effective_params.to_vec(),
-            effective_param_defs
-                .iter()
-                .filter(|p| p.name.as_str() != "self")
-                .cloned()
-                .collect(),
-        )
+        (effective_params.to_vec(), effective_param_defs.to_vec())
     } else {
         // Prepend "self" as first param so the first argument
         // gets bound as `self` when calling this as a function.
