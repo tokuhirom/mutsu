@@ -210,6 +210,7 @@ mod vm_helpers_junction;
 mod vm_helpers_lazy;
 mod vm_helpers_lazy_adaptor;
 mod vm_helpers_lazy_adaptor_build;
+mod vm_helpers_lazy_nested;
 mod vm_helpers_lazy_pull;
 mod vm_helpers_lazy_reify;
 mod vm_helpers_lazy_scan;

@@ -175,6 +175,7 @@ impl Interpreter {
         } else {
             val
         };
+        self.reify_nested_map_grep_for_read(&val)?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
         // Tag-probed: `~$match` lands here per capture and a `view()` would

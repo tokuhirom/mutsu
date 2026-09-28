@@ -299,6 +299,9 @@ impl Interpreter {
         // ADR-0058: rendering reads elements through pure code, so a
         // still-deferred `.map` Seq must run its callback first.
         self.reify_map_grep_seq_args(&values)?;
+        for value in &values {
+            self.reify_nested_map_grep_for_read(value)?;
+        }
         // A lone Junction argument to `put` autothreads: each eigenstate is
         // put on its own line (`put 1|2` => "1\n2\n").
         if kind == OutputKind::Put
