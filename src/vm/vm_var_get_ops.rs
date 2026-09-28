@@ -738,7 +738,8 @@ impl Interpreter {
         // module tables by its term key (#9962). Like the two probes above it
         // cannot be a lexical of the loading scope's routine: a routine's own
         // constant is read from its local slot and never reaches here.
-        if !name.starts_with(['$', '@', '%', '&']) && !crate::runtime::utils::has_double_colon(name)
+        if !name.starts_with(['$', '@', '%', '&'])
+            && !crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
         {
             let key = crate::runtime::term_names::term_key(name);
             if let Some(v) = self

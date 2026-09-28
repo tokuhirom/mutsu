@@ -2244,9 +2244,14 @@ impl Compiler {
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
                 // `b = 5` on an in-scope sigil-less constant targets the term,
-                // stored under its term key (#9962), not a same-named `$b`.
+                // stored under its term key (#9962), not a same-named `$b`. So
+                // does one whose target this unit cannot see at all (`EVAL
+                // 'b = 5'`); the VM falls back to the plain name when no term
+                // of that spelling is in scope.
                 let term_target;
-                let name = if *target_is_sigilless && self.names_term_constant(name) {
+                let name = if *target_is_sigilless
+                    && (self.names_term_constant(name) || self.sigilless_target_is_unknown(name))
+                {
                     term_target = crate::runtime::term_names::term_key(name);
                     &term_target
                 } else {

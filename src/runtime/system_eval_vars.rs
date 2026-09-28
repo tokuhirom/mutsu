@@ -253,9 +253,19 @@ impl Interpreter {
             // but `$ret = (my $foo) ~ $foo` is fine). Walk the RHS left-to-right so
             // an embedded `my $x` only brings `x` into scope for references that
             // follow it.
-            Stmt::Assign { name, expr, .. } => {
+            Stmt::Assign {
+                name,
+                expr,
+                target_is_sigilless,
+                ..
+            } => {
+                // A sigil-less target naming an in-scope constant is the term,
+                // not an undeclared `$name` (#9962); the store itself reports
+                // the immutable value.
                 let lhs = Self::assign_lhs_expr(name);
-                self.find_undeclared_var_in_expr(&lhs, declared)
+                (!(*target_is_sigilless && self.term_binding(name).is_some()))
+                    .then(|| self.find_undeclared_var_in_expr(&lhs, declared))
+                    .flatten()
                     .or_else(|| {
                         let mut local = declared.clone();
                         self.find_undeclared_var_ordered(expr, &mut local)

@@ -1355,6 +1355,18 @@ impl Interpreter {
                         }
                     }
                 }
+                // A sigil-less write the compiler could not resolve to a binding
+                // it knows (`EVAL 'b = 3'`) is emitted against the TERM key
+                // (#9962): it is an in-scope constant's binding when there is
+                // one — whose readonly mark then refuses the write — and the
+                // plain sigil-less name (an outer `my \x`) otherwise.
+                if !raw_mode
+                    && let Some(spelled) = crate::runtime::term_names::term_spelling(&name)
+                    && !self.env().contains_key(&name)
+                    && self.get_our_var(&name).is_none()
+                {
+                    name = spelled.to_string();
+                }
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
                 let name_sym = crate::symbol::Symbol::intern(&name);
@@ -1513,21 +1525,6 @@ impl Interpreter {
                         self.unmark_readonly_sym(name_sym);
                     } else {
                         self.check_readonly_for_modify_sym(&name, name_sym)?;
-                        // A write to a sigil-less name with no binding of its
-                        // own, compiled where the compiler could not see the
-                        // constant it spells (`EVAL 'baka := 23'`), targets
-                        // that constant's term-namespace binding (#9962), whose
-                        // readonly mark must refuse it.
-                        if !name.starts_with(['$', '@', '%', '&', '!', '.', '*'])
-                            && !self.env().contains_key_sym(name_sym)
-                        {
-                            let term_sym = crate::runtime::term_names::term_key_sym(name_sym);
-                            if self.env().contains_key_sym(term_sym) {
-                                term_sym.with_str(|term| {
-                                    self.check_readonly_for_modify_sym(term, term_sym)
-                                })?;
-                            }
-                        }
                     }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant

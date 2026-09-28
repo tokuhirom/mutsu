@@ -699,6 +699,20 @@ impl Compiler {
             // name, while `@a`/`%h`/`&f` keep their sigil in the key.
             let bare: String = match key.chars().next() {
                 Some('$') => key.chars().skip(1).collect(),
+                // A sigil-less key names a term: a constant's binding is its
+                // term key (#9962) when one is declared in the scope chain.
+                Some(c) if !matches!(c, '@' | '%' | '&') => {
+                    let term = crate::runtime::term_names::term_key(&key);
+                    if self
+                        .full_scope_chain()
+                        .iter()
+                        .any(|frame| frame.contains_key(term.as_str()))
+                    {
+                        term
+                    } else {
+                        String::clone(&key)
+                    }
+                }
                 _ => String::clone(&key),
             };
             match scope {

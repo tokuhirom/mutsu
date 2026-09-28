@@ -44,4 +44,18 @@ impl Compiler {
             && !self.sigilless_locals.contains(name)
             && !self.enclosing_sigilless.contains(name)
     }
+
+    /// Whether a sigil-less assignment target `name` names no binding this
+    /// unit can see — no local, no sigil-less binding here or in an enclosing
+    /// scope. Such a write (typically an `EVAL`'d `b = 5`) is compiled against
+    /// the term key and resolved by the VM.
+    // Cost: O(1) expected.
+    pub(super) fn sigilless_target_is_unknown(&self, name: &str) -> bool {
+        !name.starts_with(['$', '@', '%', '&', '!', '.', '*', '?', '^'])
+            && !crate::runtime::utils::has_double_colon(name)
+            && !self.local_map.contains_key(name)
+            && !self.sigilless_locals.contains(name)
+            && !self.enclosing_sigilless.contains(name)
+            && !self.enclosing_local_names.contains(name)
+    }
 }

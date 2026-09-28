@@ -41,14 +41,9 @@ use crate::value::{Value, ValueView};
 /// The prefix a sigil-less constant's storage key carries.
 pub(crate) const TERM_PREFIX: char = '\\';
 
-/// The storage key of the sigil-less constant spelled `name`.
-///
-/// A qualified name (`Pkg::b`) is returned unchanged: package stores are not
-/// part of this namespace.
+/// The storage key of the sigil-less constant spelled `name` (an unqualified
+/// name: package stores, `Pkg::b`, are not part of this namespace).
 pub(crate) fn term_key(name: &str) -> String {
-    if crate::runtime::utils::has_double_colon(name) {
-        return name.to_string();
-    }
     let mut key = String::with_capacity(name.len() + 1);
     key.push(TERM_PREFIX);
     key.push_str(name);
@@ -91,8 +86,8 @@ pub(crate) fn term_spelling(key: &str) -> Option<&str> {
 pub(crate) fn is_term_constant_decl(name: &str, custom_traits: &[(String, Option<Expr>)]) -> bool {
     if name.is_empty()
         || name.starts_with(['$', '@', '%', '&', '*', '!', '.', '?', '^', '='])
-        || crate::runtime::utils::has_double_colon(name)
         || !custom_traits.iter().any(|(t, _)| t == "__constant")
+        || crate::qualified::is_qualified(Symbol::intern(name))
     {
         return false;
     }
@@ -143,13 +138,14 @@ impl Interpreter {
     /// finds a same-named `$`-scalar instead.
     // Cost: O(1) expected.
     pub(crate) fn term_value(&self, name: &str) -> Option<&Value> {
-        if name.is_empty()
-            || name.starts_with(['$', '@', '%', '&', TERM_PREFIX])
-            || crate::runtime::utils::has_double_colon(name)
-        {
+        if name.is_empty() || name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) {
             return None;
         }
-        let key = term_key_sym(Symbol::intern(name));
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        let key = term_key_sym(name_sym);
         self.env()
             .get_sym(key)
             .or_else(|| self.get_our_var(key.as_str()))
@@ -166,7 +162,7 @@ impl Interpreter {
         }
         if name.is_empty()
             || name.starts_with(['$', '@', '%', '&', TERM_PREFIX])
-            || crate::runtime::utils::has_double_colon(name)
+            || crate::qualified::is_qualified(Symbol::intern(name))
         {
             return None;
         }

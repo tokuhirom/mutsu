@@ -871,12 +871,15 @@ impl Interpreter {
         // A sigil-less constant's export name is its term key (#9962): its
         // package store is keyed by the spelling, its lexical copies by the key.
         if let Some(spelled) = crate::runtime::term_names::term_spelling(name) {
-            let qualified = format!("{module}::{spelled}");
+            let qualified = crate::qualified::qualified(
+                crate::symbol::Symbol::intern(module),
+                crate::symbol::Symbol::intern(spelled),
+            );
             return self
                 .env
-                .get(&qualified)
+                .get_sym(qualified)
                 .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
-                .or_else(|| self.our_vars.get(&qualified))
+                .or_else(|| self.our_vars.get(qualified.as_str()))
                 .or_else(|| {
                     self.module_scope_lexicals
                         .get(module)

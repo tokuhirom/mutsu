@@ -2045,8 +2045,11 @@ impl Compiler {
             // that should not be used to qualify runtime variable access.
             return name.to_string();
         }
+        // A term key (`runtime::term_names`, #9962) is a lexical binding,
+        // never a package variable.
         if self.current_package == "GLOBAL"
             || name.contains("::")
+            || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
         {
             return name.to_string();

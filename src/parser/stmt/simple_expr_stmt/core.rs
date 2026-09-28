@@ -1220,9 +1220,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         // (e.g. a `constant`). Emit a real bind so it raises for a readonly
         // constant ("terms cannot be rebound") instead of silently evaluating
         // both sides as a no-op block.
+        //
+        // The target is spelled as a term key (`runtime::term_names`,
+        // #9962) so the compiler can tell it from the sigil-stripped `$name`
+        // an ordinary `$name := ...` carries.
         let stmt = if let Expr::BareWord(name) = expr {
             Stmt::Expr(Expr::AssignExpr {
-                name,
+                name: crate::runtime::term_names::term_key(&name),
                 expr: Box::new(rhs),
                 is_bind: true,
             })

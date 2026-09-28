@@ -925,6 +925,19 @@ impl Compiler {
                 is_bind,
             } => {
                 let name = self.resolve_self_lexical(name);
+                // A sigil-less bareword bind target arrives as a term key:
+                // it stays one for an in-scope constant (or a name this unit
+                // cannot see, for the VM to resolve), and is the plain
+                // sigil-less binding otherwise (#9962).
+                let name = match crate::runtime::term_names::term_spelling(name) {
+                    Some(spelled)
+                        if !self.names_term_constant(spelled)
+                            && !self.sigilless_target_is_unknown(spelled) =>
+                    {
+                        spelled
+                    }
+                    _ => name,
+                };
                 self.compile_expr_assign(name, expr, *is_bind);
             }
             // Source-preserving annotation for `x += y` and friends. The
