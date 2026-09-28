@@ -926,6 +926,7 @@ pub(crate) mod thread_compat;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
+mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;
 pub(crate) mod undeclared_routines;
@@ -2213,9 +2214,10 @@ pub struct Interpreter {
     /// no-override hot path (e.g. tight `Int + Int` loops) free of registry
     /// lookups.
     /// Each entry maps the operator name to the compilation units that declared
-    /// it (`?FILE` at declaration time). An EMPTY file set means "provenance
-    /// unknown, visible everywhere" and is what module *exports* record, since
-    /// an exported operator is lexically visible in whatever unit imported it.
+    /// it (`?FILE` at declaration time) or imported it with a `use`. An EMPTY
+    /// file set means "provenance unknown, visible everywhere". An exported
+    /// operator is lexically visible in the unit that imported it, and in no
+    /// other unit (#9944), so an import records the importing unit here.
     ///
     /// The file set is what makes operator scoping lexical rather than dynamic:
     /// a `sub infix:<+>` declared in the main script must not override
@@ -2224,6 +2226,13 @@ pub struct Interpreter {
     /// main-script block even when a module routine is what invokes that block.
     /// See `Interpreter::user_infix_override`.
     pub(crate) user_declared_infix_ops: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    /// The compilation units that imported an operator candidate family,
+    /// keyed by operator name and then by the candidates' declaring unit. An
+    /// operator candidate that a `use` imported is visible only to its
+    /// declaring unit and to these importers (#9944); see
+    /// `runtime/operator_scope.rs`.
+    pub(crate) operator_import_units:
+        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///

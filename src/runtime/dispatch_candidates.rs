@@ -286,6 +286,9 @@ impl Interpreter {
         // every copy of one fingerprint is the same `Arc` and therefore ties
         // on every component of the key, `decl_order` included.
         let mut candidates = candidates;
+        // An operator candidate only another compunit imported is not in
+        // scope here (#9944, `runtime/operator_scope.rs`).
+        self.retain_visible_operator_candidates(name, &mut candidates);
         {
             let mut seen_keys = std::collections::HashSet::new();
             candidates.retain(|(_, def)| {

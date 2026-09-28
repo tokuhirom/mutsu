@@ -330,23 +330,8 @@ impl Interpreter {
                         .insert(normalized_op.clone());
                 }
             }
-            if normalized_op.starts_with("infix:<") {
-                // Exported: visible in the importing unit, so no
-                // declaring-file restriction (see the field's doc comment:
-                // an empty file set means "visible everywhere"). This must
-                // force the set empty, not merely fill it in when absent
-                // (`.entry().or_default()`): the declaring module's OWN
-                // decl-time registration (`registration_sub.rs`) already
-                // populated a non-empty entry scoped to ITS unit, so a
-                // fill-if-absent here was a no-op, leaving the operator
-                // invisible to every importer — including the declaring
-                // module's own body once that decl-time entry correctly
-                // named it instead of (by a since-fixed bug, #8008) the
-                // unit that had triggered the module's load.
-                crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
-                    .insert(normalized_op, std::collections::HashSet::new());
-                crate::vm::vm_jit::note_user_infix_decl();
-            }
+            // Exported: visible in the importing unit, and only there (#9944).
+            self.record_infix_import_gate(&normalized_op);
         }
         // Install into env under the key the reader looks up. A `$scalar` read
         // compiles to a bare (sigil-stripped) `GetGlobal` — the same key an

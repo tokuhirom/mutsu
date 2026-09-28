@@ -66,10 +66,16 @@ impl Compiler {
 
         // Seeded exactly like `compile_method_def_in_place_with_dist`: a bare
         // `Compiler::new()` (deliberately NOT inheriting this (the main-pass)
-        // compiler's enclosing scopes/fold_ctx/outer_code_var_names — design
+        // compiler's enclosing scopes/outer_code_var_names — design
         // decision 2), the declaring package, the enclosing distribution, and
         // `lexically_in_method` for the implicit `%_`/`@_` lexicals.
         let mut method_compiler = Compiler::new();
+        // The fold state alone IS shared: it is per compilation unit, and a
+        // literal folded in a method body must trigger the unit's refold pass
+        // when the unit also `use`s a module or declares an operator (an
+        // imported `infix:<**>` must reach `method m { 2 ** 3 }`, #9944).
+        method_compiler.fold_ctx = std::sync::Arc::clone(&self.fold_ctx);
+        method_compiler.fold_root = false;
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;

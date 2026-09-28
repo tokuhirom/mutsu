@@ -589,6 +589,7 @@ impl Interpreter {
             for pkg in &search_pkgs {
                 if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
                     .and_then(|key| self.registry().functions.get(&key).cloned())
+                    .and_then(|def| self.visible_operator_def(name, def))
                 {
                     if let Some(key) = plain_key
                         && !self.is_unit_scoped_routine_name(name)
@@ -809,6 +810,7 @@ impl Interpreter {
             None
         } else {
             self.resolve_function_with_arity(name, arity)
+                .and_then(|def| self.visible_operator_def(name, def))
         }
     }
 
