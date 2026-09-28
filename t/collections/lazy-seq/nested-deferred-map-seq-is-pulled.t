@@ -1,15 +1,23 @@
 use Test;
 
 # ADR-0058 made `.map` return a `Seq` whose callback runs at first consumption.
-# When that callback itself returns a `.map` Seq, pulling the outer one left
-# the INNER bodies unpulled, sitting in the elements the pull had just
-# produced -- and the pure-value readers `reify_map_grep_seq` exists for then
-# saw ADR-0034's empty seed one level down. Pulling a deferred map now pulls
-# the deferred maps it produced.
+# A nested `.map` stays deferred while the outer Seq is consumed. Rendering
+# or flattening the outer Seq reads the nested elements and reifies them then.
 #
 # Every expectation was verified by running this file under real `raku`.
 
-plan 8;
+plan 13;
+
+my $sink-calls = 0;
+<a b>.map({ (1, 2).map({ $sink-calls++ }) });
+is $sink-calls, 0, 'sinking the outer map leaves its returned Seqs deferred';
+
+my $calls = 0;
+my @stored = <a b>.map({ (1, 2).map({ $calls++ }) });
+is @stored.elems, 2, 'array assignment consumes only the outer map';
+is $calls, 0, 'inner maps remain deferred in array elements';
+is @stored[0].elems, 2, 'reading one inner Seq consumes it';
+is $calls, 2, 'the other inner Seq remains deferred';
 
 sub nested { [1].map(-> $e { [2].map(-> $x { "STOP" }) }) }
 

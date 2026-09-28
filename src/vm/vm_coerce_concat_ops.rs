@@ -292,7 +292,7 @@ impl Interpreter {
     pub(crate) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
         // ADR-0058: a string context renders a Seq's elements, so a
         // still-deferred `.map` must run its callback first.
-        self.reify_map_grep_seq(&v)?;
+        self.reify_nested_map_grep_for_read(&v)?;
         // A string context is a READ, so a `Proxy` operand FETCHes: `"x" ~ $p`
         // is `x5`, not `xProxy`. Every other value context already FETCHed
         // (arithmetic via `eval_binary_with_junctions`, `say`/`print`/`note`,

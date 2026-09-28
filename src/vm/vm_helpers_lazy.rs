@@ -408,7 +408,14 @@ impl Interpreter {
         target: Value,
         method: &str,
     ) -> Result<Value, RuntimeError> {
-        self.reify_or_consume_seq_target_inner(target, method, false)
+        let target = self.reify_or_consume_seq_target_inner(target, method, false)?;
+        if matches!(
+            method,
+            "raku" | "perl" | "gist" | "Str" | "Stringy" | "flat"
+        ) {
+            self.reify_nested_map_grep_for_read(&target)?;
+        }
+        Ok(target)
     }
 
     /// The ONE call site allowed to actually consume `.iterator` — see
