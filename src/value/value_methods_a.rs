@@ -33,7 +33,7 @@ impl Value {
     /// The `IterationEnd` iterator sentinel: as in rakudo, a unique instance of
     /// `Mu` (`.^name` is `Mu`, `.raku` / `.gist` / `.Str` are `IterationEnd`).
     /// Every producer hands out an instance carrying the reserved id
-    /// [`crate::value::ITERATION_END_ID`], and instance identity (`=:=`,
+    /// `ITERATION_END_ID`, and instance identity (`=:=`,
     /// `nqp::eqaddr`, `===`) compares ids, so the bareword term and whatever
     /// `pull-one` returned are the same object (#9333) — while a `Str` that
     /// merely spells "IterationEnd" is not the sentinel (#9809).
