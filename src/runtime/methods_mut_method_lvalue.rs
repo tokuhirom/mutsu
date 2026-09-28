@@ -188,6 +188,13 @@ impl Interpreter {
         {
             return Ok(assigned);
         }
+        // A `.wrap`ped declared method runs its wrapper chain, which may refuse
+        // the write; the attribute shortcuts below would bypass it.
+        if let Some(assigned) =
+            self.try_wrapped_method_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
         // A declared private method (`method !slot($k) is rw { %!h{$k} }`, then
         // `self!slot($k) = $v`) is an lvalue call like its public twin, for an
         // instance and a type-object invocant alike. Only a `!name` with no

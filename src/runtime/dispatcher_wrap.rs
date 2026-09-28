@@ -33,6 +33,33 @@ pub(crate) fn method_object_wrap_slot(attrs: &AttrMap) -> Option<usize> {
 }
 
 impl Interpreter {
+    /// Whether a call of the user-declared `method` on `receiver_class` with
+    /// `args` would enter a `.wrap` chain — a dispatcher wrap or a wrap of the
+    /// candidate that wins — i.e. whether [`Self::enter_method_wrap_chain`]
+    /// would answer `Some` for it. Answers without pushing any frame.
+    // Cost: O(1) when nothing in the program is wrapped; otherwise O(m + c),
+    // m = receiver MRO length, c = candidates of `method` on its owner.
+    pub(crate) fn user_method_call_is_wrapped(
+        &mut self,
+        receiver_class: &str,
+        method: &str,
+        args: &[Value],
+    ) -> bool {
+        if !self.has_any_wrap_chains() {
+            return false;
+        }
+        if self.dispatcher_wrap_chain(receiver_class, method).is_some() {
+            return true;
+        }
+        let Some((owner, def)) = self.resolve_method_with_owner(receiver_class, method, args)
+        else {
+            return false;
+        };
+        self.find_method_candidate_index(owner.as_str(), method, &def)
+            .and_then(|idx| self.get_method_wrap_chain(owner.as_str(), method, idx))
+            .is_some()
+    }
+
     /// The dispatcher wrap chain a call of `method` on `receiver_class`
     /// enters, if any: that of the first class in the MRO declaring
     /// `method` (the class whose dispatcher the call resolves through).

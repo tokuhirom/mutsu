@@ -256,25 +256,10 @@ impl Interpreter {
                 let (attr_name, is_public, is_rw) = (&attr.name, attr.is_public, attr.is_rw);
                 if is_public && attr_name == method_name {
                     let (source_line, source_file) = (attr.source_line, attr.source_file.clone());
-                    let mut env = crate::env::Env::new();
-                    env.insert(
-                        "__mutsu_callable_type".to_string(),
-                        Value::str_from("Method"),
-                    );
-                    let callable = Value::make_sub(
-                        class_name,
-                        Symbol::intern(method_name),
-                        vec!["self".to_string()],
-                        vec![Self::make_invocant_param(&class_name_str)],
-                        vec![],
-                        is_rw,
-                        env,
-                    );
-                    return Some(self.wrap_accessor_method_object(
+                    return Some(self.instance_accessor_method_object(
                         method_name,
                         &class_name_str,
                         is_rw,
-                        callable,
                         source_line,
                         source_file.as_deref(),
                     ));
@@ -311,6 +296,7 @@ impl Interpreter {
             return Some(self.wrap_accessor_method_object(
                 method_name,
                 &class_name_str,
+                false,
                 false,
                 callable,
                 None,
@@ -385,6 +371,43 @@ impl Interpreter {
         None
     }
 
+    /// The Method `Instance` for the auto-generated accessor of `owner`'s public
+    /// instance attribute `name` — what `.^lookup`, `.^find_method` and
+    /// `.^can` all hand out for it, so a `.wrap` on any of them registers the
+    /// same wrap chain.
+    pub(super) fn instance_accessor_method_object(
+        &self,
+        name: &str,
+        owner: &str,
+        is_rw: bool,
+        source_line: Option<i64>,
+        source_file: Option<&str>,
+    ) -> Value {
+        let mut env = crate::env::Env::new();
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::str_from("Method"),
+        );
+        let callable = Value::make_sub(
+            Symbol::intern(owner),
+            Symbol::intern(name),
+            vec!["self".to_string()],
+            vec![Self::make_invocant_param(owner)],
+            vec![],
+            is_rw,
+            env,
+        );
+        self.wrap_accessor_method_object(
+            name,
+            owner,
+            is_rw,
+            true,
+            callable,
+            source_line,
+            source_file,
+        )
+    }
+
     /// Build a minimal Method `Instance` for an auto-generated attribute
     /// accessor (`has $.x`), wrapping the pre-built accessor `Sub` as
     /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
@@ -403,6 +426,7 @@ impl Interpreter {
         name: &str,
         owner: &str,
         is_rw: bool,
+        wrappable: bool,
         callable: Value,
         source_line: Option<i64>,
         source_file: Option<&str>,
@@ -437,6 +461,26 @@ impl Interpreter {
                 .unwrap_or(Value::NIL),
         );
         attrs.insert("__mutsu_method_callable".to_string(), callable);
+        // An instance attribute's accessor is candidate slot zero of the
+        // method-wrap registry, exactly like the accessor objects
+        // `.^method_table` hands out, so `.^find_method('x').wrap(...)` /
+        // `.^lookup('x').wrap(...)` installs a wrapper that later reads and
+        // assignments run (Object::Permission's `is authorised-by` wraps an
+        // attribute's accessor from its `compose`). A class-level `my $.x`
+        // accessor has no dispatch that consults that registry, so it gets no
+        // wrap identity and `.wrap` on it stays unsupported rather than
+        // silently ineffective.
+        if wrappable {
+            attrs.insert(
+                "__mutsu_lookup_class".to_string(),
+                Value::str(owner.to_string()),
+            );
+            attrs.insert(
+                "__mutsu_lookup_method".to_string(),
+                Value::str(name.to_string()),
+            );
+            attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+        }
         Value::make_instance(Symbol::intern("Method"), attrs)
     }
 

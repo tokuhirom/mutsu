@@ -2052,6 +2052,18 @@ impl Interpreter {
                             return Ok(val);
                         }
                     }
+                    // A synthesized mixin type over a built-in base
+                    // (`$method does R` reblesses into `Method+{R}`, see
+                    // `ensure_mixin_class`) is not user-declared: its collected
+                    // list holds only the roles' attributes, while the base's
+                    // own attributes (`.name`, `.rw`, `.package`, ...) still
+                    // live in the stored map, exactly as for the bare base.
+                    if !self.user_declared_classes.contains(&cn)
+                        && !class_attrs.iter().any(|attr| attr.name == method)
+                        && let Some(val) = attributes.as_map().get(method)
+                    {
+                        return Ok(val.clone());
+                    }
                 }
             }
             // Enum-as-role dispatch: if the class `does` an enum, check variant methods
@@ -3128,7 +3140,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+                    && self.is_method_object_class(&class_name.resolve())
                 {
                     let am = attributes.as_map();
                     // A Method object obtained from a method table carries the
@@ -3211,10 +3223,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Regex"
-                    )
+                    && self.is_method_object_class(&class_name.resolve())
                     && let Some(wrapper) = args.first().cloned()
                 {
                     let am = attributes.as_map();
@@ -3248,10 +3257,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Regex"
-                    )
+                    && self.is_method_object_class(&class_name.resolve())
                     && let am = attributes.as_map()
                     && let (Some(ValueView::Str(cls)), Some(ValueView::Str(meth)), Some(idx)) = (
                         am.get("__mutsu_lookup_class").map(Value::view),

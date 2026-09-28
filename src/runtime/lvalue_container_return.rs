@@ -299,6 +299,49 @@ impl Interpreter {
             .map(Some)
     }
 
+    /// `$obj.m(args) = $v` where `m` is a declared method whose call enters a
+    /// `.wrap` chain (`method m() is rw { $!x }` wrapped by a permission check,
+    /// Object::Permission's `is authorised-by`): raku runs the wrapper chain
+    /// and assigns into what it returns. The attribute shortcut further down
+    /// `assign_method_lvalue_with_values` reads the body's `$!x` tail and
+    /// stores into the attribute without running the chain, so a wrapper that
+    /// refuses (throws) was never consulted and the write went through anyway.
+    ///
+    /// Unlike the declined-shape fallbacks, an exception raised by the chain is
+    /// the assignment's own outcome and propagates. A plain value coming back
+    /// is raku's `Cannot modify an immutable ...` refusal
+    /// (`assign_through_rw_result`).
+    pub(crate) fn try_wrapped_method_lvalue(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let target = Self::unwrap_lvalue_invocant(target);
+        let target = if target.is_container_ref() {
+            target.deref_container()
+        } else {
+            target
+        };
+        let Some(class_name) = Self::lvalue_invocant_class_name(&target) else {
+            return Ok(None);
+        };
+        if !self.user_method_call_is_wrapped(&class_name, method, method_args) {
+            return Ok(None);
+        }
+        let was_lvalue = self.in_lvalue_assignment;
+        self.in_lvalue_assignment = true;
+        // As in `try_rw_method_container_lvalue`: the pending argument-source
+        // names describe the enclosing `__mutsu_assign_method_lvalue` call.
+        let saved_sources = self.take_pending_call_arg_sources();
+        let result = self.call_method_with_values(target, method, method_args.to_vec());
+        self.set_pending_call_arg_sources(saved_sources);
+        self.in_lvalue_assignment = was_lvalue;
+        self.assign_through_rw_result(result?, value.clone())
+            .map(Some)
+    }
+
     /// `Class.m($arg) = $v` where `m` is a declared method that is **not**
     /// rw-capable: raku dies (`Cannot modify an immutable Int (42)`) after
     /// calling `m` with its real arguments.
