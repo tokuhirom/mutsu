@@ -759,23 +759,27 @@ impl Interpreter {
                 result.push_str(&mixed?.to_string_value());
                 continue;
             }
-            // For non-Buf instances, try .Stringy() for string context (Raku spec:
-            // string interpolation calls .Str which delegates to .Stringy).
-            if let ValueView::Instance { .. } = v.view() {
+            // A native `Str` beats the inherited default `Stringy`.
+            if let ValueView::Instance { class_name, .. } = v.view() {
+                let cn = class_name.resolve();
+                if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
+                    let str_result =
+                        self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())?;
+                    result.push_str(&str_result.to_string_value());
+                    continue;
+                }
                 if let Ok(str_result) =
                     self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())
                 {
                     result.push_str(&str_result.to_string_value());
                     continue;
                 }
-                // Fall back to .Str() if .Stringy() is not defined
                 if let Ok(str_result) =
                     self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())
                 {
                     result.push_str(&str_result.to_string_value());
                     continue;
                 }
-                // Fall through to default stringification
                 result.push_str(&crate::runtime::utils::coerce_to_str(&v));
                 continue;
             }

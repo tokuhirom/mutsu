@@ -297,11 +297,18 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // If the value is an Instance, try calling the Stringy method, then Str
-        if let ValueView::Instance { .. } = val.view() {
-            // Slice F: a user `Stringy`/`Str` method can mutate a captured-outer
-            // caller lexical; reconcile its writeback to the caller's slot (see
-            // coerce_numeric_bridge_value).
+        // A native `Str` beats the inherited default `Stringy`, which would
+        // render an object placeholder instead of the native string value.
+        if let ValueView::Instance { class_name, .. } = val.view() {
+            let cn = class_name.resolve();
+            if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
+                let caller_code = self.current_code;
+                let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![])?;
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                self.stack.push(str_r);
+                return Ok(());
+            }
+            // A user `Stringy`/`Str` method can mutate a captured outer.
             let caller_code = self.current_code;
             let stringy = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
