@@ -526,6 +526,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A previous parse may have returned a failed Match before consuming a
+        // subrule binding error from the thread-local slot. Each parse starts
+        // with its own error state, so that failure cannot poison the next one.
+        let _ = Self::take_pending_regex_error();
         let mut source_arg: Option<String> = None;
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();

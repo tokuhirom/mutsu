@@ -99,7 +99,13 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<std::sync::Arc<Vec<super::regex_token_resolve::ParsedTokenCandidate>>> {
         let value = self.resolve_lexical_regex(spec, pkg)?;
-        let pattern = self.instantiate_regex_value_with_args(&value, arg_values)?;
+        let pattern = self.instantiate_regex_value_with_args(&value, arg_values);
+        if pattern.is_none()
+            && super::super::regex_parse::PENDING_REGEX_ERROR.with(|error| error.borrow().is_some())
+        {
+            return Some(std::sync::Arc::new(Vec::new()));
+        }
+        let pattern = pattern?;
         let parsed = self.parse_candidate_in_pkg(&pattern, pkg)?;
         Some(std::sync::Arc::new(vec![(parsed, pkg, None)]))
     }
@@ -181,9 +187,13 @@ impl Interpreter {
             }
         }
         let names: Vec<String> = param_defs.iter().map(|pd| pd.name.clone()).collect();
-        interp
-            .bind_function_args_values(param_defs, &names, arg_values)
-            .ok()?;
+        if let Err(err) = interp.bind_function_args_values(param_defs, &names, arg_values) {
+            super::regex_arg_purity::note_opaque_read();
+            super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                *slot.borrow_mut() = Some(err);
+            });
+            return None;
+        }
         let bare_names: Vec<String> = param_defs
             .iter()
             .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
