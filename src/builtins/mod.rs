@@ -16,6 +16,7 @@ pub(crate) mod grapheme_index;
 pub(crate) mod int_subclass;
 pub(crate) mod iterator_construct;
 pub(crate) mod map_hash_coerce;
+pub(crate) mod math_prim;
 pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;

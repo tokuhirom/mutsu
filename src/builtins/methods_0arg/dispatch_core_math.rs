@@ -265,15 +265,19 @@ pub(super) fn dispatch(
             _ => None,
         }),
         "log10" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::num((i as f64).log10()))),
-            ValueView::BigInt(i) => {
-                Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).log10())))
-            }
-            ValueView::Num(f) => Some(Ok(Value::num(f.log10()))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).log10()))),
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log10(),
+            ValueView::Int(i) => Some(Ok(Value::num(crate::builtins::math_prim::log10(i as f64)))),
+            ValueView::BigInt(i) => Some(Ok(Value::num(crate::builtins::math_prim::log10(
+                i.to_f64().unwrap_or(f64::INFINITY),
+            )))),
+            ValueView::Num(f) => Some(Ok(Value::num(crate::builtins::math_prim::log10(f)))),
+            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num(
+                crate::builtins::math_prim::log10(n as f64 / d as f64),
             ))),
+            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                Some(Ok(Value::num(crate::builtins::math_prim::log10(
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0),
+                ))))
+            }
             ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(r);
@@ -370,7 +374,7 @@ pub(super) fn dispatch(
                         (x + (x * x - 1.0).sqrt()).ln()
                     }
                 }
-                "atanh" => x.atanh(),
+                "atanh" => crate::builtins::math_prim::atanh(x),
                 "asech" => {
                     let y = 1.0 / x;
                     (y + (y * y - 1.0).sqrt()).ln()

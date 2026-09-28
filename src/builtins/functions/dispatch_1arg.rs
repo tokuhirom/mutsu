@@ -568,7 +568,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }
             _ => {
                 let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-                Some(Ok(Value::num(x.log10())))
+                Some(Ok(Value::num(crate::builtins::math_prim::log10(x))))
             }
         },
         "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
@@ -621,7 +621,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         (x + (x * x - 1.0).sqrt()).ln()
                     }
                 }
-                "atanh" => x.atanh(),
+                "atanh" => crate::builtins::math_prim::atanh(x),
                 "asech" => {
                     let y = 1.0 / x;
                     (y + (y * y - 1.0).sqrt()).ln()
