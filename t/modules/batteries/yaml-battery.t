@@ -6,7 +6,7 @@ use Test;
 # check is the release-time gate that runs the full upstream suite
 # (scripts/battery-testsuite.sh).
 
-plan 9;
+plan 11;
 
 use YAMLish;
 
@@ -27,3 +27,7 @@ is save-yaml('a string'), qq{--- "a string"\n...}, 'save-yaml quotes a string';
 
 is-deeply load-yaml(save-yaml({ x => [1, 2], y => 'z' })), { x => [1, 2], y => 'z' },
     'save-yaml and load-yaml round-trip';
+
+nok load-yaml("---\n...\n"), 'an empty document fails to parse';
+is load-yaml("--- foo\n...\n"), 'foo',
+    'a failed parse does not leave a subrule binding error for the next parse';
