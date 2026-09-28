@@ -79,17 +79,14 @@ impl Interpreter {
             }
         };
 
-        let message = if let ValueView::Instance { attributes, .. } = value.view() {
-            attributes
-                .as_map()
-                .get("message")
-                .map(|v| v.to_string_value())
-                .unwrap_or_else(|| {
-                    // Try calling the user-defined .Str method
-                    self.vm_call_method_with_values(value.clone(), "Str", vec![])
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|_| value.to_string_value())
-                })
+        let message = if matches!(value.view(), ValueView::Instance { .. }) {
+            self.exception_message_text(&value).unwrap_or_else(|| {
+                // A non-exception instance, or an exception without a message,
+                // may still supply its own .Str method.
+                self.vm_call_method_with_values(value.clone(), "Str", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| value.to_string_value())
+            })
         } else if matches!(value.view(), ValueView::Mixin(..)) {
             // A mixed-in exception may override `.message`/`.Str`; dispatch through
             // the mixin so the override is honored, falling back to stringification.

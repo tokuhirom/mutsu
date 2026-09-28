@@ -17,6 +17,59 @@ use super::Interpreter;
 use crate::value::{Value, ValueView};
 
 impl Interpreter {
+    /// Cost: O(m), m = the receiver class's MRO length.
+    pub(crate) fn inherited_adhoc_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        if !matches!(method, "payload" | "message" | "gist" | "Str" | "Stringy") || !args.is_empty()
+        {
+            return None;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let cn = class_name.as_str();
+        if cn == "X::AdHoc"
+            || self.has_user_method(cn, method)
+            || (method != "payload" && self.has_user_method(cn, "message"))
+            || !self.class_mro(cn).iter().any(|name| name == "X::AdHoc")
+        {
+            return None;
+        }
+        let attrs = attributes.as_map();
+        let payload = attrs.get("payload").or_else(|| attrs.get("message"));
+        if method == "payload" {
+            return Some(
+                payload
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(String::new())),
+            );
+        }
+        let message = payload
+            .map(Value::to_string_value)
+            .filter(|text| !text.is_empty())
+            .unwrap_or_else(|| "Unexplained error".to_string());
+        if method == "gist"
+            && let Some(backtrace) = attrs.get("backtrace")
+            && !backtrace.to_string_value().is_empty()
+        {
+            return Some(Value::str(format!(
+                "{}\n{}",
+                message,
+                backtrace.to_string_value()
+            )));
+        }
+        Some(Value::str(message))
+    }
+
     /// Preserve the few dynamic switches used by standard exception message
     /// methods while an exception crosses an unwinding boundary.  Raku keeps
     /// those bindings visible to the exception's later `.message` call; mutsu
@@ -146,6 +199,12 @@ impl Interpreter {
                 if !text.is_empty() {
                     return Some(text);
                 }
+            }
+            if cn != "X::AdHoc"
+                && map.contains_key("payload")
+                && let Some(text) = self.inherited_adhoc_method(target, "message", &[])
+            {
+                return Some(text.to_string_value());
             }
             if let Some(formatted) =
                 crate::builtins::exception_message::format_exception_message(&cn, &map)

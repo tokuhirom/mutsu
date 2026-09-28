@@ -276,6 +276,9 @@ impl Interpreter {
         if self.mixin_role_has_method(target, method_name) {
             return None;
         }
+        if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
+            return Some(Ok(value));
+        }
         // Augmented native-type bypass: a plain Array/List/Hash/Str/Range/Set/
         // Bag/Mix/... receiver is not `Instance`/`Package`, so it carries no
         // per-call user-method check of its own here -- the callers' own

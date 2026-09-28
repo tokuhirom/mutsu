@@ -3907,7 +3907,12 @@ impl Interpreter {
         }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
-        let native_result = if bypass_native_fastpath {
+        let inherited_adhoc = (!bypass_native_fastpath)
+            .then(|| self.inherited_adhoc_method(&target, method, cascade_args))
+            .flatten();
+        let native_result = if let Some(value) = inherited_adhoc {
+            Some(Ok(value))
+        } else if bypass_native_fastpath {
             None
         } else {
             // The interpreter-side twin of `try_native_method_raw`, and the

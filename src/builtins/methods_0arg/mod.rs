@@ -1486,6 +1486,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Cost: O(1), the payload is an attribute lookup.
+    if method == "payload"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "X::AdHoc"
+    {
+        let attrs = attributes.as_map();
+        return Some(Ok(attrs
+            .get("payload")
+            .or_else(|| attrs.get("message"))
+            .cloned()
+            .unwrap_or_else(|| Value::str(String::new()))));
+    }
+
     // Exception/X:: methods: gist, Str, message
     if let ValueView::Instance {
         class_name,
