@@ -865,6 +865,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Failure", "Bool", 1, 0),
     ("Failure", "throw", 1, 0),
     ("X::AdHoc", "message", 1, 0),
+    ("X::AdHoc", "payload", 1, 0),
     ("X::AdHoc", "resume", 1, 0),
     ("X::AdHoc", "backtrace", 1, 0),
     ("X::AdHoc", "gist", 1, 0),
