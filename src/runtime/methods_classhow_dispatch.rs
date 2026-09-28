@@ -427,9 +427,8 @@ impl Interpreter {
                         )
                 );
                 if !how_is_class_like {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): trusts",
-                    ));
+                    let name = self.mop_receiver_owner(&args[0]);
+                    return Err(RuntimeError::meta_method_not_found("trusts", &name));
                 }
                 let name = self.mop_receiver_owner(&args[0]);
                 let trusted = self
@@ -561,9 +560,7 @@ impl Interpreter {
                     self.registry().package_kinds.get(&name),
                     Some(crate::ast::PackageKind::Package)
                 ) {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                    ));
+                    return Err(RuntimeError::meta_method_not_found("ver", &name));
                 }
                 // Core setting types report the language version they were
                 // declared in (`Int.^ver` is v6.c). Checked before the class
@@ -587,9 +584,7 @@ impl Interpreter {
                 {
                     return Ok(Value::package(crate::symbol::Symbol::intern("Mu")));
                 }
-                Err(RuntimeError::new(
-                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                ))
+                Err(RuntimeError::meta_method_not_found("ver", &name))
             }
             "auth" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
@@ -598,9 +593,7 @@ impl Interpreter {
                     self.registry().package_kinds.get(&name),
                     Some(crate::ast::PackageKind::Package)
                 ) {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                    ));
+                    return Err(RuntimeError::meta_method_not_found("auth", &name));
                 }
                 // A type with no declared `:auth` has an empty-string auth
                 // (`class C {}; C.^auth` eq ""), so default to "" rather than
@@ -621,9 +614,7 @@ impl Interpreter {
                     self.registry().package_kinds.get(&name),
                     Some(crate::ast::PackageKind::Package)
                 ) {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): api",
-                    ));
+                    return Err(RuntimeError::meta_method_not_found("api", &name));
                 }
                 // A declared `:api(...)` is stored in type_metadata; a type with no
                 // `:api` has an empty-string api in Rakudo (`class C {}; C.^api` eq
@@ -1968,8 +1959,9 @@ impl Interpreter {
                 let type_name = self.mop_receiver_owner(&args[0]);
                 match native_types::native_type_bits(&type_name) {
                     Some(bits) => Ok(Value::int(i64::from(bits))),
-                    None => Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): nativesize",
+                    None => Err(RuntimeError::meta_method_not_found(
+                        "nativesize",
+                        &type_name,
                     )),
                 }
             }
@@ -1980,15 +1972,16 @@ impl Interpreter {
                         &type_name,
                     ))))
                 } else {
-                    Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): unsigned",
-                    ))
+                    Err(RuntimeError::meta_method_not_found("unsigned", &type_name))
                 }
             }
-            _ => Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                method
-            ))),
+            _ => {
+                let type_name = args
+                    .first()
+                    .map(|a| self.mop_receiver_owner(a))
+                    .unwrap_or_default();
+                Err(RuntimeError::meta_method_not_found(method, &type_name))
+            }
         }
     }
 }

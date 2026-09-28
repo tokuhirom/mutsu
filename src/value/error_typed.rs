@@ -216,6 +216,25 @@ impl RuntimeError {
         Self::typed("X::Method::NotFound", attrs)
     }
 
+    /// `X::Method::NotFound` for a meta-object-protocol method genuinely
+    /// absent from a given metaclass (e.g. `.^auth`/`.^ver`/`.^trusts` on a
+    /// bare `package`, which composes `PackageHOW` rather than `ClassHOW`).
+    /// Unlike [`Self::method_not_found`], this never appends a "Did you
+    /// mean...?" suggestion: the candidate pool there is ordinary object
+    /// methods, which have nothing to do with a missing MOP introspection
+    /// method and produce nonsense matches (`auth` ~ `put`).
+    pub(crate) fn meta_method_not_found(method: &str, typename: &str) -> Self {
+        let msg = format!(
+            "No such method '{}' for invocant of type '{}'",
+            method, typename
+        );
+        let mut attrs = ValueMap::default();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Method::NotFound", attrs)
+    }
+
     /// `X::Obsolete` for a Perl 5 dereference block (`${$x}`, `@{$x}`, `%{$x}`).
     ///
     /// rakudo names the *written* construct rather than a placeholder, and

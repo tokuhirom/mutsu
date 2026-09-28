@@ -1294,7 +1294,7 @@ impl Interpreter {
     /// or a declared stub)? An unknown one is what raku reports as
     /// `GLOBAL::Foo::Bar`, and it is the only case in which a qualified call
     /// may retry under its short name.
-    fn is_known_package(&self, package: &str) -> bool {
+    pub(super) fn is_known_package(&self, package: &str) -> bool {
         !package.is_empty()
             && (self.has_class(package)
                 || self.has_role(package)
@@ -1302,7 +1302,7 @@ impl Interpreter {
                 || self.registry().package_stubs.contains(package))
     }
 
-    fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
+    pub(super) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
         // An explicitly written `GLOBAL::` qualifier resolves through the
         // pseudo-package, and raku then names the symbol without its `&` sigil:
         // `GLOBAL::index(…)` is "Could not find symbol 'index' in 'GLOBAL'",

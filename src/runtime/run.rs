@@ -22,7 +22,17 @@ role GLOBAL::Rational[::NuT = Int, ::DeT = Int] does Real {
         my $n = nu div $gcd;
         my $d = de div $gcd;
         if $d < 0 { $n = -$n; $d = -$d; }
-        self.bless(numerator => NuT.new($n), denominator => DeT.new($d));
+        # NuT/DeT is usually a genuine class (Int, or a user Int-subclass), and
+        # constructing THAT type's own instance from the reduced Int is what
+        # keeps `does Rational[Foo, Foo]` (Foo a user `class Foo is Int {}`)
+        # storing a real `Foo`, not a bare Int. But a *subset* (built-in `UInt`,
+        # or a user `subset ... of ...`) can never be `.new()`-ed at all --
+        # "Cannot instantiate a subtype" -- so for those the value coming out
+        # of the gcd reduction, already checked against `NuT`/`DeT` by the
+        # parameter binding above, is used as-is (#9795).
+        my $numerator   = (NuT.HOW ~~ Metamodel::SubsetHOW) ?? $n !! NuT.new($n);
+        my $denominator = (DeT.HOW ~~ Metamodel::SubsetHOW) ?? $d !! DeT.new($d);
+        self.bless(:$numerator, :$denominator);
     }
     method nude { self.numerator, self.denominator }
     method Bool { self.numerator != 0 }

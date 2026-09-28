@@ -2974,10 +2974,9 @@ impl Interpreter {
                         self.raise_resumable_warning(&msg, Value::int(0))
                     }
                 } else {
-                    Err(RuntimeError::new(format!(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                        method
-                    )))
+                    Err(super::methods_signature_errors::method_not_found_for_value(
+                        method, &target,
+                    ))
                 }
             }
             "EVAL" if args.is_empty() => {

@@ -2855,10 +2855,25 @@ impl Interpreter {
                         );
                         Ok(Value::make_instance(name, attrs))
                     }
-                    _ => Err(RuntimeError::new(format!(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on {}",
-                        name
-                    ))),
+                    _ => {
+                        // A qualified type nobody ever declared (`Foo::Bar.new`
+                        // where `Foo` was never a class/role/module/package)
+                        // auto-vivifies as a bare `Package` value at the term
+                        // resolution site rather than failing there, so this
+                        // `.new` dispatch is the first place that can tell it
+                        // apart from a genuinely unknown *method* on a real
+                        // type -- raku reports the former as a missing global
+                        // symbol, not a missing method (#9795).
+                        if let Some(pkg_prefix) = crate::qualified::package_parent(name)
+                            && !self.is_known_package(pkg_prefix.as_str())
+                        {
+                            let short = crate::qualified::unqualified_part(name);
+                            return Err(
+                                self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
+                            );
+                        }
+                        Err(RuntimeError::method_not_found("new", &resolved))
+                    }
                 }
             }
             ValueView::Str(_) => Ok(Value::str(String::new())),
@@ -2878,48 +2893,27 @@ impl Interpreter {
                     .declared_type
                     .clone()
                     .unwrap_or_else(|| if mutable { "SetHash" } else { "Set" }.to_string());
-                self.try_native_quanthash_construct_for_package(
-                    Symbol::intern(&type_name),
-                    &args,
-                )
-                .unwrap_or_else(|| {
-                    Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
-                    ))
-                })
+                self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
+                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
             }
             ValueView::Bag(data, mutable) => {
                 let type_name = data
                     .declared_type
                     .clone()
                     .unwrap_or_else(|| if mutable { "BagHash" } else { "Bag" }.to_string());
-                self.try_native_quanthash_construct_for_package(
-                    Symbol::intern(&type_name),
-                    &args,
-                )
-                .unwrap_or_else(|| {
-                    Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
-                    ))
-                })
+                self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
+                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
             }
             ValueView::Mix(data, mutable) => {
                 let type_name = data
                     .declared_type
                     .clone()
                     .unwrap_or_else(|| if mutable { "MixHash" } else { "Mix" }.to_string());
-                self.try_native_quanthash_construct_for_package(
-                    Symbol::intern(&type_name),
-                    &args,
-                )
-                .unwrap_or_else(|| {
-                    Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
-                    ))
-                })
+                self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
+                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
             }
-            _ => Err(RuntimeError::new(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
+            _ => Err(super::methods_signature_errors::method_not_found_for_value(
+                "new", &target,
             )),
         }
     }
