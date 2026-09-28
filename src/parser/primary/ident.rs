@@ -1,5 +1,5 @@
 pub(in crate::parser) mod anon_sub;
-mod circumfix;
+pub(crate) mod circumfix;
 mod identifier_call;
 mod listop;
 pub(crate) mod predicates;

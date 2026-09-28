@@ -1794,7 +1794,8 @@ fn postfix_expr_loop_from(
                 r
             } else {
                 let (r2, arg) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
-                args.push(arg);
+                // A lone `a => 1` is data, not a named argument.
+                args.push(crate::parser::primary::ident::circumfix::positional_operand(arg));
                 r2
             };
             let (r, _) = ws(r)?;

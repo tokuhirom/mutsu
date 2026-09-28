@@ -1982,8 +1982,9 @@ impl Interpreter {
             && let Some(def) = self.var_default(name).cloned()
             && let ValueView::Array(items, kind) = val.view()
         {
-            let is_hole =
-                |v: &Value| v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any");
+            // Only a `Nil` store falls back to the default: an explicit `Any`
+            // is data (`my @a is default(7) = Nil, Any` is `[7, Any]`).
+            let is_hole = |v: &Value| v.is_nil();
             let has_holes = items.iter().any(is_hole);
             if has_holes {
                 let replaced: Vec<Value> = items

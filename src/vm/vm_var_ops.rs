@@ -132,8 +132,15 @@ impl Interpreter {
             Some(value) => match value.view() {
                 // If the element is a hole (Package("Any") from deletion or
                 // uninitialized gap) and a non-Nil default is available,
-                // return the default instead of the hole value.
-                ValueView::Package(name) if name == "Any" && !default.is_nil() => default,
+                // return the default instead of the hole value. An explicitly
+                // assigned `Any` is data, not a hole (`my Mu @a; @a[0] = Any`
+                // reads back `Any`, not the `Mu` default) -- `hole_at` is the
+                // canonical discriminator.
+                ValueView::Package(name)
+                    if name == "Any" && !default.is_nil() && items.hole_at(idx) =>
+                {
+                    default
+                }
                 // Shaped arrays are pre-allocated with Nil placeholders; an
                 // uninitialized in-range slot reads as the element default
                 // (e.g. 0 for `array[int]`). Non-shaped arrays may legitimately
