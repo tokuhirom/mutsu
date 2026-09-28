@@ -295,20 +295,30 @@ impl Interpreter {
                     )));
                 }
             };
+            // `chmod 0o755, <a b>` passes a single list argument; flatten so
+            // each path is chmod'd individually rather than stringifying the
+            // whole list into one bogus path. Per raku's `sub chmod`, a path
+            // that fails to chmod is silently dropped from the result rather
+            // than throwing.
+            let paths: Vec<Value> = args
+                .iter()
+                .skip(1)
+                .flat_map(crate::runtime::utils::value_to_list)
+                .collect();
             let mut changed = Vec::new();
-            for path_value in args.iter().skip(1) {
+            for path_value in &paths {
                 let path = path_value.to_string_value();
                 let path_buf = self.resolve_path(&path);
                 let perms = PermissionsExt::from_mode(mode_int);
-                fs::set_permissions(&path_buf, perms).map_err(|err| {
-                    RuntimeError::new(format!("Failed to chmod '{}': {}", path, err))
-                })?;
-                changed.push(path_value.clone());
+                if fs::set_permissions(&path_buf, perms).is_ok() {
+                    changed.push(path_value.clone());
+                }
             }
-            Ok(Value::array_with_kind(
-                crate::value::Value::array_arc(changed),
-                ArrayKind::List,
-            ))
+            // Like `unlink`, the real `sub chmod` builds its result in an
+            // `Array` variable and returns it as-is (an `Array` satisfies
+            // its `--> List` constraint without coercion), so it gists with
+            // `[...]`, not `(...)`.
+            Ok(Value::real_array(changed))
         }
     }
 
