@@ -871,6 +871,10 @@ impl Interpreter {
     /// Dispatch the "eager" method.
     fn dispatch_eager_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(list) = target.view() {
+            // A single-pass `.lazy` Seq (docs/adr/0034's consumption model,
+            // extended in `claim_lazy_seq_touch`'s doc comment) throws on a
+            // second `.eager` instead of silently re-answering (#9789).
+            crate::value::claim_lazy_seq_touch(&list)?;
             // Route through the VM force path (falls back to the interpreter
             // bridge itself when there is no compiled code): a prior BOUNDED
             // pull (e.g. `$s[0]`) can leave a gather coroutine suspended

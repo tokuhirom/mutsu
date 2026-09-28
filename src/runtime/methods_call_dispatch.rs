@@ -4524,6 +4524,14 @@ impl Interpreter {
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
         {
+            // A single-pass `.lazy` Seq throws on a second consuming touch
+            // (`claim_lazy_seq_touch`'s doc comment, #9789); `should_force_lazy_list`
+            // also names non-consuming methods (`gist`, `elems`, ...) that must
+            // keep reading it repeatably, so gate on the same
+            // `seq_method_consumes` table a real `Value::Seq` uses.
+            if crate::value::seq_method_consumes(method) {
+                crate::value::claim_lazy_seq_touch(&ll)?;
+            }
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(&ll)?;
             // A successful `.sink` consumes the original gather Seq as well
