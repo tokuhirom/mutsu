@@ -19,11 +19,17 @@ Rakudo produces for the same failure:
   leaking message, plus a nonsensical "Did you mean 'put'?" suggestion computed
   against the pool of ordinary object methods. A new `RuntimeError::meta_method_not_found`
   reports these MOP-method failures without that misleading suggestion.
-- `UInt.new(...)` fell through to the same leaking fallback instead of delegating to
-  its base type the way every other method call on a subset already does
-  (`constraint_is_subset`/`dispatch_nominal_base`). This blocked any parametric role
-  instantiated over `UInt` — including the builtin `Rational[NuT]` prelude — from
-  ever constructing its typed attribute; `class P does Rational[UInt] {}; P.new(1,3)`
-  now correctly answers `0.333333` instead of dying.
+- `class P does Rational[UInt] {}; P.new(1,3)` died instead of answering `0.333333`
+  (a documented, legal parameterization per raku-doc's `Type/Rational.rakudoc`). The
+  builtin `Rational[NuT]` role prelude's `method new` unconditionally called
+  `NuT.new(...)`/`DeT.new(...)` to build the typed numerator/denominator, but `UInt`
+  is a subset (`subset UInt of Int where * >= 0`) and Rakudo never permits `.new()`
+  on a subset at all — `UInt.new` itself still correctly throws
+  (`Cannot instantiate a subtype`, per `S32-num/int.t` and the `S02-types/subset-*.t`
+  family), same as any user `subset ... of ...`. The prelude now checks
+  `NuT.HOW ~~ Metamodel::SubsetHOW` and only calls `.new()` in the genuine-class case
+  (still required for e.g. `does Rational[Foo, Foo]` where `Foo` is a user
+  `class Foo is Int {}`); for a subset, the already-checked value from the parameter
+  binding is used directly.
 
 (#9795)
