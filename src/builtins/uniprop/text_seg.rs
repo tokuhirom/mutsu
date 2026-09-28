@@ -1,62 +1,42 @@
-/// UAX #29 Grapheme_Cluster_Break=Prepend set.
-fn is_gcb_prepend(cp: u32) -> bool {
-    matches!(cp,
-        0x0600..=0x0605 | 0x06DD | 0x070F | 0x08E2 | 0x0D4E | 0x110BD | 0x110CD
-        | 0x111C2 | 0x111C3 | 0x1193F | 0x11941 | 0x11A3A | 0x11A84..=0x11A89 | 0x11D46)
-}
-
-/// Spacing marks (gc=Mc) that are NOT Grapheme_Cluster_Break=SpacingMark: they
-/// are either Extend (handled earlier) or Other. Listing them keeps a plain
-/// gc=Mc test from over-classifying them as SpacingMark.
-fn is_gcb_spacingmark_exception(cp: u32) -> bool {
-    matches!(cp,
-        0x09BE | 0x09D7 | 0x0B3E | 0x0B57 | 0x0BBE | 0x0BD7 | 0x0CC2 | 0x0CD5 | 0x0CD6
-        | 0x0D3E | 0x0D57 | 0x0DCF | 0x0DDF | 0x102B | 0x102C | 0x1038 | 0x1062..=0x1064
-        | 0x1067..=0x106D | 0x1083 | 0x1087..=0x108C | 0x108F | 0x109A..=0x109C | 0x1A61
-        | 0x1A63 | 0x1A64 | 0x1B35 | 0x302E | 0x302F | 0xAA7B | 0xAA7D | 0x1133E | 0x11357
-        | 0x114B0 | 0x114BD | 0x115AF | 0x11930 | 0x1D165 | 0x1D16E..=0x1D172)
-}
+/// UAX #29 GraphemeBreakProperty values, tried in an order where no two
+/// patterns can both match (each codepoint has exactly one GCB value), so a
+/// hit on any pattern is final.
+///
+/// Queried straight from the `regex` crate's own Unicode tables rather than
+/// hand-derived from General_Category plus exception lists: the previous
+/// hand-maintained `Prepend`/`SpacingMark` exception sets and the
+/// `Grapheme_Extend`-based `Extend` check were current for the Unicode
+/// version they were written against, but drifted as Unicode's own GCB
+/// classifications moved code points between categories (emoji modifiers
+/// U+1F3FB..U+1F3FF went from `E_Modifier`/Other to `Extend` in Unicode 11 —
+/// [#9799](https://github.com/tokuhirom/mutsu/issues/9799)). The `regex`
+/// crate's `Grapheme_Cluster_Break=<value>` enumeration is generated from a
+/// current Unicode Character Database, so it can't go stale the same way.
+const GCB_VALUES: &[(&str, &str)] = &[
+    ("CR", r"^\p{Grapheme_Cluster_Break=CR}$"),
+    ("LF", r"^\p{Grapheme_Cluster_Break=LF}$"),
+    ("Control", r"^\p{Grapheme_Cluster_Break=Control}$"),
+    ("Extend", r"^\p{Grapheme_Cluster_Break=Extend}$"),
+    ("ZWJ", r"^\p{Grapheme_Cluster_Break=ZWJ}$"),
+    (
+        "Regional_Indicator",
+        r"^\p{Grapheme_Cluster_Break=Regional_Indicator}$",
+    ),
+    ("Prepend", r"^\p{Grapheme_Cluster_Break=Prepend}$"),
+    ("SpacingMark", r"^\p{Grapheme_Cluster_Break=SpacingMark}$"),
+    ("L", r"^\p{Grapheme_Cluster_Break=L}$"),
+    ("V", r"^\p{Grapheme_Cluster_Break=V}$"),
+    ("T", r"^\p{Grapheme_Cluster_Break=T}$"),
+    ("LV", r"^\p{Grapheme_Cluster_Break=LV}$"),
+    ("LVT", r"^\p{Grapheme_Cluster_Break=LVT}$"),
+];
 
 /// Grapheme_Cluster_Break property (UAX #29 GraphemeBreakProperty).
 pub(crate) fn unicode_grapheme_cluster_break(ch: char) -> &'static str {
-    let cp = ch as u32;
-    match cp {
-        0x000D => return "CR",
-        0x000A => return "LF",
-        0x200D => return "ZWJ",
-        // Regional indicator symbols.
-        0x1F1E6..=0x1F1FF => return "Regional_Indicator",
-        _ => {}
-    }
-    // Prepend must precede Extend/Control (some Prepend are gc=Cf).
-    if is_gcb_prepend(cp) {
-        return "Prepend";
-    }
-    if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
-        return "Extend";
-    }
-    // Hangul jamo / syllables.
-    match cp {
-        0x1100..=0x115F | 0xA960..=0xA97C => return "L",
-        0x1160..=0x11A7 | 0xD7B0..=0xD7C6 => return "V",
-        0x11A8..=0x11FF | 0xD7CB..=0xD7FB => return "T",
-        0xAC00..=0xD7A3 => {
-            return if (cp - 0xAC00).is_multiple_of(28) {
-                "LV"
-            } else {
-                "LVT"
-            };
+    for (value, pattern) in GCB_VALUES {
+        if super::binary_props::check_binary_property(ch, pattern) {
+            return value;
         }
-        _ => {}
-    }
-    // SpacingMark: spacing combining marks plus U+0E33 / U+0EB3.
-    let gc = crate::builtins::unicode::unicode_general_category(ch);
-    if (gc == "Mc" && !is_gcb_spacingmark_exception(cp)) || cp == 0x0E33 || cp == 0x0EB3 {
-        return "SpacingMark";
-    }
-    // Control: line/paragraph separators, control and format characters.
-    if gc == "Cc" || gc == "Cf" || gc == "Zl" || gc == "Zp" {
-        return "Control";
     }
     "Other"
 }
