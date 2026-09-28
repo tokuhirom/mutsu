@@ -685,22 +685,18 @@ impl Interpreter {
             return Ok(collect_spans(&[(n, len)]));
         }
 
-        // In 6.e, the arguments alternate between a number of values to skip
-        // and a number of values to produce. A Seq/Slip argument is already a
+        // In 6.e, multiple arguments alternate between a number of values to
+        // produce and a number of values to skip. A Seq/Slip argument is already a
         // flattened argument stream; expand it here as well so an unbounded
         // repeat such as `|(2, 3) xx *` can provide its cached prefix without
         // being mistaken for one numeric argument.
         let mut specs = Vec::new();
-        let has_lazy_spec_stream = args
-            .iter()
-            .any(|arg| matches!(arg.view(), ValueView::LazyList(_)));
         for arg in args {
             match arg.view() {
                 // A lazy (possibly infinite) spec stream (`|(2, 3) xx *`) is
                 // pulled only as far as the invocant can use: every
-                // skip/produce pair covers at least one element unless both
-                // counts are zero, so twice the element count (plus the
-                // implicit leading zero) is enough.
+                // produce/skip pair covers at least one element unless both
+                // counts are zero, so twice the element count is enough.
                 ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
                     for i in 0..len.saturating_mul(2).saturating_add(2) {
                         match self.pull_source_element(&arg, i)? {
@@ -717,18 +713,18 @@ impl Interpreter {
         }
         if specs.is_empty() {
             specs.push(Value::int(1));
-        } else if has_lazy_spec_stream {
-            // A lazily flattened capture uses the 6.e produce/skip form: the
-            // first cached value is produced before the first skip count. In
-            // the alternating representation used here that is an implicit
-            // zero-length skip, while ordinary comma-separated arguments keep
-            // the documented skip/produce order.
-            specs.insert(0, Value::int(0));
+        }
+
+        if specs.len() > 1 && !crate::parser::current_language_version().starts_with("6.e") {
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                "skip",
+            ));
         }
 
         let mut cursor = 0usize;
         let mut spans: Vec<(usize, usize)> = Vec::new();
-        let mut skipping = true;
+        // The one-argument forms retain their original skip-first meaning.
+        let mut skipping = specs.len() == 1;
         for spec in specs {
             let count = match spec.view() {
                 // `Whatever` in a skip position discards the rest; in a
@@ -754,9 +750,7 @@ impl Interpreter {
             }
         }
 
-        // An odd number of numeric specs ends in a skip position, so the
-        // remaining tail is produced. An even number ends in a produce
-        // position, so the remaining tail is skipped.
+        // The tail continues in the phase following the final count.
         if cursor < len && !skipping {
             spans.push((cursor, len));
         }
