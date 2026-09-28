@@ -252,6 +252,24 @@ impl Interpreter {
             .zip(role_arg_values.iter())
             .map(|(p, v)| (p.clone(), type_value_name(v)))
             .collect();
+        // Inherit any bindings the composed role itself picked up from a
+        // role IT composed (`role Kg does U["g"] {}` records "unit" -> "g"
+        // under "Kg" via `role_body_does_decl`). Without this, that binding
+        // is orphaned the moment a class reaches the parametric role U
+        // through the intermediate, non-parametric role Kg instead of
+        // composing U directly (#9834).
+        if let Some(inherited) = self
+            .registry()
+            .class_role_param_bindings
+            .get(base_role_name)
+        {
+            for (p, v) in inherited {
+                cx.out
+                    .class_role_param_bindings
+                    .entry(p.clone())
+                    .or_insert_with(|| v.clone());
+            }
+        }
         for (p, v) in role_param_names.iter().zip(role_arg_values.iter()) {
             cx.out
                 .class_role_param_bindings
