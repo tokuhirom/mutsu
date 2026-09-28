@@ -1,28 +1,29 @@
+use v6.e.PREVIEW;
 use Test;
 
 plan 11;
 
 is-deeply (1..12).Seq.skip(2, 3, 4).List,
-    (3, 4, 5, 10, 11, 12),
-    'Seq.skip alternates skip, produce, and skip counts';
+    (1, 2, 6, 7, 8, 9),
+    'Seq.skip alternates produce, skip, and produce counts';
 is-deeply (1..10).Seq.skip(2, 3, 1, 2).List,
-    (3, 4, 5, 7, 8),
-    'an even number of counts skips the remaining tail';
+    (1, 2, 6, 9, 10),
+    'an even number of counts produces the remaining tail';
 is-deeply (1..10).Seq.skip(2, 3, *).List,
-    (3, 4, 5),
-    'Whatever in a skip position discards the remaining tail';
+    (1, 2, 6, 7, 8, 9, 10),
+    'Whatever in a produce position keeps the remaining tail';
 is-deeply (1..10).Seq.skip(0, 3, 4).List,
-    (1, 2, 3, 8, 9, 10),
-    'zero starts with producing values';
+    (4, 5, 6, 7),
+    'zero starts with skipping values';
 is-deeply (^20).Seq.skip(|(2, 3) xx *).List,
     (0, 1, 5, 6, 10, 11, 15, 16),
-    'an unbounded lazy argument stream repeats the skip/produce pattern';
+    'an unbounded lazy argument stream uses the same produce/skip pattern';
 
 is-deeply (1..10).List.skip(2, 3, 1).List,
-    (3, 4, 5, 7, 8, 9, 10),
+    (1, 2, 6),
     'List.skip uses the same alternating semantics';
 is 42.skip(0, 1).List.gist,
-    '(42)',
+    '()',
     'Any.skip treats a scalar as a one-item sequence';
 
 is-deeply (1..5).Seq.skip.List, (2, 3, 4, 5), 'no-argument skip still skips one';
