@@ -406,14 +406,24 @@ impl EndWalker<'_> {
                 name,
                 is_our: false,
                 is_dynamic: false,
+                custom_traits,
                 ..
-            } => self.push_lexical(name),
+            } => self.push_lexical(&crate::runtime::term_names::decl_storage_name(
+                name,
+                custom_traits,
+            )),
             Stmt::VarDecl {
                 name,
                 is_our: true,
                 type_constraint,
+                custom_traits,
                 ..
             } => {
+                // A sigil-less constant's lexical alias and unqualified
+                // package symbol live under its term key (#9962), exactly
+                // where the compiler stores them.
+                let storage = crate::runtime::term_names::decl_storage_name(name, custom_traits);
+                let name = &storage;
                 self.install_our_symbol(name, type_constraint.as_deref());
                 // An `our` inside a nested block also creates a LEXICAL alias
                 // there, so a never-reached `END` in that block reads it as
@@ -512,6 +522,15 @@ impl EndWalker<'_> {
         }
         if package == "GLOBAL" || package.contains("::&") {
             return Some(name.to_string());
+        }
+        // A term key is the unqualified spelling only; the package store of
+        // a constant is keyed by its spelling (#9962).
+        if let Some(term) = crate::runtime::term_names::term_spelling(name) {
+            return Some(
+                crate::qualified::qualified(Symbol::intern(package), Symbol::intern(term))
+                    .as_str()
+                    .to_string(),
+            );
         }
         match first {
             '$' | '@' | '%' | '&' if name.len() > 1 => {

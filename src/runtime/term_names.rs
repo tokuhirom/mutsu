@@ -131,11 +131,12 @@ pub(crate) fn stmt_decl_storage_name(stmt: &crate::ast::Stmt) -> Option<String> 
 }
 
 impl Interpreter {
-    /// The value of the sigil-less constant spelled `name`, if one is in
-    /// scope: its live `env` binding, else — for an `our`-scoped constant
-    /// declared in a block that has since exited — its package store. This is
-    /// how term resolution reaches a constant; a plain probe under `name`
-    /// finds a same-named `$`-scalar instead.
+    /// The live `env` value of the sigil-less constant spelled `name`, if one
+    /// is in scope. This is how term resolution reaches a constant; a plain
+    /// probe under `name` finds a same-named `$`-scalar instead.
+    ///
+    /// An `our`-scoped constant declared in a block that has since exited is
+    /// not found here but by [`Self::term_binding`].
     // Cost: O(1) expected.
     pub(crate) fn term_value(&self, name: &str) -> Option<&Value> {
         if name.is_empty() || name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) {
@@ -145,16 +146,15 @@ impl Interpreter {
         if crate::qualified::is_qualified(name_sym) {
             return None;
         }
-        let key = term_key_sym(name_sym);
-        self.env()
-            .get_sym(key)
-            .or_else(|| self.get_our_var(key.as_str()))
+        self.env().get_sym(term_key_sym(name_sym))
     }
 
     /// [`Self::term_value`], falling back to the running module's own (or
-    /// imported) module-scope copy of the constant, and to the enclosing
-    /// package blocks' lexicals — what a module or package routine sees once
-    /// the body that declared the constant has exited.
+    /// imported) module-scope copy of the constant, to the enclosing package
+    /// blocks' lexicals, and to the package store — what a routine sees once
+    /// the body that declared the constant has exited. Callers resolving a
+    /// bareword that may also name a type check the type first (see
+    /// `push_bare_word_value`).
     // Cost: O(1) expected, plus O(p) for the module-scope probe, p = packages the running routine could belong to.
     pub(crate) fn term_binding(&self, name: &str) -> Option<Value> {
         if let Some(v) = self.term_value(name) {
@@ -173,6 +173,8 @@ impl Interpreter {
             // A package block's own `my constant`, kept for its routines in
             // `package_lexicals` once the block has exited.
             .or_else(|| self.package_chain_var_fallback(&key))
+            // An `our`-scoped constant of a block that has since exited.
+            .or_else(|| self.get_our_var(&key).cloned())
     }
 
     /// What a bare `name` written where a TYPE goes is bound to: a sigil-less

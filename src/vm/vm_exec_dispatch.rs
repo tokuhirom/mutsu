@@ -1362,8 +1362,11 @@ impl Interpreter {
                 // plain sigil-less name (an outer `my \x`) otherwise.
                 if !raw_mode
                     && let Some(spelled) = crate::runtime::term_names::term_spelling(&name)
-                    && !self.env().contains_key(&name)
-                    && self.get_our_var(&name).is_none()
+                    && (!self.env().contains_key(&name)
+                        // A type name keeps meaning the type here, exactly as
+                        // it does for a run-time bareword read.
+                        || self.has_type_direct(spelled)
+                        || Self::is_builtin_type(spelled))
                 {
                     name = spelled.to_string();
                 }

@@ -348,7 +348,13 @@ impl Interpreter {
             // exactly one thing — the env-alias fallback that was serving the
             // wrong scope's symbol.
             module_val
-        } else if let Some(v) = self.term_binding(name) {
+        } else if let Some(v) = self
+            .term_binding(name)
+            // As for the plain `env` hit below, a type name keeps meaning the
+            // type when resolved at run time: a `constant Int = 5` shadows it
+            // only lexically, through the compiler's slot read.
+            .filter(|_| !(self.has_type_direct(name) || Self::is_builtin_type(name)))
+        {
             // A sigil-less constant in scope. It lives in the term namespace
             // (`runtime::term_names`, #9962), so the plain `env[name]` probe
             // below — which a same-named `$`-scalar answers — never sees it.
