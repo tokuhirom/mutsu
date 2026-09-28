@@ -686,6 +686,11 @@ pub use error::{CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 
 static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// The instance id reserved for the `IterationEnd` sentinel
+/// ([`Value::iteration_end`]); [`next_instance_id`] counts up from 1 and never
+/// reaches it.
+pub(crate) const ITERATION_END_ID: u64 = u64::MAX;
+
 #[derive(Debug, Clone)]
 pub(crate) struct PendingInstanceDestroy {
     pub(crate) class_name: Symbol,

@@ -543,6 +543,11 @@ impl Interpreter {
         if name.is_empty() {
             return Self::no_such_symbol_failure(name);
         }
+        // The core `IterationEnd` sentinel term (as the bareword resolves it
+        // in `vm_var_get_ops`), so `::('IterationEnd') =:= IterationEnd`.
+        if name == "IterationEnd" {
+            return Value::iteration_end();
+        }
         // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
         // until they are merged into GLOBAL with `merge-symbols`.
         if self.cur_repo.pending_global_symbols.contains(name) {

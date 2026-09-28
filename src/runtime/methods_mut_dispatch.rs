@@ -2258,8 +2258,7 @@ impl Interpreter {
                             let mut collected = Vec::new();
                             loop {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                                {
+                                if next.is_iteration_end() {
                                     break;
                                 }
                                 collected.push(next);
@@ -2270,17 +2269,14 @@ impl Interpreter {
                         "skip-one" => {
                             let next = pull_one_squish(self)?;
                             // Iterator.skip-one returns 1 (Int) on a skip, 0 at end.
-                            Value::int(i64::from(
-                                !matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd"),
-                            ))
+                            Value::int(i64::from(!next.is_iteration_end()))
                         }
                         "skip-at-least" => {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
                             let mut ok = true;
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                                {
+                                if next.is_iteration_end() {
                                     ok = false;
                                     break;
                                 }
@@ -2291,8 +2287,7 @@ impl Interpreter {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                                {
+                                if next.is_iteration_end() {
                                     updated.insert(
                                         "squish_scan_index".to_string(),
                                         Value::int(scan_index as i64),
@@ -2313,8 +2308,7 @@ impl Interpreter {
                             let mut collected = Vec::new();
                             for _ in 0..want {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                                {
+                                if next.is_iteration_end() {
                                     break;
                                 }
                                 collected.push(next);
@@ -2329,8 +2323,7 @@ impl Interpreter {
                         "sink-all" => {
                             loop {
                                 let next = pull_one_squish(self)?;
-                                if matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                                {
+                                if next.is_iteration_end() {
                                     break;
                                 }
                             }

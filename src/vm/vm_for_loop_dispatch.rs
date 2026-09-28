@@ -691,9 +691,7 @@ impl Interpreter {
                 Ok(v) => v,
                 Err(e) => break Err(e),
             };
-            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                || matches!(val.view(), ValueView::Package(n) if n == crate::symbol::Symbol::intern("IterationEnd"))
-            {
+            if val.is_iteration_end() {
                 break Ok(());
             }
             items.push(val);

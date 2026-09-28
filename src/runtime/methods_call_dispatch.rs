@@ -966,9 +966,7 @@ impl Interpreter {
                 let mut pulled = Vec::new();
                 loop {
                     let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                    if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(val.view(), ValueView::Package(n) if n == Symbol::intern("IterationEnd"))
-                    {
+                    if val.is_iteration_end() {
                         break;
                     }
                     pulled.push(val);
