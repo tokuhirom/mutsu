@@ -318,9 +318,10 @@ impl Interpreter {
         };
         let (resolved, path) = self.resolve_io_arg_path(path_arg);
         check_null_in_path(&path)?;
-        let content_value = args
-            .get(1)
-            .ok_or_else(|| RuntimeError::new("spurt requires a content argument"))?;
+        // Since Rakudo 2020.12, `spurt $path` with no content creates an
+        // empty file (or truncates an existing one) rather than erroring.
+        let content_value = args.get(1).cloned().unwrap_or(Value::str(String::new()));
+        let content_value = &content_value;
         let mut append = false;
         let mut createonly = false;
         let mut enc: Option<String> = None;
