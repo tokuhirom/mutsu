@@ -38,10 +38,10 @@ fn minmax_two(arg1: &Value, arg2: &Value, want_max: bool) -> Result<Value, Runti
     if ex2.is_some() {
         return Ok(arg2.clone());
     }
-    if matches!(arg1.view(), ValueView::Package(name) if name == "Any") {
+    if !runtime::types::value_is_defined(arg1) {
         return Ok(arg2.clone());
     }
-    if matches!(arg2.view(), ValueView::Package(name) if name == "Any") {
+    if !runtime::types::value_is_defined(arg2) {
         return Ok(arg1.clone());
     }
 
