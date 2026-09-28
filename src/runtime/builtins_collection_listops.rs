@@ -193,6 +193,19 @@ impl Interpreter {
                 }
                 Ok(changed.then(|| Value::array(mapped)))
             }
+            // A NON-ITEMIZED Array-inner mixin (`@a but R`, `@a` a real
+            // Positional) flattens through its inner elements for a slurpy,
+            // exactly as `flat_val`'s own `Array`-inner `Mixin` arm does — the
+            // role's `Str` override applies to the value as a whole, not to
+            // the elements a flattening slurpy exposes instead of it. Only
+            // recurse looking for a NESTED user stringifier; an ITEMIZED inner
+            // (`my $r = @a but R` boxes it in a Scalar, `$r.raku` reads
+            // `$[...]`) does NOT flatten — a scalar container never crosses a
+            // slurpy boundary — so it stays the flattened element and keeps
+            // its own `.Str`, same as any other non-container inner below.
+            ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Array(_, kind) if !kind.is_itemized()) => {
+                self.join_prerender_user_stringifier(inner)
+            }
             ValueView::Mixin(..) => {
                 // `join` stringifies elements through `.Str`, not through the
                 // Stringy-first string-context helper used by `~`.
