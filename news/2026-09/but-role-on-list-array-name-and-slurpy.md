@@ -24,4 +24,4 @@ the pre-render step now recurses into the inner container the same way,
 only falling back to the mixin's `Str` when the inner value is not itself a
 flattening container.
 
-Pinned by `t/oo/but-role-on-list-array-name-and-slurpy.t`.
+Pinned by `t/oo/role/but-role-on-list-array-name-and-join-flatten.t`.
