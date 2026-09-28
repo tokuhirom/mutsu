@@ -926,7 +926,7 @@ impl Interpreter {
         })
     }
 
-    /// Track whether a scalar variable is bound (`:=`) to a Positional value.
+    /// Track whether a scalar variable is bound (`:=`) to a list-context value.
     /// A bound scalar is NOT a Scalar container, so `@a = $bound` must flatten
     /// rather than itemize. The `ItemizeVar` opcode reads this marker. Plain
     /// assignment to a scalar clears any stale marker (guarded by
@@ -954,6 +954,7 @@ impl Interpreter {
                 | ValueView::Set(..)
                 | ValueView::Bag(..)
                 | ValueView::Mix(..) => true,
+                ValueView::Instance { .. } => self.instance_decomposes_on_array_assign(val),
                 // A `:=` bind to a whole-container `@`/`%` variable holds a
                 // shared cell whose inner value is the container.
                 ValueView::ContainerRef(cell) => matches!(
