@@ -1559,6 +1559,11 @@ pub(crate) struct Compiler {
     /// scalar (`my $x := $itemized`) inherits the item container and is NOT
     /// recorded. See `normalize_for_iterable`.
     noncontainer_bound_vars: std::collections::HashSet<String>,
+    /// `$` parameters of the routine being compiled that bind WITHOUT a Scalar
+    /// container ([`crate::vm::ScalarParamBind::Decont`], e.g. `Positional
+    /// $x`), so `for $x` iterates and `my @a = $x` flattens the bound value.
+    /// A body `my $x` re-declaration removes the name (see the `VarDecl` arm).
+    decont_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
     /// declaring block has exited, their stale local slot must not be reused —
@@ -1876,6 +1881,7 @@ impl Compiler {
             pending_immutable_topic_block: false,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
+            decont_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -4085,6 +4091,20 @@ impl Compiler {
         !name.starts_with('=')
             && !self.constant_vars.contains(name)
             && !self.noncontainer_bound_vars.contains(name)
+            && !self.decont_scalar_params.contains(name)
+    }
+
+    /// Record a signature's container-less `$` parameters in
+    /// [`Self::decont_scalar_params`] (see [`crate::vm::ScalarParamBind`]).
+    fn note_decont_scalar_params(&mut self, param_defs: &[crate::ast::ParamDef]) {
+        for pd in param_defs {
+            if !pd.name.is_empty()
+                && crate::runtime::Interpreter::scalar_param_bind(pd)
+                    == crate::vm::ScalarParamBind::Decont
+            {
+                self.decont_scalar_params.insert(pd.name.clone());
+            }
+        }
     }
 
     fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {

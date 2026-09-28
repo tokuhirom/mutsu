@@ -426,6 +426,7 @@ impl Compiler {
             && let Expr::Var(var_name) = unwrapped
             && !var_name.starts_with('=')
             && !Self::is_desugar_temp_name(var_name)
+            && !self.decont_scalar_params.contains(var_name)
         {
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::ItemizeVar(name_idx));
@@ -1612,6 +1613,9 @@ impl Compiler {
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&');
+                // A body `my $x` shadowing a container-less `$x` parameter is
+                // an ordinary Scalar container again.
+                self.decont_scalar_params.remove(name.as_str());
                 // A `constant` initializer is evaluated at BEGIN (compile) time,
                 // so an uncaught exception while evaluating it surfaces as
                 // X::Comp::BeginTime (with the original exception nested). Wrap

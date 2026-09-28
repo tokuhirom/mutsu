@@ -33,64 +33,6 @@ impl Interpreter {
         }
     }
 
-    /// Itemize an argument bound to a plain `$`-sigiled parameter. Raku's
-    /// signature binder puts the value in a Scalar container, so `f([1,2])`
-    /// binds `$v` as `$[1, 2]` — ONE element in list context, `.raku` shows
-    /// the `$`. Sigilless (`\v`), `is raw`, and `is rw` parameters bind the
-    /// raw value; `@`/`%`/`&` parameters bind the container itself. The
-    /// backing Gc is shared — only the container kind flips — so in-place
-    /// mutation through the param still reaches the caller's data.
-    ///
-    /// An *invocant* parameter is exempt: `self` is bound raw, so
-    /// `<a b c>.&(method (List:D:) { self.raku })` reports `("a", "b", "c")`,
-    /// not the itemized `$("a", "b", "c")`.
-    #[inline]
-    pub(crate) fn itemize_plain_scalar_param(pd: &crate::ast::ParamDef, val: Value) -> Value {
-        if Self::param_binds_itemized_scalar(pd) {
-            Self::itemize_scalar_store_value(val)
-        } else {
-            val
-        }
-    }
-
-    /// [`Self::itemize_plain_scalar_param`] for a parameter of a compiled
-    /// routine, answered from the precomputed `param_itemize_on_bind` flag.
-    /// An index past the end means the chunk never ran the precompute (a
-    /// hand-built one), which falls back to deriving the answer per bind.
-    #[inline]
-    pub(crate) fn bind_itemize_param(
-        cf: &crate::opcode::CompiledFunction,
-        param_idx: usize,
-        val: Value,
-    ) -> Value {
-        match cf.param_itemize_on_bind.get(param_idx) {
-            Some(true) => Self::itemize_scalar_store_value(val),
-            Some(false) => val,
-            None => Self::itemize_plain_scalar_param(&cf.param_defs[param_idx], val),
-        }
-    }
-
-    /// Does binding `pd` itemize the incoming value (`my $h = %x` semantics for
-    /// a `$` parameter)?
-    ///
-    /// Depends only on the parameter's declaration -- its sigil, its traits and
-    /// its name -- never on the argument, yet
-    /// [`Self::itemize_plain_scalar_param`] re-derived it on every bind of every
-    /// call, scanning the `traits: Vec<String>` twice with string compares. A
-    /// routine's signature is fixed, so `CompiledFunction::param_itemize_on_bind`
-    /// settles it once at registration time; this is the definition that
-    /// precompute uses, kept here so the two can never drift.
-    pub(crate) fn param_binds_itemized_scalar(pd: &crate::ast::ParamDef) -> bool {
-        !pd.sigilless
-            && !pd.is_invocant
-            && !pd.traits.iter().any(|t| t == "invocant")
-            && !pd.name.starts_with(['@', '%', '&'])
-            && !pd.traits.iter().any(|t| t == "raw" || t == "rw")
-            // The name half of `itemize_scalar_store`'s own guard, folded in so
-            // the precomputed flag answers the whole question.
-            && !Self::name_is_itemize_exempt(&pd.name)
-    }
-
     /// Snapshot the lexical pragma state (`use fatal`, `use strict`,
     /// `use newline`, `use MONKEY-TYPING`) before entering a function body.
     /// Must be paired with `restore_pragma_state` on every exit path to prevent

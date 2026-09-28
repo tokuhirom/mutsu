@@ -12172,11 +12172,11 @@ pub(crate) struct CompiledFunction {
     /// chunk) or when some parameter's constraint is not light-path-checkable;
     /// both cases fall back to the by-name `fast_type_check`.
     pub(crate) param_fast_types: Vec<FastParamCheck>,
-    /// Whether binding each parameter itemizes the incoming value, parallel to
-    /// `param_defs` (see `Interpreter::param_binds_itemized_scalar`). Empty when
-    /// the precompute has not run (a hand-built chunk), which falls back to
+    /// What binding each parameter does to the incoming value's itemization,
+    /// parallel to `param_defs` (see `Interpreter::scalar_param_bind`). Empty
+    /// when the precompute has not run (a hand-built chunk), which falls back to
     /// re-deriving it from the `ParamDef`.
-    pub(crate) param_itemize_on_bind: Vec<bool>,
+    pub(crate) param_itemize_on_bind: Vec<crate::vm::ScalarParamBind>,
     /// The value each *omitted* trailing positional parameter binds, parallel to
     /// `param_defs`. `Some(v)` when the parameter is optional AND its bound-when-
     /// omitted value is a compile-time constant — a literal default (`''`, `1`,
@@ -12663,7 +12663,7 @@ impl CompiledFunction {
         self.param_itemize_on_bind = self
             .param_defs
             .iter()
-            .map(crate::runtime::Interpreter::param_binds_itemized_scalar)
+            .map(crate::runtime::Interpreter::scalar_param_bind)
             .collect();
         self.param_const_fills = self
             .param_defs

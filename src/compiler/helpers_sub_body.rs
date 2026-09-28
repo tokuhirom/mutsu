@@ -353,6 +353,7 @@ impl Compiler {
         }
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
+        sub_compiler.note_decont_scalar_params(param_defs);
         sub_compiler.record_param_local_slots(params, param_defs);
         let import_scope_idx = Self::has_use_stmt(body)
             .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
@@ -1316,6 +1317,7 @@ impl Compiler {
         };
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
+        sub_compiler.note_decont_scalar_params(param_defs);
         sub_compiler.record_param_local_slots(params, param_defs);
         // A `sub` declared in a *block* is lexical to it. A statement-level block
         // gets that from `BlockScope`; a block compiled as a callable has no such
