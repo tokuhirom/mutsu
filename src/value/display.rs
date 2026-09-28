@@ -827,6 +827,11 @@ impl Value {
                 Some(data) => data.name.resolve(),
                 None => String::new(),
             },
+            // The `IterationEnd` sentinel (a `Mu` instance) stringifies as its
+            // name, as rakudo's `Mu.Str` special-cases it.
+            ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID => {
+                "IterationEnd".to_string()
+            }
             // ADR-0064: a `.VAR` reflection object is a CONTAINER, and a
             // container stringifies as the value it holds -- Raku's `is
             // [1,2,3][1].VAR, 2` passes because binding the container to a

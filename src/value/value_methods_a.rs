@@ -30,19 +30,33 @@ impl Value {
     pub fn str_from(s: &str) -> Self {
         Value::Str(Arc::new(crate::value::StrBody::Flat(s.to_string())))
     }
-    /// The `IterationEnd` iterator sentinel. It is still represented as the
-    /// string `"IterationEnd"` (every consumer recognizes it by that text),
-    /// but every producer hands out the SAME allocation, so object identity
-    /// (`nqp::eqaddr`, which compares `Str`s by pointer) holds between the
-    /// bareword term and whatever `pull-one` returned, as in rakudo where
-    /// `IterationEnd` is a singleton (#9333).
-    // Cost: O(1) (one Arc clone).
+    /// The `IterationEnd` iterator sentinel: as in rakudo, a unique instance of
+    /// `Mu` (`.^name` is `Mu`, `.raku` / `.gist` / `.Str` are `IterationEnd`).
+    /// Every producer hands out an instance carrying the reserved id
+    /// [`crate::value::ITERATION_END_ID`], and instance identity (`=:=`,
+    /// `nqp::eqaddr`, `===`) compares ids, so the bareword term and whatever
+    /// `pull-one` returned are the same object (#9333) — while a `Str` that
+    /// merely spells "IterationEnd" is not the sentinel (#9809).
+    // Cost: O(1) (one attribute-cell allocation).
     pub fn iteration_end() -> Self {
-        static SENTINEL: std::sync::LazyLock<Arc<crate::value::StrBody>> =
-            std::sync::LazyLock::new(|| {
-                Arc::new(crate::value::StrBody::Flat("IterationEnd".to_string()))
-            });
-        Value::Str(SENTINEL.clone())
+        let class = crate::symbol::Symbol::intern("Mu");
+        Value::from_repr(ValueRepr::Instance {
+            class_name: class,
+            attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                class,
+                crate::value::AttrMap::default(),
+                crate::value::ITERATION_END_ID,
+                false,
+            )),
+            id: crate::value::ITERATION_END_ID,
+        })
+    }
+
+    /// Whether this is the `IterationEnd` sentinel (see [`Self::iteration_end`]).
+    // Cost: O(1).
+    #[inline]
+    pub fn is_iteration_end(&self) -> bool {
+        matches!(self.view(), ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID)
     }
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))

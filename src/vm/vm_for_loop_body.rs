@@ -140,11 +140,20 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
+        // The `IterationEnd` sentinel ends iteration wherever it sits in the
+        // source, as rakudo's `pull-one`-driven `for` does (#9809): only the
+        // items before it are iterated, and the loop reports an early exit so
+        // a live-array continuation does not resume past it.
+        let iteration_end_at = items.iter().position(Value::is_iteration_end);
+        let items: &[Value] = match iteration_end_at {
+            Some(end) => &items[..end],
+            None => items,
+        };
         // `true`  = the loop ran every item to completion;
         // `false` = it exited early via `last` or `return` (the live-array
         // continuation in `exec_for_loop_op` must NOT pick up newly-pushed tail
         // elements after an early exit).
-        let mut completed_all = true;
+        let mut completed_all = iteration_end_at.is_none();
         // Nested-resume entry: when the slot holds a state for a loop nested
         // INSIDE this body (its loop_ip lies in the body range), the resumed
         // iteration's first body run starts AT that loop op — re-running the
@@ -1586,6 +1595,9 @@ impl Iterator for ForItemIter {
                     return None;
                 };
                 let item = items.get(*next)?.clone();
+                if item.is_iteration_end() {
+                    return None;
+                }
                 let idx = *next;
                 *next += 1;
                 Some((idx, item))

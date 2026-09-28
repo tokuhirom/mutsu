@@ -114,9 +114,7 @@ impl Interpreter {
                         .or_else(|_| {
                             self.call_method_with_values(current_iter, "pull-one", vec![])
                         })?;
-                    if matches!(value.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(value.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
-                    {
+                    if value.is_iteration_end() {
                         break;
                     }
                     pulled.push(value);

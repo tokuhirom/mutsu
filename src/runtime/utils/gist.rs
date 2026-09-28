@@ -545,6 +545,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
         // captures, matching `Match.gist`. The generic Instance fall-through
         // below would otherwise stringify it to the bare matched text.
+        ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID => {
+            "IterationEnd".to_string()
+        }
         ValueView::Instance { attributes, .. } if value.is_match_instance() => {
             match_gist(&(attributes).as_map(), 0)
         }

@@ -160,6 +160,14 @@ impl Interpreter {
         else {
             return None;
         };
+        // The `IterationEnd` sentinel renders as its name in every form, as
+        // rakudo's `Mu.raku` / `Mu.gist` special-case it.
+        if target_id == crate::value::ITERATION_END_ID
+            && matches!(method, "raku" | "perl" | "gist" | "Str")
+            && args.is_empty()
+        {
+            return Some(Ok(Value::str_from("IterationEnd")));
+        }
         let has_coercion_gist = target.does_check("Real")
             || target.does_check("Numeric")
             || target.does_check("Stringy")

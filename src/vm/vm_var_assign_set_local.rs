@@ -31,7 +31,7 @@ impl Interpreter {
     /// rakudo's scalar assignment needs one: `my $x := (1, 2, 3); $x = 5` dies
     /// exactly like `my $x := 5` does. (`@`/`%` targets never reach here; they
     /// alias the whole container and `@a = ...` is a STORE, not an assignment
-    /// into a Scalar.)
+    /// into a Scalar.) The `IterationEnd` sentinel is a third, singleton case.
     fn bind_source_has_no_container(v: &Value) -> bool {
         match v.view() {
             ValueView::Int(_)
@@ -52,6 +52,10 @@ impl Interpreter {
             | ValueView::LazyList(_)
             | ValueView::Slip(_) => true,
             ValueView::Array(_, kind) => kind.is_immutable_list(),
+            // The `IterationEnd` sentinel is an attribute-less `Mu` object:
+            // `$p := IterationEnd` binds the object itself, so `$p =:=
+            // IterationEnd` holds and `$p = 5` dies as in rakudo.
+            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
             _ => false,
         }
     }
