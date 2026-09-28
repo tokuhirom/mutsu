@@ -64,6 +64,14 @@ pub fn arm_stack_guard(stack_size: usize) {
     vm::vm_stack_guard::init_thread_stack_floor(stack_size);
 }
 
+/// Cap the C allocator's per-thread arenas when the process runs under an
+/// address-space limit (`ulimit -v`), so the arenas' reservations cannot crowd
+/// out the heap and thread stacks (ADR-0123 §5). A no-op without a limit.
+/// Call once at startup, before any interpreter thread is spawned.
+pub fn cap_malloc_arenas() {
+    runtime::stack_budget::cap_malloc_arenas();
+}
+
 /// Configure the Raku-level profiler from the command line (ADR-0106 D8).
 ///
 /// `mutsu`'s own CLI calls this once, before the program runs, with whatever
