@@ -6,13 +6,22 @@ use Test;
 # unit `i`) within its scope, and a single named for-loop param must not leak its
 # value to an enclosing binding of the same bare name.
 
-plan 14;
+plan 16;
 
 # --- Destructuring sub-signature sigilless params shadow the `i` term ---
 # `-> (\i, \j)` binds `i`/`j` as bare-word readonly names; inside the body `i`
 # must be the bound value, not the imaginary unit.
 is (-> (\i, \j) { i + j })((3, 4)), 7, 'pointy destructure sigilless shadows i';
 is (-> (\i, \j) { i + j })((1, 2)), 3, 'pointy destructure sigilless sums bound';
+
+# The for modifier and statement forms must declare destructured names before
+# compiling the body. Otherwise `i` resolves to the imaginary-unit term.
+is-deeply [ (-> (\i, \j) { i + j } for (1, 2), (3, 4)) ], [3, 7],
+    'for modifier uses destructured sigilless bindings';
+my @for-values;
+for (1, 2), (3, 4) -> (\i, \j) { @for-values.push(i + j) }
+is-deeply @for-values, [3, 7],
+    'for statement uses destructured sigilless bindings';
 
 # Nested destructuring.
 is (-> (\a, (\b, \c)) { a + b + c })((1, (2, 3))), 6, 'nested destructure sigilless';
