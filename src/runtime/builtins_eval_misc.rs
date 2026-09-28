@@ -564,6 +564,7 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(n + r), n = arguments and r = total rendered representation size.
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
         for (i, val) in args.iter().enumerate() {
