@@ -31,4 +31,4 @@ Removing the temps fixed three bugs they carried, all now matching rakudo:
 - `sub raw(\x) { x = 8 }; raw(%h<a>)` died with "Cannot modify an immutable
   Package"; `x.VAR.^name` for such a parameter said `Any` instead of `Scalar`.
 
-Pinned by `t/vm/binding/index-arg-container-mode.t`.
+Pinned by `t/collections/subscript/index-arg-container-mode.t`.
