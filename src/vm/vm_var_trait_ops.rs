@@ -208,6 +208,36 @@ impl Interpreter {
                         }
                     }
                 }
+                // The Hash twin of the array hole-replacement above: a hash
+                // list-initializer's `Nil` pair values were already decayed
+                // to `Any` by `build_hash_from_items` during the earlier
+                // `SetLocal` (which runs before this trait application, so
+                // `coerce_hash_var_value`'s own Nil-to-default substitution
+                // has no default to consult yet). Sweep the stored values
+                // for holes here, same as the array branch does.
+                if name.starts_with('%')
+                    && let ValueView::Hash(h) = container.view()
+                {
+                    let is_hole = |v: &Value| {
+                        v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any")
+                    };
+                    let has_holes = h.map.values().any(is_hole);
+                    if has_holes {
+                        let mut new_hash = container.clone();
+                        new_hash.with_hash_mut(|items| {
+                            let data = crate::gc::Gc::make_mut(items);
+                            for v in data.map.values_mut() {
+                                if is_hole(v) {
+                                    *v = default_value.clone();
+                                }
+                            }
+                        });
+                        let new_hash = self.tag_container_default(new_hash, default_value.clone());
+                        if !self.write_var_trait_target(code, eff_slot, &name, new_hash.clone()) {
+                            self.set_env_with_main_alias(&name, new_hash);
+                        }
+                    }
+                }
             }
             // If the variable is currently Nil (uninitialized scalar), set it to the default.
             if !name.starts_with('@') && !name.starts_with('%') {
