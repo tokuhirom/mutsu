@@ -4512,7 +4512,7 @@ impl Interpreter {
                 return None;
             }
             // Handle frugal (non-greedy) modifier: `*?`, `+?`, `??`
-            let token_frugal = if starstar_frugal {
+            let mut token_frugal = if starstar_frugal {
                 true
             } else if !matches!(quant, RegexQuant::One) && chars.peek() == Some(&'?') {
                 chars.next();
@@ -4520,8 +4520,8 @@ impl Interpreter {
             } else {
                 false
             };
-            // Handle per-token backtracking control.
-            // `:` enables ratchet on this token; `:!` disables it.
+            // Handle per-token backtracking control. `:` commits to this
+            // token; `:!` allows backtracking and `:?` makes it frugal.
             // In Validate mode a `:` immediately followed by an identifier/digit
             // is a (possibly unrecognized) modifier such as `:11` — not a ratchet
             // control — so leave it for the `:` handler at the loop top to report
@@ -4535,11 +4535,17 @@ impl Interpreter {
                 };
             let token_ratchet = if !colon_is_modifier && chars.peek() == Some(&':') {
                 chars.next();
-                if chars.peek() == Some(&'!') {
-                    chars.next();
-                    false
-                } else {
-                    true
+                match chars.peek() {
+                    Some('!') => {
+                        chars.next();
+                        false
+                    }
+                    Some('?') => {
+                        chars.next();
+                        token_frugal = true;
+                        false
+                    }
+                    _ => true,
                 }
             } else {
                 ratchet // inherit from pattern-level :ratchet flag
