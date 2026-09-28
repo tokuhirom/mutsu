@@ -202,6 +202,9 @@ impl Interpreter {
                     crate::symbol::Symbol::intern(name),
                 );
             }
+            if crate::qualified::is_qualified(name_sym) {
+                return self.compile_and_call_qualified_def(&def, args, compiled_fns);
+            }
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
         // Builtin operator-as-function `infix:<op>(...)` (e.g. `&infix:<+>`, the
@@ -393,6 +396,24 @@ impl Interpreter {
         self.compile_and_call_function_def_at(def, args, compiled_fns, None)
     }
 
+    /// [`Self::compile_and_call_function_def`] for a def resolved through a
+    /// package-qualified name (`RA::pp`), which is never cached as what its
+    /// bare name means at the callsite: nothing resolved the bare name here.
+    /// A proto re-exported as a stash value (`use List::AllUtils :all` hands
+    /// out `List::MoreUtils`' protos that way) is called through its
+    /// qualified name from a scope where its candidates are not visible, so
+    /// the name cache's own multi check passed, the first winning candidate
+    /// was cached under `pp`, and every later `pp(...)` ran it whatever the
+    /// argument types.
+    pub(crate) fn compile_and_call_qualified_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, None, false)
+    }
+
     /// [`Self::compile_and_call_function_def`] for a `CallFunc` whose
     /// positional-only arguments came straight off `caller`'s code stack, as
     /// they were before normalization (`VarRef`-tagged). That is what lets a
@@ -404,6 +425,17 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
         caller: Option<(&CompiledCode, &[Value])>,
+    ) -> Result<Value, RuntimeError> {
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, true)
+    }
+
+    fn compile_and_call_function_def_inner(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        caller: Option<(&CompiledCode, &[Value])>,
+        resolved_by_bare_name: bool,
     ) -> Result<Value, RuntimeError> {
         // Use the pending callsite line for deprecation tracking,
         // since ?LINE in env may not reflect the call site yet.
@@ -443,7 +475,9 @@ impl Interpreter {
         // exclusion above — and a hit runs the body under the routine's own
         // nested-sub table, as this function does below.
         let name_sym = def.name;
-        if !self.has_multi_candidates_cached_sym(name_sym) {
+        let cache_by_name =
+            resolved_by_bare_name && !self.has_multi_candidates_cached_sym(name_sym);
+        if cache_by_name {
             // Keyed to the *callsite* package, not `def.package`: the cache
             // answers "what does this bare name mean here", and a module's
             // non-exported sub means nothing outside its own package. The
@@ -462,7 +496,7 @@ impl Interpreter {
         // cache hit enters TRIR; this call enters it the same way.
         if let Some((code, raw)) = caller
             && cf.trir.is_some()
-            && !self.has_multi_candidates_cached_sym(name_sym)
+            && cache_by_name
             && let Some(result) = self.try_call_trir_values(
                 &cf,
                 raw,

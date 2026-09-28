@@ -1,11 +1,11 @@
-//! CORE's `trait_mod:<is>(Routine:D, :$export!)` candidate, as real Raku
+//! CORE's `trait_mod:<is>(Routine:D, :$export!, :$SYMBOL)` candidate, as real Raku
 //! source over the `__mutsu_routine_export` primitive
 //! (`vm::vm_trait_mod_export_ops`).
 
 use super::source_code_text::CodeText;
 use super::*;
 
-/// `trait_mod:<is>(Routine:D \r, :$export!)` — CORE.setting's candidate
+/// `trait_mod:<is>(Routine:D \r, :$export!, :$SYMBOL)` — CORE.setting's candidate
 /// behind `is export`, made callable directly so a distribution's own
 /// routine-trait handler can re-dispatch to it. `Exportable`'s
 /// `is exportable` records the routine and then calls
@@ -13,10 +13,13 @@ use super::*;
 /// call has nothing to dispatch to and, since it runs nested inside the
 /// outer `is exportable` dispatch, is swallowed as that trait being unknown.
 /// `__mutsu_routine_export` performs the registration a declaration's own
-/// `is export` gets (see `vm::vm_trait_mod_export_ops`).
+/// `is export` gets (see `vm::vm_trait_mod_export_ops`). `:$SYMBOL` names the
+/// stash key to export under instead of `'&' ~ r.name`: `List::AllUtils`
+/// re-exports every routine of three other modules with
+/// `trait_mod:<is>(.value, :SYMBOL(.key), :export(:all))`.
 const TRAIT_MOD_IS_EXPORT_PRELUDE: &str = r#"
-multi sub trait_mod:<is>(Routine:D \r, :$export!) is export {
-    __mutsu_routine_export(r, $export);
+multi sub trait_mod:<is>(Routine:D \r, :$export!, :$SYMBOL) is export {
+    __mutsu_routine_export(r, $export, $SYMBOL);
 }
 "#;
 
