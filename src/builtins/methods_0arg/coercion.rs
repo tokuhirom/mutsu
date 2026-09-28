@@ -386,7 +386,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // bare `[1, 2]`). `.List` on a `List` is identity, so a
                 // hand-itemized element of a List literal survives
                 // (`($[1,2],).List[0].raku` is `$[1, 2]`).
-                let deitemize = matches!(kind, crate::value::ArrayKind::Array);
+                let deitemize = kind.is_real_array();
                 let vec: Vec<Value> = items
                     .iter()
                     .enumerate()
