@@ -629,20 +629,12 @@ impl Interpreter {
                     && !self.type_matches_value(src, &value)
                     && !self.type_matches_value(target, &value)
                 {
-                    let mut err = RuntimeError::new(format!(
-                        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                        pd.name,
-                        resolved_constraint,
-                        crate::runtime::value_type_name(&value)
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                    let exception = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                        ex_attrs,
-                    );
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                        &param_display_name(pd),
+                        &resolved_constraint,
+                        &value,
+                    )
+                    .with_parameter_object(pd, Some(&*self)));
                 }
                 let original = value.clone();
                 value = self
