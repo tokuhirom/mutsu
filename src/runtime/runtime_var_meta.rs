@@ -504,7 +504,15 @@ impl Interpreter {
         }
         let meta_key = self.type_meta_key_cached(name_sym);
         let stored = self.env.get_sym(meta_key)?;
-        matches!(stored.view(), ValueView::Str(_)).then(|| stored.clone())
+        match stored.view() {
+            ValueView::Str(_) => Some(stored.clone()),
+            // A `:=` rebind override (`runtime_var_bind_meta`): the value half
+            // is the bound container's element type in effect right now.
+            ValueView::Pair(_, current) if matches!(current.view(), ValueView::Str(_)) => {
+                Some(current.clone())
+            }
+            _ => None,
+        }
     }
 
     /// [`Self::type_meta_key_for_sym`] through a one-entry memo.

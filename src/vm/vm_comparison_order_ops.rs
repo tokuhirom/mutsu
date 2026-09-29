@@ -837,7 +837,12 @@ impl Interpreter {
     ) -> Result<Option<bool>, RuntimeError> {
         let len = match (left.view(), right.view()) {
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
-                if a_kind.is_real_array() != b_kind.is_real_array() || a.len() != b.len() {
+                if a_kind.is_real_array() != b_kind.is_real_array()
+                    || a.len() != b.len()
+                    || !crate::value::eqv_container_type::same_container_parameterization(
+                        left, right,
+                    )
+                {
                     return Ok(Some(false));
                 }
                 a.len()

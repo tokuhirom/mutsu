@@ -486,38 +486,7 @@ impl Interpreter {
                 let r = &right_list[r_index(i)];
                 results.push(self.hyper_op_pair(op, l, r, dwim_left, dwim_right)?);
             }
-            // Preserve List kind when inputs are Lists (not Arrays)
-            let left_is_array = matches!(
-                left.view(),
-                ValueView::Array(_, crate::value::ArrayKind::Array)
-            );
-            let right_is_array = matches!(
-                right.view(),
-                ValueView::Array(_, crate::value::ArrayKind::Array)
-            );
-            // A typed source array (`Int @foo`) only keeps its Array shape
-            // when every result still satisfies the element type; otherwise
-            // the hyper op degrades to a plain List (rakudo#5778) rather than
-            // raising a type-check error on assignment.
-            let declared_type = [left, right]
-                .into_iter()
-                .find_map(|side| match side.view() {
-                    ValueView::Array(data, crate::value::ArrayKind::Array) => {
-                        data.value_type.clone()
-                    }
-                    _ => None,
-                });
-            let fits_declared_type = declared_type
-                .as_deref()
-                .is_none_or(|t| results.iter().all(|v| self.type_matches_value(t, v)));
-            return if (!left_is_array && !right_is_array) || !fits_declared_type {
-                Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
-                    crate::value::ArrayKind::List,
-                ))
-            } else {
-                Ok(Value::real_array(results))
-            };
+            return Ok(self.hyper_list_result(left, right, results));
         }
         // Base case: both operands are scalars.
         // A hyper assignment's leaf op yields its right operand: `@a »=» 7`

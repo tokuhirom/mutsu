@@ -538,11 +538,16 @@ impl Interpreter {
                 }
                 let mut use_real_array = kind.is_real_array();
                 // If the source array has a type constraint (e.g. `my Str @a`)
-                // and the mapped values don't conform, downgrade to a List.
+                // and the mapped values don't conform, downgrade to a List;
+                // if they do, the result keeps the source's parameterization
+                // (rakudo#5778: `Str @a` deepmaps to an `Array[Str]`).
+                let mut type_info = None;
                 if use_real_array && let Some(info) = self.container_type_metadata(target) {
                     let vt = &info.value_type;
                     if !vt.is_empty() && result.iter().any(|v| !v.isa_check(vt)) {
                         use_real_array = false;
+                    } else {
+                        type_info = Some(info);
                     }
                 }
                 let arr_kind = if use_real_array {
@@ -556,10 +561,12 @@ impl Interpreter {
                 } else {
                     crate::value::ArrayKind::List
                 };
-                Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(result)),
-                    arr_kind,
-                ))
+                let mut data = crate::value::ArrayData::new(result);
+                if let Some(info) = type_info {
+                    data.value_type = Some(info.value_type).filter(|vt| !vt.is_empty());
+                    data.declared_type = info.declared_type;
+                }
+                Ok(Value::array_with_kind(crate::gc::Gc::new(data), arr_kind))
             }
             ValueView::Seq(items) => {
                 let mut result = Vec::new();

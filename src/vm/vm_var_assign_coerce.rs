@@ -17,7 +17,7 @@ impl Interpreter {
         if !name.starts_with('@') {
             return Ok(());
         }
-        let Some(constraint) = loan_env!(self, var_type_constraint(name)) else {
+        let Some(constraint) = loan_env!(self, var_declared_type_constraint(name)) else {
             return Ok(());
         };
         if matches!(constraint.as_str(), "" | "Any" | "Mu") {
@@ -74,7 +74,7 @@ impl Interpreter {
         if !name.starts_with('%') {
             return Ok(());
         }
-        let Some(constraint) = loan_env!(self, var_type_constraint(name)) else {
+        let Some(constraint) = loan_env!(self, var_declared_type_constraint(name)) else {
             return Ok(());
         };
         // Only enforce for a plain value-type constraint (`my Int %h`). Skip

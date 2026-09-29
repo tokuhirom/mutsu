@@ -575,6 +575,7 @@ mod nanbox;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
+pub(crate) mod eqv_container_type;
 mod native_backing;
 mod promise_await;
 pub(crate) mod promise_wake;
