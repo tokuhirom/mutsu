@@ -77,8 +77,16 @@ which live in the enclosing frame and so are reachable the same way.
 - The nested routine is callable by its bare name from other code in the module's package once
   the module is loaded, not only inside its lexical scope. Rakudo rejects such a call at
   compile time; mutsu has no lexical routine scope at the package level to reject it with.
-- **A call outside the enclosing routine's dynamic extent** reads the free variable by name in
-  the caller's env: `my @t; test("x", sub {})` in the importer pushes onto the *importer's*
-  `@t`. Rakudo binds the static outer frame instead (an implementation artefact: the write is
-  visible to the next call of `set`). Recorded as a known divergence, not fixed here
-  ([#10114](https://github.com/tokuhirom/mutsu/issues/10114)).
+- **A call outside the enclosing routine's dynamic extent** originally read the free variable
+  by name in the caller's env: `my @t; test("x", sub {})` in the importer pushed onto the
+  *importer's* `@t`. Resolved by
+  [#10114](https://github.com/tokuhirom/mutsu/issues/10114) without the rejected per-activation
+  code object: the routine-nested sub's latest-activation cells (`lexsub_latest_cells`, the
+  `capturelex` emulation of ADR-0114's aliases) now carry the owning routine's package and
+  defining file, and an entry whose owner matches the running routine wins over the caller's
+  same-named binding. Installing the enclosing routine during a module load seeds each exported
+  nested sub's entries with a fresh container per free variable, shared by the sibling subs of
+  that routine — the static outer frame. So a call before any activation reads that static
+  frame, and one after the routine returned reads its latest activation. Rakudo additionally
+  lets a write to the static frame show up in the next activation (a MoarVM artefact); mutsu
+  starts every activation fresh.

@@ -38,6 +38,7 @@ impl Interpreter {
             return Ok(());
         }
         let code = &routine.code;
+        let mut statics = rustc_hash::FxHashMap::default();
         for (idx, plan) in code.sub_decl_plans.iter().enumerate() {
             // The hoist pre-pass registers a stripped copy of the same
             // declaration; the in-sequence plan carries the full traits.
@@ -48,6 +49,9 @@ impl Interpreter {
                 continue;
             }
             self.exec_register_sub_op_in_registry(code, idx as u32, compiled_fns)?;
+            // mutsu#10114: a call before any activation of `routine` reads
+            // the static outer's fresh containers, not the caller's.
+            self.seed_lexsub_static_cells(plan, compiled_fns, &mut statics);
         }
         Ok(())
     }
