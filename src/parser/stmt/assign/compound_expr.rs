@@ -483,6 +483,35 @@ pub(crate) fn build_compound_assign_expr(
                 ],
             }
         }
+        // `@a[i]:v += x`, `%h<k>:v ~= x`: an internal `__mutsu_*` call lowers a
+        // subscript adverb, and its value is what Rakudo refuses to modify
+        // (`Cannot modify an immutable Int (10)`). Assign to that value so the
+        // error names it. The call is pure, so reading it twice is safe.
+        Expr::Call { ref name, .. } if name.with_str(|n| n.starts_with("__mutsu_")) => {
+            let assign_through = |value: Expr| Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![lhs.clone(), Expr::ArrayLiteral(Vec::new()), value],
+            };
+            if matches!(
+                op,
+                CompoundAssignOp::KeywordOr
+                    | CompoundAssignOp::KeywordAnd
+                    | CompoundAssignOp::LogicalOr
+                    | CompoundAssignOp::LogicalAnd
+                    | CompoundAssignOp::DefinedOr
+                    | CompoundAssignOp::Orelse
+                    | CompoundAssignOp::Andthen
+                    | CompoundAssignOp::Notandthen
+            ) {
+                Expr::Binary {
+                    left: Box::new(lhs.clone()),
+                    op: op.token_kind(),
+                    right: Box::new(assign_through(rhs)),
+                }
+            } else {
+                assign_through(compound_assigned_value_expr(lhs.clone(), op, rhs))
+            }
+        }
         other => {
             // For short-circuit operators (or=, and=, ||=, &&=, //=, orelse=,
             // andthen=), preserve short-circuit semantics so that when the LHS

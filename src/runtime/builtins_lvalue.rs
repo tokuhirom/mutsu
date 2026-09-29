@@ -661,10 +661,9 @@ impl Interpreter {
             if rw_capable {
                 return self.assign_through_rw_result(result, value);
             }
-            return Err(RuntimeError::new(format!(
-                "X::Assignment::RO: sub '{}' is not rw",
-                name
-            )));
+            // Rakudo names the value the routine returned: `sub f { 10 }; f() = 3`
+            // is `Cannot modify an immutable Int (10)`.
+            return Err(RuntimeError::assignment_ro_value(result));
         }
         if let Some(err) = self.take_pending_dispatch_error() {
             return Err(err);
@@ -713,7 +712,7 @@ impl Interpreter {
                 if rw_capable {
                     return self.assign_through_rw_result(result, value);
                 }
-                Err(RuntimeError::assignment_ro(Some("sub is not rw")))
+                Err(RuntimeError::assignment_ro_value(result))
             }
             ValueView::WeakSub(weak) => match weak.upgrade() {
                 Some(strong) => self.assign_callable_lvalue_with_values(
