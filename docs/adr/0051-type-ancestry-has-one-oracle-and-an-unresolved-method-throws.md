@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Accepted (P1-P5 landed; source 12 of the Context table remains, see P2)
+- Status: Accepted (P1-P5 landed; every Context-table source retired except the Buf/Blob narrowness spellings, see P2)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -337,9 +337,12 @@ Each phase is independently landable and independently valuable.
   `polymod` interceptor, and throws `X::Method::NotFound`. `Seq`/`Map` gained their
   `Iterable` `hyper`/`race` rows and the false `("Str", "bytes")` row is gone.
 
-  Not done: the synthesised `[type_name, "Cool", "Any", "Mu"]` fallback of
-  `is_builtin_type_method` (source 12), reached only for a name `class_mro_readonly` knows
-  nothing about. (Source 11, the light path's `"Any"|"Mu"|"Cool" => true`, no longer exists.)
+  Source 11, the light path's `"Any"|"Mu"|"Cool" => true`, no longer exists. Source 12, the
+  synthesised `[type_name, "Cool", "Any", "Mu"]` fallback of `is_builtin_type_method`, is gone
+  (#10132): the `.^lookup`/`.^can` builtin-row probe now walks `builtin_method_ancestors`, the
+  chain `.^mro` reports (parents, spliced with catalog chains, ending in `Any`/`Mu`). That also
+  gave the bootstrap classes whose cached registry MRO stops at the class itself (`Promise`,
+  `Channel`, `Lock`, `Thread`, `Supplier`, ...) their `Any`/`Mu` methods back.
 
 - **P3 — Fill the two genuine missing rows. LANDED (PR #6795, 2026-08-21).** Added
   `("Instant","DateTime",1,0)` and `("Date","IO",8,12)` to `RAW_ROWS`
