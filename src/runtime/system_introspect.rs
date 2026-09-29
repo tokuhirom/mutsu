@@ -62,7 +62,7 @@ impl Interpreter {
             .code
             .as_ref()
             .map(|frame| self.code_frame_value(frame))
-            .unwrap_or(Value::NIL);
+            .unwrap_or_else(|| Self::routine_frame_code(entry));
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth), entry.package);
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(entry.line));
@@ -74,6 +74,32 @@ impl Interpreter {
         attrs.insert("__depth".to_string(), Value::int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
+    }
+
+    /// The code object for a frame whose entry carries no code: a method (its
+    /// body pushes no code frame) or the unit's mainline (`<unit>`). Only
+    /// name and package are known, which is what `.code.name` needs.
+    // Cost: O(1).
+    fn routine_frame_code(entry: &CallFrameEntry) -> Value {
+        if entry.synthetic {
+            return Value::NIL;
+        }
+        let (package, name) = match entry.routine {
+            Some(f) if !f.is_block && !f.name.is_empty() && f.name != "<unit>" => {
+                (f.package, f.name)
+            }
+            Some(f) if f.is_block => return Value::NIL,
+            _ => (Symbol::intern("GLOBAL"), Symbol::intern("<unit>")),
+        };
+        Value::make_sub(
+            package,
+            name,
+            std::sync::Arc::new(Vec::new()),
+            std::sync::Arc::new(Vec::new()),
+            vec![],
+            false,
+            Env::new(),
+        )
     }
 
     /// Build a synthetic CallFrame for an enclosing `for` block. Its `code` is
