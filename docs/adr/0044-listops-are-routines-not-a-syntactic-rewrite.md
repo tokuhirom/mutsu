@@ -297,7 +297,14 @@ opcode; `pop`/`shift`/`unshift`/`append`/`prepend`/`splice` compile to
 `CallMethodMut`), pinned by `tests/adr0044_listop_fast_path.rs`. Performance
 on that hot path is unchanged, as designed.
 
-**D3 remains a recorded non-goal**, pending ADR-0036/ADR-0040's element
+**D3 update (2026-09, #9904).** The "fails loudly" claim above was wrong: `push(@a[2], 1)`
+under a competing `multi push` silently did nothing. With a competing candidate in scope
+the compiler now vivifies an *undefined* subscript slot to `[]` before routine dispatch
+(`slot // (slot = [])`) and passes the slot's value on, so the core candidate autovivifies
+and a defined slot still reaches user candidates. Pinned by
+`t/routines/dispatch/listop-multi-subscript-autoviv.t`. The `push($obj.attr, ...)` form is unchanged.
+
+**D3 otherwise remains a recorded non-goal**, pending ADR-0036/ADR-0040's element
 containers: `push(@a[2], ...)` / `push($obj.attr, ...)` under a competing
 user/imported `multi` now fails loudly (an ordinary method-dispatch error,
 since the synthetic temp binding sees a non-Array value) instead of silently

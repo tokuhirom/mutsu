@@ -1452,6 +1452,40 @@ impl Compiler {
                 self.compile_expr(&method_call);
             }
         }
+        // A user/imported `multi push` competes with the core routine, so the
+        // rewrites below are suppressed and the call goes through routine
+        // dispatch. A subscript first argument (`push(@a[2], 1)`) must still
+        // autovivify for the core candidate to have an Array to push into
+        // (ADR-0044 D3): vivify an *undefined* slot to `[]` up front and pass
+        // the slot's value on. A defined slot (which a user candidate such as
+        // `Str $x` can match) is passed through untouched.
+        else if suppress_listop_rewrite
+            && args.len() >= 2
+            && matches!(
+                name.resolve().as_str(),
+                "push" | "unshift" | "append" | "prepend"
+            )
+            && let Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } = &args[0]
+        {
+            let viv = Expr::Binary {
+                left: Box::new(args[0].clone()),
+                op: TokenKind::SlashSlash,
+                right: Box::new(Expr::IndexAssign {
+                    target: target.clone(),
+                    index: index.clone(),
+                    value: Box::new(Expr::BracketArray(Vec::new(), false)),
+                    is_positional: *is_positional,
+                }),
+            };
+            let mut new_args = args.to_vec();
+            new_args[0] = viv;
+            self.compile_expr_call_inner(name, &new_args, true);
+        }
         // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend/splice -> @arr.method(val...)
         // splice needs only 1 arg (the array); others need at least 2
         else if !args.is_empty()
