@@ -19,7 +19,10 @@ impl Compiler {
             Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
             _ => return stmt.clone(),
         };
-        if bare.contains("::") {
+        // A qualified name inside a package is relative to that package
+        // (`unit module M; class M::C {}` declares `M::M::C`); only an
+        // explicit `GLOBAL::` prefix is absolute.
+        if bare.starts_with("GLOBAL::") {
             return stmt.clone();
         }
         let qualified = format!("{}::{}", self.current_package, bare);
@@ -4554,10 +4557,7 @@ impl Compiler {
                     // `N::C` key and the second declaration is rejected.
                     let redeclaration_key = if let Some(absolute) = cname.strip_prefix("GLOBAL::") {
                         absolute.to_string()
-                    } else if self.current_package == "GLOBAL"
-                        || cname == self.current_package
-                        || cname.starts_with(&format!("{}::", self.current_package))
-                    {
+                    } else if self.current_package == "GLOBAL" {
                         cname.clone()
                     } else {
                         format!("{}::{}", self.current_package, cname)
