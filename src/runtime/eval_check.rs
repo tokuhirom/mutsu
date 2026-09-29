@@ -297,6 +297,7 @@ fn walk_validate_sub_param_types(
     declared: &std::collections::HashSet<String>,
     packages: &std::collections::HashSet<String>,
     classes: &std::collections::HashSet<String>,
+    inherited_captures: &std::collections::HashSet<String>,
 ) -> Result<(), RuntimeError> {
     for stmt in stmts {
         match stmt {
@@ -307,7 +308,13 @@ fn walk_validate_sub_param_types(
                 custom_traits,
                 ..
             } => {
-                interp.validate_param_type_constraints(param_defs, declared, packages, classes)?;
+                interp.validate_param_type_constraints(
+                    param_defs,
+                    declared,
+                    packages,
+                    classes,
+                    inherited_captures,
+                )?;
                 let via_trait = custom_traits
                     .iter()
                     .any(|(t, _)| t == "__return_via_trait" || t == "__return_via_of");
@@ -316,11 +323,32 @@ fn walk_validate_sub_param_types(
                     param_defs,
                     declared,
                     via_trait,
+                    inherited_captures,
                 )?;
-                walk_validate_sub_param_types(interp, body, declared, packages, classes)?;
+                let mut body_captures = inherited_captures.clone();
+                body_captures.extend(
+                    param_defs
+                        .iter()
+                        .filter_map(|pd| pd.captured_type_name().map(str::to_string)),
+                );
+                walk_validate_sub_param_types(
+                    interp,
+                    body,
+                    declared,
+                    packages,
+                    classes,
+                    &body_captures,
+                )?;
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                walk_validate_sub_param_types(interp, body, declared, packages, classes)?;
+                walk_validate_sub_param_types(
+                    interp,
+                    body,
+                    declared,
+                    packages,
+                    classes,
+                    inherited_captures,
+                )?;
             }
             _ => {}
         }
@@ -473,7 +501,14 @@ impl Interpreter {
             &mut packages,
             &mut classes,
         );
-        walk_validate_sub_param_types(self, stmts, &declared, &packages, &classes)
+        walk_validate_sub_param_types(
+            self,
+            stmts,
+            &declared,
+            &packages,
+            &classes,
+            &std::collections::HashSet::new(),
+        )
     }
 
     /// Reject a type-parameter argument that names an undeclared type, e.g.

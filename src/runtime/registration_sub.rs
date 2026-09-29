@@ -342,6 +342,7 @@ impl Interpreter {
         declared_types: &std::collections::HashSet<String>,
         declared_packages: &std::collections::HashSet<String>,
         declared_classes: &std::collections::HashSet<String>,
+        inherited_captures: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         // Type-capture names declared in this signature (e.g. `::T`) are valid
         // type names for the rest of the signature.
@@ -425,6 +426,7 @@ impl Interpreter {
             // uppercase value-terms (`Inf`, `NaN`, `True`, `False`) and built-in
             // enum values (`LittleEndian`, `Less`, ... — kept in the global base).
             if captures.contains(tc)
+                || inherited_captures.contains(tc)
                 || declared_types.contains(tc)
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
@@ -518,6 +520,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         declared_types: &std::collections::HashSet<String>,
         via_trait: bool,
+        inherited_captures: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         let Some(rt) = return_type else {
             return Ok(());
@@ -545,6 +548,7 @@ impl Interpreter {
             return Ok(());
         }
         if captures.contains(rt)
+            || inherited_captures.contains(rt)
             || declared_types.contains(rt)
             || self.is_resolvable_type(rt)
             || self.has_type(rt)
