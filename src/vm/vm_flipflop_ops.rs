@@ -69,6 +69,31 @@ impl Interpreter {
                 Value::truth(all_true)
             } else if call_args.len() == 2 {
                 let right_val = right_vals.first().cloned().unwrap_or(Value::NIL);
+                let (left_plain, right_plain) = (
+                    Self::unwrap_var_ref_value(left_val.clone()).into_descalarized(),
+                    Self::unwrap_var_ref_value(right_val.clone()).into_descalarized(),
+                );
+                // A user `infix:<op>` that names no Junction parameter still
+                // autothreads a Junction operand, one leaf at a time, so
+                // `'a' eq any(...)` with a user `multi infix:<eq>(C:D, C:D)` in
+                // scope stays a Junction rather than binding it as a whole.
+                if self.user_infix_override(&infix_name)
+                    && (matches!(left_plain.view(), ValueView::Junction { .. })
+                        || matches!(right_plain.view(), ValueView::Junction { .. }))
+                    && !self.user_infix_accepts_junction(&infix_name, &left_plain, &right_plain)
+                {
+                    let threaded = self.thread_user_infix_junction(
+                        &name,
+                        modifier.as_deref(),
+                        left_plain,
+                        right_plain,
+                        code,
+                        compiled_fns,
+                    )?;
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(threaded);
+                    return Ok(());
+                }
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
                 } else {
@@ -118,6 +143,89 @@ impl Interpreter {
         self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Whether the user candidate `infix:<op>` resolves for `left`/`right`
+    /// with a parameter typed `Junction`/`Mu` on a Junction operand's side,
+    /// i.e. it takes the Junction as a whole instead of autothreading it.
+    // Cost: O(c), c = candidates of the operator.
+    fn user_infix_accepts_junction(
+        &mut self,
+        infix_name: &str,
+        left: &Value,
+        right: &Value,
+    ) -> bool {
+        let args = [left.clone(), right.clone()];
+        let Some(def) = loan_env!(self, resolve_function_with_types(infix_name, &args)) else {
+            return false;
+        };
+        let takes = |idx: usize| {
+            def.param_defs
+                .iter()
+                .filter(|p| !p.named)
+                .nth(idx)
+                .and_then(|p| p.type_constraint.as_deref())
+                .is_some_and(|t| matches!(t.split(':').next().unwrap_or(t), "Junction" | "Mu"))
+        };
+        (matches!(left.view(), ValueView::Junction { .. }) && takes(0))
+            || (matches!(right.view(), ValueView::Junction { .. }) && takes(1))
+    }
+
+    /// Autothread a Junction operand through a user `infix:<op>`, one eigenstate
+    /// at a time, re-entering the ordinary two-operand path for each leaf.
+    // Cost: O(k * c), k = eigenstates, c = cost of one leaf call.
+    fn thread_user_infix_junction(
+        &mut self,
+        name: &str,
+        modifier: Option<&str>,
+        left: Value,
+        right: Value,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Junction { kind, values } = left.view() {
+            let mut out = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                out.push(self.thread_user_infix_junction(
+                    name,
+                    modifier,
+                    v.clone(),
+                    right.clone(),
+                    code,
+                    compiled_fns,
+                )?);
+            }
+            return Ok(Value::junction(kind, out));
+        }
+        if let ValueView::Junction { kind, values } = right.view() {
+            let mut out = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                out.push(self.thread_user_infix_junction(
+                    name,
+                    modifier,
+                    left.clone(),
+                    v.clone(),
+                    code,
+                    compiled_fns,
+                )?);
+            }
+            return Ok(Value::junction(kind, out));
+        }
+        let lookup_name = Self::canonical_infix_lookup_name(name);
+        let infix_name = format!("infix:<{}>", lookup_name.as_ref());
+        let mut call_args = vec![left.clone(), right.clone()];
+        if modifier == Some("R") {
+            call_args.swap(0, 1);
+        }
+        if let Some(v) = self.try_user_infix(&infix_name, &call_args[0], &call_args[1])? {
+            return Ok(v);
+        }
+        self.call_infix_fallback(
+            lookup_name.as_ref(),
+            Some(&infix_name),
+            call_args,
+            compiled_fns,
+        )
     }
 
     fn flip_flop_scope_key(&self) -> String {

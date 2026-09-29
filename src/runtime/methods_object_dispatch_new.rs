@@ -1867,6 +1867,16 @@ impl Interpreter {
                                 if self.class_does_baggy_or_setty(&cn) {
                                     return self.construct_baggy_instance(&cn, &args);
                                 }
+                                // The inherited constructor multis of a builtin
+                                // temporal ancestor stay candidates next to the
+                                // subclass's own (`class Workdate is Date` with
+                                // only some `multi method new`): `Workdate.new($date)`
+                                // reaches `Date.new($date)`, blessed as the subclass.
+                                if let Some(built) =
+                                    self.construct_via_temporal_ancestor(&cn, &args)
+                                {
+                                    return built;
+                                }
                                 return Err(constructor_positional_error(&class_name.resolve()));
                             }
                             // Fall through to default constructor below
