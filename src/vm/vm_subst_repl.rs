@@ -167,9 +167,8 @@ impl Interpreter {
             // never collide with a closure's carrier-compile-cache entry.
             cache_id: crate::value::next_instance_id(),
         });
-        self.subst_repl_plans
-            .entry(src.to_string())
-            .or_default()[thunk as usize] = Some(plan.clone());
+        self.subst_repl_plans.entry(src.to_string()).or_default()[thunk as usize] =
+            Some(plan.clone());
         plan
     }
 

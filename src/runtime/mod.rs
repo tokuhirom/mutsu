@@ -2978,7 +2978,8 @@ pub struct Interpreter {
     /// plan a stable carrier-compile-cache id.
     /// Indexed by `thunk as usize`: the same source text reads differently as
     /// a `qq` replacement and as an assignment-form thunk.
-    pub(crate) subst_repl_plans: HashMap<String, [Option<crate::vm::vm_subst_repl::SubstReplPlan>; 2]>,
+    pub(crate) subst_repl_plans:
+        HashMap<String, [Option<crate::vm::vm_subst_repl::SubstReplPlan>; 2]>,
     /// The map/grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`)
     /// compile the callback block once per `.map()`/`.grep()`/`.first()` CALL
     /// and then run every item through the same compiled bytecode via
