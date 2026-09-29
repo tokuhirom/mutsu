@@ -1046,6 +1046,19 @@ impl Interpreter {
                 None => break,
             }
         }
+        // The routine's own lexical package encloses it just as `cur` does. A
+        // method of a role mixed into a value runs under the mixin's synthetic
+        // name (`Any+{R::W}`), whose outward walk never reaches the role's
+        // enclosing package `R`, so the lexical package's ancestors are the
+        // only way a `multi sub` declared in `R`'s body stays reachable.
+        if let Some(pkg) = lexical {
+            let base = Symbol::intern(pkg.split('[').next().unwrap_or(pkg));
+            for sym in crate::qualified::package_ancestors(base).skip(1) {
+                if !crate::qualified::is_global_package(sym) && !out.contains(&sym) {
+                    out.push(sym);
+                }
+            }
+        }
         out.push(global);
         out.into()
     }
