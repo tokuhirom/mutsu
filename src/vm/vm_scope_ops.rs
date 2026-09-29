@@ -56,6 +56,11 @@ impl Interpreter {
                 })
             })
             .collect();
+        // The event loop catches what a `whenever` callback throws (it becomes
+        // `X::React::Died`, or goes to a QUIT), so it blocks the inline CATCH
+        // chain (ADR-0072): no handler outside the `react` sees the raw error
+        // at its throw.
+        self.push_catch_marker();
         let event_result = if body_done {
             // Drain any queued subscriptions so they don't leak
             self.run_react_event_loop_drain();
@@ -63,6 +68,7 @@ impl Interpreter {
         } else {
             self.run_react_event_loop()
         };
+        self.catch_handlers.pop();
         // Slice F (react/whenever coherence): the `whenever` callbacks ran as
         // compiled bytecode on *this* VM (synchronous `from-list` emit) and
         // mutated captured-outer caller lexicals (`my $i; whenever ... { $i++ }`)

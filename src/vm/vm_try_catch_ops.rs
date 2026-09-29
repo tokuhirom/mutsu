@@ -681,6 +681,14 @@ impl Interpreter {
             control_begin,
             compiled_fns: self.shared_fns_snapshot(compiled_fns),
         });
+        self.push_catch_handler_entry(token, handler);
+    }
+
+    fn push_catch_handler_entry(
+        &mut self,
+        token: u64,
+        handler: Option<crate::vm::CatchHandlerCode>,
+    ) {
         let return_target = handler
             .as_ref()
             .and_then(|_| crate::runtime::return_target::return_target_in_env(self.env()));
@@ -693,5 +701,26 @@ impl Interpreter {
             installing_package: self.current_package_sym(),
             handler,
         });
+    }
+
+    /// ADR-0072: register a boundary that catches every exception raised
+    /// below it by other means than a `CATCH` block (a LEAVE queue guard), so
+    /// the inline handler chain stops there. The caller pops it.
+    // Cost: O(1).
+    pub(crate) fn push_catch_marker(&mut self) {
+        self.catch_handler_seq += 1;
+        let token = self.catch_handler_seq;
+        self.push_catch_handler_entry(token, None);
+    }
+
+    /// Run `f` behind a catch marker ([`Self::push_catch_marker`]): for Rust
+    /// code that calls user code and handles its failure itself, so no
+    /// `CATCH` outside runs for an exception that never reaches it.
+    // Cost: O(1) plus `f`.
+    pub(crate) fn with_catch_marker<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        self.push_catch_marker();
+        let r = f(self);
+        self.catch_handlers.pop();
+        r
     }
 }

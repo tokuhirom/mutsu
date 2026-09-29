@@ -65,9 +65,7 @@ impl Interpreter {
         // handler falls back to an env read at the throw site, where a
         // same-named lexical of the dying routine shadows the capture.
         let installing_upvalues = installing.and_then(|(base, depth)| {
-            self.call_frames
-                .get(depth)
-                .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))
+            self.installing_call_frame(base, depth)
                 .map(|f| f.saved_upvalues.clone())
         });
         // The installing frame lies wholly below the executing one, or its
@@ -148,6 +146,15 @@ impl Interpreter {
         }
     }
 
+    /// The call frame the installing activation (slot base `base`) pushed
+    /// when it made its call at depth `depth`, if that is really its own.
+    // Cost: O(1).
+    fn installing_call_frame(&self, base: usize, depth: usize) -> Option<&crate::vm::VmCallFrame> {
+        self.call_frames
+            .get(depth)
+            .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))
+    }
+
     /// Make the installing activation's env the executing one for an inline
     /// handler run, so the handler's by-name reads (`GetGlobal`,
     /// `GetHashVar`, ...) resolve its own lexicals: at the throw site a
@@ -160,12 +167,7 @@ impl Interpreter {
     /// handler then runs in the throw site's env, as before.
     // Cost: O(e), e = entries in the throw site's env tiers.
     fn enter_installing_env(&mut self, base: usize, depth: usize) -> Option<HandlerEnv> {
-        let installing = self
-            .call_frames
-            .get(depth)
-            .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))?
-            .saved_env
-            .clone();
+        let installing = self.installing_call_frame(base, depth)?.saved_env.clone();
         let dynamics = self.env().tier_dynamic_entries();
         let mut env = crate::env::Env::scoped_child(installing);
         for (k, v) in &dynamics {
@@ -286,6 +288,18 @@ impl Interpreter {
             // of the installing frame (`enter_installing_frame`).
             let same_frame = entry.installing_code == self.current_code
                 && entry.installing_base == self.locals.base();
+            // A cross-frame run needs the installing activation's env, found in
+            // the call frame it pushed next. Where no such frame exists (the
+            // throw ran on a path that pushed none, like a lazy `gather` body
+            // reified later), the handler's by-name reads could not be
+            // resolved in its own scope: stop the chain and unwind to it.
+            if !same_frame
+                && self
+                    .installing_call_frame(entry.installing_base, entry.installing_call_depth)
+                    .is_none()
+            {
+                break;
+            }
             let token = entry.token;
             let return_target = entry.return_target;
             let installing_base = entry.installing_base;
