@@ -247,8 +247,26 @@ impl Interpreter {
     /// this sound at the primitive) reaches every alias by construction and
     /// does not depend on which frame is running — the same move that made
     /// `grep`'s element promotion frame-independent (ADR-0058 §9.2).
-    // Cost: O(e), e = elements of the source container.
+    // Cost: O(c) for a later chunk of a prefix-pulled map, c = elements of
+    // the chunk; O(e) otherwise, e = elements of the source container.
     fn publish_rw_map_writeback(&mut self, source: &Value, items: Vec<Value>, start: usize) {
+        // A later chunk of a prefix-pulled map (a `for` loop pulls one
+        // element per iteration, #9936): write just those slots. Rebuilding
+        // the whole container per chunk made the loop quadratic.
+        if start > 0 && !crate::runtime::utils::is_shaped_array(source) {
+            let ValueView::Array(data, _) = source.view() else {
+                return;
+            };
+            // SAFETY: as below — no other borrow of the `Gc`'s contents is
+            // live; the chunk's elements were cloned out before the map ran.
+            let slots = unsafe { crate::value::gc_contents_mut(&data) }.items_mut();
+            for (i, v) in items.into_iter().enumerate() {
+                if let Some(slot) = slots.get_mut(start + i) {
+                    *slot = v;
+                }
+            }
+            return;
+        }
         // A shaped array keeps its shape/structure — only the leaf values
         // change — so rebuild the rows from the mutated leaves instead of
         // flattening it into an ordinary list, then publish the rows. A
@@ -260,21 +278,8 @@ impl Interpreter {
                 ValueView::Array(rows, _) => rows.to_vec(),
                 _ => return,
             }
-        } else if start == 0 {
-            items
         } else {
-            // A later chunk of a prefix-pulled map: splice the mutated
-            // elements into the current contents.
-            let ValueView::Array(current, _) = source.view() else {
-                return;
-            };
-            let mut all = current.to_vec();
-            for (i, v) in items.into_iter().enumerate() {
-                if let Some(slot) = all.get_mut(start + i) {
-                    *slot = v;
-                }
-            }
-            all
+            items
         };
         let ValueView::Array(data, _) = source.view() else {
             return;
