@@ -561,7 +561,9 @@ impl RuntimeError {
         } else {
             ("a type object", "an object instance", "multi")
         };
-        let display_param = if param.starts_with(['$', '@', '%', '&']) {
+        let display_param = if crate::value::signature::is_anonymous_param_name(param) {
+            "<anon>".to_string()
+        } else if param.starts_with(['$', '@', '%', '&']) {
             param.to_string()
         } else {
             format!("${}", param)
@@ -580,8 +582,8 @@ impl RuntimeError {
             }
         } else {
             format!(
-                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a '.new'?",
-                display_param, routine, kind, expected, actual_kind, got
+                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a\n'{}'?",
+                display_param, routine, kind, expected, actual_kind, got, hint
             )
         };
         let mut attrs = ValueMap::default();
