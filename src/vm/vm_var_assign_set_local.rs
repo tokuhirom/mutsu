@@ -3387,20 +3387,17 @@ impl Interpreter {
         // bind into `my &name = ...`.
         if reset != crate::opcode::DeclReset::Keep && !name.starts_with('&') {
             let had_binding = self.env().contains_key_sym(name_sym);
-            // The first execution of a body-local declaration must leave an
-            // outer same-named binding visible while the initializer runs.
-            // Once this declaration has run in a loop body, however, its
-            // binding is reused by the next iteration and must be reset before
-            // a failing initializer can leave the prior iteration's value in
-            // place -- unless the compiler proved nothing can observe that
-            // (`DeclReset::SeedIfUnbound`), which spares a hot loop body an env
-            // write per declaration per iteration (#9537).
-            let reset_for_reused_loop_binding = reset == crate::opcode::DeclReset::Fresh
-                && had_binding
-                && self
-                    .loop_local_vars
-                    .last()
-                    .is_some_and(|set| set.contains(&name_sym));
+            // The new binding is in scope for its own initializer: a nested
+            // block reading the name there (`my $x = do { $x }`) or a dynamic
+            // lookup (`my $*X = $*X + 1`) sees a fresh `Any`, never an outer
+            // same-named binding (a direct `my $x = $x` is rejected at compile
+            // time, X::Syntax::Variable::Initializer). The same reset keeps a
+            // loop body's failed initializer from leaving the prior
+            // iteration's value in place. `DeclReset::SeedIfUnbound` only
+            // seeds a missing binding: the compiler proved nothing can observe
+            // it before the store, which spares a hot loop body an env write
+            // per declaration per iteration (#9537).
+            let reset_binding = reset == crate::opcode::DeclReset::Fresh || !had_binding;
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
@@ -3408,7 +3405,7 @@ impl Interpreter {
             } else {
                 Value::package(crate::symbol::wk::any())
             };
-            if (reset_for_reused_loop_binding || !had_binding)
+            if reset_binding
                 && let Some(slot) = local_slot
                 && let Some(local) = self.locals.get_mut(slot as usize)
             {
@@ -3418,7 +3415,7 @@ impl Interpreter {
                 // here instead of leaking a previous loop iteration's value.
                 *local = default.clone();
             }
-            if reset_for_reused_loop_binding || !had_binding {
+            if reset_binding {
                 crate::env::note_env_key(name);
                 self.env_mut().insert_sym(name_sym, default);
             }

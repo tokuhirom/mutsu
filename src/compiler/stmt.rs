@@ -1644,6 +1644,14 @@ impl Compiler {
                 // loop re-wraps any throw. Placed AFTER the X::Redeclaration /
                 // X::ParametricConstant early-returns above so those compile-time
                 // errors are not themselves wrapped.
+                // The new binding is in scope for its own initializer, so a
+                // nested block there (`my $x = do { $x }`, `my $x = sub { $x }`)
+                // must resolve `$x` to it, not to a shadowed outer `$x`. (A
+                // direct `my $x = $x` never gets here: the parser rejects it
+                // with X::Syntax::Variable::Initializer.) A sigilless `my \x`
+                // shares its local name with `$x`, which its initializer may
+                // legitimately read, so it is declared after the initializer.
+                let early_slot = (!sigilless_bind_vardecl).then(|| self.declare_local(name));
                 let constant_init_phaser_start = if is_constant_decl {
                     Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
                 } else {
@@ -1845,7 +1853,10 @@ impl Compiler {
                         ));
                     }
                 }
-                let slot = self.declare_local(name);
+                let slot = match early_slot {
+                    Some(slot) => slot,
+                    None => self.declare_local(name),
+                };
                 if !*is_state
                     && !*is_our
                     && !is_constant_decl

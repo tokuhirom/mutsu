@@ -809,9 +809,11 @@ pub(crate) enum DeclReset {
     /// declaring block can run after a failed initializer (no CATCH, CONTROL
     /// or phaser there), so that value is never observable (#9537).
     SeedIfUnbound,
-    /// As `SeedIfUnbound`, and also reset a binding the previous iteration of
-    /// the enclosing loop left behind, so a failed initializer leaves `Any`
-    /// for a CATCH/phaser (or a `try` expression) to observe.
+    /// Always bind a fresh `Any` before the initializer runs, replacing any
+    /// existing binding: an outer same-named one (the new binding is in
+    /// scope for its own initializer, so `my $*X = $*X` reads `Any`) or one
+    /// the previous iteration of the enclosing loop left behind (so a failed
+    /// initializer leaves `Any` for a CATCH/phaser or `try` to observe).
     Fresh,
 }
 
