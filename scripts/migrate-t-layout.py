@@ -98,6 +98,9 @@ RULES = [
 # Basename (without `.t`) -> category. Judgment calls and rule mistakes.
 # Keep sorted; every entry should be obvious from the file's subject.
 OVERRIDES: dict[str, str] = {
+    # A Junction operand autothreading through a user `infix:<eq>` multi is a
+    # Junction question, not a threading (`concurrency`) one.
+    "junction-threads-through-user-infix-eq": "types",
     # A method return constraint must resolve a nested class in its declaring
     # class, including when its leaf name shadows a core type.
     "nested-class-return-type": "oo/class",
