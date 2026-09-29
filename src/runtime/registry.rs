@@ -193,7 +193,7 @@ pub(crate) struct Registry {
     /// Declared (`enum Name ...`) enums live in `enum_types` instead.
     pub(crate) how_enums: HashMap<String, super::methods_enumhow::HowEnumState>,
     /// `subset Name of Base where { ... }` declarations.
-    pub(crate) subsets: HashMap<String, SubsetDef>,
+    pub(crate) subsets: HashMap<String, std::sync::Arc<SubsetDef>>,
 
     /// User/builtin class definitions: class name -> [`ClassDef`] (parents, MRO,
     /// methods, attributes, ...). Read on hot method-dispatch paths; callers take

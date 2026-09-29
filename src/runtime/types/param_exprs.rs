@@ -31,10 +31,19 @@ impl Interpreter {
         if let Some(chunks) = pd.code.get()
             && let Some(chunk) = chunks.where_chunk.as_ref()
         {
-            let value = self.eval_precompiled_block_value(chunk, record_free_var_writes);
             if !chunks.where_inline_predicate {
-                return value;
+                return self.eval_precompiled_block_value(chunk, record_free_var_writes);
             }
+            // A WhateverCode body is one expression over `$_` that declares
+            // nothing; unless it assigns a free variable (whose write the
+            // carrier would record for the caller), none of the carrier's
+            // scope bookkeeping has anything to undo, so run it lean — the
+            // way a subset's inline predicate runs.
+            let value = if chunk.code.free_var_writes.is_empty() {
+                self.eval_precompiled_block_fast(&chunk.code, &chunk.fns)
+            } else {
+                self.eval_precompiled_block_value(chunk, record_free_var_writes)
+            };
             // The chunk is the WhateverCode's body, so its value IS the
             // verdict. Answer with a Bool, which every caller's smartmatch
             // passes through unchanged. A throw inside the body rejects the
