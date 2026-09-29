@@ -3364,7 +3364,7 @@ impl Interpreter {
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
             )),
-            param_bound_aggregates: ValueMap::default(),
+            param_bound_aggregates: Default::default(),
             suppress_shared_publish: false,
             type_body_written_lexicals: Default::default(),
             closure_captured_state: HashMap::new(),
