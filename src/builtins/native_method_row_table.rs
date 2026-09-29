@@ -1035,6 +1035,11 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Seq", "race", 1, 8),
     ("Map", "hyper", 1, 8),
     ("Map", "race", 1, 8),
+    // ...and the `Iterable` role type object answers all three itself
+    // (`Iterable.hyper.configuration` is how `hyperize` reads its defaults).
+    ("Iterable", "lazy", 1, 9),
+    ("Iterable", "hyper", 1, 9),
+    ("Iterable", "race", 1, 9),
     ("Uni", "Str", 3, 0),
     ("Supply", "list", 1, 0),
     ("Junction", "gist", 1, 0),
