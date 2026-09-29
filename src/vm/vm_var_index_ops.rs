@@ -1312,6 +1312,9 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        if is_positional && matches!(target.view(), ValueView::Array(..)) {
+            Self::reject_pair_positional_index(&index)?;
+        }
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
