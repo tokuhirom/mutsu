@@ -194,6 +194,13 @@ impl Compiler {
                     && !is_promoted
                     && (shadows_outer
                         || Self::container_slot_read_applies(name)
+                        || (name.starts_with('@')
+                            && crate::runtime::utils::has_anon_marker(name)
+                            && type_constraint.as_ref().is_some_and(|tc| {
+                                crate::runtime::native_types::is_native_array_element_type(
+                                    &self.resolve_type_alias_constraint(tc),
+                                )
+                            }))
                         || is_constant_decl
                         || self.call_arg_decl_slots.contains(name))
                 {
