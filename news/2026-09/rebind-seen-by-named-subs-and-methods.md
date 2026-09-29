@@ -21,4 +21,4 @@ Two neighbours fixed on the way, both found by List::Agnostic's
   directly. Positional reached through a composed role's own roles
   (`role R does Positional`, `role S does R`, `class C does S`) is now accepted.
 
-Pin: `t/vm/binding/rebind-seen-by-named-subs-and-methods.t`.
+Pin: `t/vm/binding/bind-rebind-seen-by-named-subs-and-methods.t`.
