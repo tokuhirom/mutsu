@@ -242,9 +242,22 @@ impl Interpreter {
             let mut key = Symbol::intern(base_key);
             let mut idx = 1usize;
             loop {
-                if let std::collections::hash_map::Entry::Vacant(entry) = funcs.entry(key) {
-                    entry.insert(def);
-                    break;
+                match funcs.entry(key) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(def);
+                        break;
+                    }
+                    // A parametric role body re-runs once per composition, so
+                    // the same `multi sub` declaration arrives again under the
+                    // same package. The identical candidate is not a second
+                    // overload; keeping both makes every call ambiguous.
+                    std::collections::hash_map::Entry::Occupied(existing)
+                        if existing.get().package == def.package
+                            && existing.get().body_fingerprint() == def.body_fingerprint() =>
+                    {
+                        return;
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {}
                 }
                 key = Symbol::intern(&format!("{}__m{}", base_key, idx));
                 idx += 1;
