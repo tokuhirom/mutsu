@@ -5,7 +5,7 @@ use Test;
 # follow the currently bound container. `eqv` compares the container's type
 # parameterization too (#9852).
 
-plan 26;
+plan 32;
 
 # --- rebinding an untyped @/% variable ---
 {
@@ -86,4 +86,19 @@ plan 26;
     nok Hash[Int].new((a => 1)) eqv {a => 1}, 'Hash[Int] eqv Hash is False';
     my int @n = 1;
     nok @n eqv [1], 'native array eqv Array is False';
+}
+
+# --- producers of typed arrays keep the parameterization eqv now sees ---
+{
+    my Int @i = 1, 2, 3;
+    is-deeply @i >>*>> 4, (my Int @ = 4, 8, 12), 'hyper op keeps Array[Int] when results fit';
+    is-deeply @i >>/>> 4, (.25, .5, .75), 'hyper op degrades to a List when they do not';
+    my &op = &infix:<+>;
+    is-deeply @i >>[&op]<< @i, (my Int @ = 2, 4, 6), 'code-ref hyper keeps Array[Int] too';
+    is (1 <<+<< @i).WHAT.raku, 'Array[Int]', 'a distributed scalar takes the array side type';
+    my Str @s = <a bb>;
+    is-deeply @s.deepmap("x" ~ *), (my Str @ = <xa xbb>), 'deepmap keeps Array[Str]';
+    my grammar G { rule TOP { ^ \d+ [ <operator> \d+ ]* }; token operator { '+' } }
+    my $m = G.parse('2 + 4');
+    is-deeply EVAL($m.raku), $m, 'a Match round-trips through .raku under the stricter eqv';
 }
