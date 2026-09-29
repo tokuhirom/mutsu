@@ -2259,6 +2259,7 @@ impl Interpreter {
                             .collect();
                         return Ok(Value::seq(parts));
                     }
+                    // Cost: O(n), n = path length.
                     "splitpath" => {
                         let mut positional: Vec<&Value> = Vec::new();
                         let mut nofile = false;
@@ -2282,6 +2283,8 @@ impl Interpreter {
                                 || after_vol.ends_with('\\')
                             {
                                 (after_vol, String::new())
+                            } else if after_vol == "." || after_vol == ".." {
+                                (String::new(), after_vol)
                             } else {
                                 let last_sep = after_vol.rfind(['/', '\\']);
                                 let basename = last_sep
@@ -2336,6 +2339,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         ));
                     }
+                    // Cost: O(n), n = path length.
                     "split" => {
                         let raw_path = args
                             .first()
@@ -2347,12 +2351,13 @@ impl Interpreter {
                             let is_sep = |c: char| c == '/' || c == '\\';
                             let only_seps = !rest.is_empty() && rest.chars().all(is_sep);
                             let (dirname, basename) = if only_seps {
-                                ("\\".to_string(), "\\".to_string())
+                                let sep = rest.chars().next().unwrap().to_string();
+                                (sep.clone(), sep)
                             } else if rest.ends_with('/') || rest.ends_with('\\') {
                                 let trimmed = rest.trim_end_matches(['/', '\\']);
                                 if let Some(pos) = trimmed.rfind(['/', '\\']) {
                                     let dir = if pos == 0 {
-                                        "\\".to_string()
+                                        trimmed[..=pos].to_string()
                                     } else {
                                         trimmed[..pos].to_string()
                                     };
@@ -2373,7 +2378,7 @@ impl Interpreter {
                                 if volume.starts_with("//") || volume.starts_with("\\\\") {
                                     ("\\".to_string(), "\\".to_string())
                                 } else {
-                                    (".".to_string(), String::new())
+                                    (String::new(), String::new())
                                 }
                             } else {
                                 (".".to_string(), rest)
@@ -2427,6 +2432,7 @@ impl Interpreter {
                             hash,
                         ));
                     }
+                    // Cost: O(n), n = total input length.
                     "join" => {
                         let vol = args
                             .first()
@@ -2452,7 +2458,7 @@ impl Interpreter {
                                 }
                             };
                             let result = if !vol.is_empty() {
-                                if vol.starts_with("\\\\") {
+                                if vol.starts_with("\\\\") || vol.starts_with("//") {
                                     let path_only_seps = !path_part.is_empty()
                                         && path_part.chars().all(|c| c == '/' || c == '\\');
                                     if path_only_seps || path_part.is_empty() {
@@ -2626,48 +2632,22 @@ impl Interpreter {
                         };
                         return Ok(Value::str(result));
                     }
+                    // Cost: O(n), n = path, base, and cwd length.
                     "rel2abs" => {
                         let path_str = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        let base_str =
-                            args.get(1).map(|v| v.to_string_value()).unwrap_or_else(|| {
-                                std::env::current_dir()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_else(|_| ".".to_string())
-                            });
-                        if is_win32 {
-                            let (path_vol, path_rest) =
-                                Self::split_win32_volume_normalized(&path_str);
-                            if !path_vol.is_empty()
-                                && (path_rest.starts_with('/') || path_rest.starts_with('\\'))
-                            {
-                                return Ok(Value::str(Self::canonpath_win32(&path_str, false)));
-                            }
-                            if path_str.starts_with('\\') || path_str.starts_with('/') {
-                                let (base_vol, _) = Self::split_win32_volume_normalized(&base_str);
-                                return Ok(Value::str(Self::canonpath_win32(
-                                    &format!("{}{}", base_vol, path_str),
-                                    false,
-                                )));
-                            }
-                            let mut result = base_str;
-                            if !result.ends_with('/') && !result.ends_with('\\') {
-                                result.push('\\');
-                            }
-                            result.push_str(&path_str);
-                            return Ok(Value::str(Self::canonpath_win32(&result, false)));
-                        }
-                        if path_str.starts_with('/') {
-                            return Ok(Value::str(path_str));
-                        }
-                        let mut result = base_str;
-                        if !result.ends_with('/') {
-                            result.push('/');
-                        }
-                        result.push_str(&path_str);
-                        return Ok(Value::str(Self::canonpath_unix(&result, false)));
+                        let cwd = std::env::current_dir()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| ".".to_string());
+                        let base = args
+                            .get(1)
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| cwd.clone());
+                        return Ok(Value::str(Self::io_spec_rel2abs(
+                            &path_str, &base, &cwd, is_win32, is_cygwin,
+                        )));
                     }
                     "basename" => {
                         let path = args
