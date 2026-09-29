@@ -1388,6 +1388,16 @@ mod value_is_defined_tests {
 /// lambda (`* < 100` is stored as one, see `register_subset_decl`), with no
 /// placeholder of its own. Returns the body and the name its value binds to.
 pub(crate) fn subset_inline_predicate(pred: &crate::ast::Expr) -> Option<(&[crate::ast::Stmt], &str)> {
+    subset_inline_predicate_shape(pred)
+        .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty())
+}
+
+/// [`subset_inline_predicate`] without the placeholder walk, for a type check
+/// on a subset whose registration already established that it has none
+/// (`SubsetDef::predicate_inline`).
+pub(crate) fn subset_inline_predicate_shape(
+    pred: &crate::ast::Expr,
+) -> Option<(&[crate::ast::Stmt], &str)> {
     use crate::ast::Expr;
     match pred {
         Expr::Block(body) => Some((body.as_slice(), "_")),
@@ -1399,5 +1409,4 @@ pub(crate) fn subset_inline_predicate(pred: &crate::ast::Expr) -> Option<(&[crat
         Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
         _ => None,
     }
-    .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty())
 }

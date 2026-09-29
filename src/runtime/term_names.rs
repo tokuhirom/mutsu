@@ -157,24 +157,35 @@ impl Interpreter {
     /// `push_bare_word_value`).
     // Cost: O(1) expected, plus O(p) for the module-scope probe, p = packages the running routine could belong to.
     pub(crate) fn term_binding(&self, name: &str) -> Option<Value> {
-        if let Some(v) = self.term_value(name) {
-            return Some(v.clone());
-        }
-        if name.is_empty()
-            || name.starts_with(['$', '@', '%', '&', TERM_PREFIX])
-            || crate::qualified::is_qualified(Symbol::intern(name))
-        {
+        if name.is_empty() || name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) {
             return None;
         }
-        let key = term_key(name);
-        self.module_imported_lexical(&key)
-            .or_else(|| self.module_scope_lexical(&key))
-            .cloned()
-            // A package block's own `my constant`, kept for its routines in
-            // `package_lexicals` once the block has exited.
-            .or_else(|| self.package_chain_var_fallback(&key))
-            // An `our`-scoped constant of a block that has since exited.
-            .or_else(|| self.get_our_var(&key).cloned())
+        self.term_binding_sym(Symbol::intern(name))
+    }
+
+    /// [`Self::term_binding`] for a caller that already holds the name's
+    /// `Symbol` (and has ruled out a sigiled or term-key name). Interning the
+    /// name once and reusing the cached term key keeps a type check that
+    /// probes an alias from re-interning and re-formatting the name.
+    // Cost: O(1) expected, plus O(p) for the module-scope probe (see above).
+    fn term_binding_sym(&self, name_sym: Symbol) -> Option<Value> {
+        if crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        let key_sym = term_key_sym(name_sym);
+        if let Some(v) = self.env().get_sym(key_sym) {
+            return Some(v.clone());
+        }
+        key_sym.with_str(|key| {
+            self.module_imported_lexical(key)
+                .or_else(|| self.module_scope_lexical(key))
+                .cloned()
+                // A package block's own `my constant`, kept for its routines in
+                // `package_lexicals` once the block has exited.
+                .or_else(|| self.package_chain_var_fallback(key))
+                // An `our`-scoped constant of a block that has since exited.
+                .or_else(|| self.get_our_var(key).cloned())
+        })
     }
 
     /// What a bare `name` written where a TYPE goes is bound to: a sigil-less
@@ -184,7 +195,14 @@ impl Interpreter {
     /// `$`-scalar is in scope (#9962).
     // Cost: O(1) expected, plus [`Self::term_binding`]'s module-scope probe on a miss.
     pub(crate) fn type_name_binding(&self, name: &str) -> Option<Value> {
-        self.term_binding(name)
-            .or_else(|| self.env().get(name).cloned())
+        if name.is_empty() {
+            return None;
+        }
+        let name_sym = Symbol::intern(name);
+        if name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) {
+            return self.env().get_sym(name_sym).cloned();
+        }
+        self.term_binding_sym(name_sym)
+            .or_else(|| self.env().get_sym(name_sym).cloned())
     }
 }

@@ -1271,7 +1271,7 @@ impl Interpreter {
                 // (`where { $^a }`) and multi/typed params fall through too.
                 // Decided once, at registration (`SubsetDef::predicate_inline`).
                 let inline = if subset.predicate_inline {
-                    super::subset_inline_predicate(pred)
+                    super::subset_inline_predicate_shape(pred)
                 } else {
                     None
                 };
