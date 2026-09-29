@@ -475,8 +475,22 @@ impl Interpreter {
             // and runs as bytecode instead of through `call_sub_value`'s
             // by-name env carrier, which cost ~45k instructions per
             // `$x ~~ * > 0` (#10107).
-            (_, ValueView::Sub(_)) => {
+            //
+            // A Sub with no compiled body (built at runtime from AST, e.g. a
+            // `.constraints` closure) keeps the carrier, which knows to bind
+            // a bare block's `$_`.
+            (_, ValueView::Sub(data)) => {
                 let func = right.clone();
+                if data.compiled_code.is_none() {
+                    if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()], false)
+                    {
+                        return result.truthy();
+                    }
+                    return match self.call_sub_value(func, vec![], false) {
+                        Ok(result) => result.truthy(),
+                        Err(_) => false,
+                    };
+                }
                 if let Ok(result) = self.vm_call_on_value(func.clone(), vec![left.clone()], None) {
                     return result.truthy();
                 }
