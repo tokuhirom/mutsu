@@ -854,20 +854,8 @@ impl Interpreter {
         // parameterized-subrule resolution that reaches here is not a function
         // of its memo key.
         super::regex_arg_purity::note_opaque_read();
-        let mut interp = Interpreter {
-            env: self.make_regex_eval_env(caps),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        match interp.eval_block_value(&stmts) {
+        let env = self.make_regex_eval_env(caps);
+        match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts)) {
             Ok(v) => Some(v),
             Err(e) => e.return_value,
         }

@@ -229,7 +229,7 @@ scripts/dev stop <id>
   closure is called on the interpreter you already have (`call_compiled_closure`,
   `vm_call_on_value`), and a pure builtin that would need to call one declines or has the VM resolve
   the Callable argument first. `make check-interp-construction` is a shrinking ratchet over
-  `scripts/interp-construction-allowlist.txt` (the regex scratch interpreters are its debt, #10151).
+  `scripts/interp-construction-allowlist.txt` (the regex parse-time evaluator is its debt, #10157).
 - **Keep `size_of::<OpCode>()` ≤ 48 bytes** (the `opcode_size_guard` test) — box fat payloads.
 - **Core routine or module function?** A function belongs in core only if `raku -e '<call>'`
   resolves it with no `use` (a `use v6.X` pragma still counts as core) **and** it is documented

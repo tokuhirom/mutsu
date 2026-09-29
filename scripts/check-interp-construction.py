@@ -20,9 +20,9 @@ Legitimate construction sites are few:
   * a `thread_local!` built once per thread (`regex_parse.rs`).
 
 All of them are listed with their per-file counts in
-scripts/interp-construction-allowlist.txt, together with the regex/grammar
-scratch interpreters (`new_regex_scratch_sharing_io`), which are debt tracked
-by #10151. A new site anywhere else, or a higher count in a listed
+scripts/interp-construction-allowlist.txt, together with the regex
+parse-time evaluator (`eval_string_as_source`), which is debt tracked by
+#10157. A new site anywhere else, or a higher count in a listed
 file, fails. A count that falls must be re-cut, so the list only ever shrinks:
 
     scripts/check-interp-construction.py              # check
@@ -61,11 +61,13 @@ _spec.loader.exec_module(_ps)
 _ps.CFG_TEST_ATTR_RE = re.compile(r"#\[cfg\((?:test|all\(test\b[^\]]*\))\)\]")
 
 # Every spelling that yields a new `Interpreter`. The `fn` definitions are not
-# matched: each pattern needs a `::` / `.` receiver in front of the name.
+# matched: each pattern needs a `::` / `.` receiver in front of the name. A
+# struct literal filling the rest from `..Default::default()` is
+# `Interpreter::new()` too (comments are masked before matching, so the
+# literal's body holds no braces).
 CONSTRUCT_RE = re.compile(
     r"\bInterpreter::(?:new|default)\s*\("
-    r"|\b(?:Self|Interpreter)::new_regex_scratch\s*\("
-    r"|\.new_regex_scratch_sharing_io\s*\("
+    r"|\bInterpreter\s*\{[^{}]*\.\.\s*Default::default\s*\("
     r"|(?<!\.tap)\.clone_for_thread\s*\("
 )
 
@@ -125,13 +127,17 @@ def self_test() -> int:
     snippet = """
 fn a() { let i = Interpreter::new(); }
 fn b() { let i = crate::runtime::Interpreter::default(); }
-fn c(&self) -> Self { let s = Self::new_regex_scratch(); s }
-fn d(&self) { let s = Interpreter { ..self.new_regex_scratch_sharing_io() }; }
+fn c(&self) { let s = Interpreter { env: self.env.clone(), ..Default::default() }; }
+fn d(&self) { let s = Interpreter {
+    env: self.env.clone(),
+    current_package: Arc::new(RwLock::new(String::new())),
+    ..Default::default()
+}; }
+fn d2() { let o = Other { ..Default::default() }; }
 fn e(&mut self) { let t = self.clone_for_thread(); }
 // Interpreter::new() in a comment does not count
 fn f() { let s = "Interpreter::new()"; }
 fn g(&mut self) { let t = self.tap.clone_for_thread(); }
-pub(crate) fn new_regex_scratch() -> Self { todo!() }
 pub(crate) fn clone_for_thread(&mut self) -> Self { todo!() }
 #[cfg(test)]
 mod tests {

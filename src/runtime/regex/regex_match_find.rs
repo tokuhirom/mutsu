@@ -540,25 +540,10 @@ impl Interpreter {
         text: &str,
         pkg: Symbol,
     ) -> Option<usize> {
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(pkg.as_str().to_owned())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(pkg.id())),
-            var_dynamic_flags: self.var_dynamic_flags.clone(),
-            state_vars: self.state_vars.clone(),
-            state_vars_unmigrated: self.state_vars_unmigrated.clone(),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        // The no-capture matcher may recurse through grammar subrules on this
-        // scratch interpreter. Preserve the declaration table established by
-        // the public grammar match so nested `:temp`/`:my $*...` rule frames
-        // are installed there as well.
-        interp.grammar_rule_dynvar_decls = self.grammar_rule_dynvar_decls.clone();
-        interp.regex_match_len_at_start(pattern, text)
+        // Matched in `pkg` over an isolated copy of the env, so a code block
+        // the no-capture matcher runs cannot leave its writes behind.
+        self.run_regex_sub_eval_here(Some(pkg), |interp| {
+            interp.regex_match_len_at_start(pattern, text)
+        })
     }
 }

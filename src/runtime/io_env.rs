@@ -78,8 +78,7 @@ impl Interpreter {
 
     /// Move the built-in dynamic variables out of `self.env`'s own map and into
     /// the per-interpreter base tier ([`crate::env::Env::set_dyn_base`],
-    /// ADR-0086). Idempotent, and a no-op for a scratch interpreter (which
-    /// shares its caller's env wholesale) or a scoped env (there is no frame
+    /// ADR-0086). Idempotent, and a no-op for a scoped env (there is no frame
     /// tier to hoist *from*: the base belongs to the chain's tail).
     ///
     /// Why they leave the env. A closure capture keeps every key that is not a
@@ -98,7 +97,7 @@ impl Interpreter {
     /// itself never changes after this call, which is what lets every env share
     /// it by `Arc`.
     pub(crate) fn hoist_builtin_dynamics(&mut self) {
-        if Self::is_building_scratch() || self.env.is_scoped() {
+        if self.env.is_scoped() {
             return;
         }
         // `set_dyn_base` absorbs `GLOBAL_BASE` into the tier it installs, so
