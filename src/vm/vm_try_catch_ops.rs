@@ -15,7 +15,6 @@ impl Interpreter {
         control_handles_take: bool,
         is_bare_block: bool,
         traps: bool,
-        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -75,7 +74,6 @@ impl Interpreter {
             resume_safe,
             control_handles_take,
             traps,
-            catch_resume_capable,
             ip,
             compiled_fns,
         );
@@ -113,7 +111,6 @@ impl Interpreter {
         resume_safe: bool,
         control_handles_take: bool,
         traps: bool,
-        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -166,18 +163,12 @@ impl Interpreter {
         let catch_token = if registers_catch {
             self.catch_handler_seq += 1;
             let token = self.catch_handler_seq;
-            let handler =
-                (has_catch && catch_resume_capable).then(|| crate::vm::CatchHandlerCode {
-                    code: code.shared_snapshot(),
-                    catch_begin,
-                    control_begin,
-                    compiled_fns: self.shared_fns_snapshot(compiled_fns),
-                });
-            self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+            self.push_catch_handler(
+                code,
                 token,
-                installing_code: self.current_code,
-                handler,
-            });
+                (has_catch && explicit_catch).then_some((catch_begin, control_begin)),
+                compiled_fns,
+            );
             Some(token)
         } else {
             None
@@ -543,18 +534,13 @@ impl Interpreter {
                             // protected body, so re-register the catch boundary
                             // for it exactly as the control handler is above.
                             if let Some(token) = catch_token {
-                                let handler = (catch_begin < control_begin && catch_resume_capable)
-                                    .then(|| crate::vm::CatchHandlerCode {
-                                        code: code.shared_snapshot(),
-                                        catch_begin,
-                                        control_begin,
-                                        compiled_fns: self.shared_fns_snapshot(compiled_fns),
-                                    });
-                                self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+                                self.push_catch_handler(
+                                    code,
                                     token,
-                                    installing_code: self.current_code,
-                                    handler,
-                                });
+                                    (catch_begin < control_begin && explicit_catch)
+                                        .then_some((catch_begin, control_begin)),
+                                    compiled_fns,
+                                );
                             }
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
@@ -674,5 +660,37 @@ impl Interpreter {
                 )
             }
         }
+    }
+
+    /// ADR-0072: register a region as an exception-absorbing boundary for its
+    /// protected body. `catch_range` is the region's `CATCH` op range, `None`
+    /// for a `try` with no `CATCH` (a blocking marker the throw site cannot
+    /// run inline).
+    // Cost: O(1), plus O(c + f) the first time a code object (c = ops +
+    // constants) or function-table version (f entries) installs a handler.
+    fn push_catch_handler(
+        &mut self,
+        code: &CompiledCode,
+        token: u64,
+        catch_range: Option<(usize, usize)>,
+        compiled_fns: &CompiledFns,
+    ) {
+        let handler = catch_range.map(|(catch_begin, control_begin)| crate::vm::CatchHandlerCode {
+            code: code.shared_snapshot(),
+            catch_begin,
+            control_begin,
+            compiled_fns: self.shared_fns_snapshot(compiled_fns),
+        });
+        let return_target = handler
+            .as_ref()
+            .and_then(|_| crate::runtime::return_target::return_target_in_env(self.env()));
+        self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+            token,
+            installing_code: self.current_code,
+            installing_base: self.locals.base(),
+            return_target,
+            installing_package: self.current_package_sym(),
+            handler,
+        });
     }
 }

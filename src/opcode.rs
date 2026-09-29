@@ -4043,17 +4043,6 @@ pub(crate) enum OpCode {
         /// body that merely contains a `CATCH`/`CONTROL` phaser; such a region
         /// does not trap, so `{ die "x"; CONTROL { } }` must propagate.
         traps: bool,
-        /// ADR-0072: true when this block's CATCH handler lexically *contains* a
-        /// `.resume` call, so an exception raised several frames below can be
-        /// handled INLINE at the throw site (see `Interpreter::try_catch_inline`)
-        /// instead of unwinding the Rust call stack — which is what makes
-        /// `.resume` reach the `die`'s own call site in a nested sub. Unlike
-        /// `resume_safe` above this is *capability*, not *safety*: a handler that
-        /// runs inline and does not resume is still correct, because the throw
-        /// site tags the error with this region's verdict so the region applies
-        /// it without re-running the handler. Computed at compile time by
-        /// scanning the emitted CATCH op range (the runtime cannot see the AST).
-        catch_resume_capable: bool,
     },
 
     /// Bracket `[ip+1..body_end)` with a routine-registry save/restore, so a
@@ -8863,11 +8852,11 @@ impl CompiledCode {
             // mirror, so the handler reconstructs a stale `$out` and its `~=` is
             // lost. Keep every local of such a frame env-synced (gate-ON only; the
             // installing frame is a block/main frame, never a hot loop).
-            // ADR-0072: the same reasoning for a frame that installs a
-            // *resume-capable* CATCH handler — its handler runs INLINE at a deep
-            // `die` throw site, reconstructing this frame's locals from env by
-            // name, so `CATCH { default { $log ~= "H"; .resume } }` needs `$log`
-            // mirrored there too.
+            // ADR-0072: the same reasoning for a frame that installs a CATCH
+            // handler — every one runs INLINE at a deep `die` throw site
+            // (Slice 3), reconstructing this frame's locals from env by name, so
+            // `CATCH { default { $log ~= "H"; .resume } }` needs `$log` mirrored
+            // there too.
             let installs_resume_control = self.ops.iter().any(|op| {
                 matches!(
                     op,
@@ -8879,7 +8868,7 @@ impl CompiledCode {
                 ) || matches!(
                     op,
                     OpCode::TryCatch {
-                        catch_resume_capable: true,
+                        explicit_catch: true,
                         catch_start,
                         control_start,
                         ..
@@ -11150,40 +11139,6 @@ impl CompiledCode {
             OpCode::TryCatch { body_end, .. } => *body_end = target,
             _ => panic!("patch_try_body_end on non-TryCatch opcode"),
         }
-    }
-
-    /// ADR-0072: mark this region's CATCH handler resume-capable. Called after
-    /// `patch_try_control_start`, once the CATCH op range is final, from a scan
-    /// of that range for a `.resume` method call.
-    pub(crate) fn patch_try_catch_resume_capable(&mut self, idx: usize, capable: bool) {
-        match &mut self.ops[idx] {
-            OpCode::TryCatch {
-                catch_resume_capable,
-                ..
-            } => *catch_resume_capable = capable,
-            _ => panic!("patch_try_catch_resume_capable on non-TryCatch opcode"),
-        }
-    }
-
-    /// Whether the op range `[start, end)` calls a method named `resume`. Used by
-    /// `patch_try_catch_resume_capable`'s caller: a CATCH block with no `.resume`
-    /// token in its own bytecode provably cannot resume, so it keeps the ordinary
-    /// unwinding path. Conservative in the safe direction — a `.resume` reached
-    /// through a nested closure (which compiles to its own `CompiledCode`) is not
-    /// seen, and that block simply behaves as it did before ADR-0072.
-    pub(crate) fn range_calls_resume(&self, start: usize, end: usize) -> bool {
-        let names_resume = |idx: u32| {
-            matches!(self.constants.get(idx as usize).map(|c| c.view()),
-                Some(ValueView::Str(s)) if s.as_str() == "resume")
-        };
-        self.ops[start.min(self.ops.len())..end.min(self.ops.len())]
-            .iter()
-            .any(|op| match op {
-                OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => {
-                    names_resume(*name_idx)
-                }
-                _ => false,
-            })
     }
 
     pub(crate) fn patch_try_control_start(&mut self, idx: usize) {

@@ -411,6 +411,19 @@ pub(crate) struct CatchHandlerEntry {
     /// path there would swap `self.locals` for an env reconstruction of the very
     /// same frame and drop the handler's writes to the live slots on restore.
     pub installing_code: usize,
+    /// `self.locals.base()` of the installing activation. Together with
+    /// `installing_code` it tells a throw in that very activation (whose
+    /// handler runs on the live slots) from one in a recursive call of the
+    /// same routine (which shares the code object but not the slots).
+    pub installing_base: usize,
+    /// The routine a `return` in the handler targets: the one running when the
+    /// region was entered. An inline run raises that `return` at the throw
+    /// site, below routines that must not take it as their own.
+    pub return_target: Option<u64>,
+    /// The package the installing frame ran in. The handler resolves its
+    /// unqualified routine names there (a module-private helper the handler
+    /// calls), not in the package of the code that threw.
+    pub installing_package: crate::symbol::Symbol,
     /// Present only when this region's CATCH can resume: the bytecode + range +
     /// function table needed to run the handler INLINE at a deep throw site.
     pub handler: Option<CatchHandlerCode>,

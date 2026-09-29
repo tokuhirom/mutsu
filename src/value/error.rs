@@ -103,6 +103,16 @@ pub enum CatchInlineVerdict {
     Rethrown,
 }
 
+/// What an inline `CATCH` run produced beyond its [`CatchInlineVerdict`]
+/// (ADR-0072 Slice 3), carried next to the verdict stamp to the region that
+/// applies it.
+#[derive(Debug)]
+pub enum CatchInlinePayload {
+    /// The value a `when`/`default` succeeded with, for a region that keeps
+    /// its handler's value (`nqp::handle`'s `catch_value`).
+    Value(Value),
+}
+
 /// Renders a captured call stack as backtrace text, on demand.
 pub(crate) trait LazyBacktraceText: Send + Sync + std::fmt::Debug {
     fn render(&self) -> String;
@@ -169,6 +179,8 @@ pub struct RuntimeErrorCold {
     /// matched. That region recognises its own token while unwinding and applies
     /// the verdict instead of running the handler a second time.
     pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
+    /// See [`CatchInlinePayload`]; only ever set alongside `catch_inline_verdict`.
+    pub catch_inline_payload: Option<Box<CatchInlinePayload>>,
     /// The source position the CLI's `------>` snippet should point at, when
     /// it differs from `line`/`column` (the position reported in `at
     /// FILE:LINE`). Only "Two terms in a row across lines" sets this: rakudo
@@ -424,6 +436,16 @@ impl RuntimeError {
     }
     pub(crate) fn set_catch_inline_verdict(&mut self, v: Option<(u64, CatchInlineVerdict)>) {
         self.cold_mut().catch_inline_verdict = v;
+    }
+    pub(crate) fn set_catch_inline_payload(&mut self, v: Option<CatchInlinePayload>) {
+        self.cold_mut().catch_inline_payload = v.map(Box::new);
+    }
+    /// Move the inline-CATCH payload out of the error, leaving it `None`.
+    pub(crate) fn take_catch_inline_payload(&mut self) -> Option<CatchInlinePayload> {
+        self.cold
+            .as_mut()
+            .and_then(|c| c.catch_inline_payload.take())
+            .map(|b| *b)
     }
 
     /// `return` control signal (non-local return carrying `return_value`).

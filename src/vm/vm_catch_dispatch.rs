@@ -41,11 +41,12 @@ impl Interpreter {
                 // `LoadNil`). `$!` was already restored to its pre-throw value by
                 // the inline runner.
                 self.stack.truncate(saved_depth);
-                self.stack.push(if catch_value {
-                    e.return_value.unwrap_or(Value::NIL)
-                } else {
-                    Value::NIL
-                });
+                let mut e = e;
+                let value = match e.take_catch_inline_payload() {
+                    Some(crate::value::CatchInlinePayload::Value(v)) if catch_value => v,
+                    _ => Value::NIL,
+                };
+                self.stack.push(value);
                 *ip = end;
                 Ok(())
             }
@@ -98,9 +99,19 @@ impl Interpreter {
         // throw site, and did not `.resume` — so the exception is unwinding to
         // here only to have the region abandoned. Apply the recorded verdict
         // instead of running the handler a second time.
-        if let Some((token, verdict)) = e.catch_inline_verdict()
-            && Some(token) == catch_token
+        if let Some((tag, verdict)) = e.catch_inline_verdict()
+            && let Some(token) = catch_token
+            && tag <= token
         {
+            // A larger token than the stamp's is a region nested inside the
+            // stamping one: its handler already ran inline in the same chain
+            // and passed the exception on, so it only lets it through.
+            if tag < token {
+                self.stack.truncate(saved_depth);
+                return Err(e);
+            }
+            let mut e = e;
+            e.set_catch_inline_verdict(None);
             return self.apply_inline_catch_verdict(
                 e,
                 verdict,
