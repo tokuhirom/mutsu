@@ -553,6 +553,13 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // Named placeholder callable: `&:name` (the `&` counterpart of `$:name`).
+    if let Some(after_colon) = input.strip_prefix(':')
+        && after_colon.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        let (rest, name) = parse_ident_with_hyphens(after_colon)?;
+        return Ok((rest, Expr::CodeVar(format!(":{}", name))));
+    }
     // Dereference callable stored in a variable/expression:
     // &$x, &@x, &%x, &($expr)
     if input.starts_with('$') {

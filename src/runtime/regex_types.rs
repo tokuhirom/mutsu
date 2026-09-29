@@ -1143,6 +1143,20 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// A `$( code )` / `@( code )` contextualizer interpolation — or a
+    /// `"…$x.meth()…"` method-call chain inside a double-quoted atom, which
+    /// the interpolation pre-pass rewrites to `$( $x.meth() )` — evaluated
+    /// when the atom is matched, on the running interpreter (#10157). The
+    /// scalar form (`list: false`) matches the result's string value
+    /// literally; the list form matches an alternation over the elements
+    /// (a `Regex` element as a sub-regex, anything else literally). Opaque
+    /// to every static analysis, like [`RegexAtom::VarInterp`]: Rakudo
+    /// compiles the atom to code, which ends a declarative prefix (ADR-0046
+    /// probe Q).
+    CodeInterp {
+        code: Box<str>,
+        list: bool,
+    },
     /// A double-quoted atom (`"x @a[0]"`) the compiler lowered to a qq
     /// thunk (`crate::regex_qq_atoms`) whose result was not installed when
     /// the pattern was parsed: a `<$re>`-interpolated regex (its scope is

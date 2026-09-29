@@ -182,7 +182,14 @@ mod tests {
             // Any call may reach EVAL.
             "for ^3 { my $y = EVAL('1') }",
         ] {
-            assert!(resets(src).iter().all(|r| *r == DeclReset::Fresh), "{src}");
+            // A closure reading the new binding makes it `Shadow` (#9770),
+            // which resets unconditionally; either way it is never relaxed.
+            assert!(
+                resets(src)
+                    .iter()
+                    .all(|r| matches!(r, DeclReset::Fresh | DeclReset::Shadow)),
+                "{src}"
+            );
         }
     }
 

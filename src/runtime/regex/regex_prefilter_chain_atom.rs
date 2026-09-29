@@ -151,6 +151,7 @@ pub(super) fn chain_atom_once(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> 
         RegexAtom::Named(name) => super::regex_prefilter_subrule::chain_subrule(an, name, ctx),
         RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)

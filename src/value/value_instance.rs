@@ -658,6 +658,7 @@ impl InstanceAttrs {
             pending.borrow_mut().push(PendingInstanceDestroy {
                 class_name: self.class_name(),
                 attributes: read_attrs(&self.attributes).clone(),
+                id: self.id,
             });
         });
     }

@@ -129,6 +129,7 @@ impl Interpreter {
                             .name
                             .strip_prefix("@:")
                             .or_else(|| pd.name.strip_prefix("%:"))
+                            .or_else(|| pd.name.strip_prefix("&:"))
                         {
                             rest
                         } else {

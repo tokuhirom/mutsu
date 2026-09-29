@@ -18,17 +18,7 @@ src/runtime/native_proc_async.rs                  1  # thread spawn: clone_for_t
 src/runtime/native_supply_mut_methods.rs          3  # thread spawn: clone_for_thread
 src/runtime/parse_time_exports.rs                 1  # parse-time export probe, fresh thread once per `use`
 src/runtime/react_whenever.rs                     1  # thread spawn: clone_for_thread
-src/runtime/regex/regex_eval.rs                   3  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_eval_repeat.rs            1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_lexical_ref.rs            1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_match_atom.rs             1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_match_capture.rs          1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_match_find.rs             1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_resolve.rs                1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_token_method.rs           1  # DEBT #10151: regex/grammar scratch interpreter
-src/runtime/regex/regex_token_resolve.rs          1  # DEBT #10151: regex/grammar scratch interpreter
 src/runtime/regex_parse.rs                        1  # thread_local! VALIDATE_INTERP, built once per thread
-src/runtime/runtime_init.rs                       1  # new_regex_scratch_sharing_io's own call to new_regex_scratch
 src/runtime/slang_activation.rs                   1  # parse-time slang activation, fresh thread once per `use`
 src/runtime/supply_promise.rs                     1  # thread spawn: clone_for_thread
 src/runtime/supply_transform.rs                   4  # thread spawn: clone_for_thread

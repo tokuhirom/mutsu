@@ -630,7 +630,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     rest = r2;
                     continue;
                 }
-                deprecated_message = Some(String::new());
+                deprecated_message = Some("something else".to_string());
             } else if trait_name == "built" {
                 // `is built` or `is built(False)`
                 let (r_ws, _) = ws(r)?;

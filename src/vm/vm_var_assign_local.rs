@@ -271,6 +271,7 @@ impl Interpreter {
             // which the name-keyed coercion above cannot see.
             let name = name.clone();
             val = self.apply_attr_container_element_type(&name, val, false)?;
+            val = self.untyped_container_assign_value(&name, None, val);
         }
         // Expression-context counterpart of the `SetLocal` attribute check: a
         // scalar attribute's declared type comes from the class registry, not

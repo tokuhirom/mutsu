@@ -575,6 +575,7 @@ mod nanbox;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
+pub(crate) mod eqv_container_type;
 mod native_backing;
 mod promise_await;
 pub(crate) mod promise_wake;
@@ -696,6 +697,8 @@ pub(crate) const ITERATION_END_ID: u64 = u64::MAX;
 pub(crate) struct PendingInstanceDestroy {
     pub(crate) class_name: Symbol,
     pub(crate) attributes: AttrMap,
+    /// The dying object's identity, so every DESTROY in the MRO sees the same `self`.
+    pub(crate) id: u64,
 }
 
 thread_local! {

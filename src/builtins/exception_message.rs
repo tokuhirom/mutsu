@@ -192,8 +192,21 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
             }
         }
         "X::NYI" => {
-            let feature = attr_str(attrs, "feature");
-            Some(format!("{} not yet implemented. Sorry.", feature))
+            let mut message = if let Some(feature) = attrs.get("feature").filter(|v| v.truthy()) {
+                format!("{} not yet implemented. Sorry.", feature.to_string_value())
+            } else {
+                "Not yet implemented. Sorry.".to_string()
+            };
+            if let Some(suggestion) = attrs.get("did-you-mean").filter(|v| v.truthy()) {
+                message.push_str(&format!(
+                    "\nDid you mean: {}?",
+                    suggestion.to_string_value()
+                ));
+            }
+            if let Some(workaround) = attrs.get("workaround").filter(|v| v.truthy()) {
+                message.push_str(&format!("\nWorkaround: {}", workaround.to_string_value()));
+            }
+            Some(message)
         }
         "X::Signature::Placeholder" => {
             Some("Placeholder variable cannot override an existing signature".to_string())

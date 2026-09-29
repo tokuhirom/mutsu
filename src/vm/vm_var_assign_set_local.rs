@@ -2473,25 +2473,11 @@ impl Interpreter {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone();
-                    if let Some(info) = self.container_type_metadata(&inner)
-                        && !info.value_type.is_empty()
-                    {
-                        let constraint_str = if name.starts_with('%') {
-                            if let Some(ref kt) = info.key_type {
-                                format!("{}{{{}}}", info.value_type, kt)
-                            } else {
-                                info.value_type
-                            }
-                        } else {
-                            info.value_type
-                        };
-                        self.vm_set_var_type_constraint(name, Some(constraint_str));
-                    } else {
-                        // Untyped source: clear any declared constraint inherited
-                        // from this variable's own declaration so it does not
-                        // over-constrain the shared container.
-                        self.vm_set_var_type_constraint(name, None);
-                    }
+                    // Untyped source: `None` clears any declared constraint
+                    // inherited from this variable's own declaration so it does
+                    // not over-constrain the shared container.
+                    let constraint = self.bound_container_constraint(name, &inner);
+                    self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
                 }
                 let container = Value::container_ref(cell);
                 self.locals[idx] = container.clone();
@@ -2848,21 +2834,9 @@ impl Interpreter {
         // `coerce_constant_hash_value`) is the deliberate final type of the
         // value, not stale element/key metadata inherited from a typed source.
         // Clearing it would demote `constant %h = <a b>` back to a plain Hash.
-        if !is_bind
-            && !is_constant
-            && (name.starts_with('%') || name.starts_with('@'))
-            && !name.contains('.')
-            && !name.contains('!')
-            && loan_env!(self, var_type_constraint_for(name, name_sym)).is_none()
-            && self.container_type_metadata(&val).is_some()
-        {
-            // Clear the embedded container type metadata in place so an
-            // untyped variable never reports a typed element/key constraint.
-            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
-                &mut self.locals[idx],
-                Value::NIL,
-            ));
-            self.locals[idx] = cleared;
+        if !is_bind && !is_constant {
+            let current = std::mem::replace(&mut self.locals[idx], Value::NIL);
+            self.locals[idx] = self.untyped_container_assign_value(name, name_sym, current);
         }
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments
@@ -2878,22 +2852,16 @@ impl Interpreter {
                 val.view(),
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
             )
-            && let Some(info) = self.container_type_metadata(&val)
-            && !info.value_type.is_empty()
         {
-            // Build the constraint string that set_var_type_constraint expects.
-            // For hash variables, parse_container_constraint expects "ValueType{KeyType}"
-            // format for key-typed hashes, and plain "ValueType" otherwise.
-            let constraint_str = if name.starts_with('%') {
-                if let Some(ref kt) = info.key_type {
-                    format!("{}{{{}}}", info.value_type, kt)
-                } else {
-                    info.value_type
-                }
-            } else {
-                info.value_type
-            };
-            self.vm_set_var_type_constraint(name, Some(constraint_str));
+            // An untyped RHS (`@a := [1]`) clears a type left by an earlier
+            // bind; the declared constraint survives in the lane either way.
+            // Not for a container-trait declaration's internal bind marker
+            // (`my %h is BagHash = ...`, see `check_associative_bind_value`):
+            // its trait constraint is what `ApplyVarTrait` reads next.
+            let constraint = self.bound_container_constraint(name, &val);
+            if constraint.is_some() || self.vardecl_init_raw.is_none() {
+                self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
+            }
         }
         // Circular hash reference fixup: when assigning to a hash variable,
         // if any values in the new hash reference the old hash (captured on the
@@ -3400,20 +3368,22 @@ impl Interpreter {
         // bind into `my &name = ...`.
         if reset != crate::opcode::DeclReset::Keep && !name.starts_with('&') {
             let had_binding = self.env().contains_key_sym(name_sym);
-            // The first execution of a body-local declaration must leave an
-            // outer same-named binding visible while the initializer runs.
-            // Once this declaration has run in a loop body, however, its
-            // binding is reused by the next iteration and must be reset before
-            // a failing initializer can leave the prior iteration's value in
-            // place -- unless the compiler proved nothing can observe that
-            // (`DeclReset::SeedIfUnbound`), which spares a hot loop body an env
-            // write per declaration per iteration (#9537).
-            let reset_for_reused_loop_binding = reset == crate::opcode::DeclReset::Fresh
-                && had_binding
-                && self
-                    .loop_local_vars
-                    .last()
-                    .is_some_and(|set| set.contains(&name_sym));
+            // The first execution of a body-local declaration leaves an outer
+            // same-named binding in place while the initializer runs, unless
+            // the initializer reads the new binding (`DeclReset::Shadow`,
+            // #9770). Once this declaration has run in a loop body, however,
+            // its binding is reused by the next iteration and must be reset
+            // before a failing initializer can leave the prior iteration's
+            // value in place -- unless the compiler proved nothing can observe
+            // that (`DeclReset::SeedIfUnbound`), which spares a hot loop body an
+            // env write per declaration per iteration (#9537).
+            let reset_existing = reset == crate::opcode::DeclReset::Shadow
+                || reset == crate::opcode::DeclReset::Fresh
+                    && had_binding
+                    && self
+                        .loop_local_vars
+                        .last()
+                        .is_some_and(|set| set.contains(&name_sym));
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
@@ -3421,7 +3391,7 @@ impl Interpreter {
             } else {
                 Value::package(crate::symbol::wk::any())
             };
-            if (reset_for_reused_loop_binding || !had_binding)
+            if (reset_existing || !had_binding)
                 && let Some(slot) = local_slot
                 && let Some(local) = self.locals.get_mut(slot as usize)
             {
@@ -3431,7 +3401,7 @@ impl Interpreter {
                 // here instead of leaking a previous loop iteration's value.
                 *local = default.clone();
             }
-            if reset_for_reused_loop_binding || !had_binding {
+            if reset_existing || !had_binding {
                 crate::env::note_env_key(name);
                 self.env_mut().insert_sym(name_sym, default);
             }

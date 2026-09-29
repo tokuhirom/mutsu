@@ -179,6 +179,20 @@ impl Interpreter {
         } else {
             right
         };
+        // `IO::Path.ACCEPTS` stringifies its candidate. An unhandled Failure
+        // must throw at that read boundary, rather than being compared as the
+        // printable string "Failure()". Other smartmatches may inspect a
+        // Failure as a value, so keep this check specific to IO::Path.
+        if matches!(right.view(), ValueView::Instance { class_name, .. } if Self::is_io_path_lexical_class(class_name.as_str()))
+            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&left)
+        {
+            if let Some(v) = saved_topic {
+                self.env_mut().insert_sym(topic, v);
+            } else {
+                self.env_mut().remove_sym(topic);
+            }
+            return Err(err);
+        }
         // The RHS may have *computed* a regex (`$x ~~ $re`) whose pattern names
         // this frame's locals; publish those before matching against it.
         let value_names = Self::smartmatch_value_sync(&left, &right);

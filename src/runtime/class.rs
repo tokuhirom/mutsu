@@ -125,9 +125,10 @@ impl Interpreter {
                         .into_iter()
                         .find(|def| !def.is_private && self.method_args_match(&[], &def.param_defs))
                 {
-                    let invocant = Value::make_instance_without_destroy(
+                    let invocant = Value::make_instance_without_destroy_with_id(
                         item.class_name,
                         current_attrs.clone(),
+                        item.id,
                     );
                     if let Ok((_v, updated)) = self.run_resolved_method_compiled_or_treewalk(
                         &instance_class,
@@ -147,9 +148,10 @@ impl Interpreter {
                     let role_order = self.ordered_role_submethods_for_class(mro_class, "DESTROY");
                     // DESTROY order is reverse of BUILD: role submethods after class
                     for (role_name, method_def) in role_order.into_iter().rev() {
-                        let invocant = Value::make_instance_without_destroy(
+                        let invocant = Value::make_instance_without_destroy_with_id(
                             item.class_name,
                             current_attrs.clone(),
+                            item.id,
                         );
                         if let Ok((_v, updated)) = self.run_resolved_method_compiled_or_treewalk(
                             &instance_class,

@@ -913,6 +913,7 @@ mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
 mod runtime_thread_decl_mask;
+mod runtime_var_bind_meta;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
@@ -1849,6 +1850,13 @@ pub(crate) struct CallFrameEntry {
     pub env: Env,
     /// Package the frame's code was running in, for `callframe(N).my<::?PACKAGE>`.
     pub package: Symbol,
+    /// The routine-stack top when the entry was pushed, i.e. the frame the call
+    /// was made from. Only a *named-routine* frame carries a lazily built
+    /// `code`; a method or the mainline does not, and this is what lets
+    /// `callframe(N).code.name` report `bar` / `<unit>` for them.
+    pub routine: Option<RoutineFrame>,
+    /// True for the synthetic EVAL frames, which have no code object at all.
+    pub synthetic: bool,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.

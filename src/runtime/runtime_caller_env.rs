@@ -22,6 +22,8 @@ impl Interpreter {
             code,
             env: self.env.clone(),
             package: self.current_package_sym(),
+            routine: self.routine_stack.last().copied(),
+            synthetic: false,
         });
     }
 
@@ -83,6 +85,8 @@ impl Interpreter {
                 code: None,
                 env: Env::new(),
                 package: self.current_package_sym(),
+                routine: None,
+                synthetic: true,
             });
         }
     }

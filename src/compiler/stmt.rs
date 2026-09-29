@@ -1517,7 +1517,15 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                let reset = if !*is_state
+                // The parser marks a declaration whose initializer reads the
+                // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
+                let init_sees_self = !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
+                let reset = if init_sees_self {
+                    DeclReset::Shadow
+                } else if !*is_state
                     && !*is_our
                     && !is_constant_decl
                     && !name.starts_with('@')
@@ -1662,6 +1670,15 @@ impl Compiler {
                 // loop re-wraps any throw. Placed AFTER the X::Redeclaration /
                 // X::ParametricConstant early-returns above so those compile-time
                 // errors are not themselves wrapped.
+                // The new binding is in scope for its own initializer, so a
+                // nested block there that reads it (`my $x = do { $x }`,
+                // `my $x = sub { $x }`) must resolve `$x` to the new slot, not
+                // to a shadowed outer `$x`. (A direct `my $x = $x` never gets
+                // here: the parser rejects it with
+                // X::Syntax::Variable::Initializer.) Any other declaration is
+                // declared after its initializer, which compiler-synthesized
+                // self-copies (`-> $_ is copy` lowers to `my $_ = $_`) rely on.
+                let early_slot = init_sees_self.then(|| self.declare_local(name));
                 let constant_init_phaser_start = if is_constant_decl {
                     Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
                 } else {
@@ -1863,7 +1880,10 @@ impl Compiler {
                         ));
                     }
                 }
-                let slot = self.declare_local(name);
+                let slot = match early_slot {
+                    Some(slot) => slot,
+                    None => self.declare_local(name),
+                };
                 if !*is_state
                     && !*is_our
                     && !is_constant_decl

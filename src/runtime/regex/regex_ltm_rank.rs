@@ -78,7 +78,9 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         RegexAtom::VarDecl { .. } => LtmAtomMode::SkipZeroWidth,
         // `<{ code }>` — the interpolated pattern is not known without running
         // code, so it cannot participate in a declarative prefix.
-        RegexAtom::ClosureInterpolation { .. } => LtmAtomMode::Terminate,
+        RegexAtom::ClosureInterpolation { .. } | RegexAtom::CodeInterp { .. } => {
+            LtmAtomMode::Terminate
+        }
         // A character class built with set SUBTRACTION (`<[\x1F..\xFF] - [;]>`,
         // `<+alpha - [q]>`, `<-[;] - [q]>`): Rakudo's NFA has no single edge
         // kind for "this set minus that set", so the class becomes a fate arc

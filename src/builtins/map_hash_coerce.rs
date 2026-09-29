@@ -95,7 +95,11 @@ pub(crate) fn hash_coercion_odd_error(value: &Value) -> Option<RuntimeError> {
 }
 
 fn list_odd_error(items: &[Value]) -> Option<RuntimeError> {
-    let items: Vec<Value> = items.iter().map(unwrap_contained_pair).collect();
+    let items: Vec<Value> = items
+        .iter()
+        .map(unwrap_contained_pair)
+        .map(|v| stash_symbols(&v).unwrap_or(v))
+        .collect();
     let singles = items
         .iter()
         .filter(|v| {
@@ -130,17 +134,43 @@ pub(crate) fn unwrap_contained_pair(v: &Value) -> Value {
     }
 }
 
+/// The symbol table of a package stash (`Foo::`) or pseudo-stash item, which
+/// mutsu holds as an `Instance` of `Stash`/`PseudoStash` carrying a `symbols`
+/// Hash. Such an item is a Map in Raku, so a hash initializer flattens it.
+// Cost: O(1).
+fn stash_symbols(v: &Value) -> Option<Value> {
+    match v.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if crate::value::types::is_stash_class_name(&class_name.resolve()) => {
+            attributes.as_map().get("symbols").cloned()
+        }
+        _ => None,
+    }
+}
+
 /// Convert a slice of items to a Hash, optionally checking for odd element count.
 fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError> {
     // An itemized Pair (`$(:a(1))` = `Scalar`) or a Pair held in a `:=` element
     // cell (`ContainerRef`, e.g. a classify bucket element) still counts as a
     // hash initializer pair; an itemized *hash* stays opaque (raku dies "Odd
     // number"), so only Pair contents are unwrapped.
-    let items: Vec<Value> = items.iter().map(unwrap_contained_pair).collect();
+    let items: Vec<Value> = items
+        .iter()
+        .map(unwrap_contained_pair)
+        .map(|v| stash_symbols(&v).unwrap_or(v))
+        .collect();
     if check_odd {
         let non_pair_count = items
             .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .filter(|v| {
+                !matches!(
+                    v.view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(_)
+                )
+            })
             .count();
         if non_pair_count % 2 != 0 {
             return Err(make_odd_number_error(&items));
@@ -155,6 +185,13 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
             }
             ValueView::ValuePair(k, v) => {
                 map.insert(k.to_string_value(), v.clone());
+            }
+            // A non-itemized Hash/Map/Stash item contributes its pairs, as in
+            // list assignment to a hash (`sub EXPORT(--> Map()) { Foo::, ... }`).
+            ValueView::Hash(inner) => {
+                for (k, v) in inner.iter() {
+                    map.insert(k.clone(), v.clone());
+                }
             }
             _ => {
                 let key = item.to_string_value();

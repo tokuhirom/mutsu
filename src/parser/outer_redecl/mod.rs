@@ -30,9 +30,29 @@
 //! possible if an in-scope declaration is missed, so every declaration form
 //! (`my`/`state`, params, `for`/pointy loop variables, and inline `do my $x`) is
 //! registered before the following statements are examined.
+//!
+//! The same walk also finds a variable used in its own declaration's
+//! initializer (`my $x = $x + 1`), which rakudo rejects at compile time with
+//! `X::Syntax::Variable::Initializer`: the new `$x` is already in scope there,
+//! so the initializer could only ever read the not-yet-initialized binding. A
+//! reference inside a nested code object (`my $x = sub { $x }`,
+//! `my $x = do { $x }`) is legal -- it sees the new binding -- so only a
+//! reference at the declaration's own scope depth counts. Dynamic variables
+//! (`my $*X = $*X`) are exempt: rakudo lets that read the fresh `Any`.
 
-use crate::ast::{Expr, ParamDef, Stmt};
+mod errors;
+mod expr;
+
+pub(crate) use errors::scope_diagnostic_error;
+
+use crate::ast::{ParamDef, Stmt};
+use expr::{walk_call_arg, walk_expr};
 use std::collections::HashSet;
+
+/// The internal trait marking a declaration initialized by `.=` on its own
+/// (untyped) variable: `my @c .= new(...)` is `my @c = @c.new(...)`, whose
+/// self-read is the invocant, not a use in its own initializer.
+pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
 
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).
@@ -50,11 +70,33 @@ impl Scope {
     }
 }
 
+/// A compile-time error the walk found.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ScopeDiagnostic {
+    /// `X::Redeclaration::Outer` for `(sigil+name, line)`.
+    OuterRedeclaration(String, i64),
+    /// `X::Syntax::Variable::Initializer` for `(sigil+name, line)`.
+    SelfInitializer(String, i64),
+}
+
+/// A declaration whose initializer is being walked.
+struct Initializing {
+    /// The declared key (`$x`, or `$*X` for a dynamic variable).
+    key: String,
+    /// The scope depth the declaration is in.
+    depth: usize,
+    /// Whether the initializer reads the new binding: from a nested code
+    /// object for a lexical, from anywhere for a dynamic variable.
+    sees_self: bool,
+}
+
 struct Ctx {
     scopes: Vec<Scope>,
     line: i64,
-    /// The first offending `(sigil+name, line)` found, if any.
-    found: Option<(String, i64)>,
+    /// Declarations whose initializer is being walked, innermost last.
+    initializing: Vec<Initializing>,
+    /// The first offense found, if any.
+    found: Option<ScopeDiagnostic>,
 }
 
 impl Ctx {
@@ -65,6 +107,23 @@ impl Ctx {
         let depth = self.scopes.len();
         if depth == 0 {
             return;
+        }
+        if let Some(init) = self.initializing.iter_mut().rev().find(|i| i.key == key) {
+            if init.depth == depth {
+                if self.found.is_none() {
+                    self.found = Some(ScopeDiagnostic::SelfInitializer(key, self.line));
+                }
+                return;
+            }
+            // A nested code object in the initializer reads the new binding,
+            // unless a scope in between declares its own `key`.
+            let (from, to) = (init.depth, depth);
+            if !self.scopes[from..to]
+                .iter()
+                .any(|s| s.declared.contains(&key))
+            {
+                init.sees_self = true;
+            }
         }
         if self.scopes[depth - 1].declared.contains(&key) {
             return; // resolves locally
@@ -77,6 +136,14 @@ impl Ctx {
         }
     }
 
+    /// Register a reference to the dynamic variable `key` (`$*X`): any read
+    /// of it in its own declaration's initializer sees the new binding.
+    fn reference_dynamic(&mut self, key: &str) {
+        if let Some(init) = self.initializing.iter_mut().rev().find(|i| i.key == key) {
+            init.sees_self = true;
+        }
+    }
+
     /// Register a `my`/`state` declaration of `key` in the current scope. If it
     /// was already referenced-as-outer here, that is the error.
     fn declare(&mut self, key: String) {
@@ -85,7 +152,7 @@ impl Ctx {
             return;
         }
         if self.found.is_none() && self.scopes[depth - 1].ref_outer.contains(&key) {
-            self.found = Some((key.clone(), self.line));
+            self.found = Some(ScopeDiagnostic::OuterRedeclaration(key.clone(), self.line));
         }
         self.scopes[depth - 1].declared.insert(key);
     }
@@ -131,12 +198,17 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
     Some(format!("{}{}", sigil, base))
 }
 
-/// Returns `(sigil+name, line)` for the first `my`/`state` redeclaration of a
-/// referenced outer symbol, or `None` if there is no such offense.
-pub(crate) fn find_outer_redeclaration(stmts: &[Stmt]) -> Option<(String, i64)> {
+/// Returns the first `my`/`state` redeclaration of a referenced outer symbol or
+/// self-referencing initializer, or `None` if there is no such offense.
+///
+/// Also marks each declaration whose initializer reads the new binding (see
+/// [`Initializing::sees_self`]) with the internal `__init_sees_self` trait, so
+/// the compiler resolves those reads to it.
+pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
     let mut ctx = Ctx {
         scopes: vec![Scope::new()],
         line: 0,
+        initializing: Vec::new(),
         found: None,
     };
     walk_stmts(stmts, &mut ctx);
@@ -156,14 +228,14 @@ fn seed_params(params: &[String], param_defs: &[ParamDef], ctx: &mut Ctx) {
     }
 }
 
-fn walk_scoped_body(body: &[Stmt], ctx: &mut Ctx) {
+fn walk_scoped_body(body: &mut [Stmt], ctx: &mut Ctx) {
     ctx.scopes.push(Scope::new());
     walk_stmts(body, ctx);
     ctx.scopes.pop();
 }
 
 fn walk_scoped_body_with_params(
-    body: &[Stmt],
+    body: &mut [Stmt],
     params: &[String],
     param_defs: &[ParamDef],
     ctx: &mut Ctx,
@@ -174,32 +246,100 @@ fn walk_scoped_body_with_params(
     ctx.scopes.pop();
 }
 
-fn walk_stmts(stmts: &[Stmt], ctx: &mut Ctx) {
-    for s in stmts {
-        walk_stmt(s, ctx);
+fn walk_stmts(stmts: &mut [Stmt], ctx: &mut Ctx) {
+    for i in 0..stmts.len() {
+        // `my \x = ...` lowers to a `VarDecl` of `x` followed by a sigilless
+        // marker. The sigilless `x` is a different symbol from `$x`, so the
+        // initializer may freely read `$x`.
+        let sigilless = match (&stmts[i], stmts.get(i + 1)) {
+            (
+                Stmt::VarDecl { name, .. },
+                Some(Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n)),
+            ) => n == name,
+            _ => false,
+        };
+        if sigilless {
+            walk_var_decl(&mut stmts[i], false, ctx);
+        } else {
+            walk_stmt(&mut stmts[i], ctx);
+        }
     }
 }
 
-fn walk_stmt(stmt: &Stmt, ctx: &mut Ctx) {
+/// The key a dynamic declaration (`*X`, `@*X`) is read back under.
+fn dynamic_key(sigil: char, name: &str) -> Option<String> {
+    name.starts_with('*').then(|| format!("{sigil}{name}"))
+}
+
+/// Split a declared name into its sigil and the rest (`"x"` is a `$`).
+fn split_sigil(name: &str) -> (char, &str) {
+    match name.chars().next() {
+        Some(c @ ('@' | '%' | '$')) => (c, &name[1..]),
+        _ => ('$', name),
+    }
+}
+
+/// Walk a declaration; `check_self` arms the self-initializer check.
+fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
+    let Stmt::VarDecl {
+        name,
+        expr,
+        is_our,
+        custom_traits,
+        ..
+    } = stmt
+    else {
+        return;
+    };
+    let key = decl_key(name);
+    if let Some(key) = &key {
+        if *is_our {
+            // `our` is package-scoped and not subject to the outer-binding
+            // rule; still record it so later references resolve locally.
+            ctx.seed(key.clone());
+        } else {
+            ctx.declare(key.clone());
+        }
+    }
+    // The declared name is in scope for its own initializer, so walk the RHS
+    // *after* declaring (a self-reference is then local, not outer) -- and a
+    // direct self-reference there is `X::Syntax::Variable::Initializer`.
+    let (sigil, bare) = split_sigil(name);
+    let check_self = check_self
+        && !custom_traits
+            .iter()
+            .any(|(t, _)| t == METHOD_ASSIGN_DECL_TRAIT);
+    let armed_key = if check_self {
+        key.or_else(|| dynamic_key(sigil, bare))
+    } else {
+        None
+    };
+    let armed = armed_key.is_some();
+    if let Some(key) = armed_key {
+        ctx.initializing.push(Initializing {
+            key,
+            depth: ctx.scopes.len(),
+            sees_self: false,
+        });
+    }
+    walk_expr(expr, ctx);
+    // `is default(...)` and other trait arguments are part of the declaration.
+    for arg in custom_traits.iter_mut().filter_map(|(_, arg)| arg.as_mut()) {
+        walk_expr(arg, ctx);
+    }
+    if armed
+        && let Some(init) = ctx.initializing.pop()
+        && init.sees_self
+    {
+        custom_traits.push(("__init_sees_self".to_string(), None));
+    }
+}
+
+fn walk_stmt(stmt: &mut Stmt, ctx: &mut Ctx) {
     match stmt {
         Stmt::SetLine(n) => ctx.line = *n,
 
-        Stmt::VarDecl {
-            name, expr, is_our, ..
-        } => {
-            if let Some(key) = decl_key(name) {
-                if *is_our {
-                    // `our` is package-scoped and not subject to the outer-binding
-                    // rule; still record it so later references resolve locally.
-                    ctx.seed(key);
-                } else {
-                    ctx.declare(key);
-                }
-            }
-            // The declared name is in scope for its own initializer, so walk the
-            // RHS *after* declaring (a self-reference is then local, not outer).
-            walk_expr(expr, ctx);
-        }
+        Stmt::VarDecl { .. } => walk_var_decl(stmt, true, ctx),
 
         Stmt::Assign { name, expr, .. } => {
             if let Some(key) = decl_key(name) {
@@ -332,217 +472,6 @@ fn walk_stmt(stmt: &Stmt, ctx: &mut Ctx) {
             walk_scoped_body(else_branch, ctx);
         }
         Stmt::Label { stmt, .. } => walk_stmt(stmt, ctx),
-
-        _ => {}
-    }
-}
-
-fn walk_call_arg(arg: &crate::ast::CallArg, ctx: &mut Ctx) {
-    use crate::ast::CallArg;
-    match arg {
-        CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => walk_expr(e, ctx),
-        CallArg::Named { value, .. } => {
-            if let Some(v) = value {
-                walk_expr(v, ctx);
-            }
-        }
-    }
-}
-
-fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
-    match expr {
-        Expr::Var(n) => {
-            if let Some(k) = ref_key('$', n) {
-                ctx.reference(k);
-            }
-        }
-        Expr::ArrayVar(n) => {
-            if let Some(k) = ref_key('@', n) {
-                ctx.reference(k);
-            }
-        }
-        Expr::HashVar(n) => {
-            if let Some(k) = ref_key('%', n) {
-                ctx.reference(k);
-            }
-        }
-
-        // `do STMT` (statement form) shares the enclosing scope, so an inline
-        // `do my $x = 5` declares in the current scope. `do { ... }` is a
-        // separate `DoBlock` variant handled as a nested scope below.
-        Expr::DoStmt(s) => walk_stmt(s, ctx),
-
-        Expr::AssignExpr { name, expr, .. } => {
-            if let Some(k) = decl_key(name) {
-                ctx.reference(k);
-            }
-            walk_expr(expr, ctx);
-        }
-
-        // Body-bearing expressions open a new nested lexical scope.
-        Expr::Block(body)
-        | Expr::Gather(body)
-        | Expr::DoBlock { body, .. }
-        | Expr::Once { body }
-        | Expr::PhaserExpr { body, .. } => walk_scoped_body(body, ctx),
-        Expr::AnonSub { body, .. } => walk_scoped_body(body, ctx),
-        Expr::AnonSubParams {
-            body,
-            params,
-            param_defs,
-            ..
-        } => walk_scoped_body_with_params(body, params, param_defs, ctx),
-        Expr::Lambda { param, body, .. } => {
-            walk_scoped_body_with_params(body, std::slice::from_ref(param), &[], ctx)
-        }
-        // ADR-0033 Phase 1: an un-expanded WhateverCurry marker introduces no
-        // named bindings of its own yet (its body still has literal `*`
-        // placeholders, not the synthetic `__wc_N` params `build_closure`
-        // assigns later) — so unlike `Lambda`/`AnonSubParams` it opens no new
-        // scope here; walk its body transparently in the current scope so any
-        // *other* variable reference inside it still gets shadow-checked.
-        Expr::WhateverCurry(inner) => walk_expr(inner, ctx),
-        Expr::Try { body, catch } => {
-            walk_scoped_body(body, ctx);
-            if let Some(c) = catch {
-                walk_scoped_body(c, ctx);
-            }
-        }
-
-        // Same-scope compound expressions: recurse into children.
-        Expr::MethodCall { target, args, .. }
-        | Expr::HyperMethodCall { target, args, .. }
-        | Expr::CallOn { target, args } => {
-            walk_expr(target, ctx);
-            for a in args {
-                walk_expr(a, ctx);
-            }
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            ..
-        }
-        | Expr::HyperMethodCallDynamic {
-            target,
-            name_expr,
-            args,
-            ..
-        } => {
-            walk_expr(target, ctx);
-            walk_expr(name_expr, ctx);
-            for a in args {
-                walk_expr(a, ctx);
-            }
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args {
-                walk_expr(a, ctx);
-            }
-        }
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::HyperFuncOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            walk_expr(left, ctx);
-            walk_expr(right, ctx);
-        }
-        // `todo/tickets/chained-compare-ast-node.md`: same-scope compound
-        // expression, like `Binary` above.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands {
-                walk_expr(o, ctx);
-            }
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            walk_expr(left, ctx);
-            for r in right {
-                walk_expr(r, ctx);
-            }
-        }
-        Expr::Feed { source, sink, .. } => {
-            walk_expr(source, ctx);
-            walk_expr(sink, ctx);
-        }
-        Expr::Unary { expr, .. }
-        | Expr::PostfixOp { expr, .. }
-        | Expr::Eager(expr)
-        | Expr::Itemize(expr)
-        | Expr::DeitemizeForBind(expr)
-        | Expr::Reduction { expr, .. }
-        | Expr::ZenSlice(expr)
-        | Expr::PositionalPair(expr)
-        | Expr::IndirectTypeLookup(expr)
-        | Expr::SymbolicDeref { expr, .. } => walk_expr(expr, ctx),
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            walk_expr(cond, ctx);
-            walk_expr(then_expr, ctx);
-            walk_expr(else_expr, ctx);
-        }
-        Expr::Index { target, index, .. } => {
-            walk_expr(target, ctx);
-            walk_expr(index, ctx);
-        }
-        Expr::MultiDimIndex {
-            target, dimensions, ..
-        } => {
-            walk_expr(target, ctx);
-            for d in dimensions {
-                walk_expr(d, ctx);
-            }
-        }
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-            ..
-        } => {
-            walk_expr(target, ctx);
-            for d in dimensions {
-                walk_expr(d, ctx);
-            }
-            walk_expr(value, ctx);
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            ..
-        } => {
-            walk_expr(target, ctx);
-            walk_expr(index, ctx);
-            walk_expr(value, ctx);
-        }
-        Expr::Exists { target, arg, .. } => {
-            walk_expr(target, ctx);
-            if let Some(a) = arg {
-                walk_expr(a, ctx);
-            }
-        }
-        Expr::SymbolicDerefAssign { expr, value, .. }
-        | Expr::IndirectTypeLookupAssign { expr, value } => {
-            walk_expr(expr, ctx);
-            walk_expr(value, ctx);
-        }
-        Expr::HyperSlice { target, .. } => walk_expr(target, ctx),
-        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) | Expr::CaptureLiteral(items) => {
-            for it in items {
-                walk_expr(it, ctx);
-            }
-        }
-        Expr::Hash(pairs) => {
-            for (_, v) in pairs {
-                if let Some(v) = v {
-                    walk_expr(v, ctx);
-                }
-            }
-        }
-        Expr::IndirectCodeLookup { package, .. } => walk_expr(package, ctx),
 
         _ => {}
     }

@@ -813,6 +813,12 @@ pub(crate) enum DeclReset {
     /// the enclosing loop left behind, so a failed initializer leaves `Any`
     /// for a CATCH/phaser (or a `try` expression) to observe.
     Fresh,
+    /// As `Fresh`, and also replace an outer same-named binding: the new
+    /// binding is in scope for its own initializer, and this one reads it
+    /// (`my $*X = $*X + 1`, `my $x = do { $x }` -- #9770), so it must see a
+    /// fresh `Any` rather than the binding it shadows. The parser marks such
+    /// declarations (`__init_sees_self`).
+    Shadow,
 }
 
 /// How `OpCode::DoBlockExpr` treats the bindings its body made, on exit.

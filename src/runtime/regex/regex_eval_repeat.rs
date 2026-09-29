@@ -13,20 +13,8 @@ impl Interpreter {
     ) -> Option<(usize, Option<usize>)> {
         let stmts = self.parse_regex_code_cached(code)?;
         let env = self.make_regex_eval_env(caps);
-        let mut interp = Interpreter {
-            env,
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        let val = match interp.eval_block_value(&stmts) {
+        let val = match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts))
+        {
             Ok(v) => v,
             Err(_) => return None,
         };
