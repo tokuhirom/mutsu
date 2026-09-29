@@ -750,6 +750,21 @@ impl Interpreter {
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
     pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
+        if method_name == "DEPRECATED"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name == "Attribute"
+            && attributes.as_map().contains_key("DEPRECATED")
+        {
+            return vec![Value::routine_parts(
+                Symbol::intern("Attribute"),
+                Symbol::intern("DEPRECATED"),
+                false,
+            )];
+        }
         // A Mixin (`but`/`does`, or a trait handler's `$routine does Role`) has
         // no entry of its own in the class registry, so the generic MRO walk
         // below (keyed by `mop_receiver_owner`) never sees it and mixin-added
