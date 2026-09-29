@@ -1,6 +1,6 @@
 use Test;
 
-plan 29;
+plan 30;
 
 # A `my role` has declaration-site identity (ADR-0047 P1, #9894): two
 # same-named lexical roles in different scopes are two different types. They
@@ -102,3 +102,10 @@ ok @x[0].WHAT === @x[1].WHAT, 'a loop body role keeps one identity';
 
 # EVAL-local lexical roles.
 is EVAL('my role Ev { method e { "ev" } }; (1 but Ev).e'), 'ev', 'a `my role` inside EVAL';
+
+# An attribute `does` trait names the lexical role visible at the declaration.
+{
+    my role AttrRole { method bar { 42 } }
+    my class WithAttr { has $.scalar does AttrRole }
+    is WithAttr.new.scalar.bar, 42, 'an attribute `does` a lexical role';
+}

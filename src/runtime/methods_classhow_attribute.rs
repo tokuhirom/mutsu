@@ -503,11 +503,15 @@ impl Interpreter {
             // the attribute's value (its container does the role). Not a
             // `trait_mod:<does>` dispatch.
             if kind == "does" {
+                // A `my role` is registered under its declaration-site storage
+                // name (ADR-0047, #9894); resolve the spelling here, where the
+                // declaring scope's env binding is still visible.
+                let role = self.lexical_env_remap_name(trait_name);
                 self.registry_mut()
                     .class_attribute_does_roles
                     .entry((owner.to_string(), attr_name_str.to_string()))
                     .or_default()
-                    .push(trait_name.clone());
+                    .push(role);
                 continue;
             }
             let trait_mod_name = format!("trait_mod:<{}>", kind);
