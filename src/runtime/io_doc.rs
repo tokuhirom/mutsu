@@ -799,9 +799,15 @@ impl Interpreter {
             if let Some((name, is_class_like, kind, dispatch, callable_type_ovr)) =
                 last_seg.or_else(|| try_extract_declarant(check_line, &current_class))
             {
-                // The body must still be open after this line: `sub x {}` opens
-                // and closes on one line, so no later `}` would ever pop it.
-                let declaration_opens_body = brace_depth > depth_before_line;
+                let declaration_opens_body = brace_depth > depth_before_line
+                    || check_line.find('{').is_some_and(|brace_pos| {
+                        let before_brace = &check_line[..brace_pos];
+                        before_brace.contains(')') || !before_brace.contains('(')
+                    });
+                // Only a body still open after this line is restored by a later
+                // `}`: `sub x {}` opens and closes on one line, so nothing would
+                // ever pop it and it would shadow the declaration really ending.
+                let body_stays_open = brace_depth > depth_before_line;
                 // For multi declarations, generate a unique key to avoid
                 // overwriting proto or other multi variants.
                 // For anonymous subs, also uniquify to avoid collisions.
@@ -897,7 +903,7 @@ impl Interpreter {
                 );
                 // A declaration that opens a block body remembers itself so the
                 // matching closing brace can restore it for a trailing `#=`.
-                if declaration_opens_body {
+                if body_stays_open {
                     open_block_declarants.push((depth_before_line, declarant.clone()));
                 }
                 last_declarant = Some(declarant.clone());
