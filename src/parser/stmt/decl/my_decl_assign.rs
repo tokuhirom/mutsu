@@ -728,6 +728,16 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             _ => Expr::BareWord(s.name.clone()),
         },
     };
+    // The untyped form's self-read is the `.=` invocant, not a use of the
+    // variable in its own initializer: exempt it from that check
+    // (`outer_redecl`, X::Syntax::Variable::Initializer).
+    let mut custom_traits = s.custom_traits.clone();
+    if !matches!(target_expr, Expr::BareWord(_)) {
+        custom_traits.push((
+            crate::parser::outer_redecl::METHOD_ASSIGN_DECL_TRAIT.to_string(),
+            None,
+        ));
+    }
     let expr = Expr::MethodCall {
         target: Box::new(target_expr),
         name: Symbol::intern(&method_name),
@@ -744,7 +754,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_dynamic: s.has_dynamic_trait,
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
-        custom_traits: s.custom_traits.clone(),
+        custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
     // Handle trailing comma list

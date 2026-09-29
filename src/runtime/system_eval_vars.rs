@@ -53,7 +53,6 @@ impl Interpreter {
                 Self::collect_declared_vars(stmt, &mut declared);
                 continue;
             }
-            Self::check_self_referential_init(stmt)?;
             Self::collect_declared_vars(stmt, &mut declared);
             if let Some((sigil, var_name, suggestions)) =
                 self.find_undeclared_var_in_stmt(stmt, &declared)
@@ -89,82 +88,6 @@ impl Interpreter {
             }
         }
         Ok(())
-    }
-
-    fn check_self_referential_init(stmt: &Stmt) -> Result<(), RuntimeError> {
-        let (name, expr, custom_traits) = match stmt {
-            Stmt::VarDecl {
-                name,
-                expr,
-                custom_traits,
-                ..
-            } => (name, expr, custom_traits),
-            Stmt::SyntheticBlock(body) => {
-                for s in body {
-                    Self::check_self_referential_init(s)?;
-                }
-                return Ok(());
-            }
-            _ => return Ok(()),
-        };
-        let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer")
-            || !matches!(expr, Expr::Literal(v) if v.is_nil());
-        let self_ref_expr = has_init && Self::expr_references_var(expr, name);
-        let self_ref_trait = custom_traits.iter().any(|(_, arg)| {
-            arg.as_ref()
-                .is_some_and(|e| Self::expr_references_var(e, name))
-        });
-        if self_ref_expr || self_ref_trait {
-            let sigil = if name.starts_with('@') || name.starts_with('%') {
-                ""
-            } else {
-                "$"
-            };
-            let symbol = format!("{}{}", sigil, name);
-            let mut attrs = ValueMap::default();
-            attrs.insert("name".to_string(), Value::str(symbol));
-            return Err(RuntimeError::typed(
-                "X::Syntax::Variable::Initializer",
-                attrs,
-            ));
-        }
-        Ok(())
-    }
-
-    fn expr_references_var(expr: &Expr, var_name: &str) -> bool {
-        let bare = var_name
-            .strip_prefix('%')
-            .or_else(|| var_name.strip_prefix('@'))
-            .or_else(|| var_name.strip_prefix('$'))
-            .unwrap_or(var_name);
-        match expr {
-            Expr::Var(name) => name == var_name || name == bare,
-            Expr::HashVar(name) | Expr::ArrayVar(name) => name == bare,
-            Expr::Binary { left, right, .. } | Expr::MetaOp { left, right, .. } => {
-                Self::expr_references_var(left, var_name)
-                    || Self::expr_references_var(right, var_name)
-            }
-            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
-                Self::expr_references_var(expr, var_name)
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                Self::expr_references_var(target, var_name)
-                    || args.iter().any(|a| Self::expr_references_var(a, var_name))
-            }
-            Expr::Index { target, index, .. } => {
-                Self::expr_references_var(target, var_name)
-                    || Self::expr_references_var(index, var_name)
-            }
-            Expr::ArrayLiteral(items) => {
-                items.iter().any(|i| Self::expr_references_var(i, var_name))
-            }
-            // Grouped is the transparent parenthesization marker (e.g. a
-            // parenthesized X/Z meta-op keeps it so the arg-list lift leaves
-            // it alone) — look through it, or `my @foo := 1..3, (@foo Z+ 100)`
-            // stops throwing X::Syntax::Variable::Initializer.
-            Expr::Grouped(inner) => Self::expr_references_var(inner, var_name),
-            _ => false,
-        }
     }
 
     pub(super) fn collect_declared_vars(stmt: &Stmt, out: &mut HashSet<String>) {
