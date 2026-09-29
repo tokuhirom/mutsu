@@ -944,9 +944,17 @@ impl Interpreter {
         // deref'd clone would COW-detach on `gc_data_mut` and silently drop the
         // write. Locking the cell hands out the same `&mut Value` the slot arm
         // does, so every arm below is unchanged.
+        //
+        // The cell is found the way the read above found the container: a
+        // compunit's own file-scope lexical or a routine-nested sub's free
+        // variable (`unit_lexical_slot`) before the env key, which belongs to
+        // whatever scope called in (mutsu#10114).
         let cell = match gate_slot {
             Some(s) => self.locals.get(s),
-            None => self.env().get_sym(name_sym),
+            None => self
+                .unit_lexical_slot(&name)
+                .filter(|v| v.is_container_ref())
+                .or_else(|| self.env().get_sym(name_sym)),
         }
         .and_then(|v| match v.descalarize().view() {
             ValueView::ContainerRef(cell) => Some(cell.clone()),

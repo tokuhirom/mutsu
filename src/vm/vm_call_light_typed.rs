@@ -780,7 +780,7 @@ impl Interpreter {
                 && fname != "@_"
                 && fname != "%_"
                 && !self.is_unit_lexical_of(&cf.package, &fname)
-                && !self.is_mainline_lexical_write(func_name, &fname)
+                && !self.is_mainline_lexical_write(func_name, cf, &fname)
             {
                 self.pending_rw_writeback_sources.push(fname.to_string());
             }

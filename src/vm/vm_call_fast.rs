@@ -450,7 +450,11 @@ impl Interpreter {
                 if name != "_"
                     && name != "@_"
                     && name != "%_"
-                    && !self.is_lexsub_alias_write(fn_name, name)
+                    && !self.is_lexsub_alias_write(
+                        fn_name,
+                        (cf.package_sym(), cf.source_file_sym()),
+                        name,
+                    )
                 {
                     self.pending_rw_writeback_sources.push(name.to_string());
                 }

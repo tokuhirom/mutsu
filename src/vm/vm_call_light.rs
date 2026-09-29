@@ -1103,7 +1103,11 @@ impl Interpreter {
                 if fname != "_"
                     && fname != "@_"
                     && fname != "%_"
-                    && !self.is_lexsub_alias_write(func_name, fname)
+                    && !self.is_lexsub_alias_write(
+                        func_name,
+                        (cf.package_sym(), cf.source_file_sym()),
+                        fname,
+                    )
                 {
                     self.pending_rw_writeback_sources.push(fname.to_string());
                 }

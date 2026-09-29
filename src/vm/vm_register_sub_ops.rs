@@ -176,7 +176,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // mutsu#9111: bind this activation's free-variable aliases, on every
         // execution — a frame-lexical sub derives its definition only once.
-        self.bind_lexsub_free_aliases(code, idx);
+        self.bind_lexsub_free_aliases(code, idx, compiled_fns);
         // ADR-0113: a frame-lexical `my sub` registers nothing.
         if let Some(r) = code
             .sub_decl_plans

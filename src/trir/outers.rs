@@ -19,7 +19,6 @@
 use super::TrChunk;
 use super::frame::TrFrame;
 use crate::runtime::Interpreter;
-use crate::symbol::Symbol;
 use crate::value::Value;
 
 impl Interpreter {
@@ -55,7 +54,7 @@ impl Interpreter {
         let mut bindings = Vec::with_capacity(chunk.outers.len());
         let mut all_stable = true;
         for o in &chunk.outers {
-            match self.trir_outer_binding(chunk.name, o.name.as_str()) {
+            match self.trir_outer_binding(chunk, o.name.as_str()) {
                 Some((v, stable)) => {
                     all_stable &= stable;
                     bindings.push(v);
@@ -107,7 +106,7 @@ impl Interpreter {
         // resolve again from scratch into the same region.
         let mut fresh = Vec::with_capacity(chunk.outers.len());
         for o in &chunk.outers {
-            match self.trir_outer_binding(chunk.name, o.name.as_str()) {
+            match self.trir_outer_binding(chunk, o.name.as_str()) {
                 Some((v, _)) => fresh.push(v),
                 None => return false,
             }
@@ -131,13 +130,16 @@ impl Interpreter {
     ///
     /// The flag says whether the binding may be cached under
     /// `unit_lexical_gen` (see `trir_seed_outers`).
-    fn trir_outer_binding(&self, callee: Symbol, name: &str) -> Option<(Value, bool)> {
+    fn trir_outer_binding(&self, chunk: &TrChunk, name: &str) -> Option<(Value, bool)> {
+        let callee = chunk.name;
         let celled = |v: Value| {
             let stable = v.is_container_ref();
             (v, stable)
         };
         // mutsu#9111: a routine-nested sub's per-activation binding.
-        if let Some(v) = self.lexsub_alias_binding_for(callee, name) {
+        // The owner is what `run_trir_routine` pushes as the chunk's frame.
+        let owner = (self.current_package_sym(), chunk.def_file.get().copied());
+        if let Some(v) = self.lexsub_alias_binding_for(callee, owner, name) {
             return Some(celled(v));
         }
         if let Some(bucket) = self.mainline_lexical_subs.get(callee.as_str())
