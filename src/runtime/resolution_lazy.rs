@@ -94,7 +94,9 @@ impl Interpreter {
         // The body's `samewith` names the routine the gather was WRITTEN in —
         // see `push_captured_samewith_context`.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
-        let run_res = self.run_block(&list.body);
+        // A lazy gather body runs in its own captured env, not the forcing
+        // frame's, so it blocks the inline CATCH chain (ADR-0072).
+        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
         self.pop_captured_samewith_context(pushed_samewith);
         self.pop_block_scope_depth();
         let items = self.gather_items.pop().unwrap_or_default();
@@ -138,7 +140,9 @@ impl Interpreter {
         // See `force_lazy_list_bridge`: restore the package the gather was
         // WRITTEN in for a bare call in the body.
         let saved_package = self.enter_gather_package(&list.env);
-        let run_res = self.run_block(&list.body);
+        // A lazy gather body runs in its own captured env, not the forcing
+        // frame's, so it blocks the inline CATCH chain (ADR-0072).
+        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }
@@ -182,7 +186,9 @@ impl Interpreter {
         // method-dispatch forcing routes through this tree-walk bridge
         // instead, so it needs its own copy of the restore.
         let saved_package = self.enter_gather_package(&list.env);
-        let mut r = self.force_lazy_list(list);
+        // A lazy gather body runs in its own captured env, not the forcing
+        // frame's, so it blocks the inline CATCH chain (ADR-0072).
+        let mut r = self.with_catch_marker(|this| this.force_lazy_list(list));
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }

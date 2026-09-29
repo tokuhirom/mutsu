@@ -288,18 +288,6 @@ impl Interpreter {
             // of the installing frame (`enter_installing_frame`).
             let same_frame = entry.installing_code == self.current_code
                 && entry.installing_base == self.locals.base();
-            // A cross-frame run needs the installing activation's env, found in
-            // the call frame it pushed next. Where no such frame exists (the
-            // throw ran on a path that pushed none, like a lazy `gather` body
-            // reified later), the handler's by-name reads could not be
-            // resolved in its own scope: stop the chain and unwind to it.
-            if !same_frame
-                && self
-                    .installing_call_frame(entry.installing_base, entry.installing_call_depth)
-                    .is_none()
-            {
-                break;
-            }
             let token = entry.token;
             let return_target = entry.return_target;
             let installing_base = entry.installing_base;
