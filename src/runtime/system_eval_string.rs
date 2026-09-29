@@ -397,6 +397,7 @@ impl Interpreter {
         crate::runtime::registration_sub::push_eval_outer_routine_keys(
             self.registry().functions.keys().copied(),
         );
+        crate::runtime::registration_sub::push_eval_routine_depth(self.routine_stack.len());
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
         // is a fatal compile error in Raku; short-circuit before evaluating.
@@ -682,6 +683,7 @@ impl Interpreter {
         }
         crate::runtime::registration_sub::pop_eval_outer_amp_names();
         crate::runtime::registration_sub::pop_eval_outer_routine_keys();
+        crate::runtime::registration_sub::pop_eval_routine_depth();
         // An EVAL parse failure is exposed as `$!`, whose string form is what
         // Test.rakumod's `eval-lives-ok` prints after `# Error:`.  The raw
         // parser diagnostic is useful to the CLI renderer, but starts with an

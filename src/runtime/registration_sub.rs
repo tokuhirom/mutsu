@@ -128,6 +128,35 @@ thread_local! {
     /// Keyed by interned `Symbol`, so taking the snapshot allocates no strings.
     static EVAL_OUTER_ROUTINE_KEYS: RefCell<Vec<HashSet<Symbol>>> =
         const { RefCell::new(Vec::new()) };
+
+    /// Stack (for nested EVALs) of the routine-stack depth at which each
+    /// active `EVAL` began. A `my sub` executed deeper than that runs inside a
+    /// routine the EVAL'd code called, so it is a nested lexical declaration,
+    /// not one of the EVAL's own top-level declarations.
+    static EVAL_ROUTINE_DEPTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Record the routine-stack depth as an `EVAL` begins.
+pub(crate) fn push_eval_routine_depth(depth: usize) {
+    EVAL_ROUTINE_DEPTHS.with(|stack| stack.borrow_mut().push(depth));
+}
+
+/// Pop the routine-depth marker when an EVAL finishes.
+pub(crate) fn pop_eval_routine_depth() {
+    EVAL_ROUTINE_DEPTHS.with(|stack| {
+        stack.borrow_mut().pop();
+    });
+}
+
+/// Whether the innermost active EVAL's code is currently running inside a
+/// routine body (deeper than the routine stack was when the EVAL began).
+fn in_routine_called_by_eval(routine_depth: usize) -> bool {
+    EVAL_ROUTINE_DEPTHS.with(|stack| {
+        stack
+            .borrow()
+            .last()
+            .is_some_and(|start| routine_depth > *start)
+    })
 }
 
 /// Push the set of registry routine keys that exist as an `EVAL` begins.
@@ -640,14 +669,14 @@ impl Interpreter {
             return false;
         }
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            && (in_routine_called_by_eval(self.routine_stack.len())
+                || (!matches!(
+                    self.env.get("__mutsu_in_eval").map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) && !matches!(
+                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )));
         if allow_lexical_shadow {
             return false;
         }
@@ -1275,14 +1304,14 @@ impl Interpreter {
         });
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            && (in_routine_called_by_eval(self.routine_stack.len())
+                || (!matches!(
+                    self.env.get("__mutsu_in_eval").map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) && !matches!(
+                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )));
         let code_var_key = format!("&{}", name);
         // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
         // registry is restored afterwards, so it may shadow an `&name` that
