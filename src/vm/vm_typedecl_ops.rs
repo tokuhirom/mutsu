@@ -3,6 +3,18 @@ use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
+fn source_compound_name(
+    traits: &[(String, Option<crate::opcode::DeclTraitArg>)],
+) -> Option<String> {
+    traits.iter().find_map(|(name, arg)| {
+        if name == "__source_compound_name" {
+            arg.as_ref()?.literal()?.as_str().map(str::to_owned)
+        } else {
+            None
+        }
+    })
+}
+
 impl Interpreter {
     pub(super) fn exec_register_decl_op(
         &mut self,
@@ -470,6 +482,8 @@ impl Interpreter {
             // The bare name resolves to the (possibly mangled) storage name so
             // that `Foo.new` inside this scope produces instances tagged with
             // this declaration's identity, not an earlier same-named class's.
+            let source_alias =
+                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
             let env = self.env_mut();
             // NB: registering a type must NOT touch `$_`. A `class`/`role`
             // declaration is not an expression whose value becomes the topic,
@@ -496,6 +510,9 @@ impl Interpreter {
                 env.entry_or_insert_with(resolved_name.clone(), || {
                     Value::package(Symbol::intern(&storage))
                 });
+            }
+            if let Some(alias) = source_alias {
+                env.insert(alias, Value::package(Symbol::intern(&storage_name)));
             }
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
@@ -1072,6 +1089,12 @@ impl Interpreter {
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
                 );
+            }
+            if let Some(alias) =
+                source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias))
+            {
+                self.env_mut()
+                    .insert(alias, Value::package(Symbol::intern(&qualified_name)));
             }
             // When a role is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `role R1` inside

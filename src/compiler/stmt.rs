@@ -6,8 +6,8 @@ impl Compiler {
     /// Pre-qualify a class/role declaration's name with the compiler's
     /// `current_package` when compiling inside a `unit module`/`unit class`/
     /// `unit role` body. Bare names (no `::`) are rewritten to
-    /// `Pkg::Name`. Names that already contain `::` or are top-level
-    /// (current_package == "GLOBAL") are returned unchanged.
+    /// `Pkg::Name`. Compound names are relative as well; only `GLOBAL::`
+    /// names and top-level declarations stay unchanged.
     pub(super) fn qualify_decl_name(&self, stmt: &Stmt) -> Stmt {
         if !self.in_unit_package
             || self.current_package == "GLOBAL"
@@ -19,7 +19,7 @@ impl Compiler {
             Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
             _ => return stmt.clone(),
         };
-        if bare.contains("::") {
+        if bare.starts_with("GLOBAL::") {
             return stmt.clone();
         }
         let qualified = format!("{}::{}", self.current_package, bare);
@@ -124,7 +124,16 @@ impl Compiler {
                     repr: repr.clone(),
                     body: body.clone(),
                     language_version: language_version.clone(),
-                    custom_traits: custom_traits.clone(),
+                    custom_traits: {
+                        let mut traits = custom_traits.clone();
+                        if crate::qualified::is_qualified(Symbol::intern(&bare)) {
+                            traits.push((
+                                "__source_compound_name".to_string(),
+                                Some(Expr::Literal(Value::str(bare.clone()))),
+                            ));
+                        }
+                        traits
+                    },
                     is_unit: *is_unit,
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
@@ -154,7 +163,16 @@ impl Compiler {
                 body: body.clone(),
                 is_rw: *is_rw,
                 language_version: language_version.clone(),
-                custom_traits: custom_traits.clone(),
+                custom_traits: {
+                    let mut traits = custom_traits.clone();
+                    if crate::qualified::is_qualified(Symbol::intern(&bare)) {
+                        traits.push((
+                            "__source_compound_name".to_string(),
+                            Some(Expr::Literal(Value::str(bare.clone()))),
+                        ));
+                    }
+                    traits
+                },
             },
             _ => stmt.clone(),
         }

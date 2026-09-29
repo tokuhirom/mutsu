@@ -27,6 +27,12 @@ impl Interpreter {
     /// point of the callers is to decide whether such a lexical's value is
     /// shadowing a type.
     pub(crate) fn resolve_bareword_type_name(&self, name: &str) -> Option<String> {
+        if crate::qualified::is_qualified(Symbol::intern(name))
+            && !name.starts_with("GLOBAL::")
+            && let Some(relative) = self.resolve_type_in_current_package(name)
+        {
+            return Some(relative);
+        }
         if self.has_type_direct(name) || Self::is_builtin_type(name) {
             return Some(Self::resolve_type_alias(name).to_string());
         }
@@ -303,6 +309,13 @@ impl Interpreter {
             // module-scope fallbacks of `term_binding` stay below the type
             // branch.
             v
+        } else if crate::qualified::is_qualified(Symbol::intern(name))
+            && !name.starts_with("GLOBAL::")
+            && let Some(relative) = self.resolve_type_in_current_package(name)
+        {
+            // A compound type name inside a package is relative to that
+            // package, even when its spelling also names an outer type.
+            Value::package(Symbol::intern(&relative))
         } else if match self.env().get(name).map(Value::view) {
             Some(ValueView::Nil) => self.has_type(name) || Self::is_builtin_type(name),
             // A `my $Buf = Buf.new` declaration pre-seeds env["Buf"] with the

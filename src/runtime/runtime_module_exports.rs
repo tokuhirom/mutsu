@@ -899,6 +899,21 @@ impl Interpreter {
         self.env
             .get(&qualified)
             .cloned()
+            // The requested compunit path can differ from its declared unit
+            // package. In that case the exported role/class value lives under
+            // the declared package, even though its export metadata is also
+            // mirrored under the requested path.
+            .or_else(|| {
+                let declared = self
+                    .module_declared_unit_packages
+                    .get(&crate::symbol::Symbol::intern(module))?;
+                let key =
+                    crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
+                self.env.get_sym(key).cloned().or_else(|| {
+                    self.has_type_direct(key.as_str())
+                        .then(|| Value::package(key))
+                })
+            })
             .or_else(|| self.enum_bare_value(name).cloned())
             .or_else(|| {
                 self.package_lexicals

@@ -93,6 +93,7 @@ impl Interpreter {
         target.module_scope_lexicals = Arc::clone(&self.module_scope_lexicals);
         target.module_source_packages = Arc::clone(&self.module_source_packages);
         target.unit_module_packages = Arc::clone(&self.unit_module_packages);
+        target.module_declared_unit_packages = Arc::clone(&self.module_declared_unit_packages);
         target.escaping_our_lexical_names = Arc::clone(&self.escaping_our_lexical_names);
         target.escaped_our_sub_names = Arc::clone(&self.escaped_our_sub_names);
         target.escaped_our_lexical_cells = self.escaped_our_lexical_cells.clone();

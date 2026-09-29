@@ -959,6 +959,10 @@ impl Interpreter {
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
                 );
+                crate::runtime::cow_table_mut(&mut self.module_declared_unit_packages).insert(
+                    crate::symbol::Symbol::intern(module),
+                    crate::symbol::Symbol::intern(name),
+                );
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
