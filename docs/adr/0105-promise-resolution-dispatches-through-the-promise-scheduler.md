@@ -3,7 +3,9 @@
 - Status: **Accepted** (design final 2026-09-16 — the user delegated the two
   open points to the design session under the premise "we are building the
   fastest Raku interpreter", and §7 records how they were settled;
-  implemented 2026-09-26, slices and implementation notes in §8)
+  implemented 2026-09-26, slices and implementation notes in §8; the D2
+  ordering invariant made explicit and extended to late awaiters 2026-09-29,
+  §9)
 - Date: 2026-09-16
 - Context: [#8380](https://github.com/tokuhirom/mutsu/issues/8380) (the
   `Test::Time` / `Test::Scheduler` deadlock), whose 2026-09-16 direction
@@ -384,6 +386,57 @@ Unrelated findings to file as `todo:ticket`s (not this ADR's scope):
 - `Supply.interval` under a user `$*SCHEDULER` must route through its
   `.cue(:every, :in)` (test 55, "Certainly scheduling using virtual time":
   it ticks in real time today, 31s for the file) — ADR-0043 territory.
+
+## 9. Amendment (2026-09-29): the D2 ordering invariant, late awaiters included
+
+[#10016](https://github.com/tokuhirom/mutsu/issues/10016) reported the S0
+oracle's experiment-3 subtest losing under debug-build/JIT contention (15 of
+200 runs) and guessed the `WAKE_GRACE` tick overtook the keeper. Instrumenting
+the failing runs showed otherwise: no tick delivery happened at all. The
+awaiter had not yet *reached* `await $init` when the keeper kept it, so the
+`await` took the already-resolved fast path, returned at once, and raced the
+keeper's `$flag = 1`. D2 only ordered awaiters that were parked before the
+keep; an awaiter slowed down on its own side (preempted, or simply
+interpreted slower than the keeper) had no ordering at all.
+
+**Invariant.** An `await` on a promise resolved by a pool worker inside a
+task returns no earlier than that worker's next yield (its next park or its
+task end) — whether the awaiter parked before the resolution or arrives after
+it. The single exception is the liveness fallback: a notification the keeper
+has left deferred for `WAKE_GRACE` without yielding is delivered by the tick.
+
+- *Mechanism.* Each worker's deferred list carries a yield epoch, bumped by
+  every yield under the list's lock. A resolution on a pool worker records a
+  `KeeperMark` (the list and its epoch) on the promise. A late `await` that
+  finds the mark still current defers its own release onto that list and
+  parks; one that finds the epoch moved on returns at once. The check and the
+  push happen under the same lock the yield bumps the epoch under, so no
+  interleaving strands or skips an awaiter. The keeper awaiting its own
+  promise never defers (its own code is already ordered after its keep).
+  Cost: one `Arc` clone and one uncontended lock per pooled resolution; a late
+  `await` pays the deferral only while the keeper has not yet yielded.
+- *What it guarantees.* Ordering against any delay on the awaiter's side, and
+  against keeper-side delays shorter than `WAKE_GRACE`. A keeper stalled for
+  longer than that between its keep and its next yield loses the ordering,
+  exactly as Rakudo's own ordering is bounded by its ~10ms supervisor tick
+  (F3). It is **not** promised under arbitrary keeper preemption: no Raku
+  implementation promises it, and closing that window needs either a
+  progress measure on the keeper (a per-opcode counter in the poll network,
+  which ADR-0106 §8 gate 1 forbids on a disarmed run) or giving up the
+  liveness of a keeper that never yields. Raising `WAKE_GRACE` is not a fix
+  and was not done.
+- *Stronger than Rakudo.* Rakudo's `await` on a kept promise returns at once
+  (`$handle.already`); run against the late-awaiter shape below it loses an
+  occasional round. The rule is kept anyway, as D3 is kept stronger than F2:
+  it makes the ordering a property of the program, not of which thread the
+  OS happened to run first.
+- *Deterministic regression tests.* `yield_points::tests` (the late awaiter
+  is observed deferred on a tick-exempt keeper list and released only by the
+  yield; an awaiter after the yield and the keeper awaiting its own promise
+  never defer) and `t/concurrency/promise/await-after-keep-keeper-order.t`,
+  whose awaiter spins until the keep has happened before it awaits, so the
+  late path is taken every time (0/5 rounds before the fix, 5/5 after). The
+  S0 oracle's experiment-3 subtest stays as the Rakudo-parity oracle.
 
 ## Appendix A — the measurements
 

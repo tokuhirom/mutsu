@@ -13,6 +13,10 @@
 //!   fallback exists for a keeper that never yields (a CPU-bound loop, an
 //!   unhooked blocking call), and delivering at the first 10ms tick let an
 //!   interpreted keeper's straight-line code lose the race it exists to win.
+//!   An awaiter that arrives only *after* the keep defers onto the keeper's
+//!   list the same way, through the [`KeeperMark`] the resolution recorded:
+//!   without it, an `await` reached late returned at once and raced the
+//!   keeper's straight-line code (#10016).
 //! - **Deferred starts** (D4): tasks this worker submitted while no worker was
 //!   idle. They stay queued until the submitter parks (which grows the pool),
 //!   ends its task (it dequeues them itself), or the tick grows the pool for a
@@ -29,7 +33,72 @@ use std::time::{Duration, Instant};
 /// A notification deferred to the worker's next yield.
 pub(crate) type Deferred = Box<dyn FnOnce() + Send + 'static>;
 /// A worker's deferred notifications, each with the moment it was deferred.
-type DeferredList = Arc<Mutex<Vec<(Instant, Deferred)>>>;
+type DeferredList = Arc<Mutex<DeferredState>>;
+
+#[derive(Default)]
+struct DeferredState {
+    /// How many times the worker has yielded. A [`KeeperMark`] taken at
+    /// epoch `e` is still pending exactly while this equals `e`.
+    epoch: u64,
+    items: Vec<(Instant, Deferred)>,
+    /// Test-only: the tick leaves this list alone, so a unit test observes
+    /// the yield ordering without racing the wall-clock fallback.
+    #[cfg(test)]
+    tick_exempt: bool,
+}
+
+/// Where a promise was resolved: a pool worker inside a task, and how many
+/// times that worker had yielded at the moment (ADR-0105 D2, #10016). An
+/// `await` reaching the resolved promise before that worker yields again
+/// defers its return onto the worker's list, exactly as a parked awaiter's
+/// wake-up was deferred, so it cannot overtake the keeper's straight-line
+/// code either.
+#[derive(Clone)]
+pub(crate) struct KeeperMark {
+    list: DeferredList,
+    epoch: u64,
+}
+
+/// The calling thread's [`KeeperMark`], or `None` when it is not a pool
+/// worker running a task (a resolution there wakes everyone immediately).
+// Cost: O(1).
+pub(crate) fn keeper_mark() -> Option<KeeperMark> {
+    if !IN_TASK.with(|c| c.get()) {
+        return None;
+    }
+    let list = DEFERRED.with(|d| d.borrow().clone())?;
+    let epoch = list.lock().unwrap_or_else(PoisonError::into_inner).epoch;
+    Some(KeeperMark { list, epoch })
+}
+
+impl KeeperMark {
+    /// Run `f` at the marked worker's next yield. Hands `f` back when that
+    /// worker has yielded since the mark (the caller runs it now), when the
+    /// caller *is* the marked worker (its own code is already ordered after
+    /// its keep), or when no tick can back the deferral.
+    // Cost: O(1).
+    pub(crate) fn defer(&self, f: Deferred) -> Result<(), Deferred> {
+        let own = DEFERRED.with(|d| {
+            d.borrow()
+                .as_ref()
+                .is_some_and(|l| Arc::ptr_eq(l, &self.list))
+        });
+        if own {
+            return Err(f);
+        }
+        // Armed before the list is locked: a failed spawn delivers every
+        // list, this one included.
+        if !arm_tick() {
+            return Err(f);
+        }
+        let mut st = self.list.lock().unwrap_or_else(PoisonError::into_inner);
+        if st.epoch != self.epoch {
+            return Err(f);
+        }
+        st.items.push((Instant::now(), f));
+        Ok(())
+    }
+}
 
 /// How long a worker may keep running before the tick delivers what it
 /// deferred and starts what it submitted — the cadence of Rakudo's
@@ -57,7 +126,7 @@ fn all_lists() -> &'static Mutex<Vec<DeferredList>> {
 
 /// Give the calling worker a deferred list. Called once per worker.
 pub(super) fn register_worker() {
-    let list: DeferredList = Arc::new(Mutex::new(Vec::new()));
+    let list: DeferredList = Arc::new(Mutex::new(DeferredState::default()));
     all_lists()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -92,27 +161,32 @@ pub(crate) fn defer_until_yield(f: Deferred) -> Result<(), Deferred> {
     }
     list.lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .items
         .push((Instant::now(), f));
     Ok(())
 }
 
-/// Deliver the calling worker's deferred notifications.
+/// The calling worker yields: deliver its deferred notifications and end the
+/// epoch every outstanding [`KeeperMark`] on it was taken in.
 // Cost: O(d), d = notifications this worker deferred since its last yield.
 pub(super) fn flush_own() {
     let Some(list) = DEFERRED.with(|d| d.borrow().clone()) else {
         return;
     };
-    run_all(&list);
-}
-
-fn run_all(list: &DeferredList) {
     let pending = {
         let mut guard = list.lock().unwrap_or_else(PoisonError::into_inner);
-        if guard.is_empty() {
-            return;
-        }
-        std::mem::take(&mut *guard)
+        guard.epoch += 1;
+        std::mem::take(&mut guard.items)
     };
+    for (_, f) in pending {
+        f();
+    }
+}
+
+/// Deliver everything on `list` without ending its worker's epoch: the worker
+/// has not yielded, the tick just cannot stand behind the deferral any more.
+fn run_all(list: &DeferredList) {
+    let pending = std::mem::take(&mut list.lock().unwrap_or_else(PoisonError::into_inner).items);
     for (_, f) in pending {
         f();
     }
@@ -123,18 +197,23 @@ fn run_all(list: &DeferredList) {
 fn run_older_than(list: &DeferredList, cutoff: Instant) -> bool {
     let due: Vec<Deferred> = {
         let mut guard = list.lock().unwrap_or_else(PoisonError::into_inner);
-        if guard.is_empty() {
+        #[cfg(test)]
+        if guard.tick_exempt {
             return false;
         }
-        let (due, young): (Vec<_>, Vec<_>) = std::mem::take(&mut *guard)
+        if guard.items.is_empty() {
+            return false;
+        }
+        let (due, young): (Vec<_>, Vec<_>) = std::mem::take(&mut guard.items)
             .into_iter()
             .partition(|(at, _)| *at <= cutoff);
-        *guard = young;
+        guard.items = young;
         due.into_iter().map(|(_, f)| f).collect()
     };
     let remaining = !list
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .items
         .is_empty();
     for f in due {
         f();
@@ -247,6 +326,7 @@ fn tick_loop() {
                 None => !list
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
+                    .items
                     .is_empty(),
             };
         }
@@ -255,5 +335,77 @@ fn tick_loop() {
             lock.lock().unwrap_or_else(PoisonError::into_inner).armed = true;
         }
         grow_as_needed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::{SharedPromise, Value};
+    use std::sync::mpsc;
+
+    /// Make this test thread a pool worker inside a task whose deferred list
+    /// the wall-clock tick never touches, so only a yield can release it.
+    fn become_keeper() -> DeferredList {
+        register_worker();
+        IN_TASK.with(|c| c.set(true));
+        let list = DEFERRED.with(|d| d.borrow().clone()).unwrap();
+        list.lock().unwrap().tick_exempt = true;
+        list
+    }
+
+    fn stop_being_keeper() {
+        IN_TASK.with(|c| c.set(false));
+        unregister_worker();
+    }
+
+    /// #10016: an `await` reaching a promise after a pool worker kept it
+    /// returns only at that worker's next yield. Deterministic: the awaiter
+    /// is observed deferred on the keeper's list, and nothing but the yield
+    /// below can release it.
+    #[test]
+    fn late_awaiter_waits_for_the_keepers_yield() {
+        let list = become_keeper();
+        let promise = SharedPromise::new();
+        promise.keep(Value::int(7), String::new(), String::new());
+        let (tx, rx) = mpsc::channel();
+        let awaited = promise.clone();
+        let awaiter = std::thread::spawn(move || {
+            let (value, _, _) = awaited.wait();
+            tx.send(value).unwrap();
+        });
+        while list.lock().unwrap().items.is_empty() {
+            assert!(rx.try_recv().is_err(), "returned before the keeper yielded");
+            std::thread::yield_now();
+        }
+        assert!(rx.try_recv().is_err(), "returned before the keeper yielded");
+        flush_own();
+        assert_eq!(rx.recv().unwrap(), Value::int(7));
+        awaiter.join().unwrap();
+        stop_being_keeper();
+    }
+
+    /// Once the keeper has yielded, a late `await` returns without deferring.
+    #[test]
+    fn awaiter_after_the_yield_returns_at_once() {
+        let list = become_keeper();
+        let promise = SharedPromise::new();
+        promise.keep(Value::int(1), String::new(), String::new());
+        flush_own();
+        let awaited = promise.clone();
+        std::thread::spawn(move || awaited.wait()).join().unwrap();
+        assert!(list.lock().unwrap().items.is_empty());
+        stop_being_keeper();
+    }
+
+    /// The keeper awaiting its own promise is already ordered after its keep.
+    #[test]
+    fn keeper_awaiting_its_own_promise_does_not_defer() {
+        let list = become_keeper();
+        let promise = SharedPromise::new();
+        promise.keep(Value::int(1), String::new(), String::new());
+        let _ = promise.wait();
+        assert!(list.lock().unwrap().items.is_empty());
+        stop_being_keeper();
     }
 }
