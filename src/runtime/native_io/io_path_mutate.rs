@@ -3,7 +3,7 @@ use crate::value::AttrMap;
 
 impl Interpreter {
     /// Single-path filesystem *mutations* on an `IO::Path`
-    /// (`spurt`/`mkdir`/`rmdir`/`unlink`/`chmod`): resolve the path against the
+    /// (`spurt`/`mkdir`/`rmdir`/`unlink`/`chmod`/`chown`): resolve the path against the
     /// VM-owned cwd, then perform a one-shot syscall (`fs::write`/`create_dir_all`/
     /// `remove_dir`/`remove_file`/`set_permissions`). They allocate **no
     /// `io_handles`** — `spurt` opens, writes, and immediately drops its file
@@ -12,6 +12,8 @@ impl Interpreter {
     /// (ledger §D): the single impl `native_io_path` also delegates to. Two-path
     /// ops (`copy`/`rename`/`move`/`symlink`/`link`, which resolve a destination)
     /// and handle-opening `open` return `None` and stay in `native_io_path`.
+    /// Cost: O(p + a + c) plus one filesystem mutation, p = path length,
+    /// a = argument count, c = content bytes written by `spurt` (zero otherwise).
     pub(crate) fn try_io_path_fs_mutate(
         &self,
         attributes: &AttrMap,
@@ -19,7 +21,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "spurt" | "mkdir" | "rmdir" | "unlink" | "chmod") {
+        if !matches!(
+            method,
+            "spurt" | "mkdir" | "rmdir" | "unlink" | "chmod" | "chown"
+        ) {
             return None;
         }
         Some(self.io_path_fs_mutate(attributes, class_name, method, args))
@@ -210,6 +215,9 @@ impl Interpreter {
                         .first()
                         .cloned()
                         .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
+                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(&mode_value) {
+                        return Err(err);
+                    }
                     let mode_int = match mode_value.view() {
                         ValueView::Int(i) => i as u32,
                         // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
@@ -230,6 +238,59 @@ impl Interpreter {
                         RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
                     })?;
                     Ok(Value::TRUE)
+                }
+            }
+            "chown" => {
+                #[cfg(not(unix))]
+                {
+                    let _ = args;
+                    Err(RuntimeError::new("chown not supported on this platform"))
+                }
+                #[cfg(unix)]
+                {
+                    use std::ffi::CString;
+                    use std::os::unix::ffi::OsStrExt;
+
+                    let mut uid = !0 as libc::uid_t;
+                    let mut gid = !0 as libc::gid_t;
+                    for arg in args {
+                        let ValueView::Pair(name, value) = arg.view() else {
+                            return Err(RuntimeError::new("chown accepts only named uid and gid"));
+                        };
+                        if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {
+                            return Err(err);
+                        }
+                        let ValueView::Int(number) = value.view() else {
+                            return Err(RuntimeError::new(format!(
+                                "chown {} must be an Int",
+                                name
+                            )));
+                        };
+                        match name.as_str() {
+                            "uid" => uid = number as libc::uid_t,
+                            "gid" => gid = number as libc::gid_t,
+                            _ => {
+                                return Err(RuntimeError::new(format!(
+                                    "Unknown chown argument: {}",
+                                    name
+                                )));
+                            }
+                        }
+                    }
+                    let cpath = CString::new(path_buf.as_os_str().as_bytes())
+                        .map_err(|_| RuntimeError::new("chown path contains a NUL byte"))?;
+                    if unsafe { libc::chown(cpath.as_ptr(), uid, gid) } == 0 {
+                        Ok(Value::TRUE)
+                    } else {
+                        Ok(io_exception_failure(
+                            "X::IO::Chown",
+                            format!(
+                                "Failed to change owner of '{}': {}",
+                                p,
+                                std::io::Error::last_os_error()
+                            ),
+                        ))
+                    }
                 }
             }
             _ => unreachable!("io_path_fs_mutate called with non-mutation method"),
