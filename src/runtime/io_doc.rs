@@ -799,11 +799,9 @@ impl Interpreter {
             if let Some((name, is_class_like, kind, dispatch, callable_type_ovr)) =
                 last_seg.or_else(|| try_extract_declarant(check_line, &current_class))
             {
-                let declaration_opens_body = brace_depth > depth_before_line
-                    || check_line.find('{').is_some_and(|brace_pos| {
-                        let before_brace = &check_line[..brace_pos];
-                        before_brace.contains(')') || !before_brace.contains('(')
-                    });
+                // The body must still be open after this line: `sub x {}` opens
+                // and closes on one line, so no later `}` would ever pop it.
+                let declaration_opens_body = brace_depth > depth_before_line;
                 // For multi declarations, generate a unique key to avoid
                 // overwriting proto or other multi variants.
                 // For anonymous subs, also uniquify to avoid collisions.
