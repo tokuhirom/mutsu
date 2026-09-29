@@ -311,6 +311,27 @@ pub(crate) fn native_method_0arg(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
+    // Cost: O(n), n = bytes in the format string scanned for directives.
+    if method == "directives"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "Format"
+    {
+        let fmt = attributes
+            .as_map()
+            .get("format")
+            .map(Value::to_string_value)
+            .unwrap_or_default();
+        let directives = crate::runtime::sprintf::sprintf_arg_specs(&fmt)
+            .into_iter()
+            .map(|(_, spec)| Value::str(spec.to_string()))
+            .collect();
+        return Some(Ok(Value::array(directives)));
+    }
+
     // Lazy-Match scalar fast path: these arms are semantically identical to
     // the Match block far below, but answered here straight from the capture
     // node so the probe gauntlet in between (each a `view()`, which would

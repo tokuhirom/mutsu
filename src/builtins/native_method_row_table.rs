@@ -496,7 +496,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `target.to_string_value()` regardless of receiver type, so most of
     // `Str`'s surface is reachable from a `Match` receiver too. Only names
     // the probe actually recognized (non-zero arity bits) are listed here --
-    // `replace-with`/`ends-with`/`indices`/`match`/`starts-with`/`subst`/
+    // `ends-with`/`indices`/`match`/`starts-with`/`subst`/
     // `subst-mutate`/`substr-rw`/`substr-eq`/`trans`/`IO` returned zero and
     // are deliberately absent (not natively recognized for a Match
     // receiver). `so`/`not`/`defined` are deliberately absent here too: a
@@ -524,6 +524,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Match", "Array", 1, 0),
     ("Match", "prematch", 1, 0),
     ("Match", "postmatch", 1, 0),
+    ("Match", "replace-with", 2, 0),
     ("Match", "perl", 1, 0),
     ("Match", "WHICH", 1, 0),
     ("Match", "keys", 1, 0),
