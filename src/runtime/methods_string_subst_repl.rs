@@ -122,6 +122,14 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
             _ => return Ok(replacement_str.to_string()),
         };
+        if sub_data.compiled_code.is_some() && !sub_data.is_decl_expr_thunk {
+            let result =
+                self.call_compiled_subst_closure(&sub_data, matched_text, captures, orig_text)?;
+            return Ok(cased(result.to_string_value()));
+        }
+        // TODO: compile to bytecode — a replacement Sub without `compiled_code`
+        // (one synthesized at runtime) still runs its AST body, compiling it
+        // once per match (ADR-0133 Decision 3's correctness fallback).
         let mut saved = self.env.clone();
         // The replacement block may mutate variables it closes over
         // (`s/.../{ $n++ }/`, `{ $m = $/[0] }`). Remember its captured lexical
@@ -140,62 +148,11 @@ impl Interpreter {
                 self.env.insert_sym(*k, v.clone());
             }
         }
-        if let Some(captures) = captures {
-            let match_obj = Value::make_match_object_full(
-                captures.from as i64,
-                captures.to as i64,
-                &captures.positional,
-                &captures.named,
-                captures.target_or_new(orig_text.unwrap_or_default()),
-            );
-            self.env.insert("/".to_string(), match_obj.clone());
-            self.env.insert("$_".to_string(), match_obj.clone());
-            self.env.insert("_".to_string(), match_obj.clone());
-            let positional_len = captures
-                .positional_slots()
-                .len()
-                .max(captures.positional.len());
-            for i in 0..positional_len {
-                // A quantified capture group (`( ... )+`) exposes the LIST of
-                // per-iteration matches as `$N`; the flat slot only holds the
-                // last iteration's text (t/uri-unescape shape:
-                // `.subst(:g, /['%' (<.xdigit>**2)]+/, -> $/ { $0.flatmap... })`).
-                let value = if let Some(qlist) = captures
-                    .positional
-                    .get(i)
-                    .and_then(|slot| slot.quantified.as_ref())
-                {
-                    let t = captures.target_or_new(orig_text.unwrap_or_default());
-                    Value::array(
-                        qlist
-                            .iter()
-                            .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
-                            .collect(),
-                    )
-                } else if let Some(Some((a, b))) = captures.positional_slots().get(i) {
-                    let t = captures.target_or_new(orig_text.unwrap_or_default());
-                    Value::str(t.span_str(*a, *b))
-                } else if let Some(slot) = captures.positional.get(i) {
-                    Value::str(captures.slot_text(slot))
-                } else {
-                    Value::NIL
-                };
-                self.env.insert(i.to_string(), value);
-            }
-            if positional_len == 0 {
-                self.env.insert("0".to_string(), Value::NIL);
-            }
-            let named_v = match_obj.match_named();
-            if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
-                for (k, v) in named_hash.iter() {
-                    self.env.insert(format!("<{}>", k), v.clone());
-                }
-            }
-        } else {
-            let match_val = Value::str(matched_text.to_string());
-            self.env.insert("/".to_string(), match_val.clone());
-            self.env.insert("$_".to_string(), match_val.clone());
-            self.env.insert("_".to_string(), match_val);
+        let (topic, context) = Self::subst_match_context(matched_text, captures, orig_text);
+        self.env.insert("$_".to_string(), topic.clone());
+        self.env.insert("_".to_string(), topic);
+        for (name, value) in context {
+            self.env.insert(name, value);
         }
         // A pointy replacement block (`-> $m { $m.uc }`) receives the match as its
         // argument, not just via the `$_` topic. Bind its first parameter to the
@@ -236,5 +193,120 @@ impl Interpreter {
         }
         self.env = saved;
         Ok(cased(result.to_string_value()))
+    }
+
+    /// Run a compiled replacement closure for one match, the way Rakudo's
+    /// `Str.subst` does: `$/` (and the `$0`.. / `$<name>` entries mutsu reads
+    /// it through) holds the match while the block runs, and the block is
+    /// called with the match as its argument when it takes one
+    /// (`$replacement.count ?? $replacement($/) !! $replacement()`).
+    ///
+    /// The closure's `compiled_code` is invoked like any other closure, so no
+    /// AST is compiled per match (ADR-0133, #10120). Only the match-context
+    /// names are saved and restored — the closure call itself handles the
+    /// block's writes to the lexicals it closes over (`{ $n++ }`).
+    // Cost: O(c) plus one closure call, c = capture names of the match.
+    fn call_compiled_subst_closure(
+        &mut self,
+        sub_data: &crate::gc::Gc<crate::value::SubData>,
+        matched_text: &str,
+        captures: Option<&RegexCaptures>,
+        orig_text: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let (topic, context) = Self::subst_match_context(matched_text, captures, orig_text);
+        let saved_topic = self.env.get("_").cloned();
+        let saved_context: Vec<(String, Option<Value>)> = context
+            .into_iter()
+            .map(|(name, value)| {
+                let old = self.env.get(&name).cloned();
+                self.env.insert(name.clone(), value);
+                (name, old)
+            })
+            .collect();
+        let takes_arg = !sub_data.empty_sig
+            && (sub_data.is_bare_block
+                || !sub_data.params.is_empty()
+                || !sub_data.param_defs.is_empty());
+        let args = if takes_arg { vec![topic] } else { Vec::new() };
+        let result = self.vm_call_on_value(Value::sub_value(sub_data.clone()), args, None);
+        for (name, old) in saved_context {
+            match old {
+                Some(v) => {
+                    self.env.insert(name, v);
+                }
+                None => {
+                    self.env.remove(&name);
+                }
+            }
+        }
+        if let Some(topic) = saved_topic {
+            self.env.insert("_".to_string(), topic);
+        }
+        result
+    }
+
+    /// The topic a replacement block sees for one match (the `$/` Match, or
+    /// the matched text when there are no captures to build one from) and the
+    /// match-context env entries to publish while it runs: `$/`, the
+    /// positional `$0`.. and the named `$<name>` captures.
+    // Cost: O(c), c = capture names of the match.
+    fn subst_match_context(
+        matched_text: &str,
+        captures: Option<&RegexCaptures>,
+        orig_text: Option<&str>,
+    ) -> (Value, Vec<(String, Value)>) {
+        let Some(captures) = captures else {
+            let match_val = Value::str(matched_text.to_string());
+            return (match_val.clone(), vec![("/".to_string(), match_val)]);
+        };
+        let match_obj = Value::make_match_object_full(
+            captures.from as i64,
+            captures.to as i64,
+            &captures.positional,
+            &captures.named,
+            captures.target_or_new(orig_text.unwrap_or_default()),
+        );
+        let mut context = vec![("/".to_string(), match_obj.clone())];
+        let positional_len = captures
+            .positional_slots()
+            .len()
+            .max(captures.positional.len());
+        for i in 0..positional_len {
+            // A quantified capture group (`( ... )+`) exposes the LIST of
+            // per-iteration matches as `$N`; the flat slot only holds the
+            // last iteration's text (t/uri-unescape shape:
+            // `.subst(:g, /['%' (<.xdigit>**2)]+/, -> $/ { $0.flatmap... })`).
+            let value = if let Some(qlist) = captures
+                .positional
+                .get(i)
+                .and_then(|slot| slot.quantified.as_ref())
+            {
+                let t = captures.target_or_new(orig_text.unwrap_or_default());
+                Value::array(
+                    qlist
+                        .iter()
+                        .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
+                        .collect(),
+                )
+            } else if let Some(Some((a, b))) = captures.positional_slots().get(i) {
+                let t = captures.target_or_new(orig_text.unwrap_or_default());
+                Value::str(t.span_str(*a, *b))
+            } else if let Some(slot) = captures.positional.get(i) {
+                Value::str(captures.slot_text(slot))
+            } else {
+                Value::NIL
+            };
+            context.push((i.to_string(), value));
+        }
+        if positional_len == 0 {
+            context.push(("0".to_string(), Value::NIL));
+        }
+        let named_v = match_obj.match_named();
+        if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
+            for (k, v) in named_hash.iter() {
+                context.push((format!("<{}>", k), v.clone()));
+            }
+        }
+        (match_obj, context)
     }
 }
