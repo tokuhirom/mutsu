@@ -1063,6 +1063,9 @@ impl Interpreter {
         idx: Value,
         hole_type: &str,
     ) -> Result<Value, RuntimeError> {
+        if matches!(container.view(), ValueView::Array(_, kind) if kind.is_immutable_list()) {
+            return Err(RuntimeError::new("Can not remove elements from a List"));
+        }
         // Container identity (§3): delete through the shared backing node so
         // every by-value holder of the same container observes the removal.
         if let Some(removed) = container.with_hash_mut(|hash| match idx.view() {

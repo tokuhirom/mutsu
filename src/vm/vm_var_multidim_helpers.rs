@@ -5,6 +5,24 @@ use crate::symbol::Symbol;
 use num_traits::Zero;
 
 impl Interpreter {
+    /// Array/List subscripts coerce each leaf index to Int. Pair has no valid
+    /// Int candidate, including when it appears inside a nested slice.
+    pub(super) fn reject_pair_positional_index(index: &Value) -> Result<(), RuntimeError> {
+        match index.view() {
+            ValueView::Pair(..) | ValueView::ValuePair(..) => Err(RuntimeError::typed_msg(
+                "X::Multi::NoMatch",
+                "Cannot resolve caller Int(Pair:D: ); none of these signatures matches:\n    (Mu:U \\v:: *%_)",
+            )),
+            ValueView::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::reject_pair_positional_index(item)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     // Cost: O(E) on a shaped array, E = leaves (via `shaped_array_shape`); O(d) on a
     // plain nested array, d = nesting depth. Rakudo: O(1) -- see #9157.
     pub(super) fn array_depth(value: &Value) -> usize {
