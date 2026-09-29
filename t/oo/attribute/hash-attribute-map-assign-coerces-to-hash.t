@@ -57,7 +57,7 @@ class Bound {
 
 my $b = Bound.new;
 $b.set;
-is-deeply $b.get, [1, 2, 3],
+is-deeply $b.get, Array[Int].new(1, 2, 3),
     'a := bind into an untyped array attribute keeps the source Array[T] identity';
 
 class BoundHash {
@@ -71,5 +71,5 @@ class BoundHash {
 
 my $bh = BoundHash.new;
 $bh.set;
-is-deeply $bh.get, { a => 1, b => 2 },
+is-deeply $bh.get, (my Int % = a => 1, b => 2),
     'a := bind into an untyped hash attribute keeps the source Hash[T] identity';
