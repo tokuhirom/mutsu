@@ -333,6 +333,16 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
             expr_ends_with_block(value)
         }
+        // A pair whose value is a block closes the line with that block's `}`:
+        // `@a.push: $key => { ... }` followed by a newline and `if COND -> $x {`
+        // is two statements, exactly like a direct block argument (Commands'
+        // `extended-help-from-hash`).
+        Expr::PositionalPair(inner) => expr_ends_with_block(inner),
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            right,
+            ..
+        } => expr_ends_with_block(right),
         _ => false,
     }
 }

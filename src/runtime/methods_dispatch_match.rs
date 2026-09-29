@@ -95,6 +95,36 @@ impl Interpreter {
             "say" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_say(&target))
             }
+            // `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that acts as
+            // `$*OUT`/`$*ERR` by declaring its own `print` but no `say`/`put` -- the
+            // arguments are gisted (`say`) or stringified (`put`), joined, followed by
+            // `nl-out`, and handed to that `print`.
+            // TODO: compile to bytecode -- this re-enters user code through the generic
+            // method-call path like the other `Mu` fallbacks in this match.
+            // Cost: O(n), n = total chars of the rendered arguments.
+            "say" | "put"
+                if !args.is_empty()
+                    && matches!(target.view(), ValueView::Instance { .. })
+                    && self.instance_has_own_print(&target) =>
+            {
+                Some((|| {
+                    let mut text = String::new();
+                    for a in args {
+                        if method == "say" {
+                            text.push_str(&self.render_gist_value(&a)?);
+                        } else {
+                            text.push_str(
+                                &self
+                                    .call_method_with_values(a.clone(), "Str", vec![])?
+                                    .to_string_value(),
+                            );
+                        }
+                    }
+                    let nl = self.call_method_with_values(target.clone(), "nl-out", vec![])?;
+                    text.push_str(&nl.to_string_value());
+                    self.call_method_with_values(target.clone(), "print", vec![Value::str(text)])
+                })())
+            }
             // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
             "print" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_print(&target))
@@ -613,5 +643,16 @@ impl Interpreter {
         }
 
         None
+    }
+}
+
+impl Interpreter {
+    /// True when the instance's class (or an ancestor) declares its own `print`.
+    fn instance_has_own_print(&mut self, target: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let cls = class_name.resolve();
+        self.class_has_user_method(&cls, "print")
     }
 }
