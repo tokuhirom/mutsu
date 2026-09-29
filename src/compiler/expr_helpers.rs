@@ -640,6 +640,22 @@ impl Compiler {
 
     /// Compile Expr::Var -- variable access with all special cases.
     pub(super) fn compile_expr_var(&mut self, name: &str) {
+        // `$0`, `$1`, ... are `$/[0]`, `$/[1]`, ...: when this block declares
+        // its own `$/` (a `-> $/ { }` / `method m($/)` parameter, `my $/`, a
+        // substitution thunk's match), read the capture through it rather
+        // than the env entry published by whichever match ran last.
+        if !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_digit())
+            && self.local_map.contains_key("/")
+            && let Ok(n) = name.parse::<i64>()
+        {
+            self.compile_expr(&Expr::Index {
+                target: Box::new(Expr::Var("/".to_string())),
+                index: Box::new(Expr::Literal(Value::int(n))),
+                is_positional: true,
+            });
+            return;
+        }
         // ADR-0061: the reserved `$self` lexical key names the enclosing
         // routine's `$self` parameter when its signature declares one.
         let name = self.resolve_self_lexical(name);

@@ -4,6 +4,19 @@ use super::vm_subst_repl::{ReplPart, SubstMatchCaps, expand_capture_parts};
 use super::*;
 use crate::ast::Stmt;
 
+/// How [`Interpreter::apply_substitutions_dynamic`] produces one match's
+/// replacement text.
+pub(super) enum DynamicRepl<'a> {
+    /// A parsed `qq` replacement: see `SubstReplPlan::Dynamic`.
+    Body {
+        body: &'a [Stmt],
+        cache_id: u64,
+        capture_parts: Option<&'a [ReplPart]>,
+    },
+    /// An assignment-form RHS's compiled thunk closure.
+    Thunk(&'a Value),
+}
+
 impl Interpreter {
     /// Create a Match object for a substitution match, including its positional
     /// (`$0`, `$1`, ...) and named (`$<name>`) captures, so the post-`s///` `$/`
@@ -194,7 +207,8 @@ impl Interpreter {
 
     /// Build a substitution output whose replacement interpolates. The
     /// replacement expression (parsed once under `qq` rules, see
-    /// `vm_subst_repl`) is evaluated *per match*, with `$/` bound to that
+    /// `vm_subst_repl`, or an assignment-form RHS's compiled thunk) is
+    /// evaluated *per match*, with `$/` bound to that
     /// match -- which is what makes `$0`, `$<name>`, `%h{$/}` and `{ ... }`
     /// blocks see the right capture values.
     #[allow(clippy::too_many_arguments)]
@@ -205,9 +219,7 @@ impl Interpreter {
         text: &str,
         target: &crate::runtime::MatchTarget,
         ranges: &[(usize, usize)],
-        body: &[Stmt],
-        cache_id: u64,
-        capture_parts: Option<&[ReplPart]>,
+        repl: DynamicRepl<'_>,
         per_match_captures: &[SubstMatchCaps],
         op: &SubstOp,
     ) -> Result<String, RuntimeError> {
@@ -234,8 +246,13 @@ impl Interpreter {
             let matched_text = &text[start_b..end_b];
 
             let caps = per_match_captures.get(i).unwrap_or(&empty);
-            let spliced =
-                capture_parts.and_then(|parts| expand_capture_parts(parts, matched_text, caps));
+            let spliced = match &repl {
+                DynamicRepl::Body {
+                    capture_parts: Some(parts),
+                    ..
+                } => expand_capture_parts(parts, matched_text, caps),
+                _ => None,
+            };
             let interpolated = match spliced {
                 Some(text) => Ok(text),
                 None => {
@@ -244,7 +261,7 @@ impl Interpreter {
                     // inside an embedded `{ ... }` block is an ordinary variable
                     // lookup, so the numbered captures are also published by name.
                     let match_obj = Self::make_subst_match(target, *start, *end, caps);
-                    self.env_mut().insert("/".to_string(), match_obj);
+                    self.env_mut().insert("/".to_string(), match_obj.clone());
                     for (n, (name, _)) in saved_caps.iter().enumerate() {
                         match caps.positional.get(n) {
                             Some(cap) => {
@@ -255,7 +272,12 @@ impl Interpreter {
                             }
                         }
                     }
-                    self.eval_subst_replacement(body, cache_id)
+                    match &repl {
+                        DynamicRepl::Body { body, cache_id, .. } => {
+                            self.eval_subst_replacement(body, *cache_id)
+                        }
+                        DynamicRepl::Thunk(thunk) => self.call_subst_thunk(thunk, match_obj),
+                    }
                 }
             };
             match interpolated {

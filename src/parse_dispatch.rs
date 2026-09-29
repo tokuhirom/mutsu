@@ -59,11 +59,3 @@ pub(crate) fn parse_compilation_unit(
 pub(crate) fn parse_qq_interpolation(content: &str) -> crate::ast::Expr {
     parser::interpolate_qq_content(content)
 }
-
-/// Parse the `{…}`-wrapped RHS of an assignment-form substitution
-/// (`s[pat] = EXPR`, `S[pat] = EXPR`) as the thunk expression it is: unlike a
-/// qq closure part it is no Block of its own, so a placeholder in it belongs
-/// to the enclosing block. `None` when the source does not parse.
-pub(crate) fn parse_subst_thunk_replacement(src: &str) -> Option<crate::ast::Expr> {
-    parser::parse_subst_thunk_replacement(src)
-}

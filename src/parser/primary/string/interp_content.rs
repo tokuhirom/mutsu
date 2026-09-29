@@ -98,28 +98,10 @@ pub(in crate::parser::primary) fn parse_closure_part(inner: &str) -> Option<Expr
     parse_interpolation_block(inner).ok().flatten()
 }
 
-/// Parse the body of an assignment-form substitution RHS (`s[pat] = EXPR`)
-/// as a thunk expression. It may hold a full statement list, not just a single
-/// expression — mirror the `$( … )` interpolation path: try a statement list
-/// first, then fall back to a single expression. Unlike [`parse_closure_part`]
-/// a single expression comes back bare, not wrapped in a Block: the thunk is
-/// no frame of its own and a placeholder in it belongs to the enclosing block.
-pub(in crate::parser) fn parse_thunk_expr_body(inner: &str) -> Option<Expr> {
-    // Parsed in a fresh lexical scope so the implicit
-    // `state $__ANON_STATE_<id>__;` declaration a bare `$` mints lands in the
-    // returned statements rather than in the scope that is being parsed when
-    // the replacement is (re)parsed at run time.
-    crate::parser::stmt::simple::push_scope();
-    let parsed = parse_thunk_expr_body_scoped(inner);
-    crate::parser::stmt::simple::pop_scope();
-    parsed
-}
-
 /// Parse the body of a `"…{ … }…"` interpolation block into the scope-isolated
 /// `DoStmt(Block(…))` the double-quote parser wraps it in.
 ///
-/// Shares [`parse_thunk_expr_body`]'s lexical-scope discipline: the block is
-/// its own block, so a bare `$` in it is a `state` of that block and its
+/// The block is its own block, so a bare `$` in it is a `state` of that block and its
 /// implicit declaration belongs inside the returned statement list, not hoisted
 /// into the enclosing routine.
 pub(in crate::parser::primary) fn parse_interpolation_block(
@@ -148,36 +130,6 @@ fn parse_interpolation_block_stmts(
     };
     crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
     Ok(Some(stmts))
-}
-
-/// [`parse_thunk_expr_body`]'s body, run with the block's own lexical scope
-/// already pushed so the anonymous-`state` declarations it mints land inside it.
-fn parse_thunk_expr_body_scoped(inner: &str) -> Option<Expr> {
-    if let Ok((leftover, mut stmts)) = crate::parser::stmt::stmt_list_pub(inner)
-        && leftover.trim().is_empty()
-        && !stmts.is_empty()
-    {
-        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
-        return Some(if stmts.len() == 1 {
-            Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap()))
-        } else {
-            Expr::desugar_block(stmts)
-        });
-    }
-    if let Ok((leftover, expr)) = expression(inner)
-        && leftover.trim().is_empty()
-    {
-        let mut stmts = vec![crate::ast::Stmt::Expr(expr)];
-        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
-        if stmts.len() == 1 {
-            let Some(crate::ast::Stmt::Expr(expr)) = stmts.into_iter().next() else {
-                unreachable!("single-element vec built from Stmt::Expr");
-            };
-            return Some(expr);
-        }
-        return Some(Expr::desugar_block(stmts));
-    }
-    None
 }
 
 pub(crate) fn parse_braced_interpolation(input: &str) -> Option<(&str, &str)> {

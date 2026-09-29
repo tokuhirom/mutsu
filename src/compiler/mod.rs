@@ -1150,6 +1150,7 @@ pub(crate) mod nqp_forms;
 mod numeric_operand_names;
 mod regex_qq_thunks;
 mod stmt;
+mod subst_thunk;
 mod term_constants;
 mod trir_call;
 

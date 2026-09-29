@@ -65,6 +65,9 @@ pub(crate) enum SubstReplPlan {
         /// warning — stay those of the one evaluator.
         capture_parts: Option<Arc<Vec<ReplPart>>>,
     },
+    /// An assignment-form RHS (`s[pat] = EXPR`): the compiled thunk closure
+    /// the op popped, called once per match with `$/` bound to that match.
+    Thunk(Value),
 }
 
 /// Read a replacement expression as a list of [`ReplPart`]s, or `None` when it
@@ -133,26 +136,15 @@ pub(crate) fn expand_capture_parts(
 }
 
 impl Interpreter {
-    /// The [`SubstReplPlan`] for `src`, parsing it on first use and caching the
-    /// result (a `:g` substitution asks for the same plan once per op
-    /// execution, and the plan is reused across every match). `src` is read
-    /// under `qq` rules, or, when `thunk` is set, as the `{…}`-wrapped RHS of
-    /// an assignment-form substitution (`s[pat] = EXPR`): a thunk expression,
-    /// not a closure Block (see `Expr::Subst::replacement_thunk`).
-    pub(super) fn subst_replacement_plan(&mut self, src: &str, thunk: bool) -> SubstReplPlan {
-        if let Some(plan) = self
-            .subst_repl_plans
-            .get(src)
-            .and_then(|plans| plans[thunk as usize].as_ref())
-        {
+    /// The [`SubstReplPlan`] for the `qq` replacement source `src`, parsing
+    /// it on first use and caching the result (a `:g` substitution asks for
+    /// the same plan once per op execution, and the plan is reused across
+    /// every match).
+    pub(super) fn subst_replacement_plan(&mut self, src: &str) -> SubstReplPlan {
+        if let Some(plan) = self.subst_repl_plans.get(src) {
             return plan.clone();
         }
-        let expr = if thunk {
-            crate::parse_dispatch::parse_subst_thunk_replacement(src)
-                .unwrap_or_else(|| crate::parse_dispatch::parse_qq_interpolation(src))
-        } else {
-            crate::parse_dispatch::parse_qq_interpolation(src)
-        };
+        let expr = crate::parse_dispatch::parse_qq_interpolation(src);
         let plan = match &expr {
             Expr::Literal(v) => match v.view() {
                 ValueView::Str(s) => Some(SubstReplPlan::Static(Arc::from(s.as_str()))),
@@ -167,8 +159,7 @@ impl Interpreter {
             // never collide with a closure's carrier-compile-cache entry.
             cache_id: crate::value::next_instance_id(),
         });
-        self.subst_repl_plans.entry(src.to_string()).or_default()[thunk as usize] =
-            Some(plan.clone());
+        self.subst_repl_plans.insert(src.to_string(), plan.clone());
         plan
     }
 
@@ -185,6 +176,22 @@ impl Interpreter {
         // match.
         let saved_topic = self.env().get("_").cloned();
         let result = loan_env!(self, eval_block_value_cached(body, cache_id));
+        if let Some(topic) = saved_topic {
+            self.env_mut().insert("_".to_string(), topic);
+        }
+        Ok(result?.to_string_value())
+    }
+
+    /// Call an assignment-form replacement thunk for one match, which it
+    /// binds as its own `$/` (see `Compiler::compile_subst_replacement_thunk`).
+    // Cost: O(1) plus the thunk's own run.
+    pub(super) fn call_subst_thunk(
+        &mut self,
+        thunk: &Value,
+        match_obj: Value,
+    ) -> Result<String, RuntimeError> {
+        let saved_topic = self.env().get("_").cloned();
+        let result = self.call_value(thunk.clone(), vec![match_obj]);
         if let Some(topic) = saved_topic {
             self.env_mut().insert("_".to_string(), topic);
         }
