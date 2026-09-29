@@ -3,6 +3,7 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 mod args_matching;
+mod args_matching_simple;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
@@ -1359,6 +1360,35 @@ impl Interpreter {
             return None;
         }
         Some((base, inner))
+    }
+}
+
+/// A subset predicate that can run inline: a bare block, or a one-parameter
+/// lambda (`* < 100` is stored as one, see `register_subset_decl`), with no
+/// placeholder of its own. Returns the body and the name its value binds to.
+pub(crate) fn subset_inline_predicate(
+    pred: &crate::ast::Expr,
+) -> Option<(&[crate::ast::Stmt], &str)> {
+    subset_inline_predicate_shape(pred)
+        .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty())
+}
+
+/// [`subset_inline_predicate`] without the placeholder walk, for a type check
+/// on a subset whose registration already established that it has none
+/// (`SubsetDef::predicate_inline`).
+pub(crate) fn subset_inline_predicate_shape(
+    pred: &crate::ast::Expr,
+) -> Option<(&[crate::ast::Stmt], &str)> {
+    use crate::ast::Expr;
+    match pred {
+        Expr::Block(body) => Some((body.as_slice(), "_")),
+        Expr::AnonSub {
+            body,
+            is_block: true,
+            ..
+        } => Some((body.as_slice(), "_")),
+        Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
+        _ => None,
     }
 }
 

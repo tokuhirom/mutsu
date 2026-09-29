@@ -800,9 +800,15 @@ impl Interpreter {
                 self.set_state_var(scoped_key, val);
             }
         }
-        let value = self.env().get("_").cloned().unwrap_or(Value::NIL);
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
-        result.map(|last_value| last_value.unwrap_or(value))
+        result.map(|last_value| {
+            last_value.unwrap_or_else(|| {
+                self.env()
+                    .get_sym(crate::symbol::wk::topic())
+                    .cloned()
+                    .unwrap_or(Value::NIL)
+            })
+        })
     }
 
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block

@@ -169,7 +169,7 @@ impl Interpreter {
         })
     }
 
-    fn with_candidate_package<T>(
+    pub(super) fn with_candidate_package<T>(
         &mut self,
         package: Option<Symbol>,
         f: impl FnOnce(&mut Self) -> T,
@@ -206,6 +206,11 @@ impl Interpreter {
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
     ) -> bool {
+        if let Some(verdict) =
+            self.args_match_simple_positional(args, param_defs, multi_dispatch, candidate_package)
+        {
+            return verdict;
+        }
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
         // *later* param's `where {...}` / sub-signature / code-signature can
@@ -723,7 +728,7 @@ impl Interpreter {
                     };
                     let saved = self.env.clone();
                     self.install_match_context_for_where(&pd.name, arg);
-                    self.env.insert("_".to_string(), arg.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), arg.clone());
                     // Bind the parameter name so that `where {$param ...}` can
                     // reference it during dispatch matching.
                     self.env.insert(pd.name.clone(), arg.clone());
@@ -962,7 +967,7 @@ impl Interpreter {
                             self.env.insert(sib.name.clone(), v.clone());
                         }
                     }
-                    self.env.insert("_".to_string(), val.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), val.clone());
                     // Bind the parameter name so `where {$param ...}` can reference
                     // it during dispatch matching (mirrors the positional path).
                     if !pd.name.is_empty() {
@@ -1026,7 +1031,8 @@ impl Interpreter {
                 let slurpy_value = Value::hash_bare_values(hash_items);
                 let saved = self.env.clone();
                 self.install_match_context_for_where(&pd.name, &slurpy_value);
-                self.env.insert("_".to_string(), slurpy_value.clone());
+                self.env
+                    .insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
                 if !pd.name.is_empty() {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }
@@ -1065,7 +1071,7 @@ impl Interpreter {
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
     /// come from the source VarRef metadata or the call-site literal mask.
-    fn native_dispatch_arg_matches(
+    pub(super) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],
