@@ -399,6 +399,23 @@ impl Interpreter {
         args: &[Value],
         caller_code: Option<&CompiledCode>,
     ) -> bool {
+        Self::is_positional_light_call_eligible_where(cf, fn_name, argc, args, caller_code, false)
+    }
+
+    /// [`Self::is_positional_light_call_eligible`] for the winner of a
+    /// value-dependent `multi` whose resolution just ran every one of its
+    /// `where` clauses against these exact arguments (`where_verified`): the
+    /// light bind never runs a `where`, and here none is left to run
+    /// (#8697's `pending_skip_where_recheck` is the general binder's
+    /// equivalent of the same trust).
+    pub(super) fn is_positional_light_call_eligible_where(
+        cf: &CompiledFunction,
+        fn_name: &str,
+        argc: usize,
+        args: &[Value],
+        caller_code: Option<&CompiledCode>,
+        where_verified: bool,
+    ) -> bool {
         !fn_name.is_empty()
             && cf.code.state_locals.is_empty()
             && !cf.is_cached
@@ -443,7 +460,7 @@ impl Interpreter {
                 || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
-                    && pd.where_constraint.is_none()
+                    && (where_verified || pd.where_constraint.is_none())
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && pd.code_signature.is_none()

@@ -2018,6 +2018,58 @@ impl Interpreter {
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
+                // A multi's winner is an ordinary compiled routine once it is
+                // resolved, so it takes the positional-light bind a plain sub
+                // takes whenever its signature and this call qualify; being a
+                // multi only adds the dispatch frame `nextsame`/`callsame` and
+                // `samewith` read. The name-keyed light caches stay out of it:
+                // they would serve this winner to a later call of the same
+                // name with different arguments (#10107).
+                let where_verified = multi_def_memo.as_deref().is_some_and(|def| {
+                    def.param_defs
+                        .iter()
+                        .any(|pd| pd.where_constraint.is_some())
+                });
+                if !call_has_named
+                    && self.has_multi_candidates_cached_sym(name_sym)
+                    && Self::is_positional_light_call_eligible_where(
+                        cf,
+                        name,
+                        Self::positional_light_argc(&args),
+                        &args,
+                        Some(code),
+                        where_verified,
+                    )
+                    && !Self::call_shares_container_into_scalar_param(cf, &args)
+                    && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
+                    && self.wrap_sub_id_for_name(name).is_none()
+                    && !self.light_call_blocked_by_mainline_capture(name)
+                {
+                    let pushed_dispatch = loan_env!(
+                        self,
+                        push_multi_dispatch_frame_with_winner_sym(
+                            name,
+                            name_sym,
+                            &args,
+                            multi_def_memo.as_deref(),
+                        )
+                    );
+                    self.push_samewith_context(name, None, None);
+                    let result = self.call_compiled_function_positional_light(
+                        cf,
+                        &args,
+                        compiled_fns,
+                        name,
+                        name_sym,
+                        Some(code),
+                    );
+                    self.pop_samewith_context();
+                    if pushed_dispatch {
+                        self.pop_multi_dispatch();
+                    }
+                    let result = result?;
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
+                }
                 self.set_pending_call_arg_sources(arg_sources);
                 // Hand over the winner this call already resolved (via
                 // `find_compiled_function_memo` above) instead of letting the

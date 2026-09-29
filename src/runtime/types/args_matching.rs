@@ -169,7 +169,7 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn with_candidate_package<T>(
+    pub(crate) fn with_candidate_package<T>(
         &mut self,
         package: Option<Symbol>,
         f: impl FnOnce(&mut Self) -> T,
@@ -1071,7 +1071,7 @@ impl Interpreter {
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
     /// come from the source VarRef metadata or the call-site literal mask.
-    pub(super) fn native_dispatch_arg_matches(
+    pub(crate) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],
