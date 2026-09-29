@@ -169,7 +169,7 @@ impl Interpreter {
         })
     }
 
-    fn with_candidate_package<T>(
+    pub(super) fn with_candidate_package<T>(
         &mut self,
         package: Option<Symbol>,
         f: impl FnOnce(&mut Self) -> T,
@@ -206,6 +206,11 @@ impl Interpreter {
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
     ) -> bool {
+        if let Some(verdict) =
+            self.args_match_simple_positional(args, param_defs, multi_dispatch, candidate_package)
+        {
+            return verdict;
+        }
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
         // *later* param's `where {...}` / sub-signature / code-signature can
@@ -1065,7 +1070,7 @@ impl Interpreter {
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
     /// come from the source VarRef metadata or the call-site literal mask.
-    fn native_dispatch_arg_matches(
+    pub(super) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],

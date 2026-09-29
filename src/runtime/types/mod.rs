@@ -3,6 +3,7 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 mod args_matching;
+mod args_matching_simple;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
