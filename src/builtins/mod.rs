@@ -157,10 +157,10 @@ pub(crate) use functions::process_rusage;
 pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in_items};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
-    fmt_joinable_target, native_base_with_options, native_contains_with_options,
-    native_method_1arg, native_method_2arg, native_prefix_suffix_with_options,
-    native_substr_eq_with_options, pair_key_value, read_f32_endian, read_f64_endian,
-    read_int_value,
+    buf_get_int_items, fmt_joinable_target, is_buf_like, native_base_with_options,
+    native_contains_with_options, native_method_1arg, native_method_2arg,
+    native_prefix_suffix_with_options, native_substr_eq_with_options, pair_key_value,
+    read_f32_endian, read_f64_endian, read_int_value, resolve_buf_index,
 };
 pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
 

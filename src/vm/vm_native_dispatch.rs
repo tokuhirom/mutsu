@@ -585,6 +585,10 @@ impl Interpreter {
         // declaration is partial and why `None` is the safe default.
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
+        // `$buf.subbuf(*-2)`: the pure cascade cannot call a closure, so a
+        // Callable offset is resolved to an Int here (issue #10118).
+        let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
+        let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

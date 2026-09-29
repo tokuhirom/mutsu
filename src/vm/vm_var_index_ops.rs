@@ -566,15 +566,7 @@ impl Interpreter {
         let ValueView::Sub(data) = idx.view() else {
             return None;
         };
-        let mut sub_env = data.env.clone();
-        for p in data.params.iter() {
-            sub_env.insert(p.to_string(), Value::int(len));
-        }
-        let saved_env = std::mem::take(self.env_mut());
-        *self.env_mut() = sub_env;
-        let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-        *self.env_mut() = saved_env;
-        Some(result)
+        Some(self.call_subscript_code(&data, len))
     }
 
     /// Backward-compatible wrapper: defaults to associative indexing.
@@ -1584,14 +1576,7 @@ impl Interpreter {
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -1680,14 +1665,7 @@ impl Interpreter {
             // Treat hash as a list of pairs with elems = hash.len()
             (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 match idx.view() {
                     ValueView::Int(i) if i < 0 => Self::make_out_of_range_failure(i),
                     ValueView::Int(i) => {
@@ -2637,14 +2615,7 @@ impl Interpreter {
             (_, ValueView::Sub(data)) if target.is_range() => {
                 let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 // A block returning a Range or a list of indices (e.g. `{0,1}`)
                 // slices the range's materialized elements.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -2823,15 +2794,7 @@ impl Interpreter {
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (ValueView::Array(items, is_arr), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 // If the block returned a Range or a list of indices (e.g. `{0,1}`
                 // returns the List `(0,1)`), use every element as a slice index.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -2896,14 +2859,7 @@ impl Interpreter {
                 } else {
                     0
                 };
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -2948,15 +2904,7 @@ impl Interpreter {
                     match val.view() {
                         ValueView::Whatever => len as f64,
                         ValueView::Sub(data) => {
-                            let mut sub_env = data.env.clone();
-                            for p in data.params.iter() {
-                                sub_env.insert(p.to_string(), Value::int(len));
-                            }
-                            let saved_env = std::mem::take(self.env_mut());
-                            *self.env_mut() = sub_env;
-                            let result =
-                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                            *self.env_mut() = saved_env;
+                            let result = self.call_subscript_code(&data, len);
                             match result.view() {
                                 ValueView::Int(i) => i as f64,
                                 _ => 0.0,
@@ -2989,14 +2937,7 @@ impl Interpreter {
             (ValueView::Uni(u), ValueView::Sub(data)) => {
                 let chars: Vec<char> = u.text().chars().collect();
                 let len = chars.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -3310,14 +3251,7 @@ impl Interpreter {
                     ValueView::Array(..) | ValueView::Hash(_) | ValueView::Instance { .. }
                 ) =>
             {
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(1)); // elems = 1
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, 1);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),

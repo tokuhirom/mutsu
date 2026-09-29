@@ -545,14 +545,7 @@ impl Interpreter {
                 match val.view() {
                     ValueView::Int(i) => i,
                     ValueView::Sub(data) => {
-                        let mut sub_env = data.env.clone();
-                        for p in data.params.iter() {
-                            sub_env.insert(p.to_string(), Value::int(len));
-                        }
-                        let saved_env = std::mem::take(vm.env_mut());
-                        *vm.env_mut() = sub_env;
-                        let result = vm.eval_block_value(&data.body).unwrap_or(Value::NIL);
-                        *vm.env_mut() = saved_env;
+                        let result = vm.call_subscript_code(&data, len);
                         match result.view() {
                             ValueView::Int(i) => i,
                             _ => 0,
