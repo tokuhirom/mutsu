@@ -308,6 +308,16 @@ jobs:
         # matching cannot make the ratchet silently report 0.
         run: make check-name-scans
 
+      - name: No new Interpreter construction site
+        # A ratchet: an `Interpreter` is a whole runtime, so building one to
+        # evaluate a closure (`Buf.subbuf(*-2)` did, per call, until #10118)
+        # is both slow and runs the code outside the caller's env/registry.
+        # Only process entry points, thread spawns, the parse-time module
+        # probes and a thread_local may build one; the regex scratch
+        # interpreters are allowlisted debt (#10151). Per-file counts may go
+        # down, never up. The script self-tests its test-code masking first.
+        run: make check-interp-construction
+
       - name: No private copy of a primitive
         # A ban (ADR-0117, ADR-0118): the method, the nqp:: op, the VM opcode,
         # the reduction fold and the TRIR op must all call the one routine in
