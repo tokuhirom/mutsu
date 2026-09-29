@@ -266,6 +266,7 @@ mod vm_native_json;
 mod vm_native_map;
 mod vm_native_sort;
 mod vm_native_subst;
+mod vm_nested_export_subs;
 mod vm_nested_method_capture;
 mod vm_numeric_uninit_warn;
 mod vm_our_package_vars;
