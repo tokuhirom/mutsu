@@ -228,6 +228,20 @@ impl Interpreter {
     /// constraints for Nil→type-object conversion (a `= Nil` parameter default
     /// must stay Nil), so the stored value itself must carry the type object.
     pub(crate) fn typed_scalar_nil_seed_value(&mut self, name: &str, constraint: &str) -> Value {
+        let base = loan_env!(self, var_type_constraint(name));
+        self.typed_scalar_nil_seed_value_with_base(constraint, base)
+    }
+
+    /// [`Self::typed_scalar_nil_seed_value`] with the declared constraint
+    /// supplied by the caller rather than read back by name — for a store
+    /// whose constraint came from the cell it lands in (a routine's write to
+    /// its own free variable), where the name-keyed entry may belong to an
+    /// unrelated same-named variable of the calling scope (#10049).
+    pub(crate) fn typed_scalar_nil_seed_value_with_base(
+        &mut self,
+        constraint: &str,
+        base: Option<String>,
+    ) -> Value {
         if crate::runtime::native_types::is_native_int_type(constraint) {
             Value::int(0)
         } else if matches!(constraint, "num" | "num32" | "num64") {
@@ -249,12 +263,43 @@ impl Interpreter {
                     // smileys stripped (`my Int:_ $a` seeds `Int`, not
                     // `Int:_`) and coercion parens unwrapped — same as the
                     // read-path Nil→type-object conversion it replaces.
-                    let base = loan_env!(self, var_type_constraint(name))
-                        .unwrap_or_else(|| constraint.to_string());
+                    let base = base.unwrap_or_else(|| constraint.to_string());
                     let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&base));
                     Value::package(Symbol::intern(&nominal))
                 }
             }
         }
+    }
+
+    /// The scalar type constraint a by-name (`SetGlobal`) store to `name` must
+    /// satisfy, and whether it came from the target cell.
+    ///
+    /// A routine's write to one of its own free variables (a mainline lexical
+    /// it captured, ADR-0024, or a file-scope lexical of its compunit,
+    /// ADR-0039) lands in the shared cell `unit_lexical_slot` resolves, not in
+    /// whatever `env` holds under that name — `env` is a child of the CALLER's
+    /// env, so its `__mutsu_type::` entry can be a same-named typed `my` of the
+    /// calling scope (#10049). The constraint belongs to the container
+    /// (ADR-0042), so for such a store the cell's own `of` is authoritative,
+    /// and an untyped cell means no constraint at all. Every other store keeps
+    /// the name-keyed lane.
+    // Cost: O(p + e), p = packages probed by `unit_lexical_slot`, e = env
+    // chain depth for the name-keyed fallback.
+    pub(crate) fn by_name_store_scalar_constraint(
+        &self,
+        name: &str,
+        name_sym: Symbol,
+        free_var_store: bool,
+    ) -> (Option<String>, bool) {
+        if free_var_store
+            && let Some(slot) = self.unit_lexical_slot(name)
+            && let ValueView::ContainerRef(cell) = slot.view()
+        {
+            let constraint = crate::value::lookup_cell_constraint(&cell)
+                .filter(|c| c.element_of.is_none())
+                .map(|c| c.ty);
+            return (constraint, true);
+        }
+        (self.var_type_constraint_sym(name_sym), false)
     }
 }
