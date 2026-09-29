@@ -3484,6 +3484,7 @@ impl Interpreter {
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: Default::default(),
             check_phaser_depth: 0,
+            check_phaser_kinds: Vec::new(),
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
             begin_time_hidden: Vec::new(),
             nested_run_depth: 0,

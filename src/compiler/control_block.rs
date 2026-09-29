@@ -191,11 +191,17 @@ impl Compiler {
         // body can be bracketed by CheckPhaserStart/CheckPhaserEnd, which is
         // what wraps an error inside it in X::Comp::BeginTime.
         if position.is_value() && matches!(label, Some(l) if l == "__mutsu_check_phaser__") {
-            let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
+            let start_idx = self.code.emit(OpCode::CheckPhaserStart {
+                end_ip: 0,
+                is_begin: false,
+            });
             self.compile_block_construct(stmts, &None, position);
             self.code.emit(OpCode::CheckPhaserEnd);
             let end_ip = self.code.ops.len() as u32;
-            if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx] {
+            if let OpCode::CheckPhaserStart {
+                end_ip: ref mut e, ..
+            } = self.code.ops[start_idx]
+            {
                 *e = end_ip;
             }
             return;

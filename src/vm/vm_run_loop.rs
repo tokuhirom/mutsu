@@ -117,15 +117,15 @@ impl Interpreter {
         ))
     }
 
-    fn wrap_in_begin_time(inner: RuntimeError) -> RuntimeError {
+    fn wrap_in_begin_time(inner: RuntimeError, phaser: &str) -> RuntimeError {
         let inner_exception = inner
             .exception
             .as_ref()
             .map(|e| e.as_ref().clone())
             .unwrap_or_else(|| Value::str(inner.message.to_string()));
         let msg = format!(
-            "An exception occurred while evaluating a CHECK\nException details:\n  {}",
-            inner.message
+            "An exception occurred while evaluating a {}\nException details:\n  {}",
+            phaser, inner.message
         );
         let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg));
@@ -251,6 +251,7 @@ impl Interpreter {
         // X::Comp::BeginTime too. Snapshot the entry depth so every error
         // exit below can restore it after deciding whether to wrap.
         let entry_check_phaser_depth = self.check_phaser_depth;
+        let entry_check_phaser_kinds = self.check_phaser_kinds.len();
         // ADR-0041 §9: the BEGIN-time visibility frames are pushed by
         // `CheckPhaserStart` AND by the value-position `BEGIN` opcode (which
         // does not raise `check_phaser_depth`), so unwind them by their own
@@ -308,22 +309,32 @@ impl Interpreter {
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
-                        let wrapped = Self::wrap_in_begin_time(inner_err);
+                        let wrapped = Self::wrap_in_begin_time(
+                            inner_err,
+                            self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                        );
                         self.check_phaser_depth = entry_check_phaser_depth;
+                        self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
                         self.begin_time_unwind_to(entry_begin_time_depth);
                         return Err(wrapped);
                     }
                     self.check_phaser_depth = entry_check_phaser_depth;
+                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(inner_err);
                 }
                 if self.check_phaser_depth > 0 {
-                    let wrapped = Self::wrap_in_begin_time(e);
+                    let wrapped = Self::wrap_in_begin_time(
+                        e,
+                        self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                    );
                     self.check_phaser_depth = entry_check_phaser_depth;
+                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(wrapped);
                 }
                 self.check_phaser_depth = entry_check_phaser_depth;
+                self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
                 self.begin_time_unwind_to(entry_begin_time_depth);
                 return Err(e);
             }
