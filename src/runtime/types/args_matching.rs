@@ -593,6 +593,7 @@ impl Interpreter {
                             return false;
                         }
                     } else if (multi_dispatch
+                        && arg_was_supplied
                         && !self.native_dispatch_arg_matches(
                             &resolved_constraint,
                             args,
