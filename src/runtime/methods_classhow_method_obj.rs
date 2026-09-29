@@ -829,6 +829,12 @@ impl Interpreter {
         }
         let mro = self.classhow_mro_unhidden_names(target);
         let mut results = Vec::new();
+        // Built-in MRO levels that declare `method_name` themselves (#9869):
+        // `.^can` answers one candidate per declaring class, most-derived
+        // first (`Str.^can("uc")` is Str's and Cool's). They sit at the tail
+        // of any MRO, so they are appended after the user-class candidates
+        // and the attribute-accessor probes below.
+        let mut native_declared: Vec<&String> = Vec::new();
         for cn in &mro {
             // The candidate list comes from the canonical `Registry::method_
             // entries[(owner, name)].user_candidates` table (ADR-0019 Phase F
@@ -842,6 +848,11 @@ impl Interpreter {
                 self.registry()
                     .get_method_overloads_with_role_fallback(cn, method_name)
             };
+            if defs.is_none()
+                && crate::builtins::native_method_row::native_method_declared(cn, method_name)
+            {
+                native_declared.push(cn);
+            }
             if let Some(defs) = defs {
                 let visible: Vec<&MethodDef> = defs
                     .iter()
@@ -967,6 +978,9 @@ impl Interpreter {
                 false,
             ));
         }
+        results.extend(native_declared.into_iter().map(|cn| {
+            Value::routine_parts(Symbol::intern(cn), Symbol::intern(method_name), false)
+        }));
         // Also check for native/builtin methods if no user-defined methods found.
         // For built-in types, consult the native-method-row catalog to see if
         // the method exists.

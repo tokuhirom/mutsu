@@ -30,6 +30,8 @@
 //! production code never calls a native method to build this table. The
 //! `INTROSPECTABLE` flag (F3 step 2/3) was added the same way: raku-verified
 //! by hand, then baked into the table once via a throwaway generator test.
+//! The `DECLARED` flag (#9869) was baked from Rakudo the same way: set exactly
+//! when `::(owner).^method_table` has the name (the table `.^can` walks).
 //!
 //! E2b drove the gap between this conservative table and the cascades'
 //! actual behavior to zero (see the design doc's classification table and the
@@ -103,6 +105,14 @@ impl NativeRowFlags {
     /// production reader, replacing the fourteen hand-written per-type name
     /// slices that function used to concatenate.
     pub(crate) const INTROSPECTABLE: NativeRowFlags = NativeRowFlags(1 << 3);
+    /// #9869: Rakudo declares `name` directly on `owner` -- the name is a
+    /// key of `::(owner).^method_table`, the per-class table `.^can` walks
+    /// along the MRO. Distinct from [`Self::INTROSPECTABLE`], which records
+    /// that `owner` *responds to* the name (so it is also set on names the
+    /// owner merely inherits, e.g. `Cool`'s `Str`). Baked once from Rakudo
+    /// by a throwaway generator, like the other flags. Read by
+    /// [`native_method_declared`].
+    pub(crate) const DECLARED: NativeRowFlags = NativeRowFlags(1 << 4);
 
     pub(crate) const fn contains(self, bit: NativeRowFlags) -> bool {
         self.0 & bit.0 != 0
@@ -212,6 +222,18 @@ pub(crate) fn native_method_row(
 /// is the only signal E2's data actually carries for that question.
 pub(crate) fn native_method_row_exists(owner: &'static str, name: &'static str) -> bool {
     classification_table().contains_key(&(owner, name))
+}
+
+/// #9869: whether Rakudo declares `name` directly on the built-in `owner`
+/// (its row carries [`NativeRowFlags::DECLARED`]). `owner` is matched
+/// exactly, never folded through `canonical_builtin_owner`: `.^can` asks
+/// this once per MRO level, and folding would make `Sub`, `Routine`,
+/// `Block` and `Code` all claim `Code`'s declarations.
+// Cost: O(1), a hash lookup keyed by `(owner, name)`.
+pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
+    classification_table()
+        .get(&(owner, name))
+        .is_some_and(|&(_, flags)| NativeRowFlags(flags).contains(NativeRowFlags::DECLARED))
 }
 
 /// ADR-0019 Phase F box F3 step 3: the `.^methods` name list for a *folded*
