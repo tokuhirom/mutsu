@@ -120,9 +120,13 @@ impl Interpreter {
                         {
                             return None;
                         }
+                        // A `$` attribute IS a Scalar container: a provided
+                        // Array/Hash is itemized exactly as the default-value
+                        // fill below and the accessor store are (#9807).
+                        let val = Self::itemize_attr_store_value('$', val.clone());
                         match key_sym {
-                            Some(s) => attrs.insert(s, val.clone()),
-                            None => attrs.insert(key.clone(), val.clone()),
+                            Some(s) => attrs.insert(s, val),
+                            None => attrs.insert(key.clone(), val),
                         };
                     }
                 }

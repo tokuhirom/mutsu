@@ -2056,7 +2056,10 @@ impl Interpreter {
                                 };
                                 let storage_key =
                                     super::attribute_storage_key(&class_attrs_info, k, sigil);
-                                attrs.insert(storage_key, coerced);
+                                attrs.insert(
+                                    storage_key,
+                                    Self::itemize_attr_store_value(sigil, coerced),
+                                );
                             }
                             // When BUILD exists, named args are passed to BUILD
                             // which controls attribute initialization directly

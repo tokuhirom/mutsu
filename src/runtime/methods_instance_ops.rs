@@ -2034,6 +2034,16 @@ impl Interpreter {
                                 .get(method)
                                 .cloned()
                                 .unwrap_or(Value::NIL);
+                            // The generated accessor decontainerizes: `self.a`
+                            // is not itemized even when the store itemized the
+                            // attribute's Scalar (`$!a` / `$.a` preserve it) --
+                            // UNLESS the accessor is `is rw`, which hands back
+                            // the writable Scalar itself, item-ness included.
+                            let val = if attr.is_rw {
+                                val
+                            } else {
+                                Self::accessor_read_value(attr.sigil, val)
+                            };
                             // For typed @/% attributes, register type metadata on the
                             // returned value so push/insert type enforcement works.
                             if (attr.sigil == '@' || attr.sigil == '%')

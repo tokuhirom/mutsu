@@ -395,6 +395,24 @@ impl Interpreter {
                 // A slot promoted to a `ContainerRef` cell (a prior `:=` bind /
                 // `.VAR` mixin) is transparent to a plain accessor read.
                 let out = v.deref_container();
+                let attr = self
+                    .collect_class_attributes(&cn)
+                    .into_iter()
+                    .find(|attr| attr.is_public && attr.name == method);
+                // The generated accessor decontainerizes: `self.a`/`$obj.a`
+                // (unlike `$!a`, which preserves the store's own item-ness)
+                // never returns an itemized Array/Hash, UNLESS the accessor is
+                // `is rw` -- an `is rw` accessor hands back the writable
+                // Scalar itself, item-ness included (`Type/Attribute.rakudoc`:
+                // "the default accessor... will return a writable value";
+                // `objects.rakudoc`: "there is a difference between self.a
+                // and $.a, since the latter will itemize" for the DEFAULT,
+                // read-only accessor).
+                let out = if attr.as_ref().is_some_and(|a| a.is_rw) {
+                    out
+                } else {
+                    Self::accessor_read_value('$', out)
+                };
                 if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
@@ -405,11 +423,7 @@ impl Interpreter {
                 // declaration here so a typed parameter sees `@.attr` as a
                 // typed container instead of inferring its type from values.
                 if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_))
-                    && let Some(attr) = self
-                        .collect_class_attributes(&cn)
-                        .into_iter()
-                        .find(|attr| attr.is_public && attr.name == method)
-                    && matches!(attr.sigil, '@' | '%')
+                    && attr.is_some_and(|attr| matches!(attr.sigil, '@' | '%'))
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
