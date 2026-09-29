@@ -37,6 +37,20 @@ impl Interpreter {
                     param_sigilless: false,
                 };
             }
+            // A curried predicate (`where * < 100`) is stored as the closure
+            // the compiler would build for it, so a one-argument WhateverCode
+            // reaches the type check's inline path — its body runs with `$_`
+            // bound — instead of being built and called on every check
+            // (#10107). The `Lambda` compiles to the same closure wherever the
+            // predicate is used as a value.
+            if let Expr::WhateverCurry(curried) = pred
+                && let lambda @ Expr::Lambda {
+                    is_whatever_code: true,
+                    ..
+                } = crate::whatever_curry::build_closure(curried)
+            {
+                return lambda;
+            }
             pred.clone()
         });
         // Drop any cached compiled predicate for this name so a redeclaration
@@ -51,12 +65,14 @@ impl Interpreter {
         // `my subset SI2 of S-Int` refines the `S-Int` visible HERE: a lexical
         // base lives under its declaration-site storage name (ADR-0047), so
         // record that identity rather than the spelling.
-        let def = SubsetDef {
+        // Shared: a type check reads the definition on every call, and a
+        // deep clone of it (predicate AST included) was part of that cost.
+        let def = std::sync::Arc::new(SubsetDef {
             base: self.lexical_env_remap_name(base),
             predicate,
             version: version.to_string(),
             decl_package: pkg.clone(),
-        };
+        });
         // The qualified name is the subset's *identity* (raku reports `Foo::RM`
         // from `.^name` and in every type-check message), so the short name is
         // registered as an alias pointing at it — the same shape `class`/`role`

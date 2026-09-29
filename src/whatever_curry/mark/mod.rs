@@ -68,6 +68,8 @@ pub(super) fn mark_param_defs(param_defs: &mut [crate::ast::ParamDef]) {
     for pd in param_defs {
         mark_opt_value_leaf(&mut pd.default);
         mark_opt_box_expr(&mut pd.where_constraint);
+        // The compiled chunks (ADR-0133) describe the expressions as they were.
+        pd.code = crate::ast::ParamCode::default();
     }
 }
 

@@ -98,6 +98,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             };
             return Ok((
@@ -165,6 +166,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             };
             return Ok((
@@ -394,6 +396,7 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
             is_invocant: false,
             shape_constraints: None,
             block_param: true,
+            code: Default::default(),
             trait_args: Vec::new(),
         },
     ))
@@ -485,6 +488,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             },
         ));
@@ -580,6 +584,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             is_invocant: false,
             shape_constraints,
             block_param: true,
+            code: Default::default(),
         },
     ))
 }

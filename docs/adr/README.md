@@ -157,3 +157,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0130](0130-ecosystem-accepted-divergences.md) | A test file that fails only on a Rakudo artefact mutsu will not copy is graded `accepted` | Accepted (implemented) |
 | [0131](0131-imported-operator-candidates-are-scoped-to-the-importing-compunit.md) | An imported operator candidate is visible only to its declaring and importing compunits | Accepted (implemented) |
 | [0132](0132-nested-routine-exports-install-at-enclosing-routine-registration.md) | An `is export` routine nested in a routine body is exported when the enclosing routine is installed | Accepted (implemented) |
+| [0133](0133-no-per-call-ast-compile-at-runtime.md) | The runtime executes precompiled chunks — no per-call AST compile | Proposed (Slice 1, signature expressions, implemented) |

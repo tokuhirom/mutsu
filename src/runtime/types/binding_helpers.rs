@@ -70,7 +70,7 @@ impl Interpreter {
         } else {
             None
         };
-        let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())]);
+        let value = self.eval_param_default_expr(pd, default_expr);
         // Restore the parameter's prior env binding; the caller performs the
         // real bind right after. On the error path this prevents the shadow
         // from leaking.
@@ -156,24 +156,25 @@ impl Interpreter {
     /// Check shape constraint for array parameters in signatures.
     pub(crate) fn check_shape_constraint(
         &mut self,
-        param_name: &str,
+        pd: &ParamDef,
         value: &Value,
         shape_exprs: &[Expr],
         all_args: &[Value],
     ) -> Result<(), RuntimeError> {
         let _ = all_args; // reserved for future use
+        let param_name = pd.name.as_str();
         let actual_shape = crate::runtime::utils::shaped_array_shape(value);
 
         // Evaluate expected dimensions from shape expressions
         let mut expected_dims: Vec<Option<usize>> = Vec::new();
-        for expr in shape_exprs {
+        for (index, expr) in shape_exprs.iter().enumerate() {
             match expr {
                 Expr::Whatever | Expr::HyperWhatever => {
                     // * means any size for this dimension
                     expected_dims.push(None);
                 }
                 _ => {
-                    let dim_val = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
+                    let dim_val = self.eval_param_shape_dim(pd, index, expr)?;
                     match dim_val.view() {
                         ValueView::Whatever | ValueView::HyperWhatever => {
                             expected_dims.push(None);

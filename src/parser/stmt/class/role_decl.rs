@@ -203,6 +203,7 @@ pub(crate) fn parse_optional_role_type_params(
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 });
                 continue;
@@ -241,6 +242,7 @@ pub(crate) fn parse_optional_role_type_params(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     });
                     continue;

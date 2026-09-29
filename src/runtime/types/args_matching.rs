@@ -182,12 +182,12 @@ impl Interpreter {
         }
     }
 
-    fn eval_block_value_in_candidate_package(
+    fn eval_param_where_in_candidate_package(
         &mut self,
-        body: &[Stmt],
+        pd: &ParamDef,
         package: Option<Symbol>,
     ) -> Result<Value, RuntimeError> {
-        self.with_candidate_package(package, |this| this.eval_block_value(body))
+        self.with_candidate_package(package, |this| this.eval_param_where_value(pd, false))
     }
 
     fn eval_param_default_in_candidate_package(
@@ -710,10 +710,9 @@ impl Interpreter {
                     && !arg_was_supplied
                     && let Some(default_expr) = pd.default.as_ref()
                 {
-                    self.eval_block_value_in_candidate_package(
-                        &[Stmt::Expr(default_expr.clone())],
-                        candidate_package,
-                    )
+                    self.with_candidate_package(candidate_package, |this| {
+                        this.eval_param_default_expr(pd, default_expr)
+                    })
                     .ok()
                 } else {
                     None
@@ -752,7 +751,7 @@ impl Interpreter {
                             }
                             let r = {
                                 let ev = self
-                                    .eval_block_value_in_candidate_package(body, candidate_package);
+                                    .eval_param_where_in_candidate_package(pd, candidate_package);
                                 self.where_truthy(ev)
                             };
                             for key in &ph_keys {
@@ -762,17 +761,13 @@ impl Interpreter {
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(where_expr.as_ref().clone())],
-                                candidate_package,
-                            );
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(expr.clone())],
-                                candidate_package,
-                            );
+                        _ => {
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(arg, ev)
                         }
                     };
@@ -974,24 +969,20 @@ impl Interpreter {
                         self.env.insert(pd.name.clone(), val.clone());
                     }
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => {
+                        Expr::AnonSub { .. } => {
                             let ev =
-                                self.eval_block_value_in_candidate_package(body, candidate_package);
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(where_expr.as_ref().clone())],
-                                candidate_package,
-                            );
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(expr.clone())],
-                                candidate_package,
-                            );
+                        _ => {
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(&val, ev)
                         }
                     };
@@ -1040,24 +1031,17 @@ impl Interpreter {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }
                 let ok = match where_expr.as_ref() {
-                    Expr::AnonSub { body, .. } => {
-                        let ev =
-                            self.eval_block_value_in_candidate_package(body, candidate_package);
+                    Expr::AnonSub { .. } => {
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
                     Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                     {
-                        let ev = self.eval_block_value_in_candidate_package(
-                            &[Stmt::Expr(where_expr.as_ref().clone())],
-                            candidate_package,
-                        );
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
-                    expr => {
-                        let ev = self.eval_block_value_in_candidate_package(
-                            &[Stmt::Expr(expr.clone())],
-                            candidate_package,
-                        );
+                    _ => {
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_smartmatch(&slurpy_value, ev)
                     }
                 };

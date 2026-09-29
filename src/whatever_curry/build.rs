@@ -32,6 +32,7 @@ pub(crate) fn make_wc_param(name: String) -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        code: Default::default(),
         trait_args: Vec::new(),
     }
 }

@@ -495,7 +495,7 @@ fn where_constraint_matches(
                 interpreter.mark_readonly(key);
             }
             let r = {
-                let ev = interpreter.eval_block_value(body);
+                let ev = interpreter.eval_param_where_value(pd, false);
                 interpreter.where_truthy(ev)
             };
             for key in &ph_keys {
@@ -505,11 +505,11 @@ fn where_constraint_matches(
         }
         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
         {
-            let ev = interpreter.eval_block_value(&[Stmt::Expr(where_expr.clone())]);
+            let ev = interpreter.eval_param_where_value(pd, false);
             interpreter.where_truthy(ev)
         }
-        expr => {
-            let ev = interpreter.eval_block_value(&[Stmt::Expr(expr.clone())]);
+        _ => {
+            let ev = interpreter.eval_param_where_value(pd, false);
             interpreter.where_smartmatch(candidate, ev)
         }
     };
@@ -541,9 +541,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         if candidate.is_none()
             && let Some(default) = &pd.default
         {
-            candidate = interpreter
-                .eval_block_value(&[Stmt::Expr(default.clone())])
-                .ok();
+            candidate = interpreter.eval_param_default_expr(pd, default).ok();
         }
         let Some(candidate) = candidate else {
             // Optional params are OK without a value.  Named parameters are
@@ -1001,7 +999,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         if candidate.is_none()
             && let Some(default_expr) = &sub_pd.default
         {
-            candidate = Some(interpreter.eval_block_value(&[Stmt::Expr(default_expr.clone())])?);
+            candidate = Some(interpreter.eval_param_default_expr(sub_pd, default_expr)?);
         }
         let Some(mut candidate) = candidate else {
             // If the param is required (not optional, no default), error
@@ -1378,6 +1376,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
@@ -1415,6 +1414,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
