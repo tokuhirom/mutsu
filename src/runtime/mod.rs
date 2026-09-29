@@ -1844,6 +1844,8 @@ pub(crate) struct CallFrameEntry {
     pub line: i64,
     pub code: Option<CodeFrame>,
     pub env: Env,
+    /// Package the frame's code was running in, for `callframe(N).my<::?PACKAGE>`.
+    pub package: Symbol,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.
