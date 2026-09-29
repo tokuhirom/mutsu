@@ -24,7 +24,6 @@ the elements it reached, as in Rakudo. Its per-chunk writeback used to rebuild
 the whole source container, which made the one-element pulls quadratic; a later
 chunk now writes just its own slots.
 
-Follow-ups: `.iterator`/`pull-one` over a deferred map still reifies the whole
-source (#10186), and a one-element pull pays the whole map-loop setup, so a
-streamed loop that runs to the end costs about 3x the bulk map per element
-(#10187).
+`.iterator`/`pull-one` got the same streaming separately (#10186). Follow-up: a
+one-element pull pays the whole map-loop setup, so a streamed loop that runs to
+the end costs about 3x the bulk map per element (#10187).
