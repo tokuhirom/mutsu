@@ -61,6 +61,15 @@ impl Interpreter {
             _ => None,
         };
         let new_on_package = if method == "new" { package_sym } else { None };
+        if let Some(class_name) = new_on_package
+            && crate::runtime::types::strip_type_smiley(class_name.as_str())
+                .1
+                .is_some()
+        {
+            return Err(RuntimeError::constrained_type_instantiation(
+                class_name.as_str(),
+            ));
+        }
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
         // Interpreter builds the instance directly instead of routing through the

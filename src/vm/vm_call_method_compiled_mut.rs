@@ -31,6 +31,15 @@ impl Interpreter {
             _ => None,
         };
         let new_on_package = if method == "new" { package_sym } else { None };
+        if let Some(class_name) = new_on_package
+            && crate::runtime::types::strip_type_smiley(class_name.as_str())
+                .1
+                .is_some()
+        {
+            return Err(RuntimeError::constrained_type_instantiation(
+                class_name.as_str(),
+            ));
+        }
         // Calling a method on a role TYPE OBJECT puns the role, and punning is
         // a composition: the role's body runs. This fast path dispatched the
         // role's method straight off the role, so the body never ran at all —
