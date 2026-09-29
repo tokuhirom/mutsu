@@ -1160,6 +1160,7 @@ impl Interpreter {
         };
         // Collect attributes and methods from the role itself and all composed parent roles
         let mut all_attributes = role_def.attributes.clone();
+        let mut attribute_built = role_def.attribute_built.clone();
         let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def
             .methods
             .iter()
@@ -1181,6 +1182,9 @@ impl Interpreter {
                             {
                                 all_attributes.push(attr.clone());
                             }
+                        }
+                        for (attr_name, &built) in &parent_role.attribute_built {
+                            attribute_built.entry(attr_name.clone()).or_insert(built);
                         }
                         for (method_name, method_defs) in &parent_role.methods {
                             all_methods
@@ -1269,7 +1273,7 @@ impl Interpreter {
             attributes: all_attributes,
             attribute_types,
             attribute_smileys,
-            attribute_built: HashMap::new(),
+            attribute_built,
             embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
