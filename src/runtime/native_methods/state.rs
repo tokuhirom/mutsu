@@ -342,18 +342,23 @@ pub(in crate::runtime) fn supplier_id_from_attrs(attributes: &AttrMap) -> Option
 /// subscription would have observed (the buffered values, then a pending
 /// done/quit), then subscribe the waker to all future emit/done/quit events.
 /// Replay and subscription happen under one lock acquisition, so no event can
-/// fall between them. Returns a sink id for `supplier_sink_unregister`.
+/// fall between them. `replay` controls whether buffered values are included;
+/// a live Supply's `.list` subscribes only to future emissions. Returns a sink
+/// id for `supplier_sink_unregister`.
 pub(crate) fn supplier_sink_register(
     supplier_id: u64,
     key: usize,
     waker: &crate::value::waker::ReactWaker,
+    replay: bool,
 ) -> u64 {
     let sink_id = next_sink_id();
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
-        for (i, v) in state.emitted.iter().enumerate() {
-            let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
-            waker.push_at(key, crate::value::waker::SinkEvent::Emit(v.clone()), seq);
+        if replay {
+            for (i, v) in state.emitted.iter().enumerate() {
+                let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
+                waker.push_at(key, crate::value::waker::SinkEvent::Emit(v.clone()), seq);
+            }
         }
         let terminal_seq = state
             .terminal_seq
@@ -443,6 +448,39 @@ pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
     {
         state.sinks.retain(|s| s.sink_id != sink_id);
     }
+}
+
+// Cost: O(n), n = emitted values collected before completion.
+pub(crate) fn collect_supplier_values(
+    supplier_id: u64,
+    mut items: Vec<Value>,
+    replay: bool,
+    wait_until_done: bool,
+) -> Result<Vec<Value>, RuntimeError> {
+    use crate::value::waker::{ReactWaker, SinkEvent};
+
+    let waker = ReactWaker::new();
+    let sink_id = supplier_sink_register(supplier_id, 0, &waker, replay);
+    let collected: Result<(), RuntimeError> = 'collect: loop {
+        for (_, event, _) in waker.drain() {
+            match event {
+                SinkEvent::Emit(value) => items.push(value),
+                SinkEvent::Quit(reason) => {
+                    let mut err = RuntimeError::new(reason.to_string_value());
+                    err.exception = Some(Box::new(reason));
+                    break 'collect Err(err);
+                }
+                SinkEvent::Done => break 'collect Ok(()),
+            }
+        }
+        if !wait_until_done {
+            break Ok(());
+        }
+        waker.wait_activity(std::time::Duration::from_millis(100));
+    };
+    supplier_sink_unregister(supplier_id, sink_id);
+    collected?;
+    Ok(items)
 }
 
 pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<Value>) {

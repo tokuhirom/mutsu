@@ -21,9 +21,9 @@ my $wide := "\c[LATIN SMALL LETTER E WITH ACUTE]x".NFD;
 is nqp::elems($wide), 3, 'a decomposed codepoint counts as its NFD elements';
 is nqp::atpos_i($wide, 2), 120, 'nqp::atpos_i indexes past a decomposition';
 
-# The scan itself, timed at two sizes. The assertion is a *ratio* between two
-# runs in one process, so machine speed and CI load cancel out rather than
-# setting the threshold. Quadratic would be ~16x for a 4x longer input;
+# The scan itself, timed at two sizes. Use the median of five paired ratios so
+# one scheduling interruption during the full suite cannot decide the verdict.
+# Quadratic would be ~16x for a 4x longer input;
 # linear is ~4x. Assert well below the quadratic figure and well above the
 # linear one, so only a genuine complexity regression trips it.
 sub scan-time(int $n --> Num) {
@@ -44,5 +44,11 @@ my $large = scan-time(8000);
 
 # Guard against a clock so coarse the ratio is meaningless.
 ok $small > 0, 'the short scan took measurable time';
-my $ratio = $large / ($small || 1e-9);
+my @ratios = $large / ($small || 1e-9);
+for ^4 {
+    my $s = scan-time(2000);
+    my $l = scan-time(8000);
+    @ratios.push($l / ($s || 1e-9));
+}
+my $ratio = @ratios.sort[2];
 ok $ratio < 9, "scanning 4x the codepoints costs ~4x, not ~16x (ratio $ratio.fmt('%.2f'))";
