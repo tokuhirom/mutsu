@@ -440,6 +440,7 @@ pub(crate) fn sprintf_arg_specs(fmt: &str) -> Vec<(usize, char)> {
         if pos < len && bytes[pos] == b'*' {
             pos += 1;
             if positional_arg.is_none() {
+                out.push((arg_index, '*'));
                 arg_index += 1;
             }
         } else {
@@ -453,6 +454,7 @@ pub(crate) fn sprintf_arg_specs(fmt: &str) -> Vec<(usize, char)> {
             if pos < len && bytes[pos] == b'*' {
                 pos += 1;
                 if positional_arg.is_none() {
+                    out.push((arg_index, '*'));
                     arg_index += 1;
                 }
             } else {

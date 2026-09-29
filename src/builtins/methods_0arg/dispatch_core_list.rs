@@ -160,7 +160,7 @@ pub(super) fn dispatch(
             | ValueView::RangeExclStart(a, b)
             | ValueView::RangeExclBoth(a, b) => {
                 if b == i64::MAX || a == i64::MIN {
-                    None
+                    Some(Err(RuntimeError::cannot_lazy("reverse")))
                 } else {
                     let mut reversed = crate::runtime::utils::value_to_list(target);
                     reversed.reverse();
@@ -174,6 +174,9 @@ pub(super) fn dispatch(
                 if end_is_neg_inf {
                     // Empty range -- reverse is empty
                     return Some(Some(Ok(Value::seq(Vec::new()))));
+                }
+                if super::is_infinite_range(target) {
+                    return Some(Some(Err(RuntimeError::cannot_lazy("reverse"))));
                 }
                 // For finite generic ranges, expand and reverse
                 let items = crate::runtime::utils::value_to_list(target);
