@@ -90,7 +90,9 @@ impl Compiler {
                         .default
                         .as_ref()
                         .filter(|d| !Self::is_bound_without_evaluation(d))
-                        .map(|d| self.compile_param_chunk(&[Stmt::Expr(d.clone())], sigilless, package)),
+                        .map(|d| {
+                            self.compile_param_chunk(&[Stmt::Expr(d.clone())], sigilless, package)
+                        }),
                     shape_chunks: pd
                         .shape_constraints
                         .as_deref()
@@ -98,7 +100,11 @@ impl Compiler {
                         .iter()
                         .map(|dim| {
                             (!matches!(dim, Expr::Whatever | Expr::HyperWhatever)).then(|| {
-                                self.compile_param_chunk(&[Stmt::Expr(dim.clone())], sigilless, package)
+                                self.compile_param_chunk(
+                                    &[Stmt::Expr(dim.clone())],
+                                    sigilless,
+                                    package,
+                                )
                             })
                         })
                         .collect(),

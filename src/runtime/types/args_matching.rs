@@ -750,7 +750,8 @@ impl Interpreter {
                                 self.mark_readonly(key);
                             }
                             let r = {
-                                let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
+                                let ev = self
+                                    .eval_param_where_in_candidate_package(pd, candidate_package);
                                 self.where_truthy(ev)
                             };
                             for key in &ph_keys {
@@ -760,11 +761,13 @@ impl Interpreter {
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
                         _ => {
-                            let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(arg, ev)
                         }
                     };
@@ -973,11 +976,13 @@ impl Interpreter {
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
                         _ => {
-                            let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(&val, ev)
                         }
                     };
@@ -1027,8 +1032,7 @@ impl Interpreter {
                 }
                 let ok = match where_expr.as_ref() {
                     Expr::AnonSub { .. } => {
-                        let ev =
-                            self.eval_param_where_in_candidate_package(pd, candidate_package);
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
                     Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
