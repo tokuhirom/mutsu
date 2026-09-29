@@ -2137,14 +2137,27 @@ impl Interpreter {
                 // check inspects the container itself and reports the bogus "got Any".
                 // Only the (rare) bind path derefs; the common assignment path borrows
                 // `val` directly with no clone.
-                let bind_derefed = is_bind.then(|| val.deref_container());
+                let binding = is_bind || scalar_bind;
+                let bind_derefed = if binding && val.is_proxy_value() {
+                    // A typed bind checks the Proxy's current value, but must
+                    // still install the Proxy itself as the new container.
+                    Some(self.auto_fetch_proxy(&val)?)
+                } else {
+                    binding.then(|| val.deref_container())
+                };
                 let check_val = bind_derefed.as_ref().unwrap_or(&val);
-                if !check_val.is_nil() && !self.type_matches_value(constraint, check_val) {
-                    return Err(runtime::utils::type_check_assignment_typed_error(
-                        name, constraint, check_val,
-                    ));
+                if (!check_val.is_nil() || binding && val.is_proxy_value())
+                    && !self.type_matches_value(constraint, check_val)
+                {
+                    return Err(if binding {
+                        runtime::utils::type_check_binding_typed_error(constraint, check_val)
+                    } else {
+                        runtime::utils::type_check_assignment_typed_error(
+                            name, constraint, check_val,
+                        )
+                    });
                 }
-                if !val.is_nil() {
+                if !(val.is_nil() || binding && val.is_proxy_value()) {
                     val = loan_env!(self, try_coerce_value_for_constraint(constraint, val))?;
                 }
                 // Wrap native integer values on assignment (overflow wrapping)
