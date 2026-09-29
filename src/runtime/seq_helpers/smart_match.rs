@@ -469,13 +469,18 @@ impl Interpreter {
             // When RHS is a callable (Sub), invoke it with LHS as argument and
             // return truthiness of the result.  If the sub accepts no parameters,
             // call it with no arguments (simple closure truth).
-            (_, ValueView::Sub(data)) => {
+            //
+            // Invoked like any code value the VM calls (`vm_call_on_value`): a
+            // compiled closure — every WhateverCode and block literal — binds
+            // and runs as bytecode instead of through `call_sub_value`'s
+            // by-name env carrier, which cost ~45k instructions per
+            // `$x ~~ * > 0` (#10107).
+            (_, ValueView::Sub(_)) => {
                 let func = right.clone();
-                let _ = data; // keep pattern match shape explicit for callable RHS
-                if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()], false) {
+                if let Ok(result) = self.vm_call_on_value(func.clone(), vec![left.clone()], None) {
                     return result.truthy();
                 }
-                match self.call_sub_value(func, vec![], false) {
+                match self.vm_call_on_value(func, vec![], None) {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }

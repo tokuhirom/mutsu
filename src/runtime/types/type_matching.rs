@@ -1328,7 +1328,7 @@ impl Interpreter {
                         // Evaluate to get a callable, then call with the value
                         match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                             Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
-                                match self.call_sub_value(callable, vec![predicate_value], false) {
+                                match self.vm_call_on_value(callable, vec![predicate_value], None) {
                                     // A `fail "msg"` inside the predicate body
                                     // returns an unhandled Failure (not an Err) from
                                     // the sub call; capture its message too.
