@@ -151,11 +151,28 @@ impl Interpreter {
                 } else {
                     format!("{}{}", sigil, pd.name)
                 };
-                if let Some(tc) = &pd.type_constraint {
-                    format!("{} {}", tc, name_part)
-                } else {
-                    name_part
+                let mut part = String::new();
+                if pd.slurpy {
+                    part.push('*');
                 }
+                if let Some(tc) = &pd.type_constraint {
+                    part.push_str(tc);
+                    part.push(' ');
+                }
+                if pd.named {
+                    part.push(':');
+                }
+                part.push_str(&name_part);
+                if pd.named && pd.required {
+                    part.push('!');
+                } else if !pd.named && pd.optional_marker {
+                    part.push('?');
+                }
+                if let Some(crate::ast::Expr::Literal(value)) = &pd.default {
+                    part.push_str(" = ");
+                    part.push_str(&crate::builtins::methods_0arg::raku_repr::raku_value(value));
+                }
+                part
             })
             .collect();
         format!("({})", sig_parts.join(", "))
