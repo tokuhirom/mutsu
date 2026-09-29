@@ -936,7 +936,7 @@ impl Interpreter {
                     &owner,
                     attr.is_rw,
                     attr.source_line,
-                    attr.source_file.as_deref(),
+                    attr.source_file.map(|f| f.as_str()),
                 ));
             }
         }

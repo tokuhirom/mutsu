@@ -255,13 +255,13 @@ impl Interpreter {
             for attr in &class_def.attributes {
                 let (attr_name, is_public, is_rw) = (&attr.name, attr.is_public, attr.is_rw);
                 if is_public && attr_name == method_name {
-                    let (source_line, source_file) = (attr.source_line, attr.source_file.clone());
+                    let (source_line, source_file) = (attr.source_line, attr.source_file);
                     return Some(self.instance_accessor_method_object(
                         method_name,
                         &class_name_str,
                         is_rw,
                         source_line,
-                        source_file.as_deref(),
+                        source_file.map(|f| f.as_str()),
                     ));
                 }
             }
