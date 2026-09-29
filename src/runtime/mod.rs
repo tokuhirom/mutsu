@@ -1033,8 +1033,12 @@ pub(crate) struct ClassAttributeDef {
     /// tracked at registration time (a non-plan-backed construction site, or
     /// a mainline/EVAL `has`) -- the accessor then reports `Nil`, matching a
     /// synthetic method with no declaration site to point at.
+    ///
+    /// Interned rather than an owned `String`: the attribute list is cloned
+    /// per construction on the bless path, and a `String` here cost one heap
+    /// allocation per attribute per clone (#10090).
     pub(crate) source_line: Option<i64>,
-    pub(crate) source_file: Option<String>,
+    pub(crate) source_file: Option<crate::symbol::Symbol>,
 }
 
 /// Attribute declarations with the same bare name but different sigils are
