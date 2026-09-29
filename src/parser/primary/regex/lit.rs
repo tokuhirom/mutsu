@@ -446,6 +446,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: false,
                             },
                         ));
                     }
@@ -475,6 +476,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: false,
                                 },
                             ));
                         }
@@ -585,6 +587,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: false,
                             },
                         ));
                     }
@@ -644,6 +647,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: false,
                                 },
                             ));
                         }
@@ -693,6 +697,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: true,
                             },
                         ));
                     }
@@ -788,6 +793,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: false,
                             },
                         ));
                     }
@@ -820,6 +826,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: false,
                                 },
                             ));
                         }
@@ -866,6 +873,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: true,
                             },
                         ));
                     }
@@ -921,6 +929,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     nth: None,
                     x: None,
                     perl5: false,
+                    replacement_thunk: false,
                 },
             ));
         }

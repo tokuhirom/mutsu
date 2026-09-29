@@ -5718,6 +5718,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                replacement_thunk,
                 qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5733,6 +5734,7 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
@@ -5749,6 +5751,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                replacement_thunk,
                 qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5764,6 +5767,7 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
