@@ -31,6 +31,18 @@ fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -
         && attributes.contains_key("timezone")
 }
 
+/// Carry the invocant's `:formatter` over to a value derived from it. Rakudo
+/// passes `:&!formatter` along in `later`/`earlier`/`truncated-to`/
+/// `in-timezone` (and so `utc`/`local`), so the derived value renders through
+/// the same formatter -- against its own fields, since nothing is cached.
+// Cost: O(a), a = attributes of the result (one copy when a formatter exists).
+fn keep_formatter(
+    result: Value,
+    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
+) -> Value {
+    temporal::with_formatter(result, original_attrs.as_map().get("formatter").cloned())
+}
+
 fn rebless_datetime_result(
     result: Value,
     target_class_name: crate::symbol::Symbol,
@@ -52,7 +64,7 @@ fn rebless_datetime_result(
     }
     let merged = (**original_attrs).clone();
     for key in [
-        "year", "month", "day", "hour", "minute", "second", "timezone",
+        "year", "month", "day", "hour", "minute", "second", "timezone", "epoch",
     ] {
         if let Some(value) = attributes.as_map().get(key) {
             merged.insert(key.to_string(), value.clone());
@@ -90,7 +102,7 @@ fn rebless_date_result(
         return result;
     }
     let merged = (**original_attrs).clone();
-    for key in ["year", "month", "day"] {
+    for key in ["year", "month", "day", "days"] {
         if let Some(value) = attributes.as_map().get(key) {
             merged.insert(key.to_string(), value.clone());
         }
@@ -122,10 +134,11 @@ pub(super) fn dispatch_temporal_method(
         } if has_date_attrs(&attributes) && !has_datetime_attrs(&attributes) => {
             let (year, month, day) = temporal::date_attrs(&(attributes).as_map());
             match method {
-                "later" | "earlier" => Some(
-                    date_later_earlier(year, month, day, args, method)
-                        .map(|v| rebless_date_result(v, class_name, &attributes)),
-                ),
+                "later" | "earlier" => {
+                    Some(date_later_earlier(year, month, day, args, method).map(|v| {
+                        rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
+                    }))
+                }
                 // `.yyyy-mm-dd($sep)` / `.mm-dd-yyyy($sep)` / `.dd-mm-yyyy($sep)`
                 // with an optional separator string (default `-`).
                 "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
@@ -144,10 +157,9 @@ pub(super) fn dispatch_temporal_method(
                             .map(|v| rebless_date_result(v, class_name, &attributes)),
                     )
                 }
-                "truncated-to" => Some(
-                    date_truncated_to(year, month, day, args)
-                        .map(|v| rebless_date_result(v, class_name, &attributes)),
-                ),
+                "truncated-to" => Some(date_truncated_to(year, month, day, args).map(|v| {
+                    rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
+                })),
                 "in-timezone" => {
                     // Date.in-timezone returns a DateTime
                     if let Some(arg) = args.first() {
@@ -185,7 +197,13 @@ pub(super) fn dispatch_temporal_method(
                     datetime_later_earlier(
                         year, month, day, hour, minute, second, timezone, args, method,
                     )
-                    .map(|v| rebless_datetime_result(v, class_name, &attributes)),
+                    .map(|v| {
+                        rebless_datetime_result(
+                            keep_formatter(v, &attributes),
+                            class_name,
+                            &attributes,
+                        )
+                    }),
                 ),
                 // `.yyyy-mm-dd($sep)` etc. with an optional separator (default `-`).
                 "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
@@ -216,25 +234,37 @@ pub(super) fn dispatch_temporal_method(
                 }
                 "truncated-to" => Some(
                     datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| rebless_datetime_result(v, class_name, &attributes)),
-                ),
-                "in-timezone" => {
-                    if let Some(arg) = args.first() {
-                        let new_tz = arg.to_f64() as i64;
-                        Some(
-                            datetime_in_timezone(
-                                year, month, day, hour, minute, second, timezone, new_tz,
+                        .map(|v| {
+                            rebless_datetime_result(
+                                keep_formatter(v, &attributes),
+                                class_name,
+                                &attributes,
                             )
-                            .map(|v| rebless_datetime_result(v, class_name, &attributes)),
-                        )
+                        }),
+                ),
+                // `utc` is `in-timezone(0)` (Rakudo), reached here for a
+                // DateTime subclass so the result keeps the subclass.
+                "in-timezone" | "utc" if method == "in-timezone" || args.is_empty() => {
+                    let new_tz = if method == "utc" {
+                        Some(0)
                     } else {
-                        Some(
-                            Ok(temporal::make_datetime(
-                                year, month, day, hour, minute, second, timezone,
-                            ))
-                            .map(|v| rebless_datetime_result(v, class_name, &attributes)),
+                        args.first().map(|arg| arg.to_f64() as i64)
+                    };
+                    let result = match new_tz {
+                        Some(new_tz) => datetime_in_timezone(
+                            year, month, day, hour, minute, second, timezone, new_tz,
+                        ),
+                        None => Ok(temporal::make_datetime(
+                            year, month, day, hour, minute, second, timezone,
+                        )),
+                    };
+                    Some(result.map(|v| {
+                        rebless_datetime_result(
+                            keep_formatter(v, &attributes),
+                            class_name,
+                            &attributes,
                         )
-                    }
+                    }))
                 }
                 "posix" if args.len() == 1 => {
                     // .posix(True) / .posix(:real) keeps fractional seconds.
@@ -527,7 +557,7 @@ fn datetime_clone(
         }
     }
     temporal::validate_datetime(year, month, day, hour, minute, second, timezone)?;
-    Ok(temporal::with_datetime_formatter(
+    Ok(temporal::with_formatter(
         temporal::make_datetime(year, month, day, hour, minute, second, timezone),
         formatter,
     ))

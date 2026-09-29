@@ -577,42 +577,6 @@ impl Interpreter {
         ))
     }
 
-    /// Call a Date formatter and store the rendered result in `__formatter_rendered`.
-    pub(super) fn render_date_formatter(
-        &mut self,
-        date: Value,
-        formatter_value: Value,
-    ) -> Result<Value, RuntimeError> {
-        let is_instance = matches!(date.view(), ValueView::Instance { .. });
-        if is_instance {
-            let ValueView::Instance {
-                class_name,
-                attributes,
-                id,
-            } = date.view()
-            else {
-                unreachable!()
-            };
-            let saved_env = self.env().clone();
-            let saved_readonly = self.enter_readonly_frame();
-            let rendered = self
-                .eval_call_on_value(formatter_value, vec![date.clone()])?
-                .to_string_value();
-            *self.env_mut() = saved_env;
-            self.exit_readonly_frame(saved_readonly);
-            let mut updated = attributes.to_map();
-            updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
-            Ok(Value::write_back_sharing(
-                &attributes,
-                class_name,
-                updated,
-                id,
-            ))
-        } else {
-            Ok(date)
-        }
-    }
-
     /// Create a Collation instance with the given level settings.
     pub(super) fn make_collation_instance(
         primary: i64,

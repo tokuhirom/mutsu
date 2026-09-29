@@ -1024,13 +1024,6 @@ impl Value {
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
-                if let Some(ValueView::Str(s)) = attributes
-                    .as_map()
-                    .get("__formatter_rendered")
-                    .map(Value::view)
-                {
-                    return s.to_string();
-                }
                 let (y, m, d) =
                     crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
@@ -1044,13 +1037,6 @@ impl Value {
                     && attributes.contains_key("second")
                     && attributes.contains_key("timezone") =>
             {
-                if let Some(ValueView::Str(s)) = attributes
-                    .as_map()
-                    .get("__formatter_rendered")
-                    .map(Value::view)
-                {
-                    return s.to_string();
-                }
                 let (y, mo, d, h, mi, s, tz) =
                     crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
