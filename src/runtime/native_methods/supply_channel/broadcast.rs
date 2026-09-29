@@ -57,6 +57,20 @@ pub(super) fn notify_all(wakers: &WakerSet, signal: &Signal) {
 pub(super) struct SubQueue {
     /// Each event with its global send sequence (see `super::next_send_seq`).
     pub(super) events: Mutex<VecDeque<(u64, SupplyEvent)>>,
+    /// Set by `Tap.close` on *this* tap (issue #9899). A closed queue is
+    /// gone as far as the broadcast is concerned: it receives nothing more
+    /// and does not keep the producer alive, even while the act loop that
+    /// owns it has not yet noticed the close and dropped its handle. Other
+    /// taps of the same Supply are unaffected.
+    pub(super) closed: Arc<AtomicBool>,
+}
+
+impl SubQueue {
+    /// Still a live tap: its handle exists and it has not been closed.
+    fn is_live(weak: &Weak<SubQueue>) -> bool {
+        weak.upgrade()
+            .is_some_and(|queue| !queue.closed.load(Ordering::Acquire))
+    }
 }
 
 /// State shared by the sender clones, the registry template, and every
@@ -78,7 +92,6 @@ pub(super) struct Broadcast {
     /// broadcasting. See `SupplyReceiver::mark_exclusive`.
     pub(super) exclusive: AtomicBool,
     pub(super) wakers: WakerSet,
-    pub(super) closed: Arc<AtomicBool>,
     pub(super) signal: Signal,
 }
 
@@ -123,9 +136,9 @@ impl Broadcast {
         let Ok(mut subs) = self.subscribers.lock() else {
             return;
         };
-        // Prune dropped taps while we are here, so an abandoned subscriber
-        // stops costing a clone per event.
-        subs.retain(|weak| weak.strong_count() > 0);
+        // Prune dropped and closed taps while we are here, so an abandoned
+        // subscriber stops costing a clone per event.
+        subs.retain(SubQueue::is_live);
         for weak in subs.iter() {
             if let Some(queue) = weak.upgrade()
                 && let Ok(mut events) = queue.events.lock()
@@ -138,14 +151,16 @@ impl Broadcast {
     pub(super) fn subscribe(&self) -> Arc<SubQueue> {
         let queue = Arc::new(SubQueue::default());
         if let Ok(mut subs) = self.subscribers.lock() {
-            subs.retain(|weak| weak.strong_count() > 0);
+            subs.retain(SubQueue::is_live);
             subs.push(Arc::downgrade(&queue));
             self.ever_subscribed.store(true, Ordering::Release);
         }
         queue
     }
 
-    /// Every tap this broadcast ever had has gone away.
+    /// Every tap this broadcast ever had has gone away — dropped, or closed
+    /// by `Tap.close` (issue #9899: closing one of several taps leaves the
+    /// producer running for the others).
     ///
     /// This is how a producer that retires on "receiver gone" still retires
     /// (ADR-0074). Dropping the last consumer used to disconnect the mpsc,
@@ -160,7 +175,7 @@ impl Broadcast {
         }
         self.subscribers
             .lock()
-            .map(|subs| subs.iter().all(|weak| weak.strong_count() == 0))
+            .map(|subs| !subs.iter().any(SubQueue::is_live))
             .unwrap_or(false)
     }
 }
