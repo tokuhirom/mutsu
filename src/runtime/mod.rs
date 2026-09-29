@@ -708,6 +708,7 @@ pub(crate) mod meta_ns;
 mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
+mod method_dispatch_lazy;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
@@ -3912,6 +3913,9 @@ pub struct Interpreter {
     /// candidate's exit flush clobbering it with its own stale value (§D capstone).
     multi_dispatch_stack: Vec<MultiDispatchEntry>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Method calls whose deferral frame is not built yet, interleaved with
+    /// `method_dispatch_stack` by `dispatch_token` (see `method_dispatch_lazy`).
+    pending_method_dispatch: Vec<method_dispatch_lazy::PendingMethodDispatch>,
     /// Stack of samewith dispatch contexts, pushed whenever a multi sub,
     /// multi method, or proto is entered, popped on exit. ADR-0019 E9c-1:
     /// a single `Vec<SamewithContext>` — every push site funnels through
@@ -4750,6 +4754,10 @@ pub struct Interpreter {
     /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> can this name's deferral frame be built
+    /// after the call has started` (see `method_dispatch_lazy`). Structural,
+    /// cleared with `dispatch_multi_candidate`.
+    pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
