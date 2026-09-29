@@ -688,6 +688,7 @@ impl Interpreter {
             token,
             installing_code: self.current_code,
             installing_base: self.locals.base(),
+            installing_call_depth: self.call_frames.len(),
             return_target,
             installing_package: self.current_package_sym(),
             handler,

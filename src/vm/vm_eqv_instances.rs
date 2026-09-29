@@ -99,10 +99,19 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         match self.class_mode(class_name) {
             Some(private) if private.is_empty() => InstanceEqv::Structural,
             Some(private) => InstanceEqv::Public(private),
-            None => match (self.user_raku(a), self.user_raku(b)) {
-                (Some(ra), Some(rb)) => InstanceEqv::Rendered(self.error.is_none() && ra == rb),
-                _ => InstanceEqv::Structural,
-            },
+            None => {
+                let ra = self.user_raku(a);
+                // A throwing `raku` ends the comparison: the right operand's
+                // is never called. Its handler already ran at the throw
+                // (ADR-0072), so a second call would run it again.
+                if self.error.is_some() {
+                    return InstanceEqv::Decided(false);
+                }
+                match (ra, self.user_raku(b)) {
+                    (Some(ra), Some(rb)) => InstanceEqv::Rendered(self.error.is_none() && ra == rb),
+                    _ => InstanceEqv::Structural,
+                }
+            }
         }
     }
 }

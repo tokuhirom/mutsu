@@ -5,7 +5,7 @@ use Test;
 # dynamic scope of the `die`, before anything unwinds -- innermost first. Each
 # expectation was taken from `raku`.
 
-plan 12;
+plan 13;
 
 # The issue's repro: an inner handler that rethrows passes the exception on to
 # an outer one, still at the throw point, so the outer `.resume` reaches the
@@ -96,6 +96,19 @@ plan 12;
     is $seen, 'outer', 'the handler sees its own lexical, not a same-named one in the dying sub';
 }
 
+# ... also when the handler lives in a closure that reads the capture by name.
+{
+    sub cl-run(&blk) { blk() }
+    sub cl-inner(*%matcher) { die "cl" }
+    sub cl-outer($code, *%matcher) {
+        my $seen;
+        cl-run { CATCH { default { $seen = %matcher.keys.join(",") } }; $code() }
+        $seen
+    }
+    is cl-outer({ cl-inner(:instead) }, message => 1), 'message',
+        "a closure handler sees its own capture, not the dying routine's same-named one";
+}
+
 # A control signal from the handler is raised at the throw point: `next`
 # reaches the loop innermost at the `die`.
 {
@@ -137,5 +150,5 @@ plan 12;
         CATCH { default { @log.push: "h$n"; .rethrow if $n < 2 } }
     }
     rec(2);
-    is @log.join(","), 'h1,h2', 'recursive activations each run their own handler once';
+    is @log.join(","), 'h0,h1,h2', 'recursive activations each run their own handler once';
 }

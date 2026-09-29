@@ -416,6 +416,10 @@ pub(crate) struct CatchHandlerEntry {
     /// handler runs on the live slots) from one in a recursive call of the
     /// same routine (which shares the code object but not the slots).
     pub installing_base: usize,
+    /// `call_frames.len()` when the region was entered: the next call frame
+    /// pushed by the installing activation holds its saved upvalue array,
+    /// which the handler's upvalue reads address.
+    pub installing_call_depth: usize,
     /// The routine a `return` in the handler targets: the one running when the
     /// region was entered. An inline run raises that `return` at the throw
     /// site, below routines that must not take it as their own.

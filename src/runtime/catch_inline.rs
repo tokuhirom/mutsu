@@ -56,12 +56,23 @@ impl Interpreter {
     pub(crate) fn enter_installing_frame(
         &mut self,
         code: &CompiledCode,
-        installing_base: Option<usize>,
+        installing: Option<(usize, usize)>,
     ) -> InstallingFrame {
+        let installing_base = installing.map(|(base, _)| base);
+        // The installing activation's upvalue array, saved by the call frame
+        // it pushed next -- when that frame really is its own (its caller
+        // base is the installing base). Without it a `GetUpvalue` in the
+        // handler falls back to an env read at the throw site, where a
+        // same-named lexical of the dying routine shadows the capture.
+        let installing_upvalues = installing.and_then(|(base, depth)| {
+            self.call_frames
+                .get(depth)
+                .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))
+                .map(|f| f.saved_upvalues.clone())
+        });
         // The installing frame lies wholly below the executing one, or its
         // region cannot be trusted (a code object that grew after install).
-        let live_base =
-            installing_base.filter(|&b| b + code.locals.len() <= self.locals.base());
+        let live_base = installing_base.filter(|&b| b + code.locals.len() <= self.locals.base());
         let handler_locals: Vec<Value> = code
             .locals
             .iter()
@@ -85,7 +96,8 @@ impl Interpreter {
             .collect();
         let seeded = handler_locals.clone();
         let saved_locals_base = self.locals.push_frame_from(&handler_locals);
-        let saved_upvalues = std::mem::take(&mut self.upvalues);
+        let saved_upvalues =
+            std::mem::replace(&mut self.upvalues, installing_upvalues.unwrap_or_default());
         InstallingFrame {
             live_base,
             saved_locals_base,
@@ -132,6 +144,79 @@ impl Interpreter {
                 // drop it on return. See `inline_control_env_writes`.
                 self.inline_control_env_writes
                     .push(crate::symbol::Symbol::intern(name));
+            }
+        }
+    }
+
+    /// Make the installing activation's env the executing one for an inline
+    /// handler run, so the handler's by-name reads (`GetGlobal`,
+    /// `GetHashVar`, ...) resolve its own lexicals: at the throw site a
+    /// same-named lexical of the dying routine would shadow them. That env is
+    /// the one the installing activation saved in the call frame it pushed
+    /// next (`call_frames[depth]`, when its caller base proves it is that
+    /// activation's). The dynamics declared on the way to the throw stay
+    /// visible, copied into the handler's overlay: rakudo runs the handler in
+    /// the dynamic scope of the throw. `None` when there is no such frame; the
+    /// handler then runs in the throw site's env, as before.
+    // Cost: O(e), e = entries in the throw site's env tiers.
+    fn enter_installing_env(&mut self, base: usize, depth: usize) -> Option<HandlerEnv> {
+        let installing = self
+            .call_frames
+            .get(depth)
+            .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))?
+            .saved_env
+            .clone();
+        let dynamics = self.env().tier_dynamic_entries();
+        let mut env = crate::env::Env::scoped_child(installing);
+        for (k, v) in &dynamics {
+            env.insert_sym(*k, v.clone());
+        }
+        let throw_env = std::mem::replace(self.env_mut(), env);
+        Some(HandlerEnv {
+            throw_env,
+            dynamics,
+        })
+    }
+
+    /// Undo [`Self::enter_installing_env`] and route the handler's writes. A
+    /// write to a lexical the throw site sees as the same variable also goes
+    /// to the throw site's env (the by-name store the frames in between hand
+    /// back up on return, as before); one the throw site shadows goes only to
+    /// the installing activation's saved env. Dynamics go to the throw site.
+    // Cost: O(w), w = names the handler wrote.
+    fn leave_installing_env(&mut self, depth: usize, st: HandlerEnv) {
+        let HandlerEnv {
+            throw_env,
+            dynamics,
+        } = st;
+        let handler_env = std::mem::replace(self.env_mut(), throw_env);
+        let topic = crate::symbol::Symbol::intern("_");
+        let bang = crate::symbol::Symbol::intern("!");
+        for (k, v) in handler_env.overlay_iter() {
+            if *k == topic || *k == bang {
+                continue;
+            }
+            if k.is_dynamic_var_env_key() {
+                if dynamics.iter().any(|(dk, dv)| dk == k && dv == v) {
+                    continue;
+                }
+                self.env_mut().insert_sym(*k, v.clone());
+                continue;
+            }
+            let installing = self.call_frames.get(depth).map(|f| &f.saved_env);
+            let same_var = match (
+                self.env().get_sym(*k),
+                installing.and_then(|e| e.get_sym(*k)),
+            ) {
+                (None, _) => true,
+                (Some(a), Some(b)) => a == b,
+                (Some(_), None) => false,
+            };
+            if same_var {
+                self.env_mut().insert_sym(*k, v.clone());
+            }
+            if let Some(f) = self.call_frames.get_mut(depth) {
+                f.saved_env.insert_sym(*k, v.clone());
             }
         }
     }
@@ -204,6 +289,7 @@ impl Interpreter {
             let token = entry.token;
             let return_target = entry.return_target;
             let installing_base = entry.installing_base;
+            let installing_call_depth = entry.installing_call_depth;
             let installing_package = entry.installing_package;
             let code = handler.code.clone();
             let catch_begin = handler.catch_begin;
@@ -220,13 +306,16 @@ impl Interpreter {
             let outcome = self.run_catch_handler_inline(
                 &code,
                 (catch_begin, control_begin),
-                (same_frame, installing_base),
+                (same_frame, installing_base, installing_call_depth),
                 &fns,
                 err,
             );
             self.catch_handlers.extend(inner);
             if installing_package != throw_package {
-                self.set_current_package_with_sym(throw_package.resolve().to_string(), throw_package);
+                self.set_current_package_with_sym(
+                    throw_package.resolve().to_string(),
+                    throw_package,
+                );
             }
             match outcome {
                 CatchRunOutcome::Resumed => return Ok(Value::package(crate::symbol::wk::any())),
@@ -277,7 +366,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         (catch_begin, control_begin): (usize, usize),
-        (same_frame, installing_base): (bool, usize),
+        (same_frame, installing_base, installing_call_depth): (bool, usize, usize),
         fns: &CompiledFns,
         err: RuntimeError,
     ) -> CatchRunOutcome {
@@ -291,12 +380,17 @@ impl Interpreter {
         // inside the handler the exception is the topic, and the enclosing scope's
         // `$!` has not been written yet.
         let prior_bang = self.env().get("!").cloned();
+        let handler_env = (!same_frame)
+            .then(|| self.enter_installing_env(installing_base, installing_call_depth));
+        let handler_env = handler_env.flatten();
         self.env_mut().insert("!".to_string(), Value::NIL);
         self.env_mut().insert("_".to_string(), err_val);
         let saved_when = self.when_matched();
         self.set_when_matched(false);
 
-        let frame = (!same_frame).then(|| self.enter_installing_frame(code, Some(installing_base)));
+        let frame = (!same_frame).then(|| {
+            self.enter_installing_frame(code, Some((installing_base, installing_call_depth)))
+        });
         // The handler runs on the throw site's operand stack; isolate its effects
         // so the suspended computation's stack is left exactly as it was.
         let saved_stack = self.stack.len();
@@ -305,6 +399,9 @@ impl Interpreter {
         let handled = self.when_matched();
         if let Some(frame) = frame {
             self.leave_installing_frame(code, frame);
+        }
+        if let Some(st) = handler_env {
+            self.leave_installing_env(installing_call_depth, st);
         }
 
         self.set_when_matched(saved_when);
@@ -341,6 +438,15 @@ impl Interpreter {
             Err(ce) => CatchRunOutcome::Raised(ce),
         }
     }
+}
+
+/// The throw site's env, set aside while an inline handler runs in the
+/// installing activation's (see `Interpreter::enter_installing_env`).
+struct HandlerEnv {
+    throw_env: crate::env::Env,
+    /// The throw site's dynamics as copied into the handler's overlay, so only
+    /// the ones the handler changed are written back.
+    dynamics: Vec<(crate::symbol::Symbol, Value)>,
 }
 
 /// What one inline `CATCH` handler run decided.
