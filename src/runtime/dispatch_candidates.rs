@@ -84,7 +84,8 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
 ///    positional count (higher is narrower);
 /// 1. the type-hierarchy distance of those nominal types (lower is narrower);
-/// 2. the REFINEMENT tier — `where` count, `subset` count, sub-signature
+/// 2. the REFINEMENT tier — constrained-parameter count (a `where` clause
+///    or a `subset` type: rakudo draws no line between the two), sub-signature
 ///    count, `rw`/`raw` count (higher is narrower);
 ///
 /// then whether it declares any named parameter, optional-positional count,
@@ -100,7 +101,7 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
-    (usize, usize, usize, usize),
+    (usize, usize, usize),
     usize,
     usize,
     usize,
@@ -174,7 +175,7 @@ impl Interpreter {
         def: &Arc<FunctionDef>,
         args: &[Value],
     ) -> CandidateRankKey {
-        let (literal, typed, where_c, subset, subsig, writable) =
+        let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
         let has_named = usize::from(Self::candidate_declares_named(def));
@@ -183,7 +184,7 @@ impl Interpreter {
         (
             (literal, typed),
             dist,
-            (where_c, subset, subsig, writable),
+            (constrained, subsig, writable),
             has_named,
             opt,
             req_named,
@@ -582,12 +583,12 @@ impl Interpreter {
     }
 
     /// The narrowness tuple of `def` with no call in flight, in
-    /// `(literal, typed, where, subset, subsig, writable)` order — the first
+    /// `(literal, typed, constrained, subsig, writable)` order — the first
     /// two are the nominal tier, the rest the refinement tier.
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         self.candidate_specificity_rank_for_args(def, &[])
     }
 
@@ -661,7 +662,7 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
         args: &[Value],
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         let all_params = Self::dispatch_visible_params(def);
         // Type narrowness is computed from the POSITIONAL parameters only.
         // A named parameter's type decides whether the candidate is
@@ -683,16 +684,21 @@ impl Interpreter {
             })
             .collect();
         let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
-        let where_count = params
+        // A parameter is constrained by a `where` clause or by a `subset` type,
+        // and rakudo ranks the two alike: each is a bind-time check on top of
+        // the same nominal type, so `multi f(Small $x)` and `multi f(Int $x
+        // where * < 10_000)` tie and declaration order decides. Counting them
+        // as two separate components made every `where` beat every subset.
+        // A parameter carrying both still counts once, as rakudo's
+        // per-parameter "has a constraint" comparison does.
+        let constrained_count = params
             .iter()
-            .filter(|p| p.where_constraint.is_some())
-            .count();
-        let subset_type_count = effective
-            .iter()
-            .filter(|tc| {
-                tc.map(Self::constraint_base_name)
-                    .map(|base| self.constraint_is_subset(base))
-                    .unwrap_or(false)
+            .zip(effective.iter())
+            .filter(|(p, tc)| {
+                p.where_constraint.is_some()
+                    || tc
+                        .map(Self::constraint_base_name)
+                        .is_some_and(|base| self.constraint_is_subset(base))
             })
             .count();
         let typed_param_count = params
@@ -728,8 +734,7 @@ impl Interpreter {
             // REFINEMENT tier — consulted only once two candidates are tied on
             // the nominal tier AND on type-hierarchy distance. See
             // [`CandidateRankKey`].
-            where_count,
-            subset_type_count,
+            constrained_count,
             subsig_count,
             // `rw`/`raw` are dispatch-visible because they require a writable
             // argument; `copy` changes only binding and must not outrank an
