@@ -155,6 +155,18 @@ impl Compiler {
             self.record_type_body_written_lexicals(type_body_writes);
         }
 
+        // A method that REBINDS an outer lexical (`method set { $list := ... }`)
+        // needs the declaring frame to box it in a binding cell at its
+        // declaration, so the rebind reaches sibling methods and the frame.
+        if !cc.free_var_rebinds.is_empty() {
+            for sym in &cc.free_var_rebinds {
+                self.code.note_rebound_name(&sym.resolve());
+            }
+            self.code
+                .named_sub_captures
+                .push((cc.free_var_rebinds.clone(), Vec::new()));
+        }
+
         // ...and this body's outer-lexical READS, on the same one compile, into
         // the enclosing frame's ordinary closure-capture channel. A method is
         // installed into its type's method table by `RegisterDecl` and, exactly
