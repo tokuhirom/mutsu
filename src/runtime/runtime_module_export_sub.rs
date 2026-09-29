@@ -318,6 +318,15 @@ impl Interpreter {
             // same-named package sub (#8746) — see the field's doc comment.
             self.export_amp_override_names
                 .insert(crate::symbol::Symbol::intern(op));
+            if let Some(file) = self.executing_source_file_for_module_load() {
+                self.unit_imported_callables.insert(
+                    (
+                        crate::symbol::Symbol::intern(&file),
+                        crate::symbol::Symbol::intern(op),
+                    ),
+                    value.clone(),
+                );
+            }
             let normalized_op = Interpreter::normalize_categorical_operator_name(op);
             if matches!(
                 op.split_once(":<").map(|(c, _)| c),

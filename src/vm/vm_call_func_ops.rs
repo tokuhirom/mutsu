@@ -125,7 +125,7 @@ impl Interpreter {
     /// *importing* unit (#8746); inside the exporting module itself the bare
     /// name keeps its own lexical meaning, so a wrapper `-> |c { name(|c) }`
     /// around a same-named inner import calls that import, not itself.
-    fn callable_declared_in_unit_of(callable: &Value, code: &CompiledCode) -> bool {
+    pub(super) fn callable_declared_in_unit_of(callable: &Value, code: &CompiledCode) -> bool {
         match (callable.view(), code.source_file) {
             (ValueView::Sub(sub), Some(file)) => {
                 sub.source_file.as_deref() == Some(file.resolve().as_str())
@@ -1420,7 +1420,7 @@ impl Interpreter {
         // callable before the registry's unknown-function path; ordinary
         // exports such as JSON::Tiny's from-json retain the normal dispatch
         // precedence because they do have a registered package routine.
-        if let Some(callable) = self.export_hook_callable(&name, name_sym) {
+        if let Some(callable) = self.export_hook_callable(&name, name_sym, code) {
             let result =
                 self.call_lexical_callable_with_sources(callable, args, &arg_sources, None)?;
             self.stack.push(result);

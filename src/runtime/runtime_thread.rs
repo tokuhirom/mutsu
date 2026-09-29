@@ -1057,6 +1057,7 @@ impl Interpreter {
             // (`start { ... }` around Terminal::MultiProgress's `t.hide-cursor`,
             // #9339).
             export_amp_override_names: self.export_amp_override_names.clone(),
+            unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),

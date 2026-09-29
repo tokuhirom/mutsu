@@ -16,11 +16,39 @@ impl Interpreter {
     /// (JSON::Tiny's `from-json`) keep the normal dispatch precedence because
     /// they do have a registered package routine.
     // Cost: O(1) hash probes when `name` is not an EXPORT-installed override.
-    pub(super) fn export_hook_callable(&self, name: &str, name_sym: Symbol) -> Option<Value> {
+    ///
+    /// A caller compiled in the same unit that declared the installed callable
+    /// is not an importer of it: `sub wrap` exported as `&inner-fn` must not
+    /// capture the `inner-fn` call its own body makes to the routine it
+    /// imported from elsewhere (JSON::Pretty over JSON::Fast's `proto
+    /// to-json`, which has no plain package routine to trip `has_function`).
+    pub(super) fn export_hook_callable(
+        &self,
+        name: &str,
+        name_sym: Symbol,
+        code: &CompiledCode,
+    ) -> Option<Value> {
         if !self.export_amp_override_names.contains(&name_sym) || self.has_function(name) {
             return None;
         }
-        dispatch_key::with_amp_name(name, |ampname| self.env().get(ampname).cloned())
+        let installed =
+            dispatch_key::with_amp_name(name, |ampname| self.env().get(ampname).cloned())?;
+        if Self::callable_declared_in_unit_of(&installed, code) {
+            return self.unit_imported_callable(code, name_sym);
+        }
+        Some(installed)
+    }
+
+    /// What the unit `code` was compiled in itself imported under `name`
+    /// through a `sub EXPORT` map (`unit_imported_callables`), if anything.
+    // Cost: O(1) hash probe.
+    pub(super) fn unit_imported_callable(
+        &self,
+        code: &CompiledCode,
+        name_sym: Symbol,
+    ) -> Option<Value> {
+        let file = code.source_file?;
+        self.unit_imported_callables.get(&(file, name_sym)).cloned()
     }
 
     /// A statement-level call discards its value, so that value is *sunk* —
