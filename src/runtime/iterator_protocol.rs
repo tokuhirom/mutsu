@@ -135,7 +135,7 @@ pub(crate) fn step(
 
 /// How many elements of `items` a protocol call needs to see before it can
 /// answer, or `None` when the method wants the whole source.
-fn needed_len(method: &str, index: usize, args: &[Value]) -> Option<usize> {
+pub(super) fn needed_len(method: &str, index: usize, args: &[Value]) -> Option<usize> {
     let arg_int = |v: Option<&Value>, default: i64| -> usize {
         v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
     };

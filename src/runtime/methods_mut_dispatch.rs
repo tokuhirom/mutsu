@@ -2185,6 +2185,11 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "iterator-protocol",
                 );
+                // A `.map`/`.grep` stream commits through the shared cell.
+                if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, &args)
+                {
+                    return result;
+                }
                 // A detached working copy of the attribute map; written back into
                 // the instance's live shared cell at the end.
                 let mut updated = attributes.to_map();

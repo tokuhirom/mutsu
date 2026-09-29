@@ -41,6 +41,22 @@ impl Interpreter {
         self.run_map_grep_chunk(func, *fatal, mode, items, *pos, items.len())
     }
 
+    /// [`Self::pull_map_grep_rest`] for a source that stays in use afterwards
+    /// (an `Iterator`'s stream, #10186): advances `pos` to the end, so the
+    /// source reports itself exhausted. Returns the same shape as
+    /// [`Self::pull_map_grep_prefix`].
+    // Cost: one callback call per source element from `pos` on.
+    pub(crate) fn pull_map_grep_remaining(
+        &mut self,
+        source: &mut SeqSource,
+    ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        let out = self.pull_map_grep_rest(source)?;
+        if let SeqSource::MapGrep { items, pos, .. } = source {
+            *pos = items.len();
+        }
+        Ok((out, true))
+    }
+
     /// Pull at least `needed` more elements from a deferred `.map`/`.grep`
     /// `source` (a [`SeqSource::MapGrep`]), advancing its `pos`. Returns the
     /// elements produced (a `Slip` from the callback can overshoot `needed`)

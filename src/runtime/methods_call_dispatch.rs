@@ -947,16 +947,20 @@ impl Interpreter {
             } = iterator.view()
                 && class_name == "Iterator"
             {
-                let map = attributes.as_map();
-                let all = match map.get("items").map(|v| v.view()) {
-                    Some(ValueView::Array(values, ..)) => values.to_vec(),
-                    _ => Vec::new(),
-                };
-                let index = match map.get("index").map(|v| v.view()) {
-                    Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
-                    _ => 0,
-                };
-                all[index..].to_vec()
+                if let Some(rest) = self.map_grep_stream_drain(&attributes) {
+                    rest?
+                } else {
+                    let map = attributes.as_map();
+                    let all = match map.get("items").map(|v| v.view()) {
+                        Some(ValueView::Array(values, ..)) => values.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let index = match map.get("index").map(|v| v.view()) {
+                        Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
+                        _ => 0,
+                    };
+                    all[index..].to_vec()
+                }
             } else if user_iterator {
                 // A user-defined `does Iterator` instance: drive its `pull-one`
                 // until IterationEnd. Unlike the built-in `Iterator` (whose index
@@ -1793,6 +1797,9 @@ impl Interpreter {
         } = target.view()
             && class_name == "Iterator"
         {
+            if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, &args) {
+                return result;
+            }
             match method {
                 "count-only" if args.is_empty() => {
                     if let Some(value) =
