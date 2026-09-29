@@ -77,22 +77,61 @@ impl Interpreter {
     }
 
     /// Build a synthetic CallFrame for an enclosing `for` block. Its `code` is
-    /// the `Block` type object (`.^name` -> `Block`, `~~ Routine` -> False), its
+    /// a defined `Block` (`.^name` -> `Block`, `~~ Routine` -> False), its
     /// line is the call site, and its lexicals come from the current env (the
     /// block body is inlined into the enclosing routine's scope in mutsu).
     fn block_frame_value(&self, file: &str, callsite_line: Option<i64>) -> Value {
-        let code = Value::package(Symbol::intern("Block"));
+        let code = Self::block_frame_code();
         let my_hash = self.build_lexical_hash(&self.env, None);
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(callsite_line.unwrap_or(0)));
         attrs.insert("file".to_string(), Value::str(file.to_string()));
-        Self::insert_callframe_code_attrs(&mut attrs, &code);
+        // A block frame is not a routine: no name/package/subtype/sub.
+        attrs.insert("subname".to_string(), Value::str(String::new()));
+        attrs.insert("package".to_string(), Value::str(String::new()));
+        attrs.insert("subtype".to_string(), Value::str(String::new()));
+        attrs.insert("sub".to_string(), Value::NIL);
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
         attrs.insert("inline".to_string(), Value::FALSE);
         attrs.insert("__depth".to_string(), Value::int(0));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Value::make_instance(Symbol::intern("CallFrame"), attrs)
+    }
+
+    /// A defined, empty `Block` standing in for the code object of a `for`
+    /// block frame (the real block body is inlined into the enclosing scope).
+    // Cost: O(1).
+    fn block_frame_code() -> Value {
+        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern(""),
+            params: std::sync::Arc::new(Vec::new()),
+            param_defs: std::sync::Arc::new(Vec::new()),
+            body: std::sync::Arc::new(Vec::new()),
+            is_rw: false,
+            is_raw: false,
+            env: Env::new(),
+            assumed_positional: Vec::new(),
+            assumed_named: ValueMap::default(),
+            id: crate::value::next_instance_id(),
+            empty_sig: false,
+            is_bare_block: true,
+            compiled_code: None,
+            compiled_fns: None,
+            compiled_routine: None,
+            is_decl_expr_thunk: false,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
+            upvalues: Vec::new(),
+            captured_fatal_mode: false,
+            param_name_syms_cache: std::sync::OnceLock::new(),
+            source_file_sym_cache: std::sync::OnceLock::new(),
+            state_scope_guard: None,
+        }))
     }
 
     /// Build the synthetic "setting" CallFrame that sits above the mainline.
