@@ -368,6 +368,7 @@ fn atom_span_and_candidates(atom: &RegexAtom, depth: u32) -> Option<(Span, Vec<C
         | RegexAtom::Named(_)
         | RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::RecurseSelf(_) => Span::OPAQUE,
         // Rejected at the top of `walk_pattern`.

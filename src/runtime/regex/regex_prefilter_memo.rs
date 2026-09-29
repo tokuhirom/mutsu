@@ -172,6 +172,7 @@ fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
         | RegexAtom::AtPosition(_)
         | RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
