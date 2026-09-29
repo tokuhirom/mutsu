@@ -50,7 +50,6 @@ fn next_send_seq() -> u64 {
 pub(crate) struct SupplySender {
     tx: mpsc::Sender<(u64, SupplyEvent)>,
     wakers: WakerSet,
-    closed: Arc<AtomicBool>,
     broadcast: Weak<Broadcast>,
 }
 
@@ -59,7 +58,6 @@ impl Clone for SupplySender {
         Self {
             tx: self.tx.clone(),
             wakers: Arc::clone(&self.wakers),
-            closed: Arc::clone(&self.closed),
             broadcast: Weak::clone(&self.broadcast),
         }
     }
@@ -67,17 +65,12 @@ impl Clone for SupplySender {
 
 impl SupplySender {
     pub(crate) fn send(&self, event: SupplyEvent) -> Result<(), mpsc::SendError<SupplyEvent>> {
-        // A closed channel refuses further sends so producers holding a
-        // sender clone (e.g. the interval-timer heap entry) observe the
-        // teardown as "receiver gone" and retire themselves. The flag is set
-        // only by `Tap.close`/`.cancel` via the act-loop close registry — for
-        // every other channel user it stays false forever.
-        if self.closed.load(Ordering::Acquire) {
-            return Err(mpsc::SendError(event));
-        }
-        // Report "receiver gone" once every tap has been dropped, so producers
-        // that retire on a send failure still retire even though the registry
-        // template keeps the mpsc itself alive. See `Broadcast::all_taps_gone`.
+        // Report "receiver gone" once every tap has been dropped or closed
+        // (`Tap.close`/`.cancel`), so producers holding a sender clone (e.g.
+        // the interval-timer heap entry) retire themselves even though the
+        // registry template keeps the mpsc itself alive. Closing one of
+        // several taps does not retire the producer (issue #9899). See
+        // `Broadcast::all_taps_gone`.
         let broadcast = self.broadcast.upgrade();
         if broadcast.as_ref().is_some_and(|b| b.all_taps_gone()) {
             return Err(mpsc::SendError(event));
@@ -93,10 +86,10 @@ impl SupplySender {
         Ok(())
     }
 
-    /// Whether this sender can never deliver to anyone again — the same three
+    /// Whether this sender can never deliver to anyone again — the same two
     /// conditions `send` reports as "receiver gone", asked without an event in
-    /// hand: `Tap.close` set the close flag, the broadcast point itself is
-    /// gone, or every tap it ever had has been dropped (ADR-0074).
+    /// hand: the broadcast point itself is gone, or every tap it ever had has
+    /// been dropped or closed by `Tap.close` (ADR-0074, issue #9899).
     ///
     /// A producer registry that outlives its producers (the signal watcher's,
     /// which a `signal()` supply is entered in for the process's whole life)
@@ -105,9 +98,6 @@ impl SupplySender {
     /// A supply that has never been tapped is *not* retired: its first tap may
     /// still be coming.
     pub(crate) fn is_retired(&self) -> bool {
-        if self.closed.load(Ordering::Acquire) {
-            return true;
-        }
         match self.broadcast.upgrade() {
             None => true,
             Some(broadcast) => broadcast.all_taps_gone(),
@@ -284,11 +274,13 @@ impl SupplyReceiver {
         }
     }
 
-    /// Handle on the shared close flag, kept by the tap site after the
-    /// receiver moves into its worker. Setting it makes `send` fail and lets
-    /// the worker's bounded wait notice the close.
+    /// Handle on *this tap's* close flag, kept by the tap site after the
+    /// receiver moves into its worker. Setting it stops distribution to this
+    /// tap and lets the worker's bounded wait notice the close; the producer
+    /// retires (`send` fails) only once every tap is closed or dropped.
+    /// Other taps of the same Supply keep receiving (issue #9899).
     pub(crate) fn close_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.broadcast.closed)
+        Arc::clone(&self.own_queue().closed)
     }
 
     /// Register a drive-loop waker to poke on future sends (no-op if this
@@ -315,7 +307,6 @@ impl SupplyReceiver {
 pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
     let (tx, rx) = mpsc::channel();
     let wakers: WakerSet = Arc::new(Mutex::new(Vec::new()));
-    let closed = Arc::new(AtomicBool::new(false));
     let broadcast = Arc::new(Broadcast {
         upstream: Mutex::new(rx),
         subscribers: Mutex::new(Vec::new()),
@@ -323,14 +314,12 @@ pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
         ever_subscribed: AtomicBool::new(false),
         exclusive: AtomicBool::new(false),
         wakers: Arc::clone(&wakers),
-        closed: Arc::clone(&closed),
         signal: Signal::default(),
     });
     (
         SupplySender {
             tx,
             wakers,
-            closed,
             broadcast: Arc::downgrade(&broadcast),
         },
         SupplyReceiver {
@@ -490,10 +479,30 @@ mod tests {
         // `Tap.close` sets the flag while the subscriber handle is still
         // alive in the act loop that is about to notice it.
         let (tx, template) = supply_event_channel();
-        let _sub = template.subscribe();
+        let sub = template.subscribe();
         assert!(!tx.is_retired());
-        template
-            .close_flag()
+        sub.close_flag()
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(tx.is_retired());
+    }
+
+    #[test]
+    fn closing_one_tap_keeps_delivering_to_the_others() {
+        // Issue #9899: `Tap.close` is per subscriber. The producer keeps
+        // running for the remaining taps and retires with the last one.
+        let (tx, template) = supply_event_channel();
+        let a = template.subscribe();
+        let b = template.subscribe();
+        emit(&tx, 1);
+        assert!(a.try_recv().is_ok());
+        assert!(b.try_recv().is_ok());
+        a.close_flag()
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(!tx.is_retired());
+        emit(&tx, 2);
+        assert!(b.try_recv().is_ok());
+        assert!(matches!(a.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        b.close_flag()
             .store(true, std::sync::atomic::Ordering::Release);
         assert!(tx.is_retired());
     }
