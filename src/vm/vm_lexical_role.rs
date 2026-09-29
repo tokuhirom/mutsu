@@ -39,7 +39,7 @@ impl Interpreter {
             return (storage, true);
         }
         let written_compound = has_source_compound_name
-            || (name.contains("::")
+            || (crate::qualified::is_qualified(Symbol::intern(name))
                 && !name
                     .strip_prefix(current_package)
                     .is_some_and(|rest| rest.starts_with("::")));
@@ -57,9 +57,8 @@ impl Interpreter {
     /// restore, like a `my` variable.
     // Cost: O(n), n = name length.
     pub(super) fn bind_lexical_role_names(&mut self, storage: &str, qualified: &str, name: &str) {
-        let short = qualified
-            .rsplit_once("::")
-            .map_or(qualified, |(_, short)| short)
+        let short = crate::qualified::unqualified_part(Symbol::intern(qualified))
+            .as_str()
             .to_string();
         let value = Value::package(Symbol::intern(storage));
         for bound in [qualified, name, short.as_str()] {

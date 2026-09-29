@@ -99,10 +99,8 @@ impl Interpreter {
                 // name (`A\u{0}<id>`, ADR-0047); it names itself by the source
                 // spelling before the separator.
                 let source_name = name.split('\u{0}').next().unwrap_or(name);
-                let self_short = source_name
-                    .rsplit_once("::")
-                    .map(|(_, s)| s)
-                    .unwrap_or(source_name);
+                let self_short = crate::qualified::unqualified_part(Symbol::intern(source_name));
+                let self_short = self_short.as_str();
                 let names_self_relative = enclosing_prefixes.iter().any(|pfx| {
                     crate::qualified::qualified(Symbol::intern(pfx), Symbol::intern(tc_base))
                         .as_str()
