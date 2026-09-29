@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Accepted (P1-P5 landed; every Context-table source retired except the Buf/Blob narrowness spellings, see P2)
+- Status: Accepted (P1-P5 landed; every Context-table source retired)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -327,8 +327,10 @@ Each phase is independently landable and independently valuable.
   `Bool`/`Instant` argument (`multi f(Numeric)` vs `multi f(Real)` picks `Real`, as Rakudo
   does), `Pair` lost the `Cool` ancestor, and `Seq` lost `Positional`. The catalog gained
   `Stash` and `Macro` rows, which `is_supertype_of`'s table knew and the catalog did not.
-  The Buf/Blob family table in `type_hierarchy_distance` remains: it ranks the `buf8`/
-  `blob8` spellings, which the catalog's `Buf[uint8]` rows do not name.
+  The Buf/Blob family table in `type_hierarchy_distance` outlived this PR, because it ranked
+  the `buf8`/`blob8` spellings that the stripped chain could not name. #10133 retired it:
+  the narrowness chain keeps a parameterized name before its base (`Blob[uint8]`, then
+  `Blob`), and dispatch maps `bufN`/`blobN` onto the catalog names.
 
   The same PR closed the dispatch leak §3 describes for non-`Instance` receivers: a
   `COOL_SUBTYPE_ONLY` name (`succ`, `base`, `lazy`, `polymod`, `parse-base`, ...) whose
