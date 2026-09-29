@@ -10,7 +10,9 @@
 //!   the resolving thread is a pool worker the grant is deferred to that
 //!   worker's next yield (its next park, its task end, or the pool tick), so
 //!   the woken thread never overtakes the keeper's own straight-line code —
-//!   Rakudo's F3 ordering, without an extra queue hop (D2).
+//!   Rakudo's F3 ordering, without an extra queue hop (D2). An `await` that
+//!   only arrives after the resolution waits for the same yield
+//!   (`promise_await`, ADR-0105 §9).
 //! - **User scheduler**: an interpreter-aware resolving site gets the drained
 //!   subscribers back as a [`UserDispatch`] and cues one task through the
 //!   scheduler's `.cue(&dispatcher, :catch)` (F1). That task runs the
@@ -176,7 +178,7 @@ fn rendezvous_watchdog(ticket: u64) -> std::sync::Arc<std::sync::atomic::AtomicB
 
 /// Awaiters this thread resumed from a user-scheduler wake-up, whose
 /// dispatcher is waiting for this thread's next blocking point (D3).
-struct Borrowed(RefCell<Vec<(SharedPromise, u64)>>);
+pub(super) struct Borrowed(pub(super) RefCell<Vec<(SharedPromise, u64)>>);
 
 impl Drop for Borrowed {
     fn drop(&mut self) {
@@ -190,7 +192,7 @@ impl Drop for Borrowed {
 }
 
 thread_local! {
-    static BORROWED: Borrowed = const { Borrowed(RefCell::new(Vec::new())) };
+    pub(super) static BORROWED: Borrowed = const { Borrowed(RefCell::new(Vec::new())) };
 }
 
 /// This thread reached a blocking point or the end of its task: release every
@@ -258,12 +260,17 @@ impl SharedPromise {
         only_planned: bool,
         for_dispatch: bool,
     ) -> Result<Option<UserDispatch>, String> {
+        // Taken before the state lock: it locks the worker's deferred list,
+        // which a late `await` locks without holding this one.
+        let keeper = crate::runtime::worker_pool::keeper_mark();
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
         if only_planned && state.status != "Planned" {
             return Err(state.status.clone());
         }
         state.status = status.to_string();
+        state.keeper = keeper;
+        state.keeper_yielded = false;
         state.result = value.clone();
         let (output, stderr) = match output {
             Some((output, stderr)) => {
@@ -463,60 +470,5 @@ impl SharedPromise {
     pub(crate) fn status(&self) -> String {
         let (lock, _) = &*self.inner;
         lock.lock().unwrap().status.clone()
-    }
-
-    /// Block until this promise is resolved and this awaiter has been granted
-    /// its wake-up, then return (result, output, stderr). An already-resolved
-    /// promise returns at once, without a wake-up of its own (Rakudo's
-    /// `$handle.already`).
-    // Cost: O(1) plus the wait.
-    pub(crate) fn wait(&self) -> (Value, String, String) {
-        self.mark_observed();
-        // GC safepoint (§9.2a `await`): the await entry boundary, before the
-        // state lock is taken (a collect here can run finalizers that touch
-        // other promises/channels, so it must not hold this mutex).
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, 0);
-        let (lock, cvar) = &*self.inner;
-        let ticket = {
-            let mut state = lock.lock().unwrap();
-            if state.status != "Planned" {
-                return (
-                    state.result.clone(),
-                    state.output.clone(),
-                    state.stderr_output.clone(),
-                );
-            }
-            let ticket = state.wake_next;
-            state.wake_next += 1;
-            state.waiters.push(Subscriber::Wake(ticket));
-            ticket
-        };
-        // STW-aware: the waiting thread counts as quiescent for the GC's
-        // cooperative stop-the-world, and never resumes (cloning `Value`s
-        // below mutates Gc refcounts) while a cycle scan is in progress.
-        // On wasm this pumps the cooperative scheduler instead of parking —
-        // the `start` block we are waiting for only runs because of it.
-        let state = match crate::gc::wait_until(lock, cvar, |s| s.wake_granted > ticket) {
-            Some(state) => state,
-            None => {
-                // Single-threaded build with nothing left to run: break the
-                // promise so `await` reports a deadlock instead of hanging.
-                let _ = self.try_break(Value::str(crate::gc::DEADLOCK_MESSAGE.to_string()));
-                crate::gc::wait_until(lock, cvar, |s| s.wake_granted > ticket)
-                    .unwrap_or_else(|| lock.lock().unwrap())
-            }
-        };
-        let owes_rendezvous = state.wake_rendezvous;
-        let out = (
-            state.result.clone(),
-            state.output.clone(),
-            state.stderr_output.clone(),
-        );
-        drop(state);
-        if owes_rendezvous {
-            let promise = self.clone();
-            let _ = BORROWED.try_with(|b| b.0.borrow_mut().push((promise, ticket)));
-        }
-        out
     }
 }

@@ -576,6 +576,7 @@ mod nanbox;
 pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
 mod native_backing;
+mod promise_await;
 pub(crate) mod promise_wake;
 pub(crate) mod seq_body;
 mod serde_support;
@@ -3445,6 +3446,13 @@ struct PromiseState {
     /// Whether the grant came from a user scheduler's dispatch, so the woken
     /// awaiter owes it a rendezvous (ADR-0105 D3).
     wake_rendezvous: bool,
+    /// The pool worker that resolved this promise and its yield epoch at the
+    /// time; an `await` arriving before that worker yields again waits for
+    /// the yield (ADR-0105 D2, #10016). `None` for a resolution off the pool.
+    keeper: Option<crate::runtime::worker_pool::KeeperMark>,
+    /// Set when the resolving worker yielded after a late `await` deferred
+    /// onto it: the condition such an awaiter parks on.
+    keeper_yielded: bool,
     /// Has a `Promise::Vow` been taken for this promise? Rakudo's
     /// `Promise.vow`, `Promise.keep` and `Promise.break` all consume the
     /// single available vow: the first of them to run sets this, and every
