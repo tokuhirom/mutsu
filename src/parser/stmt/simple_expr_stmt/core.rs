@@ -29,8 +29,7 @@ use super::lvalue::{
     single_target_list_lvalue_stmt,
 };
 use super::predicates::{
-    index_bind_target_is_immutable, is_literal_expr, is_pseudo_package,
-    starts_with_postfix_ambiguous_term, starts_with_term_token,
+    is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
 use super::sig_info::{SigParamInfo, extract_signature_param_infos, extract_static_named_map};
 
@@ -648,21 +647,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) && rest.starts_with(":=") {
-        // Binding into an immutable subscript target (`(1,2)[0] := 3`,
-        // `10[0] := 1`, `"Hi"[0] := 1`) is illegal — Raku raises X::Bind.
-        if let Expr::Index { target, .. } = &expr
-            && index_bind_target_is_immutable(target)
-        {
-            let message = "Cannot use bind operator with this left-hand side".to_string();
-            let ex = crate::value::Value::make_instance(
-                crate::symbol::Symbol::intern("X::Bind"),
-                std::collections::HashMap::from([(
-                    "message".to_string(),
-                    crate::value::Value::str(message.clone()),
-                )]),
-            );
-            return Err(PError::fatal_with_exception(message, Box::new(ex)));
-        }
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
         // Assign-aware RHS parser so a chained bind whose next lvalue is also
