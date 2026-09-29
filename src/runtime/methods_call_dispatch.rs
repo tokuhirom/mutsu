@@ -3222,6 +3222,28 @@ impl Interpreter {
             fn collection_contains_instance(value: &Value) -> bool {
                 collection_contains_instance_seen(value, &mut std::collections::HashSet::new(), 0)
             }
+            /// Gist at most `GIST_ELEM_CAP` elements, then ` ...` (Rakudo's
+            /// `List.gist` stops the walk there); later elements are never
+            /// rendered.
+            // Cost: O(t), t = rendered size of the first `GIST_ELEM_CAP` elements.
+            fn gist_capped<'a>(
+                interp: &mut Interpreter,
+                items: impl Iterator<Item = &'a Value>,
+                sep: &str,
+            ) -> String {
+                let mut out = String::new();
+                for (i, item) in items.enumerate() {
+                    if i > 0 {
+                        out.push_str(sep);
+                    }
+                    if i == crate::runtime::utils::GIST_ELEM_CAP {
+                        out.push_str("...");
+                        break;
+                    }
+                    out.push_str(&gist_item(interp, item));
+                }
+                out
+            }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 use crate::value::ArrayKind;
                 // Subtrees with no dispatch-needing element render via the pure,
@@ -3257,11 +3279,7 @@ impl Interpreter {
                         } else {
                             " "
                         };
-                        let inner = items
-                            .iter()
-                            .map(|item| gist_item(interp, item))
-                            .collect::<Vec<_>>()
-                            .join(sep);
+                        let inner = gist_capped(interp, items.iter(), sep);
                         match kind {
                             ArrayKind::List | ArrayKind::ItemList => format!("({inner})"),
                             _ => format!("[{inner}]"),
@@ -3269,13 +3287,7 @@ impl Interpreter {
                     }
                     _ if value.as_list_items().is_some() => {
                         // Seq / Slip / HyperSeq / RaceSeq render parenthesized.
-                        let inner = value
-                            .as_list_items()
-                            .unwrap()
-                            .iter()
-                            .map(|item| gist_item(interp, item))
-                            .collect::<Vec<_>>()
-                            .join(" ");
+                        let inner = gist_capped(interp, value.as_list_items().unwrap().iter(), " ");
                         format!("({inner})")
                     }
                     ValueView::Hash(map) => {
