@@ -541,6 +541,7 @@ impl Interpreter {
             code_signature: None,
             shape_constraints: None,
             block_param: false,
+            code: Default::default(),
             trait_args: Vec::new(),
         }
     }

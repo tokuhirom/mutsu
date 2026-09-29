@@ -730,6 +730,7 @@ impl Interpreter {
                         is_invocant: true,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     }];
                     method_param_defs.extend(
@@ -762,6 +763,7 @@ impl Interpreter {
                             is_invocant: false,
                             shape_constraints: None,
                             block_param: false,
+                            code: Default::default(),
                             trait_args: Vec::new(),
                         });
                     }

@@ -117,6 +117,73 @@ pub(crate) struct ParamDef {
     /// seeds Mu for blocks and Any for routines.
     #[serde(default)]
     pub(crate) block_param: bool,
+    /// The precompiled chunks of this parameter's `where` clause, default and
+    /// shape dimensions (ADR-0132). Shared by every clone of this parse node;
+    /// filled by the compiler when it compiles the routine owning the
+    /// signature. Code that rewrites one of those expressions must reset it.
+    #[serde(skip)]
+    pub(crate) code: ParamCode,
+}
+
+/// The bytecode for a parameter's signature-time expressions, compiled once in
+/// the declaring scope by `Compiler::attach_param_chunks` (ADR-0132).
+///
+/// Each chunk is a standalone unit with no local slots: every variable it names
+/// resolves through the env the binder has set up (earlier parameters, `$_`,
+/// the routine's captures), exactly as the `eval_block_value` compile it
+/// replaces resolved them.
+#[derive(Debug)]
+pub(crate) struct ParamChunks {
+    /// The `where` clause: the block's statements for `where { ... }`, the
+    /// expression itself otherwise.
+    pub(crate) where_chunk: Option<crate::opcode::CompiledDeclExpr>,
+    /// A default expression that is not an immutable scalar literal.
+    pub(crate) default_chunk: Option<crate::opcode::CompiledDeclExpr>,
+    /// One entry per `shape_constraints` element; `None` for a `*` or literal
+    /// dimension the binder reads without evaluating.
+    pub(crate) shape_chunks: Vec<Option<crate::opcode::CompiledDeclExpr>>,
+}
+
+/// The slot a [`ParamDef`] carries for its [`ParamChunks`]. `Clone` shares the
+/// slot, so every copy of the node (plans, the `stmt_pool` entry, a closure's
+/// shared signature, `CompiledFunction::param_defs`) sees one fill. `Default`
+/// makes a fresh, empty slot; a slot the compiler never filled makes the binder
+/// fall back to evaluating the AST.
+#[derive(Clone, Default)]
+pub(crate) struct ParamCode(std::sync::Arc<std::sync::OnceLock<ParamChunks>>);
+
+impl ParamCode {
+    #[inline]
+    pub(crate) fn get(&self) -> Option<&ParamChunks> {
+        self.0.get()
+    }
+
+    /// Fill the slot; a slot already filled (the same parse node reached by a
+    /// second compile of its routine) keeps its first chunks.
+    pub(crate) fn fill(&self, make: impl FnOnce() -> ParamChunks) {
+        self.0.get_or_init(make);
+    }
+
+    #[inline]
+    pub(crate) fn is_filled(&self) -> bool {
+        self.0.get().is_some()
+    }
+}
+
+impl std::fmt::Debug for ParamCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.is_filled() {
+            "ParamCode(compiled)"
+        } else {
+            "ParamCode(empty)"
+        })
+    }
+}
+
+/// A signature's identity is its source: the compiled chunks are derived from
+/// the expressions already hashed, so they stay out of routine fingerprints.
+impl Hash for ParamCode {
+    fn hash<H: Hasher>(&self, _state: &mut H) {}
 }
 
 /// The external argument key a named parameter's spelling denotes: the name with
@@ -3968,6 +4035,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 })
                 .collect();
@@ -4020,6 +4088,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 }
             })
@@ -4049,6 +4118,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             });
         }

@@ -154,9 +154,7 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, &bound_val);
-                let r = self
-                    .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, true).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -164,11 +162,10 @@ impl Interpreter {
                 r
             }
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_block_value_recording_writes(&[Stmt::Expr(where_expr.as_ref().clone())])
-                    .map(|v| v.truthy())
+                self.eval_param_where_value(pd, true).map(|v| v.truthy())
             }
-            expr => self
-                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, true)
                 .map(|v| self.smart_match(&bound_val, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -207,17 +204,15 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self
-                    .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, true).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
                 }
                 r
             }
-            expr => self
-                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, true)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -281,7 +276,7 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self.eval_block_value(body).map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -292,11 +287,10 @@ impl Interpreter {
             // evaluate and check truthiness of the result, not smart-match.
             // `where .method: args` is equivalent to `where { .method: args }`.
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                    .map(|v| v.truthy())
+                self.eval_param_where_value(pd, false).map(|v| v.truthy())
             }
-            expr => self
-                .eval_block_value(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, false)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -1871,15 +1865,15 @@ impl Interpreter {
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &capture_value);
-                                let r = self.eval_block_value(body).map(|v| v.truthy());
+                                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
                                 }
                                 r
                             }
-                            expr => self
-                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            _ => self
+                                .eval_param_where_value(pd, false)
                                 .map(|v| self.smart_match(&capture_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
@@ -2239,15 +2233,15 @@ impl Interpreter {
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &slurpy_value);
-                                let r = self.eval_block_value(body).map(|v| v.truthy());
+                                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
                                 }
                                 r
                             }
-                            expr => self
-                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            _ => self
+                                .eval_param_where_value(pd, false)
                                 .map(|v| self.smart_match(&slurpy_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
@@ -3528,7 +3522,7 @@ impl Interpreter {
                         }
                         // Shape constraint check for array parameters
                         if let Some(shape_exprs) = &pd.shape_constraints {
-                            self.check_shape_constraint(&pd.name, &value, shape_exprs, args)?;
+                            self.check_shape_constraint(pd, &value, shape_exprs, args)?;
                         }
                         // Slice 2d: wrap a scalar-param array/hash in a shared cell
                         // so in-sub mutations (incl. `my @a := @$n`) propagate to

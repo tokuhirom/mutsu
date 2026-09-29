@@ -124,6 +124,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 },
             ));
@@ -194,6 +195,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
             },
         ));
     }
@@ -279,6 +281,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
             },
         ));
     }
@@ -314,6 +317,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 },
             ));
@@ -348,6 +352,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 },
             ));
@@ -381,6 +386,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             },
         ));
@@ -451,6 +457,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
             },
         ));
     }
@@ -493,6 +500,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                code: Default::default(),
                 trait_args: Vec::new(),
             },
         ));
@@ -537,6 +545,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 },
             ));
@@ -694,6 +703,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             is_invocant: false,
             shape_constraints,
             block_param: true,
+            code: Default::default(),
         },
     ))
 }

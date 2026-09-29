@@ -7,6 +7,7 @@ mod binding_helpers;
 mod binding_signature;
 mod coercion;
 mod native_backed_class;
+mod param_exprs;
 mod role_candidate;
 mod role_mixin_class;
 mod roles;

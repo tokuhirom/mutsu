@@ -84,8 +84,9 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
 ///    positional count (higher is narrower);
 /// 1. the type-hierarchy distance of those nominal types (lower is narrower);
-/// 2. the REFINEMENT tier — `where` count, `subset` count, sub-signature
-///    count, `rw`/`raw` count (higher is narrower);
+/// 2. the REFINEMENT tier — constraint count (`where` clauses and `subset`
+///    types alike), sub-signature count, `rw`/`raw` count (higher is
+///    narrower);
 ///
 /// then whether it declares any named parameter, optional-positional count,
 /// required-named count, and declaration order.
@@ -180,10 +181,14 @@ impl Interpreter {
         let has_named = usize::from(Self::candidate_declares_named(def));
         let opt = Self::candidate_optional_positional_count(def);
         let req_named = Self::candidate_required_named_count(def);
+        // A `subset`-typed parameter is its refinee plus a post-constraint,
+        // exactly what `Int $x where …` spells out, so rakudo ranks the two
+        // alike: `multi f(Small $x)` and `multi f(Int $x where * < 10_000)` tie
+        // on the refinement tier and the first declared wins.
         (
             (literal, typed),
             dist,
-            (where_c, subset, subsig, writable),
+            (where_c + subset, 0, subsig, writable),
             has_named,
             opt,
             req_named,

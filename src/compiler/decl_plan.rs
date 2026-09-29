@@ -27,7 +27,7 @@ impl Compiler {
     /// The package and distribution come from the declaration's own lexical
     /// position rather than from whatever routine frame happens to be live
     /// when registration runs.
-    fn new_decl_chunk_compiler(&self) -> Compiler {
+    pub(super) fn new_decl_chunk_compiler(&self) -> Compiler {
         let mut chunk_compiler = Compiler::new();
         // A declaration chunk (a class body) belongs to this compilation
         // unit, so it shares the unit's fold state: its `use` has to disable

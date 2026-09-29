@@ -1148,6 +1148,7 @@ pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod param_chunks;
 mod regex_qq_thunks;
 mod stmt;
 mod term_constants;
