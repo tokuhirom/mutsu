@@ -66,13 +66,13 @@ impl Interpreter {
     /// propagating the coercion's own exception on failure (`X::Str::Numeric`,
     /// `X::Temporal::InvalidFormat`, ...); a plain nominal parameter type-checks
     /// each element and throws `X::TypeCheck::Binding` on a mismatch. `Any`/`Mu`
-    /// and lowercase (type-capture) parameters are no-ops. `unwrap_pair` checks a
-    /// `Pair` element by its value (Set semantics) rather than as a whole.
+    /// and lowercase (type-capture) parameters are no-ops. A `Pair`
+    /// element is an ordinary element checked as a whole (`.new` never reads
+    /// Pairs as key/weight; only `.new-from-pairs` does).
     fn apply_quanthash_element_param(
         &mut self,
         type_args: &Option<Vec<String>>,
         items: Vec<Value>,
-        unwrap_pair: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
         let Some(constraint) = type_args.as_ref().and_then(|ta| ta.first()) else {
             return Ok(items);
@@ -100,18 +100,7 @@ impl Interpreter {
             return Ok(out);
         }
         for item in &items {
-            let check_val = if unwrap_pair {
-                // ADR-0021: a Pair sitting in the list literal being passed
-                // to `.new` mints the positional flavour by default — unwrap
-                // it identically to the named flavour.
-                match item.view() {
-                    ValueView::Pair(_, v) => v.clone(),
-                    ValueView::ValuePair(_, v) => v.clone(),
-                    _ => item.clone(),
-                }
-            } else {
-                item.clone()
-            };
+            let check_val = item.clone();
             if !self.type_matches_value(constraint, &check_val) {
                 let got_type = crate::value::what_type_name(&check_val);
                 let got_repr = check_val.to_string_value();
@@ -189,7 +178,7 @@ impl Interpreter {
                 // Flatten the elements, then apply the parameterized element
                 // type (coercion or nominal check) before counting.
                 let items = Self::quanthash_flatten_items(&args);
-                let items = self.apply_quanthash_element_param(&type_args, items, true)?;
+                let items = self.apply_quanthash_element_param(&type_args, items)?;
                 let mut elems = HashSet::new();
                 let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
@@ -259,7 +248,7 @@ impl Interpreter {
                 }
                 // Flatten the elements, then apply the parameterized element type.
                 let items = Self::quanthash_flatten_items(&args);
-                let items = self.apply_quanthash_element_param(&type_args, items, false)?;
+                let items = self.apply_quanthash_element_param(&type_args, items)?;
                 let mut counts: HashMap<String, i64> = HashMap::new();
                 let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
@@ -304,7 +293,7 @@ impl Interpreter {
                 }
                 // Flatten the elements, then apply the parameterized element type.
                 let items = Self::quanthash_flatten_items(&args);
-                let items = self.apply_quanthash_element_param(&type_args, items, false)?;
+                let items = self.apply_quanthash_element_param(&type_args, items)?;
                 let mut weights: HashMap<String, f64> = HashMap::new();
                 let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
