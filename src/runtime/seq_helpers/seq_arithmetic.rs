@@ -328,7 +328,9 @@ impl Interpreter {
     }
 
     // Multiply a sequence value by a rational ratio (num/den), preserving Rat type
-    pub(in crate::runtime) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
+    pub(crate) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
+        use num_bigint::BigInt;
+
         match val.view() {
             ValueView::Int(i) => {
                 if let Some(product) = i.checked_mul(num) {
@@ -338,7 +340,20 @@ impl Interpreter {
                         make_rat(product, den)
                     }
                 } else {
-                    Value::num(i as f64 * num as f64 / den as f64)
+                    let product = BigInt::from(i) * BigInt::from(num);
+                    if den == 1 {
+                        Value::from_bigint(product)
+                    } else {
+                        crate::value::make_big_rat_arith(product, BigInt::from(den))
+                    }
+                }
+            }
+            ValueView::BigInt(i) => {
+                let product = i.as_ref() * BigInt::from(num);
+                if den == 1 {
+                    Value::from_bigint(product)
+                } else {
+                    crate::value::make_big_rat_arith(product, BigInt::from(den))
                 }
             }
             ValueView::Num(f) => {
@@ -349,8 +364,14 @@ impl Interpreter {
                 if let (Some(new_num), Some(new_den)) = (n.checked_mul(num), d.checked_mul(den)) {
                     make_rat(new_num, new_den)
                 } else {
-                    Value::num(n as f64 / d as f64 * num as f64 / den as f64)
+                    crate::value::make_big_rat_arith(
+                        BigInt::from(n) * BigInt::from(num),
+                        BigInt::from(d) * BigInt::from(den),
+                    )
                 }
+            }
+            ValueView::BigRat(n, d) => {
+                crate::value::make_big_rat_arith(n * BigInt::from(num), d * BigInt::from(den))
             }
             _ => Self::seq_mul(val, num as f64 / den as f64),
         }
