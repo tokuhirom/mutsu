@@ -605,6 +605,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         } else if r2.starts_with(')')
             || r2.starts_with(',')
             || r2.starts_with(']')
+            || r2.starts_with(';')
             || r2.starts_with('{')
             || r2.starts_with("-->")
             // A type-only parameter may still carry traits / a where clause:
@@ -621,6 +622,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 && (r2.starts_with(')')
                     || r2.starts_with(',')
                     || r2.starts_with(']')
+                    || r2.starts_with(';')
                     || r2.starts_with('{')
                     || r2.starts_with("-->"))
             {
