@@ -907,6 +907,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     //   types (`X::Method::NotFound`, `X::Str::Sprintf::Directives::Unsupported`,
     //   `X::Str::Numeric`) without adding a row for any of them individually.
     ("Any", "hash", 1, 8),
+    // #10132: raku's `Any.^lookup("list")` is defined (`Any.list` wraps the
+    // invocant in a one-element List).
+    ("Any", "list", 1, 9),
     ("Mu", "defined", 1, 8),
     ("Nil", "gist", 1, 0),
     ("Nil", "raku", 1, 0),
