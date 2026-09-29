@@ -1031,7 +1031,8 @@ impl Interpreter {
                 let slurpy_value = Value::hash_bare_values(hash_items);
                 let saved = self.env.clone();
                 self.install_match_context_for_where(&pd.name, &slurpy_value);
-                self.env.insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
+                self.env
+                    .insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
                 if !pd.name.is_empty() {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }

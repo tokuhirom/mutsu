@@ -73,7 +73,8 @@ impl Interpreter {
             let arg = unwrap_varref_value(raw.clone()).deref_container();
             match pd.type_constraint.as_deref() {
                 Some(tc) => {
-                    if multi_dispatch && !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
+                    if multi_dispatch
+                        && !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
                     {
                         return Some(false);
                     }
