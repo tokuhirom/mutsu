@@ -123,12 +123,12 @@ fn allocs_per_attribute_per_construction() -> f64 {
 fn construction_does_not_clone_a_source_file_string_per_attribute() {
     let per_attr = allocs_per_attribute_per_construction();
     eprintln!("construction: {per_attr:.3} allocations per attribute");
-    // Measured on this test's own program: 7.0 allocations per attribute per
-    // construction before the fix, 5.0 after -- the two clones of the
-    // `source_file` `String` (#10090). The budget sits halfway, so it trips on
-    // either of them coming back and leaves the remaining per-attribute cost
-    // (the attribute's name clone, its container, its instance slot) alone.
-    let limit = 6.0;
+    // Measured on this test's own program: 2.149 allocations per attribute
+    // per construction before the fix, 1.151 after -- the clone of the
+    // `source_file` `String` (#10090). The budget sits halfway, so it trips if
+    // that clone comes back and leaves the remaining per-attribute cost (the
+    // attribute's name clone) alone.
+    let limit = 1.65;
     assert!(
         per_attr <= limit,
         "constructing an object allocates {per_attr:.3} times per attribute \
