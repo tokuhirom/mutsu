@@ -3915,6 +3915,9 @@ impl Interpreter {
         }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
+        // `$buf.subbuf(*-2)`: see `resolve_subbuf_callable_args`.
+        let subbuf_args = self.resolve_subbuf_callable_args(&target, method, cascade_args);
+        let cascade_args: &[Value] = subbuf_args.as_deref().unwrap_or(cascade_args);
         let inherited_adhoc = (!bypass_native_fastpath)
             .then(|| self.inherited_adhoc_method(&target, method, cascade_args))
             .flatten();

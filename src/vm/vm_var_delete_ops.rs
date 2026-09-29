@@ -38,15 +38,7 @@ impl Interpreter {
         match idx.view() {
             ValueView::Sub(data) => {
                 let len = arr_len as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let resolved = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
-                resolved
+                self.call_subscript_code(&data, len)
             }
             ValueView::Array(items, ..) => {
                 // Array of indices: resolve each element
