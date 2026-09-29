@@ -310,6 +310,11 @@ impl Interpreter {
                         inner,
                         slot_hint,
                     );
+                    // The alias writes into the CALLER's container, so the
+                    // caller's `of` (`my Str $t`) rides on the cell and a
+                    // callee store is checked against it (#10146). Resolved
+                    // here, while the env is still the caller's.
+                    self.register_container_cell_constraint_for_name(&cell, &name);
                     self.stack[args_base + param_idx] = cell;
                 }
                 // Else: already a shared cell (`ContainerRef`/`HashEntryRef`)

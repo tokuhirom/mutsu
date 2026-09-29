@@ -298,12 +298,21 @@ impl ParamDef {
     /// parameter's env key drops its `$`, so `$p` and `\p` reach the binder
     /// spelled identically.
     ///
+    /// A `$`-sigiled `is rw` / `is raw` parameter is the same kind of alias
+    /// ([`Self::binds_caller_container`]): `sub g(Str:D $s is rw) { $s = 5 }`
+    /// checks `Str:D` when `$z` binds, then stores the Int into the caller's
+    /// untyped `$z` (#10146). A typed caller container (`my Str $t`) still
+    /// rejects the write: the binder carries the SOURCE's constraint over, and
+    /// the positional-light path registers it on the alias cell.
+    ///
     /// Borrowed from the `ParamDef`, which outlives every binder use of it:
     /// the binder only ever reads the text and hands it to the env, so copying
     /// it made a `String` per typed parameter bind — the single largest source
     /// of `String::clone` in a `JSON::Fast` decode (#8898).
     pub(crate) fn assignment_type_constraint(&self) -> Option<&str> {
-        if self.sigilless {
+        if self.sigilless
+            || (self.binds_caller_container() && !self.name.starts_with(['@', '%', '&']))
+        {
             return None;
         }
         self.type_constraint.as_deref()
