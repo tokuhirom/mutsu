@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Accepted (P1/P3/P4/P5 landed; P2 partially landed — source 2 deleted, sources 4-11 remain)
+- Status: Accepted (P1-P5 landed; source 12 of the Context table remains, see P2)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -313,8 +313,33 @@ Each phase is independently landable and independently valuable.
   via `Real`, `Map.lazy` via `Iterable`), and `Instant`/`Duration` `.succ`/`.pred`, which had
   never been implemented, now are.
 
-  Not done yet: the narrowness chains (sources 7-9), the `Cool` allowlist (4), `isa_check`'s
-  table (5), `is_supertype_of` (6) and `are()`'s denylist (10) — tracked in #9948.
+  **Remainder landed (#9948, 2026-09-29).** Sources 4-10 read the catalog through
+  `builtins::builtin_type_ancestry`: `builtin_type_is_a` (a class in the catalog MRO or a
+  composed role) answers the static matcher's `Cool` arm (4), `isa_check`/`does_check` for
+  every non-`Instance` value (5; an `Instance` stays with the registry-aware matcher, since
+  value-only `does_check("Real")` callers mean "a user composed it"), `is_supertype_of` (6),
+  the compile-time default check in `compiler/stmt.rs` (9) and `are()`, whose `Cool`
+  denylist (10) is gone. Source 7 had already been folded into `type_hierarchy_distance`;
+  its `Nil` chain and source 8's chains now come from `builtin_type_narrowness_chain`, which
+  places each role right after the least-derived catalog class still composing it. That
+  reconciliation is the `mro`/`roles` split the phase expected to surface, and it corrected
+  three Rakudo divergences: `Real` now ranks narrower than `Numeric` for an `Int`/`Rat`/
+  `Bool`/`Instant` argument (`multi f(Numeric)` vs `multi f(Real)` picks `Real`, as Rakudo
+  does), `Pair` lost the `Cool` ancestor, and `Seq` lost `Positional`. The catalog gained
+  `Stash` and `Macro` rows, which `is_supertype_of`'s table knew and the catalog did not.
+  The Buf/Blob family table in `type_hierarchy_distance` remains: it ranks the `buf8`/
+  `blob8` spellings, which the catalog's `Buf[uint8]` rows do not name.
+
+  The same PR closed the dispatch leak §3 describes for non-`Instance` receivers: a
+  `COOL_SUBTYPE_ONLY` name (`succ`, `base`, `lazy`, `polymod`, `parse-base`, ...) whose
+  receiver's dispatch chain has no row (`$/.succ`, `5.lazy`, `"10".base(2)`,
+  `(1+2i).polymod(2)`) is no longer answered by the receiver-blind cascades or the by-name
+  `polymod` interceptor, and throws `X::Method::NotFound`. `Seq`/`Map` gained their
+  `Iterable` `hyper`/`race` rows and the false `("Str", "bytes")` row is gone.
+
+  Not done: the synthesised `[type_name, "Cool", "Any", "Mu"]` fallback of
+  `is_builtin_type_method` (source 12), reached only for a name `class_mro_readonly` knows
+  nothing about. (Source 11, the light path's `"Any"|"Mu"|"Cool" => true`, no longer exists.)
 
 - **P3 — Fill the two genuine missing rows. LANDED (PR #6795, 2026-08-21).** Added
   `("Instant","DateTime",1,0)` and `("Date","IO",8,12)` to `RAW_ROWS`

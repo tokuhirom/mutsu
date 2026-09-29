@@ -90,6 +90,17 @@ pub(crate) fn is_cool_only_method(method: &str) -> bool {
     cool_only_names().contains(method)
 }
 
+/// Whether `method` is one of the [`COOL_SUBTYPE_ONLY`] names: declared on
+/// particular `Cool` subtypes (or the `Iterable` family) but on neither `Cool`
+/// nor `Any`. The receiver-blind arity cascades answer these for any value by
+/// coercing it (`"10".base(2)`, `5.lazy`, `$/.succ`), so every receiver shape
+/// -- not only an `Instance` -- must be asked whether its own ancestry
+/// declares the method before a cascade may answer (#9948).
+// Cost: O(k), k = the 12 names of `COOL_SUBTYPE_ONLY`.
+pub(crate) fn is_cool_subtype_only_method(method: &str) -> bool {
+    COOL_SUBTYPE_ONLY.contains(&method)
+}
+
 /// The structured `X::Method::NotFound` for a `Cool`-only method called on the
 /// `Any` or `Mu` type object, or `None` when the call is not gated.
 ///

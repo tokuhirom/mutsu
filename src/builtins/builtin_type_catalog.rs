@@ -8,10 +8,10 @@
 //! (ADR-0051 P1): `classhow_mro_names` (`crate::runtime::methods_classhow_mro`)
 //! now reads this catalog directly instead, and `Registry::builtin_mro_table`
 //! was deleted in ADR-0051 P2 (`Registry::class_mro_readonly` reads this
-//! catalog). The other legacy tables —
-//! `Interpreter::builtin_type_mro_chain` (`crate::runtime::methods_call_helpers`), and
-//! `builtin_type_distance`'s inline table (`crate::runtime::resolution_method`) —
-//! are still to be collapsed onto this catalog (ADR-0051 P2).
+//! catalog). The rest of ADR-0051 P2 (#9948) re-pointed the `Cool` allowlist,
+//! `isa_check`'s variant table, `is_supertype_of`, `are()`'s `Cool` denylist and
+//! the multi-dispatch narrowness chains at this catalog, through the derived
+//! queries in `crate::builtins::builtin_type_ancestry`.
 //!
 //! **Authority is raku, not the union of the legacy tables.** Every row below
 //! was captured from `raku -e 'say <Type>.^mro.map(*.^name); say <Type>.^roles.map(*.^name)'`
@@ -147,6 +147,14 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: ["Associative", "Iterable"],
         owner: "Hash",
     ),
+    // raku (2026-09-29): `Stash.^mro` is `(Stash Hash Map Cool Any Mu)`,
+    // `Stash.^roles` is `(Associative Iterable)`.
+    row!(
+        "Stash",
+        mro: ["Stash", "Hash", "Map", "Cool", "Any", "Mu"],
+        roles: ["Associative", "Iterable"],
+        owner: "Hash",
+    ),
     row!(
         "Range",
         mro: ["Range", "Cool", "Any", "Mu"],
@@ -274,6 +282,13 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!(
         "Regex",
         mro: ["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
+        roles: ["Callable"],
+        owner: "Code",
+    ),
+    // raku (2026-09-29): `Macro.^mro` is `(Macro Routine Block Code Any Mu)`.
+    row!(
+        "Macro",
+        mro: ["Macro", "Routine", "Block", "Code", "Any", "Mu"],
         roles: ["Callable"],
         owner: "Code",
     ),
@@ -686,6 +701,12 @@ pub(crate) fn builtin_type_mro_syms(name: &str) -> Option<std::sync::Arc<[crate:
 /// of the two places allowed to produce one (see [`crate::type_id`]).
 pub(crate) fn builtin_type_mro_ids(name: &str) -> Option<&'static [crate::type_id::TypeId]> {
     interned_catalog().get(name).map(|row| &*row.mro_ids)
+}
+
+/// Every catalog row's name, for tables derived from the catalog once per
+/// process (`crate::builtins::builtin_type_ancestry`).
+pub(crate) fn all_builtin_type_names() -> impl Iterator<Item = &'static str> {
+    CATALOG.iter().map(|row| row.name)
 }
 
 /// Every catalog row, for exhaustive tests and (eventually) E1b/E2 table generation.

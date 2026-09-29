@@ -7,75 +7,13 @@ use crate::value::ValueView;
 /// model).  Any real ancestor scores below this.
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
+/// A builtin type's classes and roles in narrowness order (ADR-0051 P2): the
+/// index of a constraint in it is that constraint's distance from a value of
+/// the type. Read from the builtin type catalog, so a type the catalog knows
+/// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
+/// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-        // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
-        // True), and rakudo's core numeric operators dispatch on it rather
-        // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
-        // strictly narrower than the core `(Rational:D, Rational:D)`
-        // candidate. Without this row the role scored the 500 "unrelated"
-        // distance and every `Rational` candidate lost.
-        "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
-        "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-        "Array" => &[
-            "Array",
-            "List",
-            "Positional",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "List" => &["List", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Hash" => &[
-            "Hash",
-            "Map",
-            "Associative",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
-        "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
-        // spellings under `Any`, not subclasses of them, but they do the
-        // same roles — so each mutable name gets its own row rather than
-        // being folded into (or bridged to) the immutable one.
-        "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "Mix" => &[
-            "Mix",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "MixHash" => &[
-            "MixHash",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
-        "Seq" => &["Seq", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Regex" => &[
-            "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
-        ],
-        "Junction" => &["Junction", "Mu"],
-        _ => &[],
-    }
+    crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
 
 /// The narrowness key a multi candidate is ranked by (see
@@ -1175,8 +1113,8 @@ impl Interpreter {
                 return 1;
             }
             let ancestors: &[&str] = match value {
-                crate::value::EnumValue::Str(_) => &["Str", "Stringy", "Cool", "Any", "Mu"],
-                crate::value::EnumValue::Int(_) => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+                crate::value::EnumValue::Str(_) => builtin_type_mro("Str"),
+                crate::value::EnumValue::Int(_) => builtin_type_mro("Int"),
                 crate::value::EnumValue::Generic(_) => &["Any", "Mu"],
             };
             for (i, &ancestor) in ancestors.iter().enumerate() {
@@ -1236,6 +1174,16 @@ impl Interpreter {
             let cn = class_name.resolve();
             if base == cn.as_str() {
                 return 0;
+            }
+            // A builtin type modelled as an instance (`Instant`, `Duration`,
+            // `IO::Path`, ...) ranks its roles too: `now` is narrower as a
+            // `Real` than as a `Numeric`, which the class-only MRO below
+            // cannot see.
+            if let Some(i) = builtin_type_mro(cn.as_str())
+                .iter()
+                .position(|&ancestor| ancestor == base)
+            {
+                return i;
             }
             // `mro_readonly` falls back to a live parents-only walk when the
             // registry's cached `ClassDef::mro` is still empty (this method

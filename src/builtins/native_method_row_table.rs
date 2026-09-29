@@ -618,7 +618,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "unival", 1, 8),
     ("Str", "univals", 1, 8),
     ("Str", "chrs", 1, 0),
-    ("Str", "bytes", 1, 0),
     ("Str", "tclc", 1, 8),
     ("Str", "Range", 1, 0),
     ("Str", "Complex", 1, 0),
@@ -1030,6 +1029,17 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Duration", "base", 6, 0),
     ("Duration", "polymod", 8, 0),
     ("Map", "lazy", 1, 8),
+    // #9948: `hyper`/`race` are `Iterable` methods in raku (`Seq.^can` and
+    // `Map.^can` are 1 for both); `List`/`Array`/`Range` already had rows.
+    ("Seq", "hyper", 1, 8),
+    ("Seq", "race", 1, 8),
+    ("Map", "hyper", 1, 8),
+    ("Map", "race", 1, 8),
+    // ...and the `Iterable` role type object answers all three itself
+    // (`Iterable.hyper.configuration` is how `hyperize` reads its defaults).
+    ("Iterable", "lazy", 1, 9),
+    ("Iterable", "hyper", 1, 9),
+    ("Iterable", "race", 1, 9),
     ("Uni", "Str", 3, 0),
     ("Supply", "list", 1, 0),
     ("Junction", "gist", 1, 0),
