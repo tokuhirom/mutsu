@@ -2482,6 +2482,12 @@ impl Interpreter {
                     if name == "start" {
                         self.sync_env_from_locals_needed(code);
                     }
+                    // `make` reads the CALLER's `$/`, which may live in a local
+                    // slot (a `method foo($/)` parameter) the interpreter
+                    // terminal below cannot see.
+                    if name == "make" {
+                        self.check_make_match_topic(code)?;
+                    }
                     // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
                     // pseudo-package reads are reflective env lookups: the
                     // interpreter is a carrier here, not a tree-walk fallback.
@@ -2523,6 +2529,9 @@ impl Interpreter {
                     // (not auto-FETCHed)
                     let auto_fetch = name != "substr-rw" && name != "subbuf-rw";
                     let result = result?;
+                    if name == "make" {
+                        self.attach_made_to_match_topic(code, result.clone());
+                    }
                     loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
                 }
             }
