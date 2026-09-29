@@ -72,7 +72,8 @@ impl Interpreter {
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
             return self.build_resources_from_dist(&dist.clone());
         }
-        Value::hash_with_data(Value::hash_arc(ValueMap::default()))
+        // Outside any distribution Rakudo's `%?RESOURCES` is `Nil`, not an empty Hash.
+        Value::NIL
     }
 
     fn build_resources_from_dist(&self, dist: &Value) -> Value {
