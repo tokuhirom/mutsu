@@ -558,6 +558,20 @@ impl Interpreter {
                             // identity, not structural equality, so a fresh
                             // `Point.new(v => 1)` does not bind to `G` unless
                             // `Point` gives itself value semantics.
+                            //
+                            // The constant's type is the parameter's NOMINAL
+                            // type, checked first as for any parameter: an
+                            // argument of another type can never bind, and
+                            // rakudo never asks either side for its `WHICH`.
+                            // Warming first ran secp256k1's user `WHICH` on
+                            // `G` -- two field inversions -- for every `Int *
+                            // Int` that reached `multi infix:<*>(Int $n where
+                            // ..., G)` (#9967).
+                            if let ValueView::Instance { class_name, .. } = expected_val.view()
+                                && !self.type_matches_value(&class_name.resolve(), &dispatch_arg)
+                            {
+                                return false;
+                            }
                             self.warm_which_identity_for_identity(&dispatch_arg);
                             self.warm_which_identity_for_identity(&expected_val);
                             if !crate::runtime::values_identical(&dispatch_arg, &expected_val) {

@@ -97,7 +97,7 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// type. So `multi f($x where ...)` must lose to `multi f(Int $x)` for
 /// `f(42)`, while `multi f(Int $x where ...)` still beats `multi f(Int $x)`
 /// ([#8958](https://github.com/tokuhirom/mutsu/issues/8958)).
-type CandidateRankKey = (
+pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
     (usize, usize, usize, usize),
@@ -169,7 +169,11 @@ impl Interpreter {
     /// optional-positional count, required-named count, declaration order.
     /// See [`CandidateRankKey`] for why nominal narrowness outranks a
     /// refinement rather than the other way round.
-    fn candidate_rank_key(&mut self, def: &Arc<FunctionDef>, args: &[Value]) -> CandidateRankKey {
+    pub(super) fn candidate_rank_key(
+        &mut self,
+        def: &Arc<FunctionDef>,
+        args: &[Value],
+    ) -> CandidateRankKey {
         let (literal, typed, where_c, subset, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
@@ -193,7 +197,10 @@ impl Interpreter {
     /// optional positionals (a required param is narrower than an optional
     /// one), then higher required named, and finally — for candidates tied on
     /// all of that — the one declared first, which is what Rakudo runs.
-    fn candidate_rank_cmp(a: CandidateRankKey, b: CandidateRankKey) -> std::cmp::Ordering {
+    pub(super) fn candidate_rank_cmp(
+        a: CandidateRankKey,
+        b: CandidateRankKey,
+    ) -> std::cmp::Ordering {
         b.0.cmp(&a.0)
             .then(a.1.cmp(&b.1))
             .then(b.2.cmp(&a.2))
@@ -239,7 +246,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
-        mut rejected: Option<&mut std::collections::HashSet<u64>>,
+        rejected: Option<&mut std::collections::HashSet<u64>>,
     ) -> Option<Arc<FunctionDef>> {
         // Rank every candidate BEFORE trying to bind any of them.
         //
@@ -304,6 +311,20 @@ impl Interpreter {
             ranked.push((key, def));
         }
         ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
+        self.bind_ranked_candidates(name, args, ranked, rejected)
+    }
+
+    /// The bind half of [`Self::choose_best_matching_candidate_excluding`]:
+    /// walk `ranked` (narrowest first, already filtered) and pick the winner,
+    /// raising `X::Multi::Ambiguous` or a parked `where` exception exactly as
+    /// the full resolver does.
+    pub(super) fn bind_ranked_candidates(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
+        mut rejected: Option<&mut std::collections::HashSet<u64>>,
+    ) -> Option<Arc<FunctionDef>> {
         // The duplicate-registry-key dedup that used to sit here now runs
         // before the ranking loop above -- see the comment there. It stops one
         // candidate's `where` clause from being RUN once per key it happens to

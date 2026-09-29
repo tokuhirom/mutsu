@@ -757,6 +757,7 @@ mod methods_mut_substr_buf;
 mod methods_native_bypass;
 mod methods_object;
 mod methods_object_attr_constraints;
+pub(crate) mod multi_dispatch_plan;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 mod methods_object_default_ctor;
 mod methods_object_dispatch_new;
@@ -2260,6 +2261,9 @@ pub struct Interpreter {
     /// `runtime/operator_scope.rs`.
     pub(crate) operator_import_units:
         std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+    /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
+    /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
+    pub(crate) operator_import_gen: u64,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -4773,6 +4777,14 @@ pub struct Interpreter {
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
     pub(crate) func_multi_argkey_cacheable: GenCache<FuncMultiResolveKey, bool>,
+    /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
+    /// ranked candidate passes, so a value-dependent family (`where`,
+    /// `subset`) re-runs only its bind checks per call (#9967,
+    /// `multi_dispatch_plan.rs`).
+    pub(crate) bare_multi_plan_cache: GenCache<
+        crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
+        Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
+    >,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
