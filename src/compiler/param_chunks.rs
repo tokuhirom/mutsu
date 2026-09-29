@@ -1,4 +1,4 @@
-//! Precompiling a signature's parameter expressions (ADR-0132).
+//! Precompiling a signature's parameter expressions (ADR-0133).
 //!
 //! A `where` clause, a non-literal default and a shape dimension are evaluated
 //! by the binder on every call. They used to reach it as AST and were compiled

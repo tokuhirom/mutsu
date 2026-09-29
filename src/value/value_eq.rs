@@ -336,3 +336,34 @@ impl PartialEq for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A lazy thunk compared to itself short-circuits on `Arc` identity
+    /// instead of locking its non-reentrant cache mutex twice (the END-phaser
+    /// overlay compares every captured lexical with its live value). Pinned
+    /// here rather than in a `.t` file: Raku code no longer produces a thunk
+    /// (`lazy { ... }` lowers to `(do { ... }).lazy`, and `Code.lazy` is not
+    /// a method, as in Rakudo -- #9948).
+    #[test]
+    fn a_lazy_thunk_equals_itself_without_deadlocking() {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let unforced = Value::lazy_thunk(Arc::new(LazyThunkData {
+                thunk: Value::NIL,
+                cache: std::sync::Mutex::new(None),
+            }));
+            let forced = Value::lazy_thunk(Arc::new(LazyThunkData {
+                thunk: Value::NIL,
+                cache: std::sync::Mutex::new(Some(Value::int(7))),
+            }));
+            let _ = done.send((unforced == unforced.clone(), forced == forced.clone()));
+        });
+        let answers = finished
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("comparing a lazy thunk with itself deadlocked");
+        assert_eq!(answers, (true, true));
+    }
+}

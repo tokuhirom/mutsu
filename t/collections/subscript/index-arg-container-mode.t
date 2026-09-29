@@ -5,7 +5,7 @@ use Test;
 # gated on the callee's signature), instead of the retired copy-in/copy-out
 # `__mutsu_index_rw_arg_*` temps. Every expectation matches rakudo.
 
-plan 28;
+plan 41;
 
 sub rw($x is rw) { $x = 9 }
 sub raw(\x) { x = 8 }
@@ -157,4 +157,45 @@ sub rc(\x) { x.VAR.^name }
     is rrd(%h<a>), 42, 'is default is honoured for a missing key';
     my Int %t;
     is rrd(%t<a>).raku, 'Int', 'so is the value type';
+}
+
+# A nested subscript whose index is COMPUTED (#10044): the index expression
+# runs once, and a missing intermediate level is still created on write.
+{
+    my %h;
+    my @k = <x y>;
+    my $i = 0;
+    rw(%h{@k[$i++]}{"z"});
+    is-deeply %h, {x => {z => 9}}, 'a computed intermediate key is created on write';
+    is $i, 1, '... and its index expression ran once';
+    rrd(%h{@k[1]}{@k[0]});
+    is %h.elems, 1, 'reading through a computed missing key creates nothing';
+    my @m;
+    rw(@m[$i + 1][$i]);
+    is @m.raku, '[Any, Any, [Any, 9]]', 'computed positional indices grow each level';
+}
+
+# A computed level that turns out to select several elements at run time is
+# an ordinary read, not a deferred location.
+{
+    my @alpha = 'a' .. 'z';
+    my $res := (1, 2, 3, 4).map({ $_ }).cache;
+    is rrd(@alpha[$res[*]][0 .. *-2]).join, 'bcd', 'a whatever slice of a slice';
+    my @n = [1, 2], [3, 4];
+    is rrd(@n[*][0]).raku, '$[1, 2]', 'a * level';
+    is rrd(@n[1][*-1]), 4, 'a WhateverCode level';
+    my %g = a => {b => 1}, c => {b => 2};
+    is-deeply rrd(%g<a c>[1]), {b => 2}, 'a key slice level';
+    ok rrd(%g{'a' | 'c'}<b>) == 1 & 2, 'a junction key level';
+    my %e;
+    is rrd(%e<nope>{<a b>}).raku, '(Any, Any)', 'a slice below a missing key';
+    is %e.elems, 0, '... creates nothing';
+}
+
+# The container-mode gate's own Bool is not left under the argument: a block
+# whose value is the call answers the call's result.
+{
+    my @n = [1, 2], [3, 4];
+    is (1,).map({ rd(@n[1][0]) }).raku, '(3,).Seq', 'a block ending in the call';
+    is (1,).map({ slip(@n[1][0]) }).raku, '(3,).Seq', '... with a builtin callee';
 }

@@ -179,7 +179,7 @@ fn rebuild_quanthash_hyper(kind: QuantHashHyper, elems: &[Value], results: &[Val
 /// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
 /// subscript (which slices) to each element, not the single-element accessor
 /// method (which would return Nil). A scalar index keeps the plain method path.
-fn hyper_subscript_index_is_slice(v: &Value) -> bool {
+pub(super) fn hyper_subscript_index_is_slice(v: &Value) -> bool {
     match v.view() {
         ValueView::Range(..)
         | ValueView::RangeExcl(..)

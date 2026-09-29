@@ -7,75 +7,13 @@ use crate::value::ValueView;
 /// model).  Any real ancestor scores below this.
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
+/// A builtin type's classes and roles in narrowness order (ADR-0051 P2): the
+/// index of a constraint in it is that constraint's distance from a value of
+/// the type. Read from the builtin type catalog, so a type the catalog knows
+/// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
+/// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-        // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
-        // True), and rakudo's core numeric operators dispatch on it rather
-        // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
-        // strictly narrower than the core `(Rational:D, Rational:D)`
-        // candidate. Without this row the role scored the 500 "unrelated"
-        // distance and every `Rational` candidate lost.
-        "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
-        "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-        "Array" => &[
-            "Array",
-            "List",
-            "Positional",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "List" => &["List", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Hash" => &[
-            "Hash",
-            "Map",
-            "Associative",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
-        "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
-        // spellings under `Any`, not subclasses of them, but they do the
-        // same roles — so each mutable name gets its own row rather than
-        // being folded into (or bridged to) the immutable one.
-        "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "Mix" => &[
-            "Mix",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "MixHash" => &[
-            "MixHash",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
-        "Seq" => &["Seq", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Regex" => &[
-            "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
-        ],
-        "Junction" => &["Junction", "Mu"],
-        _ => &[],
-    }
+    crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
 
 /// The narrowness key a multi candidate is ranked by (see
@@ -84,9 +22,9 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
 ///    positional count (higher is narrower);
 /// 1. the type-hierarchy distance of those nominal types (lower is narrower);
-/// 2. the REFINEMENT tier — constraint count (`where` clauses and `subset`
-///    types alike), sub-signature count, `rw`/`raw` count (higher is
-///    narrower);
+/// 2. the REFINEMENT tier — constrained-parameter count (a `where` clause
+///    or a `subset` type: rakudo draws no line between the two), sub-signature
+///    count, `rw`/`raw` count (higher is narrower);
 ///
 /// then whether it declares any named parameter, optional-positional count,
 /// required-named count, and declaration order.
@@ -101,7 +39,7 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
-    (usize, usize, usize, usize),
+    (usize, usize, usize),
     usize,
     usize,
     usize,
@@ -175,20 +113,16 @@ impl Interpreter {
         def: &Arc<FunctionDef>,
         args: &[Value],
     ) -> CandidateRankKey {
-        let (literal, typed, where_c, subset, subsig, writable) =
+        let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
         let has_named = usize::from(Self::candidate_declares_named(def));
         let opt = Self::candidate_optional_positional_count(def);
         let req_named = Self::candidate_required_named_count(def);
-        // A `subset`-typed parameter is its refinee plus a post-constraint,
-        // exactly what `Int $x where …` spells out, so rakudo ranks the two
-        // alike: `multi f(Small $x)` and `multi f(Int $x where * < 10_000)` tie
-        // on the refinement tier and the first declared wins.
         (
             (literal, typed),
             dist,
-            (where_c + subset, 0, subsig, writable),
+            (constrained, subsig, writable),
             has_named,
             opt,
             req_named,
@@ -587,12 +521,12 @@ impl Interpreter {
     }
 
     /// The narrowness tuple of `def` with no call in flight, in
-    /// `(literal, typed, where, subset, subsig, writable)` order — the first
+    /// `(literal, typed, constrained, subsig, writable)` order — the first
     /// two are the nominal tier, the rest the refinement tier.
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         self.candidate_specificity_rank_for_args(def, &[])
     }
 
@@ -666,7 +600,7 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
         args: &[Value],
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         let all_params = Self::dispatch_visible_params(def);
         // Type narrowness is computed from the POSITIONAL parameters only.
         // A named parameter's type decides whether the candidate is
@@ -688,16 +622,21 @@ impl Interpreter {
             })
             .collect();
         let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
-        let where_count = params
+        // A parameter is constrained by a `where` clause or by a `subset` type,
+        // and rakudo ranks the two alike: each is a bind-time check on top of
+        // the same nominal type, so `multi f(Small $x)` and `multi f(Int $x
+        // where * < 10_000)` tie and declaration order decides. Counting them
+        // as two separate components made every `where` beat every subset.
+        // A parameter carrying both still counts once, as rakudo's
+        // per-parameter "has a constraint" comparison does.
+        let constrained_count = params
             .iter()
-            .filter(|p| p.where_constraint.is_some())
-            .count();
-        let subset_type_count = effective
-            .iter()
-            .filter(|tc| {
-                tc.map(Self::constraint_base_name)
-                    .map(|base| self.constraint_is_subset(base))
-                    .unwrap_or(false)
+            .zip(effective.iter())
+            .filter(|(p, tc)| {
+                p.where_constraint.is_some()
+                    || tc
+                        .map(Self::constraint_base_name)
+                        .is_some_and(|base| self.constraint_is_subset(base))
             })
             .count();
         let typed_param_count = params
@@ -733,8 +672,7 @@ impl Interpreter {
             // REFINEMENT tier — consulted only once two candidates are tied on
             // the nominal tier AND on type-hierarchy distance. See
             // [`CandidateRankKey`].
-            where_count,
-            subset_type_count,
+            constrained_count,
             subsig_count,
             // `rw`/`raw` are dispatch-visible because they require a writable
             // argument; `copy` changes only binding and must not outrank an
@@ -1175,8 +1113,8 @@ impl Interpreter {
                 return 1;
             }
             let ancestors: &[&str] = match value {
-                crate::value::EnumValue::Str(_) => &["Str", "Stringy", "Cool", "Any", "Mu"],
-                crate::value::EnumValue::Int(_) => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+                crate::value::EnumValue::Str(_) => builtin_type_mro("Str"),
+                crate::value::EnumValue::Int(_) => builtin_type_mro("Int"),
                 crate::value::EnumValue::Generic(_) => &["Any", "Mu"],
             };
             for (i, &ancestor) in ancestors.iter().enumerate() {
@@ -1236,6 +1174,16 @@ impl Interpreter {
             let cn = class_name.resolve();
             if base == cn.as_str() {
                 return 0;
+            }
+            // A builtin type modelled as an instance (`Instant`, `Duration`,
+            // `IO::Path`, ...) ranks its roles too: `now` is narrower as a
+            // `Real` than as a `Numeric`, which the class-only MRO below
+            // cannot see.
+            if let Some(i) = builtin_type_mro(cn.as_str())
+                .iter()
+                .position(|&ancestor| ancestor == base)
+            {
+                return i;
             }
             // `mro_readonly` falls back to a live parents-only walk when the
             // registry's cached `ClassDef::mro` is still empty (this method

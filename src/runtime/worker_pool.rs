@@ -37,6 +37,10 @@ pub(crate) type Rejecter = Box<dyn FnOnce(&SpawnError) + Send + 'static>;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod yield_points;
+#[cfg(target_arch = "wasm32")]
+#[path = "worker_pool/yield_points_wasm.rs"]
+mod yield_points;
+pub(crate) use yield_points::{KeeperMark, keeper_mark};
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {

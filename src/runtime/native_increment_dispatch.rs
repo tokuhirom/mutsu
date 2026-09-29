@@ -155,10 +155,10 @@ impl Interpreter {
         // loses to the core `Int:D` for an `Int` argument. The core candidate
         // is a plain nominal type, so it carries one typed positional and no
         // refinement of any kind.
-        let (literal, typed, where_c, subset, subsig, _traits) =
+        let (literal, typed, constrained, subsig, _traits) =
             self.candidate_specificity_rank_for_args(&def, args);
-        let user_key = (typed, literal, where_c, subset, subsig);
-        let core_key = (1usize, 0usize, 0usize, 0usize, 0usize);
+        let user_key = (typed, literal, constrained, subsig);
+        let core_key = (1usize, 0usize, 0usize, 0usize);
         if user_key != core_key {
             return Some(core_key > user_key);
         }

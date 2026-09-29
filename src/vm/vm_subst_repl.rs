@@ -133,14 +133,26 @@ pub(crate) fn expand_capture_parts(
 }
 
 impl Interpreter {
-    /// The [`SubstReplPlan`] for `src`, parsing it under `qq` rules on first use
-    /// and caching the result (a `:g` substitution asks for the same plan once
-    /// per op execution, and the plan is reused across every match).
-    pub(super) fn subst_replacement_plan(&mut self, src: &str) -> SubstReplPlan {
-        if let Some(plan) = self.subst_repl_plans.get(src) {
+    /// The [`SubstReplPlan`] for `src`, parsing it on first use and caching the
+    /// result (a `:g` substitution asks for the same plan once per op
+    /// execution, and the plan is reused across every match). `src` is read
+    /// under `qq` rules, or, when `thunk` is set, as the `{…}`-wrapped RHS of
+    /// an assignment-form substitution (`s[pat] = EXPR`): a thunk expression,
+    /// not a closure Block (see `Expr::Subst::replacement_thunk`).
+    pub(super) fn subst_replacement_plan(&mut self, src: &str, thunk: bool) -> SubstReplPlan {
+        if let Some(plan) = self
+            .subst_repl_plans
+            .get(src)
+            .and_then(|plans| plans[thunk as usize].as_ref())
+        {
             return plan.clone();
         }
-        let expr = crate::parse_dispatch::parse_qq_interpolation(src);
+        let expr = if thunk {
+            crate::parse_dispatch::parse_subst_thunk_replacement(src)
+                .unwrap_or_else(|| crate::parse_dispatch::parse_qq_interpolation(src))
+        } else {
+            crate::parse_dispatch::parse_qq_interpolation(src)
+        };
         let plan = match &expr {
             Expr::Literal(v) => match v.view() {
                 ValueView::Str(s) => Some(SubstReplPlan::Static(Arc::from(s.as_str()))),
@@ -155,7 +167,8 @@ impl Interpreter {
             // never collide with a closure's carrier-compile-cache entry.
             cache_id: crate::value::next_instance_id(),
         });
-        self.subst_repl_plans.insert(src.to_string(), plan.clone());
+        self.subst_repl_plans.entry(src.to_string()).or_default()[thunk as usize] =
+            Some(plan.clone());
         plan
     }
 

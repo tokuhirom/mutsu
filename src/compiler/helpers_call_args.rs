@@ -960,6 +960,11 @@ impl Compiler {
     /// first write through the parameter creates the whole path (roast
     /// `S02-types/autovivification.t`).
     ///
+    /// Any index expression is accepted, computed ones included
+    /// (`g(%h{@k[$i++]}<z>)`, #10044): whether a level turns out to be a slice,
+    /// a `Junction` or a `WhateverCode` is a run-time fact, so the chain's
+    /// lazy ops decline to an ordinary read for such an index themselves.
+    ///
     /// `positional` is the argument's entry of [`Self::arg_positional_indices`];
     /// `None` there means either a named argument (never marked: a named
     /// parameter is not what this gate reads) or an argument after a `|slip`,
@@ -991,7 +996,7 @@ impl Compiler {
             callee: crate::opcode::RwArgCallee::Named { name_idx },
         };
         let nested = matches!(arg, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::Index { .. }));
-        if !nested || !Self::index_chain_is_single_element(arg) {
+        if !nested {
             self.compile_call_arg_with_escape(arg, escaping);
             self.mark_arg_index_as_container_candidate_callee(
                 mark.callee,
@@ -1003,7 +1008,12 @@ impl Compiler {
         }
         self.code
             .emit(OpCode::RwArgCalleeBindsContainer(Box::new(mark)));
-        let to_container = self.code.emit(OpCode::JumpIfTrue(0));
+        // `JumpIfTrue` only PEEKS its condition (it is `||`'s short-circuit),
+        // which leaked the gate's Bool under the argument: a block whose value
+        // is the call (`.map({ slip(@a[1][0]) })`) answered `False`. Negate it
+        // and branch on the popping `JumpIfFalse` instead.
+        self.code.emit(OpCode::Not);
+        let to_container = self.code.emit(OpCode::JumpIfFalse(0));
         // The ordinary read first, so it is the compile that consumes the
         // one-shot argument flags `compile_call_arg_with_escape` reads.
         self.compile_call_arg_with_escape(arg, escaping);
@@ -1018,32 +1028,6 @@ impl Compiler {
         self.compile_rw_chain_index_arg(arg);
         self.raw_list_elem_terminal = saved_raw_list_elem;
         self.code.patch_jump(to_end);
-    }
-
-    /// Whether every subscript of a nested chain (`%h<a><b>`, `@a[$i][0]`)
-    /// statically addresses ONE element: a literal key or index, or a scalar
-    /// variable. Only such a chain is compiled in container mode by
-    /// [`Self::compile_named_callee_arg`] — a slice or a `WhateverCode` index
-    /// at any level (`@alpha[$res[*]][0..*-1]`) is a list of values, which the
-    /// deferred-path walk cannot describe, so it keeps the one-op producer on
-    /// its last subscript.
-    fn index_chain_is_single_element(arg: &Expr) -> bool {
-        let mut cur = arg;
-        while let Expr::Index { target, index, .. } = cur {
-            let single = match index.as_ref() {
-                Expr::Literal(v) => matches!(
-                    v.view(),
-                    crate::value::ValueView::Int(_) | crate::value::ValueView::Str(_)
-                ),
-                Expr::Var(name) => crate::value::attr_twigil_base(name).is_none(),
-                _ => false,
-            };
-            if !single {
-                return false;
-            }
-            cur = target.as_ref();
-        }
-        true
     }
 
     /// The signature-positional index of each syntactic argument, or `None`

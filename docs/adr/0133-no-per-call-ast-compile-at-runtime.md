@@ -1,4 +1,4 @@
-# ADR-0132: Runtime executes precompiled chunks — no per-call AST compile
+# ADR-0133: Runtime executes precompiled chunks — no per-call AST compile
 
 - **Status**: Proposed (Slice 1 — signature expressions — implemented with #10107; later slices open)
 - **Date**: 2026-09-29

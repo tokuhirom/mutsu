@@ -71,7 +71,9 @@ class LogSched does Scheduler {
 
 # Experiment 3: a keeper's own continuation (setting $flag before parking on
 # `sleep`) is observed by the thread it woke: the wake-up of `await $init` is
-# delivered at the keeper's next yield (ADR-0105 D2). Rakudo: 30/30.
+# delivered at the keeper's next yield (ADR-0105 D2), and an `await` reached
+# only after the keep returns no earlier than that yield either (ADR-0105 §9,
+# #10016). Rakudo: 30/30.
 {
     my $init = Promise.new;
     my $flag = 0;

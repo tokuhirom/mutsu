@@ -328,7 +328,7 @@ impl Interpreter {
         self.eval_block_value_inner(body, false, true, None, None, None)
     }
 
-    /// Run a chunk the compiler built from a signature expression (ADR-0132)
+    /// Run a chunk the compiler built from a signature expression (ADR-0133)
     /// with `eval_block_value`'s carrier semantics — topic restore, block
     /// scope, lexical registry/code-env undo, `let` restore — and without
     /// compiling anything. `record_free_var_writes` is
@@ -562,7 +562,7 @@ impl Interpreter {
         // runs so nothing compiled during execution inherits it.
         self.pending_eval_rw_tail = rw_tail;
         let (code, compiled_fns) = if let Some(chunk) = precompiled {
-            // ADR-0132: compiled once by the compiler, in the declaring scope.
+            // ADR-0133: compiled once by the compiler, in the declaring scope.
             // The pending per-body marks taken above belong to a body a
             // caller was about to compile, never to a signature expression.
             (chunk.code.clone(), chunk.fns.clone())

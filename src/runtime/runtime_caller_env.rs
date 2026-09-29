@@ -21,6 +21,7 @@ impl Interpreter {
             line,
             code,
             env: self.env.clone(),
+            package: self.current_package_sym(),
         });
     }
 
@@ -81,6 +82,7 @@ impl Interpreter {
                 line: 0,
                 code: None,
                 env: Env::new(),
+                package: self.current_package_sym(),
             });
         }
     }

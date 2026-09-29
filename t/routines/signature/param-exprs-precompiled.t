@@ -1,7 +1,7 @@
 use Test;
 
 # A parameter's `where` clause, default and shape dimension are compiled once,
-# with the routine, and run on every call (ADR-0132, #10107). These pin the
+# with the routine, and run on every call (ADR-0133, #10107). These pin the
 # lexical view the precompiled chunks must keep: routine and outer lexicals,
 # earlier parameters, `$_`/WhateverCode forms, placeholders, the declaring
 # package, and a caller lexical the clause writes.

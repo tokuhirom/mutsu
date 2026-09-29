@@ -1,4 +1,4 @@
-//! Evaluating a parameter's signature-time expressions (ADR-0132).
+//! Evaluating a parameter's signature-time expressions (ADR-0133).
 //!
 //! The binder, multi-candidate selection and sub-signature matching all ask
 //! the same three questions of a `ParamDef` — what does its `where` clause,
@@ -61,7 +61,7 @@ impl Interpreter {
             .as_deref()
             .expect("eval_param_where_value on a parameter without a where clause");
         // TODO: compile to bytecode — a runtime-synthesized `ParamDef` has no
-        // chunk (ADR-0132 Decision 3), so its clause is compiled per call.
+        // chunk (ADR-0133 Decision 3), so its clause is compiled per call.
         let body = crate::compiler::Compiler::where_chunk_body(where_expr);
         if record_free_var_writes {
             self.eval_block_value_recording_writes(&body)

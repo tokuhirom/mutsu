@@ -43,11 +43,13 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
     ) -> SubstOp {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        // The replacement is a `qq` quote (see `vm_subst_repl`): parse it with
-        // the real interpolation grammar, once, and cache the plan.
-        let plan = self.subst_replacement_plan(Self::const_str(code, replacement_idx));
+        // The replacement is a `qq` quote (see `vm_subst_repl`) or an
+        // assignment-form thunk: parse it once and cache the plan.
+        let plan =
+            self.subst_replacement_plan(Self::const_str(code, replacement_idx), replacement_thunk);
         SubstOp {
             pattern,
             plan,
@@ -266,6 +268,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
@@ -280,6 +283,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         if outcome.matched {
@@ -314,6 +318,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
@@ -328,6 +333,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.

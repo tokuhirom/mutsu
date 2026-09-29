@@ -26,7 +26,7 @@ impl Interpreter {
             // Current frame: use current env, current file/line, current code
             let line = callsite_line.unwrap_or(0);
             let code = self.current_routine_sub_value();
-            let my_hash = self.build_lexical_hash(&self.env, None);
+            let my_hash = self.build_lexical_hash(&self.env, None, self.current_package_sym());
             let mut attrs = ValueMap::default();
             attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("file".to_string(), Value::str(file));
@@ -63,7 +63,7 @@ impl Interpreter {
             .as_ref()
             .map(|frame| self.code_frame_value(frame))
             .unwrap_or(Value::NIL);
-        let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
+        let my_hash = self.build_lexical_hash(&entry.env, Some(depth), entry.package);
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(entry.line));
         attrs.insert("file".to_string(), Value::str(entry.file.clone()));
@@ -82,7 +82,7 @@ impl Interpreter {
     /// block body is inlined into the enclosing routine's scope in mutsu).
     fn block_frame_value(&self, file: &str, callsite_line: Option<i64>) -> Value {
         let code = Self::block_frame_code();
-        let my_hash = self.build_lexical_hash(&self.env, None);
+        let my_hash = self.build_lexical_hash(&self.env, None, self.current_package_sym());
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(callsite_line.unwrap_or(0)));
         attrs.insert("file".to_string(), Value::str(file.to_string()));
@@ -202,8 +202,14 @@ impl Interpreter {
         Value::NIL
     }
 
-    fn build_lexical_hash(&self, env: &Env, callframe_depth: Option<usize>) -> Value {
+    fn build_lexical_hash(
+        &self,
+        env: &Env,
+        callframe_depth: Option<usize>,
+        package: Symbol,
+    ) -> Value {
         let mut hash = ValueMap::default();
+        hash.insert("::?PACKAGE".to_string(), Value::package(package));
         for (k, v) in env.iter() {
             // Skip internal keys and special variables
             if k.starts_with("__") || k.starts_with("?") || k.starts_with("*") || k.starts_with("=")

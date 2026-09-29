@@ -326,16 +326,12 @@ impl Compiler {
             },
             _ => return None, // non-literal, can't check statically
         };
-        // Check type hierarchy: Int matches Numeric, Cool, Any, etc.
-        let mro: &[&str] = match value_type {
-            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Rat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-            _ => &[],
-        };
-        if mro.contains(&effective_constraint) {
+        // Check type hierarchy (Int matches Numeric, Cool, Any, ...) against
+        // the builtin type catalog, the one ancestry oracle (ADR-0051).
+        if crate::builtins::builtin_type_ancestry::builtin_type_is_a(
+            value_type,
+            effective_constraint,
+        ) {
             None
         } else {
             Some(match expr {
@@ -4554,10 +4550,7 @@ impl Compiler {
                     // `N::C` key and the second declaration is rejected.
                     let redeclaration_key = if let Some(absolute) = cname.strip_prefix("GLOBAL::") {
                         absolute.to_string()
-                    } else if self.current_package == "GLOBAL"
-                        || cname == self.current_package
-                        || cname.starts_with(&format!("{}::", self.current_package))
-                    {
+                    } else if self.current_package == "GLOBAL" {
                         cname.clone()
                     } else {
                         format!("{}::{}", self.current_package, cname)

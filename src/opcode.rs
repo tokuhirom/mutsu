@@ -3620,6 +3620,9 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
+        /// a `qq` string: see `Expr::Subst::replacement_thunk`.
+        replacement_thunk: bool,
         /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
         /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
         /// the thunk), installed around the match like a regex literal's
@@ -3663,6 +3666,9 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
+        /// a `qq` string: see `Expr::Subst::replacement_thunk`.
+        replacement_thunk: bool,
         /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
         /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
         /// the thunk), installed around the match like a regex literal's

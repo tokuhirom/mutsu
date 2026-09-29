@@ -25,6 +25,11 @@ throws-like 'given 42 { when Nope::Never { 1 }; default { 0 } }',
     X::Comp::Group,
     'undeclared package-qualified matcher is diagnosed too';
 
+# X is the CORE exception package. Its bare name is a complete term, even
+# though it is a package rather than a type constraint.
+is (given 1 { when X { 'matched' }; default { 'default' } }), 'default',
+    'CORE exception package does not gobble the when block';
+
 # Must still parse: a type declared earlier in the same compilation unit.
 class DeclaredHere {
 }

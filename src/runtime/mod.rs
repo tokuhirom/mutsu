@@ -637,6 +637,7 @@ mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;
 pub(crate) mod nqp_pure;
+mod param_bound_aggregates;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 pub(crate) mod decl_gate;
@@ -1844,6 +1845,8 @@ pub(crate) struct CallFrameEntry {
     pub line: i64,
     pub code: Option<CodeFrame>,
     pub env: Env,
+    /// Package the frame's code was running in, for `callframe(N).my<::?PACKAGE>`.
+    pub package: Symbol,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.
@@ -2976,7 +2979,10 @@ pub struct Interpreter {
     /// so it is parsed with the real interpolation grammar; caching keeps a
     /// `:g` substitution from re-parsing it per match and gives the dynamic
     /// plan a stable carrier-compile-cache id.
-    pub(crate) subst_repl_plans: HashMap<String, crate::vm::vm_subst_repl::SubstReplPlan>,
+    /// Indexed by `thunk as usize`: the same source text reads differently as
+    /// a `qq` replacement and as an assignment-form thunk.
+    pub(crate) subst_repl_plans:
+        HashMap<String, [Option<crate::vm::vm_subst_repl::SubstReplPlan>; 2]>,
     /// The map/grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`)
     /// compile the callback block once per `.map()`/`.grep()`/`.first()` CALL
     /// and then run every item through the same compiled bytecode via
@@ -3603,8 +3609,9 @@ pub struct Interpreter {
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
-    /// { ... }`) — with their sigils, each mapped to the container that binding
-    /// stored in `env`.
+    /// { ... }`) — with their sigils, each mapped to every live container a
+    /// binding of that name stored in `env` (held weakly; see
+    /// [`param_bound_aggregates::ParamBoundAggregates`]).
     ///
     /// Such a name is a fresh per-invocation binding, never the one shared
     /// object the name-keyed `shared_vars` lane exists to represent. Left on that
@@ -3621,7 +3628,7 @@ pub struct Interpreter {
     /// *first* spawn in a process consults it before any thread exists, and a
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
-    pub(crate) param_bound_aggregates: ValueMap,
+    pub(crate) param_bound_aggregates: param_bound_aggregates::ParamBoundAggregates,
     /// Set while an *incidental* locals -> env mirror is running: the regex
     /// interpolation pre-sync before a `~~`. It exists purely so a name-based
     /// reader in THIS interpreter can observe the frame's live slots through
