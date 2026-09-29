@@ -672,8 +672,8 @@ impl Interpreter {
 /// wrapper that previously lived once per engine.
 ///
 /// Behavior is identical to the former `Interpreter::dispatch_sort`: `:k` selects
-/// index mode, `:by` names the callable, and any other arg (including stray
-/// adverbs) is taken as the callable. Shaped multi-dim arrays sort over leaves;
+/// index mode, `:by` names the callable, other named args are ignored, and any
+/// other arg is taken as the callable. Shaped multi-dim arrays sort over leaves;
 /// non-collection targets pass through unchanged. The VM gates which target shapes
 /// it accepts before calling here (Shaped / Instance / Supply still fall back).
 pub(crate) fn sort_value_generic(
@@ -692,6 +692,10 @@ pub(crate) fn sort_value_generic(
             ValueView::Pair(key, val) if key == "by" => {
                 callable = Some(val.clone());
             }
+            // Every method carries an implicit `*%_`: a named argument other
+            // than `:k`/`:by` (`.sort(:zzz)`) is swallowed, not a comparator.
+            // Only the named flavour is dropped; a positional `Pair` stays data.
+            _ if arg.is_string_pair_value() => {}
             _ => {
                 callable = Some(arg.clone());
             }
