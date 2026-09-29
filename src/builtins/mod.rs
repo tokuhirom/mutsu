@@ -9,6 +9,7 @@ pub(crate) mod builtin_type_methods;
 pub(crate) mod cclass;
 pub(crate) mod collation;
 pub(crate) mod comb;
+pub(crate) mod cross_product;
 pub(crate) mod exception_message;
 pub(crate) mod fast_0arg;
 mod functions;

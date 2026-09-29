@@ -759,18 +759,12 @@ impl Interpreter {
             "X" => {
                 let left_list = Self::value_to_list(left);
                 let right_list = Self::value_to_list(right);
-                let mut results = Vec::new();
-                for l in &left_list {
-                    for r in &right_list {
-                        let mut tuple = match l.view() {
-                            ValueView::Array(items, ..) => items.to_vec(),
-                            _ => vec![l.clone()],
-                        };
-                        tuple.push(r.clone());
-                        results.push(Value::array(tuple));
-                    }
-                }
-                Ok(Value::array(results))
+                Ok(Value::seq(
+                    crate::builtins::cross_product::cross_product_rows(
+                        &[left_list, right_list],
+                        true,
+                    ),
+                ))
             }
             // The pure fold has no interpreter to call a thunk LHS with, so a
             // value LHS is repeated as-is; see `Interpreter::list_repeat`.

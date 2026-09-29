@@ -87,28 +87,30 @@ impl Interpreter {
                         let [left, right] = columns;
                         let left_list = self.cross_operand_list(&left)?;
                         let right_list = self.cross_operand_list(&right)?;
-                        let mut results = Vec::with_capacity(left_list.len() * right_list.len());
                         if op.is_empty() || op == "," {
-                            for l in &left_list {
-                                for r in &right_list {
-                                    results.push(Value::array(vec![l.clone(), r.clone()]));
-                                }
-                            }
+                            Value::seq(crate::builtins::cross_product::cross_product_rows(
+                                &[left_list, right_list],
+                                false,
+                            ))
                         } else if op == "~~" {
+                            let mut results =
+                                Vec::with_capacity(left_list.len() * right_list.len());
                             for l in &left_list {
                                 for r in &right_list {
                                     results.push(Value::truth(self.vm_smart_match(l, r)));
                                 }
                             }
+                            Value::seq(results)
                         } else {
+                            let mut results =
+                                Vec::with_capacity(left_list.len() * right_list.len());
                             for l in &left_list {
                                 for r in &right_list {
                                     results.push(self.eval_infix_shape(op_shape.as_ref(), l, r)?);
                                 }
                             }
+                            Value::seq(results)
                         }
-                        // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                        Value::seq(results)
                     }
                 }
             }
@@ -299,33 +301,39 @@ impl Interpreter {
                             .iter()
                             .map(|v| self.cross_operand_list(v))
                             .collect::<Result<_, _>>()?;
-                        // Cartesian product: iterate combinations in row-major
-                        // order, varying the last operand fastest (matches
-                        // Raku's X ordering).
-                        let mut results: Vec<Value> = Vec::new();
-                        let mut indices = vec![0usize; n];
-                        if !lists.iter().any(|l| l.is_empty()) {
-                            'outer: loop {
-                                let combo: Vec<Value> =
-                                    (0..n).map(|k| lists[k][indices[k]].clone()).collect();
-                                results.push(self.combine_row(&combine, combo)?);
-                                // Increment the mixed-radix index from the right.
-                                let mut k = n;
-                                loop {
-                                    if k == 0 {
-                                        break 'outer;
+                        if matches!(combine, crate::value::RowCombine::List) {
+                            Value::seq(crate::builtins::cross_product::cross_product_rows(
+                                &lists, false,
+                            ))
+                        } else {
+                            // Cartesian product: iterate combinations in row-major
+                            // order, varying the last operand fastest (matches
+                            // Raku's X ordering).
+                            let mut results: Vec<Value> = Vec::new();
+                            let mut indices = vec![0usize; n];
+                            if !lists.iter().any(|l| l.is_empty()) {
+                                'outer: loop {
+                                    let combo: Vec<Value> =
+                                        (0..n).map(|k| lists[k][indices[k]].clone()).collect();
+                                    results.push(self.combine_row(&combine, combo)?);
+                                    // Increment the mixed-radix index from the right.
+                                    let mut k = n;
+                                    loop {
+                                        if k == 0 {
+                                            break 'outer;
+                                        }
+                                        k -= 1;
+                                        indices[k] += 1;
+                                        if indices[k] < lists[k].len() {
+                                            break;
+                                        }
+                                        indices[k] = 0;
                                     }
-                                    k -= 1;
-                                    indices[k] += 1;
-                                    if indices[k] < lists[k].len() {
-                                        break;
-                                    }
-                                    indices[k] = 0;
                                 }
                             }
+                            // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
+                            Value::seq(results)
                         }
-                        // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                        Value::seq(results)
                     }
                 }
             }
