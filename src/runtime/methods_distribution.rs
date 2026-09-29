@@ -122,6 +122,33 @@ impl Interpreter {
         }
     }
 
+    /// Enforce the `Distribution $distribution` parameter of
+    /// `CompUnit::Repository::Installation.install`/`.uninstall`, so junk
+    /// (`Any`, a string, ...) fails the bind instead of touching the repo.
+    fn check_distribution_param(&mut self, dist: &Value) -> Result<(), RuntimeError> {
+        if self.type_matches_value("Distribution", dist) {
+            return Ok(());
+        }
+        let got = match dist.view() {
+            ValueView::Package(pkg) => pkg.resolve().to_string(),
+            _ => crate::runtime::value_type_name(dist).to_string(),
+        };
+        let shown = match dist.view() {
+            ValueView::Package(_) => got.clone(),
+            _ => crate::runtime::utils::gist_value(dist),
+        };
+        let mut err = RuntimeError::new(format!(
+            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '$distribution'; expected Distribution but got {got} ({shown})"
+        ));
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::TypeCheck::Binding::Parameter"),
+            ex_attrs,
+        )));
+        Err(err)
+    }
+
     /// CUR::Installation method dispatch.
     pub(crate) fn dispatch_cur_installation_method(
         &mut self,
@@ -139,13 +166,17 @@ impl Interpreter {
                 let depspec = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_candidates(&prefix, &depspec))
             }
-            "install" => {
+            "install" | "uninstall" => {
                 let dist = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.cur_inst_install(&prefix, &dist))
-            }
-            "uninstall" => {
-                let dist = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.cur_inst_uninstall(&prefix, &dist))
+                // Cost: O(1) type check, independent of repository size.
+                if let Err(e) = self.check_distribution_param(&dist) {
+                    return Some(Err(e));
+                }
+                if method == "install" {
+                    Some(self.cur_inst_install(&prefix, &dist))
+                } else {
+                    Some(self.cur_inst_uninstall(&prefix, &dist))
+                }
             }
             "installed" => Some(self.cur_inst_installed(&prefix)),
             "can-install" => {
