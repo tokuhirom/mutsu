@@ -217,6 +217,27 @@ impl Interpreter {
             .then(|| storage.clone())
     }
 
+    /// The storage name an earlier `my role` declaration of `qualified` in the
+    /// INNERMOST open lexical scope registered, if any (see
+    /// `lexical_role_storage_name`). A same-named role in an OUTER scope is
+    /// shadowed rather than joined, so only the innermost frame is consulted
+    /// (the whole map when no frame is open: the file's top level).
+    // Cost: O(s), s = declarations recorded in the innermost scope frame.
+    pub(crate) fn lexical_role_continuation(&self, qualified: &str) -> Option<String> {
+        let storage = match self.lexical_class_pending_scopes.last() {
+            Some(frame) => frame
+                .iter()
+                .rev()
+                .find(|(q, _)| q == qualified)
+                .map(|(_, storage)| storage.clone())?,
+            None => self.lexical_class_pending.get(qualified)?.clone(),
+        };
+        self.registry()
+            .roles
+            .contains_key(&storage)
+            .then_some(storage)
+    }
+
     /// Record `storage` as `qualified`'s current declaration in the innermost
     /// open lexical scope, so a later same-scope statement can find it via
     /// `lexical_class_pending_stub` if it is still a stub when that happens.
@@ -294,6 +315,16 @@ impl Interpreter {
             // default was never tagged (`roast/S32-array/delete-adverb.t`).
             if resolved != name && resolved.contains('\u{0}') {
                 return resolved;
+            }
+        }
+        // A parameterized reference (`does R1[::T]`, `does R1[Bool]`) names
+        // the lexical role by its base; remap that and keep the arguments.
+        if let Some((base, args)) = name.split_once('[')
+            && !base.is_empty()
+        {
+            let mapped = self.lexical_env_remap_name(base);
+            if mapped != base {
+                return format!("{mapped}[{args}");
             }
         }
         name.to_string()

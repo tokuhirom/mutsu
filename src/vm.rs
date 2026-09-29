@@ -138,6 +138,7 @@ mod vm_call_lexical_override;
 mod vm_call_light;
 mod vm_call_site_ops;
 mod vm_frame_lexical;
+mod vm_lexical_role;
 mod vm_lexsub_aliases;
 use vm_frame_lexical::FrameLexicalCallSite;
 pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};

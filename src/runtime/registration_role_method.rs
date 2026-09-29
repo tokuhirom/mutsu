@@ -95,13 +95,18 @@ impl Interpreter {
                 // name relative to any enclosing package: `role A::Item`
                 // inside `module Core` registers as `Core::A::Item` and names
                 // itself `A::Item` (Intl::CLDR's `role CLDR::Item`).
-                let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
+                // A `my role` registers under its declaration-site storage
+                // name (`A\u{0}<id>`, ADR-0047); it names itself by the source
+                // spelling before the separator.
+                let source_name = name.split('\u{0}').next().unwrap_or(name);
+                let self_short = crate::qualified::unqualified_part(Symbol::intern(source_name));
+                let self_short = self_short.as_str();
                 let names_self_relative = enclosing_prefixes.iter().any(|pfx| {
                     crate::qualified::qualified(Symbol::intern(pfx), Symbol::intern(tc_base))
                         .as_str()
-                        == name
+                        == source_name
                 });
-                let resolvable_without_deferred = tc_base == name
+                let resolvable_without_deferred = tc_base == source_name
                     || tc_base == self_short
                     || names_self_relative
                     // A role type parameter carrying a definiteness

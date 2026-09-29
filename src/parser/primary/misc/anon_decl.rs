@@ -275,6 +275,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             is_rw: false,
             language_version: crate::parser::current_language_version(),
             custom_traits: Vec::new(),
+            decl_id: crate::ast::next_class_decl_id(),
         })),
     ))
 }

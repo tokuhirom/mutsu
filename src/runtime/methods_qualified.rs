@@ -314,7 +314,7 @@ impl Interpreter {
         {
             return Some(Err(RuntimeError::new(format!(
                 "Ambiguous concretization lookup for {}",
-                qualifier
+                crate::value::user_facing_type_name(qualifier)
             ))));
         }
         // Read: look up the attribute in the qualifier class's attribute definitions

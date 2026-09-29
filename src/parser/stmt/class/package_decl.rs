@@ -501,6 +501,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_rw: role_is_rw,
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
+                    decl_id: crate::ast::next_class_decl_id(),
                 },
             ),
         ));

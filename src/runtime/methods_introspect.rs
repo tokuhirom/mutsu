@@ -980,7 +980,7 @@ impl Interpreter {
             ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
+            } => crate::value::parametric_role_display_name(&base_name.resolve(), type_args),
             ValueView::Sub(data) => {
                 let base = value_type_name(target);
                 // A return type reblesses a `Sub` into `Sub+{Callable[Type]}`,

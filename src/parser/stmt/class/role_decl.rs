@@ -509,6 +509,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         is_rw: role_is_rw,
         language_version: super::super::simple::current_language_version(),
         custom_traits,
+        decl_id: crate::ast::next_class_decl_id(),
     };
     // Emit __MUTSU_SET_META__ calls for ver/auth/api traits (like class declarations)
     let mut meta_stmts = Vec::new();

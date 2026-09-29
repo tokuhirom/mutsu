@@ -537,6 +537,15 @@ impl Interpreter {
                 return true;
             }
         }
+        // A parameterization of a type known only through the env
+        // (`R1[Int]` of a lexical `my role R1[::T]`, stored under its
+        // declaration-site name, ADR-0047) is a type too.
+        if let Some((base, _)) = Self::parse_parametric_type_name(name)
+            && base.len() < name.len()
+            && self.has_type(&base)
+        {
+            return true;
+        }
         self.package_type_alias(name).is_some()
     }
 

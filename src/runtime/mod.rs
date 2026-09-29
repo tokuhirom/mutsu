@@ -36,13 +36,17 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex, RwLock};
 
-static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
-
+/// A role's `role_id` is drawn from the SAME process-global counter as the
+/// parse-time declaration-site ids (`crate::ast::next_global_decl_id`). Both
+/// end up after a `\u{0}` in a type name -- `R\u{0}<role_id>` is one parametric
+/// candidate of group `R`, `R\u{0}<decl_id>` a `my role R`'s storage name
+/// (ADR-0047 P1) -- so they must never coincide, or a lexical role's storage
+/// name would read as a candidate of an unrelated package-scoped `R`.
 pub(crate) fn next_role_id() -> u64 {
-    ROLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+    crate::ast::next_global_decl_id()
 }
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

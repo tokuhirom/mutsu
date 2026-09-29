@@ -86,14 +86,27 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     let demangled = name
         .split("::")
         .map(|segment| {
-            let base = segment
-                .split_once('\u{0}')
-                .map_or(segment, |(short, _)| short);
-            anon_type_display_name(base).unwrap_or_else(|| base.to_string())
+            let base = strip_site_keys(segment);
+            anon_type_display_name(&base).unwrap_or(base)
         })
         .collect::<Vec<_>>()
         .join("::");
     std::borrow::Cow::Owned(demangled)
+}
+
+/// Strip the internal `\u{0}...` suffix from one name segment. Everything
+/// from the first `\u{0}` on is internal, except the argument list of a
+/// curried lexical role: `R\u{0}<id>[Int]` displays as `R[Int]`.
+fn strip_site_keys(segment: &str) -> String {
+    let Some((short, rest)) = segment.split_once('\u{0}') else {
+        return segment.to_string();
+    };
+    let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+    if rest.starts_with('[') {
+        format!("{short}{}", strip_site_keys(rest))
+    } else {
+        short.to_string()
+    }
 }
 
 /// The bare registry names NativeCall's builtin types are kept under. Real
@@ -817,7 +830,7 @@ impl Value {
                 type_args,
             } => format!(
                 "({})",
-                crate::value::parametric_role_name(&base_name.resolve(), type_args)
+                crate::value::parametric_role_display_name(&base_name.resolve(), type_args)
             ),
             // Rakudo: Code stringifies to its bare name (`~&say` is "say",
             // with a coercion warning mutsu does not emit).

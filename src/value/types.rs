@@ -69,7 +69,7 @@ pub(crate) fn parametric_role_arg_name(val: &Value) -> String {
         ValueView::ParametricRole {
             base_name,
             type_args,
-        } => parametric_role_name(&base_name.resolve(), type_args),
+        } => parametric_role_display_name(&base_name.resolve(), type_args),
         // A NAMED argument keeps its current value-based spelling. Rakudo drops
         // named arguments from the curried name entirely (`A[:a(1)].^name` is
         // just `A`), but two distinct concretizations of the same role must
@@ -85,6 +85,13 @@ pub(crate) fn parametric_role_arg_name(val: &Value) -> String {
 pub(crate) fn parametric_role_name(base_name: &str, type_args: &[Value]) -> String {
     let args: Vec<String> = type_args.iter().map(parametric_role_arg_name).collect();
     format!("{}[{}]", base_name, args.join(","))
+}
+
+/// [`parametric_role_name`] as a human sees it (`.^name`, `.gist`, `.raku`):
+/// a lexical role's declaration-site key (`R\u{0}<id>`, ADR-0047) is dropped.
+/// The raw name stays the identity key compositions are matched on.
+pub(crate) fn parametric_role_display_name(base_name: &str, type_args: &[Value]) -> String {
+    crate::value::user_facing_type_name(&parametric_role_name(base_name, type_args)).into_owned()
 }
 
 pub(crate) fn what_type_name(val: &Value) -> String {

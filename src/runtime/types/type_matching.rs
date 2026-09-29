@@ -240,8 +240,16 @@ impl Interpreter {
                 })
                 .collect();
             let resolved_inner = resolved_args.join(",");
-            if resolved_inner != inner {
-                return Some(format!("{}[{}]", base, resolved_inner));
+            // A lexical role (`my role R1[::T]`) is registered under its
+            // declaration-site storage name (ADR-0047); `R1[Int]` names it
+            // by the source spelling the env binds to that name.
+            let resolved_base = if base.contains('\u{0}') {
+                base.to_string()
+            } else {
+                self.lexical_env_remap_name(base)
+            };
+            if resolved_inner != inner || resolved_base != base {
+                return Some(format!("{}[{}]", resolved_base, resolved_inner));
             }
         }
         // Nested types declared with a compound name are referenced by their

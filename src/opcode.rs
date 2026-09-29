@@ -6109,6 +6109,9 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// distinct `my role A {}` declarations in different scopes distinct
     /// ids, since each is its own AST node / plan entry.
     pub(crate) role_id: u64,
+    /// `Stmt::RoleDecl::decl_id`: the parse-time declaration-site id a
+    /// `my role` mangles into its registry storage name (ADR-0047 P1).
+    pub(crate) decl_id: u64,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -11657,6 +11660,7 @@ impl CompiledCode {
             is_rw,
             language_version,
             custom_traits,
+            decl_id,
         } = stmt
         else {
             panic!("add_role_decl_plan expects RoleDecl");
@@ -11694,6 +11698,7 @@ impl CompiledCode {
             body_plan,
             deferred_body_ops,
             role_id: crate::runtime::next_role_id(),
+            decl_id: *decl_id,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));
