@@ -2672,7 +2672,9 @@ fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             push(format!("${}", name), out)
         }
-        Expr::CodeVar(name) if name.starts_with('^') => push(format!("&{}", name), out),
+        Expr::CodeVar(name) if name.starts_with('^') || name.starts_with(':') => {
+            push(format!("&{}", name), out)
+        }
         Expr::ArrayVar(name) if name.starts_with('^') || name.starts_with(':') => {
             push(format!("@{}", name), out)
         }
@@ -3073,7 +3075,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 out.push(name.clone());
             }
         }
-        Expr::CodeVar(name) if name.starts_with('^') => {
+        Expr::CodeVar(name) if name.starts_with('^') || name.starts_with(':') => {
             let prefixed = format!("&{}", name);
             if !out.contains(&prefixed) {
                 out.push(prefixed);
@@ -3746,7 +3748,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 out.push(name.clone());
             }
         }
-        Expr::CodeVar(name) if name.starts_with('^') => {
+        Expr::CodeVar(name) if name.starts_with('^') || name.starts_with(':') => {
             let prefixed = format!("&{}", name);
             if !out.contains(&prefixed) {
                 out.push(prefixed);

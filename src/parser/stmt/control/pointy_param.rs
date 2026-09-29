@@ -49,6 +49,17 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Renamed named parameter: `-> :counter(&c) { ... }`, `-> :key($k) { ... }`.
+    // The `:$x` shorthand is handled below; the `:name(<param>)` alias form is
+    // the sub parameter parser's (Test::Describe). Same delegation as `:(` above.
+    if let Some(after_colon) = input.strip_prefix(':')
+        && after_colon.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        let (r, mut p) = crate::parser::stmt::sub_param::parse_single_param(input)?;
+        p.block_param = true;
+        return Ok((r, p));
+    }
+
     // Anonymous parameter carrying BOTH a type constraint and an unpacking
     // sub-signature: `-> Pair (:key($k), :value($v)) { ... }`, and its bracket
     // spelling `-> List [$a, $b]`. Only the *named* form (`-> Pair $p (:$key)`)

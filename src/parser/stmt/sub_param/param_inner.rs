@@ -266,9 +266,11 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
-    // Slurpy unpack: *[$a, $b, ...] — gather remaining args then unpack
-    if rest.starts_with("*[") {
-        let r = &rest[1..]; // skip '*', keep '['
+    // Slurpy unpack: *[$a, $b, ...] — gather remaining args then unpack.
+    // `+[$a, ...]` is the single-argument-rule spelling of the same.
+    if rest.starts_with("*[") || rest.starts_with("+[") {
+        let plus = rest.starts_with('+');
+        let r = &rest[1..]; // skip '*' / '+', keep '['
         let (r, _) = parse_char(r, '[')?;
         let (r, _) = ws(r)?;
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
@@ -276,6 +278,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = parse_char(r, ']')?;
         let mut p = super::helpers::make_param("@".to_string());
         p.slurpy = true;
+        p.onearg = plus;
         p.sub_signature = Some(sub_params);
         return Ok((r, p));
     }
