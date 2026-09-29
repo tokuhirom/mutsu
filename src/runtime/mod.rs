@@ -4580,6 +4580,16 @@ pub struct Interpreter {
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
     pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
+    /// by the (importing file, bare name). `env` holds one `&name` slot for
+    /// the whole program, so a second import of the same name (the script
+    /// importing a module that re-exports `&to-json` over the `&to-json` it
+    /// itself imported) overwrites the first; a bareword call from the first
+    /// importer's own unit must still reach what THAT unit imported. Consulted
+    /// only when an installed override is rejected as declared in the calling
+    /// unit (`callable_declared_in_unit_of`), so it costs nothing on any other
+    /// call. Populated at export-symbol installation; never removed.
+    pub(crate) unit_imported_callables: std::collections::HashMap<(Symbol, Symbol), Value>,
     /// Sigilless bare names a `sub EXPORT`'s returned map installed into `env`
     /// (`install_export_symbol`). The CORE term keywords `True`/`False`/`Nil`/
     /// `Empty`/`Any` are ordinary lexical bindings in Raku, so such an import
