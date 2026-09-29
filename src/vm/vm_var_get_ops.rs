@@ -295,6 +295,14 @@ impl Interpreter {
             // in the very env slot that branch probes.
             self.poisoned_enum_alias_check(name)?;
             enum_val
+        } else if let Some(v) = self.term_value(name).cloned() {
+            // A sigil-less constant live in this scope's `env` — declared here
+            // or imported by a block-scoped `use` — shadows a same-named type
+            // (#9963): `{ use CG; G }` is CG's `constant G`, not the file's
+            // `grammar G`. Only the live binding outranks the type; the
+            // module-scope fallbacks of `term_binding` stay below the type
+            // branch.
+            v
         } else if match self.env().get(name).map(Value::view) {
             Some(ValueView::Nil) => self.has_type(name) || Self::is_builtin_type(name),
             // A `my $Buf = Buf.new` declaration pre-seeds env["Buf"] with the

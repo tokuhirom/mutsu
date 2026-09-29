@@ -15,8 +15,9 @@
 //!   are all read from `env` under the bare name, and rebinding them writes
 //!   no registry. So a site is only remembered, and a memo only used, while
 //!   `env` binds nothing under the name, or binds that very type object (as
-//!   a class declaration does for its own name). That probe is the one
-//!   re-check a hit pays.
+//!   a class declaration does for its own name) — and binds no sigil-less
+//!   constant under the name's term key, which outranks the type (#9963).
+//!   Those two probes are the one re-check a hit pays.
 //! - **An enum member with the same spelling.** Declaring an enum registers
 //!   its type, which bumps the generation.
 //! - **Spellings the chain rewrites from bindings.** A parameterised name
@@ -32,7 +33,7 @@
 use super::*;
 
 impl Interpreter {
-    // Cost: O(1) on a memo hit (one lock, one `env` probe); a miss costs one
+    // Cost: O(1) on a memo hit (one lock, two `env` probes); a miss costs one
     // bareword resolution, O(p*|name|), p = packages on the bare-name search path.
     pub(super) fn exec_get_bare_word_op(
         &mut self,
@@ -66,12 +67,20 @@ impl Interpreter {
     /// (a class declaration binds its own name so; so does a type capture
     /// bound to the same-named class). Any other binding may be what the
     /// resolution chain answers, and it changes without a registry write.
-    // Cost: O(1), one `env` probe.
+    /// Nor may a sigil-less constant of that spelling be live in `env`: it
+    /// shadows the type (#9963), and a block-scoped `use` installs one
+    /// without a registry write either.
+    // Cost: O(1), two `env` probes.
     pub(crate) fn env_leaves_type_name(&self, name: Symbol) -> bool {
-        match self.env().get_sym(name) {
+        let leaves = match self.env().get_sym(name) {
             None => true,
             Some(v) => matches!(v.view(), ValueView::Package(p) if p == name),
-        }
+        };
+        leaves
+            && self
+                .env()
+                .get_sym(crate::runtime::term_names::term_key_sym(name))
+                .is_none()
     }
 }
 

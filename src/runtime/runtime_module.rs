@@ -1172,6 +1172,28 @@ impl Interpreter {
             } else {
                 tags.to_vec()
             };
+            // The module body ran in the loading scope's env, and its `is
+            // export` sigil-less constants are left there for `import_module`
+            // (`collect_unit_package_scope_names` skips them). A BEGIN-time
+            // preload imports nothing, so those term bindings would otherwise
+            // be visible to the whole mainline ahead of the nested `use` that
+            // asked for them — and, as a live term binding, shadow a
+            // same-named type there (#9963). The in-position `use` installs
+            // them from the export tables.
+            if !import {
+                let leaked_terms: Vec<Symbol> = self
+                    .env
+                    .keys()
+                    .filter(|k| {
+                        !env_snapshot.contains(k)
+                            && crate::runtime::term_names::term_spelling(&k.resolve()).is_some()
+                    })
+                    .copied()
+                    .collect();
+                for key in leaked_terms {
+                    self.env.remove_sym(key);
+                }
+            }
             if import
                 && let Err(err) = self.import_module(module, &import_tags)
                 && !err.message.starts_with("No exports found for module:")
