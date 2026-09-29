@@ -13,9 +13,7 @@ fn string_has_numeric_tz_offset(s: &str) -> bool {
 }
 
 impl Interpreter {
-    pub(crate) fn build_native_date(
-        args: &[Value],
-    ) -> Result<(Value, Option<Value>), RuntimeError> {
+    pub(crate) fn build_native_date(args: &[Value]) -> Result<Value, RuntimeError> {
         use crate::builtins::methods_0arg::temporal;
         let mut year: i64 = 1970;
         let mut month: i64 = 1;
@@ -64,6 +62,10 @@ impl Interpreter {
                     ..
                 } if class_name == "DateTime" => {
                     let (y, m, d, _, _, _, _) = temporal::datetime_attrs(&attributes.as_map());
+                    // The source's formatter carries over unless one is given.
+                    if formatter.is_none() {
+                        formatter = attributes.as_map().get("formatter").cloned();
+                    }
                     year = y;
                     month = m;
                     day = d;
@@ -74,6 +76,9 @@ impl Interpreter {
                     ..
                 } if class_name == "Date" => {
                     let (y, m, d) = temporal::date_attrs(&attributes.as_map());
+                    if formatter.is_none() {
+                        formatter = attributes.as_map().get("formatter").cloned();
+                    }
                     year = y;
                     month = m;
                     day = d;
@@ -125,22 +130,18 @@ impl Interpreter {
             return Err(RuntimeError::new("Date.new requires arguments"));
         }
         temporal::validate_date(year, month, day)?;
-        let date = temporal::make_date_with_formatter(year, month, day, formatter.clone());
-        Ok((date, formatter))
+        Ok(temporal::make_date_with_formatter(
+            year, month, day, formatter,
+        ))
     }
 
     /// Build a `DateTime` from `.new` arguments as pure data: parse named
     /// (`year`..`second`/`timezone`/`date`/`formatter`) and positional args (a
     /// datetime string, a posix epoch as Int/BigInt/Num/Rat, a `Date`/`Instant`,
-    /// or `y, mo, d, h, mi, s`), validate, and construct the `DateTime`. Returns
-    /// the datetime plus the formatter that still needs *rendering* (a user
-    /// `Callable` — `eval_call_on_value`, the only `self`-dependent step), so a
-    /// `Some` formatter makes the VM fall through while the common no-formatter
-    /// case stays native. All parsing/validation (`temporal::*`) is self-free.
-    #[allow(clippy::type_complexity)]
-    pub(crate) fn build_native_datetime(
-        args: &[Value],
-    ) -> Result<(Value, Option<Value>), RuntimeError> {
+    /// or `y, mo, d, h, mi, s`), validate, and construct the `DateTime`. A
+    /// `:formatter` is only attached: it runs when the value is stringified.
+    /// All parsing/validation (`temporal::*`) is self-free.
+    pub(crate) fn build_native_datetime(args: &[Value]) -> Result<Value, RuntimeError> {
         use crate::builtins::methods_0arg::temporal;
         let mut year: i64 = 1970;
         let mut month: i64 = 1;
@@ -323,6 +324,9 @@ impl Interpreter {
                     ..
                 } if class_name == "Date" => {
                     let (y, m, d) = temporal::date_attrs(&attributes.as_map());
+                    if formatter.is_none() {
+                        formatter = attributes.as_map().get("formatter").cloned();
+                    }
                     year = y;
                     month = m;
                     day = d;
@@ -381,7 +385,7 @@ impl Interpreter {
         }
         temporal::validate_datetime(year, month, day, hour, minute, second, timezone)?;
         let dt = temporal::make_datetime(year, month, day, hour, minute, second, timezone);
-        Ok((dt, formatter))
+        Ok(temporal::with_formatter(dt, formatter))
     }
 
     /// Build a `Duration` instance from `.new` arguments as pure data: the

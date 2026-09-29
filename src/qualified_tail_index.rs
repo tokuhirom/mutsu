@@ -36,6 +36,16 @@ fn tail_index() -> &'static RwLock<TailMap> {
     TAIL_INDEX.get_or_init(|| RwLock::new(FxHashMap::default()))
 }
 
+/// The companion index: a package spelling to every interned qualified name
+/// that has a member under it (#9845). Keyed by each contiguous run of
+/// package components, so `Outer::P::x` is found under `Outer`, `Outer::P`
+/// and `P` -- the same suffix rule `stash_member_tail` applies.
+static PACKAGE_INDEX: OnceLock<RwLock<TailMap>> = OnceLock::new();
+
+fn package_index() -> &'static RwLock<TailMap> {
+    PACKAGE_INDEX.get_or_init(|| RwLock::new(FxHashMap::default()))
+}
+
 fn strip_sigil(s: &str) -> &str {
     s.strip_prefix(['$', '@', '%', '&']).unwrap_or(s)
 }
@@ -67,6 +77,48 @@ pub(crate) fn record(sym: Symbol, text: &'static str) {
             }
         }
     }
+    drop(index);
+    record_packages(sym, body);
+}
+
+/// Record `sym` under every package spelling `body` names a member of: each
+/// contiguous run of its components that stops before the last one.
+// Cost: O(c^2 + n), c = `::` components of `body`, n = its bytes.
+fn record_packages(sym: Symbol, body: &'static str) {
+    let mut starts = vec![0];
+    let mut ends = Vec::new();
+    let mut from = 0;
+    while let Some(off) = body[from..].find("::") {
+        ends.push(from + off);
+        from += off + 2;
+        starts.push(from);
+    }
+    let mut index = package_index().write().unwrap();
+    for (i, &start) in starts.iter().enumerate() {
+        for &end in &ends[i..] {
+            let package = &body[start..end];
+            if package.is_empty() {
+                continue;
+            }
+            let names = index.entry(package).or_default();
+            if names.last() != Some(&sym) {
+                names.push(sym);
+            }
+        }
+    }
+}
+
+/// Every interned qualified name with a member under the package spelled
+/// `package` (see [`PACKAGE_INDEX`]), in interning order. Owned for the same
+/// reason as [`names_ending_in`].
+// Cost: O(k), k = interned qualified names under `package`.
+pub(crate) fn names_under_package(package: &str) -> Vec<Symbol> {
+    package_index()
+        .read()
+        .unwrap()
+        .get(package)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Every interned qualified name with a member spelled `bare` (see the module
@@ -107,5 +159,15 @@ mod tests {
         // A sub-package spelling is never a member.
         assert!(!names_ending_in("Sub::other").contains(&syms[4]));
         assert!(names_ending_in("other").contains(&syms[4]));
+    }
+
+    #[test]
+    fn indexes_every_package_run() {
+        let sym = Symbol::intern("&PkgIdxOuter::PkgIdxP::pkgx/2");
+        for package in ["PkgIdxOuter", "PkgIdxOuter::PkgIdxP", "PkgIdxP"] {
+            assert!(names_under_package(package).contains(&sym), "{package}");
+        }
+        assert!(names_under_package("PkgIdxP::pkgx/2").is_empty());
+        assert!(names_under_package("pkgx").is_empty());
     }
 }

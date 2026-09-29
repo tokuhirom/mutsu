@@ -1869,9 +1869,13 @@ impl Interpreter {
                 return Ok(step.ret);
             }
         }
-        // DateTime/Date formatter rendering
+        // DateTime/Date formatter rendering. The formatter runs against this
+        // invocant on every stringification (nothing is cached), so a value
+        // derived by `.utc`, `.later`, `.clone`, `+` ... renders its own
+        // fields. `Stringy` is included because `~$dt` / interpolation try it
+        // first.
         if args.is_empty()
-            && matches!(method, "Str" | "gist")
+            && matches!(method, "Str" | "gist" | "Stringy")
             && let ValueView::Instance {
                 class_name,
                 attributes,
@@ -3011,15 +3015,7 @@ impl Interpreter {
         if let Some(result) =
             super::methods_temporal::dispatch_temporal_method(&target, method, &args)
         {
-            let val = result?;
-            if let ValueView::Instance { attributes, .. } = val.view()
-                && attributes.contains_key("formatter")
-                && !attributes.contains_key("__formatter_rendered")
-            {
-                let formatter = attributes.as_map().get("formatter").unwrap().clone();
-                return self.render_date_formatter(val, formatter);
-            }
-            return Ok(val);
+            return result;
         }
 
         // Format type-object / instance dispatch (new, arity, count, Callable,

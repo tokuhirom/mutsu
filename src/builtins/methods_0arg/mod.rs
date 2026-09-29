@@ -1236,7 +1236,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Date/DateTime 0-arg methods
     match target.view() {
-        ValueView::Instance { attributes, .. } if has_datetime_attrs(&attributes) => {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if has_datetime_attrs(&attributes) => {
+            // A DateTime subclass keeps its class through `.utc` (Rakudo's
+            // `utc` is `in-timezone(0)`, a clone); the runtime's temporal
+            // dispatch reblesses the result.
+            if method == "utc" && class_name != "DateTime" {
+                return None;
+            }
             if let Some(result) =
                 temporal_dispatch::datetime_method_0arg(&(attributes).as_map(), method)
             {

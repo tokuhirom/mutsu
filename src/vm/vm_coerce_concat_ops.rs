@@ -383,7 +383,12 @@ impl Interpreter {
             ValueView::Package(name) => (name.resolve(), true),
             _ => return Ok(v),
         };
-        if self.has_user_method(&cn, "Stringy") || self.is_native_method(&cn, "Stringy") {
+        // A Date/DateTime `:formatter` is user code the pure stringifier
+        // cannot run.
+        if self.has_user_method(&cn, "Stringy")
+            || self.is_native_method(&cn, "Stringy")
+            || crate::builtins::methods_0arg::temporal::carries_formatter(&v)
+        {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }

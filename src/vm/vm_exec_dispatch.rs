@@ -182,6 +182,10 @@ impl Interpreter {
             && !e.has_backtrace()
             && !e.code().is_some_and(|c| c.is_parse())
         {
+            // Most opcodes do not refresh the observable source line on the
+            // successful path. An error can still arise from any of them, so
+            // locate the failing instruction before capturing its backtrace.
+            self.sync_source_line(code, *ip);
             self.attach_backtrace_to_error(e);
         }
         result
@@ -1083,7 +1087,7 @@ impl Interpreter {
             // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
             // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
-                self.exec_get_pseudo_stash_op(code, *name_idx);
+                self.exec_get_pseudo_stash_op(code, *name_idx)?;
                 *ip += 1;
             }
             // Cost: O(k), k = interned qualified names ending in the key's bare name, for a

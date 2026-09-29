@@ -804,6 +804,10 @@ impl Interpreter {
                         let before_brace = &check_line[..brace_pos];
                         before_brace.contains(')') || !before_brace.contains('(')
                     });
+                // Only a body still open after this line is restored by a later
+                // `}`: `sub x {}` opens and closes on one line, so nothing would
+                // ever pop it and it would shadow the declaration really ending.
+                let body_stays_open = brace_depth > depth_before_line;
                 // For multi declarations, generate a unique key to avoid
                 // overwriting proto or other multi variants.
                 // For anonymous subs, also uniquify to avoid collisions.
@@ -899,7 +903,7 @@ impl Interpreter {
                 );
                 // A declaration that opens a block body remembers itself so the
                 // matching closing brace can restore it for a trailing `#=`.
-                if declaration_opens_body {
+                if body_stays_open {
                     open_block_declarants.push((depth_before_line, declarant.clone()));
                 }
                 last_declarant = Some(declarant.clone());

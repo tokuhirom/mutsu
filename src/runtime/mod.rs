@@ -555,6 +555,7 @@ mod accessors_misc;
 mod accessors_resolve;
 mod accessors_stack;
 mod accessors_stash;
+mod accessors_stash_exists;
 mod accessors_stash_keyed;
 mod accessors_stash_package;
 mod accessors_state;
@@ -3122,6 +3123,9 @@ pub struct Interpreter {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// Declared unit package by requested module path. A module file may be
+    /// loaded as `A::B` while declaring `unit module A::C`.
+    pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Exported variable/constant symbols by package and export tag.

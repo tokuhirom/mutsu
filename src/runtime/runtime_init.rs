@@ -3307,6 +3307,7 @@ impl Interpreter {
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),
+            module_declared_unit_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
             exported_token_defs: Default::default(),
