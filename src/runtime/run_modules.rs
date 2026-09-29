@@ -1355,12 +1355,6 @@ impl Interpreter {
                 // module *exported* MAIN (`proto MAIN(|) is export`, as zef's CLI
                 // does). Remove only non-exported leaked MAINs.
                 self.promote_exported_main_to_global();
-                let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
-                Self::remove_leaked_main_routines(
-                    self.registry_mut().functions_mut(),
-                    &before_function_keys,
-                    main_exported,
-                );
                 // A package-less top-level routine the module declared but did
                 // not export is lexical to the module's compunit, not a shared
                 // global. Move it out of the registry before the loading
@@ -1393,6 +1387,20 @@ impl Interpreter {
             };
             self.restore_export_routines(hidden_export);
             export_result?;
+            // Only now drop the module's non-exported MAINs: its `sub EXPORT`
+            // may hand the routine over itself (`"&MAIN" => &MAIN`), which
+            // needs the candidates still registered while the hook runs and
+            // keeps them as the program's MAIN afterwards.
+            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"))
+                || self.env.get("&MAIN").is_some_and(|v| {
+                    matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
+                });
+            Self::remove_leaked_main_routines(
+                self.registry_mut().functions_mut(),
+                &before_function_keys,
+                main_exported,
+            );
+            self.invalidate_fn_resolution();
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of

@@ -71,6 +71,7 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
         !p.starts_with(':')
             && !p.starts_with("@:")
             && !p.starts_with("%:")
+            && !p.starts_with("&:")
             && !p.starts_with('^')
             && !p.starts_with("@^")
             && !p.starts_with("%^")
@@ -1269,7 +1270,8 @@ impl Interpreter {
                     let named_key = p
                         .strip_prefix(':')
                         .or_else(|| p.strip_prefix("@:"))
-                        .or_else(|| p.strip_prefix("%:"));
+                        .or_else(|| p.strip_prefix("%:"))
+                        .or_else(|| p.strip_prefix("&:"));
                     named_key.is_none()
                 })
                 .count();
@@ -1311,8 +1313,12 @@ impl Interpreter {
                     || p.starts_with("%^")
                     || p.starts_with("&^")
             };
-            let has_named_placeholder =
-                |p: &String| p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:");
+            let has_named_placeholder = |p: &String| {
+                p.starts_with(':')
+                    || p.starts_with("@:")
+                    || p.starts_with("%:")
+                    || p.starts_with("&:")
+            };
             let all_plain_positional = params
                 .iter()
                 .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
@@ -1337,7 +1343,8 @@ impl Interpreter {
                 let named_key = param
                     .strip_prefix(':')
                     .or_else(|| param.strip_prefix("@:"))
-                    .or_else(|| param.strip_prefix("%:"));
+                    .or_else(|| param.strip_prefix("%:"))
+                    .or_else(|| param.strip_prefix("&:"));
                 if let Some(key) = named_key {
                     // Use rfind so the rightmost named argument wins
                     if let Some((_, val)) = named_args.iter().rfind(|(k, _)| k == key) {
@@ -1510,6 +1517,7 @@ impl Interpreter {
                     .name
                     .strip_prefix("@:")
                     .or_else(|| pd.name.strip_prefix("%:"))
+                    .or_else(|| pd.name.strip_prefix("&:"))
                 {
                     rest
                 } else if pd.named {
@@ -2234,6 +2242,7 @@ impl Interpreter {
                     .name
                     .strip_prefix("@:")
                     .or_else(|| pd.name.strip_prefix("%:"))
+                    .or_else(|| pd.name.strip_prefix("&:"))
                 {
                     rest
                 } else if pd.named {
@@ -3680,6 +3689,7 @@ impl Interpreter {
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
+                            || pd.name == format!("&:{}", key)
                             // Named params with sigils: :@l has name "@l", match key "l"
                             || (pd.named
                                 && (pd.name == format!("@{}", key)
