@@ -1,6 +1,6 @@
 # ADR-0072: A resumable exception runs its `CATCH` handler at the throw point, not after unwinding
 
-- Status: Accepted (Slice 1 implemented; Slices 2-3 open — see "Implementation status"); amended 2026-09-25 to cover CONTROL (#9469)
+- Status: Accepted (Slices 1-3 implemented — see "Implementation status" and the 2026-09-29 amendment); amended 2026-09-25 to cover CONTROL (#9469)
 - Date: 2026-09-07
 - Supersedes: none
 - Related: ADR-0001 (Rust-stack-recursive VM), `docs/adr/0052` (a `when` clause produces its value on the stack)
@@ -188,12 +188,12 @@ inline path safe there and unsafe in general.
   (`runtime/catch_inline.rs`) hooked at `OpCode::Die`, `builtin_die` and
   `Exception.throw`. Pinned by `t/exception-resume-cross-frame.t`, which covers
   every row of the table above, including the rows that already passed.
-- **Slice 2 (open)** — row 13: an exception an inner, non-resume-capable `CATCH`
+- **Slice 2 (implemented 2026-09-29, #9896)** — row 13: an exception an inner, non-resume-capable `CATCH`
   rethrew cannot be inline-resumed by an outer one, because the inner marker
   blocks the inline path (correctly — see "Blocking markers"). Doing this properly
   means running the *chain* of handlers inline, innermost first, which is
   Alternative B restricted to rethrow.
-- **Slice 3 (open)** — ungate: run every `CATCH` inline (Alternative B), which
+- **Slice 3 (implemented 2026-09-29, #9896)** — ungate: run every `CATCH` inline (Alternative B), which
   closes rows 16 and 19 for non-resuming handlers too. Trigger: a roast/battery
   failure that turns on handler-vs-`LEAVE` ordering, or on a `CATCH` observing the
   throw's dynamic scope.
@@ -263,3 +263,54 @@ Two consequences:
   stamp returns straight to the region with no call boundary in between. The
   region therefore reconciles its frame's slots when it applies a `Handled`
   stamp.
+
+## Amendment (2026-09-29): every CATCH handler runs at the throw point, as a chain (#9896)
+
+**Decision.** Slices 2 and 3 are done together. `OpCode::TryCatch::catch_resume_capable`
+is removed: every region with an explicit `CATCH` registers its handler's
+bytecode (through the same `shared_snapshot` caches as CONTROL), and only a
+`try` with no `CATCH` stays a blocking marker. At a throw site
+(`Interpreter::try_catch_inline`) the active handlers run innermost first, each
+with only the regions outside it registered:
+
+- resumed: the throw expression yields `Any` and the throwing frame continues;
+- handled (a `when`/`default` matched): the exception is stamped
+  `(token, Handled)` and unwinds to that region, which ends normally;
+- declined, or re-threw an ordinary exception (`.rethrow`): the next outer
+  handler sees it, still at the throw point — this is row 13;
+- raised a control signal (`next`, `return`, ...): the signal is raised from
+  the throw point, on top of the stack, as rakudo does — a `next` reaches the
+  loop innermost at the `die`. A `return` is targeted at the routine that
+  installed the handler, so the routines in between do not take it;
+- reaching a marker: unwind, with the exception stamped by the outermost
+  handler that already ran, so none runs twice.
+
+A region applies a stamp carrying its own token and lets through one carrying a
+smaller token (a region nested inside the stamping one, whose handler already
+ran in the chain). The value a `when`/`default` succeeded with travels next to
+the stamp (`CatchInlinePayload`) for `nqp::handle`'s `catch_value`.
+
+**Same-frame throws are inline too.** A throw in the activation that installed
+the region (same code object *and* same slot-stack base,
+`CatchHandlerEntry::installing_base`) runs the handler on the live
+`self.locals`; the frame-local `resume_ip` path is only reached behind a marker.
+A recursive call of the same routine shares the code object but not the base,
+so it gets the cross-frame treatment.
+
+**The installing frame's view, not the throw site's.** Running every handler
+inline made the old env reconstruction's blind spot common: a lexical the
+handler reads by name was looked up at the throw site, where a same-named
+lexical of the dying routine shadows it (`*%matcher` in `Test.rakumod`'s
+`throws-like` around a `fails-like`). A cross-frame run now
+
+- seeds the handler's slots from the installing activation's live slots, which
+  sit intact below the throw site on the shared slot stack (ADR-0077), and
+  writes changed slots straight back;
+- runs with the installing activation's env — the `saved_env` of the call frame
+  it pushed next — as the parent of the handler's overlay, with the throw
+  site's dynamics copied in so the handler still sees them (row 16); writes to
+  a name the throw site shadows go to that saved env only;
+- takes that activation's saved upvalue array and switches `current_package`
+  to the installing one, so a module-private helper the handler calls resolves.
+
+Rows 16 and 19 now hold for every handler, resuming or not.
