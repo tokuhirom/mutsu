@@ -130,6 +130,7 @@ impl Interpreter {
     pub(super) fn builtin_lastcall(&mut self) -> Result<Value, RuntimeError> {
         // Clear remaining candidates of the innermost live dispatch frame
         // (ADR-0019 E9b-0: chosen by dispatch_token, not a fixed stack order).
+        self.materialize_pending_method_dispatch();
         match self.innermost_dispatch_stack() {
             Some(DispatchFrameKind::Wrap) => {
                 if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
@@ -849,6 +850,7 @@ impl Interpreter {
         // dispatch_token) instead of a fixed wrap-then-method-then-multi order,
         // so an outer sub/method wrap does not shadow a more recently pushed
         // frame on a different stack (and vice versa).
+        self.materialize_pending_method_dispatch();
         let innermost = self.innermost_dispatch_stack();
         // Try wrap dispatch stack first (SUB wraps only — ADR-0019 E9b-2 moved
         // method wraps into `method_dispatch_stack` as `DeferralEntry::Wrapper`
@@ -1752,6 +1754,7 @@ impl Interpreter {
     pub(super) fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
         // ADR-0019 E9b-0: resolve to the innermost live dispatch context, same
         // as dispatch_next_candidate/builtin_lastcall.
+        self.materialize_pending_method_dispatch();
         let innermost = self.innermost_dispatch_stack();
         // Check wrap dispatch stack first (wrapper chains) — only when it is
         // genuinely the innermost context.

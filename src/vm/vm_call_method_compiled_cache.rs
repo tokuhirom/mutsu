@@ -89,6 +89,7 @@ impl Interpreter {
         self.native_lever_a_override_cache.clear();
         self.resolved_seq_cache.clear();
         self.dispatch_multi_candidate.clear();
+        self.deferral_build_context_free.clear();
         self.clear_private_zeroarg_method_cache();
     }
 
