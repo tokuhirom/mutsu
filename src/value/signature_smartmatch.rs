@@ -3,7 +3,7 @@
 use super::signature::{SigInfo, SigParam};
 
 /// Answers "is the type named `t2` the type named `t1` or a subtype of it?" for
-/// the names the built-in table in [`is_supertype_of`] does not know — user
+/// the names the builtin type catalog behind [`is_supertype_of`] does not know — user
 /// classes and roles, which need the runtime's registry.
 pub(crate) type UserTypeCheck<'a> = dyn FnMut(&str, &str) -> bool + 'a;
 
@@ -219,82 +219,16 @@ fn type_accepts(
     }
 }
 
+/// Whether the builtin type `t2` is `t1` or narrower, read from the builtin
+/// type catalog, the one ancestry oracle (ADR-0051 P2): a class in `t2`'s MRO
+/// or a role it composes (`Pair ~~ Associative`, `Array ~~ Positional`).
+/// User classes and roles are answered by the caller's `user_type` fallback.
+// Cost: O(m + r), m = MRO length of `t2`, r = total roles along it.
 fn is_supertype_of(t1: &str, t2: &str) -> bool {
-    if t1 == t2 {
-        return true;
-    }
-    if t1 == "Mu" {
-        return true;
-    }
-    if t1 == "Any" {
-        return t2 != "Mu";
-    }
-    if t1 == "Cool" {
-        return matches!(
-            t2,
-            "Str" | "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "Complex"
-        ) || is_supertype_of("Numeric", t2)
-            || is_supertype_of("Stringy", t2);
-    }
-    if t1 == "Numeric" {
-        return matches!(t2, "Int" | "Num" | "Rat" | "FatRat" | "Complex");
-    }
-    if t1 == "Real" {
-        return matches!(t2, "Int" | "Num" | "Rat" | "FatRat");
-    }
-    if t1 == "Stringy" {
-        return t2 == "Str";
-    }
-    // Built-in parametric roles: `t1` is a role that the built-in type `t2`
-    // composes (`Pair ~~ Associative`, `Array ~~ Positional`, ...). The
-    // signature layer has no registry handle, so the standard-library role
-    // memberships are enumerated here (user roles are matched by the runtime's
-    // `isa_check`/`does_check`, not this pure-value helper). Verified against
-    // reference raku.
     match t1 {
-        "Associative" => matches!(
-            t2,
-            "Hash"
-                | "Map"
-                | "Pair"
-                | "Stash"
-                | "PseudoStash"
-                | "QuantHash"
-                | "Set"
-                | "Bag"
-                | "Mix"
-                | "SetHash"
-                | "BagHash"
-                | "MixHash"
-        ),
-        "Positional" => matches!(t2, "Array" | "List" | "Range" | "Buf" | "Blob" | "Slip"),
-        "Iterable" => matches!(
-            t2,
-            "List"
-                | "Array"
-                | "Seq"
-                | "Range"
-                | "Hash"
-                | "Map"
-                | "Slip"
-                | "Set"
-                | "Bag"
-                | "Mix"
-                | "SetHash"
-                | "BagHash"
-                | "MixHash"
-        ),
-        "Callable" => matches!(
-            t2,
-            "Sub"
-                | "Block"
-                | "Method"
-                | "Submethod"
-                | "Routine"
-                | "WhateverCode"
-                | "Code"
-                | "Macro"
-        ),
-        _ => false,
+        _ if t1 == t2 => true,
+        "Mu" => true,
+        "Any" => t2 != "Mu" && t2 != "Junction",
+        _ => crate::builtins::builtin_type_ancestry::builtin_type_is_a(t2, t1),
     }
 }

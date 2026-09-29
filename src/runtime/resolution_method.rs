@@ -679,11 +679,12 @@ impl Interpreter {
     /// `value_type_name(Nil)` reports "Any", so a `Nil` argument needs its own
     /// MRO here: a `(Nil)` candidate must out-narrow e.g. `(Str() $s)` for a
     /// literal Nil argument (URI's `authority(Nil)`). Kept as its own small
-    /// table rather than folded into `type_hierarchy_distance` (which
+    /// catalog read rather than folded into `type_hierarchy_distance` (which
     /// multi-sub dispatch also uses and has no such special case) since this
     /// is a method-dispatch-specific fix.
     fn nil_type_distance(constraint: &str) -> usize {
-        let nil_mro: &[&str] = &["Nil", "Cool", "Any", "Mu"];
+        let nil_mro = crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain("Nil")
+            .unwrap_or(&[]);
         for (i, &ancestor) in nil_mro.iter().enumerate() {
             if ancestor == constraint {
                 return i;

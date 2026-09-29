@@ -3581,7 +3581,7 @@ impl Interpreter {
                 for candidate in candidates {
                     if values
                         .iter()
-                        .all(|value| self.are_value_matches_type(value, &candidate))
+                        .all(|value| self.type_matches_value(&candidate, value))
                     {
                         return Ok(Value::package(Symbol::intern(&candidate)));
                     }
@@ -3591,7 +3591,7 @@ impl Interpreter {
             [expected] => {
                 let expected_type = self.are_expected_type_name(expected);
                 for (idx, value) in values.iter().enumerate() {
-                    if !self.are_value_matches_type(value, &expected_type) {
+                    if !self.type_matches_value(&expected_type, value) {
                         let actual = self.are_actual_type_name(value);
                         let message = if values.len() == 1 {
                             format!("Expected '{}' but got '{}'", expected_type, actual)
@@ -3665,31 +3665,6 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value.to_string_value(),
         }
-    }
-
-    fn are_value_matches_type(&mut self, value: &Value, expected_type: &str) -> bool {
-        if expected_type == "Cool" {
-            // `Cool` in are() should accept list/type-object values except clearly non-Cool ones.
-            if let ValueView::Instance { class_name, .. } = value.view() {
-                let cls = class_name.resolve();
-                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
-                    return false;
-                }
-            }
-            if let ValueView::Package(name) = value.view() {
-                let cls = name.resolve();
-                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
-                    return false;
-                }
-            }
-            if matches!(
-                value.view(),
-                ValueView::Array(_, _) | ValueView::Seq(_) | ValueView::Slip(_)
-            ) {
-                return true;
-            }
-        }
-        self.type_matches_value(expected_type, value)
     }
 
     fn are_actual_type_name(&mut self, value: &Value) -> String {

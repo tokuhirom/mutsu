@@ -209,6 +209,22 @@ impl Interpreter {
                 Some(crate::builtins::pack::unpack(&bytes, &template))
             }
             "subbuf" => self.dispatch_subbuf(&target, &args),
+            // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
+            // reads any value as a number), so a receiver whose ancestry
+            // declares no `polymod` (`Str`, `Complex`, ...) falls through to
+            // normal resolution and `X::Method::NotFound`, as in Rakudo.
+            "polymod" if !self.e2_native_method_exists(&target, "polymod") => None,
+            // `Instant`/`Duration` get `polymod` from their `Real` role, which
+            // divides the receiver's `Real` value.
+            "polymod"
+                if matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if matches!(class_name.resolve().as_str(), "Instant" | "Duration")) =>
+            {
+                Some(
+                    self.call_method_with_values(target, "Real", vec![])
+                        .and_then(|real| self.method_polymod(&real, &args)),
+                )
+            }
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {
                 // Proxy .VAR returns a decontainerized copy

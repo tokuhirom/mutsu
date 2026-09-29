@@ -301,6 +301,16 @@ impl Interpreter {
         {
             return None;
         }
+        // ADR-0051 §3 (#9948): a name only some `Cool` subtypes declare
+        // (`succ`, `base`, `lazy`, ...) is answered by receiver-blind
+        // cascades that coerce ANY receiver, so a Match, Str, Int, Pair or
+        // Complex whose own ancestry lacks it must reach normal resolution,
+        // which throws `X::Method::NotFound` as Rakudo does.
+        if Self::cool_subtype_only_builtin_method(method_name)
+            && !self.e2_native_method_exists(target, method_sym.as_str())
+        {
+            return None;
+        }
         // Lazy Match: class is statically "Match" — mirror the Instance
         // bypasses below without materializing. (A Match never matches
         // Real/Numeric, and the Supply/Supplier arms cannot apply.)
