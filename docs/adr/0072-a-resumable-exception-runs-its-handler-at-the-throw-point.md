@@ -313,4 +313,18 @@ lexical of the dying routine shadows it (`*%matcher` in `Test.rakumod`'s
 - takes that activation's saved upvalue array and switches `current_package`
   to the installing one, so a module-private helper the handler calls resolves.
 
+A cross-frame handler whose installing call frame cannot be found (the throw
+ran on a path that pushed none, like a lazy `gather` reified after its region
+was entered) is not run inline: the chain stops and the exception unwinds to
+it, as before this amendment.
+
+**Rust-side catch points are markers too.** Rust code that runs user code and
+handles its failure itself — the LEAVE queue guard that collects phaser
+exceptions into `X::PhaserExceptions`, the `react` event loop that wraps a
+`whenever`'s error in `X::React::Died`, the multi-dispatch message builder that
+falls back when a user `.raku` dies — pushes a catch marker
+(`push_catch_marker` / `with_catch_marker`). Otherwise an outer handler would
+run at the throw for an exception that never reaches it, and again for the one
+that does. A new such site needs the same marker.
+
 Rows 16 and 19 now hold for every handler, resuming or not.
