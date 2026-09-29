@@ -311,6 +311,19 @@ pub(crate) fn native_method_0arg(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
+    // Cost: O(1), one lookup in the Attribute metadata map.
+    if method == "DEPRECATED"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "Attribute"
+        && let Some(message) = attributes.as_map().get("DEPRECATED")
+    {
+        return Some(Ok(message.clone()));
+    }
+
     // Cost: O(n), n = bytes in the format string scanned for directives.
     if method == "directives"
         && let ValueView::Instance {
