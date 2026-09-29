@@ -1,4 +1,5 @@
 use super::vm_control_ops::ForLoopSpec;
+use super::vm_for_loop_map_grep::MapGrepStream;
 use super::*;
 
 impl Interpreter {
@@ -247,6 +248,29 @@ impl Interpreter {
         if let ValueView::Seq(body) = iterable.view() {
             body.claim_single_use_once()?;
         }
+        // A not-yet-run `.map`/`.grep` is pulled one iteration at a time
+        // rather than reified up front, so the callback and the body
+        // interleave and a `last` leaves the rest unmapped (#9936).
+        if self.for_streams_map_grep(code, spec)
+            && let Some(mut stream) = MapGrepStream::claim(&iterable)
+        {
+            let loop_end = spec.body_end as usize;
+            let result = self.exec_for_loop_body_from(
+                code,
+                spec,
+                &[],
+                None,
+                Some(&mut stream),
+                *ip + 1,
+                loop_end,
+                compiled_fns,
+                0,
+            );
+            stream.finish();
+            result?;
+            *ip = loop_end;
+            return Ok(());
+        }
         iterable = self.reify_or_consume_seq_target(iterable, "for")?;
         // A plain Array bound one element per iteration is iterated in place,
         // reading the live array by index (`ForItemIter::Live`): no copy at
@@ -462,6 +486,25 @@ impl Interpreter {
         }
         *ip = loop_end;
         Ok(())
+    }
+
+    /// Whether this loop can stream a `.map`/`.grep` Seq (see
+    /// `vm_for_loop_map_grep.rs`): a sequential loop whose items are bound as
+    /// they come. A threaded loop batches its items, a writeback or
+    /// source-variable loop writes into a materialized source, and a
+    /// zero-parameter signature reports the first chunk's size before
+    /// running — those keep the reified path.
+    // Cost: O(1).
+    fn for_streams_map_grep(&self, code: &CompiledCode, spec: &ForLoopSpec) -> bool {
+        !spec.threaded
+            && !spec.do_writeback
+            && !spec.kv_mode
+            && !spec.zero_positional_params
+            && spec.source_var_names.is_empty()
+            && !self
+                .container_ref_var
+                .as_ref()
+                .is_some_and(|(_, _, fp)| *fp == Self::resume_code_fp(code))
     }
 
     /// Whether `for` iterates `iterable` in place (`ForItemIter::Live`): a

@@ -1,4 +1,5 @@
 use super::vm_control_ops::ForLoopSpec;
+use super::vm_for_loop_map_grep::MapGrepStream;
 use super::*;
 
 impl Interpreter {
@@ -129,6 +130,36 @@ impl Interpreter {
         spec: &ForLoopSpec,
         items: &[Value],
         live: Option<&Value>,
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &CompiledFns,
+        resume_index: usize,
+    ) -> Result<bool, RuntimeError> {
+        self.exec_for_loop_body_from(
+            code,
+            spec,
+            items,
+            live,
+            None,
+            body_start,
+            loop_end,
+            compiled_fns,
+            resume_index,
+        )
+    }
+
+    /// [`Self::exec_for_loop_body`] over one of three item sources: `items`
+    /// materialized before the loop, a `live` Array read in place, or a
+    /// `.map`/`.grep` `stream` pulled one iteration at a time (#9936). Only
+    /// one of `live` and `stream` is ever set, and `items` is empty then.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn exec_for_loop_body_from(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        items: &[Value],
+        live: Option<&Value>,
+        stream: Option<&mut MapGrepStream>,
         body_start: usize,
         loop_end: usize,
         compiled_fns: &CompiledFns,
@@ -292,7 +323,7 @@ impl Interpreter {
         let items: &[Value] = promoted_items.as_deref().unwrap_or(items);
         // A live Array source (`live`, see `ForItemIter::Live`) is read one
         // element per iteration instead of being copied here.
-        let chunked_items: Vec<Value> = if live.is_some() {
+        let chunked_items: Vec<Value> = if live.is_some() || stream.is_some() {
             Vec::new()
         } else if spec.chunks_items() {
             items
@@ -651,14 +682,35 @@ impl Interpreter {
         // Set per iteration at the bind site below; the initial value is never
         // read.
         let mut writes_back_loop_var;
-        let loop_items = match live {
-            Some(array) => ForItemIter::Live {
+        let mut loop_items = match (live, stream) {
+            (Some(array), _) => ForItemIter::Live {
                 array: array.clone(),
                 next: resume_index,
             },
-            None => ForItemIter::Owned(chunked_items.into_iter().enumerate().skip(resume_index)),
+            (None, Some(stream)) => ForItemIter::Pulled {
+                stream,
+                next: resume_index,
+                pos: 0,
+                pending: std::collections::VecDeque::new(),
+                ended: false,
+            },
+            (None, None) => {
+                ForItemIter::Owned(chunked_items.into_iter().enumerate().skip(resume_index))
+            }
         };
-        'for_loop: for (idx, item) in loop_items {
+        // A pull of a streamed `.map`/`.grep` that throws (the callback
+        // died) ends the loop between iterations, like its natural end, and
+        // is raised once the loop has restored what it bound.
+        let mut pull_error: Option<RuntimeError> = None;
+        'for_loop: loop {
+            let (idx, item) = match self.next_for_loop_item(&mut loop_items, arity, spec) {
+                Ok(Some(next)) => next,
+                Ok(None) => break,
+                Err(e) => {
+                    pull_error = Some(e);
+                    break;
+                }
+            };
             let mut item = if param_is_copy {
                 item.detach_shared_container()
             } else {
@@ -1310,12 +1362,23 @@ impl Interpreter {
                         // earlier element before the producer re-enters; the
                         // source-entry guard must compare the same cell, not
                         // the old by-value snapshot that preceded promotion.
-                        let mut resume_items = match live {
-                            Some(array) => match array.view() {
+                        let mut resume_items = match (live, &mut loop_items) {
+                            (Some(array), _) => match array.view() {
                                 ValueView::Array(current, _) => current.to_vec(),
                                 _ => Vec::new(),
                             },
-                            None => items.to_vec(),
+                            // A streamed `.map`/`.grep` has to be pulled
+                            // whole for the list continuation to hold it.
+                            (None, ForItemIter::Pulled { stream, .. }) => {
+                                match self.map_grep_stream_drain(stream) {
+                                    Ok(all) => all,
+                                    Err(pull_err) => {
+                                        e = pull_err;
+                                        Vec::new()
+                                    }
+                                }
+                            }
+                            (None, _) => items.to_vec(),
                         };
                         if let Some(slot) = resume_items.get_mut(idx) {
                             *slot = item;
@@ -1370,21 +1433,8 @@ impl Interpreter {
                         // binding (`for @!ranges -> $r { ... and return True }`
                         // inside a method clobbered the caller's `-> $r` param —
                         // Text::CSV RangeSet.in vs method CSV's gather loop).
-                        if let Some((name, saved_val, colliding_slot)) = &saved_param {
-                            if let Some(slot) = colliding_slot
-                                && (*slot as usize) < self.locals.len()
-                            {
-                                self.locals[*slot as usize] =
-                                    saved_val.clone().unwrap_or(Value::NIL);
-                            }
-                            match saved_val {
-                                Some(v) => {
-                                    self.env_mut().insert(name.clone(), v.clone());
-                                }
-                                None => {
-                                    self.env_mut().remove(name);
-                                }
-                            }
+                        if let Some(entry) = saved_param {
+                            self.restore_saved_for_param(entry);
                         }
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
@@ -1468,7 +1518,13 @@ impl Interpreter {
         // body exits before this point, so no entry is pushed and the matching
         // opcode is likewise skipped as the frame unwinds.
         if let Some(entry) = saved_param {
-            self.for_param_restore_stack.push(entry);
+            if pull_error.is_some() {
+                // No `RestoreForParam` will run for a loop that raises, so
+                // restore the binding now, as the body-error path does.
+                self.restore_saved_for_param(entry);
+            } else {
+                self.for_param_restore_stack.push(entry);
+            }
         }
         self.pop_loop_local_scope(code);
         // Slice F (env<->locals coherence, docs/env-locals-coherence.md): a
@@ -1491,6 +1547,9 @@ impl Interpreter {
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind;
         self.restore_loop_topic(saved_topic, saved_topic_local);
+        if let Some(e) = pull_error {
+            return Err(e);
+        }
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -1577,7 +1636,7 @@ impl Interpreter {
 }
 
 /// The items a `for` loop body iterates, as `(index, item)`.
-enum ForItemIter {
+enum ForItemIter<'a> {
     /// A list materialized before the loop, skipping to the resume index.
     Owned(std::iter::Skip<std::iter::Enumerate<std::vec::IntoIter<Value>>>),
     /// A plain Array read in place, one element per iteration, re-reading its
@@ -1585,14 +1644,117 @@ enum ForItemIter {
     /// an element pushed or stored by the body is seen when the loop gets
     /// there, as Rakudo's Array iterator does.
     Live { array: Value, next: usize },
+    /// A not-yet-run `.map`/`.grep` Seq, pulled one iteration's worth of
+    /// elements at a time (#9936). `next` counts iterations, `pos` the
+    /// stream elements read; `pending` holds the rest of an autothreaded
+    /// Junction's eigenstates, and `ended` is set once the stream ran out or
+    /// reached the `IterationEnd` sentinel.
+    Pulled {
+        stream: &'a mut MapGrepStream,
+        next: usize,
+        pos: usize,
+        pending: std::collections::VecDeque<Value>,
+        ended: bool,
+    },
 }
 
-impl Iterator for ForItemIter {
-    type Item = (usize, Value);
+impl Interpreter {
+    /// The next `(index, item)` a `for` loop binds, pulling it first from a
+    /// streamed `.map`/`.grep` (one element, or one `arity`-element chunk for
+    /// a loop that chunks its items).
+    // Cost: O(1) for a materialized or live source; for a stream, one
+    // callback call per source element the item needs.
+    fn next_for_loop_item(
+        &mut self,
+        items: &mut ForItemIter<'_>,
+        arity: usize,
+        spec: &ForLoopSpec,
+    ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        let ForItemIter::Pulled {
+            stream,
+            next,
+            pos,
+            pending,
+            ended,
+        } = items
+        else {
+            return Ok(items.next_ready());
+        };
+        let width = if spec.chunks_items() { arity } else { 1 };
+        let mut chunk = Vec::with_capacity(width);
+        while chunk.len() < width {
+            if let Some(v) = pending.pop_front() {
+                chunk.push(v);
+                continue;
+            }
+            if *ended {
+                break;
+            }
+            let Some(v) = self.map_grep_stream_chunk(stream, *pos, 1)?.pop() else {
+                *ended = true;
+                break;
+            };
+            *pos += 1;
+            // The `IterationEnd` sentinel ends iteration wherever it sits
+            // (#9809), after the partial chunk before it.
+            if v.is_iteration_end() {
+                *ended = true;
+                break;
+            }
+            // A parameter typed `Any` or narrower iterates a Junction's
+            // eigenstates one by one, as the materialized path expands them.
+            if spec.autothread_junctions
+                && let ValueView::Junction { values, .. } = v.view()
+            {
+                pending.extend(values.iter().cloned());
+                continue;
+            }
+            chunk.push(v);
+        }
+        if chunk.is_empty() {
+            return Ok(None);
+        }
+        let idx = *next;
+        *next += 1;
+        let item = if spec.chunks_items() {
+            Value::array(chunk)
+        } else {
+            chunk.swap_remove(0)
+        };
+        Ok(Some((idx, item)))
+    }
 
+    /// Put back the binding a single named loop parameter shadowed, when the
+    /// loop exits without reaching its `RestoreForParam` op (`return`, an
+    /// exception, an outer loop's `last`/`next`). Leaving the final
+    /// iteration value bound leaks it out of the routine via
+    /// `merge_method_env` when the CALLER has a same-named binding.
     // Cost: O(1).
-    fn next(&mut self) -> Option<(usize, Value)> {
+    fn restore_saved_for_param(&mut self, entry: (String, Option<Value>, Option<u32>)) {
+        let (name, saved_val, colliding_slot) = entry;
+        if let Some(slot) = colliding_slot
+            && (slot as usize) < self.locals.len()
+        {
+            self.locals[slot as usize] = saved_val.clone().unwrap_or(Value::NIL);
+        }
+        match saved_val {
+            Some(v) => {
+                self.env_mut().insert(name, v);
+            }
+            None => {
+                self.env_mut().remove(&name);
+            }
+        }
+    }
+}
+
+impl ForItemIter<'_> {
+    /// The next item of a materialized or live source. Never called on
+    /// [`ForItemIter::Pulled`], which needs the interpreter to pull.
+    // Cost: O(1).
+    fn next_ready(&mut self) -> Option<(usize, Value)> {
         match self {
+            ForItemIter::Pulled { .. } => None,
             ForItemIter::Owned(items) => items.next(),
             ForItemIter::Live { array, next } => {
                 let ValueView::Array(items, _) = array.view() else {
