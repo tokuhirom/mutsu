@@ -1926,10 +1926,24 @@ impl Interpreter {
                 {
                     val = def.clone();
                 }
-                if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
-                    && !name.starts_with('%')
-                    && !name.starts_with('@')
-                {
+                // Hoisted from the write-throughs below, which read it too: an
+                // expression-position `my` declares a NEW variable, so it is
+                // never a store to a captured free variable.
+                let fresh_binding_decl =
+                    self.vardecl_context().get() && code.expr_declared_syms.contains(&name_sym);
+                // #10049: a routine's plain assignment to its own free variable
+                // is checked against the cell it lands in, not against a
+                // same-named typed `my` of the caller inherited through env.
+                let (scalar_constraint, constraint_from_cell) = if name.starts_with(['%', '@']) {
+                    (None, false)
+                } else {
+                    self.by_name_store_scalar_constraint(
+                        &name,
+                        name_sym,
+                        !raw_mode && !is_bind_ctx && !is_rebind && !fresh_binding_decl,
+                    )
+                };
+                if let Some(constraint) = scalar_constraint {
                     // A Nil ASSIGNED to a typed scalar resets it to its type
                     // object (`my Str $x = "a"; $x = Nil` leaves `$x === Str`),
                     // mirroring `exec_set_local_op`'s STORE-time reset. This
@@ -1949,7 +1963,14 @@ impl Interpreter {
                         && constraint != "Nil"
                         && self.var_default(&name).is_none()
                     {
-                        val = self.typed_scalar_nil_seed_value(&name, &constraint);
+                        val = if constraint_from_cell {
+                            self.typed_scalar_nil_seed_value_with_base(
+                                &constraint,
+                                Some(constraint.clone()),
+                            )
+                        } else {
+                            self.typed_scalar_nil_seed_value(&name, &constraint)
+                        };
                     } else {
                         if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
                             // When assigning an unhandled Failure to a typed variable
@@ -2265,16 +2286,14 @@ impl Interpreter {
                 // since each would replace the boxed `Proxy` with the plain
                 // value, which is exactly the rebinding a `=` must not do. The
                 // captured lexical can sit in either store, so both are asked.
-                // `fresh_binding_decl` (hoisted here from the write-throughs,
-                // which read it too) is the exclusion they already state: an
+                // `fresh_binding_decl` (computed above, before the type check;
+                // the write-throughs read it too) is the exclusion they state: an
                 // expression-position `my` of the same name declares a NEW
                 // variable rather than writing the captured `Proxy`.
                 //
                 // Tag probes first (`is_proxy_value` / `is_container_ref`), so
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
-                let fresh_binding_decl =
-                    self.vardecl_context().get() && code.expr_declared_syms.contains(&name_sym);
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
                     let proxy_val = match self
                         .unit_lexical_slot(&name)
