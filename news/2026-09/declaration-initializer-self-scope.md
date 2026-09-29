@@ -16,11 +16,15 @@ default(%h<foo>)`. It runs for every compiled unit, so the separate
 top-level-only check that `EVAL` used to run has been removed. Sigilless
 declarations (`my \x = $x`) and dynamic variables are exempt.
 
-**A nested code object sees the new binding.** The compiler now declares
-the variable's local slot before it compiles the initializer, so
-`my $x = do { $x }` reads the new `Any` and `my $x = sub { $x }` captures
-the new variable, not the shadowed outer one. `SetVarDynamic` with
-`DeclReset::Fresh` now always resets the binding before the initializer
-runs. Previously the first execution of a body-local declaration left an
-outer binding visible, so `my $*X = $*X + 1` in a sub read the caller's
-`$*X`; it now reads the fresh `Any`, as it does in rakudo.
+**A nested code object sees the new binding.** The same walk marks a
+declaration whose initializer reads the new binding with the internal
+`__init_sees_self` trait. That covers a nested code object for a lexical
+(`my $x = do { $x }`, `my $x = sub { $x }`) and any read for a dynamic
+variable (`my $*X = $*X + 1`). For those declarations only, the compiler
+declares the local slot before it compiles the initializer, and it emits the
+new `DeclReset::Shadow`, which binds a fresh `Any` over an outer same-named
+binding before the initializer runs. The nested block therefore reads the
+new `Any`, the closure captures the new variable, and the dynamic lookup no
+longer reads the caller's `$*X`. Every other declaration keeps its old
+order. Compiler-synthesized self-copies depend on it: `-> $_ is copy` lowers
+to `my $_ = $_`, and untyped `my @c .= new(...)` is `my @c = @c.new(...)`.

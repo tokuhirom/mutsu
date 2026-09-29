@@ -49,6 +49,11 @@ use crate::ast::{ParamDef, Stmt};
 use expr::{walk_call_arg, walk_expr};
 use std::collections::HashSet;
 
+/// The internal trait marking a declaration initialized by `.=` on its own
+/// (untyped) variable: `my @c .= new(...)` is `my @c = @c.new(...)`, whose
+/// self-read is the invocant, not a use in its own initializer.
+pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
+
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).
 struct Scope {
@@ -74,12 +79,22 @@ pub(crate) enum ScopeDiagnostic {
     SelfInitializer(String, i64),
 }
 
+/// A declaration whose initializer is being walked.
+struct Initializing {
+    /// The declared key (`$x`, or `$*X` for a dynamic variable).
+    key: String,
+    /// The scope depth the declaration is in.
+    depth: usize,
+    /// Whether the initializer reads the new binding: from a nested code
+    /// object for a lexical, from anywhere for a dynamic variable.
+    sees_self: bool,
+}
+
 struct Ctx {
     scopes: Vec<Scope>,
     line: i64,
-    /// Declarations whose initializer is being walked: the declared key and
-    /// the scope depth it was declared at.
-    initializing: Vec<(String, usize)>,
+    /// Declarations whose initializer is being walked, innermost last.
+    initializing: Vec<Initializing>,
     /// The first offense found, if any.
     found: Option<ScopeDiagnostic>,
 }
@@ -93,14 +108,22 @@ impl Ctx {
         if depth == 0 {
             return;
         }
-        if self.found.is_none()
-            && self
-                .initializing
+        if let Some(init) = self.initializing.iter_mut().rev().find(|i| i.key == key) {
+            if init.depth == depth {
+                if self.found.is_none() {
+                    self.found = Some(ScopeDiagnostic::SelfInitializer(key, self.line));
+                }
+                return;
+            }
+            // A nested code object in the initializer reads the new binding,
+            // unless a scope in between declares its own `key`.
+            let (from, to) = (init.depth, depth);
+            if !self.scopes[from..to]
                 .iter()
-                .any(|(k, d)| *d == depth && *k == key)
-        {
-            self.found = Some(ScopeDiagnostic::SelfInitializer(key, self.line));
-            return;
+                .any(|s| s.declared.contains(&key))
+            {
+                init.sees_self = true;
+            }
         }
         if self.scopes[depth - 1].declared.contains(&key) {
             return; // resolves locally
@@ -110,6 +133,14 @@ impl Ctx {
             .any(|s| s.declared.contains(&key));
         if outer {
             self.scopes[depth - 1].ref_outer.insert(key);
+        }
+    }
+
+    /// Register a reference to the dynamic variable `key` (`$*X`): any read
+    /// of it in its own declaration's initializer sees the new binding.
+    fn reference_dynamic(&mut self, key: &str) {
+        if let Some(init) = self.initializing.iter_mut().rev().find(|i| i.key == key) {
+            init.sees_self = true;
         }
     }
 
@@ -169,7 +200,11 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
 
 /// Returns the first `my`/`state` redeclaration of a referenced outer symbol or
 /// self-referencing initializer, or `None` if there is no such offense.
-pub(crate) fn find_scope_diagnostic(stmts: &[Stmt]) -> Option<ScopeDiagnostic> {
+///
+/// Also marks each declaration whose initializer reads the new binding (see
+/// [`Initializing::sees_self`]) with the internal `__init_sees_self` trait, so
+/// the compiler resolves those reads to it.
+pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
     let mut ctx = Ctx {
         scopes: vec![Scope::new()],
         line: 0,
@@ -193,14 +228,14 @@ fn seed_params(params: &[String], param_defs: &[ParamDef], ctx: &mut Ctx) {
     }
 }
 
-fn walk_scoped_body(body: &[Stmt], ctx: &mut Ctx) {
+fn walk_scoped_body(body: &mut [Stmt], ctx: &mut Ctx) {
     ctx.scopes.push(Scope::new());
     walk_stmts(body, ctx);
     ctx.scopes.pop();
 }
 
 fn walk_scoped_body_with_params(
-    body: &[Stmt],
+    body: &mut [Stmt],
     params: &[String],
     param_defs: &[ParamDef],
     ctx: &mut Ctx,
@@ -211,23 +246,41 @@ fn walk_scoped_body_with_params(
     ctx.scopes.pop();
 }
 
-fn walk_stmts(stmts: &[Stmt], ctx: &mut Ctx) {
-    for (i, s) in stmts.iter().enumerate() {
+fn walk_stmts(stmts: &mut [Stmt], ctx: &mut Ctx) {
+    for i in 0..stmts.len() {
         // `my \x = ...` lowers to a `VarDecl` of `x` followed by a sigilless
         // marker. The sigilless `x` is a different symbol from `$x`, so the
         // initializer may freely read `$x`.
-        if let Stmt::VarDecl { name, .. } = s
-            && matches!(stmts.get(i + 1), Some(Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n)) if n == name)
-        {
-            walk_var_decl(s, false, ctx);
+        let sigilless = match (&stmts[i], stmts.get(i + 1)) {
+            (
+                Stmt::VarDecl { name, .. },
+                Some(Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n)),
+            ) => n == name,
+            _ => false,
+        };
+        if sigilless {
+            walk_var_decl(&mut stmts[i], false, ctx);
         } else {
-            walk_stmt(s, ctx);
+            walk_stmt(&mut stmts[i], ctx);
         }
     }
 }
 
+/// The key a dynamic declaration (`*X`, `@*X`) is read back under.
+fn dynamic_key(sigil: char, name: &str) -> Option<String> {
+    name.starts_with('*').then(|| format!("{sigil}{name}"))
+}
+
+/// Split a declared name into its sigil and the rest (`"x"` is a `$`).
+fn split_sigil(name: &str) -> (char, &str) {
+    match name.chars().next() {
+        Some(c @ ('@' | '%' | '$')) => (c, &name[1..]),
+        _ => ('$', name),
+    }
+}
+
 /// Walk a declaration; `check_self` arms the self-initializer check.
-fn walk_var_decl(stmt: &Stmt, check_self: bool, ctx: &mut Ctx) {
+fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     let Stmt::VarDecl {
         name,
         expr,
@@ -251,21 +304,38 @@ fn walk_var_decl(stmt: &Stmt, check_self: bool, ctx: &mut Ctx) {
     // The declared name is in scope for its own initializer, so walk the RHS
     // *after* declaring (a self-reference is then local, not outer) -- and a
     // direct self-reference there is `X::Syntax::Variable::Initializer`.
-    let armed = check_self && key.is_some();
-    if armed && let Some(key) = key {
-        ctx.initializing.push((key, ctx.scopes.len()));
+    let (sigil, bare) = split_sigil(name);
+    let check_self = check_self
+        && !custom_traits
+            .iter()
+            .any(|(t, _)| t == METHOD_ASSIGN_DECL_TRAIT);
+    let armed_key = if check_self {
+        key.or_else(|| dynamic_key(sigil, bare))
+    } else {
+        None
+    };
+    let armed = armed_key.is_some();
+    if let Some(key) = armed_key {
+        ctx.initializing.push(Initializing {
+            key,
+            depth: ctx.scopes.len(),
+            sees_self: false,
+        });
     }
     walk_expr(expr, ctx);
     // `is default(...)` and other trait arguments are part of the declaration.
-    for arg in custom_traits.iter().filter_map(|(_, arg)| arg.as_ref()) {
+    for arg in custom_traits.iter_mut().filter_map(|(_, arg)| arg.as_mut()) {
         walk_expr(arg, ctx);
     }
-    if armed {
-        ctx.initializing.pop();
+    if armed
+        && let Some(init) = ctx.initializing.pop()
+        && init.sees_self
+    {
+        custom_traits.push(("__init_sees_self".to_string(), None));
     }
 }
 
-fn walk_stmt(stmt: &Stmt, ctx: &mut Ctx) {
+fn walk_stmt(stmt: &mut Stmt, ctx: &mut Ctx) {
     match stmt {
         Stmt::SetLine(n) => ctx.line = *n,
 

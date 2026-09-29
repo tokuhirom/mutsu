@@ -682,7 +682,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // A `whenever` outside a `supply`/`react` block is a compile-time
                 // error in rakudo (X::Comp::WheneverOutOfScope).
                 Err(build_whenever_out_of_scope_error(line))
-            } else if let Some(diag) = outer_redecl::find_scope_diagnostic(&stmts) {
+            } else if let Some(diag) = outer_redecl::find_scope_diagnostic(&mut stmts) {
                 // Redeclaring a lexical after referencing its outer binding in the
                 // same scope (X::Redeclaration::Outer), or `my $x = $x`
                 // (X::Syntax::Variable::Initializer), is a compile-time error.

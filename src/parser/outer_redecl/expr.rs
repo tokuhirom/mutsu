@@ -1,9 +1,11 @@
 //! Expression half of the declaration-scope walk (see the parent module).
 
-use super::{Ctx, decl_key, ref_key, walk_scoped_body, walk_scoped_body_with_params, walk_stmt};
+use super::{
+    Ctx, decl_key, dynamic_key, ref_key, walk_scoped_body, walk_scoped_body_with_params, walk_stmt,
+};
 use crate::ast::Expr;
 
-pub(super) fn walk_call_arg(arg: &crate::ast::CallArg, ctx: &mut Ctx) {
+pub(super) fn walk_call_arg(arg: &mut crate::ast::CallArg, ctx: &mut Ctx) {
     use crate::ast::CallArg;
     match arg {
         CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => walk_expr(e, ctx),
@@ -15,23 +17,11 @@ pub(super) fn walk_call_arg(arg: &crate::ast::CallArg, ctx: &mut Ctx) {
     }
 }
 
-pub(super) fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
+pub(super) fn walk_expr(expr: &mut Expr, ctx: &mut Ctx) {
     match expr {
-        Expr::Var(n) => {
-            if let Some(k) = ref_key('$', n) {
-                ctx.reference(k);
-            }
-        }
-        Expr::ArrayVar(n) => {
-            if let Some(k) = ref_key('@', n) {
-                ctx.reference(k);
-            }
-        }
-        Expr::HashVar(n) => {
-            if let Some(k) = ref_key('%', n) {
-                ctx.reference(k);
-            }
-        }
+        Expr::Var(n) => reference(ctx, '$', n),
+        Expr::ArrayVar(n) => reference(ctx, '@', n),
+        Expr::HashVar(n) => reference(ctx, '%', n),
 
         // `do STMT` (statement form) shares the enclosing scope, so an inline
         // `do my $x = 5` declares in the current scope. `do { ... }` is a
@@ -59,7 +49,7 @@ pub(super) fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
             ..
         } => walk_scoped_body_with_params(body, params, param_defs, ctx),
         Expr::Lambda { param, body, .. } => {
-            walk_scoped_body_with_params(body, std::slice::from_ref(param), &[], ctx)
+            walk_scoped_body_with_params(body, std::slice::from_ref(&*param), &[], ctx)
         }
         // ADR-0033 Phase 1: an un-expanded WhateverCurry marker introduces no
         // named bindings of its own yet (its body still has literal `*`
@@ -221,5 +211,14 @@ pub(super) fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
         }
 
         _ => {}
+    }
+}
+
+/// Register a read of the variable `sigil` + `name`.
+fn reference(ctx: &mut Ctx, sigil: char, name: &str) {
+    if let Some(k) = ref_key(sigil, name) {
+        ctx.reference(k);
+    } else if let Some(k) = dynamic_key(sigil, name) {
+        ctx.reference_dynamic(&k);
     }
 }
