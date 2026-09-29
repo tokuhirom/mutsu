@@ -1052,16 +1052,11 @@ impl Interpreter {
         // enclosing package `R`, so the lexical package's ancestors are the
         // only way a `multi sub` declared in `R`'s body stays reachable.
         if let Some(pkg) = lexical {
-            let mut probe = pkg.split('[').next().unwrap_or(pkg);
-            while let Some((outer, _)) = probe.rsplit_once("::") {
-                if outer.is_empty() || outer == "GLOBAL" {
-                    break;
-                }
-                let sym = Symbol::intern(outer);
-                if !out.contains(&sym) {
+            let base = Symbol::intern(pkg.split('[').next().unwrap_or(pkg));
+            for sym in crate::qualified::package_ancestors(base).skip(1) {
+                if !crate::qualified::is_global_package(sym) && !out.contains(&sym) {
                     out.push(sym);
                 }
-                probe = outer;
             }
         }
         out.push(global);
