@@ -1370,7 +1370,7 @@ impl Interpreter {
                             // A streamed `.map`/`.grep` has to be pulled
                             // whole for the list continuation to hold it.
                             (None, ForItemIter::Pulled { stream, .. }) => {
-                                match self.map_grep_stream_drain(stream) {
+                                match self.for_map_grep_stream_drain(stream) {
                                     Ok(all) => all,
                                     Err(pull_err) => {
                                         e = pull_err;
@@ -1690,7 +1690,7 @@ impl Interpreter {
             if *ended {
                 break;
             }
-            let Some(v) = self.map_grep_stream_chunk(stream, *pos, 1)?.pop() else {
+            let Some(v) = self.for_map_grep_stream_chunk(stream, *pos, 1)?.pop() else {
                 *ended = true;
                 break;
             };

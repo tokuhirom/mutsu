@@ -56,7 +56,7 @@ impl Interpreter {
     /// pulling only as many source elements as that needs.
     // Cost: one callback call per source element up to the `start + n`-th
     // element produced, plus O(n) to copy the chunk out.
-    pub(super) fn map_grep_stream_chunk(
+    pub(super) fn for_map_grep_stream_chunk(
         &mut self,
         stream: &mut MapGrepStream,
         start: usize,
@@ -89,7 +89,7 @@ impl Interpreter {
     /// continuation). Returns every element produced.
     // Cost: one callback call per source element not yet pulled, plus O(e)
     // to copy the elements out, e = elements produced.
-    pub(super) fn map_grep_stream_drain(
+    pub(super) fn for_map_grep_stream_drain(
         &mut self,
         stream: &mut MapGrepStream,
     ) -> Result<Vec<Value>, RuntimeError> {
