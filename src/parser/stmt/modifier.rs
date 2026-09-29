@@ -399,6 +399,15 @@ fn block_follows_modifier_condition(r: &str) -> bool {
     r.starts_with('{') || r.starts_with("->")
 }
 
+/// A bare block to the left of `while`/`until` is the modifier's operand: the
+/// loop repeatedly evaluates the Block value without invoking its body.
+fn while_modifier_operand(stmt: Stmt) -> Stmt {
+    match stmt {
+        Stmt::Block(body) => Stmt::Expr(crate::ast::make_anon_sub(body)),
+        other => other,
+    }
+}
+
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
 /// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
@@ -883,7 +892,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             r,
             Stmt::While {
                 cond,
-                body: vec![stmt],
+                body: vec![while_modifier_operand(stmt)],
                 label: None,
                 is_statement_modifier: true,
                 is_until: false,
@@ -910,7 +919,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
                 },
-                body: vec![stmt],
+                body: vec![while_modifier_operand(stmt)],
                 label: None,
                 is_statement_modifier: true,
                 is_until: true,
