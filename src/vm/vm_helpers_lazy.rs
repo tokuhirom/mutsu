@@ -610,6 +610,21 @@ impl Interpreter {
             if let Some(iterator) = body.take_iterator_source()? {
                 return Ok(iterator);
             }
+            // A not-yet-finished `.map`/`.grep`: the iterator streams the
+            // source, running the callback once per element it hands out
+            // (#10186). A `.squish(:as, :with)` replay is keyed by this
+            // body's identity, so leave that one to the path below.
+            if !self.squish_iterator_meta.contains_key(&body.identity())
+                && let Some((prefix, source)) = body.take_map_grep_stream_source()
+            {
+                return Ok(
+                    crate::runtime::iterator_map_grep_stream::map_grep_stream_iterator(
+                        prefix,
+                        source,
+                        body.is_lazy(),
+                    ),
+                );
+            }
             // `.iterator` builds its FINAL result (an `Iterator` instance)
             // here, in place of returning a still-`ValueView::Seq` target
             // for a LATER dispatch layer to call `.iterator` on again. Two

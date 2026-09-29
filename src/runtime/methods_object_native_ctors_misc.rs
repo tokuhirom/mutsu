@@ -215,6 +215,11 @@ impl Interpreter {
                 ..
             } = iterator.view()
                 && class_name == "Iterator"
+                // A `.map`/`.grep` stream holds only a window; the deferred
+                // Seq below pulls it on demand.
+                && !attributes.contains_key(
+                    crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR,
+                )
             {
                 let map = attributes.as_map();
                 if let Some(ValueView::Array(items, ..)) = map

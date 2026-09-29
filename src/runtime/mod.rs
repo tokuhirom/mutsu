@@ -693,6 +693,7 @@ mod io_sysinfo_host;
 mod io_sysinfo_kernel;
 mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
+pub(crate) mod iterator_map_grep_stream;
 mod iterator_protocol;
 mod list_element_stringify;
 mod listop_functions;
