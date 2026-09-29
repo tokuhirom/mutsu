@@ -38,7 +38,7 @@ impl Compiler {
         return_type: Option<&String>,
         decl_line: Option<i64>,
     ) -> Option<Symbol> {
-        self.attach_param_chunks_in_package(param_defs, Some(package_name));
+        self.attach_param_chunks_in_package(param_defs, Some(package_name), method_name);
         let mut effective_param_defs =
             crate::method_signature_shared::effective_method_param_defs(param_defs, is_hidden);
         // Raku methods never get an implicit `*@_` (unlike subs) -- a

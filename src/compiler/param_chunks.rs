@@ -8,6 +8,13 @@
 //! parse node shares.
 use super::*;
 
+/// Where a signature's chunks are compiled: the declaring package (for
+/// `$?PACKAGE`) and the routine-scoped `Pkg::&name` the chunk runs in.
+struct ParamChunkScope {
+    package: String,
+    scope: String,
+}
+
 impl Compiler {
     /// Compile the signature-time expressions of `param_defs` (recursively
     /// through sub-signatures) into their `ParamCode` slots.
@@ -16,10 +23,13 @@ impl Compiler {
     /// chunks are standalone units rooted there, like the declaration-time
     /// chunks of ADR-0019 C5, so every name they read resolves through the env
     /// the binder prepares (the routine's captures, the parameters bound so
-    /// far, `$_`). They are compiled as running inside a routine, as the
-    /// binder runs them.
-    pub(super) fn attach_param_chunks(&self, param_defs: &[crate::ast::ParamDef]) {
-        self.attach_param_chunks_in_package(param_defs, None);
+    /// far, `$_`). They are compiled as running inside `routine`, as the
+    /// binder runs them: the chunk's package scope is the routine's own
+    /// `Pkg::&routine`, the scope the runtime's `compile_block_value` gave
+    /// these expressions, so a name the signature binds (`where { @x.elems }`)
+    /// is read as the lexical it is instead of being package-qualified.
+    pub(super) fn attach_param_chunks(&self, param_defs: &[crate::ast::ParamDef], routine: &str) {
+        self.attach_param_chunks_in_package(param_defs, None, routine);
     }
 
     /// [`Compiler::attach_param_chunks`] for a method, whose signature belongs
@@ -29,13 +39,23 @@ impl Compiler {
         &self,
         param_defs: &[crate::ast::ParamDef],
         package: Option<&str>,
+        routine: &str,
     ) {
         if !param_defs.iter().any(Self::signature_needs_chunks) {
             return;
         }
+        let package = package.map(str::to_string).unwrap_or_else(|| {
+            self.enclosing_package
+                .clone()
+                .unwrap_or_else(|| self.current_package.clone())
+        });
+        let scope = ParamChunkScope {
+            scope: format!("{package}::&{routine}"),
+            package,
+        };
         let mut sigilless = Vec::new();
         Self::collect_signature_sigilless(param_defs, &mut sigilless);
-        self.attach_param_chunks_with(param_defs, &sigilless, package);
+        self.attach_param_chunks_with(param_defs, &sigilless, &scope);
     }
 
     fn signature_needs_chunks(pd: &crate::ast::ParamDef) -> bool {
@@ -50,7 +70,7 @@ impl Compiler {
         &self,
         param_defs: &[crate::ast::ParamDef],
         sigilless: &[String],
-        package: Option<&str>,
+        package: &ParamChunkScope,
     ) {
         for pd in param_defs {
             if !pd.code.is_filled() && Self::param_has_evaluated_exprs(pd) {
@@ -133,13 +153,11 @@ impl Compiler {
         &self,
         body: &[Stmt],
         sigilless: &[String],
-        package: Option<&str>,
+        package: &ParamChunkScope,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
-        if let Some(package) = package {
-            chunk_compiler.enclosing_package = Some(package.to_string());
-            chunk_compiler.set_current_package(package.to_string());
-        }
+        chunk_compiler.enclosing_package = Some(package.package.clone());
+        chunk_compiler.set_current_package(package.scope.clone());
         chunk_compiler.is_routine = true;
         chunk_compiler.lexically_in_routine = true;
         chunk_compiler.seed_enclosing_sigilless(sigilless);

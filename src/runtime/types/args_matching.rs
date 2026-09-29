@@ -763,7 +763,7 @@ impl Interpreter {
                             let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
+                        _ => {
                             let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(arg, ev)
                         }
@@ -966,7 +966,7 @@ impl Interpreter {
                         self.env.insert(pd.name.clone(), val.clone());
                     }
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => {
+                        Expr::AnonSub { .. } => {
                             let ev =
                                 self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
@@ -976,7 +976,7 @@ impl Interpreter {
                             let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
+                        _ => {
                             let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(&val, ev)
                         }
@@ -1026,7 +1026,7 @@ impl Interpreter {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }
                 let ok = match where_expr.as_ref() {
-                    Expr::AnonSub { body, .. } => {
+                    Expr::AnonSub { .. } => {
                         let ev =
                             self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
@@ -1036,7 +1036,7 @@ impl Interpreter {
                         let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
-                    expr => {
+                    _ => {
                         let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_smartmatch(&slurpy_value, ev)
                     }
