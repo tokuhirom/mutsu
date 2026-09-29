@@ -204,7 +204,11 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
 }
 
 /// Build a Hash from a Set/Bag/Mix's keys, preserving non-`Str` original keys.
-fn quanthash_to_hash<I, F>(entries: I, value_for: F) -> Value
+///
+/// `value_type` is the value constraint Rakudo's `Baggy.hash` / `Mixy.hash`
+/// parameterize the result with (`UInt` / `Real`, i.e. `Hash[UInt,Mu,Any]`);
+/// `None` (Set) yields a plain Hash.
+fn quanthash_to_hash<I, F>(entries: I, value_for: F, value_type: Option<&str>) -> Value
 where
     I: Iterator<Item = (String, Value, Value)>,
     F: Fn(&Value) -> Value,
@@ -227,6 +231,13 @@ where
     if has_typed {
         original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
         result = set_hash_original_keys(result, original_keys);
+    }
+    if let Some(vt) = value_type {
+        result.with_hash_mut(|arc| {
+            let data = crate::gc::Gc::make_mut(arc);
+            data.value_type = Some(vt.to_string());
+            data.declared_type = Some(format!("Hash[{vt},Mu,Any]"));
+        });
     }
     result
 }
@@ -261,11 +272,13 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
         ValueView::Set(s, _) => Ok(quanthash_to_hash(
             s.iter().map(|k| (k.clone(), Value::TRUE, s.typed_key(k))),
             |_| Value::TRUE,
+            None,
         )),
         ValueView::Bag(b, _) => Ok(quanthash_to_hash(
             b.iter()
                 .map(|(k, v)| (k.clone(), Value::from_bigint(v.clone()), b.typed_key(k))),
             |w| w.clone(),
+            Some("UInt"),
         )),
         ValueView::Mix(m, _) => Ok(quanthash_to_hash(
             m.iter().map(|(k, v)| {
@@ -276,6 +289,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 )
             }),
             |w| w.clone(),
+            Some("Real"),
         )),
         ValueView::Instance { .. } if target.is_match_instance() => {
             // %($/) returns the named captures Map.

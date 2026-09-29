@@ -231,70 +231,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
     match method {
         "hash" => {
             match target.view() {
-                ValueView::Set(s, _) => {
-                    let mut map = ValueMap::default();
-                    let mut original_keys = ValueMap::default();
-                    let mut has_typed = false;
-                    for k in s.iter() {
-                        let typed = s.typed_key(k);
-                        let display = typed.to_string_value();
-                        map.insert(display.clone(), Value::TRUE);
-                        if !matches!(typed.view(), ValueView::Str(_)) {
-                            has_typed = true;
-                            original_keys.insert(display, typed);
-                        }
-                    }
-                    let mut result = Value::hash(map);
-                    if has_typed {
-                        // Tag so .keys can distinguish setty-origin hashes
-                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                        result =
-                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
-                    }
-                    Some(Ok(result))
-                }
-                ValueView::Bag(b, _) => {
-                    let mut map = ValueMap::default();
-                    let mut original_keys = ValueMap::default();
-                    let mut has_typed = false;
-                    for (k, v) in b.iter() {
-                        let typed = b.typed_key(k);
-                        let display = typed.to_string_value();
-                        map.insert(display.clone(), Value::from_bigint(v.clone()));
-                        if !matches!(typed.view(), ValueView::Str(_)) {
-                            has_typed = true;
-                            original_keys.insert(display, typed);
-                        }
-                    }
-                    let mut result = Value::hash(map);
-                    if has_typed {
-                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                        result =
-                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
-                    }
-                    Some(Ok(result))
-                }
-                ValueView::Mix(m, _) => {
-                    let mut map = ValueMap::default();
-                    let mut original_keys = ValueMap::default();
-                    let mut has_typed = false;
-                    for (k, v) in m.iter() {
-                        let typed = m.typed_key(k);
-                        let display = typed.to_string_value();
-                        map.insert(display.clone(), crate::value::mix_weight_to_value(*v));
-                        if !matches!(typed.view(), ValueView::Str(_)) {
-                            has_typed = true;
-                            original_keys.insert(display, typed);
-                        }
-                    }
-                    let mut result = Value::hash(map);
-                    if has_typed {
-                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                        result =
-                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
-                    }
-                    Some(Ok(result))
-                }
+                // One implementation with `.Hash` (and the hyper ops):
+                // `map_hash_coerce::to_hash`.
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
+                    crate::builtins::map_hash_coerce::to_hash(target.clone(), false),
+                ),
                 ValueView::Instance { .. } => {
                     // Instance types should fall through to accessor dispatch,
                     // not be coerced via .hash builtin

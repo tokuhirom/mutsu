@@ -43,7 +43,15 @@ impl Interpreter {
     // Cost: O(e), e = elements of a QuantHash operand; O(1) otherwise.
     pub(super) fn quanthash_to_hash(v: &Value) -> Result<Value, RuntimeError> {
         if Self::quanthash_kind(v).is_some() {
-            crate::builtins::map_hash_coerce::to_hash(v.clone(), false)
+            // The hyper result is an ordinary Hash: drop the `Hash[UInt,Mu,Any]`
+            // typing `.hash` gives a Baggy so it does not leak into the result.
+            let mut h = crate::builtins::map_hash_coerce::to_hash(v.clone(), false)?;
+            h.with_hash_mut(|arc| {
+                let data = crate::gc::Gc::make_mut(arc);
+                data.value_type = None;
+                data.declared_type = None;
+            });
+            Ok(h)
         } else {
             Ok(v.clone())
         }

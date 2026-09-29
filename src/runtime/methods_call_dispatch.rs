@@ -4291,6 +4291,15 @@ impl Interpreter {
             {
                 return Ok(Value::package(Symbol::intern(key_type)));
             }
+            // A `Hash[V,K,..]` declared type (`Baggy.hash` is `Hash[UInt,Mu,Any]`)
+            // names its key type as the second parameter.
+            if let Some(info) = self.container_type_metadata(&target)
+                && let Some(dt) = info.declared_type.as_deref()
+                && let Some(inner) = dt.strip_prefix("Hash[").and_then(|r| r.strip_suffix(']'))
+                && let Some(key_type) = inner.split(',').nth(1)
+            {
+                return Ok(Value::package(Symbol::intern(key_type.trim())));
+            }
             return Ok(Value::package(Symbol::intern("Str(Any)")));
         }
 
