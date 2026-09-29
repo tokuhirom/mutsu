@@ -499,18 +499,31 @@ impl Interpreter {
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
                 // For regular regexes, use the faster non-capturing path.
-                let spans: Vec<(usize, usize)> = if self.has_code_block_in_prefix(&pat) {
-                    let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
-                    for (_, _, caps) in &mut matches {
-                        if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
-                            let ct = caps.target_or_new(&text);
-                            self.reduce_regex_captures_made(caps, Some(&ct));
+                // The capture markers `<(` / `)>` also need the capturing path:
+                // `.comb` returns each match's `.Str`, which they narrow.
+                let has_markers = pat.contains("<(") || pat.contains(")>");
+                let spans: Vec<(usize, usize)> =
+                    if self.has_code_block_in_prefix(&pat) || has_markers {
+                        let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
+                        for (_, _, caps) in &mut matches {
+                            if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
+                                let ct = caps.target_or_new(&text);
+                                self.reduce_regex_captures_made(caps, Some(&ct));
+                            }
                         }
-                    }
-                    matches.into_iter().map(|(s, e, _)| (s, e)).collect()
-                } else {
-                    self.regex_find_all_limited(&pat, &text, max)
-                };
+                        matches
+                            .into_iter()
+                            .map(|(s, e, caps)| {
+                                if has_markers && caps.to >= caps.from {
+                                    (caps.from, caps.to)
+                                } else {
+                                    (s, e)
+                                }
+                            })
+                            .collect()
+                    } else {
+                        self.regex_find_all_limited(&pat, &text, max)
+                    };
                 let result: Vec<Value> = if return_match {
                     let mt = crate::runtime::MatchTarget::new(&text);
                     spans
