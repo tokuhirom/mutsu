@@ -1,6 +1,6 @@
 unit module FreeVarStoreTyped;
 
-# Fixture for t/routines/free-var-store-ignores-caller-constraint.t: routines
+# Fixture for t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t: routines
 # that assign to their own compunit's file-scope lexicals, the `Test.rakumod`
 # `_init_io` shape (#10049).
 my $output;

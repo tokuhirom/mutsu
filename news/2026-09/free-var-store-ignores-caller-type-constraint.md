@@ -30,4 +30,4 @@ no constraint. The same goes for the Nil reset: `$x = Nil` from the routine now
 seeds the outer variable's type object, not the caller's. Every other by-name
 store keeps the name-keyed lane.
 
-Pinned by `t/routines/free-var-store-ignores-caller-constraint.t`.
+Pinned by `t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t`.
