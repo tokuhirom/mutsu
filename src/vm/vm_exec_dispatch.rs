@@ -4376,10 +4376,16 @@ impl Interpreter {
                                 // (see `exit_status_parts`), so the signal is
                                 // the only evidence that it was unsuccessful.
                                 if (exitcode != 0 || signal != 0) && !is_live {
+                                    // Rakudo names the program (`$.proc.command[0]`),
+                                    // not the whole command line.
                                     let command = attributes
                                         .as_map()
                                         .get("command")
-                                        .map(|v| v.to_string_value())
+                                        .and_then(|v| {
+                                            crate::runtime::utils::value_to_list(v)
+                                                .first()
+                                                .map(|p| p.to_string_value())
+                                        })
                                         .unwrap_or_default();
                                     // When the command could not be spawned at all
                                     // (exit code -1), rakudo reports the underlying
