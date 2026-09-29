@@ -1,19 +1,6 @@
 use super::*;
 use crate::value::ValueMap;
 
-thread_local! {
-    /// Set while constructing a lightweight regex/grammar scratch interpreter
-    /// (see [`Interpreter::new_regex_scratch`]). When set, [`Interpreter::new`]
-    /// skips the heavy process-environment setup (%*ENV population, IO handles,
-    /// the process-global enum/dynamic base, $*REPO, and the default site repo)
-    /// because the scratch interpreter's `env` and `registry` are immediately
-    /// overwritten by the caller (`copy_decl_registry_into` + the provided env),
-    /// making that work pure waste. A grammar-with-actions parse builds ~100 such
-    /// scratch interpreters per parsed string, so avoiding the per-scratch init
-    /// is a large win on the zef dist-identity parse path.
-    static BUILDING_SCRATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// The OS environment, as the backing map of `%*ENV`.
 ///
 /// wasm32 has no process environment to sweep, so the browser build starts
@@ -31,57 +18,6 @@ fn os_env_hash() -> ValueMap {
 }
 
 impl Interpreter {
-    /// Whether the current `new()` call is building a lightweight scratch
-    /// interpreter (see `BUILDING_SCRATCH`).
-    #[inline]
-    pub(crate) fn is_building_scratch() -> bool {
-        BUILDING_SCRATCH.with(|f| f.get())
-    }
-
-    /// Construct a lightweight interpreter for regex/grammar sub-evaluation. The
-    /// caller immediately overwrites its `env` (typically `self.env.clone()`) and
-    /// replaces its `registry` via [`Self::copy_decl_registry_into`], so this
-    /// skips the heavy per-process environment setup that `new()` does for a
-    /// top-level interpreter (see `BUILDING_SCRATCH`). Use it in place of
-    /// `..Default::default()` at regex/grammar scratch-interpreter construction
-    /// sites.
-    pub(crate) fn new_regex_scratch() -> Self {
-        BUILDING_SCRATCH.with(|f| f.set(true));
-        let interp = Self::new();
-        BUILDING_SCRATCH.with(|f| f.set(false));
-        interp
-    }
-
-    /// [`Self::new_regex_scratch`], sharing the caller's open IO handle table.
-    ///
-    /// Use this at every scratch construction site. The `env` a scratch is
-    /// handed is the caller's, so every IO handle value it can see carries the
-    /// *caller's* handle id, and a handle op resolves that id in whichever
-    /// table the running interpreter owns ([`Self::with_handle_mut`]). A
-    /// scratch built by `new_regex_scratch` alone owns its own table, so the
-    /// ids only agreed because [`Self::new`] seeded every fresh table with the
-    /// same four handles (`$*OUT`/`$*ERR`/`$*IN`/`$*ARGFILES`) in the same
-    /// order, putting them on ids 1-4 on both sides; nothing made an id past
-    /// those four agree. No case is known where a scratch actually performed a
-    /// handle op that missed — code blocks reach their handles through the
-    /// caller's own VM frame — but the agreement was a coincidence, not an
-    /// invariant, and skipping the seeding (the `is_building_scratch` guard on
-    /// `init_io_environment` in [`Self::new`]) removes even that. Sharing the
-    /// `Arc` replaces the coincidence with the real table.
-    ///
-    /// Sharing is sound within a thread — the only place a scratch interpreter
-    /// is ever built, synchronously inside the caller's own regex evaluation:
-    /// `io_handles` is an `Arc<RwLock<_>>` precisely so the VM and the
-    /// Interpreter can reach one table as peers (see the `io_handles` module
-    /// docs). The lock discipline is unchanged: no guard is held across a
-    /// re-entrant handle operation. Pinned by
-    /// `t/io/code-block-io-handle-table.t`.
-    pub(crate) fn new_regex_scratch_sharing_io(&self) -> Self {
-        let mut interp = Self::new_regex_scratch();
-        interp.io_handles = Arc::clone(&self.io_handles);
-        interp
-    }
-
     /// Take any pending regex security error from the thread-local store.
     pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
         // Delegate to the regex_parse module's thread-local error store
@@ -92,14 +28,6 @@ impl Interpreter {
     /// the exception-class hierarchy, the composed-role seeds and the seeded
     /// method table.
     ///
-    /// Extracted from [`Self::new`] so a regex/grammar scratch interpreter can
-    /// SKIP it (see `BUILDING_SCRATCH`): a scratch interpreter has its whole
-    /// registry replaced by the caller's (`copy_decl_registry_into`) before it
-    /// runs anything, so building ~450 class definitions and seeding their
-    /// method entries first was pure waste — and a grammar parse builds one
-    /// scratch interpreter per subrule-with-arguments call and per embedded
-    /// code block (207 of them on `benchmarks/bench-yaml-parse.raku`, where a
-    /// callgrind profile attributed ~48% of the whole run to this work).
     /// The built-in declaration registry, built **once per process** and shared
     /// by every top-level interpreter.
     ///
@@ -3109,25 +3037,10 @@ impl Interpreter {
         // construct-and-drop loop that never runs bytecode buffered the dead
         // nodes of every interpreter it dropped and never collected them (that
         // was the whole of the ~7 KiB/construction retention in #7572 — with
-        // `MUTSU_GC=off`, which buffers nothing, it measured 0.08 KiB). A
-        // scratch interpreter is excluded: it is built from inside regex/grammar
-        // evaluation, which is not a re-entry boundary.
-        if !Self::is_building_scratch() {
-            crate::vm::vm_poll::poll(crate::gc::SafepointKind::Construct, 0);
-        }
-        // Seed the process-wide magicals. A scratch interpreter skips ALL of
-        // it: every one of the ten scratch construction sites spells
-        // `Interpreter { env: <the caller's env>, .. }` (directly, or through
-        // `make_regex_eval_env`, which starts from `self.env.clone()`), so this
-        // whole map — `%*ENV`'s OS sweep, `$*TZ`'s `localtime_r`,
-        // `$*INIT-INSTANT`'s clock read, `$*SCHEDULER`'s instance — is built and
-        // dropped unread. That is the same argument `init_io_environment` was
-        // put behind this guard on (round 12 of #7576); the `%*ENV` sweep was
-        // the only part of it excluded then. A YAMLish parse builds 1,609
-        // scratch interpreters.
-        let env = if Self::is_building_scratch() {
-            ValueMap::default()
-        } else {
+        // `MUTSU_GC=off`, which buffers nothing, it measured 0.08 KiB).
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Construct, 0);
+        // Seed the process-wide magicals.
+        let env = {
             let mut env = ValueMap::default();
             env.insert("*PID".to_string(), Value::int(current_process_id()));
             env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
@@ -3228,11 +3141,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
-            registry: Arc::new(RwLock::new(if Self::is_building_scratch() {
-                Arc::new(Registry::default())
-            } else {
-                Self::shared_builtin_registry()
-            })),
+            registry: Arc::new(RwLock::new(Self::shared_builtin_registry())),
             registry_write_gen: Self::fresh_registry_write_gen(),
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
@@ -3585,26 +3494,9 @@ impl Interpreter {
             rw_map_topic_capture: None,
             map_grep_last_depth: None,
         };
-        // A scratch interpreter (regex/grammar sub-interpreter) has its `env`
-        // replaced wholesale by the caller's, so every `$*OUT`/`$*CWD`/
-        // `$*TMPDIR`/`$*HOME`/`$*EXECUTABLE`/`$*SPEC` entry seeded here is
-        // dropped unread, and the four IO handles created for them are left
-        // unreferenced — the caller's env carries the CALLER's handle ids, and
-        // `new_regex_scratch_sharing_io` is what makes those resolve. On a
-        // 60-row `benchmarks/bench-yaml-parse.raku` document that was 3,109
-        // rebuilds of the process IO environment, 4.8% of the whole program's
-        // instructions (#7576 round 12).
-        if !Self::is_building_scratch() {
-            interpreter.init_io_environment();
-        }
+        interpreter.init_io_environment();
         interpreter.env.insert("Any".to_string(), Value::NIL);
-        // A scratch interpreter (regex/grammar sub-interpreter) inherits the
-        // caller's env and has its registry replaced by `copy_decl_registry_into`,
-        // so the process-global base tier (already installed by the top-level
-        // interpreter), the default $*REPO, and the site repo are redundant. A
-        // grammar-with-actions parse builds ~100 scratch interpreters per parsed
-        // string, so skipping this per-scratch setup is the win.
-        if !Self::is_building_scratch() {
+        {
             // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
             // process-wide immutables: collect them into the shared base tier
             // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
@@ -3652,15 +3544,10 @@ impl Interpreter {
             // module resolution -- not just the top-level CLI -- so a plain
             // `use ModuleName` finds anything installed via
             // `CompUnit::RepositoryRegistry.repository-for-name("site").install(...)`
-            // regardless of how the interpreter was embedded. A scratch
-            // interpreter inherits $*REPO (and thus the site repo) from the
-            // caller's cloned env, so it needs neither.
+            // regardless of how the interpreter was embedded.
             interpreter.add_default_site_repo();
             // Rakudo's own core setting bootstraps `nqp::gethllsym("default",
-            // "SysConfig")` at BEGIN time (see `bootstrap_hll_syms`); a
-            // scratch interpreter never runs top-level BEGIN code of its own
-            // and inherits nothing that would read this, so it is skipped
-            // along with the rest of this block.
+            // "SysConfig")` at BEGIN time (see `bootstrap_hll_syms`).
             interpreter.bootstrap_hll_syms();
         }
         interpreter

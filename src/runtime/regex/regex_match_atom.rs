@@ -1067,7 +1067,8 @@ impl Interpreter {
         if !is_user_method {
             return None;
         }
-        // Run the method in a scratch interpreter (mirrors `eval_regex_code_assertion`).
+        // Run the method in the grammar's package over an isolated copy of the
+        // env (`run_regex_sub_eval_here`).
         //
         // The invocant is an INSTANCE of the grammar carrying the cursor state
         // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
@@ -1085,19 +1086,10 @@ impl Interpreter {
         cursor_attrs.insert("pos", Value::int(pos as i64));
         cursor_attrs.insert("to", Value::int(pos as i64));
         let invocant = Value::make_instance(pkg, cursor_attrs);
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            current_package: Arc::new(RwLock::new(pkg.to_string())),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        // Full registry: the grammar's methods live in `Registry::classes`, which
-        // the lean `copy_decl_registry_into` omits.
-        self.copy_full_registry_into(&mut interp);
-        if self.test_module_loaded() {
-            interp.loaded_modules = self.loaded_modules.clone();
-            interp.tap.ensure_state();
-        }
-        match interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new()) {
+        let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+            interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
+        });
+        match called {
             Err(e) => {
                 // Propagate the method's exception (e.g. `die`) out of the parse.
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
