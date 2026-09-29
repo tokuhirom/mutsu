@@ -94,6 +94,7 @@ of #9053: CSS::Grammar's `any-arg` is `rule {<CSS::Grammar::Core::_arg>}`, so it
 
 ## 5. Known gaps
 
-- Uniprop atoms (`<:L>`, `<-:L>`) and a negated named class (`<-alpha>`) are fates in
-  Rakudo (no NFA method), and are still measured as declarative here.
+- ~~Uniprop atoms (`<:L>`, `<-:L>`) and a negated named class (`<-alpha>`) are fates in
+  Rakudo (no NFA method), and are still measured as declarative here.~~ Resolved
+  (#9908): `ltm_atom_mode` classifies them as fates.
 - `<-[\s] + [x]>` fails to match at all in mutsu (a class-union bug, independent of LTM).

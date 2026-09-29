@@ -95,6 +95,22 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         RegexAtom::CompositeClass { negative, .. } if !negative.is_empty() => {
             LtmAtomMode::Terminate
         }
+        // `<:L>` / `<-:L>` / `<:!L>`: a Unicode-property atom has no NFA edge
+        // in Rakudo, so it is a fate (ADR-0111 §5).
+        RegexAtom::UnicodeProp { .. } => LtmAtomMode::Terminate,
+        // `<-alpha>`: a negated *named* class has no NFA edge either, while
+        // `\W`/`\D`/`\S` and `<-[..]>` do.
+        RegexAtom::CharClass(class)
+            if class.negated
+                && class.items.iter().any(|item| {
+                    matches!(
+                        item,
+                        ClassItem::NamedBuiltin(_) | ClassItem::UnicodePropItem { .. }
+                    )
+                }) =>
+        {
+            LtmAtomMode::Terminate
+        }
         // `&` / `&&` conjunction: no NFA method in Rakudo -> fate (terminate).
         RegexAtom::Conjunction(_) => LtmAtomMode::Terminate,
         // `<~~>` recurses into the enclosing regex, which is exactly the
