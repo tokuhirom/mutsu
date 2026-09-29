@@ -709,6 +709,9 @@ impl Interpreter {
                         "STORE",
                         vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
                     )?;
+                    // The user STORE may bind a captured-outer lexical by name
+                    // (`$list := values.List`); pull that back into the caller slot.
+                    self.drain_and_reconcile_after_cached_call(code);
                     let bound = if Self::is_tie_bindable(&stored) {
                         stored
                     } else {
@@ -800,6 +803,9 @@ impl Interpreter {
                         "STORE",
                         vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
                     )?;
+                    // The user STORE may bind a captured-outer lexical by name
+                    // (`$list := values.List`); pull that back into the caller slot.
+                    self.drain_and_reconcile_after_cached_call(code);
                     let bound = if Self::is_tie_bindable(&stored) {
                         stored
                     } else {
@@ -996,6 +1002,9 @@ impl Interpreter {
             "STORE",
             vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
         )?;
+        // The user STORE may bind a captured-outer lexical by name
+        // (`$list := values.List`); pull that back into the caller slot.
+        self.drain_and_reconcile_after_cached_call(code);
         if Self::is_tie_bindable(&stored) {
             let name_owned = name.to_string();
             if !self.write_var_trait_target(code, eff_slot, &name_owned, stored.clone()) {

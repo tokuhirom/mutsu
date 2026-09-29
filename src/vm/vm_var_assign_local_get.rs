@@ -659,8 +659,13 @@ impl Interpreter {
         {
             return;
         }
-        let container = cur.into_container_ref();
+        let mut container = cur.into_container_ref();
         self.register_container_cell_constraint_for_name(&container, name);
+        // A lexical this frame later rebinds (`$a := ...`) needs a binding
+        // cell so the rebind reaches every sharer of the cell.
+        if code.rebound_slots.contains(&(idx as u32)) {
+            container = Self::wrap_in_binding_cell(container);
+        }
         self.locals[idx] = container.clone();
         let nm = code.locals[idx].clone();
         self.env_mut().insert(nm.clone(), container.clone());

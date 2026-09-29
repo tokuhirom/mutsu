@@ -251,6 +251,9 @@ impl Interpreter {
                         .class_composed_roles(&cn)
                         .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
                         || attributes.contains_key("__mutsu_array_storage")
+                        // Positional reached through a composed role's own
+                        // roles (`role R does Positional`, `class C does R`).
+                        || self.type_matches_value("Positional", raw_popped)
                 }
                 _ => false,
             };

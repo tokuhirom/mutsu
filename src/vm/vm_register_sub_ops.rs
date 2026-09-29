@@ -703,7 +703,9 @@ impl Interpreter {
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
-                    // A name the sub rebinds needs a binding cell (a cell whose
+                    // A name the sub rebinds, or this declaring frame itself
+                    // rebinds after the sub is registered (`$l := ...` read by
+                    // `sub f { $l }`), needs a binding cell (a cell whose
                     // content is the variable's container), shared by this
                     // frame's slot and the store. The sub's rebind then seats
                     // the new binding INSIDE it (`unit_scope_lexical_rebind`),
@@ -711,7 +713,10 @@ impl Interpreter {
                     // the old container keeps that container: with the plain
                     // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
                     // through the cell `@b` shares with `@a` (#9416).
-                    if rebound_syms.contains(&sym) && Self::binding_cell_of(&cell).is_none() {
+                    if (rebound_syms.contains(&sym)
+                        || code.rebound_slots.contains(&(slot_idx as u32)))
+                        && Self::binding_cell_of(&cell).is_none()
+                    {
                         cell = Self::wrap_in_binding_cell(cell);
                         self.locals[slot_idx] = cell.clone();
                         self.env_mut().insert(name.clone(), cell.clone());
