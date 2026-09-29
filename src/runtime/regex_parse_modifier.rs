@@ -397,21 +397,10 @@ impl Interpreter {
                             .unwrap_or(Value::NIL);
                         let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
-                        // A double-quoted regex literal (`"${name}..."`) is
-                        // scanned by the structural parser's OWN inner loop
-                        // (its `"..."` arm reads chars directly, bypassing
-                        // the main token loop that consumes
-                        // `NON_DECLARATIVE_INTERP_MARK`), so a mark placed
-                        // inside it would leak through as a literal control
-                        // character instead of being stripped. Skip marking
-                        // there — such an interpolation stays declarative,
-                        // same as before this slice.
-                        // TODO: teach the double-quoted-literal tokenizer arm
-                        // to also strip/honor the mark, so `$var` inside
-                        // `"..."` gets the same non-constant treatment as
-                        // everywhere else.
+                        // The `"..."` tokenizer arm strips the mark and makes
+                        // the whole literal a non-declarative atom.
                         let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
-                        let is_const = inside_qq || self.is_compile_time_constant_scalar(&name);
+                        let is_const = self.is_compile_time_constant_scalar(&name);
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                         }
@@ -512,13 +501,8 @@ impl Interpreter {
                         .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
-                    // See the `${name}` arm above: a double-quoted regex
-                    // literal is scanned by the structural parser's own
-                    // inner loop, which does not strip
-                    // `NON_DECLARATIVE_INTERP_MARK`, so skip marking there.
                     let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
-                    let is_const =
-                        !is_overlay && (inside_qq || self.is_compile_time_constant_scalar(&name));
+                    let is_const = !is_overlay && self.is_compile_time_constant_scalar(&name);
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }

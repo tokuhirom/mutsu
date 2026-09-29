@@ -2583,6 +2583,7 @@ impl Interpreter {
                     for _ in 0..span {
                         chars.next();
                     }
+                    runtime_value_atom = true;
                     self.regex_qq_interp_atom(c, &body, ignore_case)?
                 }
                 '"' | '\u{201C}' | '\u{201E}' => {
@@ -2597,6 +2598,7 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
                     let mut literal = String::new();
+                    let mut saw_interp_mark = false;
                     // Literal runs, each followed by an embedded `$( code )`
                     // the pre-pass left for match time (#10157).
                     let mut code_segments: Vec<(String, String)> = Vec::new();
@@ -2685,9 +2687,15 @@ impl Interpreter {
                                 None => break,
                             },
                             Some(ch) if ch == close => break,
+                            // A runtime-interpolated span: the whole literal
+                            // becomes one non-declarative atom (ADR-0022 §5).
+                            Some(Self::NON_DECLARATIVE_INTERP_MARK) => saw_interp_mark = true,
                             Some(ch) => literal.push(ch),
                             None => break,
                         }
+                    }
+                    if saw_interp_mark {
+                        runtime_value_atom = true;
                     }
                     if code_segments.is_empty() {
                         regex_single_quote_atom(literal, ignore_case)
