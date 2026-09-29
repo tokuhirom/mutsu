@@ -900,6 +900,10 @@ impl Interpreter {
                 _ => item,
             };
             if let Some(ref name) = param_name {
+                // An `@`/`%` loop parameter is a fresh per-iteration binding:
+                // record it so a spawned block keeps it off the bare-name lane
+                // (ADR-0023 follow-up; same rule as a routine's `@`/`%` param).
+                self.note_param_bound_aggregate(name, &item);
                 self.env_mut().insert(name.clone(), item.clone());
                 // Create non-twigil alias for placeholder params: $^a → $a
                 if let Some(bare) = name.strip_prefix("&^") {
