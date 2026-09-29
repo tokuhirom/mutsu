@@ -279,15 +279,21 @@ impl Interpreter {
     }
 
     /// `package::<key>` as a one-entry stash (empty when there is no such
-    /// member), ready for the ordinary `Index` read — or `None` when the read
-    /// needs the whole stash (see [`Self::package_stash_symbol`]).
+    /// member), ready for the ordinary `Index` read, paired with whether the
+    /// member was found — or `None` when the read needs the whole stash (see
+    /// [`Self::package_stash_symbol`]).
     // Cost: as `package_stash_symbol`.
-    pub(crate) fn package_stash_keyed_value(&self, package: &str, key: &str) -> Option<Value> {
+    pub(crate) fn package_stash_keyed_value(
+        &self,
+        package: &str,
+        key: &str,
+    ) -> Option<(Value, bool)> {
         let entry = self.package_stash_symbol(package, key)?;
+        let found = entry.is_some();
         let mut symbols = ValueMap::default();
         if let Some(value) = entry {
             symbols.insert(key.to_string(), value);
         }
-        Some(Self::make_stash_instance(package, symbols))
+        Some((Self::make_stash_instance(package, symbols), found))
     }
 }

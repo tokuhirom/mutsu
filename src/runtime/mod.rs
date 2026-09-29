@@ -555,6 +555,7 @@ mod accessors_misc;
 mod accessors_resolve;
 mod accessors_stack;
 mod accessors_stash;
+mod accessors_stash_exists;
 mod accessors_stash_keyed;
 mod accessors_stash_package;
 mod accessors_state;

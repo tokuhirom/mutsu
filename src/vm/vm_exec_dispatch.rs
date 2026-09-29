@@ -1083,7 +1083,7 @@ impl Interpreter {
             // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
             // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
-                self.exec_get_pseudo_stash_op(code, *name_idx);
+                self.exec_get_pseudo_stash_op(code, *name_idx)?;
                 *ip += 1;
             }
             // Cost: O(k), k = interned qualified names ending in the key's bare name, for a
