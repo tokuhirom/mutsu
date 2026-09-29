@@ -1850,6 +1850,18 @@ impl Interpreter {
                     // already-correct `does Positional` instance, whose
                     // non-Array input falls through to a generic
                     // `coerce_to_array` wrap and loses the custom class.
+                } else if (is_bind_ctx || is_rebind)
+                    && (name.starts_with('@') || name.starts_with('%'))
+                    && name.len() > 1
+                    && !name.contains("__")
+                    && !is_attr_twigil
+                {
+                    // `@a := ...` / `%h := ...` reached by name (a closure or
+                    // nested sub rebinding a captured free var): a bind aliases
+                    // the RHS container, so check it against the DECLARED
+                    // element type and make the bound container's own type the
+                    // one in effect — the same as the SetLocal bind path.
+                    self.bind_container_by_name(&name, &val)?;
                 } else if name.starts_with('%')
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())

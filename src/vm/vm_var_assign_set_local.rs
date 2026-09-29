@@ -2460,25 +2460,11 @@ impl Interpreter {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone();
-                    if let Some(info) = self.container_type_metadata(&inner)
-                        && !info.value_type.is_empty()
-                    {
-                        let constraint_str = if name.starts_with('%') {
-                            if let Some(ref kt) = info.key_type {
-                                format!("{}{{{}}}", info.value_type, kt)
-                            } else {
-                                info.value_type
-                            }
-                        } else {
-                            info.value_type
-                        };
-                        self.vm_set_var_type_constraint(name, Some(constraint_str));
-                    } else {
-                        // Untyped source: clear any declared constraint inherited
-                        // from this variable's own declaration so it does not
-                        // over-constrain the shared container.
-                        self.vm_set_var_type_constraint(name, None);
-                    }
+                    // Untyped source: `None` clears any declared constraint
+                    // inherited from this variable's own declaration so it does
+                    // not over-constrain the shared container.
+                    let constraint = self.bound_container_constraint(name, &inner);
+                    self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
                 }
                 let container = Value::container_ref(cell);
                 self.locals[idx] = container.clone();
@@ -2865,22 +2851,16 @@ impl Interpreter {
                 val.view(),
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
             )
-            && let Some(info) = self.container_type_metadata(&val)
-            && !info.value_type.is_empty()
         {
-            // Build the constraint string that set_var_type_constraint expects.
-            // For hash variables, parse_container_constraint expects "ValueType{KeyType}"
-            // format for key-typed hashes, and plain "ValueType" otherwise.
-            let constraint_str = if name.starts_with('%') {
-                if let Some(ref kt) = info.key_type {
-                    format!("{}{{{}}}", info.value_type, kt)
-                } else {
-                    info.value_type
-                }
-            } else {
-                info.value_type
-            };
-            self.vm_set_var_type_constraint(name, Some(constraint_str));
+            // An untyped RHS (`@a := [1]`) clears a type left by an earlier
+            // bind; the declared constraint survives in the lane either way.
+            // Not for a container-trait declaration's internal bind marker
+            // (`my %h is BagHash = ...`, see `check_associative_bind_value`):
+            // its trait constraint is what `ApplyVarTrait` reads next.
+            let constraint = self.bound_container_constraint(name, &val);
+            if constraint.is_some() || self.vardecl_init_raw.is_none() {
+                self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
+            }
         }
         // Circular hash reference fixup: when assigning to a hash variable,
         // if any values in the new hash reference the old hash (captured on the
