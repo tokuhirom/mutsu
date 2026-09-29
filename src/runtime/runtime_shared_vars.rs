@@ -274,10 +274,21 @@ impl Interpreter {
     /// name genuinely shared?" by *presence* in the store, which a masked name
     /// still satisfies — the entry is simply the outer binding's. They ask here
     /// instead so a re-declared container stays frame-local on every axis.
+    ///
+    /// A live `@`/`%` **parameter** binding counts too: `clone_for_thread_for_block`
+    /// keeps it off the lane for the same reason (a fresh per-invocation binding
+    /// that merely shares a name), so whatever the store holds under the name
+    /// belongs to some other binding. Without this, a closure's captured
+    /// `@g.push(...)` funnelled into the name-keyed atomic store and merged two
+    /// closures whose `@g` were bound to different caller arrays (#10076).
     pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
         self.shared_vars_active
             && key.starts_with(['@', '%'])
-            && self.thread_redeclared_vars.borrow().contains(key)
+            && (self.thread_redeclared_vars.borrow().contains(key)
+                || self
+                    .env
+                    .get(key)
+                    .is_some_and(|cur| self.param_bound_aggregates.holds(key, cur)))
     }
 
     /// Mask each scalar and aggregate parameter (`&` parameters are excluded)

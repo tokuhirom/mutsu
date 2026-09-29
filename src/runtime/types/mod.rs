@@ -835,8 +835,7 @@ impl Interpreter {
     /// directly.
     pub(crate) fn note_param_bound_aggregate(&mut self, name: &str, value: &Value) {
         if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
-            self.param_bound_aggregates
-                .insert(name.to_string(), value.clone());
+            self.param_bound_aggregates.note(name, value);
         }
     }
 

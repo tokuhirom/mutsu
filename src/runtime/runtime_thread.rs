@@ -133,11 +133,19 @@ impl Interpreter {
             // already what every alias holds, so no lane is needed to reach it.
             // The frame's env may hold the parameter boxed in the closure
             // machinery's `ContainerRef` cell, so compare through it.
-            for (name, bound) in self.param_bound_aggregates.iter() {
+            //
+            // Every live binding of the name counts, not just the latest one:
+            // two closures made by one routine, each capturing its `%g` bound
+            // to a different caller hash, both hold a parameter binding, and
+            // letting the older one onto the lane merged both closures' stores
+            // into one copy (#10076). `ParamBoundAggregates` records them
+            // weakly, so it neither pins arguments alive nor mistakes a reused
+            // address for a recorded one.
+            for name in self.param_bound_aggregates.names() {
                 if self
                     .env
                     .get(name)
-                    .is_some_and(|cur| Self::same_container_arc(&cur.deref_container(), bound))
+                    .is_some_and(|cur| self.param_bound_aggregates.holds(name, cur))
                 {
                     out.insert(name.clone());
                 }
@@ -852,7 +860,7 @@ impl Interpreter {
                 self.thread_param_shadow_vars.borrow().clone(),
             )),
             // The child re-binds its own env-bound parameters if it runs any.
-            param_bound_aggregates: ValueMap::default(),
+            param_bound_aggregates: Default::default(),
             suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
