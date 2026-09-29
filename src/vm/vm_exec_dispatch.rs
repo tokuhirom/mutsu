@@ -2790,7 +2790,9 @@ impl Interpreter {
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.last_topic_value = Some(val.clone());
-                self.env_mut().insert("_".to_string(), val);
+                // Pre-interned: `insert("_".to_string(), ..)` allocated and
+                // re-interned the key on every block value.
+                self.env_mut().insert_sym(crate::symbol::wk::topic(), val);
                 *ip += 1;
             }
             // Cost: O(1).
