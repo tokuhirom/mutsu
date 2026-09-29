@@ -22,6 +22,7 @@ mod sink_warn;
 mod stmt;
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws};
+pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
