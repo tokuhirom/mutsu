@@ -86,5 +86,11 @@ end state.
 
 ## Implementation status
 
-- Slice 1 — signature expressions (`where`, default, shape): implemented (#10107).
+- Slice 1 — signature expressions (`where`, default, shape): implemented (#10107). Beyond the
+  compile removal, the slice routes a `where`/subset callable through `vm_call_on_value`
+  instead of `call_sub_value`'s env carrier, and answers a one-argument WhateverCode predicate
+  (`where * < 100`, `subset … where * < 100`) by running its body with `$_` bound, building no
+  closure. The #10107 repro went from 178.7k to 56.1k instructions per call; the remainder is
+  the value-dependent multi-dispatch machinery itself (candidate gather/rank, `type_matches_value`,
+  the env snapshot around each `where`) and stays open under #10107.
 - Later slices: #10118, #10119, #10120, #10121 (Decision 4).
