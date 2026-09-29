@@ -302,6 +302,17 @@ impl Interpreter {
         }
     }
 
+    /// Whether a lazy (bind/container-mode) subscript's run-time index selects
+    /// more than one element: a slice list, a range, a `Seq`, a `Junction`, a
+    /// `*`, or a `WhateverCode` (an `Array` target resolves the last to one
+    /// position first). An itemized list `$(1,2)` is a single key.
+    fn lazy_index_selects_many(index: &Value) -> bool {
+        match index.view() {
+            ValueView::Junction { .. } | ValueView::Whatever | ValueView::Sub(_) => true,
+            _ => super::vm_hyper_method_ops::hyper_subscript_index_is_slice(index),
+        }
+    }
+
     /// Lazy variant of IndexAutovivify: returns a HashEntryRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
@@ -335,6 +346,24 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
+
+        // A subscript that selects several elements (a slice, a `Junction`, a
+        // `*`/`WhateverCode` not resolvable to one position) names no single
+        // location, so the deferred-path walk below cannot describe it: a
+        // missing-key step would record the whole list as one key. Decline to
+        // the ordinary read, which slices/autothreads. An `Array` keeps its own
+        // arms (a bound array slice promotes each element to a cell), which
+        // settle a list index themselves. This is what lets a nested subscript
+        // argument with a *computed* index (`g(%h{@k[$i]}<z>)`) be compiled in
+        // container mode (#10044): only the run-time value can tell.
+        if Self::lazy_index_selects_many(&index) {
+            let resolved = target.deref_container().descalarize().clone();
+            if !matches!(resolved.view(), ValueView::Array(..)) {
+                self.stack.push(resolved);
+                self.stack.push(index);
+                return self.exec_index_op_with_positional(is_positional);
+            }
+        }
 
         let resolved = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
