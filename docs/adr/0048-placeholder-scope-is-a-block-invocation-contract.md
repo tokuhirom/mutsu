@@ -602,7 +602,9 @@ not a real `Mu` either — it is one null per declared placeholder, which is wha
    - **Deliberately NOT chased:** `{ ... } while COND` — raku never calls the
      block at all (`my $i=0; { say 1 } while $i++ < 2` prints nothing), mutsu
      calls it. That is a `{ }`-as-statement-modifier-target divergence, not a
-     placeholder one, and Phase 3 already recorded it.
+     placeholder one, and Phase 3 already recorded it. This separate residue
+     was resolved in #9903: the `while`/`until` modifier parser now treats its
+     bare-block operand as a Block value, leaving its body uninvoked.
 5. **Role classification (D7): SCOPE half landed (2026-09-02), value half
    deferred.** `Stmt::RoleDecl` is now `Signature(ArgSupply::AllMu)` rather
    than `Transparent`, which fixes the real half of the defect: a role body no

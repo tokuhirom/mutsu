@@ -88,6 +88,26 @@ impl Interpreter {
         Ok(name)
     }
 
+    /// Whether `class_name` is a routine meta-object class (`Method`,
+    /// `Submethod`, `Regex`) or a synthesized mixin type over one
+    /// (`Method+{R}` after `$method does R`, see [`Self::ensure_mixin_class`]):
+    /// the object still carries the base's stored meta attributes, so `.wrap`,
+    /// `.unwrap` and `CALL-ME` apply to it unchanged.
+    // Cost: O(1) for the bare classes; O(d) for a mixin type, d = its MRO
+    // length.
+    pub(crate) fn is_method_object_class(&mut self, class_name: &str) -> bool {
+        const BASES: [&str; 3] = ["Method", "Submethod", "Regex"];
+        if BASES.contains(&class_name) {
+            return true;
+        }
+        !self.user_declared_classes.contains(class_name)
+            && self.registry().classes.contains_key(class_name)
+            && self
+                .class_mro(class_name)
+                .iter()
+                .any(|c| BASES.contains(&c.as_str()))
+    }
+
     /// `$obj does R` where `$obj` is a real object: rebless it into `C+{R}` in
     /// place. Returns `None` when the value is not an instance (an `Int`, a
     /// `Str`, an already-wrapped `Mixin`), leaving those to the wrapper path.

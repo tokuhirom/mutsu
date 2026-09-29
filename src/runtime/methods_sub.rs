@@ -245,6 +245,18 @@ impl Interpreter {
                 .unwrap_or(Value::NIL)
             }));
         }
+        // `is implementation-detail` -- see the matching arm in
+        // `dispatch_sub_method` below (a bare `&name` reference reaches this
+        // function instead, as a `ValueView::Routine`, so both need the arm).
+        if method == "is-implementation-detail" && args.is_empty() {
+            let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+            let is_impl_detail = self
+                .registry()
+                .functions
+                .get(&key)
+                .is_some_and(|def| def.is_implementation_detail);
+            return Some(Ok(Value::truth(is_impl_detail)));
+        }
         if method == "cando" && args.len() == 1 {
             let call_args = Self::capture_to_call_args(&args[0]);
             let matching = self
@@ -302,6 +314,7 @@ impl Interpreter {
                             is_invocant: false,
                             shape_constraints: None,
                             block_param: false,
+                            code: Default::default(),
                             trait_args: Vec::new(),
                         })
                         .collect()
@@ -388,6 +401,7 @@ impl Interpreter {
                             is_invocant: false,
                             shape_constraints: None,
                             block_param: false,
+                            code: Default::default(),
                             trait_args: Vec::new(),
                         })
                         .collect()
@@ -524,6 +538,7 @@ impl Interpreter {
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     })
                     .collect()
@@ -1028,10 +1043,35 @@ impl Interpreter {
                 .unwrap_or(Value::NIL)
             }));
         }
+        // `is implementation-detail` -- read back from the registered
+        // `FunctionDef` (see `registration_sub.rs`'s `is_implementation_detail:
+        // custom_traits.iter().any(...)`). A builtin like `&say` has no
+        // registry entry under its own name and answers `False`, matching
+        // real Raku rather than raising "No such method".
+        if method == "is-implementation-detail" && args.is_empty() {
+            let key = crate::qualified::qualified(data.package, data.name);
+            let is_impl_detail = self
+                .registry()
+                .functions
+                .get(&key)
+                .is_some_and(|def| def.is_implementation_detail);
+            return Some(Ok(Value::truth(is_impl_detail)));
+        }
         if matches!(method, "of" | "returns") && args.is_empty() {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());
+            // The return constraint is recorded by its source spelling; a
+            // lexical type (`my subset ofTest ...; --> ofTest`) lives under a
+            // mangled storage name (ADR-0047), so answer the type object the
+            // spelling is bound to in the closure's scope, which is the one
+            // the bare `ofTest` term evaluates to.
+            let type_name = match data.env.get(&type_name).map(Value::view) {
+                Some(ValueView::Package(p)) if p.resolve().contains('\u{0}') => {
+                    p.resolve().to_string()
+                }
+                _ => self.lexical_env_remap_name(&type_name),
+            };
             return Some(Ok(Value::package(Symbol::intern(&type_name))));
         }
         if method == "rw" && args.is_empty() {

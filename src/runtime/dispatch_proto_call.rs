@@ -350,19 +350,37 @@ impl Interpreter {
     /// ```
     ///
     /// `name` is the routine as the call named it (`"infix:<cross>"`) and is
-    /// what the candidate lines are collected under. Named arguments are left
-    /// out of the call profile, as rakudo does.
+    /// what the candidate lines are collected under.
     pub(crate) fn multi_no_match_error(&self, name: &str, args: &[Value]) -> RuntimeError {
         let arg_types: Vec<String> = args
             .iter()
-            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .map(|a| {
-                let tn = super::value_type_name(a);
-                if !a.is_nil() {
-                    format!("{}:D", tn)
-                } else {
-                    tn.to_string()
-                }
+                let arg = match a.view() {
+                    ValueView::VarRef { value, .. } => value,
+                    _ => a,
+                };
+                arg.with_deref(|arg| match arg.view() {
+                    ValueView::Pair(key, value) => {
+                        format!(":{}({})", key, crate::value::what_type_name(value))
+                    }
+                    _ => {
+                        let smiley = if matches!(
+                            arg.view(),
+                            ValueView::Package(_) | ValueView::ParametricRole { .. }
+                        ) {
+                            ":U"
+                        } else {
+                            ":D"
+                        };
+                        let type_name = match arg.view() {
+                            ValueView::Array(_, kind) if !kind.is_real_array() => {
+                                "List".to_string()
+                            }
+                            _ => crate::value::what_type_name(arg),
+                        };
+                        format!("{}{}", type_name, smiley)
+                    }
+                })
             })
             .collect();
         let call_profile = format!("{}({})", name, arg_types.join(", "));
@@ -402,42 +420,20 @@ impl Interpreter {
         let global_prefix = format!("GLOBAL::{}/", name);
         let bare_prefix = format!("{}/", name);
         let mut seen_sigs = std::collections::HashSet::new();
-        for (key, def) in self.registry().functions.iter() {
-            let ks = key.resolve();
-            if !ks.starts_with(&local_prefix)
-                && !ks.starts_with(&global_prefix)
-                && !ks.starts_with(&bare_prefix)
-            {
-                continue;
-            }
-            let sig_parts: Vec<String> = def
-                .param_defs
-                .iter()
-                .filter(|pd| !pd.traits.iter().any(|t| t == "invocant"))
-                .map(|pd| {
-                    if pd.name == "__type_only__" {
-                        pd.type_constraint.as_deref().unwrap_or("Any").to_string()
-                    } else {
-                        let sigil = if pd.name.starts_with('@')
-                            || pd.name.starts_with('%')
-                            || pd.name.starts_with('&')
-                        {
-                            ""
-                        } else if pd.sigilless {
-                            "\\"
-                        } else {
-                            "$"
-                        };
-                        let name_part = format!("{}{}", sigil, pd.name);
-                        if let Some(tc) = &pd.type_constraint {
-                            format!("{} {}", tc, name_part)
-                        } else {
-                            name_part
-                        }
-                    }
-                })
-                .collect();
-            let sig_str = format!("    ({})", sig_parts.join(", "));
+        let registry = self.registry();
+        let mut candidates: Vec<_> = registry
+            .functions
+            .iter()
+            .filter(|(key, _)| {
+                let ks = key.resolve();
+                ks.starts_with(&local_prefix)
+                    || ks.starts_with(&global_prefix)
+                    || ks.starts_with(&bare_prefix)
+            })
+            .collect();
+        candidates.sort_by_key(|(_, def)| def.decl_order);
+        for (_, def) in candidates {
+            let sig_str = format!("    {}", Self::build_signature_string(&def.param_defs));
             if seen_sigs.insert(sig_str.clone()) {
                 sig_lines.push(sig_str);
             }

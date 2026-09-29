@@ -255,25 +255,13 @@ impl Interpreter {
             for attr in &class_def.attributes {
                 let (attr_name, is_public, is_rw) = (&attr.name, attr.is_public, attr.is_rw);
                 if is_public && attr_name == method_name {
-                    let mut env = crate::env::Env::new();
-                    env.insert(
-                        "__mutsu_callable_type".to_string(),
-                        Value::str_from("Method"),
-                    );
-                    let callable = Value::make_sub(
-                        class_name,
-                        Symbol::intern(method_name),
-                        vec!["self".to_string()],
-                        vec![Self::make_invocant_param(&class_name_str)],
-                        vec![],
-                        is_rw,
-                        env,
-                    );
-                    return Some(Self::wrap_accessor_method_object(
+                    let (source_line, source_file) = (attr.source_line, attr.source_file);
+                    return Some(self.instance_accessor_method_object(
                         method_name,
                         &class_name_str,
                         is_rw,
-                        callable,
+                        source_line,
+                        source_file.map(|f| f.as_str()),
                     ));
                 }
             }
@@ -305,12 +293,15 @@ impl Interpreter {
                 false,
                 env,
             );
-            return Some(Self::wrap_accessor_method_object(
+            let attrs = self.accessor_method_attrs(
                 method_name,
                 &class_name_str,
                 false,
                 callable,
-            ));
+                None,
+                None,
+            );
+            return Some(Value::make_instance(Symbol::intern("Method"), attrs));
         }
         // Check grammar token/rule/regex definitions -- walks the MRO like the
         // class-methods loop above, so a `token`/`rule` declared only on an
@@ -380,12 +371,77 @@ impl Interpreter {
         None
     }
 
-    /// Build a minimal Method `Instance` for an auto-generated attribute
+    /// The Method `Instance` for the auto-generated accessor of `owner`'s public
+    /// instance attribute `name` — what `.^lookup`, `.^find_method` and
+    /// `.^can` all hand out for it, so a `.wrap` on any of them registers the
+    /// same wrap chain.
+    pub(super) fn instance_accessor_method_object(
+        &self,
+        name: &str,
+        owner: &str,
+        is_rw: bool,
+        source_line: Option<i64>,
+        source_file: Option<&str>,
+    ) -> Value {
+        let mut env = crate::env::Env::new();
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::str_from("Method"),
+        );
+        let callable = Value::make_sub(
+            Symbol::intern(owner),
+            Symbol::intern(name),
+            vec!["self".to_string()],
+            vec![Self::make_invocant_param(owner)],
+            vec![],
+            is_rw,
+            env,
+        );
+        let mut attrs =
+            self.accessor_method_attrs(name, owner, is_rw, callable, source_line, source_file);
+        // An instance attribute's accessor is candidate slot zero of the
+        // method-wrap registry, exactly like the accessor objects
+        // `.^method_table` hands out, so `.^find_method('x').wrap(...)` /
+        // `.^lookup('x').wrap(...)` installs a wrapper that later reads and
+        // assignments run (Object::Permission's `is authorised-by` wraps an
+        // attribute's accessor from its `compose`). A class-level `my $.x`
+        // accessor has no dispatch that consults that registry, so it gets no
+        // wrap identity and `.wrap` on it stays unsupported rather than
+        // silently ineffective.
+        attrs.insert(
+            "__mutsu_lookup_class".to_string(),
+            Value::str(owner.to_string()),
+        );
+        attrs.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(name.to_string()),
+        );
+        attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+        Value::make_instance(Symbol::intern("Method"), attrs)
+    }
+
+    /// The attributes of a minimal Method `Instance` for an auto-generated attribute
     /// accessor (`has $.x`), wrapping the pre-built accessor `Sub` as
     /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
     /// accessor is synthesized, not declared), so this does not go through
     /// `make_method_object_with_owner`.
-    fn wrap_accessor_method_object(name: &str, owner: &str, is_rw: bool, callable: Value) -> Value {
+    ///
+    /// `source_line`/`source_file` are the attribute's own `has`-declaration
+    /// site (`ClassAttributeDef::source_line`/`source_file`, threaded from
+    /// `CompiledAttrDecl::decl_line` -- see `Compiler::compile_class_attr_decls`),
+    /// mirroring how `make_method_object_with_owner_ex` reports `Code.line`/
+    /// `.file` for a user-declared method. `None` (reported as `Nil`, never a
+    /// fabricated location) for a class-level `our`/`my` attribute or a
+    /// non-plan-backed construction site that does not track it yet.
+    fn accessor_method_attrs(
+        &self,
+        name: &str,
+        owner: &str,
+        is_rw: bool,
+        callable: Value,
+        source_line: Option<i64>,
+        source_file: Option<&str>,
+    ) -> std::collections::HashMap<String, Value> {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
@@ -402,8 +458,21 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
+        attrs.insert(
+            "line".to_string(),
+            source_line.map_or(Value::NIL, Value::int),
+        );
+        attrs.insert(
+            "file".to_string(),
+            source_file
+                .map(|f| {
+                    let source_file_sym = Symbol::intern(f);
+                    Value::str(self.format_routine_file(f.to_string(), Some(source_file_sym)))
+                })
+                .unwrap_or(Value::NIL),
+        );
         attrs.insert("__mutsu_method_callable".to_string(), callable);
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        attrs
     }
 
     /// Build the callable `Sub` value for a single (non-dispatcher) method
@@ -472,6 +541,7 @@ impl Interpreter {
             code_signature: None,
             shape_constraints: None,
             block_param: false,
+            code: Default::default(),
             trait_args: Vec::new(),
         }
     }
@@ -573,26 +643,9 @@ impl Interpreter {
     }
 
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)
-    /// by checking the hardcoded method lists for the type and its ancestors.
+    /// by checking the builtin method rows of the type and its ancestors.
     fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
-        // Check the type itself and its real ancestors, per the builtin type
-        // catalog's own MRO -- NOT an unconditional ["Cool", "Any", "Mu"]
-        // guess. `Pair`'s real MRO is `[Pair, Any, Mu]` (no `Cool`); blindly
-        // probing `Cool`'s method list here made `Pair.^can($any_cool_
-        // coercion_method)` a false positive once `Cool`'s own list grew
-        // past the handful of names that happened not to collide (ADR-0019
-        // Phase F box F3 step 2, `t/native-int-coerce-methods-are-cool-
-        // only.t`'s "Pair cannot int8" pin).
-        let ancestors = self
-            .registry()
-            .class_mro_readonly(type_name)
-            .map(|mro| mro.iter().map(|s| s.to_string()).collect::<Vec<_>>())
-            .unwrap_or_else(|| {
-                [type_name, "Cool", "Any", "Mu"]
-                    .into_iter()
-                    .map(String::from)
-                    .collect()
-            });
+        let ancestors = self.builtin_method_ancestors(type_name);
         for tn in &ancestors {
             let mut methods = Vec::new();
             self.collect_builtin_type_methods(tn, &mut methods);
@@ -601,6 +654,47 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    /// The ancestors whose builtin method rows `type_name` inherits, in MRO
+    /// order -- the chain `.^mro` reports (ADR-0051, #10132). The registry's
+    /// cached MRO of a bootstrap class can stop at the class itself
+    /// (`Promise` caches `[Promise]`), and a registered class whose MRO is not
+    /// computed yet has none at all, so this walks the parents, splices in
+    /// the builtin type catalog's chain for every catalog type it meets, and
+    /// ends in `Any`/`Mu` like `classhow_mro_names`. It never guesses `Cool`:
+    /// a class is `Cool` only when that chain says so. `Pair`'s real MRO is
+    /// `[Pair, Any, Mu]`, and probing `Cool`'s rows for it made
+    /// `Pair.^can($any_cool_coercion_method)` a false positive (ADR-0019
+    /// Phase F box F3 step 2, `t/native-int-coerce-methods-are-cool-only.t`'s
+    /// "Pair cannot int8" pin).
+    // Cost: O(d * m), d = ancestors, m = MRO length of a catalog ancestor.
+    fn builtin_method_ancestors(&self, type_name: &str) -> Vec<String> {
+        use crate::builtins::builtin_type_catalog::builtin_type_info;
+        let own: Vec<String> = match builtin_type_info(type_name) {
+            Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),
+            None => self.mro_readonly(type_name),
+        };
+        let mut chain: Vec<String> = Vec::with_capacity(own.len() + 2);
+        for name in own {
+            let catalog = builtin_type_info(&name);
+            if !chain.contains(&name) {
+                chain.push(name);
+            }
+            for ancestor in catalog.map_or(&[][..], |info| info.mro) {
+                if !chain.iter().any(|n| n == ancestor) {
+                    chain.push(ancestor.to_string());
+                }
+            }
+        }
+        if !chain.iter().any(|n| n == "Mu") {
+            for tail in ["Any", "Mu"] {
+                if !chain.iter().any(|n| n == tail) {
+                    chain.push(tail.to_string());
+                }
+            }
+        }
+        chain
     }
 
     pub(super) fn classhow_find_method(

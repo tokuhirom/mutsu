@@ -244,7 +244,8 @@ impl Compiler {
             Expr::AssignExpr { name, .. } => Some(name.clone()),
             Expr::CompoundAssign { expanded, .. } => Self::postfix_index_name(expanded),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+                Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
+                Stmt::Assign { name, .. } => Some(name.clone()),
                 _ => None,
             },
             _ => None,
@@ -767,8 +768,23 @@ impl Compiler {
     /// it registers in place, so a shell would be pure double-registration
     /// overhead.
     pub(super) fn hoist_type_decl_shells(&mut self, stmts: &[Stmt]) {
+        let original_package = self.current_package.clone();
+        let original_in_unit_package = self.in_unit_package;
         let mut seen_runtime_stmt = false;
         for stmt in stmts {
+            if let Stmt::Package {
+                name,
+                is_unit: true,
+                ..
+            } = stmt
+            {
+                // Shells are emitted before source-order statements, but a
+                // preceding unit declarator changes their lexical package.
+                // Keep the compiler's qualification context in source order;
+                // compile_unit already emits SetCurrentPackage before shells.
+                self.current_package = self.qualify_package_name(&name.resolve());
+                self.in_unit_package = true;
+            }
             if !seen_runtime_stmt {
                 // Declaration/pragma statements register symbols but run no
                 // user code; anything else may forward-reference a later type.
@@ -828,6 +844,8 @@ impl Compiler {
                 _ => {}
             }
         }
+        self.current_package = original_package;
+        self.in_unit_package = original_in_unit_package;
     }
 
     /// The declaration-only subset of a class body used by

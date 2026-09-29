@@ -64,6 +64,39 @@ impl Interpreter {
 }
 
 impl Interpreter {
+    /// Does a qq body interpolate only compile-time-constant scalars
+    /// (`$name`), which Rakudo inlines into the declarative prefix?
+    // Cost: O(n), n = the body's length.
+    fn qq_body_is_constant(&self, body: &str) -> bool {
+        let chars: Vec<char> = body.chars().collect();
+        let mut names = Vec::new();
+        let mut i = 0;
+        while i < chars.len() {
+            match chars[i] {
+                '\\' => i += 1,
+                '@' | '%' | '&' | '{' => return false,
+                '$' => {
+                    let start = i + 1;
+                    let mut j = start;
+                    while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                        j += 1;
+                    }
+                    if j == start {
+                        return false;
+                    }
+                    names.push(chars[start..j].iter().collect::<String>());
+                    i = j - 1;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        !names.is_empty()
+            && names
+                .iter()
+                .all(|n| self.is_compile_time_constant_scalar(n))
+    }
+
     /// Handle the double-quoted atom opening at `chars[at]` when the
     /// compiler lowers such an atom to a qq thunk (`crate::regex_qq_atoms`),
     /// returning the position after the closing quote. When the regex's
@@ -106,6 +139,12 @@ impl Interpreter {
         let ValueView::Str(text) = result.view() else {
             unreachable!("filtered to a Str above");
         };
+        // A runtime interpolation ends the declarative LTM prefix (ADR-0022
+        // Slice 5); only a body of compile-time constants is inlined.
+        let mark = !self.qq_body_is_constant(&body);
+        if mark {
+            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+        }
         out.push('\'');
         for c in text.chars() {
             if matches!(c, '\\' | '\'') {
@@ -114,6 +153,9 @@ impl Interpreter {
             out.push(c);
         }
         out.push('\'');
+        if mark {
+            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+        }
         Some(close + 1)
     }
 }

@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 11.09,
+        "secs": 11.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.79,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.57,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,11 +57,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Bad escape sequence: \\e[18m",
-        "nok": 1,
-        "ok": 1,
+        "first_failure": "Cannot resolve caller draw-box(A:D: Int:D, Int:D, Int:D, Int:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
         "plan": null,
-        "secs": 0.42,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 2.44,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,10 +94,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-27",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2f3b7d6",
+    "mutsu_commit": "6235cda",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -112,7 +112,7 @@
   "totals": {
     "baseline_assertions": 35,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
+    "mutsu_assertions": 0,
     "parity_files": 0,
     "regressed_files": 1
   },

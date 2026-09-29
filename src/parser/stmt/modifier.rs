@@ -333,6 +333,16 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
             expr_ends_with_block(value)
         }
+        // A pair whose value is a block closes the line with that block's `}`:
+        // `@a.push: $key => { ... }` followed by a newline and `if COND -> $x {`
+        // is two statements, exactly like a direct block argument (Commands'
+        // `extended-help-from-hash`).
+        Expr::PositionalPair(inner) => expr_ends_with_block(inner),
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            right,
+            ..
+        } => expr_ends_with_block(right),
         _ => false,
     }
 }
@@ -387,6 +397,15 @@ pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
 fn block_follows_modifier_condition(r: &str) -> bool {
     let r = r.trim_start();
     r.starts_with('{') || r.starts_with("->")
+}
+
+/// A bare block to the left of `while`/`until` is the modifier's operand: the
+/// loop repeatedly evaluates the Block value without invoking its body.
+fn while_modifier_operand(stmt: Stmt) -> Stmt {
+    match stmt {
+        Stmt::Block(body) => Stmt::Expr(crate::ast::make_anon_sub(body)),
+        other => other,
+    }
 }
 
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
@@ -873,7 +892,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             r,
             Stmt::While {
                 cond,
-                body: vec![stmt],
+                body: vec![while_modifier_operand(stmt)],
                 label: None,
                 is_statement_modifier: true,
                 is_until: false,
@@ -900,7 +919,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
                 },
-                body: vec![stmt],
+                body: vec![while_modifier_operand(stmt)],
                 label: None,
                 is_statement_modifier: true,
                 is_until: true,

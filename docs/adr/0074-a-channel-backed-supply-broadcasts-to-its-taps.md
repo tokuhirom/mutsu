@@ -183,6 +183,10 @@ and runs one act loop per registered tap, each with its own subscriber.
   nothing in the first place), but it is not right. Per-subscriber close, and
   retiring the upstream only once every subscriber has closed, is deliberately
   left out of this decision.
+  *Follow-up (issue #9899):* now implemented within this decision's design —
+  the close flag lives on each subscriber queue, a closed queue receives
+  nothing more and counts as gone for `Broadcast::all_taps_gone`, so the
+  producer retires only when the last tap is closed or dropped.
 - **Not every channel-backed source is a broadcast point, so exclusivity became
   an explicit property.** Row 09 is the measured counter-example: rakudo hands
   each chunk of an `IO::Socket::Async` connection's read Supply to exactly one

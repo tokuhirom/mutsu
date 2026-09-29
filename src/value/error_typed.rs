@@ -508,6 +508,14 @@ impl RuntimeError {
         // message uses the declared name, as rakudo does (#9654).
         let expected_display = crate::value::enum_display_name(expected);
         let shown_expected = expected_display.as_deref().unwrap_or(expected);
+        // Demangle a lexical type's storage name (ADR-0047).
+        let demangled;
+        let shown_expected = if shown_expected.contains('\u{0}') {
+            demangled = crate::value::user_facing_type_name(shown_expected).into_owned();
+            demangled.as_str()
+        } else {
+            shown_expected
+        };
         // Rakudo's wording is `expected X but got Y (repr)` — the `(repr)` tail
         // is present for any value with a short representation. Kept identical
         // to `runtime::utils::type_check_assignment_error`, which builds the
@@ -553,7 +561,9 @@ impl RuntimeError {
         } else {
             ("a type object", "an object instance", "multi")
         };
-        let display_param = if param.starts_with(['$', '@', '%', '&']) {
+        let display_param = if crate::value::signature::is_anonymous_param_name(param) {
+            "<anon>".to_string()
+        } else if param.starts_with(['$', '@', '%', '&']) {
             param.to_string()
         } else {
             format!("${}", param)
@@ -572,8 +582,8 @@ impl RuntimeError {
             }
         } else {
             format!(
-                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a '.new'?",
-                display_param, routine, kind, expected, actual_kind, got
+                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a\n'{}'?",
+                display_param, routine, kind, expected, actual_kind, got, hint
             )
         };
         let mut attrs = ValueMap::default();

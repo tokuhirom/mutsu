@@ -147,6 +147,7 @@ impl Value {
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
+                    && super::eqv_container_type::same_container_parameterization(self, other)
                     && a.iter().zip(b.iter()).all(|(x, y)| x.eqv_inner(y, seen))
             }
             // Buffer storage: bytes and element type, same rule as `==`.
@@ -154,6 +155,7 @@ impl Value {
             // Hashes: recursively use eqv for values
             (ValueView::Hash(a), ValueView::Hash(b)) => {
                 a.len() == b.len()
+                    && super::eqv_container_type::same_container_parameterization(self, other)
                     && a.iter()
                         .all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv_inner(bv, seen)))
             }

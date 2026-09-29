@@ -95,13 +95,21 @@ impl Interpreter {
     /// implementation that already handles them, rather than being partially
     /// re-derived here.
     ///
-    /// `grow` is the ARGUMENT producer's own rule (see
-    /// [`Self::exec_index_arg_ref_op`]): an argument position is a definite
-    /// bind, so a subscript past the end vivifies the element rather than
-    /// declining. A receiver (`@a[5].mut`) is not a bind and keeps the
-    /// declining behaviour, which is why the two producers no longer share one
-    /// answer here.
-    fn take_subscript_element_cell(&mut self, is_positional: bool, grow: bool) -> Option<Value> {
+    /// `argument` is the ARGUMENT producer's own rule (see
+    /// [`Self::exec_index_arg_ref_op`]): an argument position binds the
+    /// element's *location*, so a subscript past the end of an array, or a
+    /// missing hash key, hands over the deferred vivification token
+    /// (`HashEntryRef`) instead of declining. The token creates the element on
+    /// the first write through the parameter and never before, which is the
+    /// read-safety ADR-0059 Slice 3 needed: `sub f(\x) { x }; f(@a[5])` leaves
+    /// `@a` as it was, while `sub g($x is rw) { $x = 9 }; g(@a[5])` grows it
+    /// (rakudo: `[1 2 (Any) (Any) (Any) 9]`). A receiver (`@a[5].mut`) is not
+    /// a bind and keeps declining.
+    fn take_subscript_element_cell(
+        &mut self,
+        is_positional: bool,
+        argument: bool,
+    ) -> Option<Value> {
         let n = self.stack.len();
         if n < 2 {
             return None;
@@ -134,21 +142,12 @@ impl Interpreter {
             if i < 0 {
                 return None;
             }
-            // Past the end, `terminal: true` hands back a deferred
-            // vivification token rather than a location -- right for
-            // `my $r := @a[5]`, and right for `@a[5].mut`, which has no
-            // element to hand over. An ARGUMENT is a definite bind, so it asks
-            // for the eager (`terminal: false`) growth instead: rakudo answers
-            // `my @a = 1, 2; $r(@a[5])` with `[1 2 (Any) (Any) (Any) 9]`, and
-            // so does mutsu's own NAMED-callee path through `CallFunc`'s
-            // copy-in/copy-out temp protocol.
-            if !grow && i as usize >= len {
+            if !argument && i as usize >= len {
                 return None;
             }
-            // `terminal` only decides the past-the-end behaviour, and an
-            // in-range index never reaches it, so `!grow` says exactly "defer
-            // unless this is an argument".
-            target.array_slot_ref(i as usize, !grow)?
+            // `terminal: true`: past the end this is the deferred token, never
+            // an eager growth (see the doc comment).
+            target.array_slot_ref(i as usize, true)?
         } else {
             // An object hash (`my %h{Any}`) stores `.WHICH`-encoded keys, so the
             // subscript has to be encoded the same way the read path encodes it.
@@ -161,25 +160,16 @@ impl Interpreter {
             } else {
                 Value::hash_key_encode(&index)
             };
-            let cell = target.hash_slot_ref(&key, true)?;
-            // Same rule on the associative side: a MISSING key hands back the
-            // deferred token, which is right for a receiver but not for an
-            // argument -- a definite bind vivifies (`$r(%h<k>)` leaves
-            // `{:k(9)}` in rakudo). `terminal` cannot express that here (a
-            // missing key defers either way), so the entry is created and the
-            // slot re-taken. An EXISTING entry is untouched, which keeps the
-            // `terminal: true` promotion of a nested Array/Hash element.
-            if grow && !matches!(cell.view(), ValueView::ContainerRef(_)) {
-                target.hash_assign_at(&key, Value::NIL)?;
-                target.hash_slot_ref(&key, true)?
-            } else {
-                cell
-            }
+            // A MISSING key hands back the deferred token, exactly like the
+            // array arm past the end.
+            target.hash_slot_ref(&key, true)?
         };
-        // A missing key hands back a lazy `HashEntryRef` token rather than a
-        // location; that is a read, not a receiver container.
-        if !matches!(cell.view(), ValueView::ContainerRef(_)) {
-            return None;
+        match cell.view() {
+            ValueView::ContainerRef(_) => {}
+            // The deferred token is a location only for an argument; for a
+            // receiver it is a read.
+            ValueView::HashEntryRef { .. } if argument => {}
+            _ => return None,
         }
         self.stack.pop();
         self.stack.pop();

@@ -182,11 +182,17 @@ impl Compiler {
     /// — it decides which variable the program is talking about — so it reads
     /// the same environment unconditionally.
     pub(super) fn compile_time_constant(&self, name: &str) -> Option<&Value> {
-        // mutsu strips sigils in the AST, so a `my $DEBUG` / a parameter `$DEBUG`
-        // and a sigilless `constant DEBUG` collide on the same `local_map` key.
-        // Anything holding that key which is not the constant itself shadows it:
-        // fall back to the ordinary (GetLocal/GetBareWord) resolution.
-        if self.local_map.contains_key(name) && !self.constant_vars_in_scope.contains(name) {
+        // A sigil-less `constant DEBUG` lives under its term key (#9962), so a
+        // `my $DEBUG` / a parameter `$DEBUG` holding the plain `DEBUG` key is a
+        // different symbol and does not shadow it. What does is a term-key
+        // local that is not an in-scope constant (an inner non-foldable
+        // constant is forgotten by `note_constant_decl` instead) and, below, a
+        // sigil-less binding of the same spelling.
+        if !self.constant_vars_in_scope.contains(name)
+            && self
+                .local_map
+                .contains_key(crate::runtime::term_names::term_key(name).as_str())
+        {
             return None;
         }
         if self.sigilless_locals.contains(name) {

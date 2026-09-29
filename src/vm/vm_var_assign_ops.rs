@@ -545,15 +545,7 @@ impl Interpreter {
             return Value::array(indices);
         }
         if let ValueView::Sub(data) = idx.view() {
-            let mut sub_env = data.env.clone();
-            // Pass length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
-            for p in data.params.iter() {
-                sub_env.insert(p.to_string(), Value::int(len));
-            }
-            let saved_env = std::mem::take(self.env_mut());
-            *self.env_mut() = sub_env;
-            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-            *self.env_mut() = saved_env;
+            let result = self.call_subscript_code(&data, len);
             return result;
         }
         // Resolve Array of WhateverCode indices: @a[*-3, *-2, *-1]
@@ -569,15 +561,7 @@ impl Interpreter {
                 let mut resolved = Vec::with_capacity(items.len());
                 for item in items.iter() {
                     if let ValueView::Sub(data) = item.view() {
-                        let mut sub_env = data.env.clone();
-                        for p in data.params.iter() {
-                            sub_env.insert(p.to_string(), Value::int(len));
-                        }
-                        let saved_env = std::mem::take(self.env_mut());
-                        *self.env_mut() = sub_env;
-                        let result =
-                            loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                        *self.env_mut() = saved_env;
+                        let result = self.call_subscript_code(&data, len);
                         resolved.push(result);
                     } else {
                         resolved.push(item.clone());

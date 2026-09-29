@@ -150,9 +150,9 @@ impl Interpreter {
 
     /// Bind `arg_values` to the signature a Regex value carries and render the
     /// resulting pattern. Mirrors the named-rule path
-    /// (`resolve_one_token_pattern_with_args`): the parameters are bound in a
-    /// scratch interpreter, then baked into the pattern's code blocks and
-    /// interpolated into its text, because both run against the *caller's* env
+    /// (`resolve_one_token_pattern_with_args`): the parameters are bound over
+    /// an isolated copy of the env (`run_regex_sub_eval`), then baked into the
+    /// pattern's code blocks and interpolated into its text, because both run against the *caller's* env
     /// at match time and would otherwise never see them.
     fn instantiate_regex_value_with_args(
         &mut self,
@@ -173,38 +173,36 @@ impl Interpreter {
         // The instantiation depends on the caller's lexicals and on the
         // arguments, neither of which the subrule memo key carries.
         super::regex_arg_purity::note_opaque_read();
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_decl_registry_into(&mut interp);
+        let mut env = self.env.clone();
         // A regex is a closure over the scope its literal was written in; the
         // body of an anonymous declarator returned from a sub (HomoGlypher's
         // `tokenize`) routinely reads such a lexical.
         if let Some(scope) = value.regex_closure_scope() {
             for (key, captured) in scope.iter() {
-                interp.env.insert(key.clone(), captured.clone());
+                env.insert(key.clone(), captured.clone());
             }
         }
-        let names: Vec<String> = param_defs.iter().map(|pd| pd.name.clone()).collect();
-        if let Err(err) = interp.bind_function_args_values(param_defs, &names, arg_values) {
-            super::regex_arg_purity::note_opaque_read();
-            super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
-                *slot.borrow_mut() = Some(err);
-            });
-            return None;
-        }
-        let bare_names: Vec<String> = param_defs
-            .iter()
-            .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
-            .map(|pd| {
-                pd.name
-                    .trim_start_matches([':', '@', '%', '&', '!', '.'])
-                    .to_string()
-            })
-            .collect();
-        let pattern = interp.bake_bound_params_into_regex_code_blocks(&pattern, &bare_names);
-        let pattern = interp.interpolate_bound_regex_scalars(&pattern);
-        interp.instantiate_named_regex_arg_calls(&pattern).ok()
+        self.run_regex_sub_eval(env, None, |interp| {
+            let names: Vec<String> = param_defs.iter().map(|pd| pd.name.clone()).collect();
+            if let Err(err) = interp.bind_function_args_values(param_defs, &names, arg_values) {
+                super::regex_arg_purity::note_opaque_read();
+                super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    *slot.borrow_mut() = Some(err);
+                });
+                return None;
+            }
+            let bare_names: Vec<String> = param_defs
+                .iter()
+                .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
+                .map(|pd| {
+                    pd.name
+                        .trim_start_matches([':', '@', '%', '&', '!', '.'])
+                        .to_string()
+                })
+                .collect();
+            let pattern = interp.bake_bound_params_into_regex_code_blocks(&pattern, &bare_names);
+            let pattern = interp.interpolate_bound_regex_scalars(&pattern);
+            interp.instantiate_named_regex_arg_calls(&pattern).ok()
+        })
     }
 }

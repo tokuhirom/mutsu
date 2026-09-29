@@ -134,6 +134,8 @@ impl Interpreter {
             type_constraint: None,
             where_constraint: None,
             declared_shape: None,
+            source_line: None,
+            source_file: None,
         };
         let class_def =
             |name: &str, attributes: Vec<ClassAttributeDef>, methods: &[&str]| ClassDef {

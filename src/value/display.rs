@@ -827,6 +827,11 @@ impl Value {
                 Some(data) => data.name.resolve(),
                 None => String::new(),
             },
+            // The `IterationEnd` sentinel (a `Mu` instance) stringifies as its
+            // name, as rakudo's `Mu.Str` special-cases it.
+            ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID => {
+                "IterationEnd".to_string()
+            }
             // ADR-0064: a `.VAR` reflection object is a CONTAINER, and a
             // container stringifies as the value it holds -- Raku's `is
             // [1,2,3][1].VAR, 2` passes because binding the container to a
@@ -1019,13 +1024,6 @@ impl Value {
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
-                if let Some(ValueView::Str(s)) = attributes
-                    .as_map()
-                    .get("__formatter_rendered")
-                    .map(Value::view)
-                {
-                    return s.to_string();
-                }
                 let (y, m, d) =
                     crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
@@ -1039,13 +1037,6 @@ impl Value {
                     && attributes.contains_key("second")
                     && attributes.contains_key("timezone") =>
             {
-                if let Some(ValueView::Str(s)) = attributes
-                    .as_map()
-                    .get("__formatter_rendered")
-                    .map(Value::view)
-                {
-                    return s.to_string();
-                }
                 let (y, mo, d, h, mi, s, tz) =
                     crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
@@ -1082,16 +1073,13 @@ impl Value {
                     .map(Value::to_string_value)
                     .unwrap_or_default()
             }
-            // A subclass of native `Int` carries its numeric payload in the
-            // reserved slot seeded by both `new` and `bless`.
+            // A subclass of native `Int` or `Num` carries its numeric payload
+            // in the reserved slot seeded by both `new` and `bless`.
             ValueView::Instance { attributes, .. }
-                if attributes.contains_key("__mutsu_int_value") =>
+                if let Some(payload) =
+                    crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
             {
-                attributes
-                    .as_map()
-                    .get("__mutsu_int_value")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default()
+                payload.to_string_value()
             }
             // A subclass of native `Version` (`class Foo is Version {}`) carries
             // its built `Version` in `__mutsu_version_value` (#8070); stringify
@@ -1127,7 +1115,9 @@ impl Value {
                     msg
                 }
             }
-            ValueView::Instance { class_name, .. } => format!("{}()", class_name),
+            // Rakudo's `Mu.Str` on a plain instance is `Name<identity>`: distinct
+            // objects stringify (and so `eq`) differently even with equal attributes.
+            ValueView::Instance { class_name, id, .. } => format!("{}<{}>", class_name, id),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {
                     JunctionKind::Any => "any",

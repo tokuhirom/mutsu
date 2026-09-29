@@ -85,6 +85,11 @@ impl Interpreter {
                 "Int",
                 "Num",
                 "Str",
+                "IntStr",
+                "NumStr",
+                "RatStr",
+                "ComplexStr",
+                "Allomorph",
                 "Bool",
                 "Rat",
                 "FatRat",
@@ -362,6 +367,7 @@ impl Interpreter {
                             param_defs: our_param_defs,
                             body: decl.body.clone(),
                             is_test_assertion: false,
+                            is_implementation_detail: false,
                             is_rw: decl.is_rw,
                             is_raw: decl.is_raw,
                             declarator: crate::ast::RoutineDeclarator::Method,
@@ -394,6 +400,7 @@ impl Interpreter {
                             param_defs: my_param_defs,
                             body: decl.body.clone(),
                             is_test_assertion: false,
+                            is_implementation_detail: false,
                             is_rw: decl.is_rw,
                             is_raw: decl.is_raw,
                             declarator: crate::ast::RoutineDeclarator::Method,
@@ -601,6 +608,8 @@ impl Interpreter {
                             type_constraint: decl.type_constraint.clone(),
                             where_constraint: decl.where_constraint.clone(),
                             declared_shape,
+                            source_line: None,
+                            source_file: None,
                         });
                         if decl.where_constraint.is_some() {
                             Self::mark_attr_where_constraint_seen();
@@ -797,107 +806,6 @@ impl Interpreter {
             .sync_accessor_entries(Symbol::intern(name));
         // Recompile so the fast path sees the newly composed methods.
         self.compile_class_methods(name);
-    }
-
-    pub(crate) fn register_subset_decl(
-        &mut self,
-        name: &str,
-        base: &str,
-        predicate: Option<&Expr>,
-        version: &str,
-        is_my: bool,
-    ) {
-        // When the predicate is `* ~~ <expr>` (Whatever on LHS of SmartMatch),
-        // the parser doesn't wrap it as WhateverCode (to avoid breaking other
-        // smartmatch semantics). Convert it here to a Lambda so the subset
-        // check correctly evaluates `$_ ~~ <expr>` against the candidate value.
-        let predicate = predicate.map(|pred| {
-            if let Expr::Binary {
-                left,
-                op: crate::token_kind::TokenKind::SmartMatch,
-                right,
-            } = pred
-                && matches!(left.as_ref(), Expr::Whatever)
-            {
-                return Expr::Lambda {
-                    param: "_".to_string(),
-                    body: vec![Stmt::Expr(Expr::Binary {
-                        left: Box::new(Expr::Var("_".to_string())),
-                        op: crate::token_kind::TokenKind::SmartMatch,
-                        right: right.clone(),
-                    })],
-                    is_whatever_code: true,
-                    param_sigilless: false,
-                };
-            }
-            pred.clone()
-        });
-        // Drop any cached compiled predicate for this name so a redeclaration
-        // recompiles against the new predicate (see `subset_predicate_cache`).
-        self.subset_predicate_cache.remove(name);
-        // A subset defaults to `our` scope: declared inside a package/class/
-        // module it is also reachable by its qualified name (`URI::Scheme`),
-        // so register that alias too — smartmatch resolves the constraint by
-        // the exact name it was referenced with. A `my subset` is lexical and
-        // must NOT get the package-qualified alias (S12-subset/type-subset.t).
-        let pkg = self.current_package();
-        let def = SubsetDef {
-            base: base.to_string(),
-            predicate,
-            version: version.to_string(),
-            decl_package: pkg.clone(),
-        };
-        // The qualified name is the subset's *identity* (raku reports `Foo::RM`
-        // from `.^name` and in every type-check message), so the short name is
-        // registered as an alias pointing at it — the same shape `class`/`role`
-        // registration uses. The short key stays in `subsets` because most
-        // constraint lookups are by the exact name written at the use site.
-        let mut canonical = name.to_string();
-        // A compound name written inside a package is still relative to that
-        // package.  `subset Table::Position` inside `module M` is therefore
-        // `M::Table::Position`, not a top-level `Table::Position`.  The old
-        // bare-name-only qualification happened to handle `subset Small` but
-        // left compound names detached from their declaring package.  That
-        // made the package-qualified type object differ from the one stored
-        // in a typed signature (and, in turn, caused valid subset parameters
-        // to be rejected during dispatch).
-        let already_qualified =
-            name == pkg || name.starts_with(&format!("{}::", pkg)) || name.starts_with("GLOBAL::");
-        if !is_my && !already_qualified && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
-            let qualified = format!("{}::{}", pkg, name);
-            self.subset_predicate_cache.remove(&qualified);
-            self.registry_mut()
-                .subsets
-                .insert(qualified.clone(), def.clone());
-            self.env.insert(
-                qualified.clone(),
-                Value::package(Symbol::intern(&qualified)),
-            );
-            canonical = qualified;
-        }
-        // Keep the final name available by its leaf inside the declaring
-        // package.  Method signatures use that short spelling (`Position` in
-        // `class StaticTable`), while the registry stores the canonical
-        // package-qualified subset.  Package-key the alias just like nested
-        // classes, so it remains visible to the package's methods without
-        // leaking a global short name.
-        if !is_my
-            && !pkg.is_empty()
-            && pkg != "GLOBAL"
-            && pkg != "Main"
-            && let Some((_, short)) = canonical.rsplit_once("::")
-            && !short.is_empty()
-            && !Self::is_builtin_type(short)
-        {
-            crate::runtime::cow_table_mut(&mut self.package_type_aliases)
-                .entry(pkg.clone())
-                .or_default()
-                .entry(short.to_string())
-                .or_insert_with(|| canonical.clone());
-        }
-        self.registry_mut().subsets.insert(name.to_string(), def);
-        self.env
-            .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
     }
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
@@ -1257,6 +1165,7 @@ impl Interpreter {
         };
         // Collect attributes and methods from the role itself and all composed parent roles
         let mut all_attributes = role_def.attributes.clone();
+        let mut attribute_built = role_def.attribute_built.clone();
         let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def
             .methods
             .iter()
@@ -1278,6 +1187,9 @@ impl Interpreter {
                             {
                                 all_attributes.push(attr.clone());
                             }
+                        }
+                        for (attr_name, &built) in &parent_role.attribute_built {
+                            attribute_built.entry(attr_name.clone()).or_insert(built);
                         }
                         for (method_name, method_defs) in &parent_role.methods {
                             all_methods
@@ -1366,7 +1278,7 @@ impl Interpreter {
             attributes: all_attributes,
             attribute_types,
             attribute_smileys,
-            attribute_built: HashMap::new(),
+            attribute_built,
             embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
@@ -1400,6 +1312,15 @@ impl Interpreter {
         // A role pun materializes a new dispatch owner. Compile its copied
         // declarations once at that boundary so VM dispatch sees them in the
         // canonical method-entry table immediately.
+        // A pun is a composition like `class R does R { }`, so a role that
+        // still requires a method (`method m { ... }`) cannot be punned:
+        // Rakudo refuses `R.new` with the same "must be implemented by R
+        // because it is required by roles: R." error. Withdraw the half-built
+        // pun so the name stays a plain role.
+        if let Err(e) = self.resolve_class_stub_requirements(role_name) {
+            self.withdraw_role_pun(role_name);
+            return Err(e);
+        }
         self.compile_class_methods(role_name);
         // When punning a bare role (no type params), update the language
         // revision metadata from the matching candidate so that

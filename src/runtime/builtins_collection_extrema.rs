@@ -147,7 +147,7 @@ impl Interpreter {
 
         let mut filtered: Vec<Value> = expanded
             .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Package(name) if name == "Any"))
+            .filter(|v| crate::runtime::types::value_is_defined(v))
             .cloned()
             .collect();
         if filtered.is_empty() {

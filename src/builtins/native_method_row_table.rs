@@ -496,7 +496,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `target.to_string_value()` regardless of receiver type, so most of
     // `Str`'s surface is reachable from a `Match` receiver too. Only names
     // the probe actually recognized (non-zero arity bits) are listed here --
-    // `replace-with`/`ends-with`/`indices`/`match`/`starts-with`/`subst`/
+    // `ends-with`/`indices`/`match`/`starts-with`/`subst`/
     // `subst-mutate`/`substr-rw`/`substr-eq`/`trans`/`IO` returned zero and
     // are deliberately absent (not natively recognized for a Match
     // receiver). `so`/`not`/`defined` are deliberately absent here too: a
@@ -524,6 +524,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Match", "Array", 1, 0),
     ("Match", "prematch", 1, 0),
     ("Match", "postmatch", 1, 0),
+    ("Match", "replace-with", 2, 0),
     ("Match", "perl", 1, 0),
     ("Match", "WHICH", 1, 0),
     ("Match", "keys", 1, 0),
@@ -617,7 +618,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "unival", 1, 8),
     ("Str", "univals", 1, 8),
     ("Str", "chrs", 1, 0),
-    ("Str", "bytes", 1, 0),
     ("Str", "tclc", 1, 8),
     ("Str", "Range", 1, 0),
     ("Str", "Complex", 1, 0),
@@ -865,6 +865,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Failure", "Bool", 1, 0),
     ("Failure", "throw", 1, 0),
     ("X::AdHoc", "message", 1, 0),
+    ("X::AdHoc", "payload", 1, 0),
     ("X::AdHoc", "resume", 1, 0),
     ("X::AdHoc", "backtrace", 1, 0),
     ("X::AdHoc", "gist", 1, 0),
@@ -906,6 +907,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     //   types (`X::Method::NotFound`, `X::Str::Sprintf::Directives::Unsupported`,
     //   `X::Str::Numeric`) without adding a row for any of them individually.
     ("Any", "hash", 1, 8),
+    // #10132: raku's `Any.^lookup("list")` is defined (`Any.list` wraps the
+    // invocant in a one-element List).
+    ("Any", "list", 1, 9),
     ("Mu", "defined", 1, 8),
     ("Nil", "gist", 1, 0),
     ("Nil", "raku", 1, 0),
@@ -1028,6 +1032,17 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Duration", "base", 6, 0),
     ("Duration", "polymod", 8, 0),
     ("Map", "lazy", 1, 8),
+    // #9948: `hyper`/`race` are `Iterable` methods in raku (`Seq.^can` and
+    // `Map.^can` are 1 for both); `List`/`Array`/`Range` already had rows.
+    ("Seq", "hyper", 1, 8),
+    ("Seq", "race", 1, 8),
+    ("Map", "hyper", 1, 8),
+    ("Map", "race", 1, 8),
+    // ...and the `Iterable` role type object answers all three itself
+    // (`Iterable.hyper.configuration` is how `hyperize` reads its defaults).
+    ("Iterable", "lazy", 1, 9),
+    ("Iterable", "hyper", 1, 9),
+    ("Iterable", "race", 1, 9),
     ("Uni", "Str", 3, 0),
     ("Supply", "list", 1, 0),
     ("Junction", "gist", 1, 0),
@@ -1479,6 +1494,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Path", "accessed", 8, 12),
     ("IO::Path", "changed", 8, 12),
     ("IO::Path", "mode", 8, 12),
+    ("IO::Path", "inode", 8, 12),
+    ("IO::Path", "dev", 8, 12),
+    ("IO::Path", "devtype", 8, 12),
     ("IO::Path", "move", 8, 12),
     ("IO::Path", "open", 8, 12),
     ("IO::Path", "parent", 8, 12),
@@ -1496,6 +1514,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Path", "add", 8, 12),
     ("IO::Path", "child", 8, 12),
     ("IO::Path", "unlink", 8, 12),
+    ("IO::Path", "chown", 8, 12),
     ("IO::Path", "volume", 8, 12),
     ("IO::Path", "watch", 8, 12),
     ("IO::Path", "words", 3, 9),

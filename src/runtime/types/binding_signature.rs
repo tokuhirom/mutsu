@@ -71,6 +71,7 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
         !p.starts_with(':')
             && !p.starts_with("@:")
             && !p.starts_with("%:")
+            && !p.starts_with("&:")
             && !p.starts_with('^')
             && !p.starts_with("@^")
             && !p.starts_with("%^")
@@ -154,9 +155,7 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, &bound_val);
-                let r = self
-                    .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, true).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -164,11 +163,10 @@ impl Interpreter {
                 r
             }
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_block_value_recording_writes(&[Stmt::Expr(where_expr.as_ref().clone())])
-                    .map(|v| v.truthy())
+                self.eval_param_where_value(pd, true).map(|v| v.truthy())
             }
-            expr => self
-                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, true)
                 .map(|v| self.smart_match(&bound_val, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -207,17 +205,15 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self
-                    .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, true).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
                 }
                 r
             }
-            expr => self
-                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, true)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -281,7 +277,7 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self.eval_block_value(body).map(|v| v.truthy());
+                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -292,11 +288,10 @@ impl Interpreter {
             // evaluate and check truthiness of the result, not smart-match.
             // `where .method: args` is equivalent to `where { .method: args }`.
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                    .map(|v| v.truthy())
+                self.eval_param_where_value(pd, false).map(|v| v.truthy())
             }
-            expr => self
-                .eval_block_value(&[Stmt::Expr(expr.clone())])
+            _ => self
+                .eval_param_where_value(pd, false)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -415,22 +410,24 @@ impl Interpreter {
         } = iterator.view()
             && class_name == "Iterator"
         {
-            let all = match attributes.as_map().get("items").map(Value::view) {
-                Some(ValueView::Array(values, ..)) => values.to_vec(),
-                _ => Vec::new(),
-            };
-            let index = match attributes.as_map().get("index").map(Value::view) {
-                Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
-                _ => 0,
-            };
-            all[index..].to_vec()
+            if let Some(rest) = self.map_grep_stream_drain(&attributes) {
+                rest?
+            } else {
+                let all = match attributes.as_map().get("items").map(Value::view) {
+                    Some(ValueView::Array(values, ..)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
+                let index = match attributes.as_map().get("index").map(Value::view) {
+                    Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
+                    _ => 0,
+                };
+                all[index..].to_vec()
+            }
         } else {
             let mut items = Vec::new();
             loop {
                 let item = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                if matches!(item.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                    || matches!(item.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
-                {
+                if item.is_iteration_end() {
                     break;
                 }
                 items.push(item);
@@ -532,55 +529,19 @@ impl Interpreter {
         {
             value = (*inner).clone();
         }
-        // A gather normally materializes when it is bound to an aggregate,
-        // but a gather whose captured environment contains another live
-        // gather or an infinite sequence must stay pullable.  The latter is
-        // the shape of `gather { for @infinite { take ... } }`: forcing it
-        // here would never reach the callee's bounded consumer.
-        if pd.name.starts_with('@')
-            && let ValueView::LazyList(list) = value.view()
-            && list.is_from_gather()
-            && !list.is_genuinely_lazy()
-            && !list.env.iter().any(|(_, captured)| {
-                matches!(
-                    captured.view(),
-                    ValueView::LazyList(inner)
-                        if inner.is_from_gather() || inner.is_lazy_infinite()
-                ) || matches!(
-                    captured.view(),
-                    ValueView::Range(_, end)
-                        | ValueView::RangeExcl(_, end)
-                        | ValueView::RangeExclStart(_, end)
-                        | ValueView::RangeExclBoth(_, end)
-                        if end == i64::MAX
-                )
-            })
-        {
-            // A finite gather is a Seq until it is consumed, while an
-            // aggregate parameter exposes its pulled values as a List.
-            let items = self.force_lazy_list_vm(&list)?;
-            value = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                crate::value::ArrayKind::List,
-            );
-        }
-        // A genuinely lazy Seq (for example an infinite `.grep` pipeline) is
-        // already a pullable Positional.  Plain `@` binding presents it as a
-        // List, but must retain the deferred body: routing it through the
-        // ordinary PositionalBindFailover coercion asks for `.iterator` and
-        // drains an infinite source before the callee starts.  The List view
-        // shares the SeqBody, so later indexed/first consumers still pull the
-        // original source incrementally.
-        let lazy_seq_array_context = if pd.name.starts_with('@') {
+        // A gather can be infinite even when `.is-lazy` is False. Its captured
+        // values do not reveal whether the body will terminate, so binding it
+        // to an @ parameter must keep the source pullable. A List-context view
+        // lets a bounded index fetch only the prefix it needs.
+        // A Seq's List view similarly shares its deferred SeqBody.
+        let seq_list_array_context = if pd.name.starts_with('@') {
             if let ValueView::LazyList(list) = value.view()
-                && list.is_genuinely_lazy()
+                && (list.is_genuinely_lazy() || list.is_from_gather())
             {
                 let list = list.with_list_context();
                 value = Value::lazy_list(crate::gc::Gc::new(list));
                 true
-            } else if let ValueView::Seq(body) = value.view()
-                && body.is_lazy()
-            {
+            } else if let ValueView::Seq(body) = value.view() {
                 let body = std::sync::Arc::clone(&body);
                 value = Value::seq_list_view(&body);
                 true
@@ -590,22 +551,11 @@ impl Interpreter {
         } else {
             false
         };
-        if pd.name.starts_with('@')
-            && let ValueView::Seq(body) = value.view()
-            && !body.is_lazy()
-        {
-            let body = std::sync::Arc::clone(&body);
-            let items = self.reify_seq_body(&body)?;
-            value = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                crate::value::ArrayKind::List,
-            );
-        }
         let is_builtin_seq = matches!(value.view(), ValueView::Seq(body) if !body.is_lazy());
         let is_positional_bind_failover =
             is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
         if pd.name.starts_with('@')
-            && !lazy_seq_array_context
+            && !seq_list_array_context
             && is_positional_bind_failover
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {
@@ -683,20 +633,12 @@ impl Interpreter {
                     && !self.type_matches_value(src, &value)
                     && !self.type_matches_value(target, &value)
                 {
-                    let mut err = RuntimeError::new(format!(
-                        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                        pd.name,
-                        resolved_constraint,
-                        crate::runtime::value_type_name(&value)
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                    let exception = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                        ex_attrs,
-                    );
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                        &param_display_name(pd),
+                        &resolved_constraint,
+                        &value,
+                    )
+                    .with_parameter_object(pd, Some(&*self)));
                 }
                 let original = value.clone();
                 value = self
@@ -1324,7 +1266,8 @@ impl Interpreter {
                     let named_key = p
                         .strip_prefix(':')
                         .or_else(|| p.strip_prefix("@:"))
-                        .or_else(|| p.strip_prefix("%:"));
+                        .or_else(|| p.strip_prefix("%:"))
+                        .or_else(|| p.strip_prefix("&:"));
                     named_key.is_none()
                 })
                 .count();
@@ -1366,8 +1309,12 @@ impl Interpreter {
                     || p.starts_with("%^")
                     || p.starts_with("&^")
             };
-            let has_named_placeholder =
-                |p: &String| p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:");
+            let has_named_placeholder = |p: &String| {
+                p.starts_with(':')
+                    || p.starts_with("@:")
+                    || p.starts_with("%:")
+                    || p.starts_with("&:")
+            };
             let all_plain_positional = params
                 .iter()
                 .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
@@ -1392,7 +1339,8 @@ impl Interpreter {
                 let named_key = param
                     .strip_prefix(':')
                     .or_else(|| param.strip_prefix("@:"))
-                    .or_else(|| param.strip_prefix("%:"));
+                    .or_else(|| param.strip_prefix("%:"))
+                    .or_else(|| param.strip_prefix("&:"));
                 if let Some(key) = named_key {
                     // Use rfind so the rightmost named argument wins
                     if let Some((_, val)) = named_args.iter().rfind(|(k, _)| k == key) {
@@ -1565,6 +1513,7 @@ impl Interpreter {
                     .name
                     .strip_prefix("@:")
                     .or_else(|| pd.name.strip_prefix("%:"))
+                    .or_else(|| pd.name.strip_prefix("&:"))
                 {
                     rest
                 } else if pd.named {
@@ -1873,15 +1822,15 @@ impl Interpreter {
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &capture_value);
-                                let r = self.eval_block_value(body).map(|v| v.truthy());
+                                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
                                 }
                                 r
                             }
-                            expr => self
-                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            _ => self
+                                .eval_param_where_value(pd, false)
                                 .map(|v| self.smart_match(&capture_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
@@ -1961,7 +1910,15 @@ impl Interpreter {
                         // A sigiled `**@` slurpy is an Array in Raku. Keep the
                         // real Array kind here, while preserving the raw
                         // binding through the common parameter bookkeeping.
-                        let slurpy_value = Value::real_array(items);
+                        // `**@x is raw` binds the un-itemized List instead:
+                        // rakudo's `sub f(**@x is raw) { @x.raku }; f(())` is
+                        // `((),)`, whose `()` a later `*@` slurpy flattens
+                        // away (Hash::Agnostic's `new(**@values is raw)`).
+                        let slurpy_value = if pd.traits.iter().any(|t| t == "raw") {
+                            Value::array(items)
+                        } else {
+                            Value::real_array(items)
+                        };
                         self.bind_param_value(&key, slurpy_value.clone());
                         self.env.insert(key.clone(), slurpy_value.clone());
                         self.note_param_bound_aggregate(&key, &slurpy_value);
@@ -2233,15 +2190,15 @@ impl Interpreter {
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &slurpy_value);
-                                let r = self.eval_block_value(body).map(|v| v.truthy());
+                                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
                                 }
                                 r
                             }
-                            expr => self
-                                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            _ => self
+                                .eval_param_where_value(pd, false)
                                 .map(|v| self.smart_match(&slurpy_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
@@ -2281,6 +2238,7 @@ impl Interpreter {
                     .name
                     .strip_prefix("@:")
                     .or_else(|| pd.name.strip_prefix("%:"))
+                    .or_else(|| pd.name.strip_prefix("&:"))
                 {
                     rest
                 } else if pd.named {
@@ -3006,14 +2964,20 @@ impl Interpreter {
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(source_name));
                             self.sigilless_alias_seen = true;
-                        } else if matches!(args[positional_idx].view(), ValueView::ContainerRef(_))
-                        {
+                        } else if matches!(
+                            args[positional_idx].view(),
+                            ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+                        ) {
                             // A bare `ContainerRef` cell (e.g. the leaf container
                             // `deepmap`/hyper passes by reference) IS a writable
                             // lvalue even without a source variable name: the raw
                             // param binds the shared cell and mutations through it
                             // (`*++`, `*--`) write to the source slot. Keep it
-                            // mutable (do NOT mark readonly).
+                            // mutable (do NOT mark readonly). So is the deferred
+                            // vivification token a subscript argument past the
+                            // end / at a missing key arrives as (`$r(@a[5])`,
+                            // ADR-0059 Slice 3): the first write creates the
+                            // element.
                         } else if is_rw {
                             return Err(RuntimeError::parameter_rw_not_container(
                                 &param_display_name(pd),
@@ -3516,7 +3480,7 @@ impl Interpreter {
                         }
                         // Shape constraint check for array parameters
                         if let Some(shape_exprs) = &pd.shape_constraints {
-                            self.check_shape_constraint(&pd.name, &value, shape_exprs, args)?;
+                            self.check_shape_constraint(pd, &value, shape_exprs, args)?;
                         }
                         // Slice 2d: wrap a scalar-param array/hash in a shared cell
                         // so in-sub mutations (incl. `my @a := @$n`) propagate to
@@ -3721,6 +3685,7 @@ impl Interpreter {
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
+                            || pd.name == format!("&:{}", key)
                             // Named params with sigils: :@l has name "@l", match key "l"
                             || (pd.named
                                 && (pd.name == format!("@{}", key)

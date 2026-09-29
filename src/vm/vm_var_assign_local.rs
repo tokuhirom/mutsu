@@ -271,6 +271,7 @@ impl Interpreter {
             // which the name-keyed coercion above cannot see.
             let name = name.clone();
             val = self.apply_attr_container_element_type(&name, val, false)?;
+            val = self.untyped_container_assign_value(&name, None, val);
         }
         // Expression-context counterpart of the `SetLocal` attribute check: a
         // scalar attribute's declared type comes from the class registry, not
@@ -539,7 +540,11 @@ impl Interpreter {
     }
 
     pub(crate) fn add_sigil_prefix(name: &str) -> String {
-        if name.starts_with('$')
+        if let Some(term) = crate::runtime::term_names::term_spelling(name) {
+            // A sigil-less constant's term-namespace key (#9962) is displayed
+            // as the term it spells.
+            term.to_string()
+        } else if name.starts_with('$')
             || name.starts_with('@')
             || name.starts_with('%')
             || name.starts_with('&')

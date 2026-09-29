@@ -77,7 +77,7 @@ impl Interpreter {
         // win its dispatch, so it operates as its `Int` payload rather than
         // through the generic `Real` candidates' `.Bridge` (which is a Num, and
         // made `IntSub.new(1) / IntSub.new(0)` a Num division by zero).
-        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(&value) {
+        if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(&value) {
             return Ok(payload);
         }
         // Coerce when the type is known Real/Numeric OR the class defines a

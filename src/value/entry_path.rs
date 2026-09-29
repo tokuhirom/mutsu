@@ -272,15 +272,18 @@ impl EntryTerminal {
     /// What a read of this slot yields while the deferred bind is still
     /// UNCONNECTED — nothing was ever written through the bound variable.
     ///
-    /// A hash entry that does not exist reads as `Any`. An array slot past the
-    /// end reads as the array's hole value, which is `Any` only by default:
+    /// A hash entry that does not exist, and an array slot past the end, read
+    /// as the container's hole value, which is `Any` only by default:
     /// `my Int @i; my $r := @i[5]` reads `Int`, and an `is default(42)` array
-    /// reads `42` (verified against rakudo). That is the same value
+    /// or hash reads `42` (verified against rakudo). That is the same value
     /// [`EntryTerminal::insert`] fills the gap with, so the read agrees with
     /// what the eventual write leaves behind.
     pub(crate) fn unwritten_read(&self) -> Value {
         match self {
-            EntryTerminal::Hash(..) => Value::Package(crate::symbol::wk::any()),
+            // SAFETY: a shared read of the aliased container, mirroring `peek`.
+            // The clone ends the borrow before any caller can mutate through
+            // `gc_contents_mut`.
+            EntryTerminal::Hash(arc, _) => hash_hole(unsafe { &*Gc::as_ptr(arc) }),
             // SAFETY: a shared read of the aliased container, mirroring `peek`.
             // The clone ends the borrow before any caller can mutate through
             // `gc_contents_mut`.
@@ -301,6 +304,19 @@ impl EntryTerminal {
             _ => false,
         }
     }
+}
+
+/// What a missing hash key reads as — the `is default(...)` value, or the
+/// declared value type object (`my Int %h`), exactly as a plain `%h<k>` read
+/// answers. The twin of [`array_hole`].
+fn hash_hole(data: &HashData) -> Value {
+    data.default
+        .as_ref()
+        .map(|d| (**d).clone())
+        .unwrap_or_else(|| match data.value_type.as_deref() {
+            Some(ty) => Value::Package(crate::symbol::Symbol::intern(ty)),
+            None => Value::Package(crate::symbol::wk::any()),
+        })
 }
 
 /// The value a missing array slot is filled with — the declared element type

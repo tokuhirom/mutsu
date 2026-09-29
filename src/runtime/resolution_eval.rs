@@ -258,6 +258,7 @@ impl Interpreter {
             false,
             Some(CarrierCacheKey::Id(cache_id)),
             None,
+            None,
         )
     }
 
@@ -277,6 +278,7 @@ impl Interpreter {
             false,
             false,
             Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
+            None,
             None,
         )
     }
@@ -304,6 +306,7 @@ impl Interpreter {
             false,
             Some(CarrierCacheKey::Id(cache_id)),
             Some(free_var_writes_out),
+            None,
         )
     }
 
@@ -322,7 +325,20 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, true, None, None)
+        self.eval_block_value_inner(body, false, true, None, None, None)
+    }
+
+    /// Run a chunk the compiler built from a signature expression (ADR-0133)
+    /// with `eval_block_value`'s carrier semantics — topic restore, block
+    /// scope, lexical registry/code-env undo, `let` restore — and without
+    /// compiling anything. `record_free_var_writes` is
+    /// [`Interpreter::eval_block_value_recording_writes`]'s flag.
+    pub(crate) fn eval_precompiled_block_value(
+        &mut self,
+        chunk: &crate::opcode::CompiledDeclExpr,
+        record_free_var_writes: bool,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(&[], false, record_free_var_writes, None, None, Some(chunk))
     }
 
     /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
@@ -344,7 +360,7 @@ impl Interpreter {
         // retain-on-miss list then refreshes the slot in whichever frame declares
         // the lexical, and `propagate_pending_caller_writes` carries the value
         // across each intervening frame exit.
-        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None, None)
+        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None, None, None)
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -467,11 +483,12 @@ impl Interpreter {
         record_free_var_writes: bool,
         cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
+        precompiled: Option<&crate::opcode::CompiledDeclExpr>,
     ) -> Result<Value, RuntimeError> {
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
         let rw_tail = std::mem::take(&mut self.pending_eval_rw_tail);
-        if body.is_empty() {
+        if body.is_empty() && precompiled.is_none() {
             return Ok(Value::NIL);
         }
         // Taken (not read) so a block compiled from *inside* this body does not
@@ -544,7 +561,12 @@ impl Interpreter {
         // and `compile_block_value_opts` read it), then cleared before the body
         // runs so nothing compiled during execution inherits it.
         self.pending_eval_rw_tail = rw_tail;
-        let (code, compiled_fns) = if let Some(id) = cache_id {
+        let (code, compiled_fns) = if let Some(chunk) = precompiled {
+            // ADR-0133: compiled once by the compiler, in the declaring scope.
+            // The pending per-body marks taken above belong to a body a
+            // caller was about to compile, never to a signature expression.
+            (chunk.code.clone(), chunk.fns.clone())
+        } else if let Some(id) = cache_id {
             self.compile_block_value_cached(body, is_eval_unit, id, &post)
         } else {
             let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
@@ -778,9 +800,15 @@ impl Interpreter {
                 self.set_state_var(scoped_key, val);
             }
         }
-        let value = self.env().get("_").cloned().unwrap_or(Value::NIL);
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
-        result.map(|last_value| last_value.unwrap_or(value))
+        result.map(|last_value| {
+            last_value.unwrap_or_else(|| {
+                self.env()
+                    .get_sym(crate::symbol::wk::topic())
+                    .cloned()
+                    .unwrap_or(Value::NIL)
+            })
+        })
     }
 
     /// Fast path for `Lock::Async.protect { ... }` — executes a bare block

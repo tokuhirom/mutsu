@@ -21,6 +21,9 @@ impl Interpreter {
             line,
             code,
             env: self.env.clone(),
+            package: self.current_package_sym(),
+            routine: self.routine_stack.last().copied(),
+            synthetic: false,
         });
     }
 
@@ -81,6 +84,9 @@ impl Interpreter {
                 line: 0,
                 code: None,
                 env: Env::new(),
+                package: self.current_package_sym(),
+                routine: None,
+                synthetic: true,
             });
         }
     }

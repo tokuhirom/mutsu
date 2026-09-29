@@ -37,6 +37,9 @@ pub(super) enum NfaNode {
         pkg: Symbol,
         ic: bool,
         kind: LeafKind,
+        /// A literal that counts toward `litlen` (NQP's `_LL` edge; see
+        /// `regex_ltm_litend`).
+        ll: bool,
         next: u32,
     },
     /// `<.ws>`: a fate, except at the very start of the subject where a rule's
@@ -130,6 +133,10 @@ pub(crate) struct LtmMeasure {
     /// (ADR-0022 §4.2; Cro::Uri's `IPv6address`, ADR-0046 Slice 4). A `None`
     /// with `false` is a sound "cannot match here" verdict.
     pub(crate) stopped: bool,
+    /// The longest-literal tie-break (ADR-0022 §2): the length, from the
+    /// start position, just past the furthest `_LL` literal any path crossed
+    /// that is no further than `len` — MoarVM's `longlit` for the fate.
+    pub(crate) litlen: usize,
 }
 
 impl Interpreter {
@@ -149,9 +156,18 @@ impl Interpreter {
         let nfa = self.ltm_nfa_for(pattern, pkg, false);
         let run = nfa.run(self, chars, pos, &[]);
         let furthest = run.ends.iter().copied().max().max(run.fate);
+        let litlen = furthest.map_or(0, |furthest| {
+            run.ll_ends
+                .iter()
+                .copied()
+                .filter(|&end| end <= furthest)
+                .max()
+                .map_or(0, |end| end - pos)
+        });
         LtmMeasure {
             len: furthest.map(|end| end - pos),
             stopped: run.seqalt || run.fate.is_some(),
+            litlen,
         }
     }
 

@@ -927,6 +927,29 @@ impl Interpreter {
                 );
                 param_bindings.push((param_name, value));
             }
+            // `role_name` may itself be a non-parametric role that composed a
+            // parametric one (`role Kg does U["g"] {}`): `role_body_does_decl`
+            // records that binding under "Kg" in
+            // `registry.class_role_param_bindings`, since there is no class to
+            // key it by here. Without inheriting it, `5 does Kg` never sees
+            // U's parametric attribute default (#9834) -- `class D does Kg {}`
+            // has the analogous fix in `compose_role_into_class`.
+            if let Some(inherited) = self
+                .registry()
+                .class_role_param_bindings
+                .get(role_name)
+                .cloned()
+            {
+                for (param_name, value) in inherited {
+                    if !param_bindings.iter().any(|(k, _)| *k == param_name) {
+                        mixins.insert(
+                            MetaNs::RoleParam.owned_key_for_str(&param_name),
+                            value.clone(),
+                        );
+                        param_bindings.push((param_name, value));
+                    }
+                }
+            }
         }
         // Store the role's unique ID so that different lexical roles with the
         // same name (e.g. two `my role A { }` in different scopes) produce

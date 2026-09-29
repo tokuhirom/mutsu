@@ -302,6 +302,17 @@ impl Interpreter {
         }
     }
 
+    /// Whether a lazy (bind/container-mode) subscript's run-time index selects
+    /// more than one element: a slice list, a range, a `Seq`, a `Junction`, a
+    /// `*`, or a `WhateverCode` (an `Array` target resolves the last to one
+    /// position first). An itemized list `$(1,2)` is a single key.
+    fn lazy_index_selects_many(index: &Value) -> bool {
+        match index.view() {
+            ValueView::Junction { .. } | ValueView::Whatever | ValueView::Sub(_) => true,
+            _ => super::vm_hyper_method_ops::hyper_subscript_index_is_slice(index),
+        }
+    }
+
     /// Lazy variant of IndexAutovivify: returns a HashEntryRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
@@ -335,6 +346,24 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
+
+        // A subscript that selects several elements (a slice, a `Junction`, a
+        // `*`/`WhateverCode` not resolvable to one position) names no single
+        // location, so the deferred-path walk below cannot describe it: a
+        // missing-key step would record the whole list as one key. Decline to
+        // the ordinary read, which slices/autothreads. An `Array` keeps its own
+        // arms (a bound array slice promotes each element to a cell), which
+        // settle a list index themselves. This is what lets a nested subscript
+        // argument with a *computed* index (`g(%h{@k[$i]}<z>)`) be compiled in
+        // container mode (#10044): only the run-time value can tell.
+        if Self::lazy_index_selects_many(&index) {
+            let resolved = target.deref_container().descalarize().clone();
+            if !matches!(resolved.view(), ValueView::Array(..)) {
+                self.stack.push(resolved);
+                self.stack.push(index);
+                return self.exec_index_op_with_positional(is_positional);
+            }
+        }
 
         let resolved = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
@@ -448,6 +477,25 @@ impl Interpreter {
                     return self.exec_index_autovivify_op(is_positional);
                 }
             }
+            // An intermediate step PAST THE END of a mutable array is the
+            // array twin of a missing hash key: hand back the deferred token
+            // (`array_slot_ref`'s terminal arm), which the next step extends,
+            // instead of growing the array for a level that may never be
+            // written. `my @a; my $x := @a[1][2]` — or a nested subscript
+            // argument bound by a `\x` parameter that only reads it — leaves
+            // `@a` empty, as in rakudo; the first write walk-creates the path.
+            ValueView::Array(ref items, kind)
+                if matches!(
+                    kind,
+                    crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
+                ) && Self::index_to_usize(&index).is_some_and(|idx| idx >= items.len()) =>
+            {
+                let idx = Self::index_to_usize(&index).unwrap();
+                match resolved.array_slot_ref(idx, true) {
+                    Some(token) => self.stack.push(token),
+                    None => self.stack.push(Value::NIL),
+                }
+            }
             // When resolved is an Array (e.g. reached through a HashEntryRef),
             // descend via the non-lazy autoviv op so nested binding like
             // `$struct[1]<key><subkey>[1]` works (it promotes the element to a
@@ -518,15 +566,7 @@ impl Interpreter {
         let ValueView::Sub(data) = idx.view() else {
             return None;
         };
-        let mut sub_env = data.env.clone();
-        for p in data.params.iter() {
-            sub_env.insert(p.to_string(), Value::int(len));
-        }
-        let saved_env = std::mem::take(self.env_mut());
-        *self.env_mut() = sub_env;
-        let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-        *self.env_mut() = saved_env;
-        Some(result)
+        Some(self.call_subscript_code(&data, len))
     }
 
     /// Backward-compatible wrapper: defaults to associative indexing.
@@ -1248,6 +1288,25 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // Cost: O(1) per associative key read, excluding the user method body.
+        // Braces select AT-KEY even when their key is numeric. In particular,
+        // the inherited Any.AT-POS must not intercept an integer key, and a
+        // fractional key must reach AT-KEY without positional truncation.
+        if !is_positional
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && matches!(
+                index.view(),
+                ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..)
+            )
+            && self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
+        {
+            let result = self.try_compiled_method_or_interpret(target, "AT-KEY", vec![index])?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        if is_positional && matches!(target.view(), ValueView::Array(..)) {
+            Self::reject_pair_positional_index(&index)?;
+        }
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
@@ -1517,14 +1576,7 @@ impl Interpreter {
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -1613,14 +1665,7 @@ impl Interpreter {
             // Treat hash as a list of pairs with elems = hash.len()
             (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 match idx.view() {
                     ValueView::Int(i) if i < 0 => Self::make_out_of_range_failure(i),
                     ValueView::Int(i) => {
@@ -2570,14 +2615,7 @@ impl Interpreter {
             (_, ValueView::Sub(data)) if target.is_range() => {
                 let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 // A block returning a Range or a list of indices (e.g. `{0,1}`)
                 // slices the range's materialized elements.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -2756,15 +2794,7 @@ impl Interpreter {
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (ValueView::Array(items, is_arr), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
-                let mut sub_env = data.env.clone();
-                // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 // If the block returned a Range or a list of indices (e.g. `{0,1}`
                 // returns the List `(0,1)`), use every element as a slice index.
                 if idx.is_range() || idx.as_list_items().is_some() {
@@ -2829,14 +2859,7 @@ impl Interpreter {
                 } else {
                     0
                 };
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -2881,15 +2904,7 @@ impl Interpreter {
                     match val.view() {
                         ValueView::Whatever => len as f64,
                         ValueView::Sub(data) => {
-                            let mut sub_env = data.env.clone();
-                            for p in data.params.iter() {
-                                sub_env.insert(p.to_string(), Value::int(len));
-                            }
-                            let saved_env = std::mem::take(self.env_mut());
-                            *self.env_mut() = sub_env;
-                            let result =
-                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                            *self.env_mut() = saved_env;
+                            let result = self.call_subscript_code(&data, len);
                             match result.view() {
                                 ValueView::Int(i) => i as f64,
                                 _ => 0.0,
@@ -2922,14 +2937,7 @@ impl Interpreter {
             (ValueView::Uni(u), ValueView::Sub(data)) => {
                 let chars: Vec<char> = u.text().chars().collect();
                 let len = chars.len() as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, len);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),
@@ -3192,6 +3200,23 @@ impl Interpreter {
                     Value::NIL
                 }
             }
+            // An enum-valued key (`$pair{CSSValue::IntegerComponent}` on a `Str`
+            // enum) subscripts by its string form, like a Str key.
+            // Cost: O(k), k = key length.
+            (ValueView::Pair(key, value), ValueView::Enum { .. }) => {
+                if *key == index.to_string_value() {
+                    value.clone()
+                } else {
+                    Value::NIL
+                }
+            }
+            (ValueView::ValuePair(key, value), ValueView::Enum { .. }) => {
+                if key.to_string_value() == index.to_string_value() {
+                    value.clone()
+                } else {
+                    Value::NIL
+                }
+            }
             // Array + Str is only reachable for an ASSOCIATIVE subscript: a
             // positional one numified its index up front, so it never arrives
             // here as a Str. An Array does not support associative indexing.
@@ -3243,14 +3268,7 @@ impl Interpreter {
                     ValueView::Array(..) | ValueView::Hash(_) | ValueView::Instance { .. }
                 ) =>
             {
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(1)); // elems = 1
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let idx = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
+                let idx = self.call_subscript_code(&data, 1);
                 let i = match idx.view() {
                     ValueView::Int(i) => Some(i),
                     ValueView::Num(n) => Some(n as i64),

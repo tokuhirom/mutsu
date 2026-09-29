@@ -396,7 +396,7 @@ impl Interpreter {
     /// Callers use this AFTER the live env misses, so an in-scope binding
     /// always wins. Never falls through to the bare (GLOBAL) name — the
     /// lexical alias for `our` is block-scoped.
-    pub(super) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
+    pub(crate) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
         if crate::runtime::utils::has_double_colon(name) {
             return None;
         }
@@ -1032,9 +1032,15 @@ impl Interpreter {
     /// whatever the *caller's* own same-named slot holds — which, for a call
     /// made inside a shadowing block, is the shadow's `my`, not the mainline
     /// lexical the cell already updated (ADR-0024 row 2a).
-    pub(crate) fn is_mainline_lexical_write(&self, callee_name: &str, name: &str) -> bool {
+    pub(crate) fn is_mainline_lexical_write(
+        &self,
+        callee_name: &str,
+        callee: &CompiledFunction,
+        name: &str,
+    ) -> bool {
         // mutsu#9111: a routine-nested sub's write through its alias cell.
-        if self.is_lexsub_alias_write(callee_name, name) {
+        let owner = (callee.package_sym(), callee.source_file_sym());
+        if self.is_lexsub_alias_write(callee_name, owner, name) {
             return true;
         }
         let Some(bucket) = self.mainline_lexical_subs.get(callee_name) else {

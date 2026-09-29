@@ -427,9 +427,16 @@ fn scan_to_delim_inner(
             depth += 1;
         } else if !p5_mode && c == '#' {
             // # starts a comment in Raku regex.
-            // #`[...] is an embedded comment (bracket-delimited).
+            // #`[...] is an embedded comment (bracket-delimited), and so are
+            // the declarator blocks #|{...} / #={...}: the regex's whitespace
+            // is the main language's, which may span lines.
             // Plain # is a line comment (until end of line).
-            if let Some((_, '`')) = chars.clone().next() {
+            if let Some(rest) = crate::parser::helpers::skip_bracketed_comment(&input[i..]) {
+                let end = input.len() - rest.len();
+                while chars.clone().next().is_some_and(|(j, _)| j < end) {
+                    chars.next();
+                }
+            } else if let Some((_, '`')) = chars.clone().next() {
                 chars.next(); // skip `
                 if let Some((_, bracket)) = chars.next() {
                     // `#`«...»`, `#`[...]`, etc. — any bracket pair Raku accepts.

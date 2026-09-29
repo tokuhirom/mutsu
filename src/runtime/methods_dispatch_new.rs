@@ -1067,6 +1067,27 @@ impl Interpreter {
         for attr in class_attrs {
             let attr_name = attr.name;
             let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
+            // A `@`/`%` attribute is an empty container, never its element
+            // type's default (`has int @!a` must not seed `0`).
+            if attr.sigil == '@' {
+                let mut arr = Value::real_array(Vec::new());
+                if let Some(tc) = type_constraint {
+                    arr = self.tag_container_metadata(
+                        arr,
+                        super::ContainerTypeInfo {
+                            value_type: tc,
+                            key_type: None,
+                            declared_type: None,
+                        },
+                    );
+                }
+                attributes.insert(attr_name, arr);
+                continue;
+            }
+            if attr.sigil == '%' {
+                attributes.insert(attr_name, Value::hash(ValueMap::default()));
+                continue;
+            }
             let val = match type_constraint.as_deref() {
                 Some(
                     "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
@@ -1135,41 +1156,7 @@ impl Interpreter {
         let mi = (day_secs % 3600) / 60;
         let s = (day_secs % 60) as f64 + frac;
         let dt = temporal::make_datetime(y, m, d, h, mi, s, timezone);
-        if let Some(formatter_value) = formatter
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                id,
-            } = dt.view()
-        {
-            let mut attrs = attributes.to_map();
-            attrs.insert("formatter".to_string(), formatter_value.clone());
-            let dt_with_formatter = Value::write_back_sharing(&attributes, class_name, attrs, id);
-            let saved_env = self.env().clone();
-            let saved_readonly = self.enter_readonly_frame();
-            let rendered =
-                match self.eval_call_on_value(formatter_value, vec![dt_with_formatter.clone()]) {
-                    Ok(v) => v.to_string_value(),
-                    Err(e) => return Some(Err(e)),
-                };
-            *self.env_mut() = saved_env;
-            self.exit_readonly_frame(saved_readonly);
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                id,
-            } = dt_with_formatter.view()
-            {
-                let mut updated = attributes.to_map();
-                updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
-                return Some(Ok(Value::write_back_sharing(
-                    &attributes,
-                    class_name,
-                    updated,
-                    id,
-                )));
-            }
-        }
+        let dt = temporal::with_formatter(dt, formatter);
         if class_name.resolve() != "DateTime" {
             return Some(self.dispatch_new(target.clone(), vec![dt]));
         }

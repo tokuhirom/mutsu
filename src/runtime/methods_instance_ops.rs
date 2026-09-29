@@ -160,6 +160,14 @@ impl Interpreter {
         else {
             return None;
         };
+        // The `IterationEnd` sentinel renders as its name in every form, as
+        // rakudo's `Mu.raku` / `Mu.gist` special-case it.
+        if target_id == crate::value::ITERATION_END_ID
+            && matches!(method, "raku" | "perl" | "gist" | "Str")
+            && args.is_empty()
+        {
+            return Some(Ok(Value::str_from("IterationEnd")));
+        }
         let has_coercion_gist = target.does_check("Real")
             || target.does_check("Numeric")
             || target.does_check("Stringy")
@@ -203,7 +211,7 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_str_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
-        if let Some(payload) = attributes.as_map().get("__mutsu_int_value").cloned() {
+        if let Some(payload) = crate::builtins::numeric_subclass::numeric_payload_of(&attributes) {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         // An `is Version` subclass (#8070) delegates any method it does not
@@ -2054,6 +2062,18 @@ impl Interpreter {
                             return Ok(val);
                         }
                     }
+                    // A synthesized mixin type over a built-in base
+                    // (`$method does R` reblesses into `Method+{R}`, see
+                    // `ensure_mixin_class`) is not user-declared: its collected
+                    // list holds only the roles' attributes, while the base's
+                    // own attributes (`.name`, `.rw`, `.package`, ...) still
+                    // live in the stored map, exactly as for the bare base.
+                    if !self.user_declared_classes.contains(&cn)
+                        && !class_attrs.iter().any(|attr| attr.name == method)
+                        && let Some(val) = attributes.as_map().get(method)
+                    {
+                        return Ok(val.clone());
+                    }
                 }
             }
             // Enum-as-role dispatch: if the class `does` an enum, check variant methods
@@ -3130,7 +3150,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+                    && self.is_method_object_class(&class_name.resolve())
                 {
                     let am = attributes.as_map();
                     // A Method object obtained from a method table carries the
@@ -3213,10 +3233,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Regex"
-                    )
+                    && self.is_method_object_class(&class_name.resolve())
                     && let Some(wrapper) = args.first().cloned()
                 {
                     let am = attributes.as_map();
@@ -3250,10 +3267,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Regex"
-                    )
+                    && self.is_method_object_class(&class_name.resolve())
                     && let am = attributes.as_map()
                     && let (Some(ValueView::Str(cls)), Some(ValueView::Str(meth)), Some(idx)) = (
                         am.get("__mutsu_lookup_class").map(Value::view),
@@ -3577,7 +3591,7 @@ impl Interpreter {
                 for candidate in candidates {
                     if values
                         .iter()
-                        .all(|value| self.are_value_matches_type(value, &candidate))
+                        .all(|value| self.type_matches_value(&candidate, value))
                     {
                         return Ok(Value::package(Symbol::intern(&candidate)));
                     }
@@ -3587,7 +3601,7 @@ impl Interpreter {
             [expected] => {
                 let expected_type = self.are_expected_type_name(expected);
                 for (idx, value) in values.iter().enumerate() {
-                    if !self.are_value_matches_type(value, &expected_type) {
+                    if !self.type_matches_value(&expected_type, value) {
                         let actual = self.are_actual_type_name(value);
                         let message = if values.len() == 1 {
                             format!("Expected '{}' but got '{}'", expected_type, actual)
@@ -3661,31 +3675,6 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value.to_string_value(),
         }
-    }
-
-    fn are_value_matches_type(&mut self, value: &Value, expected_type: &str) -> bool {
-        if expected_type == "Cool" {
-            // `Cool` in are() should accept list/type-object values except clearly non-Cool ones.
-            if let ValueView::Instance { class_name, .. } = value.view() {
-                let cls = class_name.resolve();
-                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
-                    return false;
-                }
-            }
-            if let ValueView::Package(name) = value.view() {
-                let cls = name.resolve();
-                if cls == "Date" || cls == "DateTime" || cls == "Mu" {
-                    return false;
-                }
-            }
-            if matches!(
-                value.view(),
-                ValueView::Array(_, _) | ValueView::Seq(_) | ValueView::Slip(_)
-            ) {
-                return true;
-            }
-        }
-        self.type_matches_value(expected_type, value)
     }
 
     fn are_actual_type_name(&mut self, value: &Value) -> String {

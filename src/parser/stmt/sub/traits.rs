@@ -235,7 +235,6 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 && trait_name != "looser"
                 && trait_name != "readonly"
                 && trait_name != "hidden-from-backtrace"
-                && trait_name != "implementation-detail"
                 && trait_name != "nodal"
                 && trait_name != "pure"
             {

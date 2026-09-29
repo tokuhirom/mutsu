@@ -451,6 +451,7 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
         // match time.
         RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
@@ -483,6 +484,7 @@ fn atom_runs_code(atom: &RegexAtom, depth: u32) -> bool {
     match atom {
         RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::Named(_)
         | RegexAtom::RecurseSelf(_)

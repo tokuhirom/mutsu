@@ -176,7 +176,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // mutsu#9111: bind this activation's free-variable aliases, on every
         // execution — a frame-lexical sub derives its definition only once.
-        self.bind_lexsub_free_aliases(code, idx);
+        self.bind_lexsub_free_aliases(code, idx, compiled_fns);
         // ADR-0113: a frame-lexical `my sub` registers nothing.
         if let Some(r) = code
             .sub_decl_plans
@@ -430,6 +430,11 @@ impl Interpreter {
                 }
                 if *multi && !self.suppress_exports {
                     self.refresh_exported_multi_family(&resolved_name);
+                }
+                // mutsu#10050: `is export` routines nested in this body are
+                // exported at compile time, not when this routine runs.
+                if let Some(routine) = primary_compiled {
+                    self.register_nested_exported_subs(routine, compiled_fns)?;
                 }
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
@@ -703,7 +708,9 @@ impl Interpreter {
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
-                    // A name the sub rebinds needs a binding cell (a cell whose
+                    // A name the sub rebinds, or this declaring frame itself
+                    // rebinds after the sub is registered (`$l := ...` read by
+                    // `sub f { $l }`), needs a binding cell (a cell whose
                     // content is the variable's container), shared by this
                     // frame's slot and the store. The sub's rebind then seats
                     // the new binding INSIDE it (`unit_scope_lexical_rebind`),
@@ -711,7 +718,10 @@ impl Interpreter {
                     // the old container keeps that container: with the plain
                     // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
                     // through the cell `@b` shares with `@a` (#9416).
-                    if rebound_syms.contains(&sym) && Self::binding_cell_of(&cell).is_none() {
+                    if (rebound_syms.contains(&sym)
+                        || code.rebound_slots.contains(&(slot_idx as u32)))
+                        && Self::binding_cell_of(&cell).is_none()
+                    {
                         cell = Self::wrap_in_binding_cell(cell);
                         self.locals[slot_idx] = cell.clone();
                         self.env_mut().insert(name.clone(), cell.clone());
@@ -1244,14 +1254,22 @@ impl Interpreter {
             if CType::from_type_name(&current).is_some() {
                 return current;
             }
-            let value = self.get_env_with_main_alias(&current).or_else(|| {
-                if owner.is_empty() {
-                    None
-                } else {
-                    self.module_scope_lexical_for_owner(owner, &current)
-                        .cloned()
-                }
-            });
+            // A `constant Foo = int8` alias is a term, stored in the term
+            // namespace (#9962) — in the live env and in the owner's module
+            // scope alike.
+            let term = crate::runtime::term_names::term_key(&current);
+            let value = self
+                .term_binding(&current)
+                .or_else(|| self.get_env_with_main_alias(&current))
+                .or_else(|| {
+                    if owner.is_empty() {
+                        None
+                    } else {
+                        self.module_scope_lexical_for_owner(owner, &term)
+                            .or_else(|| self.module_scope_lexical_for_owner(owner, &current))
+                            .cloned()
+                    }
+                });
             let Some(value) = value else {
                 break;
             };

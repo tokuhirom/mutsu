@@ -169,7 +169,7 @@ impl Interpreter {
         })
     }
 
-    fn with_candidate_package<T>(
+    pub(crate) fn with_candidate_package<T>(
         &mut self,
         package: Option<Symbol>,
         f: impl FnOnce(&mut Self) -> T,
@@ -182,12 +182,12 @@ impl Interpreter {
         }
     }
 
-    fn eval_block_value_in_candidate_package(
+    fn eval_param_where_in_candidate_package(
         &mut self,
-        body: &[Stmt],
+        pd: &ParamDef,
         package: Option<Symbol>,
     ) -> Result<Value, RuntimeError> {
-        self.with_candidate_package(package, |this| this.eval_block_value(body))
+        self.with_candidate_package(package, |this| this.eval_param_where_value(pd, false))
     }
 
     fn eval_param_default_in_candidate_package(
@@ -206,6 +206,11 @@ impl Interpreter {
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
     ) -> bool {
+        if let Some(verdict) =
+            self.args_match_simple_positional(args, param_defs, multi_dispatch, candidate_package)
+        {
+            return verdict;
+        }
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
         // *later* param's `where {...}` / sub-signature / code-signature can
@@ -550,7 +555,7 @@ impl Interpreter {
                                 return false;
                             }
                         } else if let Some(expected_val) =
-                            self.env.get(&resolved_constraint).cloned()
+                            self.type_name_binding(&resolved_constraint)
                         {
                             // A `constant` bound to a value (`multi f(G)`):
                             // rakudo smartmatches the argument against it,
@@ -558,6 +563,20 @@ impl Interpreter {
                             // identity, not structural equality, so a fresh
                             // `Point.new(v => 1)` does not bind to `G` unless
                             // `Point` gives itself value semantics.
+                            //
+                            // The constant's type is the parameter's NOMINAL
+                            // type, checked first as for any parameter: an
+                            // argument of another type can never bind, and
+                            // rakudo never asks either side for its `WHICH`.
+                            // Warming first ran secp256k1's user `WHICH` on
+                            // `G` -- two field inversions -- for every `Int *
+                            // Int` that reached `multi infix:<*>(Int $n where
+                            // ..., G)` (#9967).
+                            if let ValueView::Instance { class_name, .. } = expected_val.view()
+                                && !self.type_matches_value(&class_name.resolve(), &dispatch_arg)
+                            {
+                                return false;
+                            }
                             self.warm_which_identity_for_identity(&dispatch_arg);
                             self.warm_which_identity_for_identity(&expected_val);
                             if !crate::runtime::values_identical(&dispatch_arg, &expected_val) {
@@ -593,6 +612,7 @@ impl Interpreter {
                             return false;
                         }
                     } else if (multi_dispatch
+                        && arg_was_supplied
                         && !self.native_dispatch_arg_matches(
                             &resolved_constraint,
                             args,
@@ -695,10 +715,9 @@ impl Interpreter {
                     && !arg_was_supplied
                     && let Some(default_expr) = pd.default.as_ref()
                 {
-                    self.eval_block_value_in_candidate_package(
-                        &[Stmt::Expr(default_expr.clone())],
-                        candidate_package,
-                    )
+                    self.with_candidate_package(candidate_package, |this| {
+                        this.eval_param_default_expr(pd, default_expr)
+                    })
                     .ok()
                 } else {
                     None
@@ -709,7 +728,7 @@ impl Interpreter {
                     };
                     let saved = self.env.clone();
                     self.install_match_context_for_where(&pd.name, arg);
-                    self.env.insert("_".to_string(), arg.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), arg.clone());
                     // Bind the parameter name so that `where {$param ...}` can
                     // reference it during dispatch matching.
                     self.env.insert(pd.name.clone(), arg.clone());
@@ -737,7 +756,7 @@ impl Interpreter {
                             }
                             let r = {
                                 let ev = self
-                                    .eval_block_value_in_candidate_package(body, candidate_package);
+                                    .eval_param_where_in_candidate_package(pd, candidate_package);
                                 self.where_truthy(ev)
                             };
                             for key in &ph_keys {
@@ -747,17 +766,13 @@ impl Interpreter {
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(where_expr.as_ref().clone())],
-                                candidate_package,
-                            );
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(expr.clone())],
-                                candidate_package,
-                            );
+                        _ => {
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(arg, ev)
                         }
                     };
@@ -952,31 +967,27 @@ impl Interpreter {
                             self.env.insert(sib.name.clone(), v.clone());
                         }
                     }
-                    self.env.insert("_".to_string(), val.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), val.clone());
                     // Bind the parameter name so `where {$param ...}` can reference
                     // it during dispatch matching (mirrors the positional path).
                     if !pd.name.is_empty() {
                         self.env.insert(pd.name.clone(), val.clone());
                     }
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => {
+                        Expr::AnonSub { .. } => {
                             let ev =
-                                self.eval_block_value_in_candidate_package(body, candidate_package);
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(where_expr.as_ref().clone())],
-                                candidate_package,
-                            );
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_truthy(ev)
                         }
-                        expr => {
-                            let ev = self.eval_block_value_in_candidate_package(
-                                &[Stmt::Expr(expr.clone())],
-                                candidate_package,
-                            );
+                        _ => {
+                            let ev =
+                                self.eval_param_where_in_candidate_package(pd, candidate_package);
                             self.where_smartmatch(&val, ev)
                         }
                     };
@@ -1020,29 +1031,23 @@ impl Interpreter {
                 let slurpy_value = Value::hash_bare_values(hash_items);
                 let saved = self.env.clone();
                 self.install_match_context_for_where(&pd.name, &slurpy_value);
-                self.env.insert("_".to_string(), slurpy_value.clone());
+                self.env
+                    .insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
                 if !pd.name.is_empty() {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }
                 let ok = match where_expr.as_ref() {
-                    Expr::AnonSub { body, .. } => {
-                        let ev =
-                            self.eval_block_value_in_candidate_package(body, candidate_package);
+                    Expr::AnonSub { .. } => {
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
                     Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                     {
-                        let ev = self.eval_block_value_in_candidate_package(
-                            &[Stmt::Expr(where_expr.as_ref().clone())],
-                            candidate_package,
-                        );
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_truthy(ev)
                     }
-                    expr => {
-                        let ev = self.eval_block_value_in_candidate_package(
-                            &[Stmt::Expr(expr.clone())],
-                            candidate_package,
-                        );
+                    _ => {
+                        let ev = self.eval_param_where_in_candidate_package(pd, candidate_package);
                         self.where_smartmatch(&slurpy_value, ev)
                     }
                 };
@@ -1066,7 +1071,7 @@ impl Interpreter {
     /// Whether a native constraint is applicable during multi dispatch.  The
     /// value itself is boxed by the time this matcher runs, so provenance must
     /// come from the source VarRef metadata or the call-site literal mask.
-    fn native_dispatch_arg_matches(
+    pub(crate) fn native_dispatch_arg_matches(
         &self,
         constraint: &str,
         args: &[Value],

@@ -91,7 +91,7 @@ pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeErro
 /// Seed the representation payload carried by a subclass of a native scalar.
 ///
 /// `Mu.new` and `Mu.bless` both construct an ordinary instance, but the native
-/// `Int`/`Str` implementations need their scalar value in a reserved attribute
+/// `Int`/`Num`/`Str` implementations need their scalar value in a reserved attribute
 /// so value-level coercion and rendering can see it without consulting the
 /// class registry. Keep the convention in one place so the two constructor
 /// paths cannot drift again.
@@ -101,9 +101,17 @@ pub(crate) fn seed_native_subclass_payloads(
     args: &[Value],
     positional_args: &[Value],
 ) {
-    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key("__mutsu_int_value") {
+    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD};
+    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
-        attrs.insert("__mutsu_int_value", Value::int(payload));
+        attrs.insert(INT_PAYLOAD, Value::int(payload));
+    } else if class_mro.iter().any(|name| name == "Num") && !attrs.contains_key(NUM_PAYLOAD) {
+        // raku: `Num.new(\value)` boxes `value.Num` into the subclass; no
+        // argument is `0e0`.
+        let payload = positional_args.first().map_or(0.0, |v| {
+            crate::runtime::coerce_to_numeric(v.clone()).to_f64()
+        });
+        attrs.insert(NUM_PAYLOAD, Value::num(payload));
     }
     if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
         let payload = args
@@ -547,6 +555,7 @@ mod accessors_misc;
 mod accessors_resolve;
 mod accessors_stack;
 mod accessors_stash;
+mod accessors_stash_exists;
 mod accessors_stash_keyed;
 mod accessors_stash_package;
 mod accessors_state;
@@ -574,6 +583,7 @@ mod builtins_io_dir;
 mod builtins_io_fs;
 mod builtins_io_stream;
 mod builtins_lvalue;
+mod builtins_method_lvalue_slice;
 mod builtins_multidim;
 mod builtins_multidim_assign;
 mod builtins_multidim_assign_storage;
@@ -628,6 +638,7 @@ mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;
 pub(crate) mod nqp_pure;
+mod param_bound_aggregates;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 pub(crate) mod decl_gate;
@@ -635,6 +646,7 @@ mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
 pub(crate) mod nativecall_fnptr;
+pub(crate) mod term_names;
 pub(crate) use self::decl_types::*;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
@@ -675,11 +687,13 @@ mod io_pod_entries;
 mod io_pod_format;
 mod io_pod_heredoc;
 mod io_pod_table;
+mod io_spec_rel2abs;
 mod io_sysinfo;
 mod io_sysinfo_host;
 mod io_sysinfo_kernel;
 mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
+pub(crate) mod iterator_map_grep_stream;
 mod iterator_protocol;
 mod list_element_stringify;
 mod listop_functions;
@@ -695,6 +709,7 @@ pub(crate) mod meta_ns;
 mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
+mod method_dispatch_lazy;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
@@ -746,6 +761,8 @@ mod methods_mut_substr_buf;
 mod methods_native_bypass;
 mod methods_object;
 mod methods_object_attr_constraints;
+pub(crate) mod multi_dispatch_plan;
+pub(crate) mod multi_dispatch_program;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 mod methods_object_default_ctor;
 mod methods_object_dispatch_new;
@@ -785,7 +802,7 @@ pub(crate) mod native_increment_dispatch;
 pub(crate) mod native_infix_dispatch;
 mod native_io;
 pub(crate) mod raw_invocant;
-mod rw_arg_container;
+pub(crate) mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
@@ -860,6 +877,7 @@ mod registration_role_body;
 mod registration_role_decl;
 mod registration_role_method;
 pub(crate) mod registration_sub;
+mod registration_subset;
 mod registry;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
@@ -897,6 +915,7 @@ mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
 mod runtime_thread_decl_mask;
+mod runtime_var_bind_meta;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
@@ -1014,6 +1033,19 @@ pub(crate) struct ClassAttributeDef {
     /// (`.^add_attribute`, builtin `Proc` attributes) — none of those are
     /// ever compiler-generated shaped-array defaults.
     pub(crate) declared_shape: Option<Vec<usize>>,
+    /// `Code.line`/`Code.file` for the auto-generated accessor method this
+    /// attribute produces (`instance_accessor_method_object`), mirroring
+    /// `MethodDef::source_file`/`compiled_code.source_line` for a
+    /// user-declared method. `None` when the declaration line was not
+    /// tracked at registration time (a non-plan-backed construction site, or
+    /// a mainline/EVAL `has`) -- the accessor then reports `Nil`, matching a
+    /// synthetic method with no declaration site to point at.
+    ///
+    /// Interned rather than an owned `String`: the attribute list is cloned
+    /// per construction on the bless path, and a `String` here cost one heap
+    /// allocation per attribute per clone (#10090).
+    pub(crate) source_line: Option<i64>,
+    pub(crate) source_file: Option<crate::symbol::Symbol>,
 }
 
 /// Attribute declarations with the same bare name but different sigils are
@@ -1818,6 +1850,15 @@ pub(crate) struct CallFrameEntry {
     pub line: i64,
     pub code: Option<CodeFrame>,
     pub env: Env,
+    /// Package the frame's code was running in, for `callframe(N).my<::?PACKAGE>`.
+    pub package: Symbol,
+    /// The routine-stack top when the entry was pushed, i.e. the frame the call
+    /// was made from. Only a *named-routine* frame carries a lazily built
+    /// `code`; a method or the mainline does not, and this is what lets
+    /// `callframe(N).code.name` report `bar` / `<unit>` for them.
+    pub routine: Option<RoutineFrame>,
+    /// True for the synthetic EVAL frames, which have no code object at all.
+    pub synthetic: bool,
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.
@@ -2235,6 +2276,9 @@ pub struct Interpreter {
     /// `runtime/operator_scope.rs`.
     pub(crate) operator_import_units:
         std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+    /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
+    /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
+    pub(crate) operator_import_gen: u64,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -2946,7 +2990,8 @@ pub struct Interpreter {
     /// source text (see `vm::vm_subst_repl`). The replacement is a `qq` quote,
     /// so it is parsed with the real interpolation grammar; caching keeps a
     /// `:g` substitution from re-parsing it per match and gives the dynamic
-    /// plan a stable carrier-compile-cache id.
+    /// plan a stable carrier-compile-cache id. (An assignment-form RHS is a
+    /// compiled thunk closure and never reaches this cache.)
     pub(crate) subst_repl_plans: HashMap<String, crate::vm::vm_subst_repl::SubstReplPlan>,
     /// The map/grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`)
     /// compile the callback block once per `.map()`/`.grep()`/`.first()` CALL
@@ -3089,6 +3134,9 @@ pub struct Interpreter {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// Declared unit package by requested module path. A module file may be
+    /// loaded as `A::B` while declaring `unit module A::C`.
+    pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Exported variable/constant symbols by package and export tag.
@@ -3574,8 +3622,9 @@ pub struct Interpreter {
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
-    /// { ... }`) — with their sigils, each mapped to the container that binding
-    /// stored in `env`.
+    /// { ... }`) — with their sigils, each mapped to every live container a
+    /// binding of that name stored in `env` (held weakly; see
+    /// [`param_bound_aggregates::ParamBoundAggregates`]).
     ///
     /// Such a name is a fresh per-invocation binding, never the one shared
     /// object the name-keyed `shared_vars` lane exists to represent. Left on that
@@ -3592,7 +3641,7 @@ pub struct Interpreter {
     /// *first* spawn in a process consults it before any thread exists, and a
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
-    pub(crate) param_bound_aggregates: ValueMap,
+    pub(crate) param_bound_aggregates: param_bound_aggregates::ParamBoundAggregates,
     /// Set while an *incidental* locals -> env mirror is running: the regex
     /// interpolation pre-sync before a `~~`. It exists purely so a name-based
     /// reader in THIS interpreter can observe the frame's live slots through
@@ -3866,6 +3915,9 @@ pub struct Interpreter {
     /// candidate's exit flush clobbering it with its own stale value (§D capstone).
     multi_dispatch_stack: Vec<MultiDispatchEntry>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Method calls whose deferral frame is not built yet, interleaved with
+    /// `method_dispatch_stack` by `dispatch_token` (see `method_dispatch_lazy`).
+    pending_method_dispatch: Vec<method_dispatch_lazy::PendingMethodDispatch>,
     /// Stack of samewith dispatch contexts, pushed whenever a multi sub,
     /// multi method, or proto is entered, popped on exit. ADR-0019 E9c-1:
     /// a single `Vec<SamewithContext>` — every push site funnels through
@@ -4528,6 +4580,16 @@ pub struct Interpreter {
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
     pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
+    /// by the (importing file, bare name). `env` holds one `&name` slot for
+    /// the whole program, so a second import of the same name (the script
+    /// importing a module that re-exports `&to-json` over the `&to-json` it
+    /// itself imported) overwrites the first; a bareword call from the first
+    /// importer's own unit must still reach what THAT unit imported. Consulted
+    /// only when an installed override is rejected as declared in the calling
+    /// unit (`callable_declared_in_unit_of`), so it costs nothing on any other
+    /// call. Populated at export-symbol installation; never removed.
+    pub(crate) unit_imported_callables: std::collections::HashMap<(Symbol, Symbol), Value>,
     /// Sigilless bare names a `sub EXPORT`'s returned map installed into `env`
     /// (`install_export_symbol`). The CORE term keywords `True`/`False`/`Nil`/
     /// `Empty`/`Any` are ordinary lexical bindings in Raku, so such an import
@@ -4704,6 +4766,10 @@ pub struct Interpreter {
     /// Structural (registry-shape) only, so it is sound to key on `(class, method)`
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> can this name's deferral frame be built
+    /// after the call has started` (see `method_dispatch_lazy`). Structural,
+    /// cleared with `dispatch_multi_candidate`.
+    pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
     /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
@@ -4748,6 +4814,14 @@ pub struct Interpreter {
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
     pub(crate) func_multi_argkey_cacheable: GenCache<FuncMultiResolveKey, bool>,
+    /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
+    /// ranked candidate passes, so a value-dependent family (`where`,
+    /// `subset`) re-runs only its bind checks per call (#9967,
+    /// `multi_dispatch_plan.rs`).
+    pub(crate) bare_multi_plan_cache: GenCache<
+        crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
+        Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
+    >,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
@@ -4876,6 +4950,9 @@ pub struct Interpreter {
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
     pub(crate) check_phaser_depth: u32,
+    /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
+    /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.
+    pub(crate) check_phaser_kinds: Vec<&'static str>,
     /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
     /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time
     /// region (`constant` initializer, `BEGIN`/`CHECK` body) rolls these back

@@ -17,6 +17,7 @@ impl Compiler {
                 nth,
                 x,
                 perl5,
+                replacement_thunk,
             } => {
                 self.compile_expr_subst(
                     pattern,
@@ -29,6 +30,7 @@ impl Compiler {
                     nth,
                     x,
                     *perl5,
+                    replacement_thunk.as_deref(),
                 );
             }
             Expr::NonDestructiveSubst {
@@ -42,6 +44,7 @@ impl Compiler {
                 nth,
                 x,
                 perl5,
+                replacement_thunk,
             } => {
                 self.compile_expr_nondestructive_subst(
                     pattern,
@@ -54,6 +57,7 @@ impl Compiler {
                     nth,
                     x,
                     *perl5,
+                    replacement_thunk.as_deref(),
                 );
             }
             Expr::Transliterate {
@@ -125,7 +129,10 @@ impl Compiler {
         nth: &Option<String>,
         x: &Option<String>,
         perl5: bool,
+        replacement_thunk: Option<&Expr>,
     ) {
+        self.compile_subst_replacement_thunk(replacement_thunk);
+        let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
@@ -150,6 +157,7 @@ impl Compiler {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
             qq_thunks,
         });
     }
@@ -168,7 +176,10 @@ impl Compiler {
         nth: &Option<String>,
         x: &Option<String>,
         perl5: bool,
+        replacement_thunk: Option<&Expr>,
     ) {
+        self.compile_subst_replacement_thunk(replacement_thunk);
+        let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
@@ -193,6 +204,7 @@ impl Compiler {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
             qq_thunks,
         });
     }
@@ -897,8 +909,17 @@ impl Compiler {
         // reach the caller's own container — a plain `compile_expr` always
         // leaves a bare value on the stack, which is what made every such
         // call die "expects a writable container (variable) as an argument".
-        self.compile_call_arg(left);
-        for r in right {
+        // A subscript operand (`@a[1] plus_égal 5`) hands the element's own
+        // location to a parameter that binds the caller's container, through
+        // the same named-callee producer a `g(@a[1])` call uses. Not under a
+        // meta-operator (`R` swaps the operands at run time, so the syntactic
+        // position is not the parameter's).
+        let infix_callee = (modifier.is_none()
+            && (matches!(left, Expr::Index { .. })
+                || right.iter().any(|r| matches!(r, Expr::Index { .. }))))
+        .then(|| format!("infix:<{name}>"));
+        self.compile_named_callee_arg(infix_callee.as_deref(), Some(0), left, false);
+        for (i, r) in right.iter().enumerate() {
             // ADR-0021 I2/I3: a trailing colonpair adverb (`1 / 3 :round`,
             // appended into `right` by `attach_trailing_adverbs`) is a
             // genuine named argument to the user-defined `infix:<op>` sub —
@@ -911,7 +932,7 @@ impl Compiler {
             {
                 self.mint_named_pair = true;
             }
-            self.compile_call_arg(r);
+            self.compile_named_callee_arg(infix_callee.as_deref(), Some(i as u32 + 1), r, false);
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let modifier_idx = modifier

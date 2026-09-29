@@ -95,6 +95,36 @@ impl Interpreter {
             "say" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_say(&target))
             }
+            // `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that acts as
+            // `$*OUT`/`$*ERR` by declaring its own `print` but no `say`/`put` -- the
+            // arguments are gisted (`say`) or stringified (`put`), joined, followed by
+            // `nl-out`, and handed to that `print`.
+            // TODO: compile to bytecode -- this re-enters user code through the generic
+            // method-call path like the other `Mu` fallbacks in this match.
+            // Cost: O(n), n = total chars of the rendered arguments.
+            "say" | "put"
+                if !args.is_empty()
+                    && matches!(target.view(), ValueView::Instance { .. })
+                    && self.instance_has_own_print(&target) =>
+            {
+                Some((|| {
+                    let mut text = String::new();
+                    for a in args {
+                        if method == "say" {
+                            text.push_str(&self.render_gist_value(&a)?);
+                        } else {
+                            text.push_str(
+                                &self
+                                    .call_method_with_values(a.clone(), "Str", vec![])?
+                                    .to_string_value(),
+                            );
+                        }
+                    }
+                    let nl = self.call_method_with_values(target.clone(), "nl-out", vec![])?;
+                    text.push_str(&nl.to_string_value());
+                    self.call_method_with_values(target.clone(), "print", vec![Value::str(text)])
+                })())
+            }
             // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
             "print" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_print(&target))
@@ -179,6 +209,22 @@ impl Interpreter {
                 Some(crate::builtins::pack::unpack(&bytes, &template))
             }
             "subbuf" => self.dispatch_subbuf(&target, &args),
+            // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
+            // reads any value as a number), so a receiver whose ancestry
+            // declares no `polymod` (`Str`, `Complex`, ...) falls through to
+            // normal resolution and `X::Method::NotFound`, as in Rakudo.
+            "polymod" if !self.e2_native_method_exists(&target, "polymod") => None,
+            // `Instant`/`Duration` get `polymod` from their `Real` role, which
+            // divides the receiver's `Real` value.
+            "polymod"
+                if matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if matches!(class_name.resolve().as_str(), "Instant" | "Duration")) =>
+            {
+                Some(
+                    self.call_method_with_values(target, "Real", vec![])
+                        .and_then(|real| self.method_polymod(&real, &args)),
+                )
+            }
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {
                 // Proxy .VAR returns a decontainerized copy
@@ -453,18 +499,31 @@ impl Interpreter {
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
                 // For regular regexes, use the faster non-capturing path.
-                let spans: Vec<(usize, usize)> = if self.has_code_block_in_prefix(&pat) {
-                    let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
-                    for (_, _, caps) in &mut matches {
-                        if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
-                            let ct = caps.target_or_new(&text);
-                            self.reduce_regex_captures_made(caps, Some(&ct));
+                // The capture markers `<(` / `)>` also need the capturing path:
+                // `.comb` returns each match's `.Str`, which they narrow.
+                let has_markers = pat.contains("<(") || pat.contains(")>");
+                let spans: Vec<(usize, usize)> =
+                    if self.has_code_block_in_prefix(&pat) || has_markers {
+                        let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
+                        for (_, _, caps) in &mut matches {
+                            if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
+                                let ct = caps.target_or_new(&text);
+                                self.reduce_regex_captures_made(caps, Some(&ct));
+                            }
                         }
-                    }
-                    matches.into_iter().map(|(s, e, _)| (s, e)).collect()
-                } else {
-                    self.regex_find_all_limited(&pat, &text, max)
-                };
+                        matches
+                            .into_iter()
+                            .map(|(s, e, caps)| {
+                                if has_markers && caps.to >= caps.from {
+                                    (caps.from, caps.to)
+                                } else {
+                                    (s, e)
+                                }
+                            })
+                            .collect()
+                    } else {
+                        self.regex_find_all_limited(&pat, &text, max)
+                    };
                 let result: Vec<Value> = if return_match {
                     let mt = crate::runtime::MatchTarget::new(&text);
                     spans
@@ -581,7 +640,7 @@ impl Interpreter {
             // An `Int` subclass's `.Numeric` is the instance itself, so it
             // takes its `Int` payload instead of re-entering this dispatch.
             let coerced = if let Some(payload) =
-                crate::builtins::int_subclass::int_subclass_payload(&target)
+                crate::builtins::numeric_subclass::numeric_subclass_payload(&target)
             {
                 payload
             } else if let Ok(v) = self.call_method_with_values(target.clone(), "Numeric", vec![]) {
@@ -613,5 +672,16 @@ impl Interpreter {
         }
 
         None
+    }
+}
+
+impl Interpreter {
+    /// True when the instance's class (or an ancestor) declares its own `print`.
+    fn instance_has_own_print(&mut self, target: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let cls = class_name.resolve();
+        self.class_has_user_method(&cls, "print")
     }
 }

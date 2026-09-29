@@ -27,7 +27,7 @@ impl Compiler {
     /// The package and distribution come from the declaration's own lexical
     /// position rather than from whatever routine frame happens to be live
     /// when registration runs.
-    fn new_decl_chunk_compiler(&self) -> Compiler {
+    pub(super) fn new_decl_chunk_compiler(&self) -> Compiler {
         let mut chunk_compiler = Compiler::new();
         // A declaration chunk (a class body) belongs to this compilation
         // unit, so it shares the unit's fold state: its `use` has to disable
@@ -584,17 +584,31 @@ impl Compiler {
         &self,
         body: &[Stmt],
     ) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
-        let mut out: Vec<(Symbol, crate::opcode::CompiledAttrDecl)> = body
+        let flattened: Vec<&Stmt> = body
             .iter()
             .flat_map(|s| match s {
                 Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
                 other => vec![other],
             })
-            .filter_map(|stmt| match stmt {
-                Stmt::HasDecl { name, .. } => Some((*name, self.compile_class_attr_decl(stmt))),
-                _ => None,
-            })
             .collect();
+        // Mirrors `compile_method_body_keys`'s `decl_line` walk: the type
+        // body's own `Stmt::SetLine` markers are what tell each `has` which
+        // line its keyword sits on, so the line has to be tracked here,
+        // walking the body in source order, rather than read off `stmt`
+        // itself (`Stmt::HasDecl` carries no line of its own).
+        let mut decl_line = self.last_source_line;
+        let mut out: Vec<(Symbol, crate::opcode::CompiledAttrDecl)> = Vec::new();
+        for stmt in flattened {
+            if let Stmt::SetLine(line) = stmt {
+                decl_line = Some(*line);
+                continue;
+            }
+            if let Stmt::HasDecl { name, .. } = stmt {
+                let mut decl = self.compile_class_attr_decl(stmt);
+                decl.decl_line = decl_line;
+                out.push((*name, decl));
+            }
+        }
         let mut nested = Vec::new();
         crate::opcode::collect_nested_has_decl_stmts(body, &mut nested);
         for stmt in nested {

@@ -1109,6 +1109,7 @@ mod adverb_interp;
 mod begin_use;
 mod const_fold;
 pub(crate) mod control_block;
+mod control_block_placeholder;
 mod control_block_scope;
 mod control_for;
 mod control_for_tail;
@@ -1118,6 +1119,7 @@ mod decl_reset;
 mod expr;
 mod expr_binary;
 mod expr_block;
+mod expr_block_decl_helpers;
 mod expr_call;
 mod expr_closure;
 mod expr_data;
@@ -1147,8 +1149,11 @@ pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod param_chunks;
 mod regex_qq_thunks;
 mod stmt;
+mod subst_thunk;
+mod term_constants;
 mod trir_call;
 
 #[derive(Clone)]
@@ -1312,10 +1317,25 @@ pub(crate) struct Compiler {
     /// or shadowing an outer same-name — so its isolating exit reverts exactly
     /// those while letting OUTER-variable mutations persist. A nested closure
     /// compiles in a fresh `Compiler` (own scope) so it never pollutes this.
-    pub(crate) block_decl_tracker: Vec<Vec<String>>,
+    /// Each frame carries the [`Self::decl_scope_depth`] of the block's own
+    /// scope; a declaration in a deeper scope is not recorded.
+    pub(crate) block_decl_tracker: Vec<(u32, Vec<String>)>,
+    /// How many enclosing lexical scopes a `my` compiled right now is nested
+    /// in, counting only scopes that own their declarations: a
+    /// `SyntheticBlock` inlined in tail position and a desugar's
+    /// `Expr::DoBlock` are pushed as scope frames but declare into the
+    /// enclosing scope, so they leave it unchanged. Read by
+    /// [`Self::record_block_decl`].
+    pub(crate) decl_scope_depth: u32,
+    /// One-shot: the next `push_dynamic_scope_lexical` enters a scope that
+    /// does not own its declarations (see [`Self::decl_scope_depth`]).
+    pub(crate) next_scope_decl_transparent: bool,
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
+    /// Inline scalar declarations currently compiled as call arguments need
+    /// a lexical slot so their VarRef can identify a writable container.
+    call_arg_decl_slots: HashSet<String>,
     /// The kind of package (`module`/`package`/`grammar`) whose body is
     /// currently being compiled, or `None` in the mainline. Used to raise
     /// X::Attribute::Package when a `has` attribute is declared in a
@@ -1501,13 +1521,9 @@ pub(crate) struct Compiler {
     /// argument. `compile_call_arg` reads this once at entry and clears it
     /// before any nested compilation, so a call nested inside the bind RHS
     /// (`my $x := f(@a[$i])`) still sees `false` for its own arguments and
-    /// keeps the normal `is rw` writeback machinery. Guards against reusing the
-    /// call-argument `is rw` Index writeback temps (`__mutsu_index_rw_*`) for a
-    /// bind: those temps are compile-time-fixed global names, and inside a loop
-    /// body the same bind statement re-executes every iteration, so the
-    /// call-argument writeback's "write through an existing ContainerRef"
-    /// semantics corrupt the *previous* iteration's bound cell instead of
-    /// storing a fresh one (see the `lock.t` array-corruption investigation).
+    /// keeps the ordinary argument compile. A direct bind target wraps the
+    /// subscript's promoted cell in a per-site `__mutsu_bind_index_ref_N`
+    /// `VarRef`, so `SetLocal` sees a bind.
     bind_target_direct: bool,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
@@ -1695,11 +1711,6 @@ pub(crate) struct Compiler {
     /// `augment_site_id`. A separate map so an augment site and an unrelated
     /// BEGIN that happened to hash to the same base never share a counter.
     augment_site_seq: std::collections::HashMap<u64, u32>,
-    /// Pending writebacks for Index expressions passed to function calls.
-    /// After the call returns, if the `is rw` parameter was written to,
-    /// we need to write the temp variable value back to the original hash/array slot.
-    /// Each entry is (original Index Expr, temp variable name).
-    pub(super) pending_index_rw_writebacks: Vec<(Expr, String, String)>,
     /// The current distribution context for $?DISTRIBUTION.
     pub(crate) current_distribution: Option<Value>,
     /// True while compiling a sub-expression whose VALUE is stored/returned/bound
@@ -1847,7 +1858,10 @@ impl Compiler {
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
+            decl_scope_depth: 0,
+            next_scope_decl_transparent: false,
             promoted_expr_decl_names: HashSet::new(),
+            call_arg_decl_slots: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,
@@ -1899,7 +1913,6 @@ impl Compiler {
             last_source_line: None,
             begin_site_seq: std::collections::HashMap::new(),
             augment_site_seq: std::collections::HashMap::new(),
-            pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
             dot_twigil_rmw_assign: false,
@@ -2054,8 +2067,11 @@ impl Compiler {
             // that should not be used to qualify runtime variable access.
             return name.to_string();
         }
+        // A term key (`runtime::term_names`, #9962) is a lexical binding,
+        // never a package variable.
         if self.current_package == "GLOBAL"
             || name.contains("::")
+            || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
         {
             return name.to_string();
@@ -2147,9 +2163,16 @@ impl Compiler {
     /// Record a `my`/`state` declaration name for the innermost active
     /// scope-isolation tracker (see `block_decl_tracker`). No-op when no
     /// scope-isolating do-block is being compiled.
+    ///
+    /// Only a declaration in the tracked block's OWN scope counts: one in a
+    /// nested block (`do { { my $x }; $x = 5 }`) is that block's to revert,
+    /// and reverting it again here would undo the later write to the outer
+    /// same-named variable.
     pub(crate) fn record_block_decl(&mut self, name: &str) {
-        if let Some(top) = self.block_decl_tracker.last_mut() {
-            top.push(name.to_string());
+        if let Some((depth, decls)) = self.block_decl_tracker.last_mut()
+            && *depth == self.decl_scope_depth
+        {
+            decls.push(name.to_string());
         }
     }
 
@@ -2469,13 +2492,17 @@ impl Compiler {
                     lex_scope::OuterResolution::Read { slot, .. } => slot,
                     lex_scope::OuterResolution::NotDeclared => None,
                 };
-                let display_name = if var_name.starts_with(['$', '@', '%', '&'])
-                    || var_name.chars().next().is_some_and(|c| c.is_uppercase())
-                {
-                    var_name.clone()
-                } else {
-                    format!("${var_name}")
-                };
+                let display_name =
+                    if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
+                        // A sigil-less constant is listed under its spelling (#9962).
+                        term.to_string()
+                    } else if var_name.starts_with(['$', '@', '%', '&'])
+                        || var_name.chars().next().is_some_and(|c| c.is_uppercase())
+                    {
+                        var_name.clone()
+                    } else {
+                        format!("${var_name}")
+                    };
                 Value::array(vec![
                     Value::str(display_name),
                     Value::str(var_name.clone()),
@@ -3104,7 +3131,8 @@ impl Compiler {
     /// Extract variable name from a statement, handling VarDecl and SyntheticBlock.
     fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
         match stmt {
-            Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
+            Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
+            Stmt::Assign { name, .. } => Some(name.clone()),
             Stmt::SyntheticBlock(stmts) => {
                 for s in stmts {
                     if let Some(name) = Self::extract_varname_from_stmt(s) {
@@ -3962,16 +3990,6 @@ impl Compiler {
         }
     }
 
-    fn for_direct_smartmatch(iterable: &Expr) -> bool {
-        matches!(
-            iterable,
-            Expr::Binary {
-                op: crate::token_kind::TokenKind::SmartMatch,
-                ..
-            }
-        )
-    }
-
     /// Bake the local slot for a `for @a` live-array source (§1.5). The source
     /// is an `@`-variable by construction (`for_single_array_source` only
     /// matches `Expr::ArrayVar`), so the `@`-sigiled local key is tried FIRST:
@@ -4417,11 +4435,12 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
-                        Stmt::VarDecl { name, .. } => {
+                        Stmt::VarDecl { .. } => {
                             // VarDecl as last statement: compile normally, then
                             // load the declared variable back and set as topic
                             // so that implicit return works correctly.
-                            let var_name = name.clone();
+                            let var_name = crate::runtime::term_names::stmt_decl_storage_name(stmt)
+                                .unwrap_or_default();
                             self.compile_stmt(stmt);
                             let slot = self.alloc_local(&var_name);
                             self.code.emit(OpCode::GetLocal(slot));

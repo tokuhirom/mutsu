@@ -19,6 +19,7 @@ impl Interpreter {
             // group above (`types/role_candidate.rs`). Answers the same
             // introspection methods.
             || cn == "Perl6::Metamodel::ParametricRoleHOW"
+            || cn == "Perl6::Metamodel::ConcreteRoleHOW"
             || cn == "Perl6::Metamodel::CoercionHOW"
             // A definiteness-constrained type object's metaclass (ADR-0069).
             || cn == "Perl6::Metamodel::DefiniteHOW"
@@ -357,6 +358,12 @@ impl Interpreter {
         crate::runtime::any_cool_method_gate::is_cool_only_method(method)
     }
 
+    /// A `Cool`-subtype-only builtin name (`succ`, `base`, `lazy`, ...), see
+    /// [`crate::runtime::any_cool_method_gate::is_cool_subtype_only_method`].
+    pub(crate) fn cool_subtype_only_builtin_method(method: &str) -> bool {
+        crate::runtime::any_cool_method_gate::is_cool_subtype_only_method(method)
+    }
+
     /// Whether `class_name` (or any ancestor in its MRO) declares `handles *`
     /// or a `FALLBACK` method — the two mechanisms that intercept a
     /// `X::Method::NotFound` from normal resolution. Used to gate the native
@@ -395,6 +402,12 @@ impl Interpreter {
             // declares takes precedence over the native `Match` row. The
             // lookups below all MRO-walk, so `Match`'s own rows still apply.
             let owner = target.match_dispatch_class();
+            if Self::cool_subtype_only_builtin_method(method)
+                && !self
+                    .e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
+            {
+                return true;
+            }
             return skip_pseudo
                 || method == "squish"
                 || method == "elems"
@@ -409,6 +422,14 @@ impl Interpreter {
                             && !self.has_public_accessor(owner, method))));
         }
         if skip_pseudo || self.native_fastpath_receiver_state_guard(target, method, args) {
+            return true;
+        }
+        // ADR-0051 §3 (#9948): see `try_native_method_raw`'s twin of this
+        // gate -- a `Cool`-subtype-only name the receiver's ancestry does not
+        // declare must not be answered by a receiver-blind cascade.
+        if Self::cool_subtype_only_builtin_method(method)
+            && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
+        {
             return true;
         }
         // ADR-0019 E4b step 12 (authoritative switch, category 3): the

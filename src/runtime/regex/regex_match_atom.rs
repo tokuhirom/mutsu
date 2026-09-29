@@ -417,6 +417,17 @@ impl Interpreter {
             }
             return out;
         }
+        if let RegexAtom::CodeInterp { code, list } = atom {
+            return self.regex_code_interp_ends(
+                code,
+                *list,
+                chars,
+                pos,
+                current_caps,
+                pkg,
+                ignore_case,
+            );
+        }
         if let RegexAtom::Group(pattern) = atom {
             // The delta shape lives in `regex_match_lazy.rs` so this eager
             // producer and the demand-driven driver cannot drift (ADR-0073).
@@ -729,8 +740,8 @@ impl Interpreter {
                         // in declaration order.
                         let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
                         for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
-                            let (plen, stopped) =
-                                self.ltm_prefix_len_at(parsed, chars, pos, *sub_pkg);
+                            let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
+                            let (plen, stopped) = (measured.len, measured.stopped);
                             // ADR-0022 §4.1's contract: `(None, false)` is a sound
                             // "this candidate cannot match here" verdict and may
                             // filter; `(None, true)` only means the measurement was
@@ -738,10 +749,7 @@ impl Interpreter {
                             if plen.is_none() && !stopped {
                                 continue;
                             }
-                            let mut seen = std::collections::HashSet::new();
-                            let litlen =
-                                self.ltm_litlen_at(parsed, chars, pos, *sub_pkg, &mut seen, 0);
-                            ranked.push((idx, (plen.unwrap_or(0), litlen)));
+                            ranked.push((idx, (plen.unwrap_or(0), measured.litlen)));
                         }
                         ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
                         // Attempt the ranked candidates in order and stop at the
@@ -1070,7 +1078,8 @@ impl Interpreter {
         if !is_user_method {
             return None;
         }
-        // Run the method in a scratch interpreter (mirrors `eval_regex_code_assertion`).
+        // Run the method in the grammar's package over an isolated copy of the
+        // env (`run_regex_sub_eval_here`).
         //
         // The invocant is an INSTANCE of the grammar carrying the cursor state
         // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
@@ -1088,19 +1097,10 @@ impl Interpreter {
         cursor_attrs.insert("pos", Value::int(pos as i64));
         cursor_attrs.insert("to", Value::int(pos as i64));
         let invocant = Value::make_instance(pkg, cursor_attrs);
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            current_package: Arc::new(RwLock::new(pkg.to_string())),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        // Full registry: the grammar's methods live in `Registry::classes`, which
-        // the lean `copy_decl_registry_into` omits.
-        self.copy_full_registry_into(&mut interp);
-        if self.test_module_loaded() {
-            interp.loaded_modules = self.loaded_modules.clone();
-            interp.tap.ensure_state();
-        }
-        match interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new()) {
+        let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+            interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
+        });
+        match called {
             Err(e) => {
                 // Propagate the method's exception (e.g. `die`) out of the parse.
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {

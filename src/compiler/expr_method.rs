@@ -185,6 +185,10 @@ impl Compiler {
             Expr::ArrayVar(n) => format!("@{}", n),
             Expr::HashVar(n) => format!("%{}", n),
             Expr::CodeVar(n) => format!("&{}", n),
+            // A sigil-less constant is reached through its term key (#9962).
+            Expr::BareWord(n) if self.names_term_constant(n) => {
+                crate::runtime::term_names::term_key(n)
+            }
             Expr::BareWord(n) => n.clone(),
             Expr::DoStmt(stmt) => {
                 if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
@@ -906,6 +910,31 @@ impl Compiler {
         modifier: &Option<char>,
         quoted: bool,
     ) {
+        // `$x.&f(args)` IS `f($x, args)`: the invocant is passed as the first
+        // positional argument of a plain call, so it binds as its container —
+        // an `is rw` first parameter writes back to `$x`, and a multi picks
+        // the rw candidate exactly as the direct call does (String::Fields'
+        // `$foo.&apply-fields($sf)`). Compiled as that call rather than as a
+        // method dispatch that only ever saw the invocant's value.
+        if modifier.is_none()
+            && !quoted
+            && let Expr::CodeVar(_) = name_expr
+        {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            // The invocant is always positional, even a literal colonpair
+            // (`:42foo.&f`), which as a bare call argument would be a named.
+            call_args.push(if Self::is_named_arg_expr(target) {
+                Expr::PositionalPair(Box::new(target.clone()))
+            } else {
+                target.clone()
+            });
+            call_args.extend(args.iter().cloned());
+            self.compile_expr(&Expr::CallOn {
+                target: Box::new(name_expr.clone()),
+                args: call_args,
+            });
+            return;
+        }
         let target_var_name = match target {
             Expr::Var(n) => Some(n.clone()),
             Expr::ArrayVar(n) => Some(format!("@{}", n)),

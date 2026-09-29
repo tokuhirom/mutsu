@@ -288,18 +288,32 @@ pub fn make_datetime(
     Value::make_instance(Symbol::intern("DateTime"), attrs)
 }
 
-/// Attach an optional formatter to an existing DateTime instance.
-pub fn with_datetime_formatter(datetime: Value, formatter: Option<Value>) -> Value {
+/// Whether `value` is a Date/DateTime carrying a user `:formatter`. Its
+/// stringification must go through `Str` (which calls the formatter against
+/// this very value); the pure renderer only knows the default ISO format.
+// Cost: O(1).
+pub fn carries_formatter(value: &Value) -> bool {
+    matches!(value.view(), ValueView::Instance { attributes, .. }
+        if attributes.contains_key("formatter")
+            && attributes.contains_key("year")
+            && attributes.contains_key("month")
+            && attributes.contains_key("day"))
+}
+
+/// Attach an optional formatter to an existing Date or DateTime instance. The
+/// formatter is not run here: `Str`/`gist` call it against whichever value
+/// they stringify, so a converted or derived value renders its own fields.
+pub fn with_formatter(value: Value, formatter: Option<Value>) -> Value {
     let Some(formatter) = formatter else {
-        return datetime;
+        return value;
     };
     let ValueView::Instance {
         class_name,
         attributes,
         id,
-    } = datetime.view()
+    } = value.view()
     else {
-        return datetime;
+        return value;
     };
     let mut updated = attributes.to_map();
     updated.insert("formatter".to_string(), formatter);

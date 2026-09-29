@@ -100,6 +100,20 @@ pub(crate) fn try_interpolate_var<'a>(
     current: &mut String,
 ) -> Option<&'a str> {
     let parse_one_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+        // A `.`-prefixed postcircumfix calls the same operator via method
+        // syntax (`$m.<x>` same as `$m<x>`, `@a.[1]` same as `@a[1]`,
+        // `%h.<a>` same as `%h<a>`) — strip the dot before matching so the
+        // branches below see the bracket form directly. Only strip it when
+        // an opener actually follows, so an ordinary `.method` call (handled
+        // by `try_parse_interp_method_call`) is left untouched.
+        let input = match input.strip_prefix('.') {
+            Some(after_dot)
+                if after_dot.starts_with(['<', '[', '{']) || after_dot.starts_with('\u{00AB}') =>
+            {
+                after_dot
+            }
+            _ => input,
+        };
         // Double angle bracket indexing: $var<<key>> (must be checked before single <)
         if let Some(after_dlt) = input.strip_prefix("<<")
             && let Some(end) = after_dlt.find(">>")

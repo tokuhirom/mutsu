@@ -392,6 +392,28 @@ impl RuntimeError {
         err
     }
 
+    /// `X::Match::Bool` -- a `Bool` used as a matcher for `grep`/`first`
+    /// (`(1,2).grep(True)`, `1,2,3.first($_ == 1)`). `routine` is the dotted
+    /// method name Rakudo reports in `.type` (`.grep`, `.first`) regardless
+    /// of whether the call site used the sub or method form. The human
+    /// text comes from `format_exception_message()` so `.message`/`.Str`/
+    /// `.gist` and this thrown error's own text all agree (storing it in a
+    /// `message` attribute would shadow that table -- see
+    /// `promise_vowed_error`).
+    pub(crate) fn match_bool(routine: &str) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("type".to_string(), Value::str(routine.to_string()));
+        let message = crate::builtins::exception_message::format_exception_message(
+            "X::Match::Bool",
+            &attrs.clone().into(),
+        )
+        .unwrap_or_default();
+        let ex = Value::make_instance(Symbol::intern("X::Match::Bool"), attrs);
+        let mut err = Self::new(message);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     /// X::AdHoc - assignment through a readonly *binding* that still owns a
     /// container: a non-`is rw` sub/block parameter, or a `for`-loop named
     /// alias. Rakudo reports this as a plain `X::AdHoc`, not as the specific
@@ -405,6 +427,14 @@ impl RuntimeError {
     /// `my constant $PI = 3.14`, a topic aliased to a literal).
     pub(crate) fn immutable_value() -> Self {
         Self::new("Cannot assign to an immutable value")
+    }
+
+    /// X::AdHoc - a definiteness-constrained type object has no instances of
+    /// its own; construction must target its unconstrained base type.
+    pub(crate) fn constrained_type_instantiation(type_name: &str) -> Self {
+        Self::new(format!(
+            "You cannot create an instance of this type ({type_name})"
+        ))
     }
 
     /// X::AdHoc - assignment to a sigiled variable bound straight to a TYPE

@@ -106,16 +106,31 @@ impl Interpreter {
             "X" => {
                 // Index entry: `X<display|a,b;c>` — the meta is a list of
                 // `;`-separated entries, each a `,`-separated list of levels.
+                // rakudo's grammar (`\s* \| \s* ( [$<meta>=…]+ +%% \, ) +%% \;`)
+                // skips only the whitespace around the `|`: each level keeps
+                // its own spaces (`X<t|defining, a term>` has the levels
+                // "defining" and " a term"), and `%%` lets a trailing
+                // separator end the list without adding an empty level.
                 match Self::find_unescaped_pipe(inner) {
                     Some(pipe_pos) => {
                         let contents = Self::parse_formatting_codes(&inner[..pipe_pos]);
                         fc_attrs.insert("contents".to_string(), Value::real_array(contents));
-                        for entry in inner[pipe_pos + 1..].split(';') {
-                            let levels: Vec<Value> = entry
-                                .split(',')
-                                .map(|lvl| Value::str(lvl.trim().to_string()))
-                                .collect();
-                            meta.push(Value::real_array(levels));
+                        let spec = inner[pipe_pos + 1..].trim_start();
+                        let mut entries: Vec<&str> = spec.split(';').collect();
+                        if entries.len() > 1 && entries.last() == Some(&"") {
+                            entries.pop();
+                        }
+                        for entry in entries {
+                            let mut levels: Vec<&str> = entry.split(',').collect();
+                            if levels.len() > 1 && levels.last() == Some(&"") {
+                                levels.pop();
+                            }
+                            meta.push(Value::real_array(
+                                levels
+                                    .into_iter()
+                                    .map(|lvl| Value::str(lvl.to_string()))
+                                    .collect(),
+                            ));
                         }
                     }
                     None => {

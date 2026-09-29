@@ -42,8 +42,8 @@ thread_local! {
 
     /// Memoized WITH-ARGS subrule resolution: (pkg, name, rendered-args) →
     /// parsed candidates. A parameterized rule (`multi rule expr($p)` called
-    /// as `<expr(3)>`) re-resolves through a fresh scratch interpreter (bind
-    /// args, eval body, bake params) on EVERY match-position probe; nested
+    /// as `<expr(3)>`) re-resolves (bind args, eval body, bake params) on
+    /// EVERY match-position probe; nested
     /// precedence-climbing grammars (P47) re-enter that per position and per
     /// LR-seed iteration, which is exponential without memoization. Same
     /// `TOKEN_DEFS_GEN` invalidation as above.
@@ -440,7 +440,7 @@ impl Interpreter {
                 .collect();
             let (resolved, _) = super::regex_arg_purity::with_resolution(params, || {
                 // Binding evaluates a parameter default or a `where` clause in
-                // the scratch env — arbitrary expressions over the caller's
+                // the isolated env — arbitrary expressions over the caller's
                 // lexical scope, which the memo key does not carry.
                 if def
                     .param_defs
@@ -494,87 +494,72 @@ impl Interpreter {
     }
 
     /// One candidate of [`Self::resolve_token_patterns_with_args_in_pkg`]: bind
-    /// the arguments in a scratch interpreter, evaluate the body, and render
-    /// the resulting pattern.
+    /// the arguments over an isolated copy of the env
+    /// ([`Self::run_regex_sub_eval`]) in the token's package, evaluate the body,
+    /// and render the resulting pattern.
     fn resolve_one_token_pattern_with_args(
         &mut self,
         def: &Arc<FunctionDef>,
         arg_values: &[Value],
     ) -> Result<Vec<(String, Symbol, Option<String>)>, RuntimeError> {
-        let mut out = Vec::new();
-        {
-            let mut interp = Interpreter {
-                env: self.env.clone(),
-                // The scratch runs in this package. Both the string and its interned
-                // mirror are set: `current_package_sym()` reads the mirror, and a
-                // scratch that overrode only the string answered for the wrong
-                // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-                current_package: Arc::new(RwLock::new(def.package.resolve())),
-                current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                    def.package.id(),
-                )),
-                ..self.new_regex_scratch_sharing_io()
-            };
-            self.copy_decl_registry_into(&mut interp);
-            let saved_env = interp.env.clone();
+        let env = self.env.clone();
+        self.run_regex_sub_eval(env, Some(def.package), |interp| {
+            let mut out = Vec::new();
             interp.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
-            {
-                let invocation_id = interp.take_invocation_id();
-                let frame = super::super::RoutineFrame {
-                    package: def.package,
-                    lexical_package: None,
-                    name: def.name,
-                    line: None,
-                    file: None,
-                    is_method: false,
-                    is_submethod: false,
-                    is_block: false,
-                    is_hidden_from_backtrace: false,
-                    def_file: None,
-                    invocation_id,
+            let invocation_id = interp.take_invocation_id();
+            let frame = super::super::RoutineFrame {
+                package: def.package,
+                lexical_package: None,
+                name: def.name,
+                line: None,
+                file: None,
+                is_method: false,
+                is_submethod: false,
+                is_block: false,
+                is_hidden_from_backtrace: false,
+                def_file: None,
+                invocation_id,
+            };
+            interp.record_profile_routine_frame(&frame);
+            interp.routine_stack.push(frame);
+            let result = interp.eval_block_value(&def.body);
+            interp.routine_stack.pop();
+            let value = match result {
+                Ok(v) => Some(v),
+                Err(e) if e.return_value.is_some() => e.return_value,
+                Err(_) => None,
+            };
+            if let Some(value) = value {
+                let pattern = match value.view() {
+                    ValueView::Regex(pat) => pat.to_string(),
+                    ValueView::Str(s) => s.to_string(),
+                    ValueView::Nil => String::new(),
+                    _ => value.to_string_value(),
                 };
-                interp.record_profile_routine_frame(&frame);
-                interp.routine_stack.push(frame);
-                let result = interp.eval_block_value(&def.body);
-                interp.routine_stack.pop();
-                let value = match result {
-                    Ok(v) => Some(v),
-                    Err(e) if e.return_value.is_some() => e.return_value,
-                    Err(_) => None,
-                };
-                if let Some(value) = value {
-                    let pattern = match value.view() {
-                        ValueView::Regex(pat) => pat.to_string(),
-                        ValueView::Str(s) => s.to_string(),
-                        ValueView::Nil => String::new(),
-                        _ => value.to_string_value(),
-                    };
-                    // Bake the bound parameter values into any `{ ... }` code
-                    // blocks of the pattern. This is needed because regex code
-                    // blocks execute in the outer interpreter env (which does
-                    // not contain the subrule's bound params).
-                    let param_names: Vec<String> = def
-                        .param_defs
-                        .iter()
-                        .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
-                        .map(|pd| {
-                            pd.name
-                                .trim_start_matches([':', '@', '%', '&', '!', '.'])
-                                .to_string()
-                        })
-                        .collect();
-                    let pattern =
-                        interp.bake_bound_params_into_regex_code_blocks(&pattern, &param_names);
-                    let pattern = interp.interpolate_bound_regex_scalars(&pattern);
-                    if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
-                        let sym_val = Self::extract_sym_adverb(&def.name.resolve());
-                        out.push((instantiated, def.package, sym_val));
-                    }
+                // Bake the bound parameter values into any `{ ... }` code
+                // blocks of the pattern. This is needed because regex code
+                // blocks execute in the outer interpreter env (which does
+                // not contain the subrule's bound params).
+                let param_names: Vec<String> = def
+                    .param_defs
+                    .iter()
+                    .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
+                    .map(|pd| {
+                        pd.name
+                            .trim_start_matches([':', '@', '%', '&', '!', '.'])
+                            .to_string()
+                    })
+                    .collect();
+                let pattern =
+                    interp.bake_bound_params_into_regex_code_blocks(&pattern, &param_names);
+                let pattern = interp.interpolate_bound_regex_scalars(&pattern);
+                if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
+                    let sym_val = Self::extract_sym_adverb(&def.name.resolve());
+                    out.push((instantiated, def.package, sym_val));
                 }
             }
-            interp.env = saved_env;
-        }
-        Ok(out)
+            Ok(out)
+        })
     }
 
     pub(super) fn resolve_named_regex_candidates_in_pkg(

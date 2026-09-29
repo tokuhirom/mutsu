@@ -230,10 +230,13 @@ impl Interpreter {
         if class_name.resolve() != "Iterator"
             || attributes.contains_key("squish_source")
             || attributes.contains_key("is_lazy")
+            || attributes
+                .contains_key(crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR)
         {
             // squish iterators invoke user callbacks; lazy iterators (gather /
             // lazy Seq) pull through interpreter-owned coroutine state rather than
-            // a materialized `items` snapshot — leave both to the interpreter.
+            // a materialized `items` snapshot, and a `.map`/`.grep` stream
+            // runs its callback per pull — leave all three to the interpreter.
             return None;
         }
         // Only a concrete array-backed iterator (excludes predictive/coroutine

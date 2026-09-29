@@ -868,6 +868,26 @@ impl Interpreter {
     /// is persisted in that class's package-lexical store when its body exits.
     /// Keep both import-time and EXPORT-stash reads on the same lookup path.
     pub(crate) fn exported_var_value(&self, module: &str, name: &str) -> Option<Value> {
+        // A sigil-less constant's export name is its term key (#9962): its
+        // package store is keyed by the spelling, its lexical copies by the key.
+        if let Some(spelled) = crate::runtime::term_names::term_spelling(name) {
+            let qualified = crate::qualified::qualified(
+                crate::symbol::Symbol::intern(module),
+                crate::symbol::Symbol::intern(spelled),
+            );
+            return self
+                .env
+                .get_sym(qualified)
+                .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
+                .or_else(|| self.our_vars.get(qualified.as_str()))
+                .or_else(|| {
+                    self.module_scope_lexicals
+                        .get(module)
+                        .and_then(|e| e.get(name))
+                })
+                .or_else(|| self.env.get(name))
+                .cloned();
+        }
         let (sigil, bare) = match name.chars().next() {
             Some(sigil @ ('$' | '@' | '%' | '&')) => (Some(sigil), &name[1..]),
             _ => (None, name),
@@ -879,6 +899,21 @@ impl Interpreter {
         self.env
             .get(&qualified)
             .cloned()
+            // The requested compunit path can differ from its declared unit
+            // package. In that case the exported role/class value lives under
+            // the declared package, even though its export metadata is also
+            // mirrored under the requested path.
+            .or_else(|| {
+                let declared = self
+                    .module_declared_unit_packages
+                    .get(&crate::symbol::Symbol::intern(module))?;
+                let key =
+                    crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
+                self.env.get_sym(key).cloned().or_else(|| {
+                    self.has_type_direct(key.as_str())
+                        .then(|| Value::package(key))
+                })
+            })
             .or_else(|| self.enum_bare_value(name).cloned())
             .or_else(|| {
                 self.package_lexicals
@@ -1244,10 +1279,6 @@ impl Interpreter {
             // Shadow an imported proto in a lexical scope, or a preloaded
             // GLOBAL family for a bare-file module, but do not shadow a
             // package-qualified proto merely because the source has one.
-            if (imported_proto && !self.import_scope_stack.is_empty()) || global_family_present {
-                self.shadow_imported_proto_family(&target_single);
-            }
-
             let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
@@ -1335,6 +1366,20 @@ impl Interpreter {
                         break;
                     }
                 }
+            }
+            // An imported `only` sub (no multi candidates) is a single lexical
+            // symbol: inside a nested scope it hides every outer candidate of
+            // the name, exactly as a locally declared `sub` would. Without
+            // this, `{ use Green :harness; ok ... }` merged Green's `ok` next to
+            // Test's outer `multi ok` and dispatch picked Test's.
+            let imports_only_sub = !function_entries.is_empty()
+                && function_entries
+                    .iter()
+                    .all(|(key, _)| !key.resolve().contains('/'));
+            if ((imported_proto || imports_only_sub) && !self.import_scope_stack.is_empty())
+                || global_family_present
+            {
+                self.shadow_imported_proto_family(&target_single);
             }
             if is_operator {
                 self.record_operator_import(&name, function_entries.iter().map(|(_, def)| def));
@@ -1440,7 +1485,14 @@ impl Interpreter {
                 // `my $s` lives (#7914). Importing `:s<time>` from
                 // `CSS::Grammar::Defs` otherwise replaced the importing scope's
                 // `$s` wholesale. See `runtime::enum_bare_names`.
-                let is_enum_key = !target.contains("::")
+                // A sigil-less constant is exported under its term key
+                // (#9962), and is imported under it too: a `my $b` in the
+                // importing scope is a different symbol. See
+                // `runtime::term_names`.
+                let term_spelling = crate::runtime::term_names::term_spelling(&target);
+                let is_term = term_spelling.is_some();
+                let is_enum_key = !is_term
+                    && !target.contains("::")
                     && !target.starts_with(['$', '@', '%', '&'])
                     && matches!(value.view(), ValueView::Enum { .. });
                 let env_target = if is_enum_key {
@@ -1449,7 +1501,7 @@ impl Interpreter {
                     target.clone()
                 };
                 if !target.contains("::") {
-                    self.unsuppress_name(&target);
+                    self.unsuppress_name(term_spelling.unwrap_or(&target));
                 }
                 // Slice F (env<->locals coherence): `import` writes the symbol
                 // into env by name, but a later bare reference (e.g. an imported
@@ -1462,7 +1514,7 @@ impl Interpreter {
                 // recording it made the importing frame pull `env[<key>]` over a
                 // same-named lexical's slot on the next frame reconcile — the
                 // half of #7914 that turned the caller's `my $s` into `Any`.
-                if !target.contains("::") && !is_enum_key {
+                if !target.contains("::") && !is_enum_key && !is_term {
                     let slot_name = match target.chars().next() {
                         Some('$' | '@' | '%') => target[1..].to_string(),
                         _ => target.clone(),

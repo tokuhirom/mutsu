@@ -79,17 +79,14 @@ impl Interpreter {
             }
         };
 
-        let message = if let ValueView::Instance { attributes, .. } = value.view() {
-            attributes
-                .as_map()
-                .get("message")
-                .map(|v| v.to_string_value())
-                .unwrap_or_else(|| {
-                    // Try calling the user-defined .Str method
-                    self.vm_call_method_with_values(value.clone(), "Str", vec![])
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|_| value.to_string_value())
-                })
+        let message = if matches!(value.view(), ValueView::Instance { .. }) {
+            self.exception_message_text(&value).unwrap_or_else(|| {
+                // A non-exception instance, or an exception without a message,
+                // may still supply its own .Str method.
+                self.vm_call_method_with_values(value.clone(), "Str", vec![])
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|_| value.to_string_value())
+            })
         } else if matches!(value.view(), ValueView::Mixin(..)) {
             // A mixed-in exception may override `.message`/`.Str`; dispatch through
             // the mixin so the override is honored, falling back to stringification.
@@ -185,6 +182,10 @@ impl Interpreter {
             && !e.has_backtrace()
             && !e.code().is_some_and(|c| c.is_parse())
         {
+            // Most opcodes do not refresh the observable source line on the
+            // successful path. An error can still arise from any of them, so
+            // locate the failing instruction before capturing its backtrace.
+            self.sync_source_line(code, *ip);
             self.attach_backtrace_to_error(e);
         }
         result
@@ -1086,7 +1087,7 @@ impl Interpreter {
             // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
             // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
-                self.exec_get_pseudo_stash_op(code, *name_idx);
+                self.exec_get_pseudo_stash_op(code, *name_idx)?;
                 *ip += 1;
             }
             // Cost: O(k), k = interned qualified names ending in the key's bare name, for a
@@ -1198,23 +1199,6 @@ impl Interpreter {
             OpCode::SetCallTemp(name_idx) => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.env_mut().insert_sym(code.const_sym(*name_idx), val);
-                *ip += 1;
-            }
-            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
-            OpCode::GetCallTemp(name_idx) => {
-                let val = self
-                    .env()
-                    .get_sym(code.const_sym(*name_idx))
-                    .cloned()
-                    .unwrap_or(Value::NIL);
-                let val = if val.is_lazy_thunk_value()
-                    && let ValueView::LazyThunk(thunk_data) = val.view()
-                {
-                    self.force_lazy_thunk(&thunk_data)?
-                } else {
-                    val
-                };
-                self.stack.push(val.into_deref());
                 *ip += 1;
             }
             // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
@@ -1371,6 +1355,21 @@ impl Interpreter {
                             name = bare;
                         }
                     }
+                }
+                // A sigil-less write the compiler could not resolve to a binding
+                // it knows (`EVAL 'b = 3'`) is emitted against the TERM key
+                // (#9962): it is an in-scope constant's binding when there is
+                // one — whose readonly mark then refuses the write — and the
+                // plain sigil-less name (an outer `my \x`) otherwise.
+                if !raw_mode
+                    && let Some(spelled) = crate::runtime::term_names::term_spelling(&name)
+                    && (!self.env().contains_key(&name)
+                        // A type name keeps meaning the type here, exactly as
+                        // it does for a run-time bareword read.
+                        || self.has_type_direct(spelled)
+                        || Self::is_builtin_type(spelled))
+                {
+                    name = spelled.to_string();
                 }
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
@@ -1855,6 +1854,18 @@ impl Interpreter {
                     // already-correct `does Positional` instance, whose
                     // non-Array input falls through to a generic
                     // `coerce_to_array` wrap and loses the custom class.
+                } else if (is_bind_ctx || is_rebind)
+                    && (name.starts_with('@') || name.starts_with('%'))
+                    && name.len() > 1
+                    && !name.contains("__")
+                    && !is_attr_twigil
+                {
+                    // `@a := ...` / `%h := ...` reached by name (a closure or
+                    // nested sub rebinding a captured free var): a bind aliases
+                    // the RHS container, so check it against the DECLARED
+                    // element type and make the bound container's own type the
+                    // one in effect — the same as the SetLocal bind path.
+                    self.bind_container_by_name(&name, &val)?;
                 } else if name.starts_with('%')
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
@@ -1931,10 +1942,24 @@ impl Interpreter {
                 {
                     val = def.clone();
                 }
-                if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
-                    && !name.starts_with('%')
-                    && !name.starts_with('@')
-                {
+                // Hoisted from the write-throughs below, which read it too: an
+                // expression-position `my` declares a NEW variable, so it is
+                // never a store to a captured free variable.
+                let fresh_binding_decl =
+                    self.vardecl_context().get() && code.expr_declared_syms.contains(&name_sym);
+                // #10049: a routine's plain assignment to its own free variable
+                // is checked against the cell it lands in, not against a
+                // same-named typed `my` of the caller inherited through env.
+                let (scalar_constraint, constraint_from_cell) = if name.starts_with(['%', '@']) {
+                    (None, false)
+                } else {
+                    self.by_name_store_scalar_constraint(
+                        &name,
+                        name_sym,
+                        !raw_mode && !is_bind_ctx && !is_rebind && !fresh_binding_decl,
+                    )
+                };
+                if let Some(constraint) = scalar_constraint {
                     // A Nil ASSIGNED to a typed scalar resets it to its type
                     // object (`my Str $x = "a"; $x = Nil` leaves `$x === Str`),
                     // mirroring `exec_set_local_op`'s STORE-time reset. This
@@ -1954,7 +1979,14 @@ impl Interpreter {
                         && constraint != "Nil"
                         && self.var_default(&name).is_none()
                     {
-                        val = self.typed_scalar_nil_seed_value(&name, &constraint);
+                        val = if constraint_from_cell {
+                            self.typed_scalar_nil_seed_value_with_base(
+                                &constraint,
+                                Some(constraint.clone()),
+                            )
+                        } else {
+                            self.typed_scalar_nil_seed_value(&name, &constraint)
+                        };
                     } else {
                         if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
                             // When assigning an unhandled Failure to a typed variable
@@ -2270,16 +2302,14 @@ impl Interpreter {
                 // since each would replace the boxed `Proxy` with the plain
                 // value, which is exactly the rebinding a `=` must not do. The
                 // captured lexical can sit in either store, so both are asked.
-                // `fresh_binding_decl` (hoisted here from the write-throughs,
-                // which read it too) is the exclusion they already state: an
+                // `fresh_binding_decl` (computed above, before the type check;
+                // the write-throughs read it too) is the exclusion they state: an
                 // expression-position `my` of the same name declares a NEW
                 // variable rather than writing the captured `Proxy`.
                 //
                 // Tag probes first (`is_proxy_value` / `is_container_ref`), so
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
-                let fresh_binding_decl =
-                    self.vardecl_context().get() && code.expr_declared_syms.contains(&name_sym);
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
                     let proxy_val = match self
                         .unit_lexical_slot(&name)
@@ -2776,7 +2806,9 @@ impl Interpreter {
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.last_topic_value = Some(val.clone());
-                self.env_mut().insert("_".to_string(), val);
+                // Pre-interned: `insert("_".to_string(), ..)` allocated and
+                // re-interned the key on every block value.
+                self.env_mut().insert_sym(crate::symbol::wk::topic(), val);
                 *ip += 1;
             }
             // Cost: O(1).
@@ -2969,12 +3001,13 @@ impl Interpreter {
                         ..
                     } if class_name.resolve() == "IO::Path::Parts" => {
                         let attrs = attributes.as_map();
+                        // ADR-0021 I2: a data-minted pair defaults positional.
                         Value::array(
                             crate::runtime::utils::io_path_parts_keys()
                                 .iter()
                                 .map(|key| {
-                                    Value::pair(
-                                        (*key).to_string(),
+                                    Value::value_pair(
+                                        Value::str((*key).to_string()),
                                         attrs.get(*key).cloned().unwrap_or(Value::NIL),
                                     )
                                 })
@@ -4361,10 +4394,16 @@ impl Interpreter {
                                 // (see `exit_status_parts`), so the signal is
                                 // the only evidence that it was unsuccessful.
                                 if (exitcode != 0 || signal != 0) && !is_live {
+                                    // Rakudo names the program (`$.proc.command[0]`),
+                                    // not the whole command line.
                                     let command = attributes
                                         .as_map()
                                         .get("command")
-                                        .map(|v| v.to_string_value())
+                                        .and_then(|v| {
+                                            crate::runtime::utils::value_to_list(v)
+                                                .first()
+                                                .map(|p| p.to_string_value())
+                                        })
                                         .unwrap_or_default();
                                     // When the command could not be spawned at all
                                     // (exit code -1), rakudo reports the underlying
@@ -4721,6 +4760,12 @@ impl Interpreter {
             // Cost: O(1) (element cell for a single index), otherwise as Index.
             OpCode::IndexArgRef(mark) => {
                 self.exec_index_arg_ref_op(code, mark)?;
+                *ip += 1;
+            }
+            // Cost: O(c), c = registered candidates of the callee's name.
+            OpCode::RwArgCalleeBindsContainer(mark) => {
+                let binds = self.rw_arg_callee_binds_container(code, mark);
+                self.stack.push(Value::truth(binds));
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices.
@@ -5556,7 +5601,7 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             }
-            // Cost: O(s), s = routine-stack depth (eager backtrace, as Rakudo's Failure).
+            // Cost: O(s), s = routine-stack depth (Failure origin capture).
             OpCode::Fail => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
@@ -5577,13 +5622,16 @@ impl Interpreter {
                 } else {
                     val
                 };
-                // Build a backtrace from the routine stack so that
-                // Exception.gist can show where the fail originated.
+                // A CATCH of `fail` needs the full structured call stack. If
+                // this signal becomes a Failure instead, conversion moves the
+                // backtrace off the exception and onto the Failure.
                 let backtrace_val = self.build_backtrace_value();
+                let failure_origin = self.build_backtrace_string();
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
-                let err = self.runtime_error_from_exception_value(val, "Failed", true);
-                // Attach backtrace, line, and file to the exception value
+                let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
+                // A direct CATCH sees the fail-site Backtrace. A soft Failure
+                // moves it off the exception in fail_error_to_failure_value.
                 if let Some(ref exc_box) = err.exception
                     && let ValueView::Instance { attributes, .. } = exc_box.view()
                 {
@@ -5595,6 +5643,7 @@ impl Interpreter {
                         attributes.insert_if_absent("file".to_string(), Value::str_from(file));
                     }
                 }
+                err.set_failure_original_backtrace(Some(failure_origin));
                 return Err(err);
             }
             // Cost: O(1).
@@ -5687,6 +5736,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                replacement_thunk,
                 qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5702,6 +5752,7 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
@@ -5718,6 +5769,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                replacement_thunk,
                 qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5733,6 +5785,7 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
@@ -5878,9 +5931,11 @@ impl Interpreter {
 
             // -- CHECK Phaser scope --
             // Cost: O(1).
-            OpCode::CheckPhaserStart { .. } => {
+            OpCode::CheckPhaserStart { is_begin, .. } => {
                 self.sync_source_line(code, *ip);
                 self.check_phaser_depth += 1;
+                self.check_phaser_kinds
+                    .push(if *is_begin { "BEGIN" } else { "CHECK" });
                 // ADR-0041 §9: a name reference evaluated at BEGIN time sees
                 // only declarations the program has textually reached.
                 self.begin_time_enter();
@@ -5889,6 +5944,7 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::CheckPhaserEnd => {
                 self.check_phaser_depth = self.check_phaser_depth.saturating_sub(1);
+                self.check_phaser_kinds.pop();
                 self.begin_time_leave();
                 *ip += 1;
             }
@@ -6212,11 +6268,11 @@ impl Interpreter {
                 // to find the next LEAVE phaser boundary on error.
                 *ip += 1;
             }
-            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(w + k + s), w = names written, k = names declared, s = special local slots; `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(w + k + s), w = names written, k = names declared, s = special local slots, and a source block (`DoBlockIsolation::Lexical`) O(w + k); `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
             OpCode::DoBlockExpr {
                 body_end,
                 label,
-                scope_isolate,
+                isolation,
                 isolate_decls_idx,
                 scope_routines,
             } => {
@@ -6225,7 +6281,7 @@ impl Interpreter {
                     code,
                     *body_end,
                     label,
-                    *scope_isolate,
+                    *isolation,
                     *isolate_decls_idx,
                     *scope_routines,
                     ip,

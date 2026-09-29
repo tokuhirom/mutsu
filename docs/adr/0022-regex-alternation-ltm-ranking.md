@@ -26,6 +26,15 @@
   `prefix_len` is taken from the walk that collected its ends
   (`src/runtime/regex/regex_ltm_rank_reuse.rs`) instead of from a second walk. The
   two are the same walk, so the ranking is unchanged.
+- **Implementation note** (2026-09-28, ANTLR4::Grammar): `litlen` is now measured by
+  the same NFA run as `prefix_len`, and the §2 non-goal "litlen inside a quantified
+  subrule counts in rakudo … mutsu implements the simple rule" is removed. The builder
+  marks a literal as counting exactly when NQP's `$!LITEND` would be 0 there, per rule
+  body (`src/runtime/regex/regex_ltm_litend.rs`). The run records the furthest such
+  literal crossed, as MoarVM's `longlit` does. So a subrule's leading literals count
+  wherever the call sits, and a literal after a subrule call does not. §4.3's separate
+  `ltm_litlen_at` walk is retired. A real distribution depended on this:
+  `[<nohy> '-']? <elem>` must tie with `<elem>` and win by declaration order.
 - **Superseded in part by**: [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md)
   (2026-09-27) — every measurement runs the NFA; §4.1-§4.2's walker (the matcher under
   `LTM_DECLARATIVE_MODE`) and the memo, recursion-stack and rank-reuse notes above are

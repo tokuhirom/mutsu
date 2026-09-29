@@ -224,11 +224,13 @@ impl Interpreter {
             }
         }
         // 2. Code-valued `our constant &alias is export(...)` declarations.
-        if self
-            .exported_vars
-            .get(package_name.as_str())
-            .is_some_and(|vars| vars.contains_key(key))
-            && let Some(value) = self.exported_var_value(&package_name, key)
+        // A term export is recorded under its term key (#9962).
+        let term_key = crate::runtime::term_names::term_key(key);
+        if let Some(vars) = self.exported_vars.get(package_name.as_str())
+            && let Some(export_name) = [key, term_key.as_str()]
+                .into_iter()
+                .find(|name| vars.contains_key(*name))
+            && let Some(value) = self.exported_var_value(&package_name, export_name)
         {
             return Some(Some(value));
         }
@@ -277,15 +279,21 @@ impl Interpreter {
     }
 
     /// `package::<key>` as a one-entry stash (empty when there is no such
-    /// member), ready for the ordinary `Index` read — or `None` when the read
-    /// needs the whole stash (see [`Self::package_stash_symbol`]).
+    /// member), ready for the ordinary `Index` read, paired with whether the
+    /// member was found — or `None` when the read needs the whole stash (see
+    /// [`Self::package_stash_symbol`]).
     // Cost: as `package_stash_symbol`.
-    pub(crate) fn package_stash_keyed_value(&self, package: &str, key: &str) -> Option<Value> {
+    pub(crate) fn package_stash_keyed_value(
+        &self,
+        package: &str,
+        key: &str,
+    ) -> Option<(Value, bool)> {
         let entry = self.package_stash_symbol(package, key)?;
+        let found = entry.is_some();
         let mut symbols = ValueMap::default();
         if let Some(value) = entry {
             symbols.insert(key.to_string(), value);
         }
-        Some(Self::make_stash_instance(package, symbols))
+        Some((Self::make_stash_instance(package, symbols), found))
     }
 }

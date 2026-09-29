@@ -7,7 +7,11 @@ impl Interpreter {
     // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::):
     // every pseudo/package stash read materializes a fresh map by scanning them all (see
     // `package_stash_value`), however few symbols the package has. Rakudo: O(1) -- see #9171.
-    pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_get_pseudo_stash_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if let Some(depth) = Self::caller_stash_depth(name) {
             let origin = self.caller_frame_package();
@@ -17,13 +21,13 @@ impl Interpreter {
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
             Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if let Some(depth) = Self::caller_lexical_stash_depth(name) {
             let entries = self.caller_lexical_stash_entries(depth);
             let stash = self.pseudo_stash_hash(entries);
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if name.strip_suffix("::") == Some("OUTER") {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
@@ -39,18 +43,18 @@ impl Interpreter {
             }
             let stash = self.pseudo_stash_hash(entries);
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if name.strip_suffix("::") == Some("OUR") {
             let stash = self.our_pseudo_stash();
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if name.strip_suffix("::") == Some("DYNAMIC") {
             let entries = self.dynamic_pseudo_stash_entries();
             let stash = self.pseudo_stash_hash(entries);
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if let Some(kind) = name.strip_suffix("::")
             && kind == "CALLERS"
@@ -65,12 +69,13 @@ impl Interpreter {
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
             Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
         if let Some(target) = self.named_pseudo_stash_target(name) {
+            self.check_named_stash_package(&target)?;
             let stash = loan_env!(self, package_stash_value(&target));
             self.stack.push(stash);
-            return;
+            return Ok(());
         }
 
         // MY:: pseudo-stash: collect all variable names from current scope.
@@ -91,6 +96,18 @@ impl Interpreter {
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         let stash = self.pseudo_stash_hash(entries);
         self.stack.push(stash);
+        Ok(())
+    }
+
+    /// Die as rakudo does when the literally spelled package of a `Foo::Bar::`
+    /// stash read does not exist (#9845).
+    // Cost: as `missing_stash_package_error`.
+    fn check_named_stash_package(&self, target: &str) -> Result<(), RuntimeError> {
+        let package = Self::normalize_stash_package(target);
+        match self.missing_stash_package_error(&package) {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
     }
 
     /// The package a `Name::` pseudo-stash read names, when it is an ordinary
@@ -157,7 +174,7 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let key = self.stack.pop().unwrap_or(Value::NIL);
-        self.push_pseudo_stash_for_key(code, name_idx, &key);
+        self.push_pseudo_stash_for_key(code, name_idx, &key)?;
         self.stack.push(key);
         self.exec_index_op_with_positional(false)
     }
@@ -172,16 +189,24 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         key: &Value,
-    ) {
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let keyed = match key.deref_container().view() {
-            ValueView::Str(key_str) => self
-                .named_pseudo_stash_target(name)
-                .and_then(|target| loan_env!(self, package_stash_keyed_value(&target, &key_str))),
+            ValueView::Str(key_str) => self.named_pseudo_stash_target(name).and_then(|target| {
+                loan_env!(self, package_stash_keyed_value(&target, &key_str))
+                    .map(|(stash, found)| (target, stash, found))
+            }),
             _ => None,
         };
         match keyed {
-            Some(stash) => self.stack.push(stash),
+            Some((target, stash, found)) => {
+                // A hit proves the package exists; only a miss pays the check.
+                if !found {
+                    self.check_named_stash_package(&target)?;
+                }
+                self.stack.push(stash);
+                Ok(())
+            }
             None => self.exec_get_pseudo_stash_op(code, name_idx),
         }
     }

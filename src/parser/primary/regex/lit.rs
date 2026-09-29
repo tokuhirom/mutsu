@@ -446,6 +446,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: None,
                             },
                         ));
                     }
@@ -475,6 +476,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: None,
                                 },
                             ));
                         }
@@ -585,6 +587,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: None,
                             },
                         ));
                     }
@@ -644,6 +647,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: None,
                                 },
                             ));
                         }
@@ -665,26 +669,22 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 )?,
                             ));
                         }
-                        // Capture the raw replacement source so the substitution
-                        // can be compiled to a `Subst` node. Compiling to `Subst`
-                        // (rather than `$_ = $_.subst(...)`) makes the expression
+                        // Compiling to a `Subst` node (rather than
+                        // `$_ = $_.subst(...)`) makes the expression
                         // value the proper Match / List-of-Match result (so e.g.
                         // `+(s:g[(\w)] = $0 x 2)` yields the match count) and sets
                         // `$/` to a List under `:g`.
-                        let consumed = after_eq_ws.len() - rest.len();
-                        let raw_replacement = after_eq_ws[..consumed].trim().to_string();
                         let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&p)?;
                         let pattern = p;
-                        // Wrap the RHS expression in a `{...}` closure block so the
-                        // substitution-replacement interpolator evaluates it once per
-                        // match with `$/`, `$0`, ... bound to that match.
-                        let replacement = format!("{{{raw_replacement}}}");
+                        // Carry the RHS expression itself: it is compiled as a
+                        // thunk evaluated once per match with `$/`, `$0`, ...
+                        // bound to that match (see `Expr::Subst::replacement_thunk`).
                         return Ok((
                             rest,
                             Expr::Subst {
                                 pattern,
-                                replacement,
+                                replacement: String::new(),
                                 samecase: adverbs.samecase,
                                 sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
@@ -693,6 +693,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: Some(Box::new(replacement_expr)),
                             },
                         ));
                     }
@@ -788,6 +789,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: None,
                             },
                         ));
                     }
@@ -820,6 +822,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
                                     perl5: adverbs.perl5,
+                                    replacement_thunk: None,
                                 },
                             ));
                         }
@@ -840,24 +843,20 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 )?,
                             ));
                         }
-                        // Capture the raw replacement source and wrap it in a
-                        // `{...}` block so the NonDestructiveSubst interpolator
-                        // evaluates it once per match with `$/`, `$0`, ... bound to
-                        // that match. Crucially this does NOT rebind `$_` (it stays
-                        // the surrounding topic) nor steal the enclosing block's
+                        // Carry the RHS expression as a thunk evaluated once per
+                        // match with `$/`, `$0`, ... bound to that match.
+                        // Crucially this does NOT rebind `$_` (it stays the
+                        // surrounding topic) nor steal the enclosing block's
                         // placeholder parameters (`$^a`) -- both of which the
                         // AnonSub `.subst` lowering would incorrectly do. Mirrors
                         // the destructive `s[pattern] = expr` path above.
-                        let consumed = after_eq_ws.len() - rest.len();
-                        let raw_replacement = after_eq_ws[..consumed].trim().to_string();
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&pattern)?;
-                        let replacement = format!("{{{raw_replacement}}}");
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
                                 pattern,
-                                replacement,
+                                replacement: String::new(),
                                 samecase: adverbs.samecase,
                                 sigspace: adverbs.sigspace,
                                 samemark: adverbs.samemark,
@@ -866,6 +865,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
                                 perl5: adverbs.perl5,
+                                replacement_thunk: Some(Box::new(replacement_expr)),
                             },
                         ));
                     }
@@ -921,6 +921,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     nth: None,
                     x: None,
                     perl5: false,
+                    replacement_thunk: None,
                 },
             ));
         }

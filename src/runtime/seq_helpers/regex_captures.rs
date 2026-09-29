@@ -363,14 +363,19 @@ impl Interpreter {
             })
             .collect::<Vec<_>>();
         self.reset_capture_env_vars();
-        self.env.insert("/".to_string(), Value::array(slash_list));
-        if let Some(first) = selected.first() {
-            let t = first.target_or_new(orig);
-            for (i, cap) in first.positional.iter().enumerate() {
-                self.env
-                    .insert(i.to_string(), Value::str(t.span_str(cap.from, cap.to)));
+        // `$/` is now a List of Matches, and `$N` is `$/[N]` -- the N-th MATCH,
+        // not the first match's N-th capture (`"a1b2" ~~ m:g/(\d)/` makes `$1`
+        // the whole second match `｢2｣`). No digit key may shadow that: a
+        // missing one reads through to `$/[N]` (`bound_slash_positional`),
+        // while one left `Nil` by the reset above -- or by an earlier match
+        // that did have captures -- would answer `Nil`.
+        let (numeric_keys, _) = crate::symbol::capture_shaped_symbols();
+        for key in numeric_keys {
+            if self.env.contains_key_sym(key) {
+                self.env.remove_sym(key);
             }
         }
+        self.env.insert("/".to_string(), Value::array(slash_list));
     }
 
     pub(in crate::runtime) fn set_pending_nth_error(message: String) {

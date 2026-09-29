@@ -560,14 +560,8 @@ impl Interpreter {
                         // span in `NON_DECLARATIVE_INTERP_MARK` so the tokenizer
                         // sets `RegexToken::from_runtime_interpolation` on every
                         // atom it builds from it. Genuine `constant`s are exempt
-                        // (Rakudo inlines them at compile time — ADR-0022 §2), and
-                        // so is a `"..."` regex literal, whose own tokenizer arm
-                        // does not strip the mark (see the identical
-                        // `// TODO:` at `regex_parse_modifier.rs`).
-                        let is_const =
-                            crate::runtime::regex_parse::is_inside_double_quoted_regex_literal(
-                                &chars, start,
-                            ) || self.is_compile_time_constant_scalar(&name);
+                        // (Rakudo inlines them at compile time — ADR-0022 §2).
+                        let is_const = self.is_compile_time_constant_scalar(&name);
                         if !is_const {
                             out.push(Interpreter::NON_DECLARATIVE_INTERP_MARK);
                         }

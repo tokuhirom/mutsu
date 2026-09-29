@@ -3,7 +3,7 @@ use super::*;
 impl Compiler {
     /// Compile a CHECK phaser body wrapped in error-catching logic.
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
-    pub(super) fn compile_check_phaser(&mut self, body: &[Stmt]) {
+    pub(super) fn compile_check_phaser(&mut self, body: &[Stmt], is_begin: bool) {
         // ADR-0048 Phase 2: BEGIN/CHECK do not take a signature in raku. This
         // is the shared primitive both statement-position phaser kinds route
         // through (see `stmt.rs`'s `Stmt::Phaser` arms), so the check lives
@@ -11,7 +11,10 @@ impl Compiler {
         if self.emit_block_placeholder_die(body) {
             return;
         }
-        let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
+        let start_idx = self.code.emit(OpCode::CheckPhaserStart {
+            end_ip: 0,
+            is_begin,
+        });
         // A `CATCH` in the phaser body handles that body's exceptions, including
         // ones thrown from a call inside it. Compiled inline into the enclosing
         // (mainline) code, the handler covered only a `die` executed at this
@@ -34,7 +37,10 @@ impl Compiler {
         self.code.emit(OpCode::CheckPhaserEnd);
         // Patch the end_ip to point to after the CheckPhaserEnd
         let end_ip = self.code.ops.len() as u32;
-        if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx] {
+        if let OpCode::CheckPhaserStart {
+            end_ip: ref mut e, ..
+        } = self.code.ops[start_idx]
+        {
             *e = end_ip;
         }
     }

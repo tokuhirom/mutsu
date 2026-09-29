@@ -212,26 +212,15 @@ impl Interpreter {
         if constraint == "Int" && matches!(value_type, "Bool" | "UInt") {
             return true;
         }
-        if constraint == "Cool"
-            && matches!(
-                value_type,
-                "Int"
-                    | "Num"
-                    | "Str"
-                    | "Bool"
-                    | "Rat"
-                    | "FatRat"
-                    | "Complex"
-                    | "Array"
-                    | "List"
-                    | "Slip"
-                    | "Hash"
-                    | "Map"
-                    | "Range"
-                    | "Seq"
-                    | "Instant"
-                    | "Duration"
-            )
+        // `Cool` (and any other catalog ancestor or role) comes from the
+        // builtin type catalog, the one ancestry oracle (ADR-0051 P2), not
+        // from a per-consumer allowlist: `Seq`, `Nil`, `Match`, `IO::Path`,
+        // the allomorphs, ... are `Cool` exactly when Rakudo says so. A
+        // parameterized constraint (`Positional[Int]`) narrows past what the
+        // catalog's role names record, so it is left to the callers that
+        // compare the type arguments.
+        if !has_bracket(constraint)
+            && crate::builtins::builtin_type_ancestry::builtin_type_is_a(value_type, constraint)
         {
             return true;
         }

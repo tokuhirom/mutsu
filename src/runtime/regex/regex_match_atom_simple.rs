@@ -333,6 +333,20 @@ impl Interpreter {
                     None => self.regex_match_end_from_in_pkg(fallback, chars, pos, pkg),
                 };
             }
+            RegexAtom::CodeInterp { code, list } => {
+                return self
+                    .regex_code_interp_ends(
+                        code,
+                        *list,
+                        chars,
+                        pos,
+                        &RegexCaptures::default(),
+                        pkg,
+                        ignore_case,
+                    )
+                    .pop()
+                    .map(|(end, _)| end);
+            }
             RegexAtom::Lookaround {
                 pattern,
                 negated,
@@ -795,6 +809,7 @@ impl Interpreter {
             | RegexAtom::QqInterp { .. }
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
+            | RegexAtom::CodeInterp { .. }
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::WordBoundary { .. }

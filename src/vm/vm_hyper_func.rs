@@ -190,21 +190,11 @@ impl Interpreter {
                 results.push(result);
             }
         }
-        let left_is_array = matches!(
-            left.view(),
-            ValueView::Array(_, crate::value::ArrayKind::Array)
-        );
-        let right_is_array = matches!(
-            right.view(),
-            ValueView::Array(_, crate::value::ArrayKind::Array)
-        );
-        let wrap = |items: Vec<Value>| -> Value {
+        let wrap = |this: &mut Self, items: Vec<Value>| -> Value {
             if both_scalar && items.len() == 1 {
                 items.into_iter().next().unwrap()
-            } else if !left_is_array && !right_is_array {
-                Value::array(items)
             } else {
-                Value::real_array(items)
+                this.hyper_list_result(&left, &right, items)
             }
         };
         // For writeback, push the mutated-left value first (consumed by the
@@ -221,17 +211,19 @@ impl Interpreter {
             }
         };
         if writeback {
+            let result = wrap(self, results);
             let writeback_val = if do_writeback {
-                wrap(mutated_left)
+                wrap(self, mutated_left)
             } else {
                 // No mutation happened; restore the original left value so the
                 // compiler-emitted store is a harmless no-op.
-                left
+                left.clone()
             };
-            self.stack.push(finish(wrap(results)));
+            self.stack.push(finish(result));
             self.stack.push(writeback_val);
         } else {
-            self.stack.push(finish(wrap(results)));
+            let result = wrap(self, results);
+            self.stack.push(finish(result));
         }
         Ok(())
     }

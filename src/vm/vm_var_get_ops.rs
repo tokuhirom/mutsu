@@ -27,6 +27,12 @@ impl Interpreter {
     /// point of the callers is to decide whether such a lexical's value is
     /// shadowing a type.
     pub(crate) fn resolve_bareword_type_name(&self, name: &str) -> Option<String> {
+        if crate::qualified::is_qualified(Symbol::intern(name))
+            && !name.starts_with("GLOBAL::")
+            && let Some(relative) = self.resolve_type_in_current_package(name)
+        {
+            return Some(relative);
+        }
         if self.has_type_direct(name) || Self::is_builtin_type(name) {
             return Some(Self::resolve_type_alias(name).to_string());
         }
@@ -295,6 +301,21 @@ impl Interpreter {
             // in the very env slot that branch probes.
             self.poisoned_enum_alias_check(name)?;
             enum_val
+        } else if let Some(v) = self.term_value(name).cloned() {
+            // A sigil-less constant live in this scope's `env` — declared here
+            // or imported by a block-scoped `use` — shadows a same-named type
+            // (#9963): `{ use CG; G }` is CG's `constant G`, not the file's
+            // `grammar G`. Only the live binding outranks the type; the
+            // module-scope fallbacks of `term_binding` stay below the type
+            // branch.
+            v
+        } else if crate::qualified::is_qualified(Symbol::intern(name))
+            && !name.starts_with("GLOBAL::")
+            && let Some(relative) = self.resolve_type_in_current_package(name)
+        {
+            // A compound type name inside a package is relative to that
+            // package, even when its spelling also names an outer type.
+            Value::package(Symbol::intern(&relative))
         } else if match self.env().get(name).map(Value::view) {
             Some(ValueView::Nil) => self.has_type(name) || Self::is_builtin_type(name),
             // A `my $Buf = Buf.new` declaration pre-seeds env["Buf"] with the
@@ -348,6 +369,17 @@ impl Interpreter {
             // exactly one thing — the env-alias fallback that was serving the
             // wrong scope's symbol.
             module_val
+        } else if let Some(v) = self
+            .term_binding(name)
+            // As for the plain `env` hit below, a type name keeps meaning the
+            // type when resolved at run time: a `constant Int = 5` shadows it
+            // only lexically, through the compiler's slot read.
+            .filter(|_| !(self.has_type_direct(name) || Self::is_builtin_type(name)))
+        {
+            // A sigil-less constant in scope. It lives in the term namespace
+            // (`runtime::term_names`, #9962), so the plain `env[name]` probe
+            // below — which a same-named `$`-scalar answers — never sees it.
+            v
         } else if let Some(v) = self.env().get(name).cloned() {
             if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil) {
                 // Check for poisoned enum aliases
@@ -729,6 +761,21 @@ impl Interpreter {
         if let Some(v) = self.running_package_our_var(name) {
             return Some(v);
         }
+        // The module's own (or imported) sigil-less constant, keyed in the
+        // module tables by its term key (#9962). Like the two probes above it
+        // cannot be a lexical of the loading scope's routine: a routine's own
+        // constant is read from its local slot and never reaches here.
+        if !name.starts_with(['$', '@', '%', '&'])
+            && !crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
+        {
+            let key = crate::runtime::term_names::term_key(name);
+            if let Some(v) = self
+                .module_imported_lexical(&key)
+                .or_else(|| self.module_scope_lexical(&key))
+            {
+                return Some(v.clone());
+            }
+        }
         // `module_scope_lexicals` is keyed by BARE name, so it CAN collide with
         // a captured local of the module's own routine — and such a local must
         // win ("a captured local in an anonymous block must beat the module's
@@ -814,7 +861,10 @@ impl Interpreter {
         }
         let (prefix, variant) = name.rsplit_once("::")?;
         // The prefix must resolve through the lexical env to an enum type object.
-        let Some(ValueView::Package(pkg)) = self.env().get(prefix).map(Value::view) else {
+        // The prefix is most often a `constant`, a term (#9962).
+        let Some(ValueView::Package(pkg)) =
+            self.type_name_binding(prefix).as_ref().map(Value::view)
+        else {
             return None;
         };
         let pkg = pkg.resolve();

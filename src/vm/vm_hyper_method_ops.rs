@@ -179,7 +179,7 @@ fn rebuild_quanthash_hyper(kind: QuantHashHyper, elems: &[Value], results: &[Val
 /// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
 /// subscript (which slices) to each element, not the single-element accessor
 /// method (which would return Nil). A scalar index keeps the plain method path.
-fn hyper_subscript_index_is_slice(v: &Value) -> bool {
+pub(super) fn hyper_subscript_index_is_slice(v: &Value) -> bool {
     match v.view() {
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
@@ -608,15 +608,17 @@ impl Interpreter {
             // `SeqBody::store_taken_elements`.
             body.store_taken_elements(items);
         }
-        // A not-yet-forced lazy list (`gather { take 1 }`, a finite `.map` pipe)
-        // carries an EMPTY cache, and `hyper_source_items` below is a static
-        // reader that cannot run the VM -- so it read zero elements and the
-        // whole hyper silently answered `()`. Force it here first. Only lists
-        // that are not genuinely lazy (a plain `gather` is `.is-lazy` False in
-        // Rakudo) or whose pipe provably bottoms out in a finite source are
-        // forced, so a genuinely-infinite list still cannot hang.
+        // A not-yet-forced lazy list (`gather { take 1 }`, a finite `.map` pipe,
+        // or an explicitly `lazy`-marked but finite list) carries an EMPTY
+        // cache, and `hyper_source_items` below is a static reader that cannot
+        // run the VM -- so it read zero elements and the whole hyper silently
+        // answered `()`. Force it here first. Only a genuinely infinite /
+        // unreifiable list (`is_lazy_infinite()`: an infinite sequence spec, an
+        // endpoint-less closure sequence, or a pipe over an infinite source) is
+        // left unforced, so it cannot hang -- it falls through to
+        // `hyper_source_items` and downstream raises `X::Cannot::Lazy`.
         let target = match target.view() {
-            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() || ll.pipe_bottoms_out_finite() => {
+            ValueView::LazyList(ll) if !ll.is_lazy_infinite() => {
                 Value::seq(self.force_lazy_list_vm(&ll)?)
             }
             _ => target,

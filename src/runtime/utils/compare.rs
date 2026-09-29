@@ -103,10 +103,11 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         ValueView::Instance { .. } if val.is_match_instance() => {
             val.match_str_value().as_ref().and_then(to_float_value)
         }
-        ValueView::Instance { attributes, .. } => attributes
-            .as_map()
-            .get("__mutsu_int_value")
-            .and_then(to_float_value),
+        ValueView::Instance { attributes, .. } => {
+            crate::builtins::numeric_subclass::numeric_payload_of(&attributes)
+                .as_ref()
+                .and_then(to_float_value)
+        }
         // A type object (e.g. `Any`, `Str`, `Rat`, a user class) numifies to 0 in
         // numeric context (Raku warns "Use of uninitialized value"). This makes
         // `(Any) == 0` / `@a[oob] == 0` true, matching Rakudo. (`Mu` alone has no
@@ -414,10 +415,11 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         }
         ValueView::Slip(items) => items.len() as i64,
         ValueView::Capture { positional, .. } => positional.len() as i64,
-        ValueView::Instance { attributes, .. } => attributes
-            .as_map()
-            .get("__mutsu_int_value")
-            .map_or(0, to_int),
+        ValueView::Instance { attributes, .. } => {
+            crate::builtins::numeric_subclass::numeric_payload_of(&attributes)
+                .as_ref()
+                .map_or(0, to_int)
+        }
         _ => 0,
     }
 }

@@ -35,8 +35,8 @@ impl Interpreter {
     /// compile-cache id (see `CachedCodeParse`). A caller that evaluates the
     /// body in *this* interpreter passes the id to `eval_block_value_cached`,
     /// so the body is compiled once per code string rather than once per
-    /// cursor position; a caller that spins up a scratch interpreter has
-    /// nowhere to keep the compile and uses the plain entry point.
+    /// cursor position; a caller whose body runs once per resolution uses the
+    /// plain entry point.
     pub(in crate::runtime) fn parse_regex_code_cached_with_id(
         &self,
         code: &str,
@@ -64,62 +64,6 @@ impl Interpreter {
         Some((stmts, id))
     }
 
-    /// Install `self`'s declaration registry into a freshly-built
-    /// sub-interpreter used for regex/grammar evaluation.
-    ///
-    /// This used to copy four fields (`functions` / `proto_functions` /
-    /// `token_defs` / `enum_types`) into the registry the sub-interpreter built
-    /// for itself, leaving it on its own built-in `classes`/`method_entries`.
-    /// Sharing the parent's whole registry instead (the copy-on-write
-    /// `Arc<Registry>`, see [`Self::copy_full_registry_into`]) is both a strict
-    /// superset of that data — the parent's registry carries every built-in the
-    /// sub-interpreter used to build for itself, plus the user declarations it
-    /// could not see before — and O(1) instead of four map clones plus a
-    /// registry write. It is also what lets `Interpreter::new` skip building the
-    /// built-in registry for a scratch interpreter altogether.
-    pub(crate) fn copy_decl_registry_into(&self, target: &mut Interpreter) {
-        self.copy_full_registry_into(target);
-        // Propagate the in-progress `Grammar.parse(:actions(...))` object so the
-        // assertion's sub-interpreter can still run the action method mid-parse.
-        // None outside a parse, so this is a no-op there.
-        target.current_grammar_actions = self.current_grammar_actions.clone();
-        // A routine the scratch calls (`/ $(format-money($n)) /`, `<{ f() }>`)
-        // reads its own module's file-scope and package-block lexicals
-        // through these stores, not through `env`; without them such a read
-        // is Nil. Shared read-only, like the registry (all but the escaped
-        // cells are `Arc`s).
-        target.unit_lexicals = Arc::clone(&self.unit_lexicals);
-        target.package_lexicals = Arc::clone(&self.package_lexicals);
-        target.module_scope_lexicals = Arc::clone(&self.module_scope_lexicals);
-        target.module_source_packages = Arc::clone(&self.module_source_packages);
-        target.unit_module_packages = Arc::clone(&self.unit_module_packages);
-        target.escaping_our_lexical_names = Arc::clone(&self.escaping_our_lexical_names);
-        target.escaped_our_sub_names = Arc::clone(&self.escaped_our_sub_names);
-        target.escaped_our_lexical_cells = self.escaped_our_lexical_cells.clone();
-    }
-
-    /// Snapshot the *entire* declaration registry (classes, roles, methods,
-    /// proto-methods, ... in addition to functions/tokens) into `target`. Needed
-    /// when the sub-interpreter must dispatch user class methods — e.g. running
-    /// grammar action methods on the `:actions` object during an in-parse
-    /// `<?{ $<x>.made ... }>` assertion (see `run_named_capture_actions`), where
-    /// the action class's methods live in `Registry::classes`, which the leaner
-    /// `copy_decl_registry_into` omits.
-    pub(crate) fn copy_full_registry_into(&self, target: &mut Interpreter) {
-        // The sub-interpreter only READS the registry during regex/grammar
-        // evaluation (dispatching methods, resolving tokens/actions); it never
-        // declares new classes into it. Since the registry is copy-on-write
-        // (`Arc<RwLock<Arc<Registry>>>`, slice 1 of
-        // docs/per-task-clone-slimming.md), sharing the inner `Arc<Registry>`
-        // here is already O(1) — no per-call deep clone, and no snapshot cache
-        // needed. `target` gets its OWN outer `Arc<RwLock<...>>`, so a (rare)
-        // write on either side pays its own `Arc::make_mut` clone and never
-        // leaks into the other — this also fixes a latent bug in the prior
-        // shared-snapshot cache, where one sub-interpreter's write could leak
-        // into the next sub-interpreter built from the same cached snapshot.
-        target.registry = Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap())));
-    }
-
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
     /// Returns the regex pattern string to match against.
     pub(super) fn eval_regex_closure_interpolation(
@@ -129,52 +73,14 @@ impl Interpreter {
         caps: &RegexCaptures,
         target: &str,
     ) -> Option<String> {
-        let mut env = self.make_regex_eval_env(caps);
-        // Regex code interpolations such as `<{$NOUN}>` execute in a scratch
-        // interpreter. Its copied env contains dynamic bindings, but a
-        // module's file-scope lexicals are resolved by the normal compiled
-        // variable reader through the module/unit lexical stores rather than
-        // by a plain env lookup. Seed those names explicitly so a module
-        // routine can use its own regex fragments after another regex has
-        // run. Match-local `:my`/`:let` values retain precedence.
-        let regex_local_names: std::collections::HashSet<String> =
-            caps.regex_vars().keys().cloned().collect();
-        for name in crate::opcode::CompiledCode::regex_code_interpolated_var_names(code) {
-            if regex_local_names.contains(&name) {
-                continue;
-            }
-            if let Some(value) = self.get_env_with_main_alias(&name) {
-                env.insert(name, value);
-            }
-        }
-        // Set $_ to the match target string. After `make_regex_eval_env`, which
-        // installs the `:my`/`:let` lexicals — the topic must win over them.
-        // A regex that captured its defining scope's `$_` keeps that one
-        // instead (`install_regex_closure_scope` pinned it, #9610).
-        if self.regex_topic_pinned == 0 {
-            env.insert("_".to_string(), Value::str(target.to_string()));
-        } else if let Some(topic) = self.env.get("_") {
-            env.insert("_".to_string(), topic.clone());
-        }
+        let env = self.regex_code_interp_env(code, caps, target);
         let stmts = if let Some(body) = parsed_body {
             std::sync::Arc::clone(body)
         } else {
             self.parse_regex_code_cached(code)?
         };
-        let mut interp = Interpreter {
-            env,
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        let val = match interp.eval_block_value(&stmts) {
+        let val = match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts))
+        {
             Ok(v) => v,
             Err(e) => e.return_value?,
         };
@@ -350,8 +256,9 @@ impl Interpreter {
         // only runs them post-parse, which leaves `.made` undefined here (e.g.
         // Template::Mustache's standalone-line rule:
         // `token linetag { ^^ (\h*) <tag> <?{ $<tag>.made<type> ~~ none(...) }> ... }`).
-        // The actions run in a scratch interpreter so the assertion's own
-        // `$/`/`$0` env below is not clobbered by the action dispatch.
+        // The actions run env-isolated (`run_regex_sub_eval_here`) so the
+        // assertion's own `$/`/`$0` env below is not clobbered by the action
+        // dispatch.
         let made_named: ValueMap = if code.contains(".made") {
             if let Some(actions0) = self.current_grammar_actions.clone() {
                 self.run_named_capture_actions(&visible_caps, actions0)
@@ -652,8 +559,8 @@ impl Interpreter {
     /// Build a Match object for each named capture in `caps` and run its grammar
     /// action method (proto-regex `:sym<>` variant aware) so the resulting Match
     /// carries `.made`. Used by `eval_regex_code_assertion` to support
-    /// `$<x>.made` inside `<?{ ... }>` assertions during parsing. Runs in a
-    /// scratch interpreter to avoid mutating the caller's env. Best-effort: a
+    /// `$<x>.made` inside `<?{ ... }>` assertions during parsing. Runs
+    /// env-isolated (`run_regex_sub_eval_here`) to avoid mutating the caller's env. Best-effort: a
     /// capture whose action errors or is absent maps to its un-actioned Match.
     fn run_named_capture_actions(&mut self, caps: &RegexCaptures, mut actions: Value) -> ValueMap {
         let mut out = ValueMap::default();
@@ -673,44 +580,36 @@ impl Interpreter {
         let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) else {
             return out;
         };
-        let mut scratch = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_full_registry_into(&mut scratch);
-        for (k, child) in named.iter() {
-            let ran = match child.view() {
-                ValueView::Array(items, meta) => {
-                    let mut acc = Vec::with_capacity(items.len());
-                    for it in items.as_ref() {
-                        let dn = Interpreter::get_action_name(it).unwrap_or_else(|| k.clone());
-                        let m = scratch
-                            .invoke_grammar_actions(it.clone(), &mut actions, &dn)
-                            .unwrap_or_else(|_| it.clone());
-                        acc.push(m);
+        // The actions run env-isolated, so the dispatch cannot clobber the
+        // calling assertion's own `$/`/`$0` bindings.
+        let actions = &mut actions;
+        self.run_regex_sub_eval_here(None, |scratch| {
+            for (k, child) in named.iter() {
+                let ran = match child.view() {
+                    ValueView::Array(items, meta) => {
+                        let mut acc = Vec::with_capacity(items.len());
+                        for it in items.as_ref() {
+                            let dn = Interpreter::get_action_name(it).unwrap_or_else(|| k.clone());
+                            let m = scratch
+                                .invoke_grammar_actions(it.clone(), actions, &dn)
+                                .unwrap_or_else(|_| it.clone());
+                            acc.push(m);
+                        }
+                        Value::array_with_kind(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(acc)),
+                            meta,
+                        )
                     }
-                    Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(acc)),
-                        meta,
-                    )
-                }
-                _ => {
-                    let dn = Interpreter::get_action_name(child).unwrap_or_else(|| k.clone());
-                    scratch
-                        .invoke_grammar_actions(child.clone(), &mut actions, &dn)
-                        .unwrap_or_else(|_| child.clone())
-                }
-            };
-            out.insert(k.clone(), ran);
-        }
+                    _ => {
+                        let dn = Interpreter::get_action_name(child).unwrap_or_else(|| k.clone());
+                        scratch
+                            .invoke_grammar_actions(child.clone(), actions, &dn)
+                            .unwrap_or_else(|_| child.clone())
+                    }
+                };
+                out.insert(k.clone(), ran);
+            }
+        });
         out
     }
 
@@ -752,22 +651,22 @@ impl Interpreter {
         self.run_reduce_time_action(&sub, &rule_name, actions);
     }
 
-    /// Run a single subrule's grammar action in a scratch interpreter and publish
-    /// any `$*` dynamic-var writes it makes into the reduce-time overlay. The
-    /// scratch is seeded with the overlay's current values so the action sees the
+    /// Run a single subrule's grammar action env-isolated and publish any `$*`
+    /// dynamic-var writes it makes into the reduce-time overlay. The
+    /// isolated env is seeded with the overlay's current values so the action sees the
     /// latest dynamic state; only vars whose value actually changes are published.
-    fn run_reduce_time_action(&self, sub: &CapNode, rule_name: &str, actions: Value) {
+    fn run_reduce_time_action(&mut self, sub: &CapNode, rule_name: &str, actions: Value) {
         // Run on an INDEPENDENT deep copy of the actions object so any `self`
         // attribute the action mutates does not leak into the real actions
         // object — the authoritative post-parse action pass will run again and is
         // the one whose `make`/`self` effects count. The reduce-time pass exists
-        // ONLY to extract `$*` dynamic-var writes (which flow through the scratch
+        // ONLY to extract `$*` dynamic-var writes (which flow through the isolated
         // env into the overlay, not through actions state). `InstanceAttrs::clone`
         // is a deep, fresh-cell copy.
         //
         // The copy gets a FRESH instance id: `invoke_grammar_actions` re-reads
         // the actions object from the env after each dispatch by (class, id)
-        // match, and the scratch env holds the caller's ORIGINAL instance — a
+        // match, and the isolated env holds the caller's ORIGINAL instance — a
         // copy sharing the id would be silently swapped back to the original
         // mid-walk, leaking every subsequent attribute mutation (pinned by
         // t/grammar-reduce-time-dynvar.t test 5).
@@ -804,44 +703,36 @@ impl Interpreter {
             &kids.named,
             target,
         );
-        let mut scratch = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_full_registry_into(&mut scratch);
-        // Seed the scratch's `$*` vars from the overlay (latest delimiters etc.).
+        // Seed the isolated env's `$*` vars from the overlay (latest delimiters
+        // etc.).
+        let mut env = self.env.clone();
         for (k, v) in super::regex_helpers::dynvar_overlay_snapshot() {
-            scratch.env.insert(k, v);
+            env.insert(k, v);
         }
-        // Baseline of `$*` vars visible to the action, to diff after it runs.
-        let baseline: ValueMap = scratch
-            .env
-            .iter()
-            .filter(|(k, _)| k.starts_with("*"))
-            .map(|(k, v)| (k.with_str(|s| s.to_string()), v.clone()))
-            .collect();
-        let _ = scratch.invoke_grammar_actions(match_obj, &mut actions, rule_name);
+        let changed: Vec<(String, Value)> = self.run_regex_sub_eval(env, None, |scratch| {
+            // Baseline of `$*` vars visible to the action, to diff after it runs.
+            let baseline: ValueMap = scratch
+                .env
+                .iter()
+                .filter(|(k, _)| k.starts_with("*"))
+                .map(|(k, v)| (k.with_str(|s| s.to_string()), v.clone()))
+                .collect();
+            let _ = scratch.invoke_grammar_actions(match_obj, &mut actions, rule_name);
+            // Collect the changed `$*` vars before the env is restored.
+            scratch
+                .env
+                .iter()
+                .filter(|(k, _)| k.starts_with("*"))
+                .filter_map(|(k, v)| {
+                    let name = k.with_str(|s| s.to_string());
+                    match baseline.get(&name) {
+                        Some(old) if old == v => None,
+                        _ => Some((name, v.clone())),
+                    }
+                })
+                .collect()
+        });
         // Publish changed `$*` vars into the overlay for subsequent matching.
-        let changed: Vec<(String, Value)> = scratch
-            .env
-            .iter()
-            .filter(|(k, _)| k.starts_with("*"))
-            .filter_map(|(k, v)| {
-                let name = k.with_str(|s| s.to_string());
-                match baseline.get(&name) {
-                    Some(old) if old == v => None,
-                    _ => Some((name, v.clone())),
-                }
-            })
-            .collect();
         for (name, val) in changed {
             super::regex_helpers::dynvar_overlay_put(&name, val);
         }

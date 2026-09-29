@@ -74,7 +74,20 @@ impl Compiler {
             }
             // Signal rebind context for cleanup of old bind pairs / aliases.
             self.code.emit(OpCode::MarkRebindContext);
-            self.compile_call_arg(expr);
+            if !name.starts_with(['@', '%', '&']) && matches!(expr, Expr::Index { .. }) {
+                // `($x := @a[0])`: alias the element's own cell, exactly as the
+                // statement form (`Stmt::Assign`'s `scalar_elem_bind`) does.
+                let saved_av = self.scalar_bind_autovivify;
+                let saved_terminal = self.bind_terminal;
+                self.scalar_bind_autovivify = true;
+                self.bind_terminal = true;
+                self.bind_target_direct = true;
+                self.compile_call_arg(expr);
+                self.scalar_bind_autovivify = saved_av;
+                self.bind_terminal = saved_terminal;
+            } else {
+                self.compile_call_arg(expr);
+            }
             self.emit_set_named_var(name);
             // Leave the assigned value on the stack (expression context).
             if let Some(&slot) = self.local_map.get(name) {
@@ -686,6 +699,20 @@ impl Compiler {
             // name, while `@a`/`%h`/`&f` keep their sigil in the key.
             let bare: String = match key.chars().next() {
                 Some('$') => key.chars().skip(1).collect(),
+                // A sigil-less key names a term: a constant's binding is its
+                // term key (#9962) when one is declared in the scope chain.
+                Some(c) if !matches!(c, '@' | '%' | '&') => {
+                    let term = crate::runtime::term_names::term_key(&key);
+                    if self
+                        .full_scope_chain()
+                        .iter()
+                        .any(|frame| frame.contains_key(term.as_str()))
+                    {
+                        term
+                    } else {
+                        String::clone(&key)
+                    }
+                }
                 _ => String::clone(&key),
             };
             match scope {
@@ -849,10 +876,18 @@ impl Compiler {
         if self.constant_value(name).is_some() {
             return false;
         }
-        match self.local_map.get(name).copied() {
+        // A sigil-less constant reads its term-namespace slot (#9962).
+        let term_slot = matches!(target, Expr::BareWord(_))
+            .then(|| self.term_constant_slot(name))
+            .flatten();
+        let storage = match term_slot {
+            Some(_) => crate::runtime::term_names::term_key(name),
+            None => name.to_string(),
+        };
+        match term_slot.or_else(|| self.local_map.get(name).copied()) {
             Some(slot) => {
                 if self.compile_nested_index_bind_source {
-                    let name_idx = self.code.add_constant(Value::str(name.to_string()));
+                    let name_idx = self.code.add_constant(Value::str(storage));
                     self.code.emit(OpCode::GetScalarContainer {
                         name_idx,
                         local_idx: Some(slot),

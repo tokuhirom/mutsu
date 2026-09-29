@@ -89,6 +89,7 @@ impl Interpreter {
         self.native_lever_a_override_cache.clear();
         self.resolved_seq_cache.clear();
         self.dispatch_multi_candidate.clear();
+        self.deferral_build_context_free.clear();
         self.clear_private_zeroarg_method_cache();
     }
 
@@ -313,8 +314,7 @@ impl Interpreter {
         // stays nominal.
         !crate::runtime::utils::is_known_type_constraint(base)
             && self
-                .env()
-                .get(base)
+                .type_name_binding(base)
                 .is_some_and(|bound| !matches!(bound.view(), crate::value::ValueView::Package(_)))
     }
 
@@ -622,19 +622,15 @@ impl Interpreter {
         };
         // No whole-map `to_map()` snapshot here: the fast path reads attributes
         // through the live cell, and the slow path materializes its own map.
-        let attrs_empty = attrs_cell.as_ref().is_none_or(|c| c.as_map().is_empty());
         let empty_fns = CompiledFns::default();
         // A `sub` declared inside this method's body compiles into
         // `method_def.compiled_fns`; without it, the nested routine's compiled
         // key can never resolve at call time (ADR-0019 C6e-3c).
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if let Some(csm) = can_skip_merge {
-            // Fast path: move target directly as base (avoid extra clone).
-            let invocant_for_dispatch = if attrs_empty {
-                Value::package(crate::symbol::Symbol::intern(cn))
-            } else {
-                target.clone()
-            };
+            // The real receiver, never its type object: a deferral candidate
+            // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
+            let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
                 push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
@@ -657,11 +653,9 @@ impl Interpreter {
             result
         } else {
             let attributes = attrs_cell.as_ref().map(|c| c.to_map()).unwrap_or_default();
-            let invocant_for_dispatch = if attrs_empty {
-                Value::package(crate::symbol::Symbol::intern(cn))
-            } else {
-                target.clone()
-            };
+            // The real receiver, never its type object: a deferral candidate
+            // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
+            let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
                 push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)

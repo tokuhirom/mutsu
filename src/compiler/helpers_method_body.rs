@@ -38,6 +38,7 @@ impl Compiler {
         return_type: Option<&String>,
         decl_line: Option<i64>,
     ) -> Option<Symbol> {
+        self.attach_param_chunks_in_package(param_defs, Some(package_name), method_name);
         let mut effective_param_defs =
             crate::method_signature_shared::effective_method_param_defs(param_defs, is_hidden);
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
@@ -153,6 +154,18 @@ impl Compiler {
             .collect();
         if !type_body_writes.is_empty() {
             self.record_type_body_written_lexicals(type_body_writes);
+        }
+
+        // A method that REBINDS an outer lexical (`method set { $list := ... }`)
+        // needs the declaring frame to box it in a binding cell at its
+        // declaration, so the rebind reaches sibling methods and the frame.
+        if !cc.free_var_rebinds.is_empty() {
+            for sym in &cc.free_var_rebinds {
+                self.code.note_rebound_name(&sym.resolve());
+            }
+            self.code
+                .named_sub_captures
+                .push((cc.free_var_rebinds.clone(), Vec::new()));
         }
 
         // ...and this body's outer-lexical READS, on the same one compile, into

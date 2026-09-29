@@ -495,7 +495,7 @@ fn where_constraint_matches(
                 interpreter.mark_readonly(key);
             }
             let r = {
-                let ev = interpreter.eval_block_value(body);
+                let ev = interpreter.eval_param_where_value(pd, false);
                 interpreter.where_truthy(ev)
             };
             for key in &ph_keys {
@@ -505,11 +505,11 @@ fn where_constraint_matches(
         }
         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
         {
-            let ev = interpreter.eval_block_value(&[Stmt::Expr(where_expr.clone())]);
+            let ev = interpreter.eval_param_where_value(pd, false);
             interpreter.where_truthy(ev)
         }
-        expr => {
-            let ev = interpreter.eval_block_value(&[Stmt::Expr(expr.clone())]);
+        _ => {
+            let ev = interpreter.eval_param_where_value(pd, false);
             interpreter.where_smartmatch(candidate, ev)
         }
     };
@@ -541,9 +541,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         if candidate.is_none()
             && let Some(default) = &pd.default
         {
-            candidate = interpreter
-                .eval_block_value(&[Stmt::Expr(default.clone())])
-                .ok();
+            candidate = interpreter.eval_param_default_expr(pd, default).ok();
         }
         let Some(candidate) = candidate else {
             // Optional params are OK without a value.  Named parameters are
@@ -866,9 +864,7 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
     // that spawn's binding to be seeded — and frozen — on the name lane
     // (`todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`).
     if name.starts_with(['@', '%']) && Interpreter::is_plain_lexical_name(name) {
-        interpreter
-            .param_bound_aggregates
-            .insert(name.to_string(), value.clone());
+        interpreter.param_bound_aggregates.note(name, &value);
     }
     interpreter.env.insert(name.to_string(), value);
 }
@@ -1003,7 +999,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         if candidate.is_none()
             && let Some(default_expr) = &sub_pd.default
         {
-            candidate = Some(interpreter.eval_block_value(&[Stmt::Expr(default_expr.clone())])?);
+            candidate = Some(interpreter.eval_param_default_expr(sub_pd, default_expr)?);
         }
         let Some(mut candidate) = candidate else {
             // If the param is required (not optional, no default), error
@@ -1345,10 +1341,24 @@ pub(in crate::runtime) fn callable_signature_info(
 
     match callable.view() {
         ValueView::Sub(data) => {
-            let return_type = interpreter
-                .callable_return_type(&callable)
-                .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
-            Some(param_defs_to_sig_info(&data.param_defs, return_type))
+            // A plain pointy block keeps its one positional parameter in
+            // `params` while `param_defs` is empty. Its `.signature` path
+            // already reconstructs that parameter; use the same result for
+            // Callable constraints. Bare blocks have different implicit-topic
+            // semantics and retain the direct `param_defs` path.
+            if data.param_defs.is_empty()
+                && data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|code| code.is_pointy_block)
+            {
+                crate::value::signature::extract_sig_info(&interpreter.sub_signature_value(&data))
+            } else {
+                let return_type = interpreter
+                    .callable_return_type(&callable)
+                    .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
+                Some(param_defs_to_sig_info(&data.param_defs, return_type))
+            }
         }
         ValueView::Routine { name, .. } => {
             let (params, param_defs) = interpreter.callable_signature(&callable);
@@ -1380,6 +1390,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
@@ -1417,6 +1428,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        code: Default::default(),
                         trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
@@ -1443,7 +1455,11 @@ pub(in crate::runtime) fn code_signature_matches_value(
         {
             return name.resolve();
         }
-        if let Some(ValueView::Package(name)) = interpreter.env.get(constraint).map(Value::view) {
+        if let Some(ValueView::Package(name)) = interpreter
+            .type_name_binding(constraint)
+            .as_ref()
+            .map(Value::view)
+        {
             return name.resolve();
         }
         constraint.to_string()

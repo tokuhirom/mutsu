@@ -750,6 +750,21 @@ impl Interpreter {
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
     pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
+        if method_name == "DEPRECATED"
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name == "Attribute"
+            && attributes.as_map().contains_key("DEPRECATED")
+        {
+            return vec![Value::routine_parts(
+                Symbol::intern("Attribute"),
+                Symbol::intern("DEPRECATED"),
+                false,
+            )];
+        }
         // A Mixin (`but`/`does`, or a trait handler's `$routine does Role`) has
         // no entry of its own in the class registry, so the generic MRO walk
         // below (keyed by `mop_receiver_owner`) never sees it and mixin-added
@@ -875,6 +890,11 @@ impl Interpreter {
                     continue;
                 }
                 for def in visible {
+                    // The candidate slot of the method-wrap registry, so a
+                    // `.wrap` on this Sub wraps the method's later dispatch
+                    // (see `.wrap` in `methods_sub.rs`), as it does for the
+                    // `.^lookup` / `.^find_method` object.
+                    let candidate_idx = defs.iter().position(|d| std::ptr::eq(d, def));
                     // Prepend "self" to params so the method can be called
                     // as $meth($invocant) — the first argument binds as self.
                     let mut params = vec!["self".to_string()];
@@ -895,6 +915,12 @@ impl Interpreter {
                         "__mutsu_lookup_method".to_string(),
                         Value::str(method_name.to_string()),
                     );
+                    if let Some(idx) = candidate_idx {
+                        env.insert(
+                            "__mutsu_lookup_candidate_idx".to_string(),
+                            Value::int(idx as i64),
+                        );
+                    }
                     results.push(Value::make_sub(
                         Symbol::intern(cn),
                         Symbol::intern(method_name),
@@ -910,18 +936,23 @@ impl Interpreter {
         // Check for auto-generated attribute accessors (has $.x creates an accessor method).
         if results.is_empty() {
             let class_attrs = self.collect_class_attributes(&class_name);
-            for attr in &class_attrs {
-                if attr.is_public && attr.name == method_name {
-                    results.push(Value::routine_parts(
-                        Symbol::intern(&class_name),
-                        Symbol::intern(method_name),
-                        false,
-                    ));
-                    // Tag the routine with rw status if needed — currently Routine
-                    // doesn't carry rw info, but we at least return a truthy result.
-                    let _ = attr.is_rw; // suppress unused warning
-                    break;
-                }
+            if let Some(attr) = class_attrs
+                .iter()
+                .find(|attr| attr.is_public && attr.name == method_name)
+            {
+                // The same object `.^lookup` answers, carrying the accessor's
+                // wrap identity: Object::Permission wraps the accessor it gets
+                // from `$package.^can($name)[0]`.
+                let owner = self
+                    .attribute_accessor_owner(&class_name, method_name)
+                    .map_or_else(|| class_name.clone(), |owner| owner.resolve());
+                results.push(self.instance_accessor_method_object(
+                    method_name,
+                    &owner,
+                    attr.is_rw,
+                    attr.source_line,
+                    attr.source_file.map(|f| f.as_str()),
+                ));
             }
         }
         // Class-level attributes (`my $.x` / `our $.x`) get a reader accessor

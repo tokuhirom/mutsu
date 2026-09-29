@@ -426,9 +426,11 @@ pub(super) fn dispatch(
                 if im.abs() <= 1e-15 {
                     Some(Ok(crate::builtins::num_to_rat_with_epsilon(r, 1e-6)))
                 } else {
-                    Some(Err(RuntimeError::new(
-                        "Cannot convert Complex to Real: imaginary part not zero",
-                    )))
+                    Some(Err(
+                        crate::builtins::methods_0arg::dispatch_core_coerce::complex_not_real_error(
+                            r, im, "Rat", target,
+                        ),
+                    ))
                 }
             }
             ValueView::Array(items, ..) => Some(Ok(make_rat(items.len() as i64, 1))),
@@ -556,9 +558,11 @@ pub(super) fn dispatch(
                         _ => Some(Ok(Value::fat_rat_raw(0, 1))),
                     }
                 } else {
-                    Some(Err(RuntimeError::new(
-                        "Cannot convert Complex to Real: imaginary part not zero",
-                    )))
+                    Some(Err(
+                        crate::builtins::methods_0arg::dispatch_core_coerce::complex_not_real_error(
+                            r, im, "FatRat", target,
+                        ),
+                    ))
                 }
             }
             ValueView::Array(items, ..) => Some(Ok(Value::fat_rat_raw(items.len() as i64, 1))),

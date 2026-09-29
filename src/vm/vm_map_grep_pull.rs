@@ -41,6 +41,22 @@ impl Interpreter {
         self.run_map_grep_chunk(func, *fatal, mode, items, *pos, items.len())
     }
 
+    /// [`Self::pull_map_grep_rest`] for a source that stays in use afterwards
+    /// (an `Iterator`'s stream, #10186): advances `pos` to the end, so the
+    /// source reports itself exhausted. Returns the same shape as
+    /// [`Self::pull_map_grep_prefix`].
+    // Cost: one callback call per source element from `pos` on.
+    pub(crate) fn pull_map_grep_remaining(
+        &mut self,
+        source: &mut SeqSource,
+    ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        let out = self.pull_map_grep_rest(source)?;
+        if let SeqSource::MapGrep { items, pos, .. } = source {
+            *pos = items.len();
+        }
+        Ok((out, true))
+    }
+
     /// Pull at least `needed` more elements from a deferred `.map`/`.grep`
     /// `source` (a [`SeqSource::MapGrep`]), advancing its `pos`. Returns the
     /// elements produced (a `Slip` from the callback can overshoot `needed`)
@@ -179,23 +195,6 @@ impl Interpreter {
             ValueView::Array(items, _) => items.to_vec(),
             _ => crate::runtime::utils::value_to_list(&result),
         };
-        // A callback that itself returns a deferred Seq
-        // (`[1].map({ [2].map({ ... }) })`, and the recursive
-        // `map`-over-`map` shape `roast/integration/99problems-21-to-30.t`
-        // builds) leaves nested unpulled `MapGrep` bodies sitting in
-        // the elements this pull just produced -- and the same pure
-        // readers `reify_map_grep_seq` exists for then see the empty
-        // seed one level down: `.raku` rendered `(().Seq,).Seq` where
-        // rakudo says `(("STOP",).Seq,).Seq`, and `say`/`.Str`/`.gist`/
-        // `.flat` came out empty. Pulling a `MapGrep` therefore pulls
-        // the `MapGrep`s it produced. Depth is bounded by how deeply
-        // the callbacks nest, and every level is finite for the same
-        // reason the top level is (its source is a finite list).
-        for item in &items {
-            if item.is_seq_value() {
-                self.reify_map_grep_seq(item)?;
-            }
-        }
         Ok(items)
     }
 

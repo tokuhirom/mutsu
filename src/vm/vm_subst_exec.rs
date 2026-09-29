@@ -1,3 +1,4 @@
+use super::vm_subst_apply::DynamicRepl;
 use super::vm_subst_repl::{SubstMatchCaps, SubstReplPlan};
 use super::*;
 use crate::value::ValueMap;
@@ -43,11 +44,17 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
     ) -> SubstOp {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        // The replacement is a `qq` quote (see `vm_subst_repl`): parse it with
-        // the real interpolation grammar, once, and cache the plan.
-        let plan = self.subst_replacement_plan(Self::const_str(code, replacement_idx));
+        // The replacement is an assignment-form thunk, compiled to the closure
+        // the op pops, or a `qq` quote (see `vm_subst_repl`): parse that once
+        // and cache the plan.
+        let plan = if replacement_thunk {
+            SubstReplPlan::Thunk(self.stack.pop().unwrap_or(Value::NIL))
+        } else {
+            self.subst_replacement_plan(Self::const_str(code, replacement_idx))
+        };
         SubstOp {
             pattern,
             plan,
@@ -192,13 +199,23 @@ impl Interpreter {
                     &text,
                     &target,
                     &selected,
-                    &body,
-                    *cache_id,
-                    parts.as_deref().map(|p| p.as_slice()),
+                    DynamicRepl::Body {
+                        body: &body,
+                        cache_id: *cache_id,
+                        capture_parts: parts.as_deref().map(|p| p.as_slice()),
+                    },
                     &caps,
                     op,
                 )?
             }
+            SubstReplPlan::Thunk(thunk) => self.apply_substitutions_dynamic(
+                &text,
+                &target,
+                &selected,
+                DynamicRepl::Thunk(thunk),
+                &caps,
+                op,
+            )?,
         };
         let slash = if is_list {
             let matches: Vec<Value> = selected
@@ -266,6 +283,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
@@ -280,6 +298,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         if outcome.matched {
@@ -314,6 +333,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
@@ -328,6 +348,7 @@ impl Interpreter {
             nth_idx,
             x_idx,
             perl5,
+            replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.

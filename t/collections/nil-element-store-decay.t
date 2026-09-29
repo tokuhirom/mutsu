@@ -132,17 +132,11 @@ is %row26.AT-KEY("a").WHAT, Any, 'row 26: my %n = a=>Nil; %n.AT-KEY("a").WHAT';
     ok !$died, 'row 28: my %h{Int} = 1 => Nil does not die';
 }
 
-# 29: TODO -- decay is per-container (the *inner* `[Nil]` literal decays to
-# its own `Any`, not the *outer* variable's `is default(42)`), but the
-# existing read-side `resolve_array_entry` chokepoint
-# (src/vm/vm_var_ops.rs) unconditionally substitutes a non-Nil container
-# default for ANY in-range `Package("Any")` element -- including one that is
-# a genuinely-stored value, not a hole. ADR-0049 SS5.2 flags this exact
-# rewrite as "a *different* bug in the same family ... deserve[ing] its own
-# probe rather than being swept in" to this ADR, so it stays open past
-# slices 1-2.
+# 29: The inner `[Nil]` literal decays to its own `Any` before the outer
+# declaration receives it. The outer `is default(42)` must be installed before
+# that initializer is assigned, so its hole/default handling leaves the
+# explicitly stored `Any` untouched.
 {
-    todo 'row 29: per-container decay vs is-default read-side rewrite (ADR-0049 SS5.2 follow-up)';
     my @row29 is default(42) = [Nil];
     is @row29[0], Any, 'row 29: my @d is default(42) = [Nil]; @d[0]';
 }

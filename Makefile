@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -52,7 +52,7 @@ PROVE_JOBS ?= 4
 # test that parses the vendored `Test` module cold (after a rebuild invalidated
 # the precompilation cache) overflowed locally while passing in CI
 # (`named_call_intern_budget`, found by the first `scripts/dev gate` run).
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det check-prims check-dev
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-bench-det check-prims check-dev
 	@mkdir -p tmp
 	(cargo build --release && RUST_MIN_STACK=8388608 cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -113,6 +113,16 @@ check-panic-surface:
 check-name-scans:
 	scripts/check-name-scans.sh --self-test
 	scripts/check-name-scans.sh
+
+# Ratchet on constructing an `Interpreter` (#10118, #10151): only process entry
+# points, thread spawns, the parse-time module probes and a thread_local may
+# build one; everything else runs code on the caller's interpreter. Per-file
+# counts live in scripts/interp-construction-allowlist.txt and may go down,
+# never up. Re-cut after removing a site:
+#   scripts/check-interp-construction.py --update
+check-interp-construction:
+	python3 scripts/check-interp-construction.py --self-test
+	python3 scripts/check-interp-construction.py
 
 # Ban on private copies of the Str primitives (ADR-0117). The nqp:: op tables,
 # the VM's nqp path and TRIR's runtime must call src/builtins/str_prim/ -- the

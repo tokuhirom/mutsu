@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.12,
+        "secs": 6.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.2,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,76 +46,74 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.75,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.26,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-raw-c2c.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.07,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.22,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-raw-r2c.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.73,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.17,
+        "first_failure": "r2r 1d odd transform",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/04-raw-r2r.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.81,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +126,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.25,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +136,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.13,
+        "secs": 6.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,7 +149,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -161,7 +159,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.63,
+        "secs": 4.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +172,7 @@
         "nok": 0,
         "ok": 4,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -184,30 +182,30 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.35,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.17,
+        "first_failure": "r2c & c2r advanced transform - trasform each column of a 2d 10x3 array",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/08-raw-adv.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.37,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -220,7 +218,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -230,53 +228,51 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.01,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/10-raw-thread.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.74,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/11-raw-openmp.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.7,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -289,7 +285,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.22,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -299,7 +295,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -312,7 +308,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.31,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -322,7 +318,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.71,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -335,7 +331,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -345,7 +341,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.72,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -357,7 +353,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.15,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -367,7 +363,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.53,
+        "secs": 0.84,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -385,10 +381,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-27",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2f3b7d6",
+    "mutsu_commit": "6235cda",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -403,9 +399,9 @@
   "totals": {
     "baseline_assertions": 65,
     "baseline_files": 16,
-    "mutsu_assertions": 16,
-    "parity_files": 3,
-    "regressed_files": 13
+    "mutsu_assertions": 32,
+    "parity_files": 7,
+    "regressed_files": 9
   },
   "version": "0.3.4"
 }

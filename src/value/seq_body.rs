@@ -23,6 +23,8 @@ use super::{RuntimeError, Value};
 use crate::value::{MapGrepItems, PureCursor};
 use std::sync::{Arc, Mutex};
 
+mod map_grep_stream;
+
 /// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
 #[derive(Clone)]
 pub(crate) enum MapGrepMode {

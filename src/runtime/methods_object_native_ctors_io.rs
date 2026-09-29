@@ -390,22 +390,9 @@ impl Interpreter {
         } else if cn == "Pair" {
             Some(Self::build_native_pair_value(args))
         } else if cn == "Date" {
-            // A `:formatter` renders a user Callable (`render_date_formatter`,
-            // self-dependent) — fall through to the interpreter for that case;
-            // the common no-formatter date is built natively.
-            match Self::build_native_date(args) {
-                Ok((date, None)) => Some(Ok(date)),
-                Ok((_, Some(_))) => None,
-                Err(e) => Some(Err(e)),
-            }
+            Some(Self::build_native_date(args))
         } else if cn == "DateTime" {
-            // Same `:formatter` caveat as `Date` (the formatter renders a user
-            // Callable via `eval_call_on_value`).
-            match Self::build_native_datetime(args) {
-                Ok((dt, None)) => Some(Ok(dt)),
-                Ok((_, Some(_))) => None,
-                Err(e) => Some(Err(e)),
-            }
+            Some(Self::build_native_datetime(args))
         } else if cn == "Duration" {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {

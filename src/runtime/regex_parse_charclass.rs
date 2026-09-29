@@ -460,6 +460,12 @@ impl Interpreter {
         // Split input into parts: each part is (+/-) followed by [content]
         let mut positive_items: Vec<ClassItem> = Vec::new();
         let mut negative_items: Vec<ClassItem> = Vec::new();
+        // A class that *starts* with a negated part (`-[\s] + [x]`) begins from
+        // every character minus that part, so a later `+` part is a union with
+        // that complement rather than a filter on it. `lead_negative_items`
+        // holds the negatives written before the first positive part.
+        let mut lead_negative_items: Vec<ClassItem> = Vec::new();
+        let mut lead_negative = false;
         let mut remaining = input.trim();
 
         // First part may be just [content] (implicitly positive) or +[content] or -[content]
@@ -475,6 +481,7 @@ impl Interpreter {
                 remaining = Self::skip_charclass_whitespace_and_comments(remaining);
             } else if remaining.starts_with('-') {
                 adding = false;
+                lead_negative |= first;
                 remaining = &remaining[1..];
                 remaining = Self::skip_charclass_whitespace_and_comments(remaining);
             } else if first && remaining.starts_with('[') {
@@ -507,6 +514,8 @@ impl Interpreter {
                     let effective_adding = if class.negated { !adding } else { adding };
                     if effective_adding {
                         positive_items.extend(class.items);
+                    } else if lead_negative && positive_items.is_empty() {
+                        lead_negative_items.extend(class.items);
                     } else {
                         negative_items.extend(class.items);
                     }
@@ -515,6 +524,15 @@ impl Interpreter {
                 break;
             }
         }
+
+        if lead_negative && !positive_items.is_empty() && !lead_negative_items.is_empty() {
+            return Some(Self::union_with_negated_lead(
+                lead_negative_items,
+                positive_items,
+                negative_items,
+            ));
+        }
+        negative_items.splice(0..0, lead_negative_items);
 
         if positive_items.is_empty() && negative_items.is_empty() {
             // <[]> or <-[]> — empty bracket class: always fails (matches no character)
@@ -569,6 +587,62 @@ impl Interpreter {
                 negative: negative_items,
             })
         }
+    }
+
+    /// `-[lead] + [pos] - [rest]`: every character except `lead`, united with
+    /// `pos`, minus `rest`. Desugared to `[ <-[lead]> | <[pos]> ]`, each branch
+    /// guarded by `<!before <[rest]>>` when a later subtraction exists.
+    fn union_with_negated_lead(
+        lead: Vec<ClassItem>,
+        positive: Vec<ClassItem>,
+        rest: Vec<ClassItem>,
+    ) -> RegexAtom {
+        let pattern = |tokens: Vec<RegexAtom>| RegexPattern {
+            tokens: tokens
+                .into_iter()
+                .map(|atom| RegexToken {
+                    atom,
+                    quant: RegexQuant::One,
+                    named_capture: None,
+                    secondary_named_capture: None,
+                    hash_capture: None,
+                    force_list_capture: false,
+                    ratchet: false,
+                    frugal: false,
+                    separator: None,
+                    from_runtime_interpolation: false,
+                    subrule_call_capture: false,
+                })
+                .collect(),
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case: false,
+            ignore_mark: false,
+            derived: Default::default(),
+        };
+        let guard = (!rest.is_empty()).then(|| RegexAtom::Lookaround {
+            pattern: pattern(vec![RegexAtom::CompositeClass {
+                positive: rest,
+                negative: vec![],
+            }]),
+            negated: true,
+            is_behind: false,
+        });
+        let branch = |atom: RegexAtom| {
+            let mut atoms: Vec<RegexAtom> = guard.iter().cloned().collect();
+            atoms.push(atom);
+            pattern(atoms)
+        };
+        RegexAtom::Alternation(vec![
+            branch(RegexAtom::CharClass(CharClass {
+                items: lead,
+                negated: true,
+            })),
+            branch(RegexAtom::CharClass(CharClass {
+                items: positive,
+                negated: false,
+            })),
+        ])
     }
 
     /// Find the position of the closing ']' in a bracket character class,
@@ -1249,41 +1323,5 @@ impl Interpreter {
             }
         }
         s.len()
-    }
-
-    /// Evaluate a string as Raku source code and return the result value.
-    /// Used for @(expr) interpolation in regex patterns.
-    pub(super) fn eval_string_as_source(&self, code: &str) -> Value {
-        let parsed = crate::parse_dispatch::parse_source(code);
-        let (stmts, _) = match parsed {
-            Ok(v) => v,
-            Err(_) => return Value::NIL,
-        };
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..Default::default()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        // A `<$re>` reference re-resolving `$re`'s OWN pattern text (issue
-        // #8951) needs `$re`'s defining scope here, not this call's ambient
-        // `self.env` — e.g. a literal's `@(%hash.keys)` closed over `%hash`
-        // where it was WRITTEN, not wherever it is later interpolated.
-        if let Some(scope) = super::regex::regex_helpers::interp_closure_scope_snapshot() {
-            for (k, v) in scope.iter() {
-                interp.env.insert(k.clone(), v.clone());
-            }
-        }
-        match interp.eval_block_value(&stmts) {
-            Ok(v) => v,
-            Err(e) => e.return_value.unwrap_or(Value::NIL),
-        }
     }
 }

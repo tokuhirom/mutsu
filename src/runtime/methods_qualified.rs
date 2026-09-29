@@ -80,6 +80,43 @@ impl Interpreter {
         Some(Ok(instance))
     }
 
+    /// `Sub.new(args)` where `Sub` is a class inheriting from a builtin
+    /// temporal type (`Date`, `DateTime`) and none of its own `new`
+    /// candidates accepted `args`: Raku keeps the inherited `Date.new`
+    /// candidates in the multi, so build through the ancestor's native
+    /// constructor and bless the result as `Sub`. `None` when `class_name`
+    /// has no such ancestor or the ancestor rejects the arguments too.
+    // Cost: O(d + c), d = MRO depth, c = cost of the ancestor constructor.
+    pub(super) fn construct_via_temporal_ancestor(
+        &mut self,
+        class_name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let mro = self.class_mro(class_name);
+        let ancestor = mro
+            .iter()
+            .map(|c| c.as_str())
+            .find(|c| matches!(*c, "Date" | "DateTime") && *c != class_name)?
+            .to_string();
+        let built = self
+            .dispatch_new(Value::package(Symbol::intern(&ancestor)), args.to_vec())
+            .ok()?;
+        let ValueView::Instance { attributes, id, .. } = built.view() else {
+            return None;
+        };
+        let target_sym = Symbol::intern(class_name);
+        Some(Ok(Value::instance_parts(
+            target_sym,
+            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                target_sym,
+                attributes.to_map(),
+                id,
+                true,
+            )),
+            id,
+        )))
+    }
+
     /// Handle private method calls on non-Instance, non-Package values.
     /// Returns Some(err) if handled, None to continue.
     pub(super) fn dispatch_private_method_on_non_instance(
@@ -661,9 +698,22 @@ impl Interpreter {
             qualifier,
             actual_method,
             &attributes.to_map(),
-            args,
+            args.clone(),
         ) {
             return Some(res);
+        }
+
+        // A qualified call naming a builtin ancestor whose method is not a
+        // user method (`$date.Date::succ` from a `class Workdate is Date`
+        // whose own `succ` must not be re-entered): view the receiver as a
+        // plain instance of the qualifier and run the ordinary builtin
+        // dispatch on it. No user method of that name exists on `qualifier`
+        // (the lookups above found none), so this cannot re-enter an override.
+        if !self.registry().roles.contains_key(qualifier)
+            && !self.has_user_method(qualifier, actual_method)
+        {
+            let as_qualifier = Value::make_instance(Symbol::intern(qualifier), attributes.to_map());
+            return Some(self.call_method_with_values(as_qualifier, actual_method, args));
         }
 
         None

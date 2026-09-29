@@ -326,7 +326,13 @@ impl Compiler {
                 // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
                 // stripped share the same key in local_map but must NOT shadow type
                 // names, so they go through GetBareWord which checks the type registry.
-                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                if let Some(slot) = self.term_constant_slot(name) {
+                    // An in-scope sigil-less constant lives in its own
+                    // term-namespace slot (#9962): a same-named `$b` — even one
+                    // declared later, or a parameter of this very routine —
+                    // cannot shadow it.
+                    self.code.emit(OpCode::GetLocal(slot));
+                } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if self.sigilless_locals.contains(name.as_str())
                         || self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
@@ -919,6 +925,19 @@ impl Compiler {
                 is_bind,
             } => {
                 let name = self.resolve_self_lexical(name);
+                // A sigil-less bareword bind target arrives as a term key:
+                // it stays one for an in-scope constant (or a name this unit
+                // cannot see, for the VM to resolve), and is the plain
+                // sigil-less binding otherwise (#9962).
+                let name = match crate::runtime::term_names::term_spelling(name) {
+                    Some(spelled)
+                        if !self.names_term_constant(spelled)
+                            && !self.sigilless_target_is_unknown(spelled) =>
+                    {
+                        spelled
+                    }
+                    _ => name,
+                };
                 self.compile_expr_assign(name, expr, *is_bind);
             }
             // Source-preserving annotation for `x += y` and friends. The

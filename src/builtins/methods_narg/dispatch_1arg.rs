@@ -33,9 +33,9 @@ pub(crate) fn native_method_1arg(
     // Scalar containers are transparent for method dispatch (no .VAR at this arity).
     let target = target.descalarize();
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::int_subclass`).
+    // payload (`builtins::numeric_subclass`).
     if let Some(result) =
-        crate::builtins::int_subclass::dispatch(target, method_sym, std::slice::from_ref(arg))
+        crate::builtins::numeric_subclass::dispatch(target, method_sym, std::slice::from_ref(arg))
     {
         return Some(result);
     }
@@ -43,6 +43,28 @@ pub(crate) fn native_method_1arg(
         && let Some(result) = target.rakuast_add_statement(arg.clone())
     {
         return Some(result);
+    }
+    // Cost: O(n + r), n = subject chars copied and r = replacement chars.
+    if method == "replace-with" && target.is_match_instance() {
+        if target.match_is_failed() {
+            return Some(Ok(Value::NIL));
+        }
+        let before = target.match_side_text(true).or_else(|| {
+            let orig = target.match_orig()?.to_string_value();
+            let from = target.match_from()?.max(0) as usize;
+            Some(orig.chars().take(from).collect())
+        })?;
+        let after = target.match_side_text(false).or_else(|| {
+            let orig = target.match_orig()?.to_string_value();
+            let to = target.match_to()?.max(0) as usize;
+            Some(orig.chars().skip(to).collect())
+        })?;
+        return Some(Ok(Value::str(format!(
+            "{}{}{}",
+            before,
+            arg.to_string_value(),
+            after
+        ))));
     }
     // `Backtrace` introspection: `.nice(:oneline)`, `.outer-caller-idx($i)`,
     // `.next-interesting-index($i)` / `(:named)` / `(:setting)` / `(:noproto)`.
@@ -670,6 +692,10 @@ pub(crate) fn native_method_1arg(
                     }
                     // IO::Path::Parts does Positional: `$parts[0]` is `volume => C:`,
                     // `[1]` the dirname pair, `[2]` the basename pair (fixed order).
+                    // ADR-0021 I2: a data-minted pair defaults positional, not the
+                    // named-argument marker flavour `Value::pair` mints — else `say
+                    // $parts[0]` (no call-site fat-arrow) silently filters it out as
+                    // an in-band named marker (#9820).
                     ValueView::Instance {
                         class_name,
                         attributes,
@@ -680,7 +706,7 @@ pub(crate) fn native_method_1arg(
                             .map(|key| {
                                 let v =
                                     attributes.as_map().get(*key).cloned().unwrap_or(Value::NIL);
-                                Value::pair((*key).to_string(), v)
+                                Value::value_pair(Value::str((*key).to_string()), v)
                             })
                             .unwrap_or(Value::NIL)))
                     }
@@ -774,29 +800,8 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
-        "in-range" => {
-            // Range.in-range(x): True when x lies within the range, otherwise
-            // it throws X::OutOfRange (it never returns False).
-            if crate::builtins::arith::range::range_bounds(target).is_some() {
-                if range_contains_value(target, arg) {
-                    return Some(Ok(Value::TRUE));
-                }
-                use crate::builtins::methods_0arg::raku_repr::raku_value;
-                let msg = format!(
-                    "Value out of range. Is: {}, should be in {}",
-                    raku_value(arg),
-                    raku_value(target)
-                );
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("message".to_string(), Value::str(msg.clone()));
-                attrs.insert("got".to_string(), arg.clone());
-                let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(ex));
-                return Some(Err(err));
-            }
-            None
-        }
+        // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
+        "in-range" => in_range(target, arg, "Value"),
         // Cost: see `native_split_method`.
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -2544,10 +2549,37 @@ fn range_elem_count(range: &Value) -> Option<usize> {
     Some(crate::runtime::value_to_list(range).len())
 }
 
+/// Return True for a contained value, otherwise throw X::OutOfRange.
+// Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
+pub(super) fn in_range(
+    target: &Value,
+    value: &Value,
+    what: &str,
+) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::arith::range::range_bounds(target)?;
+    if range_contains_value(target, value) {
+        return Some(Ok(Value::TRUE));
+    }
+    use crate::builtins::methods_0arg::raku_repr::raku_value;
+    let msg = format!(
+        "{} out of range. Is: {}, should be in {}",
+        what,
+        raku_value(value),
+        raku_value(target)
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("got".to_string(), value.clone());
+    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    Some(Err(err))
+}
+
 /// Whether `val` lies within `range`, honoring the range's exclusivity and
 /// Whatever endpoints. Mirrors `Interpreter::value_in_range` for the numeric
 /// and string-endpoint cases used by `.in-range`.
-fn range_contains_value(range: &Value, val: &Value) -> bool {
+pub(super) fn range_contains_value(range: &Value, val: &Value) -> bool {
     let Some((start, end, excl_start, excl_end)) =
         crate::builtins::arith::range::range_bounds(range)
     else {

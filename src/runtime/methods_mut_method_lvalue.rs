@@ -27,6 +27,21 @@ impl Interpreter {
         !found_attr
     }
 
+    /// An `is rw` lvalue call (`$obj.method = value`) found no matching
+    /// method overload, no attribute accessor, and no native method for
+    /// `method` on `class_name`. When no overload of that name exists
+    /// anywhere in the class's MRO, `method` is simply undeclared, and the
+    /// error must match what a plain non-assignment call to it raises
+    /// (X::Method::NotFound) rather than X::Multi::NoMatch, which belongs to
+    /// a real multi whose signatures just didn't match this call's args.
+    fn rw_method_lvalue_missing_error(&mut self, class_name: &str, method: &str) -> RuntimeError {
+        if self.class_has_user_method(class_name, method) {
+            super::methods_signature_errors::make_multi_no_match_error(method)
+        } else {
+            super::methods_signature_errors::make_method_not_found_error(method, class_name, false)
+        }
+    }
+
     fn mixin_has_public_attr(&self, mixins: &crate::value::MixinOverrides, method: &str) -> bool {
         mixins
             .keys()
@@ -170,6 +185,13 @@ impl Interpreter {
         // alike — the attribute store below would bypass the wrappers.
         if let Some(assigned) =
             self.try_wrapped_accessor_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
+        // A `.wrap`ped declared method runs its wrapper chain, which may refuse
+        // the write; the attribute shortcuts below would bypass it.
+        if let Some(assigned) =
+            self.try_wrapped_method_lvalue(&target, method, &method_args, &value)?
         {
             return Ok(assigned);
         }
@@ -1355,13 +1377,9 @@ impl Interpreter {
                     }
                 }
             }
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
-                method,
-            ));
+            return Err(self.rw_method_lvalue_missing_error(&class_name.resolve(), method));
         } else {
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
-                method,
-            ));
+            return Err(self.rw_method_lvalue_missing_error(&class_name.resolve(), method));
         };
         // `is raw` container-accessor return (`method AT-KEY($k) is raw {
         // %!hash.AT-KEY($k) }`): assigning through it (`$obj.AT-KEY($k) = $v`,

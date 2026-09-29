@@ -7,75 +7,13 @@ use crate::value::ValueView;
 /// model).  Any real ancestor scores below this.
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
+/// A builtin type's classes and roles in narrowness order (ADR-0051 P2): the
+/// index of a constraint in it is that constraint's distance from a value of
+/// the type. Read from the builtin type catalog, so a type the catalog knows
+/// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
+/// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-        // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
-        // True), and rakudo's core numeric operators dispatch on it rather
-        // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
-        // strictly narrower than the core `(Rational:D, Rational:D)`
-        // candidate. Without this row the role scored the 500 "unrelated"
-        // distance and every `Rational` candidate lost.
-        "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
-        "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
-        "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-        "Array" => &[
-            "Array",
-            "List",
-            "Positional",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "List" => &["List", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Hash" => &[
-            "Hash",
-            "Map",
-            "Associative",
-            "Iterable",
-            "Cool",
-            "Any",
-            "Mu",
-        ],
-        "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
-        "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
-        // spellings under `Any`, not subclasses of them, but they do the
-        // same roles — so each mutable name gets its own row rather than
-        // being folded into (or bridged to) the immutable one.
-        "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-        "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-        "Mix" => &[
-            "Mix",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "MixHash" => &[
-            "MixHash",
-            "Mixy",
-            "Baggy",
-            "QuantHash",
-            "Associative",
-            "Any",
-            "Mu",
-        ],
-        "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
-        "Seq" => &["Seq", "Positional", "Iterable", "Cool", "Any", "Mu"],
-        "Regex" => &[
-            "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
-        ],
-        "Junction" => &["Junction", "Mu"],
-        _ => &[],
-    }
+    crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
 
 /// The narrowness key a multi candidate is ranked by (see
@@ -84,7 +22,8 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
 ///    positional count (higher is narrower);
 /// 1. the type-hierarchy distance of those nominal types (lower is narrower);
-/// 2. the REFINEMENT tier — `where` count, `subset` count, sub-signature
+/// 2. the REFINEMENT tier — constrained-parameter count (a `where` clause
+///    or a `subset` type: rakudo draws no line between the two), sub-signature
 ///    count, `rw`/`raw` count (higher is narrower);
 ///
 /// then whether it declares any named parameter, optional-positional count,
@@ -97,10 +36,10 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 /// type. So `multi f($x where ...)` must lose to `multi f(Int $x)` for
 /// `f(42)`, while `multi f(Int $x where ...)` still beats `multi f(Int $x)`
 /// ([#8958](https://github.com/tokuhirom/mutsu/issues/8958)).
-type CandidateRankKey = (
+pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
-    (usize, usize, usize, usize),
+    (usize, usize, usize),
     usize,
     usize,
     usize,
@@ -169,8 +108,12 @@ impl Interpreter {
     /// optional-positional count, required-named count, declaration order.
     /// See [`CandidateRankKey`] for why nominal narrowness outranks a
     /// refinement rather than the other way round.
-    fn candidate_rank_key(&mut self, def: &Arc<FunctionDef>, args: &[Value]) -> CandidateRankKey {
-        let (literal, typed, where_c, subset, subsig, writable) =
+    pub(super) fn candidate_rank_key(
+        &mut self,
+        def: &Arc<FunctionDef>,
+        args: &[Value],
+    ) -> CandidateRankKey {
+        let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
         let has_named = usize::from(Self::candidate_declares_named(def));
@@ -179,7 +122,7 @@ impl Interpreter {
         (
             (literal, typed),
             dist,
-            (where_c, subset, subsig, writable),
+            (constrained, subsig, writable),
             has_named,
             opt,
             req_named,
@@ -193,7 +136,10 @@ impl Interpreter {
     /// optional positionals (a required param is narrower than an optional
     /// one), then higher required named, and finally — for candidates tied on
     /// all of that — the one declared first, which is what Rakudo runs.
-    fn candidate_rank_cmp(a: CandidateRankKey, b: CandidateRankKey) -> std::cmp::Ordering {
+    pub(super) fn candidate_rank_cmp(
+        a: CandidateRankKey,
+        b: CandidateRankKey,
+    ) -> std::cmp::Ordering {
         b.0.cmp(&a.0)
             .then(a.1.cmp(&b.1))
             .then(b.2.cmp(&a.2))
@@ -210,7 +156,7 @@ impl Interpreter {
     /// in [`Interpreter::choose_best_matching_candidate`] may stop — as
     /// opposed to `candidate_rank_cmp` on the full key, which is the total
     /// order the winner is picked by.
-    fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
+    pub(super) fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
         key.6 = 0;
         key
     }
@@ -239,7 +185,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
-        mut rejected: Option<&mut std::collections::HashSet<u64>>,
+        rejected: Option<&mut std::collections::HashSet<u64>>,
     ) -> Option<Arc<FunctionDef>> {
         // Rank every candidate BEFORE trying to bind any of them.
         //
@@ -304,6 +250,20 @@ impl Interpreter {
             ranked.push((key, def));
         }
         ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
+        self.bind_ranked_candidates(name, args, ranked, rejected)
+    }
+
+    /// The bind half of [`Self::choose_best_matching_candidate_excluding`]:
+    /// walk `ranked` (narrowest first, already filtered) and pick the winner,
+    /// raising `X::Multi::Ambiguous` or a parked `where` exception exactly as
+    /// the full resolver does.
+    pub(super) fn bind_ranked_candidates(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
+        mut rejected: Option<&mut std::collections::HashSet<u64>>,
+    ) -> Option<Arc<FunctionDef>> {
         // The duplicate-registry-key dedup that used to sit here now runs
         // before the ranking loop above -- see the comment there. It stops one
         // candidate's `where` clause from being RUN once per key it happens to
@@ -372,6 +332,24 @@ impl Interpreter {
                 matches.push(def);
             }
         }
+        self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
+    }
+
+    /// The second half of [`Self::bind_ranked_candidates`]: given the
+    /// candidates that matched at the best rank (narrowest first) and the
+    /// first `where` exception a tried candidate threw, pick the winner —
+    /// raising the parked exception when it was reached, and
+    /// `X::Multi::Ambiguous` for a genuine tie. Shared with the per-type
+    /// dispatch program (`multi_dispatch_program.rs`), which finds the
+    /// matches its own way.
+    pub(super) fn settle_ranked_matches(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        mut matches: Vec<Arc<FunctionDef>>,
+        threw: Option<(Arc<FunctionDef>, RuntimeError)>,
+        outer_where_exception: Option<Box<RuntimeError>>,
+    ) -> Option<Arc<FunctionDef>> {
         if let Some((thrower, e)) = threw {
             // No candidate matched at all, or the thrower sorts at least as
             // narrow as (or was declared before) the best match: raku would
@@ -561,12 +539,12 @@ impl Interpreter {
     }
 
     /// The narrowness tuple of `def` with no call in flight, in
-    /// `(literal, typed, where, subset, subsig, writable)` order — the first
+    /// `(literal, typed, constrained, subsig, writable)` order — the first
     /// two are the nominal tier, the rest the refinement tier.
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         self.candidate_specificity_rank_for_args(def, &[])
     }
 
@@ -640,7 +618,7 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
         args: &[Value],
-    ) -> (usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize) {
         let all_params = Self::dispatch_visible_params(def);
         // Type narrowness is computed from the POSITIONAL parameters only.
         // A named parameter's type decides whether the candidate is
@@ -662,16 +640,21 @@ impl Interpreter {
             })
             .collect();
         let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
-        let where_count = params
+        // A parameter is constrained by a `where` clause or by a `subset` type,
+        // and rakudo ranks the two alike: each is a bind-time check on top of
+        // the same nominal type, so `multi f(Small $x)` and `multi f(Int $x
+        // where * < 10_000)` tie and declaration order decides. Counting them
+        // as two separate components made every `where` beat every subset.
+        // A parameter carrying both still counts once, as rakudo's
+        // per-parameter "has a constraint" comparison does.
+        let constrained_count = params
             .iter()
-            .filter(|p| p.where_constraint.is_some())
-            .count();
-        let subset_type_count = effective
-            .iter()
-            .filter(|tc| {
-                tc.map(Self::constraint_base_name)
-                    .map(|base| self.constraint_is_subset(base))
-                    .unwrap_or(false)
+            .zip(effective.iter())
+            .filter(|(p, tc)| {
+                p.where_constraint.is_some()
+                    || tc
+                        .map(Self::constraint_base_name)
+                        .is_some_and(|base| self.constraint_is_subset(base))
             })
             .count();
         let typed_param_count = params
@@ -707,8 +690,7 @@ impl Interpreter {
             // REFINEMENT tier — consulted only once two candidates are tied on
             // the nominal tier AND on type-hierarchy distance. See
             // [`CandidateRankKey`].
-            where_count,
-            subset_type_count,
+            constrained_count,
             subsig_count,
             // `rw`/`raw` are dispatch-visible because they require a writable
             // argument; `copy` changes only binding and must not outrank an
@@ -1056,19 +1038,20 @@ impl Interpreter {
 
     /// Return how many MRO levels separate `constraint` from the actual type
     /// of `value`.  0 means exact match; larger means less specific.
-    /// The short spelling of a sized Buf/Blob type name. `.^name` renders these
-    /// parameterized (`Buf[uint8]`); Raku source spells them `buf8`/`blob8`.
-    /// Anything else is returned unchanged.
-    fn canonical_buf_type_name(name: &str) -> &str {
+    /// The builtin type catalog's spelling of a sized Buf/Blob type name.
+    /// Raku source spells these `buf8`/`blob8`; `.^name` and the catalog
+    /// render them parameterized (`Buf[uint8]`). Anything else is returned
+    /// unchanged.
+    fn catalog_buf_type_name(name: &str) -> &str {
         match name {
-            "Buf[uint8]" => "buf8",
-            "Buf[uint16]" => "buf16",
-            "Buf[uint32]" => "buf32",
-            "Buf[uint64]" => "buf64",
-            "Blob[uint8]" => "blob8",
-            "Blob[uint16]" => "blob16",
-            "Blob[uint32]" => "blob32",
-            "Blob[uint64]" => "blob64",
+            "buf8" => "Buf[uint8]",
+            "buf16" => "Buf[uint16]",
+            "buf32" => "Buf[uint32]",
+            "buf64" => "Buf[uint64]",
+            "blob8" => "Blob[uint8]",
+            "blob16" => "Blob[uint16]",
+            "blob32" => "Blob[uint32]",
+            "blob64" => "Blob[uint64]",
             other => other,
         }
     }
@@ -1093,7 +1076,7 @@ impl Interpreter {
         // #8566, cross-module case).
         let resolved_base;
         let base = if !crate::runtime::utils::is_known_type_constraint(base)
-            && let Some(bound_val) = self.env.get(base)
+            && let Some(bound_val) = self.type_name_binding(base)
             && let ValueView::Package(bound) = bound_val.view()
             && bound.with_str(|b| b != base)
         {
@@ -1121,9 +1104,9 @@ impl Interpreter {
         // narrow as the argument that bound to it. Only a candidate that
         // already matched is ranked, so equality here is that match.
         if !crate::runtime::utils::is_known_type_constraint(base)
-            && let Some(bound_val) = self.env.get(base)
+            && let Some(bound_val) = self.type_name_binding(base)
             && !matches!(bound_val.view(), ValueView::Package(_))
-            && crate::runtime::values_identical(bound_val, value)
+            && crate::runtime::values_identical(&bound_val, value)
         {
             return 0;
         }
@@ -1149,8 +1132,8 @@ impl Interpreter {
                 return 1;
             }
             let ancestors: &[&str] = match value {
-                crate::value::EnumValue::Str(_) => &["Str", "Stringy", "Cool", "Any", "Mu"],
-                crate::value::EnumValue::Int(_) => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+                crate::value::EnumValue::Str(_) => builtin_type_mro("Str"),
+                crate::value::EnumValue::Int(_) => builtin_type_mro("Int"),
                 crate::value::EnumValue::Generic(_) => &["Any", "Mu"],
             };
             for (i, &ancestor) in ancestors.iter().enumerate() {
@@ -1208,8 +1191,21 @@ impl Interpreter {
         // For instances, use the class MRO
         if let ValueView::Instance { class_name, .. } = value.view() {
             let cn = class_name.resolve();
-            if base == cn.as_str() {
+            // `buf8` and `Buf[uint8]` are one type spelled two ways.
+            let catalog_base = Self::catalog_buf_type_name(base);
+            if base == cn.as_str() || catalog_base == cn.as_str() {
                 return 0;
+            }
+            // A builtin type modelled as an instance (`Instant`, `Duration`,
+            // `IO::Path`, the Buf/Blob family, ...) ranks its roles too: `now`
+            // is narrower as a `Real` than as a `Numeric`, and a `"x".encode`
+            // (`utf8`) is narrower as a `blob8` (`Blob[uint8]`) than as a
+            // `Blob`, which the class-only MRO below cannot see.
+            if let Some(i) = builtin_type_mro(cn.as_str())
+                .iter()
+                .position(|&ancestor| ancestor == catalog_base)
+            {
+                return i;
             }
             // `mro_readonly` falls back to a live parents-only walk when the
             // registry's cached `ClassDef::mro` is still empty (this method
@@ -1259,81 +1255,6 @@ impl Interpreter {
                 }
             }
         }
-        // Buf/Blob family. `Buf` extends `Blob`; the `utfN` encodings and the
-        // sized `blobN`/`bufN` types do the `Blob`/`Buf` roles, and a `bufN`
-        // also does its same-width `blobN` (`buf8 ~~ blob8` is True). The
-        // value's own type is distance 0, so these lists start at the first
-        // ancestor and the index is offset by one. Without them a `Blob:D`
-        // candidate scored the 500 "unknown type" distance for a `"x".encode`
-        // argument and lost the tie-break to whichever candidate happened to be
-        // declared first.
-        //
-        // Both spellings have to be recognized: `.^name` renders a sized buffer
-        // parameterized (`Buf[uint8]`) while the source spells it `buf8`, so
-        // matching only the short form made EVERY sized buffer fall through to
-        // the 500 fallback — `multi f(blob8 $s)` then lost to `multi f(@a)` for
-        // a `buf8` argument (Digest::SHA3's `KeccakF1600`, which never ran its
-        // permutation as a result).
-        // A sized buffer is an `Instance` whose class is `Buf[uint8]`, and
-        // `value_type_name` answers the generic "Any" for every instance — so
-        // the family table below never matched one. Use the instance's class
-        // name (the MRO/role checks above have already failed for it: `Buf` is
-        // not a registered user class).
-        let instance_class = match value.view() {
-            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-            _ => None,
-        };
-        let vt = Self::canonical_buf_type_name(instance_class.as_deref().unwrap_or(value_type));
-        let cbase = Self::canonical_buf_type_name(base);
-        let buf_ancestors: &[&str] = match vt {
-            "Buf" => &["Blob", "Positional", "Stringy", "Any", "Mu"],
-            "Blob" => &["Positional", "Stringy", "Any", "Mu"],
-            "buf8" => &["Buf", "blob8", "Blob", "Positional", "Stringy", "Any", "Mu"],
-            "buf16" => &[
-                "Buf",
-                "blob16",
-                "Blob",
-                "Positional",
-                "Stringy",
-                "Any",
-                "Mu",
-            ],
-            "buf32" => &[
-                "Buf",
-                "blob32",
-                "Blob",
-                "Positional",
-                "Stringy",
-                "Any",
-                "Mu",
-            ],
-            "buf64" => &[
-                "Buf",
-                "blob64",
-                "Blob",
-                "Positional",
-                "Stringy",
-                "Any",
-                "Mu",
-            ],
-            "utf8" | "utf16" | "utf32" | "blob8" | "blob16" | "blob32" | "blob64" => {
-                &["Blob", "Positional", "Stringy", "Any", "Mu"]
-            }
-            _ => &[],
-        };
-        if !buf_ancestors.is_empty() {
-            // `buf8` vs `Buf[uint8]` are the same type spelled two ways; the
-            // literal-equality check above only catches the matching spelling.
-            if cbase == vt {
-                return 0;
-            }
-            for (i, &ancestor) in buf_ancestors.iter().enumerate() {
-                if ancestor == cbase {
-                    return i + 1;
-                }
-            }
-            return UNRELATED_DISTANCE;
-        }
         // Built-in type hierarchy (approximation of Raku MRO depths)
         // Bool -> Int -> Cool -> Any -> Mu
         // but also Bool -> Int -> Numeric/Real -> ...
@@ -1346,12 +1267,18 @@ impl Interpreter {
             // Type objects are represented as Package, whose generic value
             // type is `Package`; use the named type's built-in MRO instead.
             ValueView::Package(name) => name.with_str(|type_name| {
-                builtin_type_mro(type_name.split('[').next().unwrap_or("Package"))
+                let own = builtin_type_mro(type_name);
+                if own.is_empty() {
+                    builtin_type_mro(type_name.split('[').next().unwrap_or("Package"))
+                } else {
+                    own
+                }
             }),
             _ => builtin_type_mro(value_type),
         };
+        let catalog_base = Self::catalog_buf_type_name(base);
         for (i, &ancestor) in builtin_mro.iter().enumerate() {
-            if ancestor == base {
+            if ancestor == catalog_base {
                 return i;
             }
         }

@@ -38,15 +38,7 @@ impl Interpreter {
         match idx.view() {
             ValueView::Sub(data) => {
                 let len = arr_len as i64;
-                let mut sub_env = data.env.clone();
-                for p in data.params.iter() {
-                    sub_env.insert(p.to_string(), Value::int(len));
-                }
-                let saved_env = std::mem::take(self.env_mut());
-                *self.env_mut() = sub_env;
-                let resolved = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                *self.env_mut() = saved_env;
-                resolved
+                self.call_subscript_code(&data, len)
             }
             ValueView::Array(items, ..) => {
                 // Array of indices: resolve each element
@@ -1063,6 +1055,9 @@ impl Interpreter {
         idx: Value,
         hole_type: &str,
     ) -> Result<Value, RuntimeError> {
+        if matches!(container.view(), ValueView::Array(_, kind) if kind.is_immutable_list()) {
+            return Err(RuntimeError::new("Can not remove elements from a List"));
+        }
         // Container identity (§3): delete through the shared backing node so
         // every by-value holder of the same container observes the removal.
         if let Some(removed) = container.with_hash_mut(|hash| match idx.view() {

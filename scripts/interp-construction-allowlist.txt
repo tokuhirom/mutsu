@@ -1,0 +1,25 @@
+# Allowed `Interpreter` construction sites, per file (see
+# scripts/check-interp-construction.py). Format: <path> <count>  # <why>
+# Counts may only go down. Re-cut with
+#   scripts/check-interp-construction.py --update
+# after removing a site. Adding a site or a file means editing this list by
+# hand, which a reviewer sees: say why the new site cannot run on the caller's
+# interpreter.
+
+src/doc_mode.rs                                   1  # entry point: --doc
+src/lib.rs                                        2  # entry points: library run API
+src/main.rs                                       1  # entry point: the mutsu binary
+src/repl.rs                                       1  # entry point: REPL
+src/runtime/builtins_system.rs                    1  # thread spawn: clone_for_thread
+src/runtime/methods_collection_ops/thread_ops.rs  1  # thread spawn: clone_for_thread
+src/runtime/native_methods/scheduler.rs           1  # thread spawn: clone_for_thread
+src/runtime/native_methods/socket_async.rs        1  # thread spawn: clone_for_thread
+src/runtime/native_proc_async.rs                  1  # thread spawn: clone_for_thread
+src/runtime/native_supply_mut_methods.rs          3  # thread spawn: clone_for_thread
+src/runtime/parse_time_exports.rs                 1  # parse-time export probe, fresh thread once per `use`
+src/runtime/react_whenever.rs                     1  # thread spawn: clone_for_thread
+src/runtime/regex_parse.rs                        1  # thread_local! VALIDATE_INTERP, built once per thread
+src/runtime/slang_activation.rs                   1  # parse-time slang activation, fresh thread once per `use`
+src/runtime/supply_promise.rs                     1  # thread spawn: clone_for_thread
+src/runtime/supply_transform.rs                   4  # thread spawn: clone_for_thread
+src/vm/vm_hyper_race_parallel.rs                  3  # thread spawn: clone_for_thread

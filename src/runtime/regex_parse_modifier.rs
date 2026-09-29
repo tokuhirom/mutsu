@@ -397,21 +397,10 @@ impl Interpreter {
                             .unwrap_or(Value::NIL);
                         let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
-                        // A double-quoted regex literal (`"${name}..."`) is
-                        // scanned by the structural parser's OWN inner loop
-                        // (its `"..."` arm reads chars directly, bypassing
-                        // the main token loop that consumes
-                        // `NON_DECLARATIVE_INTERP_MARK`), so a mark placed
-                        // inside it would leak through as a literal control
-                        // character instead of being stripped. Skip marking
-                        // there — such an interpolation stays declarative,
-                        // same as before this slice.
-                        // TODO: teach the double-quoted-literal tokenizer arm
-                        // to also strip/honor the mark, so `$var` inside
-                        // `"..."` gets the same non-constant treatment as
-                        // everywhere else.
+                        // The `"..."` tokenizer arm strips the mark and makes
+                        // the whole literal a non-declarative atom.
                         let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
-                        let is_const = inside_qq || self.is_compile_time_constant_scalar(&name);
+                        let is_const = self.is_compile_time_constant_scalar(&name);
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                         }
@@ -464,14 +453,16 @@ impl Interpreter {
                     // chain is a qq-string method-call interpolation (Raku
                     // interpolates `"$x.uc()"`), not a scalar followed by a
                     // match-any `.`. A bare `/ $x.foo() /` is a Raku syntax
-                    // error, so this only applies within `"..."`. Evaluate the
-                    // whole chain and match its result literally.
+                    // error, so this only applies within `"..."`. The chain is
+                    // rewritten to a `$( … )` contextualizer, which the
+                    // structural parser lowers to a match-time
+                    // `RegexAtom::CodeInterp` matched literally (#10157).
                     if let Some(chain_end) = scan_interp_method_chain(&chars, j)
                         && is_inside_double_quoted_regex_literal(&chars, i)
                     {
-                        let expr_str: String = chars[i..chain_end].iter().collect();
-                        let val = self.eval_string_as_source(&expr_str);
-                        out.push_str(&Self::escape_regex_scalar_literal(&val.to_string_value()));
+                        out.push_str("$(");
+                        out.extend(chars[i..chain_end].iter());
+                        out.push(')');
                         i = chain_end;
                         continue;
                     }
@@ -510,13 +501,8 @@ impl Interpreter {
                         .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
-                    // See the `${name}` arm above: a double-quoted regex
-                    // literal is scanned by the structural parser's own
-                    // inner loop, which does not strip
-                    // `NON_DECLARATIVE_INTERP_MARK`, so skip marking there.
                     let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
-                    let is_const =
-                        !is_overlay && (inside_qq || self.is_compile_time_constant_scalar(&name));
+                    let is_const = !is_overlay && self.is_compile_time_constant_scalar(&name);
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }
@@ -544,33 +530,21 @@ impl Interpreter {
                     i = j;
                     continue;
                 } else if j < chars.len() && chars[j] == '(' {
-                    // $( expr ) — scalar contextualizer: evaluate expr
-                    // and match the result as a literal string.
+                    // $( expr ) — scalar contextualizer. Left in the text for
+                    // the structural parser, which lowers it to a
+                    // `RegexAtom::CodeInterp` evaluated at match time (#10157).
                     if inside_sq {
                         out.push('$');
                         i += 1;
                         continue;
                     }
-                    j += 1; // skip '('
-                    let mut depth = 1usize;
-                    let expr_start = j;
-                    while j < chars.len() && depth > 0 {
-                        if chars[j] == '(' {
-                            depth += 1;
-                        } else if chars[j] == ')' {
-                            depth -= 1;
-                        }
-                        if depth > 0 {
-                            j += 1;
-                        }
+                    if let Some(close) =
+                        super::regex::regex_code_interp::code_interp_close(&chars, j)
+                    {
+                        out.extend(chars[i..=close].iter());
+                        i = close + 1;
+                        continue;
                     }
-                    let expr_str: String = chars[expr_start..j].iter().collect();
-                    j += 1; // skip closing ')'
-                    let val = self.eval_string_as_source(&expr_str);
-                    let literal = val.to_string_value();
-                    out.push_str(&Self::escape_regex_scalar_literal(&literal));
-                    i = j;
-                    continue;
                 }
             }
             if ch == '@' {
@@ -724,44 +698,19 @@ impl Interpreter {
                     Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
                     i = j;
                     continue;
-                } else if j < chars.len() && chars[j] == '(' {
-                    j += 1; // skip '('
-                    let mut depth = 1usize;
-                    let expr_start = j;
-                    while j < chars.len() && depth > 0 {
-                        if chars[j] == '(' {
-                            depth += 1;
-                        } else if chars[j] == ')' {
-                            depth -= 1;
-                        }
-                        if depth > 0 {
-                            j += 1;
-                        }
-                    }
-                    let expr_str: String = chars[expr_start..j].iter().collect();
-                    j += 1; // skip closing ')'
-                    let val = self.eval_string_as_source(&expr_str);
-                    let elements = match val.view() {
-                        ValueView::Array(arr, _) => arr.as_ref().clone(),
-                        ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
-                        ValueView::Slip(items) => crate::value::ArrayData::new((**items).clone()),
-                        _ => crate::value::ArrayData::new(vec![val]),
-                    };
-                    let mut alts = Vec::new();
-                    for elt in elements.iter() {
-                        match elt.view() {
-                            ValueView::Regex(pat) => alts.push(pat.to_string()),
-                            ValueView::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
-                            _ => {
-                                alts.push(Self::escape_regex_scalar_literal(&elt.to_string_value()))
-                            }
-                        }
-                    }
-                    // ADR-0046 Slice 1 / ADR §2.1 probe Q: `@(...)`
-                    // contextualizer interpolation terminates the declarative
-                    // LTM prefix unconditionally, same as bare `@name` above.
-                    Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
-                    i = j;
+                } else if j < chars.len()
+                    && chars[j] == '('
+                    && let Some(close) =
+                        super::regex::regex_code_interp::code_interp_close(&chars, j)
+                {
+                    // `@( expr )` — list contextualizer. Left in the text for
+                    // the structural parser, which lowers it to a
+                    // `RegexAtom::CodeInterp` evaluated at match time
+                    // (#10157); that atom terminates the declarative LTM
+                    // prefix unconditionally (ADR-0046 §2.1 probe Q), like
+                    // the bare `@name` above.
+                    out.extend(chars[i..=close].iter());
+                    i = close + 1;
                     continue;
                 }
             }
@@ -869,7 +818,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn escape_regex_scalar_literal(input: &str) -> String {
+    pub(in crate::runtime) fn escape_regex_scalar_literal(input: &str) -> String {
         let mut out = String::new();
         for ch in input.chars() {
             // Whitespace cannot be backslash-escaped in regex source: `\ ` is the

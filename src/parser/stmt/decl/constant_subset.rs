@@ -39,6 +39,14 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         let name = format!("{prefix}{n}");
         register_term_symbol_from_decl_name(&name);
         (r, name)
+    } else if rest.starts_with('=') && !rest.starts_with("==") {
+        // Anonymous `constant = EXPR`: evaluated for its side effects, but
+        // bound to no name. Give it a unique hidden name so it cannot collide
+        // with another anonymous constant (X::Redeclaration).
+        static ANON_CONSTANT_COUNTER: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        let n = ANON_CONSTANT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        (rest, format!("__anon_constant_{n}"))
     } else if rest.starts_with("term:<") || rest.starts_with("term:\u{ab}") {
         // `constant term:<♥> = "♥"` defines a term named `♥`, resolvable as a
         // bareword. Parse the operator name (`term:<♥>`) and use its inner
@@ -361,6 +369,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             is_export,
             export_tags,
             is_my: false,
+            decl_id: crate::ast::next_class_decl_id(),
         },
     ))
 }
@@ -425,6 +434,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         is_export: false,
         export_tags: Vec::new(),
         is_my: false,
+        decl_id: crate::ast::next_class_decl_id(),
     };
     Ok((
         rest,

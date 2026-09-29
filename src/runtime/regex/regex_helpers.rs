@@ -70,12 +70,11 @@ thread_local! {
     /// — a site that has no reason to carry the inner regex's own captured
     /// lexicals (e.g. a `token`/regex literal's `@(%hash.keys)` needs
     /// `%hash` from where the literal was written, not from wherever it is
-    /// later interpolated). `eval_string_as_source`'s scratch interpreter
-    /// consults this to seed its env for exactly the embedded
-    /// `@(...)`/`$(...)` evaluation that resolving `$re`'s text triggers;
-    /// like [`REGEX_DYNVAR_OVERLAY`] this is `&self`-compatible because it
-    /// is consulted by a freshly built scratch `Interpreter`, never by
-    /// mutating the live one. `None` on the overwhelmingly common path where
+    /// later interpolated). The `&self` interpolation pre-pass consults it
+    /// while resolving `$re`'s text (an embedded `$(...)`/`@(...)` is left
+    /// for match time, where `CaptureIsolatedGroupScoped` installs the same
+    /// scope); like [`REGEX_DYNVAR_OVERLAY`] it overlays reads without
+    /// mutating the live interpreter. `None` on the overwhelmingly common path where
     /// no `Regex` value being interpolated is itself a closure.
     pub(crate) static REGEX_INTERP_CLOSURE_SCOPE: RefCell<Option<Arc<ValueMap>>> = const { RefCell::new(None) };
     /// Log of every named subrule that *reduced* (matched successfully) during the
@@ -645,13 +644,6 @@ pub(crate) fn interp_closure_scope_get(key: &str) -> Option<Value> {
             .and_then(|scope| scope.get(key))
             .cloned()
     })
-}
-
-/// The whole active scope (or `None`), for a caller that wants to seed a
-/// scratch interpreter's env in bulk instead of probing one name at a time —
-/// [`Interpreter::eval_string_as_source`]'s `@(...)`/`$(...)` evaluation.
-pub(crate) fn interp_closure_scope_snapshot() -> Option<Arc<ValueMap>> {
-    REGEX_INTERP_CLOSURE_SCOPE.with(|slot| slot.borrow().clone())
 }
 
 /// RAII guard that activates [`REGEX_INTERP_CLOSURE_SCOPE`] for the duration

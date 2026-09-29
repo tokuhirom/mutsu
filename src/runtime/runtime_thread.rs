@@ -46,6 +46,19 @@ impl Interpreter {
                     out.insert(bare.to_string());
                     continue;
                 }
+                // The same holds for any other readonly binding live in the
+                // spawning frame — a routine, method or pointy-block parameter
+                // (`-> $job { start { await $g; $job.id } }`): it can never be
+                // reassigned, so the spawn-time clone cannot miss a write, and
+                // leaving it on the lane let an unrelated same-named lexical (a
+                // caller's loop `my $job`) be pulled over it at the worker's
+                // next sync point. `mask_thread_redeclared_params` covers this
+                // only once the shared store is active; the first spawn of a
+                // program happens before that, so the mask alone misses it.
+                if self.is_readonly(&name) || self.is_readonly(bare) {
+                    out.insert(bare.to_string());
+                    continue;
+                }
                 // Only a genuinely PLAIN scalar is owned per binding by the
                 // closure machinery — either boxed into a shared cell by
                 // `box_captured_lexicals` or correctly frozen by value. An
@@ -107,15 +120,34 @@ impl Interpreter {
             // block keeps its sigil and gets a real `ParamDef`) is just as
             // fresh per invocation, and leaving it on the once-seeded name lane
             // froze every worker at the first call's argument.
-            for sym in cc.free_var_syms.iter() {
-                let name = sym.resolve();
-                if let Some(bound) = self.param_bound_aggregates.get(name.as_str())
-                    && self
-                        .env
-                        .get(&name)
-                        .is_some_and(|cur| Self::same_container_arc(cur, bound))
+            //
+            // Nor does it require the block to NAME the parameter (#10031).
+            // A parameter the block never mentions was still seeded, as an
+            // ADR-0039 §8.6 transient entry, and the spawning frame's own later
+            // `%g{$k} = ...` then saw the name in the store and took the atomic
+            // hash lane, which writes a COPY and rebinds `%g` to it — detaching
+            // the parameter from the caller's container it aliases:
+            // `sub mk(%g) { -> $k { %g{$k} = 1; start { 1 } } }` lost every
+            // store after the first spawn. Being a per-invocation binding does
+            // not depend on who names it, and the parameter's own container is
+            // already what every alias holds, so no lane is needed to reach it.
+            // The frame's env may hold the parameter boxed in the closure
+            // machinery's `ContainerRef` cell, so compare through it.
+            //
+            // Every live binding of the name counts, not just the latest one:
+            // two closures made by one routine, each capturing its `%g` bound
+            // to a different caller hash, both hold a parameter binding, and
+            // letting the older one onto the lane merged both closures' stores
+            // into one copy (#10076). `ParamBoundAggregates` records them
+            // weakly, so it neither pins arguments alive nor mistakes a reused
+            // address for a recorded one.
+            for name in self.param_bound_aggregates.names() {
+                if self
+                    .env
+                    .get(name)
+                    .is_some_and(|cur| self.param_bound_aggregates.holds(name, cur))
                 {
-                    out.insert(name.to_string());
+                    out.insert(name.clone());
                 }
             }
         }
@@ -589,6 +621,7 @@ impl Interpreter {
             imported_operator_names: self.imported_operator_names.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             operator_import_units: self.operator_import_units.clone(),
+            operator_import_gen: self.operator_import_gen,
             unit_private_routines: self.unit_private_routines.clone(),
             unit_private_names: self.unit_private_names.clone(),
             class_declaring_units: self.class_declaring_units.clone(),
@@ -734,6 +767,7 @@ impl Interpreter {
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
+            module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             exported_sub_values: self.exported_sub_values.clone(),
@@ -827,7 +861,7 @@ impl Interpreter {
                 self.thread_param_shadow_vars.borrow().clone(),
             )),
             // The child re-binds its own env-bound parameters if it runs any.
-            param_bound_aggregates: ValueMap::default(),
+            param_bound_aggregates: Default::default(),
             suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
@@ -899,6 +933,7 @@ impl Interpreter {
             classes_composing_accessors: std::collections::HashSet::new(),
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            pending_method_dispatch: Vec::new(),
             samewith_context_stack: Vec::new(),
             metamodel_dispatch_stack: Vec::new(),
             wrap_chains: self.wrap_chains.clone(),
@@ -1022,6 +1057,7 @@ impl Interpreter {
             // (`start { ... }` around Terminal::MultiProgress's `t.hide-cursor`,
             // #9339).
             export_amp_override_names: self.export_amp_override_names.clone(),
+            unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
@@ -1051,9 +1087,11 @@ impl Interpreter {
             native_lever_a_override_cache: rustc_hash::FxHashMap::default(),
             resolved_seq_cache: rustc_hash::FxHashMap::default(),
             dispatch_multi_candidate: rustc_hash::FxHashMap::default(),
+            deferral_build_context_free: rustc_hash::FxHashMap::default(),
             method_body_fp_cache: rustc_hash::FxHashMap::default(),
             func_multi_resolve_cache: Default::default(),
             func_multi_argkey_cacheable: Default::default(),
+            bare_multi_plan_cache: Default::default(),
             func_multi_type_cacheable: Default::default(),
             user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
@@ -1070,6 +1108,7 @@ impl Interpreter {
             pending_alias_bind_names: Vec::new(),
             otf_call_cache: Default::default(),
             check_phaser_depth: 0,
+            check_phaser_kinds: Vec::new(),
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
             begin_time_hidden: Vec::new(),
             nested_run_depth: 0,

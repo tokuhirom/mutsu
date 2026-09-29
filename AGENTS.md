@@ -31,6 +31,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 | [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass, or working a red/`blocked_load` `ecosystem/` record |
 | [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution and locking it on the board so parallel agents do not collide |
+| [`ecosystem-lock-board-rotation`](.agents/skills/ecosystem-lock-board-rotation/SKILL.md) | The lock board passed ~250 comments or a `get_comments` read of it overflows: moving it to a fresh issue |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass for wasted `.clone()` calls |
 | [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
 | [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
@@ -223,6 +224,12 @@ scripts/dev stop <id>
   `is_global_package`) instead of run-time `format!("{pkg}::{name}")` / `contains("::")`, and
   `MetaNs` (`src/runtime/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` is a shrinking
   ratchet and `make check-magic-keys` a ban; `src/parser/` and `src/compiler/` are exempt.
+- **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
+  (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
+  closure is called on the interpreter you already have (`call_compiled_closure`,
+  `vm_call_on_value`), and a pure builtin that would need to call one declines or has the VM resolve
+  the Callable argument first. `make check-interp-construction` is a shrinking ratchet over
+  `scripts/interp-construction-allowlist.txt`.
 - **Keep `size_of::<OpCode>()` ≤ 48 bytes** (the `opcode_size_guard` test) — box fat payloads.
 - **Core routine or module function?** A function belongs in core only if `raku -e '<call>'`
   resolves it with no `use` (a `use v6.X` pragma still counts as core) **and** it is documented

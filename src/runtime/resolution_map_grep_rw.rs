@@ -838,7 +838,7 @@ impl Interpreter {
         }
         if let Some(pattern) = func {
             if matches!(pattern.view(), ValueView::Bool(_)) {
-                return Err(RuntimeError::new("X::Match::Bool"));
+                return Err(RuntimeError::match_bool(".grep"));
             }
             let mut result = Vec::new();
             let mut matched = Vec::new();

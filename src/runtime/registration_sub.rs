@@ -128,6 +128,38 @@ thread_local! {
     /// Keyed by interned `Symbol`, so taking the snapshot allocates no strings.
     static EVAL_OUTER_ROUTINE_KEYS: RefCell<Vec<HashSet<Symbol>>> =
         const { RefCell::new(Vec::new()) };
+
+    /// Stack (for nested EVALs) of the routine-stack depth at which each
+    /// active `EVAL` began. A `my sub` executed deeper than that runs inside a
+    /// routine the EVAL'd code called, so it is a nested lexical declaration,
+    /// not one of the EVAL's own top-level declarations.
+    static EVAL_ROUTINE_DEPTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Record the routine-stack depth as an `EVAL` begins.
+pub(crate) fn push_eval_routine_depth(depth: usize) {
+    EVAL_ROUTINE_DEPTHS.with(|stack| stack.borrow_mut().push(depth));
+}
+
+/// Pop the routine-depth marker when an EVAL finishes.
+pub(crate) fn pop_eval_routine_depth() {
+    EVAL_ROUTINE_DEPTHS.with(|stack| {
+        stack.borrow_mut().pop();
+    });
+}
+
+/// Whether the innermost active EVAL's code is currently running inside the
+/// routine called `name` (deeper than the routine stack was when the EVAL
+/// began), i.e. `name` is a nested declaration shadowing that very routine.
+fn in_routine_called_by_eval(routine_stack: &[RoutineFrame], name: &str) -> bool {
+    EVAL_ROUTINE_DEPTHS.with(|stack| {
+        stack
+            .borrow()
+            .last()
+            .is_some_and(|start| routine_stack.len() > *start)
+    }) && routine_stack
+        .last()
+        .is_some_and(|frame| !frame.is_block && frame.name.resolve() == name)
 }
 
 /// Push the set of registry routine keys that exist as an `EVAL` begins.
@@ -210,9 +242,22 @@ impl Interpreter {
             let mut key = Symbol::intern(base_key);
             let mut idx = 1usize;
             loop {
-                if let std::collections::hash_map::Entry::Vacant(entry) = funcs.entry(key) {
-                    entry.insert(def);
-                    break;
+                match funcs.entry(key) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(def);
+                        break;
+                    }
+                    // A parametric role body re-runs once per composition, so
+                    // the same `multi sub` declaration arrives again under the
+                    // same package. The identical candidate is not a second
+                    // overload; keeping both makes every call ambiguous.
+                    std::collections::hash_map::Entry::Occupied(existing)
+                        if existing.get().package == def.package
+                            && existing.get().body_fingerprint() == def.body_fingerprint() =>
+                    {
+                        return;
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {}
                 }
                 key = Symbol::intern(&format!("{}__m{}", base_key, idx));
                 idx += 1;
@@ -310,6 +355,7 @@ impl Interpreter {
         declared_types: &std::collections::HashSet<String>,
         declared_packages: &std::collections::HashSet<String>,
         declared_classes: &std::collections::HashSet<String>,
+        inherited_captures: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         // Type-capture names declared in this signature (e.g. `::T`) are valid
         // type names for the rest of the signature.
@@ -346,12 +392,19 @@ impl Interpreter {
             // including the type-only `(Base of T)` param named `__type_only__`)
             // on a non-parametric type (a plain class or a package/module) is
             // X::NotParametric. Built-in containers and roles are parametric and
-            // not in these statically-collected sets. (Runtime `is_non_parametric_type`
-            // can't be used here: this pre-pass runs before the type is registered.)
-            // This is checked before the synthetic-param skip below because a
-            // `(Base of T)` term param IS named `__type_only__`.
+            // mostly not in these statically-collected sets -- but a few
+            // (NativeCall's `Pointer`, ...) ARE spliced in as genuine `class`
+            // preludes and so DO land in `declared_classes`; `is_parametric_builtin_type_name`
+            // is the same allowlist the runtime `is_non_parametric_type` check
+            // uses, kept in one place so a type parameterizes consistently
+            // whether or not its own declaration happens to be visible yet.
+            // (Runtime `is_non_parametric_type` can't be used here: this
+            // pre-pass runs before the type is registered.) This is checked
+            // before the synthetic-param skip below because a `(Base of T)`
+            // term param IS named `__type_only__`.
             if let Some(base) = tc.split_once('[').map(|(b, _)| b.trim())
                 && !base.is_empty()
+                && !crate::runtime::runtime_class_query::is_parametric_builtin_type_name(base)
                 && (declared_packages.contains(base) || declared_classes.contains(base))
             {
                 let mut attrs = ValueMap::default();
@@ -386,10 +439,13 @@ impl Interpreter {
             // uppercase value-terms (`Inf`, `NaN`, `True`, `False`) and built-in
             // enum values (`LittleEndian`, `Less`, ... — kept in the global base).
             if captures.contains(tc)
+                || inherited_captures.contains(tc)
                 || declared_types.contains(tc)
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
                 || self.is_type_alias_constant(tc)
+                // A sigil-less value constant is a value constraint (#9962).
+                || self.term_value(tc).is_some()
                 || matches!(tc, "Inf" | "NaN" | "True" | "False" | "Empty")
                 || crate::env::global_base_contains(tc)
             {
@@ -477,6 +533,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         declared_types: &std::collections::HashSet<String>,
         via_trait: bool,
+        inherited_captures: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         let Some(rt) = return_type else {
             return Ok(());
@@ -504,6 +561,7 @@ impl Interpreter {
             return Ok(());
         }
         if captures.contains(rt)
+            || inherited_captures.contains(rt)
             || declared_types.contains(rt)
             || self.is_resolvable_type(rt)
             || self.has_type(rt)
@@ -631,14 +689,14 @@ impl Interpreter {
             return false;
         }
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            && (in_routine_called_by_eval(&self.routine_stack, name)
+                || (!matches!(
+                    self.env.get("__mutsu_in_eval").map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) && !matches!(
+                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )));
         if allow_lexical_shadow {
             return false;
         }
@@ -1063,6 +1121,7 @@ impl Interpreter {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 });
             }
@@ -1090,6 +1149,7 @@ impl Interpreter {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    code: Default::default(),
                     trait_args: Vec::new(),
                 });
             }
@@ -1179,6 +1239,9 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_implementation_detail: custom_traits
+                .iter()
+                .any(|(t, _)| t == "implementation-detail"),
             is_cached: custom_traits.iter().any(|(t, _)| t == "cached"),
             is_rw,
             is_raw,
@@ -1263,14 +1326,14 @@ impl Interpreter {
         });
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(
-                self.env.get("__mutsu_in_eval").map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
+            && (in_routine_called_by_eval(&self.routine_stack, name)
+                || (!matches!(
+                    self.env.get("__mutsu_in_eval").map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) && !matches!(
+                    self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )));
         let code_var_key = format!("&{}", name);
         // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
         // registry is restored afterwards, so it may shadow an `&name` that
@@ -1777,6 +1840,10 @@ impl Interpreter {
                     // user `trait_mod:<is>` handler (or reported as unknown
                     // when the declaration is loaded from EVAL).
                     && *t != "cached"
+                    // `is implementation-detail` is likewise a built-in
+                    // routine trait now recorded on the def via
+                    // `is_implementation_detail` (`Code.is-implementation-detail`).
+                    && *t != "implementation-detail"
                     // NativeCall traits are consumed by `register_native_call_sub`
                     // above, not by `trait_mod:<is>`.
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
@@ -1990,6 +2057,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            is_implementation_detail: false,
             is_rw: false,
             is_raw: false,
             declarator: crate::ast::RoutineDeclarator::Sub,
@@ -2185,6 +2253,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
@@ -2259,6 +2328,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,

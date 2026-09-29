@@ -353,10 +353,6 @@ pub(crate) struct ForLoopSpec {
     /// so an aliasing loop parameter must be allowed to bind that container
     /// even when the scalar holds a plain value rather than an Array.
     pub(crate) scalar_list_source: bool,
-    /// The source expression is a direct smartmatch. A successful Match has
-    /// an empty list value in this context; an itemized scalar variable still
-    /// yields the Match as one item.
-    pub(crate) direct_smartmatch: bool,
     /// The bare source array variable name for `for @a` (without sigil), when
     /// the iterable is a single plain array variable. Enables live-array
     /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding
@@ -492,6 +488,13 @@ pub(crate) struct CompiledAttrDecl {
     /// registration path stores the right-hand container itself instead of a
     /// copy. See `Stmt::HasDecl::default_is_bind`.
     pub(crate) default_is_bind: bool,
+    /// The line the `has` keyword sits on, filled in by the class-body walk
+    /// (`Compiler::compile_class_attr_decls`) that tracks `Stmt::SetLine`
+    /// markers as it visits each declaration -- `from_stmt` itself has no
+    /// line history to draw on, so this starts `None` and is set by the
+    /// caller afterward, the same two-step `decl_line` already used for
+    /// `compile_method_body_keys`.
+    pub(crate) decl_line: Option<i64>,
 }
 
 impl CompiledAttrDecl {
@@ -569,6 +572,7 @@ impl CompiledAttrDecl {
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
+            decl_line: None,
         }
     }
 }
@@ -809,6 +813,30 @@ pub(crate) enum DeclReset {
     /// the enclosing loop left behind, so a failed initializer leaves `Any`
     /// for a CATCH/phaser (or a `try` expression) to observe.
     Fresh,
+    /// As `Fresh`, and also replace an outer same-named binding: the new
+    /// binding is in scope for its own initializer, and this one reads it
+    /// (`my $*X = $*X + 1`, `my $x = do { $x }` -- #9770), so it must see a
+    /// fresh `Any` rather than the binding it shadows. The parser marks such
+    /// declarations (`__init_sees_self`).
+    Shadow,
+}
+
+/// How `OpCode::DoBlockExpr` treats the bindings its body made, on exit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DoBlockIsolation {
+    /// Nothing is reverted: a desugar's statements declare straight into the
+    /// enclosing scope.
+    None,
+    /// The `"{...}"`-interpolation policy: the block's own scalar/array
+    /// declarations revert, and so does every write to a special, internal
+    /// or dynamic name; only writes to plain outer user variables and new
+    /// hashes (the `:into(my %h := :{})` idiom) survive.
+    Interpolation,
+    /// A genuine source block (`do { }`, a labelled block, the inline
+    /// `lazy`/`sink`/`quietly` blocks): exactly the block's own declarations
+    /// revert, whatever their sigil, and every other write -- to an outer
+    /// lexical, a dynamic variable, `$!`, `$/` -- persists (#9897).
+    Lexical,
 }
 
 /// Bytecode operations for the VM.
@@ -1047,22 +1075,14 @@ pub(crate) enum OpCode {
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
-    /// Store a call-site temporary of the subscript-argument `is rw`
-    /// writeback (`__mutsu_index_rw_arg_N` / `_orig_N` / `__mutsu_call_result_N`,
-    /// see `compile_call_arg_with_escape`) into the frame env under its
-    /// pre-interned name. Stack: `[value] -> []`.
+    /// Store a compiler-internal call-site temporary into the frame env under
+    /// its pre-interned name. Stack: `[value] -> []`.
     ///
     /// A raw replace: the temp is compiler-internal, so none of
     /// [`Self::SetGlobal`]'s user-variable semantics (readonly/type/strict
     /// checks, `our`/shared-store mirroring, write-through into a cell a
-    /// previous execution left there) apply. It still lives in `env`, because
-    /// an `is rw` callee writes its parameter back by that name
-    /// (`apply_rw_bindings_to_env`).
+    /// previous execution left there) apply.
     SetCallTemp(u32),
-    /// Read a temporary stored by [`Self::SetCallTemp`] (or written back into
-    /// it by an `is rw` callee), decontainerized exactly as [`Self::GetGlobal`]
-    /// hands back a variable's value. Stack: `[] -> [value]`.
-    GetCallTemp(u32),
     /// Read a call temporary without dereferencing its lvalue payload. This is
     /// used when a compiler-generated temporary carries a `ContainerRef` or a
     /// deferred `HashEntryRef` into another bind operation. Stack: `[] -> [raw]`.
@@ -2694,12 +2714,15 @@ pub(crate) enum OpCode {
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
-        scope_isolate: bool,
-        /// Constant-pool index of a `Array` of the scalar/array variable
-        /// names the block declares with `my`/`state` (sigil-keyed as stored in
-        /// env). On a `scope_isolate` exit those names revert to their pre-block
-        /// values (block-local declarations don't leak), while mutations of OUTER
-        /// variables persist. `u32::MAX` when there are none / not isolated.
+        /// Which of the block's own bindings are reverted on exit; see
+        /// [`DoBlockIsolation`].
+        isolation: DoBlockIsolation,
+        /// Constant-pool index of a `Array` of the variable names the block
+        /// declares with `my`/`state` in its own scope (sigil-keyed as stored
+        /// in env). On an isolating exit those names revert to their pre-block
+        /// values (block-local declarations don't leak), while mutations of
+        /// OUTER variables persist. `u32::MAX` when there are none / not
+        /// isolated.
         isolate_decls_idx: u32,
         /// True when the body declares a routine (`sub`/`proto`) directly in
         /// its own scope. A `do { ... }` block is a block, so such a routine is
@@ -2827,13 +2850,18 @@ pub(crate) enum OpCode {
     /// a callee that binds that argument to the caller's location — an
     /// `is rw`/`is raw`/sigil-less parameter, or a bare block's implicit `$_`.
     ///
-    /// The named-callee spelling `g(@a[0])` does not need this: `CallFunc`
-    /// carries the copy-in/copy-out temp protocol
-    /// (`Compiler::emit_index_rw_writebacks`). The three nameless-callee
-    /// spellings have no such protocol, and a plain `Index` has already read the
-    /// element's *value* by the time the call op runs, so there is nothing left
-    /// to write back — the write was silently dropped, or (for an explicit
-    /// `is rw`) refused with "expects a writable container".
+    /// The named-callee spelling `g(@a[0])` uses it too
+    /// ([`RwArgCallee::Named`], ADR-0059 Slice 3): it retired the
+    /// copy-in/copy-out `__mutsu_index_rw_arg_*` temps `CallFunc` used to
+    /// carry. A plain `Index` has already read the element's *value* by the
+    /// time the call op runs, so without this producer there is nothing left
+    /// to write back to.
+    ///
+    /// A subscript past the end of an array, or a missing hash key, produces
+    /// the deferred vivification token (`HashEntryRef`) rather than growing
+    /// the container: a `\x` parameter that only reads leaves the container
+    /// untouched, and the first write through the parameter creates the
+    /// element, as in rakudo.
     ///
     /// Gated at run time on the real callee, exactly as
     /// [`Self::MarkRwArgRefContextCallee`] is — a signature is not knowable at
@@ -2844,6 +2872,14 @@ pub(crate) enum OpCode {
     /// and index still on the stack, so the callee sits one slot deeper than it
     /// does for the accessor marker.
     IndexArgRef(Box<IndexArgRefMark>),
+    /// [`Self::IndexArgRef`]'s gate on its own, for an argument whose location
+    /// one op cannot produce: a *nested* subscript passed to a named routine
+    /// (`g(%h<a><b>)`, ADR-0059 Slice 3). Pushes whether the callee binds that
+    /// positional to the caller's container, and the compiler branches to a
+    /// container-mode compile of the argument or an ordinary read. Only
+    /// emitted with [`RwArgCallee::Named`], which reads nothing off the stack.
+    /// Stack: `[] -> [Bool]`.
+    RwArgCalleeBindsContainer(Box<RwArgCalleeMark>),
     /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
@@ -3611,6 +3647,11 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
+        /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
+        /// closure is on the stack (`[Code] → …`), called once per match, and
+        /// `replacement_idx` names an empty string.
+        replacement_thunk: bool,
         /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
         /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
         /// the thunk), installed around the match like a regex literal's
@@ -3654,6 +3695,11 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
+        /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
+        /// closure is on the stack (`[Code] → …`), called once per match, and
+        /// `replacement_idx` names an empty string.
+        replacement_thunk: bool,
         /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
         /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
         /// the thunk), installed around the match like a regex literal's
@@ -3747,6 +3793,9 @@ pub(crate) enum OpCode {
     CheckPhaserStart {
         /// IP of the CheckPhaserEnd instruction (jump target on error).
         end_ip: u32,
+        /// `true` for a `BEGIN` body, `false` for `CHECK` (and the other
+        /// BEGIN-time regions); names the phaser in X::Comp::BeginTime.
+        is_begin: bool,
     },
     /// Marks the end of a CHECK phaser body.
     CheckPhaserEnd,
@@ -5103,6 +5152,7 @@ fn implicit_legacy_param(name: &str) -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        code: Default::default(),
         trait_args: Vec::new(),
     }
 }
@@ -11868,6 +11918,8 @@ impl<'a> IntoIterator for &'a CompiledFns {
 pub(crate) struct RwArgCalleeMark {
     /// Which positional parameter of the callee's *signature* this argument
     /// binds to — named arguments earlier in the list do not consume one.
+    /// [`RWARG_POSITIONAL_UNKNOWN`] when an earlier `|slip` makes the index
+    /// unknowable at compile time (only [`RwArgCallee::Named`] emits it).
     pub(crate) positional: u32,
     /// How many argument values sit above the callee on the stack when this op
     /// runs (its index in the syntactic argument list, named arguments
@@ -11901,7 +11953,18 @@ pub(crate) enum RwArgCallee {
     /// `&g(...)` — nothing is pushed; the callee is the code variable this
     /// constant names, resolved exactly as `CallOnCodeVar` resolves it.
     CodeVar { name_idx: u32 },
+    /// `g(...)` — a named routine call (`CallFunc` / `CallFuncNamed`, or a
+    /// user-defined operator's `CallFunc`-shaped dispatch); nothing is pushed
+    /// for the callee. Answered over every registered candidate of the name,
+    /// then, when none is registered, over the lexical `&g` a `my &g = sub
+    /// ...` binds.
+    Named { name_idx: u32 },
 }
+
+/// [`RwArgCalleeMark::positional`] for an argument after a `|slip`: its
+/// signature index is only known at run time, so the gate asks whether *any*
+/// positional parameter binds the caller's container.
+pub(crate) const RWARG_POSITIONAL_UNKNOWN: u32 = u32::MAX;
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
 /// call's stack values are named-arg values, and under which keys.

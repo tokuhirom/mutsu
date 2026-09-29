@@ -283,16 +283,16 @@ impl Interpreter {
         Self::concat_values(left, right)
     }
 
-    /// Coerce an operand whose class defines a user `Stringy`/`Str` to its
+    /// Coerce an operand whose class defines a `Stringy`/`Str` to its
     /// string value (Raku infix `~` uses `.Stringy`, falling back to `.Str`;
     /// the string comparators `eq`/`lt`/… use `.Str`). Plain values and
-    /// instances without a user stringifier pass through unchanged (the pure
+    /// instances without a stringifier pass through unchanged (the pure
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
     pub(crate) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
         // ADR-0058: a string context renders a Seq's elements, so a
         // still-deferred `.map` must run its callback first.
-        self.reify_map_grep_seq(&v)?;
+        self.reify_nested_map_grep_for_read(&v)?;
         // A string context is a READ, so a `Proxy` operand FETCHes: `"x" ~ $p`
         // is `x5`, not `xProxy`. Every other value context already FETCHed
         // (arithmetic via `eval_binary_with_junctions`, `say`/`print`/`note`,
@@ -383,11 +383,16 @@ impl Interpreter {
             ValueView::Package(name) => (name.resolve(), true),
             _ => return Ok(v),
         };
-        if self.has_user_method(&cn, "Stringy") {
+        // A Date/DateTime `:formatter` is user code the pure stringifier
+        // cannot run.
+        if self.has_user_method(&cn, "Stringy")
+            || self.is_native_method(&cn, "Stringy")
+            || crate::builtins::methods_0arg::temporal::carries_formatter(&v)
+        {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }
-        if self.has_user_method(&cn, "Str") {
+        if self.has_user_method(&cn, "Str") || self.is_native_method(&cn, "Str") {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }

@@ -222,8 +222,12 @@ impl Interpreter {
                         entries.push(Self::make_pod_table_full(headers, rows, tbl_config));
                         continue;
                     }
-                    let (contents, next_idx) =
-                        Self::collect_pod_entries(&lines, idx + 1, Some(target));
+                    let (contents, next_idx) = Self::collect_pod_entries(
+                        &lines,
+                        idx + 1,
+                        Some(target),
+                        Self::pod_line_indent(lines[idx]),
+                    );
                     let after_target = rest.strip_prefix(target).unwrap_or("");
                     let (config, _) = Self::parse_pod_config(after_target);
                     entries.push(Self::make_pod_block_for_target(target, contents, config));

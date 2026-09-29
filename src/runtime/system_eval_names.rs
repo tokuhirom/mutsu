@@ -911,6 +911,8 @@ impl Interpreter {
                     || self.has_function(name)
                     || self.has_multi_function_unindexed(name)
                     || self.env().contains_key(name)
+                    // An in-scope sigil-less constant (#9962).
+                    || self.term_binding(name).is_some()
                     // `our`-scoped constants/variables installed in the package
                     // survive in `our_vars` even after their lexical block exits.
                     || self.get_our_var(name).is_some()

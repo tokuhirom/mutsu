@@ -5,7 +5,7 @@ use Test;
 # BigInt and stay exact. Regression: a "multiply with overflow" panic in the
 # lazy sequence generator (integration/advent2010-day04.t).
 
-plan 6;
+plan 12;
 
 my @p = 1, 2, 4 ... *;
 is @p[^10].join(" "), "1 2 4 8 16 32 64 128 256 512", "small powers of two exact";
@@ -16,6 +16,20 @@ ok @p[100] > @p[99], "deep geometric index does not panic and grows";
 # ratio 3 geometric also stays exact
 my @t = 1, 3, 9 ... *;
 is @t[40], 3**40, "powers of three exact past i64";
+is @t[50].raku, '717897987691852588770249',
+    'powers of three retain Int precision after promotion';
+
+my @eleven = 1, 11, 121 ... *;
+is @eleven[19].raku, '61159090448414546291',
+    'an integer ratio other than two stays exact past i64';
+is @eleven[19].WHAT, Int, 'the promoted geometric element remains an Int';
+is (1, 11, 121 ... 10**30).tail.raku, '144209936106499234037676064081',
+    'a BigInt endpoint stops the exact geometric sequence before it is crossed';
+
+my @rational = 2, 3, 9/2 ... *;
+is @rational[40].raku, '22114664.641880024284546379931271076202392578125',
+    'a rational ratio stays exact in the deferred generator';
+is @rational[40].WHAT, Rat, 'the deferred rational ratio retains Rat type';
 
 # arithmetic int sequence unaffected
 my @a = 2, 4 ... *;

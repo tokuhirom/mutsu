@@ -55,9 +55,9 @@ pub(in crate::runtime) use state::{
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
-    PromiseCombinator, next_supplier_id, supplier_done, supplier_quit, supplier_register_promise,
-    supplier_sink_register, supplier_sink_unregister, supplier_sinks_register_batch,
-    supplier_snapshot, take_promise_combinator_sources,
+    PromiseCombinator, collect_supplier_values, next_supplier_id, supplier_done, supplier_quit,
+    supplier_register_promise, supplier_sink_register, supplier_sink_unregister,
+    supplier_sinks_register_batch, supplier_snapshot, take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;
@@ -521,6 +521,26 @@ impl Interpreter {
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Path" => self.native_io_path(attributes, class_name, method, args),
+            "IO::Handle" if method == "open" && class_name != "IO::Handle" => {
+                // `.open` on a user subclass answers the receiver (Rakudo returns
+                // `self`), so keep the subclass and its own attributes and only
+                // overlay the opened handle's state.
+                let opened = self.native_io_handle(attributes, method, args)?;
+                if let ValueView::Instance {
+                    class_name: opened_class,
+                    attributes: opened_attrs,
+                    ..
+                } = opened.view()
+                    && opened_class == "IO::Handle"
+                {
+                    let mut merged = attributes.clone();
+                    for (key, value) in opened_attrs.as_map().iter() {
+                        merged.insert(key.as_str(), value.clone());
+                    }
+                    return Ok(Value::make_instance(Symbol::intern(class_name), merged));
+                }
+                Ok(opened)
+            }
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::CatHandle" => {
                 // All IO::CatHandle methods mutate read state; the immutable entry

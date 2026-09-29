@@ -1645,6 +1645,28 @@ impl Interpreter {
                                     continue;
                                 }
                             }
+                            // An exact geometric sequence can grow past i64
+                            // while its endpoint is also a BigInt. Compare the
+                            // values directly before the f64-only cases below;
+                            // converting either side to Num loses the bound.
+                            if let SeqMode::GeometricRat(num, den) = &mode
+                                && *num > 0
+                                && *den > 0
+                                && let ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Rat(..)
+                                | ValueView::BigRat(..) = item.view()
+                                && let ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Rat(..)
+                                | ValueView::BigRat(..) = ep.view()
+                            {
+                                let cmp = crate::runtime::compare_values(&item, ep);
+                                if (*num > *den && cmp > 0) || (*num < *den && cmp < 0) {
+                                    should_break = true;
+                                    continue;
+                                }
+                            }
                             // Check if we went past the endpoint (numeric)
                             if let (Some(nf), Some(ef)) =
                                 (Self::seq_value_to_f64(&item), Self::seq_value_to_f64(ep))

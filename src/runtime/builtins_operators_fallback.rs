@@ -504,7 +504,9 @@ impl Interpreter {
             let mut coerced_args: Vec<Value> = Vec::with_capacity(args.len());
             let mut all_ok = true;
             for arg in args {
-                if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(arg) {
+                if let Some(payload) =
+                    crate::builtins::numeric_subclass::numeric_subclass_payload(arg)
+                {
                     // An `Int` subclass's `.Numeric` is the instance itself;
                     // the builtin takes its `Int` payload.
                     coerced_args.push(payload);
@@ -1159,7 +1161,7 @@ impl Interpreter {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(name);
             // A bound generic type parameter (`T()` / `T:D()` inside a role method
             // where `T` -> `Int`) forms `Int(Any)` / `Int:D(Any)`.
-            if let Some(v) = self.env.get(base)
+            if let Some(v) = self.type_name_binding(base)
                 && let ValueView::Package(pkg) = v.view()
             {
                 let resolved = format!("{}{}(Any)", pkg.resolve(), smiley.unwrap_or(""));

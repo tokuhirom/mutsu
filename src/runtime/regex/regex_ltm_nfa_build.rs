@@ -21,6 +21,7 @@
 
 use super::super::*;
 use super::regex_helpers::{bounded_declarative_max, named_lookup_is_ws};
+use super::regex_ltm_litend::{open_after_token, open_at_pattern_start, token_keeps_open};
 use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode, SubKind};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use super::regex_token_resolve::ParsedTokenCandidate;
@@ -89,7 +90,7 @@ impl<'a> NfaBuilder<'a> {
         inherited_ic: bool,
     ) -> LtmNfa {
         let accept = self.push(NfaNode::Accept);
-        let start = self.build_pattern(pattern, pkg, inherited_ic, accept);
+        let start = self.build_pattern(pattern, pkg, inherited_ic, true, accept);
         LtmNfa {
             nodes: self.nodes,
             start,
@@ -106,12 +107,14 @@ impl<'a> NfaBuilder<'a> {
     }
 
     /// A pattern walked at one level: its own `:i` flag, or one inherited from
-    /// a `:i` subrule call.
+    /// a `:i` subrule call. `open` says the pattern is entered where a
+    /// literal still counts toward `litlen` (see `regex_ltm_litend`).
     fn build_pattern(
         &mut self,
         pattern: &RegexPattern,
         pkg: Symbol,
         inherited_ic: bool,
+        open: bool,
         next: u32,
     ) -> u32 {
         if pattern.ignore_mark {
@@ -123,8 +126,16 @@ impl<'a> NfaBuilder<'a> {
         if pattern.anchor_end {
             cont = self.push(NfaNode::AtEnd(cont));
         }
-        for token in pattern.tokens.iter().rev() {
-            cont = self.build_token(token, pkg, ic, cont);
+        // `open` on entry to each token, computed forwards; the tokens are
+        // then built backwards.
+        let mut entry = Vec::with_capacity(pattern.tokens.len());
+        let mut open = open_at_pattern_start(pattern, open);
+        for token in &pattern.tokens {
+            entry.push(open);
+            open = open_after_token(token, open);
+        }
+        for (token, &open) in pattern.tokens.iter().zip(&entry).rev() {
+            cont = self.build_token(token, pkg, ic, open, cont);
         }
         if pattern.anchor_start {
             cont = self.push(NfaNode::AtStart(cont));
@@ -152,7 +163,14 @@ impl<'a> NfaBuilder<'a> {
         })
     }
 
-    fn build_token(&mut self, token: &RegexToken, pkg: Symbol, ic: bool, next: u32) -> u32 {
+    fn build_token(
+        &mut self,
+        token: &RegexToken,
+        pkg: Symbol,
+        ic: bool,
+        open: bool,
+        next: u32,
+    ) -> u32 {
         // A literal from a runtime interpolation and a `** {code}` count are
         // fates (ADR-0022 Slice 5; `'a' ** {3} % ','` measures 0 in `raku`).
         if token.from_runtime_interpolation || matches!(token.quant, RegexQuant::RepeatCode(_)) {
@@ -160,7 +178,8 @@ impl<'a> NfaBuilder<'a> {
         }
         let (min, max) = match token.quant {
             RegexQuant::One if token.separator.is_none() => {
-                return self.build_atom(&token.atom, pkg, ic, next);
+                let open = open && token_keeps_open(token);
+                return self.build_atom(&token.atom, pkg, ic, open, next);
             }
             RegexQuant::One => (1, Some(1)),
             RegexQuant::ZeroOrOne => (0, Some(1)),
@@ -205,7 +224,7 @@ impl<'a> NfaBuilder<'a> {
         // Where a path goes once it has done at least one iteration and stops.
         let done = match token.separator.as_ref() {
             Some(sep) if sep.allow_trailing => {
-                let trailing = self.build_pattern(&sep.pattern, pkg, false, next);
+                let trailing = self.build_pattern(&sep.pattern, pkg, false, false, next);
                 self.push(NfaNode::Split(vec![trailing, next]))
             }
             _ => next,
@@ -263,14 +282,22 @@ impl<'a> NfaBuilder<'a> {
         ic: bool,
         next: u32,
     ) -> u32 {
-        let atom = self.build_atom(&token.atom, pkg, ic, next);
+        // A quantified atom is never open (`method quant`).
+        let atom = self.build_atom(&token.atom, pkg, ic, false, next);
         match (unit, token.separator.as_ref()) {
-            (Unit::SepAtom, Some(sep)) => self.build_pattern(&sep.pattern, pkg, false, atom),
+            (Unit::SepAtom, Some(sep)) => self.build_pattern(&sep.pattern, pkg, false, false, atom),
             _ => atom,
         }
     }
 
-    fn build_atom(&mut self, atom: &RegexAtom, pkg: Symbol, ic: bool, next: u32) -> u32 {
+    fn build_atom(
+        &mut self,
+        atom: &RegexAtom,
+        pkg: Symbol,
+        ic: bool,
+        open: bool,
+        next: u32,
+    ) -> u32 {
         match ltm_atom_mode(atom) {
             // A rule's leading `<.ws>` is transparent at the start of the
             // subject (`ltm_leading_ws_is_transparent`); that is decided per
@@ -287,16 +314,16 @@ impl<'a> NfaBuilder<'a> {
             // `<?before X>` measures `X`, then ends the path.
             LtmAtomMode::TerminateAfter(inner) => {
                 let fate = self.fate();
-                return self.build_pattern(inner, pkg, false, fate);
+                return self.build_pattern(inner, pkg, false, false, fate);
             }
             LtmAtomMode::SkipZeroWidth => return next,
             LtmAtomMode::Normal => {}
         }
         match atom {
-            RegexAtom::Group(pattern)
-            | RegexAtom::CaptureGroup(pattern)
-            | RegexAtom::CaptureIsolatedGroup(pattern) => {
-                self.build_pattern(pattern, pkg, false, next)
+            RegexAtom::Group(pattern) => self.build_pattern(pattern, pkg, false, open, next),
+            // A capture is a `subcapture`, which closes `litlen`.
+            RegexAtom::CaptureGroup(pattern) | RegexAtom::CaptureIsolatedGroup(pattern) => {
+                self.build_pattern(pattern, pkg, false, false, next)
             }
             RegexAtom::CaptureIsolatedGroupScoped(pattern, scope) => self.build_sub(
                 pattern,
@@ -308,14 +335,14 @@ impl<'a> NfaBuilder<'a> {
             RegexAtom::Alternation(alternatives) => {
                 let branches = alternatives
                     .iter()
-                    .map(|alt| self.build_pattern(alt, pkg, false, next))
+                    .map(|alt| self.build_pattern(alt, pkg, false, open, next))
                     .collect();
                 self.push(NfaNode::Split(branches))
             }
             // ADR-0022 §4.2: the first branch, plus an ε bypass.
             RegexAtom::SequentialAlternation(alternatives) => match alternatives.first() {
                 Some(first) => {
-                    let first = self.build_pattern(first, pkg, false, next);
+                    let first = self.build_pattern(first, pkg, false, false, next);
                     self.push(NfaNode::SeqAlt(vec![first, next]))
                 }
                 None => next,
@@ -330,8 +357,8 @@ impl<'a> NfaBuilder<'a> {
             }
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => next,
             RegexAtom::GoalMatch { goal, inner, .. } => {
-                let goal = self.build_pattern(goal, pkg, false, next);
-                self.build_pattern(inner, pkg, false, goal)
+                let goal = self.build_pattern(goal, pkg, false, false, next);
+                self.build_pattern(inner, pkg, false, false, goal)
             }
             RegexAtom::Named(name) => self.build_subrule(atom, name, pkg, ic, next),
             // Everything else consumes one grapheme-sized unit or is a
@@ -348,11 +375,15 @@ impl<'a> NfaBuilder<'a> {
                     | RegexAtom::CompositeClass { .. } => LeafKind::Consume,
                     _ => LeafKind::Probe,
                 };
+                // An open literal is one of NQP's `_LL` edges.
+                let ll =
+                    open && matches!(atom, RegexAtom::Literal(_) | RegexAtom::LiteralGrapheme(_));
                 self.push(NfaNode::Leaf {
                     atom: Box::new(atom.clone()),
                     pkg,
                     ic,
                     kind,
+                    ll,
                     next,
                 })
             }
@@ -425,6 +456,7 @@ impl<'a> NfaBuilder<'a> {
                 pkg,
                 ic,
                 kind: LeafKind::Plural,
+                ll: false,
                 next,
             });
         }
@@ -460,7 +492,7 @@ impl<'a> NfaBuilder<'a> {
         let ret = self.ret;
         let bodies = candidates
             .iter()
-            .map(|(parsed, sub_pkg, _)| self.build_pattern(parsed, *sub_pkg, ic, ret))
+            .map(|(parsed, sub_pkg, _)| self.build_pattern(parsed, *sub_pkg, ic, true, ret))
             .collect();
         self.nodes[entry as usize] = NfaNode::Split(bodies);
         entry

@@ -311,6 +311,40 @@ pub(crate) fn native_method_0arg(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
+    // Cost: O(1), one lookup in the Attribute metadata map.
+    if method == "DEPRECATED"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "Attribute"
+        && let Some(message) = attributes.as_map().get("DEPRECATED")
+    {
+        return Some(Ok(message.clone()));
+    }
+
+    // Cost: O(n), n = bytes in the format string scanned for directives.
+    if method == "directives"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "Format"
+    {
+        let fmt = attributes
+            .as_map()
+            .get("format")
+            .map(Value::to_string_value)
+            .unwrap_or_default();
+        let directives = crate::runtime::sprintf::sprintf_arg_specs(&fmt)
+            .into_iter()
+            .map(|(_, spec)| Value::str(spec.to_string()))
+            .collect();
+        return Some(Ok(Value::array(directives)));
+    }
+
     // Lazy-Match scalar fast path: these arms are semantically identical to
     // the Match block far below, but answered here straight from the capture
     // node so the probe gauntlet in between (each a `view()`, which would
@@ -346,6 +380,12 @@ pub(crate) fn native_method_0arg(
     // than answering out of the descriptor's attribute map.
     if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
         return None;
+    }
+
+    // Cost: O(1), one scheduler yield for the calling OS thread.
+    if method == "yield" && matches!(target.view(), ValueView::Package(name) if name == "Thread") {
+        std::thread::yield_now();
+        return Some(Ok(Value::NIL));
     }
 
     // Unicode's query methods are class methods over the Unicode data shipped
@@ -548,8 +588,8 @@ pub(crate) fn native_method_0arg(
     }
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::int_subclass`).
-    if let Some(result) = super::int_subclass::dispatch(target, method_sym, &[]) {
+    // payload (`builtins::numeric_subclass`).
+    if let Some(result) = super::numeric_subclass::dispatch(target, method_sym, &[]) {
         return Some(result);
     }
 
@@ -778,12 +818,12 @@ pub(crate) fn native_method_0arg(
             | "msb" | "is-int" | "re" | "im" => {
                 let coerced = if let Ok(i) = s.parse::<i64>() {
                     Value::int(i)
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Value::num(f)
                 } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                    // A Str that numifies to a Complex/Rat (`"6+8i"`, `"1/2"`)
-                    // must coerce fully before the numeric method runs, so
-                    // `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
+                    // A Str numifies the way `.Numeric` does before the numeric
+                    // method runs: a decimal is a Rat (`"-5.9".abs` is the Rat
+                    // 5.9, not the Num 5.9000000000000004 an `f64` parse gave),
+                    // and a Complex/Rat string (`"6+8i"`, `"1/2"`) coerces
+                    // fully, so `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
                     v
                 } else {
                     parse_raku_int_from_str(&s)?
@@ -1209,7 +1249,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Date/DateTime 0-arg methods
     match target.view() {
-        ValueView::Instance { attributes, .. } if has_datetime_attrs(&attributes) => {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if has_datetime_attrs(&attributes) => {
+            // A DateTime subclass keeps its class through `.utc` (Rakudo's
+            // `utc` is `in-timezone(0)`, a clone); the runtime's temporal
+            // dispatch reblesses the result.
+            if method == "utc" && class_name != "DateTime" {
+                return None;
+            }
             if let Some(result) =
                 temporal_dispatch::datetime_method_0arg(&(attributes).as_map(), method)
             {
@@ -1486,6 +1536,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Cost: O(1), the payload is an attribute lookup.
+    if method == "payload"
+        && let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        && class_name == "X::AdHoc"
+    {
+        let attrs = attributes.as_map();
+        return Some(Ok(attrs
+            .get("payload")
+            .or_else(|| attrs.get("message"))
+            .cloned()
+            .unwrap_or_else(|| Value::str(String::new()))));
+    }
+
     // Exception/X:: methods: gist, Str, message
     if let ValueView::Instance {
         class_name,
@@ -1629,11 +1696,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     return Some(Ok(Value::NIL));
                 }
+                // Cost: O(1).
                 "backtrace" => {
                     if let Some(bt) = attributes.as_map().get("backtrace") {
                         return Some(Ok(bt.clone()));
                     }
-                    return Some(Ok(Value::str(String::new())));
+                    return Some(Ok(Value::NIL));
                 }
                 _ => {}
             }

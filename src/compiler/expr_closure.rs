@@ -486,6 +486,7 @@ impl Compiler {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: false,
+                code: Default::default(),
                 trait_args: Vec::new(),
             }]
         } else {
@@ -669,15 +670,8 @@ impl Compiler {
             self.bind_terminal = true;
             // Mark the RHS as a direct bind target so an Index source
             // (`%h{k} := %d<t>`) takes the per-site `__mutsu_bind_index_ref`
-            // wrap in `compile_call_arg` instead of the `is rw` call-arg
-            // writeback temps (`__mutsu_index_rw_arg_N` + SetGlobal). Those
-            // temps are compile-time-fixed globals reused verbatim on every
-            // loop iteration, and their "write through the existing
-            // ContainerRef" semantics corrupt the PREVIOUS iteration's bound
-            // cell (a `for ... { %s{$k} := %d<t> }` loop had the first key's
-            // element track the latest source value). There is no function
-            // call after a bind RHS, so the writeback machinery is never
-            // needed here.
+            // wrap in `compile_call_arg`, which tags the promoted element cell
+            // as a bind source.
             self.bind_target_direct = true;
             self.compile_expr(value);
             self.scalar_bind_autovivify = saved_av;
@@ -856,8 +850,38 @@ impl Compiler {
         // `(state buf32 $w .= new)[3] = 77` and `($a, 42, $b)[1, 3] = ...`
         // subscript what the parentheses hold, so the shape dispatch below looks
         // through the marker the parser records for every `(...)`.
+        let original_target = target;
         let target = target.peel_parens();
         if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
+            return;
+        }
+        if matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            && crate::parser::index_bind_target_is_immutable(original_target)
+        {
+            // An immutable subscript cannot receive a binding. Evaluate the
+            // target, index, and RHS first, then throw at run time so earlier
+            // statements and operand side effects happen in source order.
+            self.compile_expr(target);
+            self.code.emit(OpCode::Pop);
+            self.compile_expr(index);
+            self.code.emit(OpCode::Pop);
+            if let Expr::Call { args, .. } = value
+                && let Some(rhs) = args.first()
+            {
+                self.compile_expr(rhs);
+                self.code.emit(OpCode::Pop);
+            }
+            let message = "Cannot use bind operator with this left-hand side";
+            let exception = Value::make_instance(
+                Symbol::intern("X::Bind"),
+                std::collections::HashMap::from([(
+                    "message".to_string(),
+                    Value::str_from(message),
+                )]),
+            );
+            let idx = self.code.add_constant(exception);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         // Binding (`:=`) to a WhateverCode subscript (`@a[*-1] := 42`) is illegal:

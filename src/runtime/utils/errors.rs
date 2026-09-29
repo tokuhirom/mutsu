@@ -72,6 +72,9 @@ pub(crate) fn got_type_name(val: &Value) -> String {
     match val.view() {
         ValueView::Package(sym) => {
             let name = sym.resolve();
+            if name.contains('\u{0}') {
+                return crate::value::user_facing_type_name(&name).into_owned();
+            }
             crate::value::enum_display_name(&name).unwrap_or(name)
         }
         ValueView::Enum { enum_type, .. } => {
@@ -205,6 +208,15 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
     // the message names it the way rakudo does: by its declared name (#9654).
     let expected_display = crate::value::enum_display_name(expected);
     let expected = expected_display.as_deref().unwrap_or(expected);
+    // A lexical (`my`) type's storage name carries its declaration-site id
+    // (ADR-0047); the message names it by its source spelling.
+    let demangled;
+    let expected = if expected.contains('\u{0}') {
+        demangled = crate::value::user_facing_type_name(expected).into_owned();
+        demangled.as_str()
+    } else {
+        expected
+    };
     let got_type = got_type_name(val);
     let repr = value_short_repr(val);
     if repr.is_empty() {

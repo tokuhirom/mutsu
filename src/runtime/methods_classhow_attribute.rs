@@ -267,6 +267,9 @@ impl Interpreter {
             Value::package(Symbol::intern(&type_name)),
         );
         meta.insert("has_accessor".to_string(), Value::truth(is_public));
+        if let Some(message) = self.class_attribute_deprecated(owner, attr_name) {
+            meta.insert("DEPRECATED".to_string(), Value::str(message));
+        }
         // `is_built`: whether `.new` initializes the attribute from a named
         // arg — true for public attrs, false for `has $!x` privates, and
         // overridable by the `is built(...)` trait (rakudo; JSON::Marshal's

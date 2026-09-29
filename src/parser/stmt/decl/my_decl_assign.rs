@@ -708,14 +708,17 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             }
         }
         Some(c) if s.name.starts_with('%') => Expr::BareWord(format!("Hash[{c}]")),
-        // A definedness smiley constrains the *variable*, not the invocant of
-        // the `.=` call: `my Pod::Block::Declarator:D $pod .= new` calls
-        // `Pod::Block::Declarator.new`, and a literal `K:D` bareword resolves
-        // to no type at all ("no such method new on K:D"). The `@`/`%` arms
-        // above deliberately keep the smiley, because there the constraint is
-        // the *element* type and `Array[Int:D]` is the real container type.
+        // In v6.c, `.=` calls the declared type, including its smiley, so
+        // `my Int:D $x .= new` tries to instantiate Int:D and fails. Later
+        // revisions use the base type. The `@`/`%` arms above always keep the
+        // smiley because it constrains the element of the container type.
         Some(c) => {
-            Expr::BareWord(crate::parser::stmt::decl::strip_type_smiley_suffix(c).to_string())
+            let target = if crate::parser::current_language_version_starts_with("6.c") {
+                c.as_str()
+            } else {
+                crate::parser::stmt::decl::strip_type_smiley_suffix(c)
+            };
+            Expr::BareWord(target.to_string())
         }
         // Untyped: `.= new` desugars to `$var = $var.new(...)`, so the invocant is
         // the variable itself, NOT a type named after it. Using a `@c`-named
@@ -728,6 +731,16 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             _ => Expr::BareWord(s.name.clone()),
         },
     };
+    // The untyped form's self-read is the `.=` invocant, not a use of the
+    // variable in its own initializer: exempt it from that check
+    // (`outer_redecl`, X::Syntax::Variable::Initializer).
+    let mut custom_traits = s.custom_traits.clone();
+    if !matches!(target_expr, Expr::BareWord(_)) {
+        custom_traits.push((
+            crate::parser::outer_redecl::METHOD_ASSIGN_DECL_TRAIT.to_string(),
+            None,
+        ));
+    }
     let expr = Expr::MethodCall {
         target: Box::new(target_expr),
         name: Symbol::intern(&method_name),
@@ -744,7 +757,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         is_dynamic: s.has_dynamic_trait,
         is_export: s.has_export_trait,
         export_tags: s.export_tags.clone(),
-        custom_traits: s.custom_traits.clone(),
+        custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
     // Handle trailing comma list

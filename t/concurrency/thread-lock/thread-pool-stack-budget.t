@@ -5,7 +5,7 @@ use Test;
 # regardless when every worker is blocked, and turns a thread the OS refuses
 # into a catchable X::AdHoc instead of a panic.
 
-plan 7;
+plan 9;
 
 my $exe = $*EXECUTABLE.absolute;
 
@@ -52,7 +52,7 @@ my $burst = q:to/CODE/;
 }
 
 if $*KERNEL.name ne 'linux' || !"/bin/bash".IO.e {
-    skip 'ulimit -v needs Linux and bash', 4;
+    skip 'ulimit -v needs Linux and bash', 6;
 }
 else {
     # The #9377 shape: under a 3 GB address-space limit, 64 x 256 MiB stacks
@@ -60,6 +60,27 @@ else {
     my ($code, $out, $err) = run-child($burst, :ulimit<3000000>);
     is $out.trim, '64', 'a start burst completes under ulimit -v';
     unlike $err, /panicked/, '... without a panic';
+
+    # A burst of workers that all BLOCK on one promise forces the pool to grow
+    # past the budget (every worker is blocked). Those required threads must
+    # step DOWN the stack tiers: taking a full 256 MiB stack each past the
+    # budget spent the heap's half of the limit, so a later spawn broke its
+    # promise with EAGAIN or the next malloc aborted the process (the JobQueue
+    # distribution's t/01-queue under the ecosystem sandbox's 6 GB limit).
+    my $blocked = q:to/CODE/;
+        my $gate = Promise.new;
+        my atomicint $parked = 0;
+        my @p = (^48).map: { start { $parked⚛++; await $gate; 1 } };
+        my $t0 = now;
+        sleep 0.01 until ⚛$parked == 48 || now - $t0 > 20;
+        $gate.keep;
+        await Promise.anyof(Promise.allof(@p), Promise.in(30));
+        say @p.grep({ .status ~~ Kept }).elems;
+        CODE
+    my ($bcode, $bout, $berr) = run-child($blocked, :ulimit<6000000>);
+    is $bout.trim, '48', 'a burst of blocked start workers completes under ulimit -v'
+        or diag "stderr: $berr";
+    is $bcode, 0, '... and exits cleanly';
 
     # Leave the process almost no address space beyond what it already uses,
     # so no thread stack fits: every refusal must be a catchable X::AdHoc.

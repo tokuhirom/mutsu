@@ -17,7 +17,10 @@ mod numeric;
 mod str_match;
 
 pub(crate) use base::native_base_with_options;
-pub(crate) use buf::{read_f32_endian, read_f64_endian, read_int_value};
+pub(crate) use buf::{
+    buf_get_int_items, is_buf_like, read_f32_endian, read_f64_endian, read_int_value,
+    resolve_buf_index,
+};
 pub(crate) use dispatch_1arg::native_method_1arg;
 pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{fmt_joinable_target, native_contains_with_options, pair_key_value};

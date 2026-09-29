@@ -1198,6 +1198,9 @@ pub fn raku_value(v: &Value) -> String {
         // `Match.new(...)` form, the same as a direct `$/.raku`. Without this,
         // `$/.list.raku` / `$/.caps.raku` / an array holding a Match stringified
         // the Match to its matched text instead.
+        ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID => {
+            "IterationEnd".to_string()
+        }
         ValueView::Instance { attributes, .. } if v.is_match_instance() => {
             super::match_helpers::match_raku_repr(&attributes.as_map())
         }

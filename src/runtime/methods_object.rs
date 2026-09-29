@@ -365,23 +365,25 @@ impl Interpreter {
             // See `NativeCtorPlan::attrs_fully_known`. Roles are flattened into
             // `ClassDef::attributes` at composition time, so only the MRO's
             // classes need to be registered for the attribute set to be complete.
-            // Two extra guards keep the built-in attribute-bag classes permissive:
+            // Extra guards keep built-in attribute-bag classes permissive:
             // an `Exception` anywhere in the MRO (`message`/`payload`/`got`/… are
             // not declared anywhere), and a class that declares no attribute at
             // all (every built-in `X::…` type is registered with an empty
-            // attribute list and used purely as a bag).
-            let attrs_fully_known = !class_attrs.is_empty() && {
-                let registry = self.registry();
-                mro.iter().all(|cls| {
-                    cls != "Exception"
-                        && (matches!(cls.as_str(), "Any" | "Mu" | "Cool")
+            // attribute list and used purely as a bag). `IO::Handle` has a
+            // declared default path but still accepts native option attributes.
+            let attrs_fully_known =
+                !class_attrs.is_empty() && !mro.iter().any(|cls| cls == "IO::Handle") && {
+                    let registry = self.registry();
+                    mro.iter().all(|cls| {
+                        cls != "Exception"
+                            && (matches!(cls.as_str(), "Any" | "Mu" | "Cool")
                             || registry.classes.contains_key(cls)
                             // A composed role shows up in the MRO; its attributes
                             // are flattened into `class_attrs`, so a known role is
                             // just as complete as a known class.
-                            || registry.roles.contains_key(cls))
-                })
-            };
+                                || registry.roles.contains_key(cls))
+                    })
+                };
             // Does any `is default(...)` element default exist keyed by this
             // class? `apply_container_attribute_defaults` looks defaults up by
             // the receiver class name only, so a key with a matching class is

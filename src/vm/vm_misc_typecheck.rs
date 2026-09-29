@@ -50,6 +50,15 @@ impl Interpreter {
         if var_name.is_some_and(|name| name.starts_with('%')) {
             return Ok(());
         }
+        // The following bind store checks a Proxy's FETCH value and installs
+        // the Proxy container. Leave that check to the store so FETCH runs
+        // once, including when the RHS is wrapped in a VarRef.
+        if bind_mode
+            && var_name.is_some_and(|name| name.starts_with('$'))
+            && value.unwrap_varref().is_proxy_value()
+        {
+            return Ok(());
+        }
         // A *non-lazy* lazy-positional RHS (e.g. a plain `gather` coroutine, whose
         // view is `LazyList`, not `Array`/`Seq`) is reified here so both native and
         // boxed typed arrays check/coerce its elements through the normal eager-list
@@ -357,6 +366,12 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str(desc.to_string()));
                     return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
                 }
+                if bind_mode {
+                    return Err(crate::runtime::utils::type_check_binding_typed_error(
+                        base_constraint,
+                        &value,
+                    ));
+                }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
                     _ => None,
@@ -368,12 +383,6 @@ impl Interpreter {
                     // explode the Failure first (Raku behavior)
                     if let Some(err) = self.failure_to_runtime_error_if_unhandled(&value) {
                         return Err(err);
-                    }
-                    if bind_mode {
-                        return Err(crate::runtime::utils::type_check_binding_typed_error(
-                            base_constraint,
-                            &value,
-                        ));
                     }
                     return Err(if let Some(var_name) = var_name {
                         if self.is_definite_constraint(constraint) {

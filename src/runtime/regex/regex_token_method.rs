@@ -478,31 +478,18 @@ impl Interpreter {
         {
             return None;
         }
-        // Scratch interpreter (mirrors `try_regex_subrule_as_method`): the
-        // regex engine runs on `&self`, but user `find_method` / wrapper code
-        // needs a mutable interpreter. Shared-cell values (module `our` vars)
-        // keep mutations visible to the parent.
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(pkg.as_str().to_owned())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(pkg.id())),
-            ..self.new_regex_scratch_sharing_io()
-        };
-        self.copy_full_registry_into(&mut interp);
-        if self.test_module_loaded() {
-            interp.loaded_modules = self.loaded_modules.clone();
-            interp.tap.ensure_state();
-        }
+        // User `find_method` / wrapper code runs in the grammar's package over
+        // an isolated copy of the env (mirrors `try_regex_subrule_as_method`).
+        // Shared-cell values (module `our` vars) keep mutations visible.
         let typeobj = Value::package(pkg);
-        let meth = match interp.call_method_with_values(
-            how,
-            "find_method",
-            vec![typeobj, Value::str(spec.lookup_name.clone())],
-        ) {
+        let found = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+            interp.call_method_with_values(
+                how,
+                "find_method",
+                vec![typeobj, Value::str(spec.lookup_name.clone())],
+            )
+        });
+        let meth = match found {
             Ok(v) => v,
             Err(e) => {
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR
@@ -525,7 +512,10 @@ impl Interpreter {
         let mut call_args = vec![cursor];
         call_args.extend(arg_values.iter().cloned());
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        let result = match interp.call_sub_value(meth, call_args, false) {
+        let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+            interp.call_sub_value(meth, call_args, false)
+        });
+        let result = match called {
             Ok(v) => v,
             Err(e) => {
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR

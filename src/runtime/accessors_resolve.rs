@@ -305,7 +305,7 @@ impl Interpreter {
             "__mutsu_multi_dispatch_name".to_string(),
             Value::str(name.to_string()),
         );
-        Value::make_sub(
+        let dispatcher = Value::make_sub(
             Symbol::intern(&self.current_package()),
             Symbol::intern(name),
             Vec::new(),
@@ -313,7 +313,14 @@ impl Interpreter {
             Vec::new(),
             false,
             dispatcher_env,
-        )
+        );
+        // The dispatcher belongs to the compunit its candidates were declared
+        // in. A `sub EXPORT` override built from it must not capture bareword
+        // calls made from that same unit (JSON::Pretty's
+        // `multi pretty-json(Cool:D)` calling the imported `to-json` it also
+        // exports over): `callable_declared_in_unit_of` needs a `source_file`.
+        let unit_file = candidates.first().and_then(|c| c.source_file.as_deref());
+        Self::sub_with_source_file(dispatcher, unit_file)
     }
 
     /// The registration clone id for a named routine `package::name`, i.e. the

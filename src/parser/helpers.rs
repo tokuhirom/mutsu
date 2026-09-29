@@ -125,6 +125,15 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     Ok((rest, ()))
 }
 
+/// Skip a bracketed comment — ``#`{ ... }`` or a declarator block `#|{ ... }`
+/// / `#={ ... }` — returning the input after it, or `None` when `input` does
+/// not start with one that closes. Rakudo's regex whitespace is the main
+/// language's `ws`, so the regex scanners skip comments with this too.
+// Cost: O(n), n = length of the comment.
+pub(crate) fn skip_bracketed_comment(input: &str) -> Option<&str> {
+    skip_embedded_comment(input).or_else(|| skip_declarator_doc_comment(input))
+}
+
 /// Skip a declarator documentation comment.
 ///
 /// Supports block forms such as `#|{ ... }` and `#={ ... }`, including multiline

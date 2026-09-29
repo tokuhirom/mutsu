@@ -926,58 +926,15 @@ impl Interpreter {
                     if let Some(result) = self.try_augmented_builtin_new(class_key, &args)? {
                         return Ok(result);
                     }
-                    // Shared with the VM's native fast path. Only the formatter
-                    // case needs `self` (it renders a user Callable).
-                    let (date, formatter) = Self::build_native_date(&args)?;
-                    if let Some(formatter_value) = formatter {
-                        return self.render_date_formatter(date, formatter_value);
-                    }
-                    return Ok(date);
+                    // Shared with the VM's native fast path.
+                    return Self::build_native_date(&args);
                 }
                 "DateTime" => {
                     if let Some(result) = self.try_augmented_builtin_new(class_key, &args)? {
                         return Ok(result);
                     }
-                    // Shared with the VM's native fast path. Only the
-                    // `:formatter` case needs `self` (it renders a user
-                    // Callable); the common case is built natively.
-                    let (dt, formatter) = Self::build_native_datetime(&args)?;
-                    if let Some(formatter_value) = formatter
-                        && let ValueView::Instance {
-                            class_name,
-                            attributes,
-                            id,
-                        } = dt.view()
-                    {
-                        let mut attrs = attributes.to_map();
-                        attrs.insert("formatter".to_string(), formatter_value.clone());
-                        let dt_with_formatter =
-                            Value::write_back_sharing(&attributes, class_name, attrs, id);
-                        let saved_env = self.env().clone();
-                        let saved_readonly = self.enter_readonly_frame();
-                        let rendered = self
-                            .eval_call_on_value(formatter_value, vec![dt_with_formatter.clone()])?
-                            .to_string_value();
-                        *self.env_mut() = saved_env;
-                        self.exit_readonly_frame(saved_readonly);
-                        if let ValueView::Instance {
-                            class_name,
-                            attributes,
-                            id,
-                        } = dt_with_formatter.view()
-                        {
-                            let mut updated = attributes.to_map();
-                            updated
-                                .insert("__formatter_rendered".to_string(), Value::str(rendered));
-                            return Ok(Value::write_back_sharing(
-                                &attributes,
-                                class_name,
-                                updated,
-                                id,
-                            ));
-                        }
-                    }
-                    return Ok(dt);
+                    // Shared with the VM's native fast path.
+                    return Self::build_native_datetime(&args);
                 }
                 "IO::Socket::INET" => {
                     // Shared single implementation with the VM's native fast
@@ -1909,6 +1866,16 @@ impl Interpreter {
                                 let cn = class_name.resolve();
                                 if self.class_does_baggy_or_setty(&cn) {
                                     return self.construct_baggy_instance(&cn, &args);
+                                }
+                                // The inherited constructor multis of a builtin
+                                // temporal ancestor stay candidates next to the
+                                // subclass's own (`class Workdate is Date` with
+                                // only some `multi method new`): `Workdate.new($date)`
+                                // reaches `Date.new($date)`, blessed as the subclass.
+                                if let Some(built) =
+                                    self.construct_via_temporal_ancestor(&cn, &args)
+                                {
+                                    return built;
                                 }
                                 return Err(constructor_positional_error(&class_name.resolve()));
                             }

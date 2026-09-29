@@ -183,9 +183,6 @@ pub(crate) mod flags {
     /// never copy back into the caller. Mirrors
     /// `crate::runtime::utils::is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
-    /// A per-call-site index-rw / call-result temporary. Mirrors
-    /// `crate::runtime::utils::is_index_rw_call_temp`.
-    pub(crate) const INDEX_RW_CALL_TEMP: u16 = 1 << 1;
     /// A `__mutsu_type::<name>` typed-lexical metadata key.
     pub(crate) const TYPE_META: u16 = 1 << 2;
     /// An `nqp::<op>` routine name: a compiler-known primitive in a reserved
@@ -276,9 +273,6 @@ fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if crate::runtime::utils::is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT;
-    }
-    if crate::runtime::utils::is_index_rw_call_temp(s) {
-        f |= flags::INDEX_RW_CALL_TEMP;
     }
     if s.starts_with(TYPE_META_PREFIX) {
         f |= flags::TYPE_META;

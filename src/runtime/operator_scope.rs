@@ -42,6 +42,7 @@ impl Interpreter {
         if decl_units.is_empty() {
             return;
         }
+        self.operator_import_gen += 1;
         let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
         let families = table.entry(name_sym).or_default();
         for unit in decl_units {

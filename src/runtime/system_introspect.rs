@@ -26,7 +26,7 @@ impl Interpreter {
             // Current frame: use current env, current file/line, current code
             let line = callsite_line.unwrap_or(0);
             let code = self.current_routine_sub_value();
-            let my_hash = self.build_lexical_hash(&self.env, None);
+            let my_hash = self.build_lexical_hash(&self.env, None, self.current_package_sym());
             let mut attrs = ValueMap::default();
             attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("file".to_string(), Value::str(file));
@@ -62,8 +62,8 @@ impl Interpreter {
             .code
             .as_ref()
             .map(|frame| self.code_frame_value(frame))
-            .unwrap_or(Value::NIL);
-        let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
+            .unwrap_or_else(|| Self::routine_frame_code(entry));
+        let my_hash = self.build_lexical_hash(&entry.env, Some(depth), entry.package);
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(entry.line));
         attrs.insert("file".to_string(), Value::str(entry.file.clone()));
@@ -76,23 +76,88 @@ impl Interpreter {
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
     }
 
+    /// The code object for a frame whose entry carries no code: a method (its
+    /// body pushes no code frame) or the unit's mainline (`<unit>`). Only
+    /// name and package are known, which is what `.code.name` needs.
+    // Cost: O(1).
+    fn routine_frame_code(entry: &CallFrameEntry) -> Value {
+        if entry.synthetic {
+            return Value::NIL;
+        }
+        let (package, name) = match entry.routine {
+            Some(f) if !f.is_block && !f.name.is_empty() && f.name != "<unit>" => {
+                (f.package, f.name)
+            }
+            Some(f) if f.is_block => return Value::NIL,
+            _ => (Symbol::intern("GLOBAL"), Symbol::intern("<unit>")),
+        };
+        Value::make_sub(
+            package,
+            name,
+            std::sync::Arc::new(Vec::new()),
+            std::sync::Arc::new(Vec::new()),
+            vec![],
+            false,
+            Env::new(),
+        )
+    }
+
     /// Build a synthetic CallFrame for an enclosing `for` block. Its `code` is
-    /// the `Block` type object (`.^name` -> `Block`, `~~ Routine` -> False), its
+    /// a defined `Block` (`.^name` -> `Block`, `~~ Routine` -> False), its
     /// line is the call site, and its lexicals come from the current env (the
     /// block body is inlined into the enclosing routine's scope in mutsu).
     fn block_frame_value(&self, file: &str, callsite_line: Option<i64>) -> Value {
-        let code = Value::package(Symbol::intern("Block"));
-        let my_hash = self.build_lexical_hash(&self.env, None);
+        let code = Self::block_frame_code();
+        let my_hash = self.build_lexical_hash(&self.env, None, self.current_package_sym());
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(callsite_line.unwrap_or(0)));
         attrs.insert("file".to_string(), Value::str(file.to_string()));
-        Self::insert_callframe_code_attrs(&mut attrs, &code);
+        // A block frame is not a routine: no name/package/subtype/sub.
+        attrs.insert("subname".to_string(), Value::str(String::new()));
+        attrs.insert("package".to_string(), Value::str(String::new()));
+        attrs.insert("subtype".to_string(), Value::str(String::new()));
+        attrs.insert("sub".to_string(), Value::NIL);
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
         attrs.insert("inline".to_string(), Value::FALSE);
         attrs.insert("__depth".to_string(), Value::int(0));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Value::make_instance(Symbol::intern("CallFrame"), attrs)
+    }
+
+    /// A defined, empty `Block` standing in for the code object of a `for`
+    /// block frame (the real block body is inlined into the enclosing scope).
+    // Cost: O(1).
+    fn block_frame_code() -> Value {
+        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern(""),
+            params: std::sync::Arc::new(Vec::new()),
+            param_defs: std::sync::Arc::new(Vec::new()),
+            body: std::sync::Arc::new(Vec::new()),
+            is_rw: false,
+            is_raw: false,
+            env: Env::new(),
+            assumed_positional: Vec::new(),
+            assumed_named: ValueMap::default(),
+            id: crate::value::next_instance_id(),
+            empty_sig: false,
+            is_bare_block: true,
+            compiled_code: None,
+            compiled_fns: None,
+            compiled_routine: None,
+            is_decl_expr_thunk: false,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
+            upvalues: Vec::new(),
+            captured_fatal_mode: false,
+            param_name_syms_cache: std::sync::OnceLock::new(),
+            source_file_sym_cache: std::sync::OnceLock::new(),
+            state_scope_guard: None,
+        }))
     }
 
     /// Build the synthetic "setting" CallFrame that sits above the mainline.
@@ -163,8 +228,14 @@ impl Interpreter {
         Value::NIL
     }
 
-    fn build_lexical_hash(&self, env: &Env, callframe_depth: Option<usize>) -> Value {
+    fn build_lexical_hash(
+        &self,
+        env: &Env,
+        callframe_depth: Option<usize>,
+        package: Symbol,
+    ) -> Value {
         let mut hash = ValueMap::default();
+        hash.insert("::?PACKAGE".to_string(), Value::package(package));
         for (k, v) in env.iter() {
             // Skip internal keys and special variables
             if k.starts_with("__") || k.starts_with("?") || k.starts_with("*") || k.starts_with("=")

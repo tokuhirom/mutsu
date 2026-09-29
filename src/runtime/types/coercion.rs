@@ -81,7 +81,14 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
                 RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
             }
             ValueView::FatRat(n, d) => Value::int(n / d),
-            ValueView::Str(s) => Value::int(s.parse::<i64>().unwrap_or(0)),
+            ValueView::Str(s) => match s.parse::<i64>() {
+                Ok(n) => Value::int(n),
+                // Past i64: keep the exact big integer, not 0.
+                Err(_) => s
+                    .trim()
+                    .parse::<num_bigint::BigInt>()
+                    .map_or_else(|_| Value::int(0), Value::from_bigint),
+            },
             ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
             _ => value,
         },

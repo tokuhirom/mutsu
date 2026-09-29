@@ -2,12 +2,14 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+mod default;
+
 impl Compiler {
     /// Pre-qualify a class/role declaration's name with the compiler's
     /// `current_package` when compiling inside a `unit module`/`unit class`/
     /// `unit role` body. Bare names (no `::`) are rewritten to
-    /// `Pkg::Name`. Names that already contain `::` or are top-level
-    /// (current_package == "GLOBAL") are returned unchanged.
+    /// `Pkg::Name`. Compound names are relative as well; only `GLOBAL::`
+    /// names and top-level declarations stay unchanged.
     pub(super) fn qualify_decl_name(&self, stmt: &Stmt) -> Stmt {
         if !self.in_unit_package
             || self.current_package == "GLOBAL"
@@ -19,7 +21,7 @@ impl Compiler {
             Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
             _ => return stmt.clone(),
         };
-        if bare.contains("::") {
+        if bare.starts_with("GLOBAL::") {
             return stmt.clone();
         }
         let qualified = format!("{}::{}", self.current_package, bare);
@@ -124,7 +126,16 @@ impl Compiler {
                     repr: repr.clone(),
                     body: body.clone(),
                     language_version: language_version.clone(),
-                    custom_traits: custom_traits.clone(),
+                    custom_traits: {
+                        let mut traits = custom_traits.clone();
+                        if crate::qualified::is_qualified(Symbol::intern(&bare)) {
+                            traits.push((
+                                "__source_compound_name".to_string(),
+                                Some(Expr::Literal(Value::str(bare.clone()))),
+                            ));
+                        }
+                        traits
+                    },
                     is_unit: *is_unit,
                     implicit_grammar_parent: *implicit_grammar_parent,
                     is_grammar: *is_grammar,
@@ -154,7 +165,16 @@ impl Compiler {
                 body: body.clone(),
                 is_rw: *is_rw,
                 language_version: language_version.clone(),
-                custom_traits: custom_traits.clone(),
+                custom_traits: {
+                    let mut traits = custom_traits.clone();
+                    if crate::qualified::is_qualified(Symbol::intern(&bare)) {
+                        traits.push((
+                            "__source_compound_name".to_string(),
+                            Some(Expr::Literal(Value::str(bare.clone()))),
+                        ));
+                    }
+                    traits
+                },
             },
             _ => stmt.clone(),
         }
@@ -251,97 +271,6 @@ impl Compiler {
             | Expr::CaptureLiteral(es)
             | Expr::StringInterpolation(es) => any(es),
             _ => false,
-        }
-    }
-
-    /// Check if a default value expression statically mismatches a type constraint.
-    /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
-    fn check_default_type_mismatch(type_constraint: &str, expr: &Expr) -> Option<String> {
-        // Split off an optional type smiley (`:D` / `:U` / `:_`).
-        let (effective_constraint, smiley) = if let Some(b) = type_constraint.strip_suffix(":D") {
-            (b, Some('D'))
-        } else if let Some(b) = type_constraint.strip_suffix(":U") {
-            (b, Some('U'))
-        } else if let Some(b) = type_constraint.strip_suffix(":_") {
-            (b, Some('_'))
-        } else {
-            (type_constraint, None)
-        };
-        // Only a recognized concrete built-in type can be rejected at compile
-        // time. A subset / `where`-constrained type (`my $x is default(42) where
-        // * == 42`, compiled to an anonymous `__mutsu_anon_subset_N`) or any
-        // user-defined type narrows membership by a runtime predicate the compiler
-        // cannot evaluate, so it must NOT be statically flagged as a mismatch —
-        // the default may well satisfy it. S02-types/whatever.t "compile time
-        // WhateverCode / Junction evaluation" exercises exactly this.
-        const CHECKABLE_BUILTINS: &[&str] = &[
-            "Int", "Num", "Rat", "Bool", "Str", "Numeric", "Real", "Cool", "Any", "Mu", "Stringy",
-            "Complex", "Rational",
-        ];
-        if !CHECKABLE_BUILTINS.contains(&effective_constraint) {
-            return None;
-        }
-        // A concrete (defined) literal default can never bind to a `:U`
-        // (type-object-only) constraint, e.g. `my Int:U $y is default(0)`.
-        let is_concrete_literal = matches!(
-            expr,
-            Expr::Literal(lit)
-                if matches!(
-                    lit.view(),
-                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_) | ValueView::Bool(_) | ValueView::Rat(..)
-                )
-        );
-        if smiley == Some('U') && is_concrete_literal {
-            return Some(match expr {
-                Expr::Literal(v) => v.to_string_value(),
-                _ => "?".to_string(),
-            });
-        }
-        let value_type = match expr {
-            Expr::Literal(lit) => match lit.view() {
-                ValueView::Str(s) => {
-                    if effective_constraint != "Str"
-                        && effective_constraint != "Cool"
-                        && effective_constraint != "Any"
-                    {
-                        return Some(s.to_string());
-                    }
-                    return None;
-                }
-                ValueView::Int(_) => "Int",
-                ValueView::Num(_) => "Num",
-                ValueView::Bool(_) => "Bool",
-                ValueView::Nil => {
-                    // Nil is invalid for typed variables (Int, Str, etc.)
-                    // but valid for untyped (Any, Mu) or explicitly Nil-accepting types
-                    if effective_constraint != "Any"
-                        && effective_constraint != "Mu"
-                        && !effective_constraint.contains("Nil")
-                    {
-                        return Some("Nil".to_string());
-                    }
-                    return None;
-                }
-                _ => return None,
-            },
-            _ => return None, // non-literal, can't check statically
-        };
-        // Check type hierarchy: Int matches Numeric, Cool, Any, etc.
-        let mro: &[&str] = match value_type {
-            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Rat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-            _ => &[],
-        };
-        if mro.contains(&effective_constraint) {
-            None
-        } else {
-            Some(match expr {
-                Expr::Literal(v) => v.to_string_value(),
-                _ => "?".to_string(),
-            })
         }
     }
 
@@ -1269,6 +1198,22 @@ impl Compiler {
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // A sigil-less `constant b` is a TERM, a different symbol from
+                // a same-named `$b`; it is stored under its term-namespace key
+                // (`runtime::term_names`, #9962) so the two never share a local
+                // slot or an `env` entry. `spelled` keeps the name the program
+                // writes, for everything that tracks the constant BY that name
+                // (bareword resolution, redeclaration, exports, the package
+                // store); `name` is the storage key from here on.
+                let spelled = name;
+                let term_storage;
+                let name = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                {
+                    term_storage = crate::runtime::term_names::term_key(name);
+                    &term_storage
+                } else {
+                    name
+                };
                 // Snapshot-and-clear `bind_vardecl` immediately: it is a
                 // one-shot signal meant for THIS declaration's own store
                 // (set by an enclosing `SyntheticBlock`/inline-block for a
@@ -1341,6 +1286,8 @@ impl Compiler {
                             // Anonymous where-subsets are internal; never
                             // alias them under the enclosing package.
                             is_my: true,
+                            // The generated name is already unique per site.
+                            decl_id: 0,
                         };
                         let idx = self.code.add_stmt(subset_stmt);
                         self.code.emit(OpCode::RegisterSubset(idx));
@@ -1370,13 +1317,13 @@ impl Compiler {
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if is_constant_decl
-                    && !name.starts_with(['$', '@', '%', '&'])
+                    && !spelled.starts_with(['$', '@', '%', '&'])
                     && let Expr::BareWord(target) = expr
                 {
                     // A bare type object on the RHS makes this constant a
                     // type alias. Keep the spelling for runtime diagnostics,
                     // but let native storage and arithmetic use its target.
-                    self.type_aliases.insert(name.clone(), target.clone());
+                    self.type_aliases.insert(spelled.clone(), target.clone());
                 }
                 // A `constant` that shadows an outer constant of the same name
                 // (in an enclosing block or closure) is a fresh lexical binding,
@@ -1387,8 +1334,8 @@ impl Compiler {
                 // same-scope duplicate errors as X::Redeclaration below, so a hit
                 // here is always an outer shadow.
                 let shadows_outer_constant = is_constant_decl
-                    && (self.constant_vars_in_scope.contains(name.as_str())
-                        || self.outer_constant_names.contains(name.as_str()));
+                    && (self.constant_vars_in_scope.contains(spelled.as_str())
+                        || self.outer_constant_names.contains(spelled.as_str()));
                 if is_constant_decl {
                     // X::Redeclaration on a duplicate same-scope `constant` is only
                     // fired when the *sigil* matches. mutsu's AST strips the `$`
@@ -1409,9 +1356,9 @@ impl Compiler {
                             _ => None,
                         })
                         .unwrap_or_default();
-                    let redecl_key = format!("{}{}", constant_sigil, name);
+                    let redecl_key = format!("{}{}", constant_sigil, spelled);
                     if !self.constant_vars_current_scope.insert(redecl_key) {
-                        let sym = name.trim_start_matches(['$', '@', '%', '&']).to_string();
+                        let sym = spelled.trim_start_matches(['$', '@', '%', '&']).to_string();
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("symbol".to_string(), Value::str(sym));
                         attrs.insert("what".to_string(), Value::str_from("symbol"));
@@ -1421,15 +1368,22 @@ impl Compiler {
                         self.code.emit(OpCode::Die { user_throw: false });
                         return;
                     }
-                    self.constant_vars.insert(name.clone());
-                    self.constant_vars_in_scope.insert(name.clone());
+                    self.constant_vars.insert(spelled.clone());
+                    self.constant_vars_in_scope.insert(spelled.clone());
                     // A `constant` with a compile-time-constant scalar value is
                     // inlined at its read sites (ADR-0006 §2.2).
-                    self.note_constant_decl(name, expr);
-                } else {
-                    // An ordinary `my`/`state` of the same bare name shadows the
-                    // constant — mutsu strips sigils, so `my $DEBUG` and a
-                    // sigilless `constant DEBUG` collide. Stop inlining it.
+                    self.note_constant_decl(spelled, expr);
+                } else if !self
+                    .local_map
+                    .contains_key(crate::runtime::term_names::term_key(name).as_str())
+                {
+                    // An ordinary `my`/`state` of the same spelling shadows a
+                    // same-sigil constant (`constant $DEBUG` / `my $DEBUG`):
+                    // stop inlining it. A sigil-less `constant DEBUG` of THIS
+                    // unit is a different symbol from `$DEBUG` (#9962) and
+                    // keeps its value; one inherited from an enclosing unit is
+                    // conservatively forgotten, which only costs the inlining —
+                    // the bareword still resolves to the term at run time.
                     self.forget_constant(name);
                 }
                 // X::ParametricConstant: typed @/% constants are forbidden
@@ -1478,7 +1432,15 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                let reset = if !*is_state
+                // The parser marks a declaration whose initializer reads the
+                // new binding (`my $x = do { $x }`, `my $*X = $*X + 1`, #9770).
+                let init_sees_self = !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
+                let reset = if init_sees_self {
+                    DeclReset::Shadow
+                } else if !*is_state
                     && !*is_our
                     && !is_constant_decl
                     && !name.starts_with('@')
@@ -1497,6 +1459,13 @@ impl Compiler {
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let preapply_container_default = has_default_trait
+                    && has_explicit_initializer
+                    && name.starts_with('@')
+                    && !bind_vardecl
+                    && !is_constant_decl
+                    && !*is_state
+                    && !*is_our;
                 let default_trait_expr =
                     custom_traits.iter().find_map(|(trait_name, trait_arg)| {
                         if trait_name == "default" {
@@ -1623,13 +1592,30 @@ impl Compiler {
                 // loop re-wraps any throw. Placed AFTER the X::Redeclaration /
                 // X::ParametricConstant early-returns above so those compile-time
                 // errors are not themselves wrapped.
+                // The new binding is in scope for its own initializer, so a
+                // nested block there that reads it (`my $x = do { $x }`,
+                // `my $x = sub { $x }`) must resolve `$x` to the new slot, not
+                // to a shadowed outer `$x`. (A direct `my $x = $x` never gets
+                // here: the parser rejects it with
+                // X::Syntax::Variable::Initializer.) Any other declaration is
+                // declared after its initializer, which compiler-synthesized
+                // self-copies (`-> $_ is copy` lowers to `my $_ = $_`) rely on.
+                let early_slot = (init_sees_self || preapply_container_default)
+                    .then(|| self.declare_local(name));
+                if preapply_container_default {
+                    let slot = early_slot.expect("defaulted container has an early slot");
+                    self.emit_default_before_array_initializer(name_idx, slot, default_trait_expr);
+                }
                 let constant_init_phaser_start = if is_constant_decl {
-                    Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
+                    Some(self.code.emit(OpCode::CheckPhaserStart {
+                        end_ip: 0,
+                        is_begin: false,
+                    }))
                 } else {
                     None
                 };
                 if is_our_bare_decl {
-                    let qualified = self.qualify_our_variable_name(name);
+                    let qualified = self.qualify_our_storage_name(spelled, name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
                 } else if bind_vardecl
@@ -1775,7 +1761,9 @@ impl Compiler {
                 if let Some(start_idx) = constant_init_phaser_start {
                     self.code.emit(OpCode::CheckPhaserEnd);
                     let end_ip = self.code.ops.len() as u32;
-                    if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx]
+                    if let OpCode::CheckPhaserStart {
+                        end_ip: ref mut e, ..
+                    } = self.code.ops[start_idx]
                     {
                         *e = end_ip;
                     }
@@ -1824,7 +1812,10 @@ impl Compiler {
                         ));
                     }
                 }
-                let slot = self.declare_local(name);
+                let slot = match early_slot {
+                    Some(slot) => slot,
+                    None => self.declare_local(name),
+                };
                 if !*is_state
                     && !*is_our
                     && !is_constant_decl
@@ -1911,7 +1902,7 @@ impl Compiler {
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
                     if use_our_cell {
-                        let qualified = self.qualify_our_variable_name(name);
+                        let qualified = self.qualify_our_storage_name(spelled, name);
                         self.code
                             .our_locals
                             .push((slot as usize, qualified.clone()));
@@ -1961,13 +1952,17 @@ impl Compiler {
                         // keep Nil — S04-statements/with.t 49/56). The store keeps
                         // Nil verbatim and the ApplyVarTrait that follows replaces a
                         // still-Nil scalar with its default.
-                        if has_explicit_initializer && !has_default_trait {
+                        if has_explicit_initializer
+                            && (!has_default_trait || preapply_container_default)
+                        {
                             self.code.emit(OpCode::MarkExplicitInitializerContext);
                         }
                         // Mark this SetLocal as coming from a VarDecl so the VM
                         // can allow overwriting immutable containers (e.g. Blob)
                         // when the local slot is reused across loop iterations.
-                        self.code.emit(OpCode::MarkVarDeclContext);
+                        if !preapply_container_default {
+                            self.code.emit(OpCode::MarkVarDeclContext);
+                        }
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way
                         // an unshaped value-copy (`my @u = @shaped`) does.
@@ -2016,7 +2011,7 @@ impl Compiler {
                         // an `our` var declared inside a closure leaks the shadowing
                         // value back to the caller.
                         if *is_our && !shadows_outer_constant {
-                            let qualified = self.qualify_our_variable_name(name);
+                            let qualified = self.qualify_our_storage_name(spelled, name);
                             // Track this slot as `our`-scoped so BlockScope restoration
                             // can sync the local from its global after block exit.
                             self.code
@@ -2050,6 +2045,7 @@ impl Compiler {
                     && crate::runtime::Interpreter::export_stash_tag(&self.current_package)
                         .is_some()
                 {
+                    let name_idx = self.code.add_constant(Value::str(spelled.clone()));
                     self.code.emit(OpCode::PublishExportStashVar { name_idx });
                 }
                 if *is_export {
@@ -2063,6 +2059,10 @@ impl Compiler {
                             .collect::<Vec<Value>>();
                         Some(self.code.add_constant(Value::array(entries)))
                     };
+                    // The export is recorded under the declaration's storage
+                    // key: a sigil-less constant's term key (#9962) is what
+                    // tells the importer it is a term and not a sigil-stripped
+                    // `$`-scalar export (`our $x is export` records `x`).
                     self.code
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
@@ -2151,6 +2151,9 @@ impl Compiler {
                         self.code.emit(OpCode::Die { user_throw: false });
                         return;
                     }
+                    if trait_name == "default" && preapply_container_default {
+                        continue;
+                    }
                     if let Some(arg) = trait_arg {
                         // A custom variable trait may retain its argument (for
                         // example a callable used to parameterize a role), so a
@@ -2215,6 +2218,20 @@ impl Compiler {
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // `b = 5` on an in-scope sigil-less constant targets the term,
+                // stored under its term key (#9962), not a same-named `$b`. So
+                // does one whose target this unit cannot see at all (`EVAL
+                // 'b = 5'`); the VM falls back to the plain name when no term
+                // of that spelling is in scope.
+                let term_target;
+                let name = if *target_is_sigilless
+                    && (self.names_term_constant(name) || self.sigilless_target_is_unknown(name))
+                {
+                    term_target = crate::runtime::term_names::term_key(name);
+                    &term_target
+                } else {
+                    name
+                };
                 // Keep `provably_bare_receiver_vars` (see its doc, and the
                 // matching `Stmt::VarDecl` arm) live across a REASSIGNMENT
                 // too, not just the declaration: a plain scalar `=`/`:=` and a
@@ -3743,7 +3760,7 @@ impl Compiler {
             } => {
                 // CHECK phasers run at compile time. If an error occurs inside
                 // a CHECK phaser, Raku wraps it in X::Comp::BeginTime.
-                self.compile_check_phaser(body);
+                self.compile_check_phaser(body, false);
             }
             Stmt::Phaser {
                 kind: PhaserKind::Begin,
@@ -3755,7 +3772,7 @@ impl Compiler {
                 // CheckPhaserStart/End opcodes raise the `check_phaser_depth`
                 // counter, and a throw at depth > 0 is wrapped). The opcodes don't
                 // touch the stack, so the body's value/side-effects are preserved.
-                self.compile_check_phaser(body);
+                self.compile_check_phaser(body, true);
             }
             Stmt::Phaser {
                 kind: PhaserKind::Init | PhaserKind::Enter,
@@ -4510,10 +4527,7 @@ impl Compiler {
                     // `N::C` key and the second declaration is rejected.
                     let redeclaration_key = if let Some(absolute) = cname.strip_prefix("GLOBAL::") {
                         absolute.to_string()
-                    } else if self.current_package == "GLOBAL"
-                        || cname == self.current_package
-                        || cname.starts_with(&format!("{}::", self.current_package))
-                    {
+                    } else if self.current_package == "GLOBAL" {
                         cname.clone()
                     } else {
                         format!("{}::{}", self.current_package, cname)

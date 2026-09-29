@@ -508,8 +508,13 @@ impl Interpreter {
         // The topic is excluded for the reason `is_magic_sigilless_key` records:
         // `$_` lives under the bare key `_` and holds `Any` inside a routine, so
         // without the guard `my _ $x` would accept `_` as a type name.
+        // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
+        // namespace (#9962) and is consulted first.
         if !crate::env::is_magic_sigilless_key(name)
-            && let Some(ValueView::Package(target)) = self.env.get(name).map(Value::view)
+            && let Some(ValueView::Package(target)) = self
+                .term_value(name)
+                .or_else(|| self.env.get(name))
+                .map(Value::view)
         {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
@@ -522,7 +527,11 @@ impl Interpreter {
         // public class's own package still needs that lexical at instantiation
         // time. Consult the package-keyed module scope when the running code
         // belongs to that package.
-        if let Some(ValueView::Package(target)) = self.module_scope_lexical(name).map(Value::view) {
+        if let Some(ValueView::Package(target)) = self
+            .module_scope_lexical(&crate::runtime::term_names::term_key(name))
+            .or_else(|| self.module_scope_lexical(name))
+            .map(Value::view)
+        {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return true;
@@ -946,7 +955,8 @@ impl Interpreter {
             // short name `Hash`, shadowing CORE's `Hash` for its whole body
             // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
             // Real nesting (`unit module NL; class Hash`) still resolves.
-            if !self.compound_name_segment_is_not_a_scope(qualified)
+            if (crate::qualified::is_qualified(name_sym)
+                || !self.compound_name_segment_is_not_a_scope(qualified))
                 && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return Some(key);
@@ -989,7 +999,8 @@ impl Interpreter {
                 }
             }
             if let Some(ValueView::Package(target)) = self
-                .module_scope_lexical_for_owner(owner, &name)
+                .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
+                .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
                 .map(Value::view)
             {
                 let resolved = target.resolve();
@@ -1017,7 +1028,8 @@ impl Interpreter {
             }
         }
         if let Some(ValueView::Package(target)) = self
-            .module_scope_lexical_for_owner(owner, &name)
+            .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
+            .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
             .map(Value::view)
         {
             let resolved = target.resolve();
@@ -1366,6 +1378,17 @@ impl Interpreter {
         if crate::runtime::utils::is_known_type_constraint(base) {
             return true;
         }
+        // A well-known compound (`::`-qualified) core type name — pinned in
+        // raku-doc's type graph but not yet backed by a registry entry, the
+        // same gap `is_known_type_constraint` above closes for unqualified
+        // names. Without this, a role method's parameter validation (the
+        // only caller strict enough to notice) rejected `CompUnit::
+        // DependencySpecification` and `Distribution::Resource` as
+        // "Invalid typename" even though the identical signature on a sub
+        // or class method resolves them fine (#9835).
+        if crate::runtime::utils::is_known_compound_type(base) {
+            return true;
+        }
         // Check user-defined classes
         if self.has_class(base) {
             return true;
@@ -1473,12 +1496,15 @@ impl Interpreter {
         }
         let mut current = name.to_string();
         for _ in 0..16 {
-            let next =
-                self.get_env_with_main_alias(&current)
-                    .and_then(|value| match value.view() {
-                        crate::value::ValueView::Package(target) => Some(target.resolve()),
-                        _ => None,
-                    });
+            // A sigil-less `constant Foo = Int` is a term (#9962); a
+            // same-named `$Foo` holding a type object is not an alias.
+            let next = self
+                .term_binding(&current)
+                .or_else(|| self.get_env_with_main_alias(&current))
+                .and_then(|value| match value.view() {
+                    crate::value::ValueView::Package(target) => Some(target.resolve()),
+                    _ => None,
+                });
             match next {
                 Some(target) if target != current => current = target,
                 // Settled: either the name is not bound to a type object at

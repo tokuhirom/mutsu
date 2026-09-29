@@ -913,7 +913,7 @@ pub(crate) struct RegexToken {
     /// from a `constant`-declared value (which Rakudo inlines at compile
     /// time and so still participates in LTM ranking like a hand-written
     /// literal — ADR-0022 §2's "non-constant `$var` interpolation" row).
-    /// `ltm_atom_mode`'s callers and `ltm_litlen_at` treat a token with this
+    /// `ltm_atom_mode`'s callers and `regex_ltm_litend` treat a token with this
     /// set as a `Terminate` stopper: it neither extends the declarative
     /// prefix nor contributes to litlen. Always `false` outside
     /// `LTM_DECLARATIVE_MODE` measurement — it does not affect ordinary
@@ -958,12 +958,6 @@ pub(crate) struct NamedAtom {
 }
 
 impl NamedAtom {
-    /// The atom exactly as written between the angle brackets.
-    #[inline]
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
     /// This atom's parsed lookup spec, derived once.
     #[inline]
     pub(crate) fn spec(&self) -> &Arc<crate::runtime::regex::regex_helpers::NamedRegexLookupSpec> {
@@ -1149,6 +1143,20 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// A `$( code )` / `@( code )` contextualizer interpolation — or a
+    /// `"…$x.meth()…"` method-call chain inside a double-quoted atom, which
+    /// the interpolation pre-pass rewrites to `$( $x.meth() )` — evaluated
+    /// when the atom is matched, on the running interpreter (#10157). The
+    /// scalar form (`list: false`) matches the result's string value
+    /// literally; the list form matches an alternation over the elements
+    /// (a `Regex` element as a sub-regex, anything else literally). Opaque
+    /// to every static analysis, like [`RegexAtom::VarInterp`]: Rakudo
+    /// compiles the atom to code, which ends a declarative prefix (ADR-0046
+    /// probe Q).
+    CodeInterp {
+        code: Box<str>,
+        list: bool,
+    },
     /// A double-quoted atom (`"x @a[0]"`) the compiler lowered to a qq
     /// thunk (`crate::regex_qq_atoms`) whose result was not installed when
     /// the pattern was parsed: a `<$re>`-interpolated regex (its scope is

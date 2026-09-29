@@ -22,7 +22,7 @@ ok $p.isa("Point"), ".isa with own class";
 # raku: a defined instance's default gist is `ClassName.new(attr => value, ...)`
 # (same as .raku), not the type-object form `Point()`.
 is $p.gist, "Point.new(x => 3, y => 4)", ".gist";
-is $p.Str, "Point()", ".Str";
+like $p.Str, /^ 'Point<' \d+ '>' $/, ".Str (Mu.Str is Name<identity>)";
 
 # .raku / .perl
 is $p.raku, "Point.new(x => 3, y => 4)", ".raku";

@@ -563,6 +563,11 @@ impl Interpreter {
                 new_caps.ast = outcome.made;
                 return Some((pos, new_caps));
             }
+            RegexAtom::CodeInterp { code, list } => {
+                return self
+                    .regex_code_interp_ends(code, *list, chars, pos, current_caps, pkg, ignore_case)
+                    .pop();
+            }
             RegexAtom::ClosureInterpolation { code, body } => {
                 let target: String = chars.iter().collect();
                 let pattern_str = self.eval_regex_closure_interpolation(
@@ -762,15 +767,13 @@ impl Interpreter {
                         capture_saved.push((k.clone(), self.env.get(k).cloned()));
                         self.env.insert(k.clone(), v.clone());
                     }
-                    // An initializer that calls a METHOD has to run on the real
-                    // interpreter: the scratch one below carries only a lean
-                    // registry copy with no classes, so `:my @segs =
-                    // $req.path-segments;` (Cro's route matcher) died with "No
-                    // such method". Evaluate each non-dynamic declaration here,
-                    // with the lexicals declared before it installed around the
-                    // call so a later one can read — and dispatch on — an
-                    // earlier one. Dynamics (`:my %*PLAYED = ()`) and any other
-                    // statement shape keep the scratch path and its env diff.
+                    // Evaluate each non-dynamic declaration here, with the
+                    // lexicals declared before it installed around the call so
+                    // a later one can read — and dispatch on — an earlier one
+                    // (`:my @segs = $req.path-segments;`, Cro's route matcher).
+                    // Dynamics (`:my %*PLAYED = ()`) and any other statement
+                    // shape run together below over an isolated copy of the
+                    // env, and are harvested by an env diff.
                     let mut scratch_stmts: Vec<Stmt> = Vec::new();
                     for stmt in stmts.iter() {
                         let Stmt::VarDecl {
@@ -832,30 +835,24 @@ impl Interpreter {
                         }
                         return Some((pos, new_caps));
                     }
-                    let mut interp = Interpreter {
-                        env: self.env.clone(),
-                        // The scratch runs in this package. Both the string and its interned
-                        // mirror are set: `current_package_sym()` reads the mirror, and a
-                        // scratch that overrode only the string answered for the wrong
-                        // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-                        current_package: Arc::new(RwLock::new(self.current_package())),
-                        current_package_sym: std::sync::Arc::new(
-                            std::sync::atomic::AtomicU32::new(self.current_package_sym().id()),
-                        ),
-                        ..self.new_regex_scratch_sharing_io()
-                    };
-                    self.copy_decl_registry_into(&mut interp);
+                    let mut env = self.env.clone();
                     for (k, v) in current_caps
                         .regex_vars()
                         .iter()
                         .chain(new_caps.regex_vars())
                     {
-                        interp.env.insert(k.clone(), v.clone());
+                        env.insert(k.clone(), v.clone());
                     }
-                    let _ = interp.eval_block_value(&scratch_stmts);
-                    for (k, v) in &interp.env {
-                        // The topic is not a `:my` declaration — the scratch run
-                        // leaves `$_` holding the declaration's value, and
+                    // Run over an isolated copy of the env; what the
+                    // declarations wrote is read back out of it before it is
+                    // restored.
+                    let after = self.run_regex_sub_eval(env, None, |interp| {
+                        let _ = interp.eval_block_value(&scratch_stmts);
+                        interp.env.clone()
+                    });
+                    for (k, v) in &after {
+                        // The topic is not a `:my` declaration — the isolated
+                        // run leaves `$_` holding the declaration's value, and
                         // recording it would let a later code block / assertion
                         // (which installs `regex_vars` into its env) see that stale
                         // value as `$_` instead of the real topic.
@@ -866,7 +863,7 @@ impl Interpreter {
                             new_caps.regex_vars_mut().insert(k.resolve(), v.clone());
                         }
                     }
-                    // The env diff above only sees a *change*. The scratch env is
+                    // The env diff above only sees a *change*. The isolated env is
                     // cloned from this one, so a declaration whose write reached
                     // the shared storage compares equal and is missed — which left
                     // the lexical out of `regex_vars` entirely. It then only worked
@@ -881,7 +878,7 @@ impl Interpreter {
                         if name == "_" || new_caps.regex_vars().contains_key(name) {
                             continue;
                         }
-                        if let Some(v) = interp.env.get(name) {
+                        if let Some(v) = after.get(name) {
                             new_caps.regex_vars_mut().insert(name.clone(), v.clone());
                         }
                     }

@@ -26,6 +26,13 @@ pub(crate) fn block_newline_terminates(
     let Some(consumed) = crate::parser::expr::postfix::consumed_span(input, rest) else {
         return false;
     };
+    // The `}` belongs to the LAST operand parsed, not to the whole left side:
+    // in `$a ~ q{>}\n~ $b` the loop's `left` is already `$a ~ q{>}`, and the
+    // brace that ends it is the quote's.
+    let mut left = left;
+    while let Expr::Binary { right, .. } = left {
+        left = right;
+    }
     // A `q{...}`/`qq{...}` quote also leaves a literal expression whose source
     // ends in `}`.  Its delimiter is not a block boundary: `qq{head}\n~ $x`
     // continues the expression in Rakudo.  The AST is the reliable

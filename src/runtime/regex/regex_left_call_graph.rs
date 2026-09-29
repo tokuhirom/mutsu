@@ -299,7 +299,9 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
             out.push((pkg, spec.lookup_sym));
             Some(true)
         }
-        RegexAtom::ClosureInterpolation { .. } | RegexAtom::RecurseSelf(_) => None,
+        RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
+        | RegexAtom::RecurseSelf(_) => None,
     }
 }
 

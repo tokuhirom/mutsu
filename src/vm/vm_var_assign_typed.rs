@@ -545,14 +545,7 @@ impl Interpreter {
                 match val.view() {
                     ValueView::Int(i) => i,
                     ValueView::Sub(data) => {
-                        let mut sub_env = data.env.clone();
-                        for p in data.params.iter() {
-                            sub_env.insert(p.to_string(), Value::int(len));
-                        }
-                        let saved_env = std::mem::take(vm.env_mut());
-                        *vm.env_mut() = sub_env;
-                        let result = vm.eval_block_value(&data.body).unwrap_or(Value::NIL);
-                        *vm.env_mut() = saved_env;
+                        let result = vm.call_subscript_code(&data, len);
                         match result.view() {
                             ValueView::Int(i) => i,
                             _ => 0,
@@ -759,23 +752,27 @@ impl Interpreter {
                 result.push_str(&mixed?.to_string_value());
                 continue;
             }
-            // For non-Buf instances, try .Stringy() for string context (Raku spec:
-            // string interpolation calls .Str which delegates to .Stringy).
-            if let ValueView::Instance { .. } = v.view() {
+            // A native `Str` beats the inherited default `Stringy`.
+            if let ValueView::Instance { class_name, .. } = v.view() {
+                let cn = class_name.resolve();
+                if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
+                    let str_result =
+                        self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())?;
+                    result.push_str(&str_result.to_string_value());
+                    continue;
+                }
                 if let Ok(str_result) =
                     self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())
                 {
                     result.push_str(&str_result.to_string_value());
                     continue;
                 }
-                // Fall back to .Str() if .Stringy() is not defined
                 if let Ok(str_result) =
                     self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())
                 {
                     result.push_str(&str_result.to_string_value());
                     continue;
                 }
-                // Fall through to default stringification
                 result.push_str(&crate::runtime::utils::coerce_to_str(&v));
                 continue;
             }
@@ -845,8 +842,8 @@ impl Interpreter {
         // other failure the method body raised.
         // An `Int` subclass takes `Int`'s own `postfix:<++>` candidate, as in
         // Rakudo: its payload steps, and a user `.succ` on the subclass is not
-        // consulted (`builtins::int_subclass`).
-        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(val) {
+        // consulted (`builtins::numeric_subclass`).
+        if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
             return Ok(Self::increment_value(&payload));
         }
         if let ValueView::Instance { .. } = val.view() {
@@ -966,8 +963,8 @@ impl Interpreter {
         // tree-walk — one method-dispatch path, not two.
         // An `Int` subclass takes `Int`'s own `postfix:<-->` candidate, as in
         // Rakudo: its payload steps, and a user `.pred` on the subclass is not
-        // consulted (`builtins::int_subclass`).
-        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(val) {
+        // consulted (`builtins::numeric_subclass`).
+        if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
             return Ok(Self::decrement_value(&payload));
         }
         if let ValueView::Instance { .. } = val.view() {

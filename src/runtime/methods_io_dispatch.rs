@@ -119,6 +119,7 @@ impl Interpreter {
     /// `None` below language version 6.e, so the method is simply not there —
     /// rakudo reports `No such method 'snitch'` without the pragma, exactly as
     /// falling through to ordinary dispatch does here.
+    // Cost: O(n + r + c), n = Seq items, r = rendered output and c = logger cost.
     pub(super) fn dispatch_snitch(
         &mut self,
         target: &Value,
@@ -139,7 +140,21 @@ impl Interpreter {
                 self.dispatch_note(&shown)
             }
             Some(snitcher) => {
-                self.call_sub_value(snitcher.clone(), vec![target.deref_container()], false)
+                let shown = target.deref_container();
+                // Calling the snitcher with an unitemized Seq gives it a List
+                // of the Seq's items. The raw invocant itself still returns
+                // unchanged after the call.
+                let logged_arg = match shown.view() {
+                    ValueView::Seq(items) => Value::array(items.to_vec()),
+                    _ => shown,
+                };
+                // The enclosing `.snitch(&dd)` call names `&dd` as its own
+                // argument. That source name does not describe the invocant
+                // passed to the logger and must not appear in dd's output.
+                let saved_sources = self.take_pending_call_arg_sources();
+                let result = self.call_sub_value(snitcher.clone(), vec![logged_arg], false);
+                self.set_pending_call_arg_sources(saved_sources);
+                result
             }
         };
         Some(logged.map(|_| target.clone()))

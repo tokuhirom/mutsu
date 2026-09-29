@@ -4,84 +4,71 @@ use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 
-/// Parse a user-declared circumfix operator: `open args close` → Call `circumfix:<open close>(args)`
+/// Parse a user-declared circumfix operator: `open semilist close` → Call
+/// `circumfix:<open close>(semilist)`.
+///
+/// Like rakudo, the operator receives its whole semilist as ONE positional
+/// argument: `⦃ 1, 2 ⦄` passes the List `(1, 2)`, `⦃ ⦄` the empty List, and a
+/// lone `⦃ a => 1 ⦄` the Pair itself -- as data, never as a named argument.
 pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
-    if let Some((name, open_len, close_delim)) =
+    let Some((name, open_len, close_delim)) =
         crate::parser::stmt::simple::match_user_declared_circumfix_op(input)
-    {
-        let open = &input[..open_len];
-        let rest = &input[open_len..];
-        let (rest, _) = ws(rest)?;
-        // Check for empty circumfix: `open close` with nothing inside
+    else {
+        return Err(PError::expected("declared circumfix operator"));
+    };
+    let open = &input[..open_len];
+    let (mut rest, _) = ws(&input[open_len..])?;
+    let mut items = Vec::new();
+    let mut saw_comma = false;
+    let after = loop {
         if let Some(after) = rest.strip_prefix(close_delim.as_str()) {
-            return Ok((
-                after,
-                Expr::Call {
-                    name: Symbol::intern(&name),
-                    args: vec![],
-                },
-            ));
+            break after;
         }
-        // Parse first argument
-        let (r, arg) = expression(rest)?;
-        let args = vec![arg];
-        let (r, _) = ws(r)?;
-        // Check if more args follow (comma-separated)
-        if let Some(after_comma) = r.strip_prefix(',') {
-            let (r, _) = ws(after_comma)?;
-            return parse_circumfix_rest(r, open, &close_delim, name, args);
-        }
-        // Check for closing delimiter
-        if let Some(after) = r.strip_prefix(close_delim.as_str()) {
-            return Ok((
-                after,
-                Expr::Call {
-                    name: Symbol::intern(&name),
-                    args,
-                },
-            ));
-        }
-        return Err(circumfix_fail_goal(open, &close_delim, r));
-    }
-    Err(PError::expected("declared circumfix operator"))
-}
-
-fn parse_circumfix_rest<'a>(
-    mut rest: &'a str,
-    open: &str,
-    close_delim: &str,
-    name: String,
-    mut args: Vec<Expr>,
-) -> PResult<'a, Expr> {
-    loop {
-        if let Some(after) = rest.strip_prefix(close_delim) {
-            return Ok((
-                after,
-                Expr::Call {
-                    name: Symbol::intern(&name),
-                    args,
-                },
-            ));
-        }
-        let (r, arg) = expression(rest)?;
-        args.push(arg);
+        let (r, item) = expression(rest)?;
+        items.push(item);
         let (r, _) = ws(r)?;
         if let Some(after_comma) = r.strip_prefix(',') {
+            saw_comma = true;
             let (r, _) = ws(after_comma)?;
             rest = r;
             continue;
         }
-        let (r, _) = ws(r)?;
-        if let Some(after) = r.strip_prefix(close_delim) {
-            return Ok((
-                after,
-                Expr::Call {
-                    name: Symbol::intern(&name),
-                    args,
-                },
-            ));
+        match r.strip_prefix(close_delim.as_str()) {
+            Some(after) => break after,
+            None => return Err(circumfix_fail_goal(open, &close_delim, r)),
         }
-        return Err(circumfix_fail_goal(open, close_delim, r));
+    };
+    let arg = match items.pop() {
+        Some(item) if items.is_empty() && !saw_comma => positional_operand(item),
+        last => {
+            items.extend(last);
+            Expr::ArrayLiteral(items)
+        }
+    };
+    Ok((
+        after,
+        Expr::Call {
+            name: Symbol::intern(&name),
+            args: vec![arg],
+        },
+    ))
+}
+
+/// An operator's operand is always positional: rakudo compiles
+/// `⦃ a => 1 ⦄` to `&circumfix:<⦃ ⦄>(a => 1)` with the Pair as *data*, never
+/// as a named argument (only a call's own argument list turns `=>` into a
+/// named). So a pair-shaped operand is marked positional here, exactly like a
+/// parenthesized `(a => 1)` argument.
+pub(crate) fn positional_operand(arg: Expr) -> Expr {
+    let is_pair = match &arg {
+        Expr::Binary { op, .. } => *op == crate::token_kind::TokenKind::FatArrow,
+        Expr::Literal(lit) => matches!(lit.view(), crate::value::ValueView::Pair(..)),
+        _ => false,
+    };
+    if is_pair {
+        Expr::PositionalPair(Box::new(arg))
+    } else {
+        arg
     }
 }
 

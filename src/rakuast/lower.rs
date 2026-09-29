@@ -917,6 +917,7 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export: false,
         export_tags: Vec::new(),
         is_my: false,
+        decl_id: crate::ast::next_class_decl_id(),
     })
 }
 
@@ -1216,6 +1217,7 @@ fn positional_param(name: &str) -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        code: Default::default(),
         trait_args: Vec::new(),
     }
 }

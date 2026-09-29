@@ -386,7 +386,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // bare `[1, 2]`). `.List` on a `List` is identity, so a
                 // hand-itemized element of a List literal survives
                 // (`($[1,2],).List[0].raku` is `$[1, 2]`).
-                let deitemize = matches!(kind, crate::value::ArrayKind::Array);
+                let deitemize = kind.is_real_array();
                 let vec: Vec<Value> = items
                     .iter()
                     .enumerate()
@@ -598,11 +598,26 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // channel that only the stateful path can drain, and
                     // answering the empty `values` attribute here would report
                     // an open stream as an empty one.
-                    if method == "list"
-                        && attributes.as_map().contains_key("supply_id")
-                        && !attributes.as_map().contains_key("proc_output")
-                    {
-                        return None;
+                    if method == "list" {
+                        let attrs = attributes.as_map();
+                        if attrs.get("live").is_some_and(Value::truthy)
+                            && let Some(supplier_id) =
+                                attrs.get("supplier_id").and_then(Value::as_int)
+                            && supplier_id > 0
+                        {
+                            return Some(
+                                crate::runtime::native_methods::collect_supplier_values(
+                                    supplier_id as u64,
+                                    Vec::new(),
+                                    false,
+                                    true,
+                                )
+                                .map(wrap),
+                            );
+                        }
+                        if attrs.contains_key("supply_id") && !attrs.contains_key("proc_output") {
+                            return None;
+                        }
                     }
                     let items = match attributes.as_map().get("values").map(Value::view) {
                         Some(ValueView::Array(items, ..)) => items.to_vec(),

@@ -3,10 +3,13 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 mod args_matching;
+mod args_matching_simple;
+pub(crate) use args_matching_simple::unwrap_varref_value_for_dispatch;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
 mod native_backed_class;
+mod param_exprs;
 mod role_candidate;
 mod role_mixin_class;
 mod roles;
@@ -100,15 +103,14 @@ pub(super) fn predicate_requires_defined(predicate: &Expr) -> bool {
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
-    if let Some(base) = constraint.strip_suffix(":U") {
-        (base, Some(":U"))
-    } else if let Some(base) = constraint.strip_suffix(":D") {
-        (base, Some(":D"))
-    } else if let Some(base) = constraint.strip_suffix(":_") {
-        (base, Some(":_"))
-    } else {
-        (constraint, None)
+    for smiley in [":U", ":D", ":_"] {
+        if let Some(base) = constraint.strip_suffix(smiley)
+            && !base.ends_with(':')
+        {
+            return (base, Some(smiley));
+        }
     }
+    (constraint, None)
 }
 
 /// Split an object-hash constraint of the form `ValueType{KeyType}` into its
@@ -835,8 +837,7 @@ impl Interpreter {
     /// directly.
     pub(crate) fn note_param_bound_aggregate(&mut self, name: &str, value: &Value) {
         if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
-            self.param_bound_aggregates
-                .insert(name.to_string(), value.clone());
+            self.param_bound_aggregates.note(name, value);
         }
     }
 
@@ -1359,6 +1360,35 @@ impl Interpreter {
             return None;
         }
         Some((base, inner))
+    }
+}
+
+/// A subset predicate that can run inline: a bare block, or a one-parameter
+/// lambda (`* < 100` is stored as one, see `register_subset_decl`), with no
+/// placeholder of its own. Returns the body and the name its value binds to.
+pub(crate) fn subset_inline_predicate(
+    pred: &crate::ast::Expr,
+) -> Option<(&[crate::ast::Stmt], &str)> {
+    subset_inline_predicate_shape(pred)
+        .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty())
+}
+
+/// [`subset_inline_predicate`] without the placeholder walk, for a type check
+/// on a subset whose registration already established that it has none
+/// (`SubsetDef::predicate_inline`).
+pub(crate) fn subset_inline_predicate_shape(
+    pred: &crate::ast::Expr,
+) -> Option<(&[crate::ast::Stmt], &str)> {
+    use crate::ast::Expr;
+    match pred {
+        Expr::Block(body) => Some((body.as_slice(), "_")),
+        Expr::AnonSub {
+            body,
+            is_block: true,
+            ..
+        } => Some((body.as_slice(), "_")),
+        Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
+        _ => None,
     }
 }
 

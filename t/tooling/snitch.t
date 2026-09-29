@@ -6,7 +6,7 @@ use Test;
 # a chain without changing the result. The logging goes to `$*ERR` via `note`
 # unless a Callable replaces it.
 
-plan 13;
+plan 17;
 
 # --- the method form returns the invocant unchanged --------------------------
 
@@ -48,6 +48,20 @@ plan 13;
     my $back = 42.snitch(-> $v { $seen = $v });
     is $seen, 42, 'the snitcher is called with the invocant';
     is $back, 42, 'and snitch still returns it';
+}
+
+{
+    ok &dd ~~ Callable, 'the built-in dd routine is a Callable value';
+    my $logged_type;
+    (1..3).Seq.snitch(-> $value { $logged_type = $value.WHAT.^name });
+    is $logged_type, 'List', 'an unitemized Seq reaches the snitcher as a List';
+    my $p = run $*EXECUTABLE, '-e',
+        'use v6.e.PREVIEW; (1..3).Seq.snitch(&dd); (1..2).snitch(&note)',
+        :err, :out;
+    is $p.err.slurp(:close), "(1, 2, 3)\n1..2\n",
+        'both built-in Callable loggers receive the snitchee';
+    is $p.exitcode, 0, 'calling the built-in loggers through snitch succeeds';
+    $p.out.slurp(:close);
 }
 
 # --- the subroutine form puts the snitchee last -----------------------------

@@ -33,27 +33,6 @@ pub(crate) fn make_buf_from_int_items(class_name: &str, items: &[Value]) -> Valu
     make_buf(Symbol::intern(class_name), items.to_vec())
 }
 
-pub(crate) fn eval_whatever_code(sub_data: &crate::gc::Gc<crate::value::SubData>, arg: i64) -> i64 {
-    let param = sub_data
-        .params
-        .first()
-        .map(|s: &String| s.as_str())
-        .unwrap_or("_");
-    let mut sub_env = sub_data.env.clone();
-    sub_env.insert(param.to_string(), Value::int(arg));
-    let mut interpreter = crate::runtime::Interpreter::new();
-    *interpreter.env_mut() = sub_env;
-    if let Ok(result) = interpreter.eval_block_value(&sub_data.body) {
-        match result.view() {
-            ValueView::Int(n) => n,
-            ValueView::Num(f) => f as i64,
-            _ => 0,
-        }
-    } else {
-        0
-    }
-}
-
 pub(crate) fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
     match arg.view() {
         ValueView::Int(n) => n,
@@ -65,7 +44,6 @@ pub(crate) fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
                 0
             }
         }
-        ValueView::Sub(data) => eval_whatever_code(&data, len as i64),
         ValueView::Whatever => len as i64,
         _ => 0,
     }
@@ -89,13 +67,6 @@ pub(crate) fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i6
             }
         }
         ValueView::Whatever => (total_len - start) as i64,
-        ValueView::Sub(data) => {
-            // WhateverCode receives total_len and returns an end index (inclusive).
-            // Length = max(0, end_index - start + 1)
-            let end_idx = eval_whatever_code(&data, total_len as i64);
-            let len = end_idx - start as i64 + 1;
-            if len < 0 { 0 } else { len }
-        }
         _ => 0,
     }
 }

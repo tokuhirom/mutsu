@@ -788,12 +788,6 @@ impl Interpreter {
                 {
                     continue;
                 }
-                // Per-call-site index-rw temps are frame-internal; merging a
-                // callee's same-named entries corrupts the caller's pending
-                // post-call writeback compare.
-                if kflags & crate::symbol::flags::INDEX_RW_CALL_TEMP != 0 {
-                    continue;
-                }
                 // Only a key the caller already has can be merged back, and
                 // only if the callee actually REBOUND it: a key whose value is
                 // the same binding (same immediate, or the same heap
@@ -947,7 +941,7 @@ impl Interpreter {
                 && fname != "@_"
                 && fname != "%_"
                 && !self.is_unit_lexical_of(&cf.package, &fname)
-                && !self.is_mainline_lexical_write(fn_name, &fname)
+                && !self.is_mainline_lexical_write(fn_name, cf, &fname)
             {
                 self.pending_rw_writeback_sources.push(fname.to_string());
             }

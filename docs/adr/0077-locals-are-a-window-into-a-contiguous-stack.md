@@ -1,6 +1,6 @@
 # ADR-0077: A call's locals are a window into one contiguous stack, not a pooled `Vec`
 
-- Status: **Accepted** (Slices 0 and 2 implemented; Slice 1 withdrawn into Slice 2; the leading-parameter form's *fill* half implemented via `params_fill_frame`, its argument-move half and Slice 3 still open — see the "What Slice N actually built" sections)
+- Status: **Accepted** (Slices 0 and 2 implemented; Slice 1 withdrawn into Slice 2; the leading-parameter form's *fill* half implemented via `params_fill_frame`, its argument-move half measured and not pursued, Slice 3 moot on the default build — see the "What Slice N actually built" sections and open question 1)
 - Date: 2026-09-08
 - Related: [#7562](https://github.com/tokuhirom/mutsu/issues/7562) (the perf
   finding this ADR unblocks), [#7579](https://github.com/tokuhirom/mutsu/issues/7579)
@@ -258,6 +258,15 @@ implementation settled differently from the way this ADR first framed it.
 stack-of-locals for block scopes. Once locals live on a contiguous stack, a
 block scope is just another base index and that field can go away. Not required
 by this ADR; recorded so the next reader sees the whole shape.
+
+*Moot on the default build (2026-09-29, #9935).* Under shadow slots (the
+default; `MUTSU_NO_SHADOW_SLOTS` opts out) a block scope pushes an **empty**
+`Vec` onto `outer_scope_locals` (`src/vm/vm_misc_scope.rs`): no allocation, no
+copy, only the depth bookkeeping `OUTER::` relies on, because an in-frame
+`$OUTER::x` resolves through its compiler-baked slot against the live locals.
+Folding the field into the contiguous stack would save a 24-byte push/pop per
+block. Only the opt-out still snapshots, and it is not worth a representation
+change.
 
 ### What Slice 2 actually built
 
@@ -539,6 +548,30 @@ could be much larger than a few percent.
    hence its own slice with its own measurement. Slice 2's win is the pool, the
    `Vec` header traffic and the `mem::take` pairs; the remaining argument move
    loop is the next thing to attack, not something this slice quietly dropped.
+
+   **Measured (2026-09-29, #9935): not worth the fusion.** Instruction-level
+   callgrind on a profiling build (`--dump-instr=yes`, each instruction
+   attributed through `addr2line -i` to the line of
+   `call_compiled_function_positional_light_at` it was inlined into) puts
+   the whole argument hand-off at:
+
+   | cost per call | `fib(22)`, 1 arg | `tak(14,7,0)`, 3 args |
+   | --- | ---: | ---: |
+   | `mem::replace` out of the operand stack | 9 Ir | 27 Ir |
+   | `put_param_slot` push into the frame | 4 Ir | 12 Ir |
+   | `stack.truncate(args_base)` after the bind | 31 Ir | 69 Ir |
+   | **share of the run, JIT on / off** | **1.77% / 1.05%** | **2.56% / 1.68%** |
+
+   That is the *gross* ceiling: fusion still has to drop the frame's values
+   when it pops (today `Locals::pop_frame` does it), and it adds a per-frame
+   length that every locals access would have to respect. The move proper
+   (the first two rows) is 13 Ir per argument — 0.3–0.9% of these, the
+   most call-bound programs there are. The largest row is not the move at all:
+   the truncate drop-scans `Nil` placeholders that own nothing, and removing
+   that needs a local change, not a fused stack — tracked as
+   [#10184](https://github.com/tokuhirom/mutsu/issues/10184). The
+   `locals_base = args_base` form is therefore **not pursued**; reopen it only
+   with a profile where the move's share is several times these.
 2. **Overflow policy.** A growable `Vec` inherits Rust's allocation failure
    behavior on runaway recursion. mutsu has no explicit call-depth limit today;
    whether to add one (a real VM's stack limit, raising an `X::` rather than

@@ -37,6 +37,13 @@ impl Interpreter {
                         return Ok(None);
                     }
                 }
+                ValueView::Enum { enum_type, .. } => {
+                    let registry = self.registry();
+                    let Some(variants) = registry.enum_types.get(&enum_type.resolve()) else {
+                        return Ok(None);
+                    };
+                    vec![Value::int(variants.len() as i64)]
+                }
                 _ => return Ok(None),
             }
         };
@@ -81,6 +88,13 @@ impl Interpreter {
                     } else {
                         return Ok(None);
                     }
+                }
+                ValueView::Enum { enum_type, .. } => {
+                    let registry = self.registry();
+                    let Some(variants) = registry.enum_types.get(&enum_type.resolve()) else {
+                        return Ok(None);
+                    };
+                    variants.len()
                 }
                 _ => return Ok(None),
             };

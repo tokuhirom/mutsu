@@ -352,7 +352,6 @@ the first "not filed" list. Paths are under `raku-doc/doc/`.
 | Language/objects:1397 | `::?CLASS:U:` invocant rejects a parameterized role's type object | [#9806](https://github.com/tokuhirom/mutsu/issues/9806) |
 | Language/objects:580, Type/Attribute:186 | attribute container itemization (`self.x` vs `$!x`) | [#9807](https://github.com/tokuhirom/mutsu/issues/9807) |
 | Type/Iterator:277 | bound user `Iterable` not iterated by list assignment | [#9808](https://github.com/tokuhirom/mutsu/issues/9808) |
-| Type/Iterator:69,115 | `IterationEnd` is a `Str`; iteration does not stop at it (deep) | [#9809](https://github.com/tokuhirom/mutsu/issues/9809) |
 | Language/signatures:299 | `min(2, Int)` returns `(Int)` | [#9810](https://github.com/tokuhirom/mutsu/issues/9810) |
 | Language/subscripts:697 | `@a[i]:v = x` leaks `__mutsu_subscript_adverb` | [#9811](https://github.com/tokuhirom/mutsu/issues/9811) |
 | Type/Any:1307,311 | `.tree(1)` / `».List.flat` add one item level | [#9812](https://github.com/tokuhirom/mutsu/issues/9812) |
@@ -477,8 +476,7 @@ intentionally deferred; see PLAN.md §6 and the ADRs (the old §8.5 pointer was 
   scan_spec arrays stay force-capped on `@`-assign because
   `S32-array/create.t` requires `.clone` to *share* the reifier — needs the
   element-cell store (TODO in `value_lazy.rs`); `=:= IterationEnd` container
-  identity; IterationEnd's repr (it is a Str internally, so `.raku` quotes
-  it); the custom `does Iterator` residue where an `is Array` subclass skips
+  identity; the custom `does Iterator` residue where an `is Array` subclass skips
   its user iterator (`__mutsu_array_storage` guard in
   `vm_for_loop_dispatch.rs`); big-Int→Float degradation in geometric
   sequence generation past i64 (`list.rakudoc` [1] tail).

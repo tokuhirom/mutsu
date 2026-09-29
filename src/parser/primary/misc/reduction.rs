@@ -344,9 +344,12 @@ pub(crate) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         || r_term.starts_with('}')
         || r_term.starts_with(')')
         || (r.starts_with(',') && is_symbol_op)
+        // `[+].^name`: a method-call postfix directly after the `]` applies to the
+        // zero-operand reduction (a `..` range operator does not).
+        || (is_symbol_op && r.starts_with('.') && !r.starts_with(".."))
     {
         return Ok((
-            if r.starts_with(',') { r } else { r_term },
+            if r.starts_with([',', '.']) { r } else { r_term },
             Expr::Reduction {
                 op,
                 expr: Box::new(Expr::ArrayLiteral(vec![])),

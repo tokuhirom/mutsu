@@ -12,6 +12,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "print",
     "put",
     "note",
+    "dd",
     "die",
     "fail",
     "succeed",

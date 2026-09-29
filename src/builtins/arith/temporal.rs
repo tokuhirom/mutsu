@@ -197,6 +197,9 @@ pub(crate) fn rebuild_datetime_like(
         epoch_days as f64 * 86_400.0 + hour as f64 * 3_600.0 + minute as f64 * 60.0 + second
             - timezone as f64;
     attrs.insert("epoch", Value::num(epoch_secs));
+    // Rakudo builds the sum from the Instant (`self.new($instant, :timezone)`),
+    // which does not pass the formatter along: `~($dt + $dur)` is ISO.
+    attrs.remove("formatter");
     let rebuilt = Value::make_instance(class_name, attrs);
     match mixin_state {
         Some(mixins) => Value::mixin_with_state(rebuilt, (*mixins).clone()),

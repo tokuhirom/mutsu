@@ -947,16 +947,20 @@ impl Interpreter {
             } = iterator.view()
                 && class_name == "Iterator"
             {
-                let map = attributes.as_map();
-                let all = match map.get("items").map(|v| v.view()) {
-                    Some(ValueView::Array(values, ..)) => values.to_vec(),
-                    _ => Vec::new(),
-                };
-                let index = match map.get("index").map(|v| v.view()) {
-                    Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
-                    _ => 0,
-                };
-                all[index..].to_vec()
+                if let Some(rest) = self.map_grep_stream_drain(&attributes) {
+                    rest?
+                } else {
+                    let map = attributes.as_map();
+                    let all = match map.get("items").map(|v| v.view()) {
+                        Some(ValueView::Array(values, ..)) => values.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let index = match map.get("index").map(|v| v.view()) {
+                        Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
+                        _ => 0,
+                    };
+                    all[index..].to_vec()
+                }
             } else if user_iterator {
                 // A user-defined `does Iterator` instance: drive its `pull-one`
                 // until IterationEnd. Unlike the built-in `Iterator` (whose index
@@ -966,9 +970,7 @@ impl Interpreter {
                 let mut pulled = Vec::new();
                 loop {
                     let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                    if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(val.view(), ValueView::Package(n) if n == Symbol::intern("IterationEnd"))
-                    {
+                    if val.is_iteration_end() {
                         break;
                     }
                     pulled.push(val);
@@ -996,18 +998,10 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
-        // `Rakudo::Internals.IS-WIN` / `.IS-MACOS`: platform predicates used by
-        // low-level native modules (e.g. NativeLibs picks the library name by
-        // `Rakudo::Internals.IS-WIN()`). Resolved from the host build target.
-        if matches!(target.view(), ValueView::Package(name) if name.resolve() == "Rakudo::Internals")
-            && matches!(method, "IS-WIN" | "IS-MACOS")
-        {
-            let val = match method {
-                "IS-WIN" => cfg!(target_os = "windows"),
-                "IS-MACOS" => cfg!(target_os = "macos"),
-                _ => unreachable!(),
-            };
-            return Ok(Value::truth(val));
+        // `Rakudo::Internals.IS-WIN` / `.IS-MACOS` / `.INCLUDE`: the same
+        // helper the VM's native method path answers them with.
+        if let Some(result) = self.try_rakudo_internals_method(&target, method, &args) {
+            return result;
         }
         // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
         // default for a process dynamic variable by running the initializer
@@ -1803,6 +1797,9 @@ impl Interpreter {
         } = target.view()
             && class_name == "Iterator"
         {
+            if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, &args) {
+                return result;
+            }
             match method {
                 "count-only" if args.is_empty() => {
                     if let Some(value) =
@@ -1879,9 +1876,13 @@ impl Interpreter {
                 return Ok(step.ret);
             }
         }
-        // DateTime/Date formatter rendering
+        // DateTime/Date formatter rendering. The formatter runs against this
+        // invocant on every stringification (nothing is cached), so a value
+        // derived by `.utc`, `.later`, `.clone`, `+` ... renders its own
+        // fields. `Stringy` is included because `~$dt` / interpolation try it
+        // first.
         if args.is_empty()
-            && matches!(method, "Str" | "gist")
+            && matches!(method, "Str" | "gist" | "Stringy")
             && let ValueView::Instance {
                 class_name,
                 attributes,
@@ -2269,6 +2270,7 @@ impl Interpreter {
                             .collect();
                         return Ok(Value::seq(parts));
                     }
+                    // Cost: O(n), n = path length.
                     "splitpath" => {
                         let mut positional: Vec<&Value> = Vec::new();
                         let mut nofile = false;
@@ -2292,6 +2294,8 @@ impl Interpreter {
                                 || after_vol.ends_with('\\')
                             {
                                 (after_vol, String::new())
+                            } else if after_vol == "." || after_vol == ".." {
+                                (String::new(), after_vol)
                             } else {
                                 let last_sep = after_vol.rfind(['/', '\\']);
                                 let basename = last_sep
@@ -2346,6 +2350,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         ));
                     }
+                    // Cost: O(n), n = path length.
                     "split" => {
                         let raw_path = args
                             .first()
@@ -2357,12 +2362,13 @@ impl Interpreter {
                             let is_sep = |c: char| c == '/' || c == '\\';
                             let only_seps = !rest.is_empty() && rest.chars().all(is_sep);
                             let (dirname, basename) = if only_seps {
-                                ("\\".to_string(), "\\".to_string())
+                                let sep = rest.chars().next().unwrap().to_string();
+                                (sep.clone(), sep)
                             } else if rest.ends_with('/') || rest.ends_with('\\') {
                                 let trimmed = rest.trim_end_matches(['/', '\\']);
                                 if let Some(pos) = trimmed.rfind(['/', '\\']) {
                                     let dir = if pos == 0 {
-                                        "\\".to_string()
+                                        trimmed[..=pos].to_string()
                                     } else {
                                         trimmed[..pos].to_string()
                                     };
@@ -2383,7 +2389,7 @@ impl Interpreter {
                                 if volume.starts_with("//") || volume.starts_with("\\\\") {
                                     ("\\".to_string(), "\\".to_string())
                                 } else {
-                                    (".".to_string(), String::new())
+                                    (String::new(), String::new())
                                 }
                             } else {
                                 (".".to_string(), rest)
@@ -2437,6 +2443,7 @@ impl Interpreter {
                             hash,
                         ));
                     }
+                    // Cost: O(n), n = total input length.
                     "join" => {
                         let vol = args
                             .first()
@@ -2462,7 +2469,7 @@ impl Interpreter {
                                 }
                             };
                             let result = if !vol.is_empty() {
-                                if vol.starts_with("\\\\") {
+                                if vol.starts_with("\\\\") || vol.starts_with("//") {
                                     let path_only_seps = !path_part.is_empty()
                                         && path_part.chars().all(|c| c == '/' || c == '\\');
                                     if path_only_seps || path_part.is_empty() {
@@ -2636,48 +2643,22 @@ impl Interpreter {
                         };
                         return Ok(Value::str(result));
                     }
+                    // Cost: O(n), n = path, base, and cwd length.
                     "rel2abs" => {
                         let path_str = args
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        let base_str =
-                            args.get(1).map(|v| v.to_string_value()).unwrap_or_else(|| {
-                                std::env::current_dir()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_else(|_| ".".to_string())
-                            });
-                        if is_win32 {
-                            let (path_vol, path_rest) =
-                                Self::split_win32_volume_normalized(&path_str);
-                            if !path_vol.is_empty()
-                                && (path_rest.starts_with('/') || path_rest.starts_with('\\'))
-                            {
-                                return Ok(Value::str(Self::canonpath_win32(&path_str, false)));
-                            }
-                            if path_str.starts_with('\\') || path_str.starts_with('/') {
-                                let (base_vol, _) = Self::split_win32_volume_normalized(&base_str);
-                                return Ok(Value::str(Self::canonpath_win32(
-                                    &format!("{}{}", base_vol, path_str),
-                                    false,
-                                )));
-                            }
-                            let mut result = base_str;
-                            if !result.ends_with('/') && !result.ends_with('\\') {
-                                result.push('\\');
-                            }
-                            result.push_str(&path_str);
-                            return Ok(Value::str(Self::canonpath_win32(&result, false)));
-                        }
-                        if path_str.starts_with('/') {
-                            return Ok(Value::str(path_str));
-                        }
-                        let mut result = base_str;
-                        if !result.ends_with('/') {
-                            result.push('/');
-                        }
-                        result.push_str(&path_str);
-                        return Ok(Value::str(Self::canonpath_unix(&result, false)));
+                        let cwd = std::env::current_dir()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|_| ".".to_string());
+                        let base = args
+                            .get(1)
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| cwd.clone());
+                        return Ok(Value::str(Self::io_spec_rel2abs(
+                            &path_str, &base, &cwd, is_win32, is_cygwin,
+                        )));
                     }
                     "basename" => {
                         let path = args
@@ -2721,6 +2702,30 @@ impl Interpreter {
             let cn = name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return self.buf_allocate(name, &args);
+            }
+            // `CArray[T].allocate(n)` pre-sizes the array to `n` elements
+            // instead of growing it one out-of-range index assignment at a
+            // time (the mechanism the pre-2018.05 idiom documented in
+            // `Language/nativecall.rakudoc` relied on: `$arr[n - 1] = 0`).
+            // A native numeric element type shares `Buf.allocate`'s own
+            // zero-fill storage (`buf_allocate`/`value_buf::make_buf`); a
+            // reference element type (`CArray[Str]`, `CArray[Pointer]`, a
+            // CStruct element) fills with that type's gap value, the same
+            // `native_fill_for_constraint` an ordinary out-of-bounds
+            // `$carray[n] = v` autovivifies through.
+            if let Some(elem) = crate::value::value_carray::carray_elem_type_name(&cn) {
+                if crate::value::value_carray::is_native_carray_class(&cn) {
+                    return self.buf_allocate(name, &args);
+                }
+                let size = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
+                let mut items = Vec::new();
+                items.try_reserve(size).map_err(|_| {
+                    RuntimeError::new(format!(
+                        "Cannot allocate CArray of {size} elements: memory allocation failed"
+                    ))
+                })?;
+                items.resize(size, Self::native_fill_for_constraint(Some(elem)));
+                return Ok(Value::real_array(items));
             }
         }
         // Buf/Blob class-level and instance-level methods
@@ -3017,15 +3022,7 @@ impl Interpreter {
         if let Some(result) =
             super::methods_temporal::dispatch_temporal_method(&target, method, &args)
         {
-            let val = result?;
-            if let ValueView::Instance { attributes, .. } = val.view()
-                && attributes.contains_key("formatter")
-                && !attributes.contains_key("__formatter_rendered")
-            {
-                let formatter = attributes.as_map().get("formatter").unwrap().clone();
-                return self.render_date_formatter(val, formatter);
-            }
-            return Ok(val);
+            return result;
         }
 
         // Format type-object / instance dispatch (new, arity, count, Callable,
@@ -3228,6 +3225,28 @@ impl Interpreter {
             fn collection_contains_instance(value: &Value) -> bool {
                 collection_contains_instance_seen(value, &mut std::collections::HashSet::new(), 0)
             }
+            /// Gist at most `GIST_ELEM_CAP` elements, then ` ...` (Rakudo's
+            /// `List.gist` stops the walk there); later elements are never
+            /// rendered.
+            // Cost: O(t), t = rendered size of the first `GIST_ELEM_CAP` elements.
+            fn gist_capped<'a>(
+                interp: &mut Interpreter,
+                items: impl Iterator<Item = &'a Value>,
+                sep: &str,
+            ) -> String {
+                let mut out = String::new();
+                for (i, item) in items.enumerate() {
+                    if i > 0 {
+                        out.push_str(sep);
+                    }
+                    if i == crate::runtime::utils::GIST_ELEM_CAP {
+                        out.push_str("...");
+                        break;
+                    }
+                    out.push_str(&gist_item(interp, item));
+                }
+                out
+            }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 use crate::value::ArrayKind;
                 // Subtrees with no dispatch-needing element render via the pure,
@@ -3263,11 +3282,7 @@ impl Interpreter {
                         } else {
                             " "
                         };
-                        let inner = items
-                            .iter()
-                            .map(|item| gist_item(interp, item))
-                            .collect::<Vec<_>>()
-                            .join(sep);
+                        let inner = gist_capped(interp, items.iter(), sep);
                         match kind {
                             ArrayKind::List | ArrayKind::ItemList => format!("({inner})"),
                             _ => format!("[{inner}]"),
@@ -3275,13 +3290,7 @@ impl Interpreter {
                     }
                     _ if value.as_list_items().is_some() => {
                         // Seq / Slip / HyperSeq / RaceSeq render parenthesized.
-                        let inner = value
-                            .as_list_items()
-                            .unwrap()
-                            .iter()
-                            .map(|item| gist_item(interp, item))
-                            .collect::<Vec<_>>()
-                            .join(" ");
+                        let inner = gist_capped(interp, value.as_list_items().unwrap().iter(), " ");
                         format!("({inner})")
                     }
                     ValueView::Hash(map) => {
@@ -3791,7 +3800,6 @@ impl Interpreter {
                         .iter()
                         .any(|a| a.is_public && a.name == method);
                 if (role.methods.contains_key(method) || has_public_accessor)
-                    && role.methods.contains_key("new")
                     && let Some(punned) = self.ensure_parametric_role_pun_class(&base, type_args)?
                 {
                     return self.call_method_with_values(
@@ -3910,7 +3918,15 @@ impl Interpreter {
         }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
-        let native_result = if bypass_native_fastpath {
+        // `$buf.subbuf(*-2)`: see `resolve_subbuf_callable_args`.
+        let subbuf_args = self.resolve_subbuf_callable_args(&target, method, cascade_args);
+        let cascade_args: &[Value] = subbuf_args.as_deref().unwrap_or(cascade_args);
+        let inherited_adhoc = (!bypass_native_fastpath)
+            .then(|| self.inherited_adhoc_method(&target, method, cascade_args))
+            .flatten();
+        let native_result = if let Some(value) = inherited_adhoc {
+            Some(Ok(value))
+        } else if bypass_native_fastpath {
             None
         } else {
             // The interpreter-side twin of `try_native_method_raw`, and the
@@ -4281,6 +4297,15 @@ impl Interpreter {
                 && let Some(ref key_type) = info.key_type
             {
                 return Ok(Value::package(Symbol::intern(key_type)));
+            }
+            // A `Hash[V,K,..]` declared type (`Baggy.hash` is `Hash[UInt,Mu,Any]`)
+            // names its key type as the second parameter.
+            if let Some(info) = self.container_type_metadata(&target)
+                && let Some(dt) = info.declared_type.as_deref()
+                && let Some(inner) = dt.strip_prefix("Hash[").and_then(|r| r.strip_suffix(']'))
+                && let Some(key_type) = inner.split(',').nth(1)
+            {
+                return Ok(Value::package(Symbol::intern(key_type.trim())));
             }
             return Ok(Value::package(Symbol::intern("Str(Any)")));
         }
@@ -5065,6 +5090,10 @@ impl Interpreter {
             // reports. The pure `value_to_capture` dumped the raw attribute
             // store instead, which both ignored the override and leaked
             // private (`$!x`) attributes into the Capture.
+            // Exact native IO::Handle instances carry additional native
+            // settings outside the declared path attribute; their Capture
+            // exposes the stored settings through the pure path.
+            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 let attrs = self.collect_class_attributes(&cn);

@@ -72,9 +72,7 @@ impl Interpreter {
         let mut pulled = Vec::new();
         while pulled.len() < limit {
             let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                || matches!(val.view(), ValueView::Package(name) if name == crate::symbol::Symbol::intern("IterationEnd"))
-            {
+            if val.is_iteration_end() {
                 break;
             }
             pulled.push(val);
@@ -410,7 +408,14 @@ impl Interpreter {
         target: Value,
         method: &str,
     ) -> Result<Value, RuntimeError> {
-        self.reify_or_consume_seq_target_inner(target, method, false)
+        let target = self.reify_or_consume_seq_target_inner(target, method, false)?;
+        if matches!(
+            method,
+            "raku" | "perl" | "gist" | "Str" | "Stringy" | "flat"
+        ) {
+            self.reify_nested_map_grep_for_read(&target)?;
+        }
+        Ok(target)
     }
 
     /// The ONE call site allowed to actually consume `.iterator` — see
@@ -604,6 +609,21 @@ impl Interpreter {
         if method == "iterator" {
             if let Some(iterator) = body.take_iterator_source()? {
                 return Ok(iterator);
+            }
+            // A not-yet-finished `.map`/`.grep`: the iterator streams the
+            // source, running the callback once per element it hands out
+            // (#10186). A `.squish(:as, :with)` replay is keyed by this
+            // body's identity, so leave that one to the path below.
+            if !self.squish_iterator_meta.contains_key(&body.identity())
+                && let Some((prefix, source)) = body.take_map_grep_stream_source()
+            {
+                return Ok(
+                    crate::runtime::iterator_map_grep_stream::map_grep_stream_iterator(
+                        prefix,
+                        source,
+                        body.is_lazy(),
+                    ),
+                );
             }
             // `.iterator` builds its FINAL result (an `Iterator` instance)
             // here, in place of returning a still-`ValueView::Seq` target
@@ -1432,6 +1452,26 @@ impl Interpreter {
         r
     }
 
+    /// Number of leading elements a list-shaped subscript needs: largest
+    /// non-negative index + 1, looking through nested lists and finite
+    /// integer ranges. `None` when any leaf has no known finite bound.
+    // Cost: O(n), n = total leaves of the (nested) index list.
+    fn index_list_needed(index: &Value) -> Option<usize> {
+        match index.view() {
+            ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+            ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
+            ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
+            _ => {
+                let items = index.as_list_items()?;
+                let mut max = 0usize;
+                for item in items.iter() {
+                    max = max.max(Self::index_list_needed(item)?);
+                }
+                Some(max)
+            }
+        }
+    }
+
     /// Force a `LazyList` to produce enough elements to answer a single
     /// positional-style index read, computing the minimal bound from the
     /// index shape instead of forcing the whole (possibly infinite)
@@ -1507,25 +1547,15 @@ impl Interpreter {
                 ValueView::RangeExcl(_, end) if end > 0 => {
                     self.force_lazy_list_vm_n(list, end as usize)
                 }
-                // A list of non-negative integer indices (`$s[2, 3]`): force
-                // only up to the largest index + 1, keeping the tail lazy so
-                // later pulls still see mid-iteration changes.
-                _ if index.as_list_items().is_some_and(|items| {
-                    !items.is_empty()
-                        && items
-                            .iter()
-                            .all(|v| matches!(v.view(), ValueView::Int(i) if i >= 0))
-                }) =>
+                // A list of non-negative integer indices (`$s[2, 3]`), possibly
+                // nesting ranges / sublists (`$s[^2, 20]`): force only up to
+                // the largest index + 1, keeping the tail lazy so later pulls
+                // still see mid-iteration changes.
+                _ if index.as_list_items().is_some_and(|items| !items.is_empty())
+                    && Self::index_list_needed(index).is_some() =>
                 {
-                    let max = index
-                        .as_list_items()
-                        .unwrap()
-                        .iter()
-                        .filter_map(Value::as_int)
-                        .map(|i| i as usize)
-                        .max()
-                        .unwrap_or(0);
-                    self.force_lazy_list_vm_n(list, max.saturating_add(1))
+                    let needed = Self::index_list_needed(index).unwrap_or(0);
+                    self.force_lazy_list_vm_n(list, needed)
                 }
                 _ => self.force_lazy_list_vm(list),
             }

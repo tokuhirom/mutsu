@@ -90,10 +90,14 @@ impl Interpreter {
         }
         // Convert hash (Map) to named captures
         if let ValueView::Hash(map) = hash.view() {
-            attrs.insert(
-                "named".to_string(),
-                Value::hash_bare_values(map.as_ref().clone()),
-            );
+            // The named-capture store is internal (`.hash` always presents it
+            // as a `Map`), so the argument's own container type (`:hash(Map.new(
+            // ...))` from a `.raku` round trip) must not ride along: a parsed
+            // Match's store is a plain hash, and `eqv` compares the two.
+            let mut data = map.as_ref().clone();
+            data.value_type = None;
+            data.declared_type = None;
+            attrs.insert("named".to_string(), Value::hash_bare_values(data));
         } else {
             attrs.insert(
                 "named".to_string(),
@@ -211,6 +215,11 @@ impl Interpreter {
                 ..
             } = iterator.view()
                 && class_name == "Iterator"
+                // A `.map`/`.grep` stream holds only a window; the deferred
+                // Seq below pulls it on demand.
+                && !attributes.contains_key(
+                    crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR,
+                )
             {
                 let map = attributes.as_map();
                 if let Some(ValueView::Array(items, ..)) = map

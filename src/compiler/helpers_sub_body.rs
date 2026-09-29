@@ -246,6 +246,7 @@ impl Compiler {
         is_cached: bool,
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
+        self.attach_param_chunks(param_defs, name);
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -826,6 +827,10 @@ impl Compiler {
         name: &str,
         global_fallback: bool,
     ) {
+        // A declaration is read back under its storage key — a sigil-less
+        // constant's is its term key (#9962).
+        let storage = crate::runtime::term_names::stmt_decl_storage_name(stmt);
+        let name = storage.as_deref().unwrap_or(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::GetLocal(slot));
         } else if global_fallback {
@@ -1207,6 +1212,7 @@ impl Compiler {
         rw_tail: bool,
         promoted_decls: &[String],
     ) -> CompiledCode {
+        self.attach_param_chunks(param_defs, "<anon>");
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();

@@ -44,6 +44,7 @@ impl Interpreter {
         Ok(promises)
     }
 
+    // Cost: O(n), n = values emitted by the Supply before completion.
     pub(super) fn supply_list_values(
         &mut self,
         attributes: &AttrMap,
@@ -54,59 +55,25 @@ impl Interpreter {
         if attributes.contains_key("on_demand_callback") {
             return self.supply_get_values(attributes);
         }
-        let mut items = match attributes.get("values").map(Value::view) {
-            Some(ValueView::Array(values, ..)) => values.to_vec(),
-            _ => Vec::new(),
+        let live = attributes.get("live").is_some_and(Value::truthy);
+        let mut items = if live {
+            Vec::new()
+        } else {
+            match attributes.get("values").map(Value::view) {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                _ => Vec::new(),
+            }
         };
 
         if let Some(ValueView::Int(supplier_id)) = attributes.get("supplier_id").map(Value::view)
             && supplier_id > 0
         {
-            let supplier_id = supplier_id as u64;
-            let live = matches!(
-                attributes.get("live").map(Value::view),
-                Some(ValueView::Bool(true))
-            );
-            let deadline = if wait_until_done && live {
-                Some(
-                    crate::runtime::thread_compat::Instant::now()
-                        + std::time::Duration::from_secs(5),
-                )
-            } else {
-                None
-            };
-            // Consume the supplier through a push sink: registration replays
-            // the already-buffered values, then emit/done/quit arrive as
-            // events — a blocking wait instead of the old 1ms snapshot poll
-            // (which also lost a done that `Supplier.done`'s reset cleared
-            // before the next poll).
-            let waker = crate::value::waker::ReactWaker::new();
-            let sink_id =
-                crate::runtime::native_methods::supplier_sink_register(supplier_id, 0, &waker);
-            let collected: Result<(), RuntimeError> = 'collect: loop {
-                for (_, event, _) in waker.drain() {
-                    match event {
-                        crate::value::waker::SinkEvent::Emit(v) => items.push(v),
-                        crate::value::waker::SinkEvent::Quit(reason) => {
-                            let message = reason.to_string_value();
-                            let mut err = RuntimeError::new(message);
-                            err.exception = Some(Box::new(reason));
-                            break 'collect Err(err);
-                        }
-                        crate::value::waker::SinkEvent::Done => break 'collect Ok(()),
-                    }
-                }
-                let Some(limit) = deadline else {
-                    break Ok(());
-                };
-                let now = crate::runtime::thread_compat::Instant::now();
-                if now >= limit {
-                    break Ok(());
-                }
-                waker.wait_activity((limit - now).min(std::time::Duration::from_millis(100)));
-            };
-            crate::runtime::native_methods::supplier_sink_unregister(supplier_id, sink_id);
-            collected?;
+            items = crate::runtime::native_methods::collect_supplier_values(
+                supplier_id as u64,
+                items,
+                !live,
+                wait_until_done && live,
+            )?;
         }
 
         Ok(items)

@@ -54,6 +54,7 @@ pub(crate) fn method_sub_form_params(
             is_invocant: false,
             shape_constraints: None,
             block_param: false,
+            code: Default::default(),
             trait_args: Vec::new(),
         };
         let mut sub_param_defs = vec![self_param];
@@ -118,6 +119,7 @@ impl Interpreter {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: false,
+                code: Default::default(),
                 trait_args: Vec::new(),
             });
             method_param_defs
@@ -145,6 +147,7 @@ impl Interpreter {
             param_defs: sub_param_defs.clone(),
             body,
             is_test_assertion: false,
+            is_implementation_detail: false,
             is_rw: false,
             is_raw: false,
             // The importable function form still reports as a Method in Raku

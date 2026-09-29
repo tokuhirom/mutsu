@@ -255,6 +255,28 @@ impl Value {
         {
             return true;
         }
+        // A builtin value's ancestors and roles come from the builtin type
+        // catalog, the one ancestry oracle (ADR-0051 P2). A parameterized
+        // role (`Positional[Int]`) narrows past the catalog's role names. An
+        // `Instance` is left to the interpreter's registry-aware matcher:
+        // its class may be a user class, and the callers that ask this
+        // value-only question of an instance (`does_check("Real")` before
+        // bridging to a user `Numeric`/`Bridge`) mean "did the user compose
+        // it", which a builtin `Duration` answering `Real` would reroute into
+        // a coercion loop.
+        if !matches!(self.view(), ValueView::Instance { .. }) {
+            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(my_type)
+                && info.mro.contains(&type_name)
+            {
+                return true;
+            }
+            if allow_roles
+                && !type_name.contains('[')
+                && crate::builtins::builtin_type_catalog::builtin_type_has_role(my_type, type_name)
+            {
+                return true;
+            }
+        }
         if allow_roles && self.does_role_hierarchy(type_name) {
             return true;
         }
@@ -275,29 +297,12 @@ impl Value {
             "SetHash" => matches!(self.view(), ValueView::Set(_, true)),
             "BagHash" => matches!(self.view(), ValueView::Bag(_, true)),
             "MixHash" => matches!(self.view(), ValueView::Mix(_, true)),
-            "Cool" => {
-                matches!(
-                    self.view(),
-                    ValueView::Int(_)
-                        | ValueView::BigInt(_)
-                        | ValueView::Num(_)
-                        | ValueView::Str(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Rat(_, _)
-                        | ValueView::FatRat(_, _)
-                        | ValueView::BigRat(_, _)
-                        | ValueView::Complex(_, _)
-                        | ValueView::Array(..)
-                        | ValueView::Hash(..)
-                ) || (
-                    // Match.^mro is (Match Capture Cool Any Mu) — Cool is a real
-                    // ancestor of Match. Capture itself is NOT (Capture.^mro is
-                    // (Capture Any Mu), no Cool): `Capture.new.isa(Cool)` is
-                    // False in real raku, verified 2026-08-22. A grammar cursor
-                    // is a Match subclass, so it is Cool too.
-                    matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance()
-                )
-            }
+            // Every catalog type's `Cool`-ness is answered by the catalog
+            // above. Match.^mro is (Match Capture Cool Any Mu); a grammar
+            // cursor reports its GRAMMAR's class name, which the catalog does
+            // not know, so the Match shape test stays. Capture itself is NOT
+            // Cool (Capture.^mro is (Capture Any Mu)).
+            "Cool" => matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance(),
             "Capture" => {
                 matches!(self.view(), ValueView::Capture { .. })
                     || matches!(
@@ -317,40 +322,6 @@ impl Value {
             "Match" => {
                 matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance()
             }
-            "FatRat" => {
-                matches!(self.view(), ValueView::FatRat(_, _))
-                    || (matches!(self.view(), ValueView::BigRat(_, _)) && self.is_bigfatrat())
-            }
-            // Bool.^mro is (Bool Int Cool Any Mu) — Bool really does nominally
-            // extend Int in raku (`True.isa(Int)` is True).
-            "Int" => matches!(self.view(), ValueView::Bool(_)),
-            // Block.^mro/Routine.^mro/Code.^mro are real class chains
-            // (Sub < Routine < Block < Code). `Callable` is the role they all
-            // compose (`Sub.isa(Callable)` is False, `.does(Callable)` is
-            // True) — see `does_role_hierarchy`.
-            "Block" | "Routine" | "Code" => {
-                matches!(
-                    self.view(),
-                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                ) || matches!(
-                    self.view(),
-                    ValueView::Package(name)
-                        if matches!(name.resolve().as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
-                )
-            }
-            "Method" => {
-                matches!(
-                    self.view(),
-                    ValueView::Sub(data)
-                        if matches!(
-                            data.env.get("__mutsu_callable_type").map(Value::view),
-                            Some(ValueView::Str(kind)) if kind.as_str() == "Method"
-                        )
-                ) || matches!(
-                    self.view(),
-                    ValueView::Instance { class_name, .. } if class_name == "Method"
-                ) || matches!(self.view(), ValueView::Package(name) if name == "Method")
-            }
             "Exception" => self.instance_is_exception_by_name(),
             "X::AdHoc" | "CX::Warn" | "CX::Return" | "X::OS" => {
                 if let ValueView::Instance { class_name, .. } = self.view() {
@@ -358,23 +329,6 @@ impl Value {
                 } else {
                     false
                 }
-            }
-            "HyperSeq" => {
-                matches!(self.view(), ValueView::HyperSeq(_))
-            }
-            "RaceSeq" => {
-                matches!(self.view(), ValueView::RaceSeq(_))
-            }
-            // List.^mro is (List Cool Any Mu); Array < List. A genuine forced
-            // `Seq` is its own `ValueView::Seq` and already answered by the
-            // `my_type == type_name` fast path above — HyperSeq/RaceSeq do
-            // NOT nominally descend from List or Seq (their `.^mro` is just
-            // (HyperSeq/RaceSeq Any Mu)), verified 2026-08-22.
-            "List" => {
-                matches!(
-                    self.view(),
-                    ValueView::Array(..) | ValueView::LazyList(_) | ValueView::Slip(_)
-                )
             }
             // Hash.^mro is (Hash Map Cool Any Mu) — Map is a real ancestor of
             // Hash. Pair/Set/Bag/Mix/Capture do NOT nominally descend from Map

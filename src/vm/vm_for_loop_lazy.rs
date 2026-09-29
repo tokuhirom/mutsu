@@ -98,14 +98,27 @@ impl Interpreter {
                 .and_then(|s| s.loop_ip())
                 .filter(|lip| *lip > body_start && *lip < loop_end)
         });
+        // Set once the `IterationEnd` sentinel was reached (#9809): it ends
+        // iteration like the end of the list, after a partial final chunk.
+        let mut reached_iteration_end = false;
         'for_loop: loop {
+            if reached_iteration_end {
+                break;
+            }
             // Force enough elements for one iteration's chunk
             let items = self.force_lazy_list_vm_n(ll, idx + arity)?;
             if idx >= items.len() {
                 break; // No more elements
             }
+            let mut end = (idx + arity).min(items.len());
+            if let Some(pos) = items[idx..end].iter().position(Value::is_iteration_end) {
+                if pos == 0 {
+                    break;
+                }
+                end = idx + pos;
+                reached_iteration_end = true;
+            }
             let item = if spec.chunks_items() {
-                let end = (idx + arity).min(items.len());
                 Value::array(items[idx..end].to_vec())
             } else {
                 items[idx].clone()

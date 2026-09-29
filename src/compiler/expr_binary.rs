@@ -827,6 +827,10 @@ impl Compiler {
             if matches!(op, TokenKind::Ident(name) if name == "does") {
                 let var_name = match left {
                     Expr::Var(name) => Some(name.clone()),
+                    // A sigil-less constant's binding is its term key (#9962).
+                    Expr::BareWord(name) if self.names_term_constant(name) => {
+                        Some(crate::runtime::term_names::term_key(name))
+                    }
                     Expr::BareWord(name) => Some(name.clone()),
                     Expr::HashVar(name) => Some(format!("%{}", name)),
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),

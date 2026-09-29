@@ -276,6 +276,9 @@ impl Interpreter {
         if self.mixin_role_has_method(target, method_name) {
             return None;
         }
+        if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
+            return Some(Ok(value));
+        }
         // Augmented native-type bypass: a plain Array/List/Hash/Str/Range/Set/
         // Bag/Mix/... receiver is not `Instance`/`Package`, so it carries no
         // per-call user-method check of its own here -- the callers' own
@@ -295,6 +298,16 @@ impl Interpreter {
                 ValueView::Instance { .. } | ValueView::Package(_)
             )
             && self.native_lever_a_user_override_sym(target, method_sym)
+        {
+            return None;
+        }
+        // ADR-0051 §3 (#9948): a name only some `Cool` subtypes declare
+        // (`succ`, `base`, `lazy`, ...) is answered by receiver-blind
+        // cascades that coerce ANY receiver, so a Match, Str, Int, Pair or
+        // Complex whose own ancestry lacks it must reach normal resolution,
+        // which throws `X::Method::NotFound` as Rakudo does.
+        if Self::cool_subtype_only_builtin_method(method_name)
+            && !self.e2_native_method_exists(target, method_sym.as_str())
         {
             return None;
         }
@@ -461,6 +474,9 @@ impl Interpreter {
         {
             return None;
         }
+        if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
+            return Some(result);
+        }
         // Collection gist bypass
         if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
             return None;
@@ -569,6 +585,10 @@ impl Interpreter {
         // declaration is partial and why `None` is the safe default.
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
+        // `$buf.subbuf(*-2)`: the pure cascade cannot call a closure, so a
+        // Callable offset is resolved to an Int here (issue #10118).
+        let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
+        let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

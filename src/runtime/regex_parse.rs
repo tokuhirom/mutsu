@@ -348,13 +348,25 @@ pub(super) fn regex_quote_closer(ch: char) -> Option<char> {
 /// `start`, or `None` when `start` is not a comment marker.
 ///
 /// A plain `#` comment ends before the newline. An embedded ``#`[...]`` (or
-/// another bracket-delimited form) consumes the matching, possibly nested,
-/// closing bracket. Keeping this scan in one place is important: structural
+/// another bracket-delimited form), or a declarator block `#|{ ... }` /
+/// `#={ ... }`, consumes the matching, possibly nested, closing bracket. Keeping this scan in one place is important: structural
 /// scanners must not mistake operators appearing in comments for regex
 /// operators.
 pub(super) fn regex_comment_end(chars: &[char], start: usize) -> Option<usize> {
     if chars.get(start) != Some(&'#') {
         return None;
+    }
+    // A bracketed comment, as the main language's `ws` reads it: ``#`{ }``,
+    // and the declarator blocks `#|{ }` / `#={ }`, which may span lines.
+    if matches!(chars.get(start + 1), Some('`' | '|' | '='))
+        && chars
+            .get(start + 2)
+            .is_some_and(|&c| crate::parser::helpers::matching_bracket(c).is_some())
+    {
+        let text: String = chars[start..].iter().collect();
+        if let Some(rest) = crate::parser::helpers::skip_bracketed_comment(&text) {
+            return Some(chars.len() - rest.chars().count());
+        }
     }
     if chars.get(start + 1) != Some(&'`') {
         return Some(
@@ -851,29 +863,8 @@ pub(super) fn regex_branch_is_blank(s: &str) -> bool {
             i += 1;
             continue;
         }
-        if c == '#' {
-            if chars.get(i + 1) == Some(&'`') {
-                i += 2;
-                if i < chars.len() {
-                    let bracket = chars[i];
-                    let close =
-                        crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
-                    i += 1;
-                    let mut depth = 1u32;
-                    while i < chars.len() && depth > 0 {
-                        if chars[i] == bracket && bracket != close {
-                            depth += 1;
-                        } else if chars[i] == close {
-                            depth -= 1;
-                        }
-                        i += 1;
-                    }
-                }
-            } else {
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
-            }
+        if let Some(end) = regex_comment_end(&chars, i) {
+            i = end;
             continue;
         }
         return false;

@@ -145,8 +145,9 @@ impl Compiler {
             // Until ADR-0052 this shape looked correct only by accident: the
             // clause left nothing on the stack and `exec_when_op` peeked the
             // ENCLOSING frame's stack top instead.
-            Stmt::VarDecl { name, .. } => {
-                let var_name = name.clone();
+            Stmt::VarDecl { .. } => {
+                let var_name =
+                    crate::runtime::term_names::stmt_decl_storage_name(stmt).unwrap_or_default();
                 self.compile_stmt(stmt);
                 let slot = self.alloc_local(&var_name);
                 self.code.emit(OpCode::GetLocal(slot));
@@ -377,8 +378,17 @@ impl Compiler {
                     // expression-position path already applies the traits and
                     // reads the container back, so route the declaration
                     // through it rather than growing a second copy of the rule.
-                    Stmt::VarDecl { custom_traits, .. }
-                        if custom_traits.iter().any(|(t, _)| !t.starts_with("__")) =>
+                    Stmt::VarDecl {
+                        name,
+                        custom_traits,
+                        ..
+                    } if custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
+                        // A sigil-less constant's term-namespace storage
+                        // (#9962) is likewise set up by that path only.
+                        || crate::runtime::term_names::is_term_constant_decl(
+                            name,
+                            custom_traits,
+                        ) =>
                     {
                         self.compile_expr_do_stmt(stmt);
                         self.pop_dynamic_scope_lexical(saved);

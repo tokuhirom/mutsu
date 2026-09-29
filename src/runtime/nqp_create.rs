@@ -206,6 +206,32 @@ impl Interpreter {
             }
         };
         let mut attributes = (*shape.template).clone();
+        // The template's `@`/`%` slots hold shared empty containers; every
+        // instance needs its own.
+        let containers: Vec<Symbol> = attributes
+            .iter()
+            .filter(|(_, v)| match v.view() {
+                ValueView::Array(_, kind) => kind.is_real_array(),
+                ValueView::Hash(_) => true,
+                _ => false,
+            })
+            .map(|(k, _)| *k)
+            .collect();
+        for key in containers {
+            let Some(template) = attributes.get(key).cloned() else {
+                continue;
+            };
+            let fresh = if matches!(template.view(), ValueView::Hash(_)) {
+                Value::hash(ValueMap::default())
+            } else {
+                let arr = Value::real_array(Vec::new());
+                match self.container_type_metadata(&template) {
+                    Some(info) => self.tag_container_metadata(arr, info),
+                    None => arr,
+                }
+            };
+            attributes.insert(key, fresh);
+        }
         if shape.associative {
             // An `is Hash`/`is Map` subclass stores its entries in a reserved
             // backing value even when it is allocated by `nqp::create` (which

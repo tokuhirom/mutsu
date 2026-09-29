@@ -116,12 +116,7 @@ impl Interpreter {
             positional.first().map(Value::view),
             Some(ValueView::Bool(_))
         ) {
-            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Match::Bool"),
-                std::collections::HashMap::new(),
-            )));
-            return Err(err);
+            return Err(RuntimeError::match_bool(".first"));
         }
         let func = positional.first().cloned();
 
@@ -234,7 +229,7 @@ impl Interpreter {
                 ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
                 // An `Int` subclass instance divides its `Int` payload.
                 ValueView::Instance { .. } => {
-                    crate::builtins::int_subclass::int_subclass_payload(v)
+                    crate::builtins::numeric_subclass::numeric_subclass_payload(v)
                         .map_or(0.0, |payload| val_to_f64(&payload))
                 }
                 _ => 0.0,

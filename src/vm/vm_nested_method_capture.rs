@@ -80,7 +80,8 @@ impl Interpreter {
     /// A role body runs again at every composition, so each composition
     /// gets its own capture (`role R[$n] { do { my $q = $n; method m { $q } } }`
     /// answers per parameterization).
-    // Cost: O(c + m), c = pending captures, m = methods of `target_class` and `role`.
+    // Cost: O(c + m + k), c = pending captures, m = methods of `target_class`
+    // and `role`, k = the role's candidates and their methods.
     pub(crate) fn apply_nested_method_captures(&mut self, role: &str, target_class: &str) {
         let role_sym = Symbol::intern(role);
         let mut captures: rustc_hash::FxHashMap<u32, crate::env::Env> =
@@ -112,7 +113,7 @@ impl Interpreter {
                 def.captured_env = Some(env.clone());
             }
         });
-        if let Some(role_def) = registry.roles.get_mut(role) {
+        let give_role_def = |role_def: &mut crate::runtime::RoleDef| {
             for defs in role_def.methods.values_mut() {
                 for def in defs.iter_mut() {
                     if let Some(index) = def.nested_capture_index
@@ -121,6 +122,22 @@ impl Interpreter {
                     {
                         def.captured_env = Some(env.clone());
                     }
+                }
+            }
+        };
+        let Some(role_id) = registry.roles.get_mut(role).map(|role_def| {
+            give_role_def(role_def);
+            role_def.role_id
+        }) else {
+            return;
+        };
+        // A mixin (`1 but R`) reads the role's methods from its
+        // `role_candidates` entry (`role_def_for_mixin_role`), a separate copy
+        // of the same `RoleDef`, so that copy needs the capture too.
+        if let Some(candidates) = registry.role_candidates.get_mut(role) {
+            for candidate in candidates.iter_mut() {
+                if candidate.role_def.role_id == role_id {
+                    give_role_def(&mut candidate.role_def);
                 }
             }
         }

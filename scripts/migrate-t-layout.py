@@ -98,6 +98,9 @@ RULES = [
 # Basename (without `.t`) -> category. Judgment calls and rule mistakes.
 # Keep sorted; every entry should be obvious from the file's subject.
 OVERRIDES: dict[str, str] = {
+    # A Junction operand autothreading through a user `infix:<eq>` multi is a
+    # Junction question, not a threading (`concurrency`) one.
+    "junction-threads-through-user-infix-eq": "types",
     # A method return constraint must resolve a nested class in its declaring
     # class, including when its leaf name shadows a core type.
     "nested-class-return-type": "oo/class",
@@ -201,6 +204,13 @@ OVERRIDES: dict[str, str] = {
     # The object-hash key identity regression belongs with associative
     # collection behavior, despite the basename's stringification wording.
     "object-hash-distinct-stringification": "collections/hash",
+    # `indir` (a cwd-changing directory routine, IO::Spec-adjacent) matches no
+    # `io` rule pattern on its own -- none of `(^|-)io(-|$)`/`^dir-`/`^chdir`/
+    # etc. sees "indir" as a prefix or substring token. It belongs with the
+    # other chdir/cwd tests in `io/`, not `collections` (the bug pinned is
+    # `indir`'s return-value handling, not Seq/laziness as a collection
+    # property).
+    "indir-return-value-laziness": "io",
 }
 
 

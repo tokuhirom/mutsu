@@ -233,9 +233,23 @@ impl Interpreter {
         // ((prefix_match_len, litlen), pattern, sym adverb of the candidate's def)
         let mut candidates: Vec<((usize, usize), String, Option<String>)> = Vec::new();
         let mut rejected: Vec<String> = Vec::new();
+        // A `multi token` set is dispatched by signature: a candidate whose
+        // parameters cannot bind the arguments (`multi token keyw {..}` beside
+        // `multi token keyw($rx) {..}`, started with no arguments) is simply not
+        // applicable. The error is only reported when no candidate applies.
+        let multi = defs.len() > 1;
+        let mut bind_error: Option<RuntimeError> = None;
         for def in defs {
             let sym = Self::extract_sym_adverb(&def.name.resolve());
-            if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
+            let evaluated = match self.eval_token_def(&def, arg_values) {
+                Ok(evaluated) => evaluated,
+                Err(err) if multi => {
+                    bind_error.get_or_insert(err);
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
+            if let Some(pattern) = evaluated {
                 if let Some(ref text) = subject {
                     match self.ltm_rank_token_candidate_source(&pattern, text) {
                         (Some(rank), _) => candidates.push((rank, pattern, sym)),
@@ -250,6 +264,12 @@ impl Interpreter {
                     candidates.push(((0, 0), pattern, sym));
                 }
             }
+        }
+        if candidates.is_empty()
+            && rejected.is_empty()
+            && let Some(err) = bind_error
+        {
+            return Err(err);
         }
         // Sort by (declarative prefix length, litlen), longest first. The sort
         // is stable, so an LTM tie falls back to declaration order (as in

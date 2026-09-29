@@ -106,6 +106,7 @@ impl Interpreter {
         };
         matches!(result.view(), ValueView::Str(s) if s.as_str() == name)
             && !self.env().contains_key(name)
+            && self.term_binding(name).is_none()
             && !self.has_class(name)
             && !self.has_function(name)
             && !self.has_multi_function_unindexed(name)
@@ -250,6 +251,8 @@ impl Interpreter {
             .filter_map(|key| {
                 let name = key.resolve();
                 let bare = name.strip_prefix(MARKER)?;
+                // A sigil-less constant's marker names its term key (#9962).
+                let bare = crate::runtime::term_names::term_spelling(bare).unwrap_or(bare);
                 let first = bare.chars().next()?;
                 (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
                     .then(|| bare.to_string())
@@ -394,6 +397,7 @@ impl Interpreter {
         crate::runtime::registration_sub::push_eval_outer_routine_keys(
             self.registry().functions.keys().copied(),
         );
+        crate::runtime::registration_sub::push_eval_routine_depth(self.routine_stack.len());
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
         // is a fatal compile error in Raku; short-circuit before evaluating.
@@ -679,6 +683,7 @@ impl Interpreter {
         }
         crate::runtime::registration_sub::pop_eval_outer_amp_names();
         crate::runtime::registration_sub::pop_eval_outer_routine_keys();
+        crate::runtime::registration_sub::pop_eval_routine_depth();
         // An EVAL parse failure is exposed as `$!`, whose string form is what
         // Test.rakumod's `eval-lives-ok` prints after `# Error:`.  The raw
         // parser diagnostic is useful to the CLI renderer, but starts with an

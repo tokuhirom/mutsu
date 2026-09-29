@@ -1,7 +1,7 @@
 use super::temporal::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 use std::collections::HashMap;
 
 /// Convert an f64 to a Rat by using its decimal string representation.
@@ -56,20 +56,20 @@ pub fn date_method_0arg(attributes: &AttrMap, method: &str) -> Option<Result<Val
             .unwrap_or_else(|| Value::package(Symbol::intern("Callable"))))),
         "daycount" => Some(Ok(Value::int(daycount(year, month, day)))),
         "Str" | "gist" => {
-            // If a formatter was applied and rendered, use that
-            if let Some(ValueView::Str(rendered)) =
-                attributes.get("__formatter_rendered").map(Value::view)
-            {
-                return Some(Ok(Value::str(rendered.to_string())));
-            }
-            // If there's a formatter but no rendered output, fall through to runtime
-            // so the formatter can be called
+            // A formatter is a user Callable: the interpreter-aware dispatch
+            // path calls it against this invocant on every stringification.
             if attributes.contains_key("formatter") {
                 return None;
             }
             Some(Ok(Value::str(format_date(year, month, day))))
         }
-        "Date" => Some(Ok(make_date(year, month, day))),
+        // `Date.Date` is the invocant itself, formatter included.
+        "Date" => Some(Ok(make_date_with_formatter(
+            year,
+            month,
+            day,
+            attributes.get("formatter").cloned(),
+        ))),
         "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => Some(Ok(Value::str(format_date_ordered(
             method, year, month, day, "-",
         )))),
@@ -209,15 +209,8 @@ pub fn datetime_method_0arg(
             second.floor() as i64
         )))),
         "Str" | "gist" => {
-            // A formatter is evaluated by the interpreter-aware dispatch path,
-            // which has the invocant needed by a user Callable. A rendered
-            // value is already available when the constructor or clone path
-            // evaluated it earlier.
-            if let Some(ValueView::Str(rendered)) =
-                attributes.get("__formatter_rendered").map(Value::view)
-            {
-                return Some(Ok(Value::str(rendered.to_string())));
-            }
+            // A formatter is a user Callable: the interpreter-aware dispatch
+            // path calls it against this invocant on every stringification.
             if attributes.contains_key("formatter") {
                 return None;
             }
@@ -247,7 +240,11 @@ pub fn datetime_method_0arg(
                 datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
             let (uy, um, ud, uh, umi, us) =
                 instant_to_datetime_leap_aware_parts(instant_int, instant_frac, 0);
-            Some(Ok(make_datetime(uy, um, ud, uh, umi, us, 0)))
+            // Rakudo's `utc` is `in-timezone(0)`, which keeps the formatter.
+            Some(Ok(with_formatter(
+                make_datetime(uy, um, ud, uh, umi, us, 0),
+                attributes.get("formatter").cloned(),
+            )))
         }
         "week-year" => {
             let (wy, _) = iso_week(year, month, day);
@@ -285,8 +282,10 @@ pub fn datetime_method_0arg(
             }
             Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)))
         }
-        "DateTime" => Some(Ok(make_datetime(
-            year, month, day, hour, minute, second, timezone,
+        // `DateTime.DateTime` is the invocant itself, formatter included.
+        "DateTime" => Some(Ok(with_formatter(
+            make_datetime(year, month, day, hour, minute, second, timezone),
+            attributes.get("formatter").cloned(),
         ))),
         "raku" | "perl" => {
             // Raku renders DateTime.raku as the numeric-argument constructor:

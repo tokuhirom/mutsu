@@ -959,6 +959,10 @@ impl Interpreter {
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
                 );
+                crate::runtime::cow_table_mut(&mut self.module_declared_unit_packages).insert(
+                    crate::symbol::Symbol::intern(module),
+                    crate::symbol::Symbol::intern(name),
+                );
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
@@ -1351,12 +1355,6 @@ impl Interpreter {
                 // module *exported* MAIN (`proto MAIN(|) is export`, as zef's CLI
                 // does). Remove only non-exported leaked MAINs.
                 self.promote_exported_main_to_global();
-                let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
-                Self::remove_leaked_main_routines(
-                    self.registry_mut().functions_mut(),
-                    &before_function_keys,
-                    main_exported,
-                );
                 // A package-less top-level routine the module declared but did
                 // not export is lexical to the module's compunit, not a shared
                 // global. Move it out of the registry before the loading
@@ -1389,6 +1387,20 @@ impl Interpreter {
             };
             self.restore_export_routines(hidden_export);
             export_result?;
+            // Only now drop the module's non-exported MAINs: its `sub EXPORT`
+            // may hand the routine over itself (`"&MAIN" => &MAIN`), which
+            // needs the candidates still registered while the hook runs and
+            // keeps them as the program's MAIN afterwards.
+            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"))
+                || self.env.get("&MAIN").is_some_and(|v| {
+                    matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
+                });
+            Self::remove_leaked_main_routines(
+                self.registry_mut().functions_mut(),
+                &before_function_keys,
+                main_exported,
+            );
+            self.invalidate_fn_resolution();
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of
@@ -1831,7 +1843,9 @@ impl Interpreter {
             if name.contains("::") || name.contains("__ANON") {
                 return;
             }
-            let bare = name.strip_prefix(['@', '%', '&', '$']).unwrap_or(name);
+            let bare = name
+                .strip_prefix(['@', '%', '&', '$', crate::runtime::term_names::TERM_PREFIX])
+                .unwrap_or(name);
             if !bare
                 .chars()
                 .next()
@@ -1862,7 +1876,13 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    push(name);
+                    // A sigil-less constant is stored under its term key
+                    // (#9962); that is the `env` entry to drop.
+                    if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                        push(&crate::runtime::term_names::term_key(name));
+                    } else {
+                        push(name);
+                    }
                 }
                 crate::ast::Stmt::EnumDecl {
                     name,
@@ -1913,8 +1933,12 @@ impl Interpreter {
             // A `my constant &name` is a code value rather than a registered
             // routine, so retain its `&`-sigiled binding too: a later tagged
             // re-import needs a durable source after the module restores the
-            // importer's plain environment.
-            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name.as_str());
+            // importer's plain environment. A sigil-less constant keeps its
+            // term-namespace key (#9962), where the module's routines look it
+            // up and a same-named module `$x` cannot collide with it.
+            let bare = name
+                .strip_prefix(['@', '%', '&', crate::runtime::term_names::TERM_PREFIX])
+                .unwrap_or(name.as_str());
             if name.contains("::")
                 || !bare
                     .chars()
