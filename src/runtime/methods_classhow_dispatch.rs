@@ -1551,6 +1551,7 @@ impl Interpreter {
                     .push((condition, calculator));
                 Ok(Value::NIL)
             }
+            // Cost: O(d), d = target type's MRO depth.
             "compose" if !args.is_empty() => {
                 // ^compose recomposes the class (e.g. after add_method)
                 // Rebuild the MRO for the class
