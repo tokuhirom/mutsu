@@ -2,6 +2,8 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+mod default;
+
 impl Compiler {
     /// Pre-qualify a class/role declaration's name with the compiler's
     /// `current_package` when compiling inside a `unit module`/`unit class`/
@@ -269,93 +271,6 @@ impl Compiler {
             | Expr::CaptureLiteral(es)
             | Expr::StringInterpolation(es) => any(es),
             _ => false,
-        }
-    }
-
-    /// Check if a default value expression statically mismatches a type constraint.
-    /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
-    fn check_default_type_mismatch(type_constraint: &str, expr: &Expr) -> Option<String> {
-        // Split off an optional type smiley (`:D` / `:U` / `:_`).
-        let (effective_constraint, smiley) = if let Some(b) = type_constraint.strip_suffix(":D") {
-            (b, Some('D'))
-        } else if let Some(b) = type_constraint.strip_suffix(":U") {
-            (b, Some('U'))
-        } else if let Some(b) = type_constraint.strip_suffix(":_") {
-            (b, Some('_'))
-        } else {
-            (type_constraint, None)
-        };
-        // Only a recognized concrete built-in type can be rejected at compile
-        // time. A subset / `where`-constrained type (`my $x is default(42) where
-        // * == 42`, compiled to an anonymous `__mutsu_anon_subset_N`) or any
-        // user-defined type narrows membership by a runtime predicate the compiler
-        // cannot evaluate, so it must NOT be statically flagged as a mismatch —
-        // the default may well satisfy it. S02-types/whatever.t "compile time
-        // WhateverCode / Junction evaluation" exercises exactly this.
-        const CHECKABLE_BUILTINS: &[&str] = &[
-            "Int", "Num", "Rat", "Bool", "Str", "Numeric", "Real", "Cool", "Any", "Mu", "Stringy",
-            "Complex", "Rational",
-        ];
-        if !CHECKABLE_BUILTINS.contains(&effective_constraint) {
-            return None;
-        }
-        // A concrete (defined) literal default can never bind to a `:U`
-        // (type-object-only) constraint, e.g. `my Int:U $y is default(0)`.
-        let is_concrete_literal = matches!(
-            expr,
-            Expr::Literal(lit)
-                if matches!(
-                    lit.view(),
-                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_) | ValueView::Bool(_) | ValueView::Rat(..)
-                )
-        );
-        if smiley == Some('U') && is_concrete_literal {
-            return Some(match expr {
-                Expr::Literal(v) => v.to_string_value(),
-                _ => "?".to_string(),
-            });
-        }
-        let value_type = match expr {
-            Expr::Literal(lit) => match lit.view() {
-                ValueView::Str(s) => {
-                    if effective_constraint != "Str"
-                        && effective_constraint != "Cool"
-                        && effective_constraint != "Any"
-                    {
-                        return Some(s.to_string());
-                    }
-                    return None;
-                }
-                ValueView::Int(_) => "Int",
-                ValueView::Num(_) => "Num",
-                ValueView::Bool(_) => "Bool",
-                ValueView::Nil => {
-                    // Nil is invalid for typed variables (Int, Str, etc.)
-                    // but valid for untyped (Any, Mu) or explicitly Nil-accepting types
-                    if effective_constraint != "Any"
-                        && effective_constraint != "Mu"
-                        && !effective_constraint.contains("Nil")
-                    {
-                        return Some("Nil".to_string());
-                    }
-                    return None;
-                }
-                _ => return None,
-            },
-            _ => return None, // non-literal, can't check statically
-        };
-        // Check type hierarchy (Int matches Numeric, Cool, Any, ...) against
-        // the builtin type catalog, the one ancestry oracle (ADR-0051).
-        if crate::builtins::builtin_type_ancestry::builtin_type_is_a(
-            value_type,
-            effective_constraint,
-        ) {
-            None
-        } else {
-            Some(match expr {
-                Expr::Literal(v) => v.to_string_value(),
-                _ => "?".to_string(),
-            })
         }
     }
 
@@ -1544,6 +1459,13 @@ impl Compiler {
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+                let preapply_container_default = has_default_trait
+                    && has_explicit_initializer
+                    && name.starts_with('@')
+                    && !bind_vardecl
+                    && !is_constant_decl
+                    && !*is_state
+                    && !*is_our;
                 let default_trait_expr =
                     custom_traits.iter().find_map(|(trait_name, trait_arg)| {
                         if trait_name == "default" {
@@ -1678,7 +1600,12 @@ impl Compiler {
                 // X::Syntax::Variable::Initializer.) Any other declaration is
                 // declared after its initializer, which compiler-synthesized
                 // self-copies (`-> $_ is copy` lowers to `my $_ = $_`) rely on.
-                let early_slot = init_sees_self.then(|| self.declare_local(name));
+                let early_slot = (init_sees_self || preapply_container_default)
+                    .then(|| self.declare_local(name));
+                if preapply_container_default {
+                    let slot = early_slot.expect("defaulted container has an early slot");
+                    self.emit_default_before_array_initializer(name_idx, slot, default_trait_expr);
+                }
                 let constant_init_phaser_start = if is_constant_decl {
                     Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
                 } else {
@@ -2020,13 +1947,17 @@ impl Compiler {
                         // keep Nil — S04-statements/with.t 49/56). The store keeps
                         // Nil verbatim and the ApplyVarTrait that follows replaces a
                         // still-Nil scalar with its default.
-                        if has_explicit_initializer && !has_default_trait {
+                        if has_explicit_initializer
+                            && (!has_default_trait || preapply_container_default)
+                        {
                             self.code.emit(OpCode::MarkExplicitInitializerContext);
                         }
                         // Mark this SetLocal as coming from a VarDecl so the VM
                         // can allow overwriting immutable containers (e.g. Blob)
                         // when the local slot is reused across loop iterations.
-                        self.code.emit(OpCode::MarkVarDeclContext);
+                        if !preapply_container_default {
+                            self.code.emit(OpCode::MarkVarDeclContext);
+                        }
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way
                         // an unshaped value-copy (`my @u = @shaped`) does.
@@ -2214,6 +2145,9 @@ impl Compiler {
                         self.code.emit(OpCode::LoadConst(idx));
                         self.code.emit(OpCode::Die { user_throw: false });
                         return;
+                    }
+                    if trait_name == "default" && preapply_container_default {
+                        continue;
                     }
                     if let Some(arg) = trait_arg {
                         // A custom variable trait may retain its argument (for
