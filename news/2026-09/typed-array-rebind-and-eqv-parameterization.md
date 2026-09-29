@@ -29,5 +29,8 @@ result-container rule (`hyper_list_result`) that returns the shape side's
 `Array[T]` when every result fits and a `List` otherwise (rakudo#5778);
 `deepmap` keeps the source's `Array[T]` likewise; and `Match.new(:hash(...))`
 no longer copies the argument's `Map` tag into its internal named-capture store.
+An expression-position assignment into an untyped `@`/`%` (`True and @h =
+@typed`) now drops the source's type tag exactly like the statement form, which
+leaked `Array[Str]` into Text::CSV's `kh => my @kh` header array.
 
 Closes #9852.

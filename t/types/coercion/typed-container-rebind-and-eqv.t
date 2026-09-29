@@ -5,7 +5,7 @@ use Test;
 # follow the currently bound container. `eqv` compares the container's type
 # parameterization too (#9852).
 
-plan 32;
+plan 34;
 
 # --- rebinding an untyped @/% variable ---
 {
@@ -101,4 +101,16 @@ plan 32;
     my grammar G { rule TOP { ^ \d+ [ <operator> \d+ ]* }; token operator { '+' } }
     my $m = G.parse('2 + 4');
     is-deeply EVAL($m.raku), $m, 'a Match round-trips through .raku under the stricter eqv';
+}
+
+# --- assignment into an untyped @/% never adopts the source's type ---
+{
+    my Str @s = <a b>;
+    my @h;
+    True and @h = @s;
+    is @h.WHAT.raku, 'Array', 'expression-position assignment drops the source Array[Str] tag';
+    my Int %t = a => 1;
+    my %u;
+    True and %u = %t;
+    is %u.WHAT.raku, 'Hash', 'expression-position hash assignment drops the source Hash[Int] tag';
 }

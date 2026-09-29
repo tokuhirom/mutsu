@@ -2821,21 +2821,9 @@ impl Interpreter {
         // `coerce_constant_hash_value`) is the deliberate final type of the
         // value, not stale element/key metadata inherited from a typed source.
         // Clearing it would demote `constant %h = <a b>` back to a plain Hash.
-        if !is_bind
-            && !is_constant
-            && (name.starts_with('%') || name.starts_with('@'))
-            && !name.contains('.')
-            && !name.contains('!')
-            && loan_env!(self, var_type_constraint_for(name, name_sym)).is_none()
-            && self.container_type_metadata(&val).is_some()
-        {
-            // Clear the embedded container type metadata in place so an
-            // untyped variable never reports a typed element/key constraint.
-            let cleared = crate::runtime::Interpreter::clear_hash_type_metadata(std::mem::replace(
-                &mut self.locals[idx],
-                Value::NIL,
-            ));
-            self.locals[idx] = cleared;
+        if !is_bind && !is_constant {
+            let current = std::mem::replace(&mut self.locals[idx], Value::NIL);
+            self.locals[idx] = self.untyped_container_assign_value(name, name_sym, current);
         }
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments

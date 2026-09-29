@@ -45,4 +45,31 @@ impl Interpreter {
         self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
         Ok(())
     }
+
+    /// The value an `@`/`%` ASSIGNMENT (not a bind) stores into `name`, with
+    /// container type metadata still attached from a typed source dropped when
+    /// `name` itself is untyped. The value may share its backing `Arc` with a
+    /// typed source container (`my @a = @typed`), and an untyped variable must
+    /// not present its value as typed. Attribute variables (`.h`, `!h`) are
+    /// left alone: their element type comes from the class definition, not
+    /// the by-name lane. Shared by the statement (`SetLocal`) and expression
+    /// (`AssignExprLocal`, `True and @h = @typed`) store paths.
+    // Cost: O(1) unless metadata is cleared, which is O(1) amortized
+    // copy-on-write of the container header.
+    pub(crate) fn untyped_container_assign_value(
+        &mut self,
+        name: &str,
+        name_sym: Option<crate::symbol::Symbol>,
+        val: Value,
+    ) -> Value {
+        if (name.starts_with('%') || name.starts_with('@'))
+            && !name.contains('.')
+            && !name.contains('!')
+            && loan_env!(self, var_type_constraint_for(name, name_sym)).is_none()
+            && self.container_type_metadata(&val).is_some()
+        {
+            return crate::runtime::Interpreter::clear_hash_type_metadata(val);
+        }
+        val
+    }
 }
