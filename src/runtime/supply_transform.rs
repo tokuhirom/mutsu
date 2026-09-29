@@ -12,7 +12,7 @@ use crate::value::AttrMap;
 /// miss a directive cleared by a supplier reset).
 fn wait_for_control_limit(ctrl_id: u64) -> i64 {
     let waker = crate::value::waker::ReactWaker::new();
-    let sink_id = supplier_sink_register(ctrl_id, 0, &waker);
+    let sink_id = supplier_sink_register(ctrl_id, 0, &waker, true);
     let mut current_limit: i64 = 0;
     let start = crate::runtime::thread_compat::Instant::now();
     while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
