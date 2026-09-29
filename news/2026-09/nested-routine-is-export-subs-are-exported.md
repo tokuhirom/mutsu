@@ -11,4 +11,4 @@ compiled body the enclosing routine already carries
 Called during the enclosing routine's dynamic extent, the exported routine reads its free
 variables from that routine's live frame, as in Rakudo.
 
-This is the shape of the `Green` distribution's `set`/`test` pair (`t/01-time.t`); mutsu#10050.
+This is the shape of the `Green` distribution's `set`/`test` pair (`t/01-time.t`), which now passes its whole suite (4/4 files); mutsu#10050.
