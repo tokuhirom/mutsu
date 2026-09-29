@@ -20,10 +20,8 @@ Legitimate construction sites are few:
   * a `thread_local!` built once per thread (`regex_parse.rs`).
 
 All of them are listed with their per-file counts in
-scripts/interp-construction-allowlist.txt, together with the regex
-parse-time evaluator (`eval_string_as_source`), which is debt tracked by
-#10157. A new site anywhere else, or a higher count in a listed
-file, fails. A count that falls must be re-cut, so the list only ever shrinks:
+scripts/interp-construction-allowlist.txt. A new site anywhere else, or a
+higher count in a listed file, fails. A count that falls must be re-cut, so the list only ever shrinks:
 
     scripts/check-interp-construction.py              # check
     scripts/check-interp-construction.py --update     # re-cut after removing a site

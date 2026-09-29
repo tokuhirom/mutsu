@@ -1,3 +1,4 @@
+use super::regex::regex_code_interp::{code_interp_close, dq_code_interp_atom};
 use super::regex_parse::*;
 use super::regex_parse_grapheme::merge_grapheme_literal_tokens;
 use super::*;
@@ -2163,6 +2164,27 @@ impl Interpreter {
             let mut aliased_subrule_call = false;
             let atom = match c {
                 '.' => RegexAtom::Any,
+                '$' | '@'
+                    if mode == RegexParseMode::Match
+                        && chars.peek() == Some(&'(')
+                        && code_interp_close(&chars.clone().collect::<Vec<char>>(), 0)
+                            .is_some() =>
+                {
+                    // `$( code )` / `@( code )`: the interpolation pre-pass
+                    // leaves the code in the text; it runs when the atom is
+                    // matched, on the running interpreter (#10157).
+                    let rest: Vec<char> = chars.clone().collect();
+                    let close = code_interp_close(&rest, 0)?;
+                    let code: String = rest[1..close].iter().collect();
+                    for _ in 0..=close {
+                        chars.next();
+                    }
+                    runtime_value_atom = true;
+                    RegexAtom::CodeInterp {
+                        code: code.into(),
+                        list: c == '@',
+                    }
+                }
                 '\\' => {
                     let esc = chars.next()?;
                     match esc {
@@ -2575,8 +2597,24 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
                     let mut literal = String::new();
+                    // Literal runs, each followed by an embedded `$( code )`
+                    // the pre-pass left for match time (#10157).
+                    let mut code_segments: Vec<(String, String)> = Vec::new();
                     loop {
                         match chars.next() {
+                            Some('$')
+                                if mode == RegexParseMode::Match
+                                    && chars.peek() == Some(&'(')
+                                    && let Some(close_at) = code_interp_close(
+                                        &chars.clone().collect::<Vec<char>>(),
+                                        0,
+                                    ) =>
+                            {
+                                let code: String =
+                                    chars.by_ref().take(close_at + 1).skip(1).collect();
+                                let code = code[..code.len() - 1].to_string();
+                                code_segments.push((std::mem::take(&mut literal), code));
+                            }
                             Some('\\') => match chars.next() {
                                 Some('n') => literal.push('\n'),
                                 Some('t') => literal.push('\t'),
@@ -2651,7 +2689,12 @@ impl Interpreter {
                             None => break,
                         }
                     }
-                    regex_single_quote_atom(literal, ignore_case)
+                    if code_segments.is_empty() {
+                        regex_single_quote_atom(literal, ignore_case)
+                    } else {
+                        runtime_value_atom = true;
+                        dq_code_interp_atom(code_segments, literal, ignore_case)
+                    }
                 }
                 '\u{00AB}' => {
                     // « — left word boundary

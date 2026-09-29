@@ -1250,40 +1250,4 @@ impl Interpreter {
         }
         s.len()
     }
-
-    /// Evaluate a string as Raku source code and return the result value.
-    /// Used for @(expr) interpolation in regex patterns.
-    pub(super) fn eval_string_as_source(&self, code: &str) -> Value {
-        let parsed = crate::parse_dispatch::parse_source(code);
-        let (stmts, _) = match parsed {
-            Ok(v) => v,
-            Err(_) => return Value::NIL,
-        };
-        let mut interp = Interpreter {
-            env: self.env.clone(),
-            // The scratch runs in this package. Both the string and its interned
-            // mirror are set: `current_package_sym()` reads the mirror, and a
-            // scratch that overrode only the string answered for the wrong
-            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-            current_package: Arc::new(RwLock::new(self.current_package())),
-            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
-                self.current_package_sym().id(),
-            )),
-            ..Default::default()
-        };
-        self.copy_decl_registry_into(&mut interp);
-        // A `<$re>` reference re-resolving `$re`'s OWN pattern text (issue
-        // #8951) needs `$re`'s defining scope here, not this call's ambient
-        // `self.env` — e.g. a literal's `@(%hash.keys)` closed over `%hash`
-        // where it was WRITTEN, not wherever it is later interpolated.
-        if let Some(scope) = super::regex::regex_helpers::interp_closure_scope_snapshot() {
-            for (k, v) in scope.iter() {
-                interp.env.insert(k.clone(), v.clone());
-            }
-        }
-        match interp.eval_block_value(&stmts) {
-            Ok(v) => v,
-            Err(e) => e.return_value.unwrap_or(Value::NIL),
-        }
-    }
 }

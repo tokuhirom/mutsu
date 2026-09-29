@@ -417,6 +417,17 @@ impl Interpreter {
             }
             return out;
         }
+        if let RegexAtom::CodeInterp { code, list } = atom {
+            return self.regex_code_interp_ends(
+                code,
+                *list,
+                chars,
+                pos,
+                current_caps,
+                pkg,
+                ignore_case,
+            );
+        }
         if let RegexAtom::Group(pattern) = atom {
             // The delta shape lives in `regex_match_lazy.rs` so this eager
             // producer and the demand-driven driver cannot drift (ADR-0073).

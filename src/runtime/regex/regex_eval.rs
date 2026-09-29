@@ -64,64 +64,6 @@ impl Interpreter {
         Some((stmts, id))
     }
 
-    /// Install `self`'s declaration registry into a freshly-built
-    /// sub-interpreter used for regex-parse-time evaluation
-    /// (`eval_string_as_source`).
-    ///
-    /// This used to copy four fields (`functions` / `proto_functions` /
-    /// `token_defs` / `enum_types`) into the registry the sub-interpreter built
-    /// for itself, leaving it on its own built-in `classes`/`method_entries`.
-    /// Sharing the parent's whole registry instead (the copy-on-write
-    /// `Arc<Registry>`, see [`Self::copy_full_registry_into`]) is both a strict
-    /// superset of that data — the parent's registry carries every built-in the
-    /// sub-interpreter used to build for itself, plus the user declarations it
-    /// could not see before — and O(1) instead of four map clones plus a
-    /// registry write. It is also what lets `Interpreter::new` skip building the
-    /// built-in registry for a scratch interpreter altogether.
-    pub(crate) fn copy_decl_registry_into(&self, target: &mut Interpreter) {
-        self.copy_full_registry_into(target);
-        // Propagate the in-progress `Grammar.parse(:actions(...))` object so the
-        // assertion's sub-interpreter can still run the action method mid-parse.
-        // None outside a parse, so this is a no-op there.
-        target.current_grammar_actions = self.current_grammar_actions.clone();
-        // A routine the scratch calls (`/ $(format-money($n)) /`, `<{ f() }>`)
-        // reads its own module's file-scope and package-block lexicals
-        // through these stores, not through `env`; without them such a read
-        // is Nil. Shared read-only, like the registry (all but the escaped
-        // cells are `Arc`s).
-        target.unit_lexicals = Arc::clone(&self.unit_lexicals);
-        target.package_lexicals = Arc::clone(&self.package_lexicals);
-        target.module_scope_lexicals = Arc::clone(&self.module_scope_lexicals);
-        target.module_source_packages = Arc::clone(&self.module_source_packages);
-        target.unit_module_packages = Arc::clone(&self.unit_module_packages);
-        target.module_declared_unit_packages = Arc::clone(&self.module_declared_unit_packages);
-        target.escaping_our_lexical_names = Arc::clone(&self.escaping_our_lexical_names);
-        target.escaped_our_sub_names = Arc::clone(&self.escaped_our_sub_names);
-        target.escaped_our_lexical_cells = self.escaped_our_lexical_cells.clone();
-    }
-
-    /// Snapshot the *entire* declaration registry (classes, roles, methods,
-    /// proto-methods, ... in addition to functions/tokens) into `target`. Needed
-    /// when the sub-interpreter must dispatch user class methods — e.g. running
-    /// grammar action methods on the `:actions` object during an in-parse
-    /// `<?{ $<x>.made ... }>` assertion (see `run_named_capture_actions`), where
-    /// the action class's methods live in `Registry::classes`, which the leaner
-    /// `copy_decl_registry_into` omits.
-    pub(crate) fn copy_full_registry_into(&self, target: &mut Interpreter) {
-        // The sub-interpreter only READS the registry during regex/grammar
-        // evaluation (dispatching methods, resolving tokens/actions); it never
-        // declares new classes into it. Since the registry is copy-on-write
-        // (`Arc<RwLock<Arc<Registry>>>`, slice 1 of
-        // docs/per-task-clone-slimming.md), sharing the inner `Arc<Registry>`
-        // here is already O(1) — no per-call deep clone, and no snapshot cache
-        // needed. `target` gets its OWN outer `Arc<RwLock<...>>`, so a (rare)
-        // write on either side pays its own `Arc::make_mut` clone and never
-        // leaks into the other — this also fixes a latent bug in the prior
-        // shared-snapshot cache, where one sub-interpreter's write could leak
-        // into the next sub-interpreter built from the same cached snapshot.
-        target.registry = Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap())));
-    }
-
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
     /// Returns the regex pattern string to match against.
     pub(super) fn eval_regex_closure_interpolation(
@@ -131,33 +73,7 @@ impl Interpreter {
         caps: &RegexCaptures,
         target: &str,
     ) -> Option<String> {
-        let mut env = self.make_regex_eval_env(caps);
-        // Regex code interpolations such as `<{$NOUN}>` execute over a copy of
-        // the caller's env (`run_regex_sub_eval`). It contains dynamic bindings, but a
-        // module's file-scope lexicals are resolved by the normal compiled
-        // variable reader through the module/unit lexical stores rather than
-        // by a plain env lookup. Seed those names explicitly so a module
-        // routine can use its own regex fragments after another regex has
-        // run. Match-local `:my`/`:let` values retain precedence.
-        let regex_local_names: std::collections::HashSet<String> =
-            caps.regex_vars().keys().cloned().collect();
-        for name in crate::opcode::CompiledCode::regex_code_interpolated_var_names(code) {
-            if regex_local_names.contains(&name) {
-                continue;
-            }
-            if let Some(value) = self.get_env_with_main_alias(&name) {
-                env.insert(name, value);
-            }
-        }
-        // Set $_ to the match target string. After `make_regex_eval_env`, which
-        // installs the `:my`/`:let` lexicals — the topic must win over them.
-        // A regex that captured its defining scope's `$_` keeps that one
-        // instead (`install_regex_closure_scope` pinned it, #9610).
-        if self.regex_topic_pinned == 0 {
-            env.insert("_".to_string(), Value::str(target.to_string()));
-        } else if let Some(topic) = self.env.get("_") {
-            env.insert("_".to_string(), topic.clone());
-        }
+        let env = self.regex_code_interp_env(code, caps, target);
         let stmts = if let Some(body) = parsed_body {
             std::sync::Arc::clone(body)
         } else {

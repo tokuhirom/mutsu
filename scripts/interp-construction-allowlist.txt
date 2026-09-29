@@ -19,7 +19,6 @@ src/runtime/native_supply_mut_methods.rs          3  # thread spawn: clone_for_t
 src/runtime/parse_time_exports.rs                 1  # parse-time export probe, fresh thread once per `use`
 src/runtime/react_whenever.rs                     1  # thread spawn: clone_for_thread
 src/runtime/regex_parse.rs                        1  # thread_local! VALIDATE_INTERP, built once per thread
-src/runtime/regex_parse_charclass.rs              1  # DEBT #10157: regex parse-time eval_string_as_source
 src/runtime/slang_activation.rs                   1  # parse-time slang activation, fresh thread once per `use`
 src/runtime/supply_promise.rs                     1  # thread spawn: clone_for_thread
 src/runtime/supply_transform.rs                   4  # thread spawn: clone_for_thread

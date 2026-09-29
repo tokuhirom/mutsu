@@ -563,6 +563,11 @@ impl Interpreter {
                 new_caps.ast = outcome.made;
                 return Some((pos, new_caps));
             }
+            RegexAtom::CodeInterp { code, list } => {
+                return self
+                    .regex_code_interp_ends(code, *list, chars, pos, current_caps, pkg, ignore_case)
+                    .pop();
+            }
             RegexAtom::ClosureInterpolation { code, body } => {
                 let target: String = chars.iter().collect();
                 let pattern_str = self.eval_regex_closure_interpolation(
