@@ -224,6 +224,12 @@ scripts/dev stop <id>
   `is_global_package`) instead of run-time `format!("{pkg}::{name}")` / `contains("::")`, and
   `MetaNs` (`src/runtime/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` is a shrinking
   ratchet and `make check-magic-keys` a ban; `src/parser/` and `src/compiler/` are exempt.
+- **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
+  (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
+  closure is called on the interpreter you already have (`call_compiled_closure`,
+  `vm_call_on_value`), and a pure builtin that would need to call one declines or has the VM resolve
+  the Callable argument first. `make check-interp-construction` is a shrinking ratchet over
+  `scripts/interp-construction-allowlist.txt` (the regex scratch interpreters are its debt, #10151).
 - **Keep `size_of::<OpCode>()` ≤ 48 bytes** (the `opcode_size_guard` test) — box fat payloads.
 - **Core routine or module function?** A function belongs in core only if `raku -e '<call>'`
   resolves it with no `use` (a `use v6.X` pragma still counts as core) **and** it is documented
