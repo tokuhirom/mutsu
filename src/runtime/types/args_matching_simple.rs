@@ -54,23 +54,11 @@ impl Interpreter {
         }) {
             return None;
         }
-        // A predicate that names one of the signature's own parameters
-        // (`$x where * > $lo`) needs the earlier ones bound; the general walk
-        // binds them.
-        if param_defs.iter().any(|pd| {
-            pd.code
-                .get()
-                .and_then(|chunks| chunks.where_chunk.as_ref())
-                .is_some_and(|chunk| {
-                    chunk.code.free_var_syms.iter().any(|sym| {
-                        sym.with_str(|name| param_defs.iter().any(|other| other.name == name))
-                    })
-                })
-        }) {
+        if !Self::simple_where_reads_no_parameter(param_defs) {
             return None;
         }
         for (idx, (pd, raw)) in param_defs.iter().zip(args).enumerate() {
-            let arg = unwrap_varref_value(raw.clone()).deref_container();
+            let arg = unwrap_varref_value_for_dispatch(raw);
             match pd.type_constraint.as_deref() {
                 Some(tc) => {
                     if multi_dispatch
@@ -90,27 +78,49 @@ impl Interpreter {
                     }
                 }
             }
-            if pd.where_constraint.is_some() {
-                let saved_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
-                self.env.insert_sym(crate::symbol::wk::topic(), arg);
-                let verdict = self.with_candidate_package(candidate_package, |this| {
-                    this.eval_param_where_value(pd, false)
-                });
-                match saved_topic {
-                    Some(topic) => self.env.insert_sym(crate::symbol::wk::topic(), topic),
-                    None => self.env.remove_sym(crate::symbol::wk::topic()),
-                };
-                // An inline predicate answers `Ok(Bool)`; a throw inside it
-                // already came back as `False`.
-                if !verdict.is_ok_and(|v| v.truthy()) {
-                    return Some(false);
-                }
+            if pd.where_constraint.is_some()
+                && !self.with_candidate_package(candidate_package, |this| {
+                    this.simple_where_holds(pd, arg)
+                })
+            {
+                return Some(false);
             }
         }
         Some(true)
     }
 
-    fn is_simple_positional_param(pd: &ParamDef) -> bool {
+    /// Whether no parameter's precompiled `where` names one of the
+    /// signature's own parameters (`$x where * > $lo`): such a predicate needs
+    /// the earlier ones bound, which only the general walk does.
+    pub(crate) fn simple_where_reads_no_parameter(param_defs: &[ParamDef]) -> bool {
+        !param_defs.iter().any(|pd| {
+            pd.code
+                .get()
+                .and_then(|chunks| chunks.where_chunk.as_ref())
+                .is_some_and(|chunk| {
+                    chunk.code.free_var_syms.iter().any(|sym| {
+                        sym.with_str(|name| param_defs.iter().any(|other| other.name == name))
+                    })
+                })
+        })
+    }
+
+    /// Run a plain positional parameter's inline `where` predicate against
+    /// `value`, with `$_` bound to it for the duration. An inline predicate
+    /// answers `Ok(Bool)`, and a throw inside it already came back as `False`.
+    pub(crate) fn simple_where_holds(&mut self, pd: &ParamDef, value: Value) -> bool {
+        let topic = crate::symbol::wk::topic();
+        let saved_topic = self.env.get_sym(topic).cloned();
+        self.env.insert_sym(topic, value);
+        let verdict = self.eval_param_where_value(pd, false);
+        match saved_topic {
+            Some(saved) => self.env.insert_sym(topic, saved),
+            None => self.env.remove_sym(topic),
+        };
+        verdict.is_ok_and(|v| v.truthy())
+    }
+
+    pub(crate) fn is_simple_positional_param(pd: &ParamDef) -> bool {
         // A scalar parameter's name carries no sigil (`$x` is `x`); `@`/`%`/`&`
         // parameters and the synthetic `_capture` / `__type_only__` names do.
         !pd.name.is_empty()
@@ -143,4 +153,10 @@ impl Interpreter {
                     .get()
                     .is_some_and(|chunks| chunks.where_inline_predicate))
     }
+}
+
+/// The value a plain positional parameter's checks apply to: through the
+/// `VarRef` tag of a by-variable argument and through a shared cell.
+pub(crate) fn unwrap_varref_value_for_dispatch(raw: &Value) -> Value {
+    unwrap_varref_value(raw.clone()).deref_container()
 }

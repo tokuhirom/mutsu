@@ -4,6 +4,7 @@ use crate::symbol::Symbol;
 
 mod args_matching;
 mod args_matching_simple;
+pub(crate) use args_matching_simple::unwrap_varref_value_for_dispatch;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;

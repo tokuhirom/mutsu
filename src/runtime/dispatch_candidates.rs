@@ -156,7 +156,7 @@ impl Interpreter {
     /// in [`Interpreter::choose_best_matching_candidate`] may stop — as
     /// opposed to `candidate_rank_cmp` on the full key, which is the total
     /// order the winner is picked by.
-    fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
+    pub(super) fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
         key.6 = 0;
         key
     }
@@ -332,6 +332,24 @@ impl Interpreter {
                 matches.push(def);
             }
         }
+        self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
+    }
+
+    /// The second half of [`Self::bind_ranked_candidates`]: given the
+    /// candidates that matched at the best rank (narrowest first) and the
+    /// first `where` exception a tried candidate threw, pick the winner —
+    /// raising the parked exception when it was reached, and
+    /// `X::Multi::Ambiguous` for a genuine tie. Shared with the per-type
+    /// dispatch program (`multi_dispatch_program.rs`), which finds the
+    /// matches its own way.
+    pub(super) fn settle_ranked_matches(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        mut matches: Vec<Arc<FunctionDef>>,
+        threw: Option<(Arc<FunctionDef>, RuntimeError)>,
+        outer_where_exception: Option<Box<RuntimeError>>,
+    ) -> Option<Arc<FunctionDef>> {
         if let Some((thrower, e)) = threw {
             // No candidate matched at all, or the thrower sorts at least as
             // narrow as (or was declared before) the best match: raku would

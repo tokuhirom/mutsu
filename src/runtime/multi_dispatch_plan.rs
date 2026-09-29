@@ -34,11 +34,11 @@ use super::*;
 /// ([`crate::runtime::multi_dispatch_plan`]).
 pub(crate) struct PlanEntry {
     /// The rank key against the argument types the plan was built for.
-    key: CandidateRankKey,
+    pub(super) key: CandidateRankKey,
     /// The key also depends on the argument values, so it is recomputed per
     /// call (see `Interpreter::candidate_rank_reads_value`).
-    reads_value: bool,
-    def: Arc<FunctionDef>,
+    pub(super) reads_value: bool,
+    pub(super) def: Arc<FunctionDef>,
 }
 
 /// One gather pass of the bare-name resolver, ranked against the call's
@@ -49,9 +49,15 @@ pub(crate) type PlanStage = Vec<PlanEntry>;
 pub(crate) struct BareMultiPlan {
     /// The passes to try, in order; the first that yields a winner decides.
     stages: Vec<PlanStage>,
+    /// Each stage's dispatch program (`multi_dispatch_program.rs`), built
+    /// from the first call that runs the stage; `None` inside when the stage
+    /// needs the general walk.
+    programs: Vec<std::sync::OnceLock<Option<super::multi_dispatch_program::StageProgram>>>,
     /// Whether any pass gathered a candidate — decides whether the resolver
     /// may fall back to the arity-only lookup when nothing binds.
     found_multi_candidates: bool,
+    /// Whether the plan was built for a cacheable argument-type key.
+    keyed: bool,
 }
 
 /// What a [`BareMultiPlan`] is computed from, besides the functions map
@@ -88,8 +94,21 @@ impl Interpreter {
         // Fingerprints of candidates an earlier pass already tried and that
         // did not bind; each wider pass re-gathers them, so skip them there.
         let mut rejected = std::collections::HashSet::new();
-        for stage in &plan.stages {
-            if let Some(def) = self.choose_from_plan_stage(name, arg_values, stage, &mut rejected) {
+        for (stage, program) in plan.stages.iter().zip(&plan.programs) {
+            // A program is specific to the argument-type key, so only a plan
+            // the cache keyed may build one (an unkeyed plan is per call).
+            let program = if plan.keyed {
+                program
+                    .get_or_init(|| self.build_stage_program(arg_values, stage))
+                    .as_ref()
+            } else {
+                None
+            };
+            let winner = match program {
+                Some(program) => self.run_stage_program(name, arg_values, program, &mut rejected),
+                None => self.choose_from_plan_stage(name, arg_values, stage, &mut rejected),
+            };
+            if let Some(def) = winner {
                 return Some(def);
             }
         }
@@ -119,7 +138,9 @@ impl Interpreter {
         {
             return plan.clone();
         }
-        let plan = Arc::new(self.build_bare_multi_plan(name, arg_values, search_pkgs, arity));
+        let mut plan = self.build_bare_multi_plan(name, arg_values, search_pkgs, arity);
+        plan.keyed = key.is_some();
+        let plan = Arc::new(plan);
         if let Some(key) = key {
             debug_assert_eq!(generation, self.fn_resolve_gen);
             self.bare_multi_plan_cache
@@ -346,8 +367,10 @@ impl Interpreter {
         stages.push(self.rank_candidates_for_plan(name, arg_values, any_arity_candidates));
         stages.retain(|stage| !stage.is_empty());
         BareMultiPlan {
+            programs: stages.iter().map(|_| std::sync::OnceLock::new()).collect(),
             stages,
             found_multi_candidates,
+            keyed: false,
         }
     }
 

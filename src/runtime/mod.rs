@@ -760,6 +760,7 @@ mod methods_native_bypass;
 mod methods_object;
 mod methods_object_attr_constraints;
 pub(crate) mod multi_dispatch_plan;
+pub(crate) mod multi_dispatch_program;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 mod methods_object_default_ctor;
 mod methods_object_dispatch_new;
