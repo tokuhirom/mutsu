@@ -1341,10 +1341,24 @@ pub(in crate::runtime) fn callable_signature_info(
 
     match callable.view() {
         ValueView::Sub(data) => {
-            let return_type = interpreter
-                .callable_return_type(&callable)
-                .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
-            Some(param_defs_to_sig_info(&data.param_defs, return_type))
+            // A plain pointy block keeps its one positional parameter in
+            // `params` while `param_defs` is empty. Its `.signature` path
+            // already reconstructs that parameter; use the same result for
+            // Callable constraints. Bare blocks have different implicit-topic
+            // semantics and retain the direct `param_defs` path.
+            if data.param_defs.is_empty()
+                && data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|code| code.is_pointy_block)
+            {
+                crate::value::signature::extract_sig_info(&interpreter.sub_signature_value(&data))
+            } else {
+                let return_type = interpreter
+                    .callable_return_type(&callable)
+                    .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
+                Some(param_defs_to_sig_info(&data.param_defs, return_type))
+            }
         }
         ValueView::Routine { name, .. } => {
             let (params, param_defs) = interpreter.callable_signature(&callable);
