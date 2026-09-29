@@ -763,6 +763,7 @@ fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: false,
         language_version: crate::parser::current_language_version(),
         custom_traits: Vec::new(),
+        decl_id: crate::ast::next_class_decl_id(),
     })
 }
 

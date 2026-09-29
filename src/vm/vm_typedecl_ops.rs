@@ -284,6 +284,14 @@ impl Interpreter {
             // alongside the remap chain (rather than looked up again after)
             // so the same filter that can drop the auto-added `Grammar`
             // self-parent keeps both lists index-aligned.
+            // A `does` role is remapped the same way: a `my role` registers
+            // under its declaration-site storage name too (#9894), and the
+            // remapped `parents` below are matched against this list by name.
+            let does_parents: Vec<String> = does_parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .collect();
+            let does_parents = &does_parents;
             let (mapped_parents, parent_pre_args): (
                 Vec<String>,
                 Vec<Option<&[crate::opcode::DeclTraitArg]>>,
@@ -955,6 +963,7 @@ impl Interpreter {
             body_plan,
             deferred_body_ops,
             role_id,
+            decl_id,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -979,6 +988,19 @@ impl Interpreter {
                 // `my class State does TAP::Entry::Handler` found no such role.
                 format!("{current_package}::{name_str}")
             };
+            // A `my role` is stored under its declaration-site storage name
+            // (ADR-0047 P1, #9894); see `lexical_role_storage_name`.
+            let source_qualified_name = qualified_name;
+            let (qualified_name, is_mangled) = self.lexical_role_storage_name(
+                &name_str,
+                &source_qualified_name,
+                &current_package,
+                custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__my_scoped"),
+                source_compound_name(custom_traits).is_some(),
+                *decl_id,
+            );
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
@@ -1080,11 +1102,15 @@ impl Interpreter {
                 self.compile_role_methods(&qualified_name);
             }
             // See `exec_register_class_op`: a declaration does not set the topic.
-            self.env_mut().insert(
-                qualified_name.clone(),
-                Value::package(Symbol::intern(&qualified_name)),
-            );
-            if qualified_name != name_str && !name_str.contains("::") {
+            if is_mangled {
+                self.bind_lexical_role_names(&qualified_name, &source_qualified_name, &name_str);
+            } else {
+                self.env_mut().insert(
+                    qualified_name.clone(),
+                    Value::package(Symbol::intern(&qualified_name)),
+                );
+            }
+            if !is_mangled && qualified_name != name_str && !name_str.contains("::") {
                 self.env_mut().insert(
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
@@ -1102,7 +1128,7 @@ impl Interpreter {
             // short name `R1`, package-scoped to the declaring package
             // rather than global (mirrors the class path above — see
             // todo/tickets/package-short-name-alias-is-global.md).
-            if qualified_name.contains("::") && qualified_name == name_str {
+            if !is_mangled && qualified_name.contains("::") && qualified_name == name_str {
                 let (parent, short) = qualified_name
                     .rsplit_once("::")
                     .map(|(p, s)| (p.to_string(), s.to_string()))

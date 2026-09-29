@@ -1087,7 +1087,7 @@ impl Registry {
             let Some(head) = candidate else {
                 return Err(RuntimeError::new(format!(
                     "Inconsistent class hierarchy for {}",
-                    class_name
+                    crate::value::user_facing_type_name(class_name)
                 )));
             };
             result.push(head.to_string());

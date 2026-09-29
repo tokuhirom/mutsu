@@ -488,7 +488,9 @@ impl Interpreter {
                     ValueView::ParametricRole {
                         base_name,
                         type_args,
-                    } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
+                    } => {
+                        crate::value::parametric_role_display_name(&base_name.resolve(), type_args)
+                    }
                     // A concrete builtin value (`5`, `"x"`, `%h`, ...): honor
                     // a process-wide rename of its type via
                     // `Hash.^set_name(...)` etc. — see

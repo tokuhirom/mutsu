@@ -153,6 +153,7 @@ impl Compiler {
                 is_rw,
                 language_version,
                 custom_traits,
+                decl_id,
                 ..
             } => Stmt::RoleDecl {
                 name: qualified_sym,
@@ -173,6 +174,7 @@ impl Compiler {
                     }
                     traits
                 },
+                decl_id: *decl_id,
             },
             _ => stmt.clone(),
         }

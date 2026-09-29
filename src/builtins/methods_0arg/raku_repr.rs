@@ -1093,7 +1093,7 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::ParametricRole {
             base_name,
             type_args,
-        } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
+        } => crate::value::parametric_role_display_name(&base_name.resolve(), type_args),
         ValueView::Range(a, b) => {
             format!(
                 "{}..{}",

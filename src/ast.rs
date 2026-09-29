@@ -41,6 +41,14 @@ pub(crate) fn next_class_decl_id() -> u64 {
     crate::anon_names::next_id(crate::anon_names::AnonKind::DeclId, &CLASS_DECL_ID_COUNTER)
 }
 
+/// Draw from the process-global declaration-site counter directly, bypassing
+/// the analysis-only unit-local mode. For ids minted at compile or run time
+/// that share a namespace with `decl_id` (a role's `role_id`, see
+/// `crate::runtime::next_role_id`).
+pub(crate) fn next_global_decl_id() -> u64 {
+    CLASS_DECL_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Specifies how delegation (`handles`) should forward methods.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
@@ -2083,6 +2091,12 @@ pub(crate) enum Stmt {
         language_version: String,
         /// Custom `is` traits with optional arguments, dispatched via `trait_mod:<is>`
         custom_traits: Vec<(String, Option<Expr>)>,
+        /// Stable per-declaration-site id, exactly as `ClassDecl::decl_id`: a
+        /// `my role` is stored under `Name\u{0}<decl_id>` so two same-named
+        /// lexical roles in different scopes keep their own identity
+        /// (ADR-0047 P1, #9894). 0 means "no stable site".
+        #[serde(skip, default = "crate::ast::next_class_decl_id")]
+        decl_id: u64,
     },
     DoesDecl {
         name: Symbol,
