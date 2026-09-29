@@ -24,7 +24,8 @@ pub(super) use helpers::{
     unrecognized_backslash_perror,
 };
 pub(in crate::parser::primary) use interp_content::parse_interpolation_block;
-pub(super) use interp_content::{finalize_interpolation, parse_braced_closure_body};
+pub(super) use interp_content::{finalize_interpolation, parse_closure_part};
+pub(in crate::parser) use interp_content::parse_thunk_expr_body;
 pub(super) use interp_var::try_interpolate_var;
 pub(super) use q_string::{big_q_string, q_string};
 pub(super) use quoted::{corner_bracket_string, parse_backslash_c_bracket};

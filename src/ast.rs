@@ -875,6 +875,12 @@ pub(crate) enum Expr {
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
         perl5: bool,
+        /// True when `replacement` is the `{…}`-wrapped source of an
+        /// assignment-form RHS (`s[pat] = EXPR`, `S[pat] = EXPR`): the braces
+        /// delimit a thunk expression evaluated per match in the enclosing
+        /// scope, not a qq closure Block (so a placeholder in EXPR belongs to
+        /// the enclosing block, and EXPR is no call frame of its own).
+        replacement_thunk: bool,
     },
     NonDestructiveSubst {
         pattern: String,
@@ -889,6 +895,12 @@ pub(crate) enum Expr {
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
         perl5: bool,
+        /// True when `replacement` is the `{…}`-wrapped source of an
+        /// assignment-form RHS (`s[pat] = EXPR`, `S[pat] = EXPR`): the braces
+        /// delimit a thunk expression evaluated per match in the enclosing
+        /// scope, not a qq closure Block (so a placeholder in EXPR belongs to
+        /// the enclosing block, and EXPR is no call frame of its own).
+        replacement_thunk: bool,
     },
     Transliterate {
         from: String,

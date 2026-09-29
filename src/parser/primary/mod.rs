@@ -306,6 +306,7 @@ pub(in crate::parser) use misc::arrow_lambda as arrow_lambda_pub;
 pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpair_sink_source};
 pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
+pub(in crate::parser) use string::parse_thunk_expr_body;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Some(cached) = PRIMARY_MEMO.get(input) {

@@ -68,7 +68,7 @@ pub(crate) fn interpolate_string_content_with_modes(
         if interpolate_closures
             && rest.starts_with('{')
             && let Some((after, inner)) = parse_braced_interpolation(rest)
-            && let Some(expr) = parse_braced_closure_body(inner.trim())
+            && let Some(expr) = parse_closure_part(inner.trim())
         {
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
@@ -89,20 +89,28 @@ pub(crate) fn interpolate_string_content_with_modes(
     finalize_interpolation(parts, current)
 }
 
-/// Parse the body of a `{ … }` string-interpolation block. A block may hold a
-/// full statement list (`{$c++; "new"}`), not just a single expression — mirror
-/// the `$( … )` interpolation path: try a statement list first (so multi-statement
-/// blocks and statement-modifiers work), then fall back to a single expression.
-pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Option<Expr> {
-    // The `{ … }` is its OWN block, so a bare `$` inside it is a `state`
-    // variable of *that* block, not of the enclosing routine. Parsing it in a
-    // fresh lexical scope is what puts the implicit
-    // `state $__ANON_STATE_<id>__;` declaration inside the interpolation block,
-    // where the block's per-execution clone restarts it — raku's documented
-    // trap `sub count-it { say "Count is {$++}" }` prints `0` on every call
-    // (Language/traps.rakudoc, "Using a block to interpolate anon state vars").
+/// A `{ … }` closure part of a `qq`-interpolated body (a heredoc, `qq{…}`, a
+/// `qq:to`, an `s///` replacement): the same scope-isolated `DoStmt(Block(…))`
+/// the `"…"` parser builds, so it is its own Raku call frame (`callframe(0)`
+/// in it is the `Block`) and its placeholders belong to it. `None` when the
+/// body does not parse, in which case the caller keeps the `{` literal.
+pub(in crate::parser::primary) fn parse_closure_part(inner: &str) -> Option<Expr> {
+    parse_interpolation_block(inner).ok().flatten()
+}
+
+/// Parse the body of an assignment-form substitution RHS (`s[pat] = EXPR`)
+/// as a thunk expression. It may hold a full statement list, not just a single
+/// expression — mirror the `$( … )` interpolation path: try a statement list
+/// first, then fall back to a single expression. Unlike [`parse_closure_part`]
+/// a single expression comes back bare, not wrapped in a Block: the thunk is
+/// no frame of its own and a placeholder in it belongs to the enclosing block.
+pub(in crate::parser) fn parse_thunk_expr_body(inner: &str) -> Option<Expr> {
+    // Parsed in a fresh lexical scope so the implicit
+    // `state $__ANON_STATE_<id>__;` declaration a bare `$` mints lands in the
+    // returned statements rather than in the scope that is being parsed when
+    // the replacement is (re)parsed at run time.
     crate::parser::stmt::simple::push_scope();
-    let parsed = parse_braced_closure_body_scoped(inner);
+    let parsed = parse_thunk_expr_body_scoped(inner);
     crate::parser::stmt::simple::pop_scope();
     parsed
 }
@@ -110,7 +118,7 @@ pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Opti
 /// Parse the body of a `"…{ … }…"` interpolation block into the scope-isolated
 /// `DoStmt(Block(…))` the double-quote parser wraps it in.
 ///
-/// Shares [`parse_braced_closure_body`]'s lexical-scope discipline: the block is
+/// Shares [`parse_thunk_expr_body`]'s lexical-scope discipline: the block is
 /// its own block, so a bare `$` in it is a `state` of that block and its
 /// implicit declaration belongs inside the returned statement list, not hoisted
 /// into the enclosing routine.
@@ -142,9 +150,9 @@ fn parse_interpolation_block_stmts(
     Ok(Some(stmts))
 }
 
-/// [`parse_braced_closure_body`]'s body, run with the block's own lexical scope
+/// [`parse_thunk_expr_body`]'s body, run with the block's own lexical scope
 /// already pushed so the anonymous-`state` declarations it mints land inside it.
-fn parse_braced_closure_body_scoped(inner: &str) -> Option<Expr> {
+fn parse_thunk_expr_body_scoped(inner: &str) -> Option<Expr> {
     if let Ok((leftover, mut stmts)) = crate::parser::stmt::stmt_list_pub(inner)
         && leftover.trim().is_empty()
         && !stmts.is_empty()
