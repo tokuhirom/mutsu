@@ -149,7 +149,15 @@ pub(crate) struct SubsetDef {
     /// the predicate references (a grammar/class declared alongside it) is
     /// only visible when the predicate happens to run from a method already
     /// on that class (see #8003).
-    pub(crate) decl_package: String,
+    ///
+    /// Interned once at registration: a type check enters the package on
+    /// every predicate run.
+    pub(crate) decl_package_sym: crate::symbol::Symbol,
+    /// Whether the predicate is a block or one-parameter lambda with no
+    /// placeholder of its own, and so runs inline with its value bound
+    /// (see `type_matches_value`). A property of the predicate alone, so it
+    /// is decided here instead of by an AST walk on every check.
+    pub(crate) predicate_inline: bool,
 }
 
 #[derive(Debug, Clone)]

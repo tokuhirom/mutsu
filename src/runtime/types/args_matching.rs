@@ -723,7 +723,7 @@ impl Interpreter {
                     };
                     let saved = self.env.clone();
                     self.install_match_context_for_where(&pd.name, arg);
-                    self.env.insert("_".to_string(), arg.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), arg.clone());
                     // Bind the parameter name so that `where {$param ...}` can
                     // reference it during dispatch matching.
                     self.env.insert(pd.name.clone(), arg.clone());
@@ -962,7 +962,7 @@ impl Interpreter {
                             self.env.insert(sib.name.clone(), v.clone());
                         }
                     }
-                    self.env.insert("_".to_string(), val.clone());
+                    self.env.insert_sym(crate::symbol::wk::topic(), val.clone());
                     // Bind the parameter name so `where {$param ...}` can reference
                     // it during dispatch matching (mirrors the positional path).
                     if !pd.name.is_empty() {
@@ -1026,7 +1026,7 @@ impl Interpreter {
                 let slurpy_value = Value::hash_bare_values(hash_items);
                 let saved = self.env.clone();
                 self.install_match_context_for_where(&pd.name, &slurpy_value);
-                self.env.insert("_".to_string(), slurpy_value.clone());
+                self.env.insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
                 if !pd.name.is_empty() {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());
                 }

@@ -1253,8 +1253,7 @@ impl Interpreter {
             // true inside one of the class's own methods, but NOT while
             // matching a multi candidate's signature during dispatch, before
             // any method body has been entered (#8003).
-            let saved_package = self.current_package();
-            self.set_current_package(subset.decl_package.clone());
+            let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
             let ok = if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
@@ -1270,25 +1269,25 @@ impl Interpreter {
                 // extra ping-pong; the closure would have captured the *same*
                 // current env, so this is behavior-equivalent. Placeholder blocks
                 // (`where { $^a }`) and multi/typed params fall through too.
-                let inline: Option<(&[Stmt], &str)> = match pred {
-                    Expr::Block(body) => Some((body.as_slice(), "_")),
-                    Expr::AnonSub {
-                        body,
-                        is_block: true,
-                        ..
-                    } => Some((body.as_slice(), "_")),
-                    Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
-                    _ => None,
-                }
-                .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty());
+                // Decided once, at registration (`SubsetDef::predicate_inline`).
+                let inline = if subset.predicate_inline {
+                    super::subset_inline_predicate(pred)
+                } else {
+                    None
+                };
 
                 if let Some((body, bind_name)) = inline {
                     // Inline execution: compile the block body once (cached by
                     // subset name) and run it with the candidate bound to the
                     // topic / param variable.
                     let compiled = self.compile_subset_predicate(constraint, body);
-                    let saved = self.env.get(bind_name).cloned();
-                    self.env.insert(bind_name.to_string(), predicate_value);
+                    let bind_sym = if bind_name == "_" {
+                        crate::symbol::wk::topic()
+                    } else {
+                        crate::symbol::Symbol::intern(bind_name)
+                    };
+                    let saved = self.env.get_sym(bind_sym).cloned();
+                    self.env.insert_sym(bind_sym, predicate_value);
                     let result = match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                         Ok(v) => v.truthy(),
                         Err(e) => {
@@ -1297,9 +1296,9 @@ impl Interpreter {
                         }
                     };
                     if let Some(old) = saved {
-                        self.env.insert(bind_name.to_string(), old);
+                        self.env.insert_sym(bind_sym, old);
                     } else {
-                        self.env.remove(bind_name);
+                        self.env.remove_sym(bind_sym);
                     }
                     result
                 } else {
@@ -1384,7 +1383,6 @@ impl Interpreter {
             } else {
                 true
             };
-            self.set_current_package(saved_package);
             return ok;
         }
         if let Some((constraint_base, constraint_args)) =

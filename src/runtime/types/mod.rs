@@ -1382,3 +1382,21 @@ mod value_is_defined_tests {
         assert!(value_is_defined(&cell_val));
     }
 }
+
+/// A subset predicate that can run inline: a bare block, or a one-parameter
+/// lambda (`* < 100` is stored as one, see `register_subset_decl`), with no
+/// placeholder of its own. Returns the body and the name its value binds to.
+pub(crate) fn subset_inline_predicate(pred: &crate::ast::Expr) -> Option<(&[crate::ast::Stmt], &str)> {
+    use crate::ast::Expr;
+    match pred {
+        Expr::Block(body) => Some((body.as_slice(), "_")),
+        Expr::AnonSub {
+            body,
+            is_block: true,
+            ..
+        } => Some((body.as_slice(), "_")),
+        Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
+        _ => None,
+    }
+    .filter(|(body, _)| crate::ast::collect_placeholders_shallow(body).is_empty())
+}
