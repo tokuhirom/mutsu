@@ -75,8 +75,13 @@ impl Interpreter {
     // Cost: O(k), k = interned qualified names under the package and under its first
     // component (`stash_package_exists`).
     pub(crate) fn missing_stash_package_error(&self, package: &str) -> Option<RuntimeError> {
-        let (prefix, last) = package.rsplit_once("::")?;
-        let first = package.split("::").next().unwrap_or(package);
+        let package_sym = Symbol::intern(package);
+        let prefix = crate::qualified::package_parent(package_sym)?;
+        let last = crate::qualified::unqualified_part(package_sym);
+        let first = crate::qualified::package_ancestors(package_sym)
+            .last()
+            .unwrap_or(package_sym);
+        let (prefix, last, first) = (prefix.as_str(), last.as_str(), first.as_str());
         if prefix.is_empty()
             || last.is_empty()
             || PSEUDO_ROOTS.contains(&first)
