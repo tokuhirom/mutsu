@@ -33,36 +33,28 @@
   "dist": "Ddt",
   "files": [
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/01-basic.t",
       "raku": {
+        "first_failure": "Cannot use variable %template in declaration to initialize itself",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 48.35,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
       "cmp": "no_baseline",
       "path": "t/02-generate-test.t",
       "raku": {
-        "first_failure": "Pair with <> really means an empty list, not null string; use :auth-matcher('') to represent the null string,",
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,11 +64,25 @@
       "cmp": "no_baseline",
       "path": "t/03-absent-dirs.t",
       "raku": {
-        "first_failure": "Pair with <> really means an empty list, not null string; use :auth-matcher('') to represent the null string,",
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.15,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-distribution.t",
+      "raku": {
+        "first_failure": "Cannot use variable %template in declaration to initialize itself",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -86,31 +92,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-distribution.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.97,
+        "secs": 9.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -120,7 +104,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.44,
+        "secs": 10.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,28 +113,28 @@
   ],
   "load": {
     "Ddt": "ok",
-    "Ddt::Distribution": "ok",
+    "Ddt::Distribution": "raku_also_fails",
     "Ddt::JSON": "ok",
     "Ddt::License": "ok",
-    "Ddt::Plugins::Build": "ok",
-    "Ddt::Plugins::Deps": "ok",
-    "Ddt::Plugins::Hack": "ok",
-    "Ddt::Plugins::New": "ok",
-    "Ddt::Plugins::Release": "ok",
-    "Ddt::Plugins::Test": "ok",
-    "Ddt::Plugins::Unit-Generator": "ok",
-    "Ddt::Plugins::Watch": "ok",
-    "Ddt::Template": "ok"
+    "Ddt::Plugins::Build": "raku_also_fails",
+    "Ddt::Plugins::Deps": "raku_also_fails",
+    "Ddt::Plugins::Hack": "raku_also_fails",
+    "Ddt::Plugins::New": "raku_also_fails",
+    "Ddt::Plugins::Release": "raku_also_fails",
+    "Ddt::Plugins::Test": "raku_also_fails",
+    "Ddt::Plugins::Unit-Generator": "raku_also_fails",
+    "Ddt::Plugins::Watch": "raku_also_fails",
+    "Ddt::Template": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -160,10 +144,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 4,
-    "baseline_files": 3,
-    "mutsu_assertions": 4,
-    "parity_files": 3,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.8.2"

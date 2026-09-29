@@ -29,11 +29,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/1790643285418338880.sql: No such file or directory",
+        "first_failure": "Failed to open file /tmp/1790725807684251326.sql: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 790,
-        "secs": 48.99,
+        "secs": 27.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,10 +48,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

@@ -7,22 +7,96 @@
     "unresolved": []
   },
   "dist": "Grammar::BNF",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/abnf.t",
+      "raku": {
+        "first_failure": "This type (Failure) does not support associative operations [at Grammar-BNF-master/t/abnf.t:393]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/generate.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parse.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/slang.t",
+      "raku": {
+        "first_failure": "This type (Failure) does not support associative operations [at Grammar-BNF-master/t/slang.t:3]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "Grammar::ABNF": "ok",
     "Grammar::BNF": "ok",
-    "Slang::ABNF": "Runtime error: slang activation for 'Slang::ABNF' failed: No such method 'AT-KEY' for invocant of type 'Mutsu::Slang::CompLang'",
-    "Slang::BNF": "Runtime error: slang activation for 'Slang::BNF' failed: No such method 'AT-KEY' for invocant of type 'Mutsu::Slang::CompLang'"
+    "Slang::ABNF": "raku_also_fails",
+    "Slang::BNF": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -30,13 +104,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/G/Grammar%3A%3ABNF/Grammar%3A%3ABNF%3Aver%3Cv0.1.0%3E%3Aauth%3Cgithub%3Atadzik%3E.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 10,
+    "baseline_files": 2,
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "v0.1.0"
 }

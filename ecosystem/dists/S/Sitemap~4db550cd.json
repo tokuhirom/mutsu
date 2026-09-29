@@ -55,11 +55,11 @@
       "cmp": "no_baseline",
       "path": "t/01-item.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.6,
+        "secs": 16.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,11 +69,11 @@
       "cmp": "no_baseline",
       "path": "t/02-builder.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.8,
+        "secs": 15.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.5,
+        "secs": 8.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,11 +97,11 @@
       "cmp": "no_baseline",
       "path": "t/04-grammars.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.99,
+        "secs": 16.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -111,11 +111,11 @@
       "cmp": "no_baseline",
       "path": "t/05-formats.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.84,
+        "secs": 17.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -125,11 +125,11 @@
       "cmp": "no_baseline",
       "path": "t/06-crawler.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.54,
+        "secs": 14.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -139,11 +139,11 @@
       "cmp": "no_baseline",
       "path": "t/07-extensions.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.89,
+        "secs": 16.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.9,
+        "secs": 9.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -167,11 +167,11 @@
       "cmp": "no_baseline",
       "path": "t/09-dir-scanner.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.92,
+        "secs": 19.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -181,11 +181,11 @@
       "cmp": "no_baseline",
       "path": "t/10-jsonld.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.82,
+        "secs": 19.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -195,11 +195,11 @@
       "cmp": "no_baseline",
       "path": "t/11-news-sitemap.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.26,
+        "secs": 13.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,11 +209,11 @@
       "cmp": "no_baseline",
       "path": "t/12-site-tree.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.64,
+        "secs": 12.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -223,11 +223,11 @@
       "cmp": "no_baseline",
       "path": "t/13-site-tree-yaml.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.46,
+        "secs": 13.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -237,11 +237,11 @@
       "cmp": "no_baseline",
       "path": "t/14-cli.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.87,
+        "secs": 13.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -251,11 +251,11 @@
       "cmp": "no_baseline",
       "path": "t/15-fetcher.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.67,
+        "secs": 12.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -265,11 +265,11 @@
       "cmp": "no_baseline",
       "path": "t/16-config.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.22,
+        "secs": 12.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -305,10 +305,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

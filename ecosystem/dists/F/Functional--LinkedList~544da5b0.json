@@ -16,11 +16,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Value (Functional::LinkedList()) does not pass the type constraint (Functional::LinkedList)",
+        "first_failure": "Value (Functional::LinkedList<11293>) does not pass the type constraint (Functional::LinkedList)",
         "nok": 1,
         "ok": 6,
         "plan": null,
-        "secs": 0.33,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 60,
         "plan": 60,
-        "secs": 7.09,
+        "secs": 7.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,13 +42,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

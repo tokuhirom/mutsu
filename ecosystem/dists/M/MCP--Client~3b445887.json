@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.61,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 8.99,
+        "secs": 7.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.41,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 4.58,
+        "secs": 4.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 11,
         "ok": 3,
         "plan": 14,
-        "secs": 4.95,
+        "secs": 4.19,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 3.95,
+        "secs": 3.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.36,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.81,
+        "secs": 2.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.47,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,7 +135,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 18.32,
+        "secs": 16.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +147,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.16,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 3.68,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +180,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 19.67,
+        "secs": 21.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +193,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 65.97,
+        "secs": 65.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 13.95,
+        "secs": 13.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +216,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 65.92,
+        "secs": 65.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 11.37,
+        "secs": 13.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -236,11 +236,11 @@
       "cmp": "no_baseline",
       "path": "t/10-http.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.32,
+        "secs": 8.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -250,11 +250,11 @@
       "cmp": "no_baseline",
       "path": "t/11-http-validation.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.9,
+        "secs": 14.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,7 +266,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.16,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -276,7 +276,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 5.97,
+        "secs": 5.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -289,7 +289,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.18,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -299,30 +299,30 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.72,
+        "secs": 4.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%a'; expected Associative but got Bool (False)",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "one seam, two kinds of question",
+        "nok": 1,
+        "ok": 13,
         "plan": 14,
-        "secs": 1.54,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/14-policy.rakutest",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 19.71,
+        "secs": 18.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -335,7 +335,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.98,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -345,7 +345,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.75,
+        "secs": 3.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -358,7 +358,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 9,
-        "secs": 1.71,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -368,30 +368,29 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 6.01,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%a'; expected Associative but got Bool (False)",
         "nok": 0,
-        "ok": 3,
+        "ok": 8,
         "plan": 8,
-        "secs": 1.01,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/17-command-rules.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.47,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -403,7 +402,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.18,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -413,7 +412,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.29,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -425,7 +424,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.55,
+        "secs": 3.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -435,7 +434,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 5.62,
+        "secs": 5.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -448,7 +447,7 @@
         "nok": 5,
         "ok": 20,
         "plan": 25,
-        "secs": 5.61,
+        "secs": 5.52,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -458,7 +457,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 26.02,
+        "secs": 25.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -470,7 +469,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.98,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -480,7 +479,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 5.7,
+        "secs": 4.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -492,7 +491,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 2.15,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -502,7 +501,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.86,
+        "secs": 3.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -515,7 +514,7 @@
         "nok": 5,
         "ok": 0,
         "plan": 5,
-        "secs": 1.89,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -525,30 +524,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.13,
+        "secs": 2.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%a'; expected Associative but got Bool (False)",
         "nok": 0,
-        "ok": 4,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.93,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/24-host-rules.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.72,
+        "secs": 2.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -560,7 +558,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.11,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -570,7 +568,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 5.68,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -583,7 +581,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.02,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -593,7 +591,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.22,
+        "secs": 4.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -623,13 +621,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -641,9 +639,9 @@
   "totals": {
     "baseline_assertions": 259,
     "baseline_files": 24,
-    "mutsu_assertions": 162,
-    "parity_files": 11,
-    "regressed_files": 13
+    "mutsu_assertions": 183,
+    "parity_files": 13,
+    "regressed_files": 11
   },
   "version": "0.5.0"
 }

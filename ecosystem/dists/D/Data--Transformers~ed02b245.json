@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.2,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,30 +26,51 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 3.55,
+        "secs": 5.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@input'; expected Positional but got Int (1)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-array-pad.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.82,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-center-array.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,44 +79,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@input'; expected Positional but got Int (2)",
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": null,
-        "secs": 0.17,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
-      },
-      "path": "t/02-center-array.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "hashes, mixes, bags",
-        "nok": 1,
-        "ok": 3,
-        "plan": 4,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
       },
       "path": "t/03-rescale.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.71,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +106,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -118,7 +116,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.71,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,13 +130,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -150,9 +148,9 @@
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 5,
-    "mutsu_assertions": 4,
-    "parity_files": 1,
-    "regressed_files": 4
+    "mutsu_assertions": 31,
+    "parity_files": 3,
+    "regressed_files": 2
   },
   "version": "0.0.2"
 }

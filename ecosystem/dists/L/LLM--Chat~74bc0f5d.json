@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 24,
-        "secs": 1.36,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.16,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.35,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 10.14,
+        "secs": 7.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.58,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 1.0,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 2.78,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.28,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,7 +139,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.98,
+        "secs": 3.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -149,10 +149,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "chat-completion returns canned response",
-        "nok": 3,
-        "ok": 14,
+        "nok": 2,
+        "ok": 15,
         "plan": 17,
-        "secs": 1.96,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 24.79,
+        "secs": 16.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +174,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.28,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.62,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -196,7 +196,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.23,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -206,7 +206,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.45,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -218,7 +218,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.25,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -228,29 +228,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.32,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in assignment to $!env; expected Template::Jinja2 but got LLM::Chat::Template::Jinja2 (LLM::Chat::Template::Jinja2)",
         "nok": 0,
-        "ok": 12,
+        "ok": 0,
         "plan": 12,
-        "secs": 8.39,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/10_jinja2.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 49.04,
+        "secs": 36.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -262,7 +263,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 2.66,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -272,7 +273,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 9.35,
+        "secs": 6.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -282,11 +283,11 @@
       "cmp": "no_baseline",
       "path": "t/11_tool_calls.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.79,
+        "secs": 12.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -296,11 +297,11 @@
       "cmp": "no_baseline",
       "path": "t/12-openrouter-backend.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.94,
+        "secs": 11.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -314,7 +315,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.64,
+        "secs": 3.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -326,7 +327,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.5,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -336,7 +337,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.94,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -350,7 +351,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 5,
-        "secs": 1.75,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -360,11 +361,11 @@
       "cmp": "no_baseline",
       "path": "t/15-streaming-resilience.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.6,
+        "secs": 12.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -374,11 +375,11 @@
       "cmp": "no_baseline",
       "path": "t/16-koboldcpp-cancel.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 19.24,
+        "secs": 12.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -390,7 +391,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.07,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -400,7 +401,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 7.53,
+        "secs": 3.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -410,11 +411,11 @@
       "cmp": "no_baseline",
       "path": "t/18-json-schema-settings.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.02,
+        "secs": 11.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -424,11 +425,11 @@
       "cmp": "no_baseline",
       "path": "t/19-length-finish-stream.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.18,
+        "secs": 12.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -438,11 +439,11 @@
       "cmp": "no_baseline",
       "path": "t/20-body-encoding.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.56,
+        "secs": 12.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -452,11 +453,11 @@
       "cmp": "no_baseline",
       "path": "t/21-stream-encoding.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.59,
+        "secs": 10.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -468,7 +469,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.61,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -478,7 +479,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 7.58,
+        "secs": 5.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -490,7 +491,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.3,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -500,7 +501,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.39,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -510,11 +511,11 @@
       "cmp": "no_baseline",
       "path": "t/24-stream-close.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 20.06,
+        "secs": 12.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -524,11 +525,11 @@
       "cmp": "no_baseline",
       "path": "t/25-stream-frame-loss.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 19.55,
+        "secs": 13.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -566,13 +567,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -584,9 +585,9 @@
   "totals": {
     "baseline_assertions": 172,
     "baseline_files": 13,
-    "mutsu_assertions": 169,
-    "parity_files": 12,
-    "regressed_files": 1
+    "mutsu_assertions": 158,
+    "parity_files": 11,
+    "regressed_files": 2
   },
   "version": "0.10.0"
 }

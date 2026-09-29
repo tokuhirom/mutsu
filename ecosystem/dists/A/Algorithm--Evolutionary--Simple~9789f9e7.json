@@ -22,11 +22,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot modify an immutable List ((True False True False False True False False False True False False False False True True False True True True True True False False False True True False False False",
+        "first_failure": "Cannot modify an immutable Bool (False)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 3.37,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 1.71,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 105.89,
+        "secs": 134.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,33 +81,24 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 12.67,
+        "secs": 13.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
-      "mutsu": {
+      "cmp": "no_baseline",
+      "path": "t/02-royal-road.t",
+      "raku": {
         "first_failure": "Testing Royal Road",
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
-      "path": "t/02-royal-road.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
       }
     },
     {
@@ -116,7 +107,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.2,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +117,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.66,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +139,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.65,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,13 +152,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -177,11 +168,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 4397,
-    "baseline_files": 6,
-    "mutsu_assertions": 4067,
+    "baseline_assertions": 4395,
+    "baseline_files": 5,
+    "mutsu_assertions": 4066,
     "parity_files": 3,
-    "regressed_files": 3
+    "regressed_files": 2
   },
   "version": "0.0.8"
 }

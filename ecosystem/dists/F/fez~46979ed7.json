@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 0.97,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 24.96,
+        "secs": 22.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.5,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.57,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,30 +69,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.97,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@input'; expected Positional but got Bool (False)",
         "nok": 0,
-        "ok": 0,
+        "ok": 27,
         "plan": 27,
-        "secs": 0.11,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-glob.t",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.35,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,13 +124,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -143,9 +142,9 @@
   "totals": {
     "baseline_assertions": 52,
     "baseline_files": 4,
-    "mutsu_assertions": 24,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 51,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "100.0.2"
 }

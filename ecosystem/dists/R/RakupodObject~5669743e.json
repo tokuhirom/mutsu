@@ -9,25 +9,17 @@
   "dist": "RakupodObject",
   "files": [
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/1-critical.t",
       "raku": {
-        "nok": 0,
-        "ok": 10,
+        "first_failure": "bad pod string",
+        "nok": 2,
+        "ok": 8,
         "plan": 10,
-        "secs": 1.3,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       }
     }
   ],
@@ -39,10 +31,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -50,12 +42,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUPODOBJECT/a567f9da47f34b9e75148df2f5d1308ccaeceebe.tar.gz"
   },
-  "status": "green",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 10,
-    "baseline_files": 1,
-    "mutsu_assertions": 10,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.7"

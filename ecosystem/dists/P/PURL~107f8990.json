@@ -20,10 +20,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "is the subpath not present",
-        "nok": 2,
-        "ok": 31,
+        "nok": 1,
+        "ok": 23,
         "plan": 33,
-        "secs": 1.11,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 16.27,
+        "secs": 19.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-gif7hlew/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
+        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-qikf0v7d/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
         "nok": 32,
         "ok": 2,
         "plan": 34,
-        "secs": 48.03,
+        "secs": 55.78,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.18,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.19,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.1,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,10 +94,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -109,7 +109,7 @@
   "totals": {
     "baseline_assertions": 100,
     "baseline_files": 3,
-    "mutsu_assertions": 66,
+    "mutsu_assertions": 58,
     "parity_files": 1,
     "regressed_files": 2
   },
