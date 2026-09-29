@@ -19,10 +19,7 @@ impl Compiler {
             Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
             _ => return stmt.clone(),
         };
-        // A qualified name inside a package is relative to that package
-        // (`unit module M; class M::C {}` declares `M::M::C`); only an
-        // explicit `GLOBAL::` prefix is absolute.
-        if bare.starts_with("GLOBAL::") {
+        if bare.contains("::") {
             return stmt.clone();
         }
         let qualified = format!("{}::{}", self.current_package, bare);
