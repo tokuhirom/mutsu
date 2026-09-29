@@ -1363,27 +1363,6 @@ impl Interpreter {
     }
 }
 
-#[cfg(test)]
-mod value_is_defined_tests {
-    use super::*;
-
-    /// #8507: a `ContainerRef` cell whose own content is a `ContainerRef`
-    /// back to itself must not deadlock `value_is_defined`'s recursive
-    /// `.lock()`. No Raku container can legitimately contain itself, but the
-    /// crash-safety fix must hold even if mutsu's container machinery
-    /// manages to create one anyway. This test hangs forever pre-fix.
-    #[test]
-    fn value_is_defined_does_not_deadlock_on_a_self_referential_cell() {
-        let cell_val = Value::NIL.into_container_ref();
-        let arc = match cell_val.view() {
-            ValueView::ContainerRef(arc) => arc.clone(),
-            _ => unreachable!("into_container_ref always returns a ContainerRef"),
-        };
-        *arc.lock().unwrap() = cell_val.clone();
-        assert!(value_is_defined(&cell_val));
-    }
-}
-
 /// A subset predicate that can run inline: a bare block, or a one-parameter
 /// lambda (`* < 100` is stored as one, see `register_subset_decl`), with no
 /// placeholder of its own. Returns the body and the name its value binds to.
@@ -1410,5 +1389,26 @@ pub(crate) fn subset_inline_predicate_shape(
         } => Some((body.as_slice(), "_")),
         Expr::Lambda { param, body, .. } => Some((body.as_slice(), param.as_str())),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod value_is_defined_tests {
+    use super::*;
+
+    /// #8507: a `ContainerRef` cell whose own content is a `ContainerRef`
+    /// back to itself must not deadlock `value_is_defined`'s recursive
+    /// `.lock()`. No Raku container can legitimately contain itself, but the
+    /// crash-safety fix must hold even if mutsu's container machinery
+    /// manages to create one anyway. This test hangs forever pre-fix.
+    #[test]
+    fn value_is_defined_does_not_deadlock_on_a_self_referential_cell() {
+        let cell_val = Value::NIL.into_container_ref();
+        let arc = match cell_val.view() {
+            ValueView::ContainerRef(arc) => arc.clone(),
+            _ => unreachable!("into_container_ref always returns a ContainerRef"),
+        };
+        *arc.lock().unwrap() = cell_val.clone();
+        assert!(value_is_defined(&cell_val));
     }
 }
