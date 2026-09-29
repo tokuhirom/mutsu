@@ -3259,6 +3259,23 @@ impl Interpreter {
                     Value::NIL
                 }
             }
+            // An enum-valued key (`$pair{CSSValue::IntegerComponent}` on a `Str`
+            // enum) subscripts by its string form, like a Str key.
+            // Cost: O(k), k = key length.
+            (ValueView::Pair(key, value), ValueView::Enum { .. }) => {
+                if *key == index.to_string_value() {
+                    value.clone()
+                } else {
+                    Value::NIL
+                }
+            }
+            (ValueView::ValuePair(key, value), ValueView::Enum { .. }) => {
+                if key.to_string_value() == index.to_string_value() {
+                    value.clone()
+                } else {
+                    Value::NIL
+                }
+            }
             // Array + Str is only reachable for an ASSOCIATIVE subscript: a
             // positional one numified its index up front, so it never arrives
             // here as a Str. An Array does not support associative indexing.
