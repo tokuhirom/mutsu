@@ -148,15 +148,18 @@ pub(crate) fn pop_eval_routine_depth() {
     });
 }
 
-/// Whether the innermost active EVAL's code is currently running inside a
-/// routine body (deeper than the routine stack was when the EVAL began).
-fn in_routine_called_by_eval(routine_depth: usize) -> bool {
+/// Whether the innermost active EVAL's code is currently running inside the
+/// routine called `name` (deeper than the routine stack was when the EVAL
+/// began), i.e. `name` is a nested declaration shadowing that very routine.
+fn in_routine_called_by_eval(routine_stack: &[RoutineFrame], name: &str) -> bool {
     EVAL_ROUTINE_DEPTHS.with(|stack| {
         stack
             .borrow()
             .last()
-            .is_some_and(|start| routine_depth > *start)
-    })
+            .is_some_and(|start| routine_stack.len() > *start)
+    }) && routine_stack
+        .last()
+        .is_some_and(|frame| !frame.is_block && frame.name.resolve() == name)
 }
 
 /// Push the set of registry routine keys that exist as an `EVAL` begins.
@@ -669,7 +672,7 @@ impl Interpreter {
             return false;
         }
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && (in_routine_called_by_eval(self.routine_stack.len())
+            && (in_routine_called_by_eval(&self.routine_stack, name)
                 || (!matches!(
                     self.env.get("__mutsu_in_eval").map(Value::view),
                     Some(ValueView::Bool(true))
@@ -1304,7 +1307,7 @@ impl Interpreter {
         });
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && (in_routine_called_by_eval(self.routine_stack.len())
+            && (in_routine_called_by_eval(&self.routine_stack, name)
                 || (!matches!(
                     self.env.get("__mutsu_in_eval").map(Value::view),
                     Some(ValueView::Bool(true))
