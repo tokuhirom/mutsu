@@ -14,7 +14,8 @@ use crate::parser::primary::ident::anon_sub::{
 use crate::parser::primary::ident::circumfix::parse_raw_braced_regex_body;
 use crate::parser::primary::ident::listop::{
     TEST_CALLSITE_LINE_KEY, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
-    parse_expr_listop_args, parse_listop_arg, try_parse_no_paren_invocant_colon_call,
+    operator_term_call, parse_expr_listop_args, parse_listop_arg,
+    try_parse_no_paren_invocant_colon_call,
 };
 use crate::parser::primary::ident::predicates::{
     balanced_paren_text, is_expr_listop, is_infix_word_op, is_keyword, is_listop,
@@ -41,6 +42,7 @@ fn anon_method_declarator_keyword(input: &str) -> Option<(&str, RoutineDeclarato
     }
     keyword("method", input).map(|rest| (rest, RoutineDeclarator::Method))
 }
+
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -638,10 +640,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let r = &r[delim_start.len()..];
                 if let Some(end_pos) = r.find(delim_end) {
                     let op_name = &r[..end_pos];
-                    let r = &r[end_pos + delim_end.len()..];
+                    let name_rest = &r[end_pos + delim_end.len()..];
                     let full_name = Symbol::intern(&format!("{}:<{}>", name, op_name));
                     // Check if followed by (args)
-                    let (r, _) = ws(r)?;
+                    let (r, _) = ws(name_rest)?;
                     if let Some(r) = r.strip_prefix('(') {
                         let (r, _) = ws(r)?;
                         if let Some(r) = r.strip_prefix(')') {
@@ -666,7 +668,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             },
                         ));
                     }
-                    return Ok((r, Expr::BareWord(full_name.resolve())));
+                    return operator_term_call(name_rest, input, full_name);
                 }
             }
             // infix:['OP'](args) / infix:«OP»(args) — operator reference via
@@ -689,8 +691,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     .and_then(|s| s.strip_suffix('>'))
                     .unwrap_or(&canonical);
                 let full_name = Symbol::intern(&format!("{}:<{}>", name, op_name));
-                let (r, _) = ws(r)?;
-                if let Some(r) = r.strip_prefix('(') {
+                let (spaced, _) = ws(r)?;
+                if let Some(r) = spaced.strip_prefix('(') {
                     let (r, _) = ws(r)?;
                     if let Some(r) = r.strip_prefix(')') {
                         return Ok((
@@ -714,7 +716,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         },
                     ));
                 }
-                return Ok((r, Expr::BareWord(full_name.resolve())));
+                return operator_term_call(r, input, full_name);
             }
         }
         "try" => {

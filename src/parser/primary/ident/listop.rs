@@ -12,6 +12,24 @@ use crate::value::Value;
 pub(crate) const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 pub(crate) const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
+/// A categorical operator name in term position is a routine call. Its
+/// unparenthesized arguments follow the same listop grammar as a named sub;
+/// with no following argument it is a zero-argument call, not a code value.
+pub(crate) fn operator_term_call<'a>(
+    rest: &'a str,
+    input: &'a str,
+    name: Symbol,
+) -> PResult<'a, Expr> {
+    let (spaced, _) = ws(rest)?;
+    if !std::ptr::eq(rest, spaced)
+        && !is_stmt_modifier_ahead(spaced)
+        && let Ok((after, call)) = make_call_expr_from_listop_args(spaced, input, name.resolve())
+    {
+        return Ok((after, call));
+    }
+    Ok((rest, Expr::Call { name, args: vec![] }))
+}
+
 pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
     if crate::parser::stmt::simple::is_test_assertion_callable(name) {
         args.push(Expr::Binary {
