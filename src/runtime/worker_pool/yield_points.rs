@@ -41,8 +41,9 @@ struct DeferredState {
     /// epoch `e` is still pending exactly while this equals `e`.
     epoch: u64,
     items: Vec<(Instant, Deferred)>,
-    /// Test-only: the tick leaves this list alone, so a unit test observes
-    /// the yield ordering without racing the wall-clock fallback.
+    /// Test-only: the tick leaves this list alone (and is not started for
+    /// it), so a unit test observes the yield ordering without racing the
+    /// wall-clock fallback or leaving a registered tick thread behind.
     #[cfg(test)]
     tick_exempt: bool,
 }
@@ -86,9 +87,17 @@ impl KeeperMark {
         if own {
             return Err(f);
         }
+        #[cfg(test)]
+        let exempt = self
+            .list
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .tick_exempt;
+        #[cfg(not(test))]
+        let exempt = false;
         // Armed before the list is locked: a failed spawn delivers every
         // list, this one included.
-        if !arm_tick() {
+        if !exempt && !arm_tick() {
             return Err(f);
         }
         let mut st = self.list.lock().unwrap_or_else(PoisonError::into_inner);
@@ -346,12 +355,15 @@ mod tests {
 
     /// Make this test thread a pool worker inside a task whose deferred list
     /// the wall-clock tick never touches, so only a yield can release it.
-    fn become_keeper() -> DeferredList {
+    /// Serialized with the GC tests: a promise and its `await` touch the
+    /// process-global collector state they count on.
+    fn become_keeper() -> (DeferredList, std::sync::MutexGuard<'static, ()>) {
+        let serial = crate::gc::test_support::serial_lock();
         register_worker();
         IN_TASK.with(|c| c.set(true));
         let list = DEFERRED.with(|d| d.borrow().clone()).unwrap();
         list.lock().unwrap().tick_exempt = true;
-        list
+        (list, serial)
     }
 
     fn stop_being_keeper() {
@@ -365,7 +377,7 @@ mod tests {
     /// below can release it.
     #[test]
     fn late_awaiter_waits_for_the_keepers_yield() {
-        let list = become_keeper();
+        let (list, _serial) = become_keeper();
         let promise = SharedPromise::new();
         promise.keep(Value::int(7), String::new(), String::new());
         let (tx, rx) = mpsc::channel();
@@ -388,7 +400,7 @@ mod tests {
     /// Once the keeper has yielded, a late `await` returns without deferring.
     #[test]
     fn awaiter_after_the_yield_returns_at_once() {
-        let list = become_keeper();
+        let (list, _serial) = become_keeper();
         let promise = SharedPromise::new();
         promise.keep(Value::int(1), String::new(), String::new());
         flush_own();
@@ -401,7 +413,7 @@ mod tests {
     /// The keeper awaiting its own promise is already ordered after its keep.
     #[test]
     fn keeper_awaiting_its_own_promise_does_not_defer() {
-        let list = become_keeper();
+        let (list, _serial) = become_keeper();
         let promise = SharedPromise::new();
         promise.keep(Value::int(1), String::new(), String::new());
         let _ = promise.wait();
