@@ -726,6 +726,25 @@ impl Value {
         Self::make_instance_with_destroy(class_name, attributes, false)
     }
 
+    /// [`Self::make_instance_without_destroy`] under an existing identity: the
+    /// invocant of a DESTROY call on the dying object keeps that object's id.
+    pub(crate) fn make_instance_without_destroy_with_id(
+        class_name: Symbol,
+        attributes: impl Into<AttrMap>,
+        id: u64,
+    ) -> Self {
+        Value::from_repr(ValueRepr::Instance {
+            class_name,
+            attributes: crate::gc::Gc::new(InstanceAttrs::new(
+                class_name,
+                attributes.into(),
+                id,
+                false,
+            )),
+            id,
+        })
+    }
+
     /// Build a typed exception instance (`X::Foo`) from `(attr, value)` pairs.
     /// A `message` attr is added if not supplied. Convenience for compile-time
     /// error construction (parser/compiler) where the full sorrow/panic model is

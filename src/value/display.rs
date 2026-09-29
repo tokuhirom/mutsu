@@ -1115,7 +1115,9 @@ impl Value {
                     msg
                 }
             }
-            ValueView::Instance { class_name, .. } => format!("{}()", class_name),
+            // Rakudo's `Mu.Str` on a plain instance is `Name<identity>`: distinct
+            // objects stringify (and so `eq`) differently even with equal attributes.
+            ValueView::Instance { class_name, id, .. } => format!("{}<{}>", class_name, id),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {
                     JunctionKind::Any => "any",
