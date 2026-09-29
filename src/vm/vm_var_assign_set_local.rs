@@ -203,7 +203,6 @@ impl Interpreter {
             || match decontained_popped.view() {
                 ValueView::Array(..)
                 | ValueView::LazyList(_)
-                | ValueView::Seq(_)
                 | ValueView::Slip(_)
                 | ValueView::Range(..)
                 | ValueView::RangeExcl(..)
@@ -212,6 +211,13 @@ impl Interpreter {
                 | ValueView::GenericRange { .. }
                 | ValueView::Uni { .. }
                 | ValueView::Nil => true,
+                // A Seq itself does PositionalBindFailover, not Positional.
+                // Its `.cache`/`.List` handle presents as a List without
+                // forcing the shared SeqBody and can bind to an @ variable.
+                ValueView::Seq(body) => matches!(
+                    body.view(),
+                    crate::value::SeqView::List | crate::value::SeqView::ItemList
+                ),
                 // A Positional TYPE OBJECT binds too (`my @x := Positional[Dog]`,
                 // JSON::Unmarshal's attribute-type flow): raku accepts it and
                 // `.of` reads the parametric element type.
