@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.71,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,7 +43,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 26.38,
+        "secs": 34.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,7 +55,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 0.52,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 1.33,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,7 +77,7 @@
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 0.46,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,6 +87,117 @@
         "nok": 0,
         "ok": 49,
         "plan": 49,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-enclosed_minimal_lorebook.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-enclosed_all_fields_lorebook.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for an element of @!entries; expected LLM::Character::Lorebook::Entry but got Bool (False)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 79,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-st_lorebook.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 79,
+        "plan": 79,
+        "secs": 1.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-character_enclosed.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-character_flat.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
         "secs": 1.12,
         "skip": 0,
         "todo": 0,
@@ -97,119 +208,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 0.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/04-enclosed_minimal_lorebook.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 1.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 49,
-        "plan": 49,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-enclosed_all_fields_lorebook.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 49,
-        "plan": 49,
-        "secs": 1.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 79,
-        "plan": 79,
-        "secs": 0.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/06-st_lorebook.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 79,
-        "plan": 79,
-        "secs": 1.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/07-character_enclosed.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/08-character_flat.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.52,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -219,7 +220,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.06,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -233,7 +234,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 10,
-        "secs": 1.1,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -246,7 +247,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -256,7 +257,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 7.57,
+        "secs": 10.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -269,7 +270,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 13,
-        "secs": 0.32,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -279,7 +280,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.97,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -291,7 +292,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.89,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -301,7 +302,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 1.39,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -313,7 +314,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.91,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -323,29 +324,30 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.37,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for an element of @!entries; expected LLM::Character::Lorebook::Entry but got Bool (False)",
         "nok": 0,
-        "ok": 22,
+        "ok": 0,
         "plan": 22,
-        "secs": 0.83,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/15-export_lorebook_st.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.38,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -359,7 +361,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 9,
-        "secs": 1.36,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -373,7 +375,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 15,
-        "secs": 1.48,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -395,10 +397,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-27",
+    "date": "2026-09-28",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2f3b7d6",
+    "mutsu_commit": "6235cda",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -413,9 +415,9 @@
   "totals": {
     "baseline_assertions": 338,
     "baseline_files": 14,
-    "mutsu_assertions": 327,
-    "parity_files": 12,
-    "regressed_files": 2
+    "mutsu_assertions": 226,
+    "parity_files": 10,
+    "regressed_files": 4
   },
   "version": "0.3.0"
 }

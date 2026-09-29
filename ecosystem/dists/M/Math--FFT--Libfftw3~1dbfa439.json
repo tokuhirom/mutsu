@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.79,
+        "secs": 6.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.19,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,76 +46,74 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.66,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.21,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-raw-c2c.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.25,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.2,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-raw-r2c.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "first_failure": "r2r 1d odd transform",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/04-raw-r2r.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.8,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +126,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.31,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +136,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 6.38,
+        "secs": 8.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,7 +149,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -161,7 +159,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.29,
+        "secs": 4.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +172,7 @@
         "nok": 0,
         "ok": 4,
         "plan": null,
-        "secs": 0.34,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -184,7 +182,30 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.28,
+        "secs": 4.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "r2c & c2r advanced transform - trasform each column of a 2d 10x3 array",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/08-raw-adv.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,21 +214,88 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
+        "first_failure": "Type check failed in binding; expected Positional but got Any",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.25,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/08-raw-adv.rakutest",
+      "path": "t/09-adv.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.21,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-raw-thread.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-raw-openmp.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding; expected Positional but got Any",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-c2c-thread.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,104 +313,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/09-adv.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.06,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/10-raw-thread.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[num64]'",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/11-raw-openmp.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding; expected Positional but got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/12-c2c-thread.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding; expected Positional but got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/13-r2c-thread.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.81,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -335,7 +331,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -345,7 +341,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.74,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -357,7 +353,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.14,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -367,7 +363,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.71,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -386,10 +382,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-27",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2f3b7d6",
+    "mutsu_commit": "6235cda",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -404,9 +400,9 @@
   "totals": {
     "baseline_assertions": 65,
     "baseline_files": 16,
-    "mutsu_assertions": 16,
-    "parity_files": 3,
-    "regressed_files": 13
+    "mutsu_assertions": 32,
+    "parity_files": 7,
+    "regressed_files": 9
   },
   "version": "0.3.5"
 }
