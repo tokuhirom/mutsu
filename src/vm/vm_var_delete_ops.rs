@@ -38,8 +38,7 @@ impl Interpreter {
         match idx.view() {
             ValueView::Sub(data) => {
                 let len = arr_len as i64;
-                let resolved = self.call_subscript_code(&data, len);
-                resolved
+                self.call_subscript_code(&data, len)
             }
             ValueView::Array(items, ..) => {
                 // Array of indices: resolve each element
