@@ -379,11 +379,9 @@ impl Interpreter {
                             ValueView::Instance { attributes, .. } => attributes.to_map(),
                             _ => AttrMap::new(),
                         };
-                        let invocant_for_dispatch = if attributes.is_empty() {
-                            Value::package(class_sym)
-                        } else {
-                            target.clone()
-                        };
+                        // The real receiver, never its type object: a deferral candidate
+                        // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
+                        let invocant_for_dispatch = target.clone();
                         let pushed_dispatch = loan_env!(
                             self,
                             push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
