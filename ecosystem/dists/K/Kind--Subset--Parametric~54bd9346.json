@@ -9,58 +9,20 @@
     "unresolved": []
   },
   "dist": "Kind::Subset::Parametric",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "can mark a subset as being parametric",
-        "nok": 1,
-        "ok": 2,
-        "plan": 8,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-metamodel.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-will.t",
-      "raku": {
-        "first_failure": "P6opaque: representation mismatch when storing value (of type Int) to attribute (of type int)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Kind::Subset::Parametric": "ok",
-    "MetamodelX::ParametricSubset": "ok"
+    "Kind::Subset::Parametric": "Failed to parse module 'MetamodelX::ParametricSubset': Cannot use variable %args in declaration to initialize itself [at lib/MetamodelX/ParametricSubset.pm6:68]",
+    "MetamodelX::ParametricSubset": "Failed to parse module 'MetamodelX::ParametricSubset': Cannot use variable %args in declaration to initialize itself [at lib/MetamodelX/ParametricSubset.pm6:68]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -68,13 +30,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/K/IN/KIND_SUBSET_PARAMETRIC/ad22a7ac7c91e2ce21fec0267f0e4f6c28446054.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 8,
-    "baseline_files": 1,
-    "mutsu_assertions": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "1.0.0"
 }

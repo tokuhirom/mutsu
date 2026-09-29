@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.33,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 10.46,
+        "secs": 11.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "comment (Compare /home/runner/.cache/mutsu-ecosystem/run/ecosweep-ye9nvpky/dist/dist/t/test-data/comment.html to `raku t/bin/html-highlight.raku /home/runner/.cache/mutsu-ecosystem/run/ecosweep-ye9nvp",
+        "first_failure": "comment (Compare /home/runner/.cache/mutsu-ecosystem/run/ecosweep-ozwa7vxn/dist/dist/t/test-data/comment.html to `raku t/bin/html-highlight.raku /home/runner/.cache/mutsu-ecosystem/run/ecosweep-ozwa7v",
         "nok": 3,
         "ok": 0,
         "plan": 8,
-        "secs": 151.8,
+        "secs": 79.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.95,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,10 +66,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

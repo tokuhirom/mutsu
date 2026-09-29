@@ -21,85 +21,15 @@
     "unresolved": []
   },
   "dist": "Pop",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot look up attributes in a Named type object. Did you forget a '.new'?",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/Pop/Entities.t",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Operations",
-        "nok": 2,
-        "ok": 2,
-        "plan": 4,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/Pop/Point.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 11.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $!y; expected num but got Int (3)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/Pop/Rect.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 2.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "Pop": "ok",
     "Pop::Color": "ok",
-    "Pop::Config": "ok",
+    "Pop::Config": "'Pop::Config' cannot inherit from 'Singleton' because it is unknown.",
     "Pop::Drawable": "ok",
     "Pop::Entities": "ok",
-    "Pop::Graphics": "ok",
-    "Pop::Images": "ok",
+    "Pop::Graphics": "'Pop::Config' cannot inherit from 'Singleton' because it is unknown.",
+    "Pop::Images": "'Pop::Images' cannot inherit from 'Singleton' because it is unknown.",
     "Pop::Inputs": "ok",
     "Pop::Point": "ok",
     "Pop::Rect": "ok",
@@ -110,17 +40,17 @@
     "Pop::Sprite": "ok",
     "Pop::Surface": "ok",
     "Pop::Texture": "ok",
-    "Pop::Textures": "ok"
+    "Pop::Textures": "'Pop::Config' cannot inherit from 'Singleton' because it is unknown."
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -128,13 +58,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/OP/POP/a674870e4fb5eedfe13627519b3fa2bfca06f8e9.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 13,
-    "baseline_files": 3,
-    "mutsu_assertions": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 3
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

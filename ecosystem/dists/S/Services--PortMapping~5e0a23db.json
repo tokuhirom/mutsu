@@ -25,23 +25,22 @@
   "dist": "Services::PortMapping",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Services::PortMapping module can be use-d ok",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.64,
+        "secs": 137.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00-load.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 20.53,
+        "secs": 31.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +52,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 103.34,
+        "secs": 113.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +62,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 7.2,
+        "secs": 10.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,10 +77,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -89,13 +88,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/ER/SERVICES_PORTMAPPING/e668914a70836825bee61f94469e3d6786e4c855.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 9,
     "baseline_files": 2,
-    "mutsu_assertions": 8,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 9,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "v0.0.4"
 }

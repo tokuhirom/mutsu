@@ -7,27 +7,97 @@
     "unresolved": []
   },
   "dist": "Test::Describe",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'is-prime' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 12.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'a' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-pars.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'value' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-change.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Test::Describe": "Runtime error: Failed to parse module 'Test::Describe::Root': Confused: Two terms in a row",
-    "Test::Describe::Describe": "Runtime error: Failed to parse module 'Test::Describe::Describe': Confused: Two terms in a row",
+    "Test::Describe": "ok",
+    "Test::Describe::Describe": "ok",
     "Test::Describe::Expect": "ok",
     "Test::Describe::Helpers": "ok",
     "Test::Describe::It": "ok",
     "Test::Describe::Match": "ok",
     "Test::Describe::Match::Change": "ok",
     "Test::Describe::MatchFunctions": "ok",
-    "Test::Describe::Root": "Runtime error: Failed to parse module 'Test::Describe::Root': Confused: Two terms in a row"
+    "Test::Describe::Root": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -35,13 +105,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_DESCRIBE/3164e55e7bee3e5f0fd091a71b3bb8a0f5df8b2d.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 3,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 3
   },
   "version": "0.0.1"
 }

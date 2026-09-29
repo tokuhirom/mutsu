@@ -19,23 +19,22 @@
   "dist": "Web::Scraper",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "tarray hash equality",
-        "nok": 17,
+        "nok": 0,
         "ok": 0,
-        "plan": 20,
-        "secs": 1.02,
+        "plan": null,
+        "secs": 11.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01_basic.t",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 31.02,
+        "secs": 37.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,30 +48,29 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "check item id: 0",
-        "nok": 1,
+        "nok": 0,
         "ok": 0,
-        "plan": 6,
-        "secs": 0.77,
+        "plan": null,
+        "secs": 11.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/03_chain.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.14,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,10 +85,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

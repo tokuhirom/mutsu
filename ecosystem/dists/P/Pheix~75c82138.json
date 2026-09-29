@@ -66,7 +66,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.08,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.88,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,11 +108,11 @@
       "cmp": "no_baseline",
       "path": "t/02-json.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.43,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -122,11 +122,11 @@
       "cmp": "no_baseline",
       "path": "t/03-headers-proto-sn.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.88,
+        "secs": 5.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,11 +136,11 @@
       "cmp": "no_baseline",
       "path": "t/04-headers-proto.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.12,
+        "secs": 5.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -150,11 +150,11 @@
       "cmp": "no_baseline",
       "path": "t/05-access-filechain.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.64,
+        "secs": 8.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -164,11 +164,11 @@
       "cmp": "no_baseline",
       "path": "t/06-access-unified.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.2,
+        "secs": 11.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -178,11 +178,11 @@
       "cmp": "no_baseline",
       "path": "t/07-blockchain-common.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.33,
+        "secs": 6.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -192,11 +192,11 @@
       "cmp": "no_baseline",
       "path": "t/08-blockchain-heavy.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.61,
+        "secs": 5.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -206,11 +206,11 @@
       "cmp": "no_baseline",
       "path": "t/09-blockchain-comp.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.54,
+        "secs": 6.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -220,11 +220,11 @@
       "cmp": "no_baseline",
       "path": "t/10-blockchain-write.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.18,
+        "secs": 5.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -234,11 +234,11 @@
       "cmp": "no_baseline",
       "path": "t/11-datepack.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.14,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -250,7 +250,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,7 +260,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.01,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -270,11 +270,11 @@
       "cmp": "no_baseline",
       "path": "t/13-headers.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.93,
+        "secs": 6.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -284,11 +284,11 @@
       "cmp": "no_baseline",
       "path": "t/14-utils.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.88,
+        "secs": 4.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -302,7 +302,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.81,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -312,11 +312,11 @@
       "cmp": "no_baseline",
       "path": "t/16-stats.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.13,
+        "secs": 4.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -329,7 +329,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.69,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -339,7 +339,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.74,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -361,7 +361,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.43,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -371,11 +371,11 @@
       "cmp": "no_baseline",
       "path": "t/19-cookie.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.27,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -385,11 +385,11 @@
       "cmp": "no_baseline",
       "path": "t/20-pages.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.61,
+        "secs": 4.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -399,11 +399,11 @@
       "cmp": "no_baseline",
       "path": "t/21-controller-basic.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -413,11 +413,11 @@
       "cmp": "no_baseline",
       "path": "t/22-controller-api.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.84,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -427,11 +427,11 @@
       "cmp": "no_baseline",
       "path": "t/23-app.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.16,
+        "secs": 5.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -443,7 +443,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.36,
+        "secs": 0.4,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -453,7 +453,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.73,
+        "secs": 2.0,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -463,11 +463,11 @@
       "cmp": "no_baseline",
       "path": "t/25-compression.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.25,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -477,11 +477,11 @@
       "cmp": "no_baseline",
       "path": "t/26-addons-embeddeduser.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.54,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -491,11 +491,11 @@
       "cmp": "no_baseline",
       "path": "t/27-addons-embeddedadm.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.41,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -505,119 +505,7 @@
       "cmp": "no_baseline",
       "path": "t/28-naive-signer.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/29-deploy-smart-contract.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/30-api-payload.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/31-blockchain-helpers.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/32-blockchain-balance.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/33-blockchain-local-signer.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/34-blockchain-signatures.t",
-      "raku": {
-        "first_failure": "Bitcoin::Core::Secp256k1::Exception::X::Library: Cannot find secp256k1 shared library",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/35-blockchain-eip-4844.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 5.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/36-access-dbi.t",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -629,13 +517,125 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/37-metrics.t",
+      "path": "t/29-deploy-smart-contract.t",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Adverb Perl5 not allowed on s",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.92,
+        "secs": 4.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-api-payload.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-blockchain-helpers.t",
+      "raku": {
+        "first_failure": "Adverb Perl5 not allowed on s",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/32-blockchain-balance.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/33-blockchain-local-signer.t",
+      "raku": {
+        "first_failure": "Adverb Perl5 not allowed on s",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/34-blockchain-signatures.t",
+      "raku": {
+        "first_failure": "Adverb Perl5 not allowed on s",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/35-blockchain-eip-4844.t",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/36-access-dbi.t",
+      "raku": {
+        "first_failure": "Adverb Perl5 not allowed on s",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/37-metrics.t",
+      "raku": {
+        "first_failure": "Adverb Perl5 not allowed on s",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -688,10 +688,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "t/020-cpromise.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 49.72,
+        "secs": 20.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,11 +62,11 @@
       "cmp": "no_baseline",
       "path": "t/030-rec-attr-aliasing.rakutest",
       "raku": {
-        "first_failure": "Could not find JSON::Class::HOW::Jsonish:auth<zef:vrurg> in:",
+        "first_failure": "Type 'test-hub' is not declared",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.51,
+        "secs": 3.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,11 +76,11 @@
       "cmp": "no_baseline",
       "path": "t/040-query-params.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Type 'test-hub' is not declared",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.89,
+        "secs": 3.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -90,11 +90,11 @@
       "cmp": "no_baseline",
       "path": "t/050-type-map.rakutest",
       "raku": {
-        "first_failure": "Could not find JSON::Class::HOW::Jsonish:auth<zef:vrurg> in:",
+        "first_failure": "Type 'test-hub' is not declared",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.95,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -104,11 +104,11 @@
       "cmp": "no_baseline",
       "path": "t/060-gc-enum.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "first_failure": "Type 'test-hub' is not declared",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.85,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -181,10 +181,10 @@
     "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,

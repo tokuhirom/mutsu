@@ -9,22 +9,23 @@
   "dist": "Data::StaticTable",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 49,
+        "ok": 30,
         "plan": 49,
-        "secs": 0.23,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/001-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 2.96,
+        "secs": 4.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +37,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.2,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +47,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.76,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +59,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.37,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,22 +69,23 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.1,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 8,
+        "ok": 0,
         "plan": 8,
         "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/004-extra.rakutest",
       "raku": {
@@ -97,22 +99,23 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 2,
+        "ok": 1,
         "plan": 2,
-        "secs": 37.45,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/005-perf.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 34.95,
+        "secs": 51.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,13 +128,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6235cda",
+    "mutsu_commit": "51f43ba",
     "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.07",
-    "raku_version": "2026.07",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -139,13 +142,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_STATICTABLE/d0112737a7d408a3dc04e875026c98e15064540a.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 104,
     "baseline_files": 5,
-    "mutsu_assertions": 104,
-    "parity_files": 5,
-    "regressed_files": 0
+    "mutsu_assertions": 76,
+    "parity_files": 2,
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }
