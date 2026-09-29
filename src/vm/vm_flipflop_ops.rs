@@ -87,7 +87,6 @@ impl Interpreter {
                         modifier.as_deref(),
                         left_plain,
                         right_plain,
-                        code,
                         compiled_fns,
                     )?;
                     self.apply_pending_rw_writeback(code);
@@ -180,7 +179,6 @@ impl Interpreter {
         modifier: Option<&str>,
         left: Value,
         right: Value,
-        code: &CompiledCode,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         if let ValueView::Junction { kind, values } = left.view() {
@@ -191,7 +189,6 @@ impl Interpreter {
                     modifier,
                     v.clone(),
                     right.clone(),
-                    code,
                     compiled_fns,
                 )?);
             }
@@ -205,7 +202,6 @@ impl Interpreter {
                     modifier,
                     left.clone(),
                     v.clone(),
-                    code,
                     compiled_fns,
                 )?);
             }
