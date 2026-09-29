@@ -17,6 +17,8 @@ pub(crate) enum OuterStash {
 /// entry and restored on block exit.
 pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
+    /// Whether this push raised `Compiler::decl_scope_depth`.
+    owns_decls: bool,
     /// `use variables :D/:U` is lexical: one inside the entered block stops
     /// applying when it exits (see `Compiler::variables_pragma`).
     variables_pragma: Option<&'static str>,
@@ -66,6 +68,13 @@ impl Compiler {
         // lexical scope.
         let dynamic_reads_transparent =
             std::mem::take(&mut self.next_dynamic_scope_inline_transparent);
+        // Neither an inlined `SyntheticBlock` nor a desugar's `DoBlock` owns
+        // the declarations compiled in it (see `decl_scope_depth`).
+        let owns_decls =
+            !dynamic_reads_transparent && !std::mem::take(&mut self.next_scope_decl_transparent);
+        if owns_decls {
+            self.decl_scope_depth += 1;
+        }
         // `std::mem::take` resets the current-scope constant set: the entered
         // block starts with no constants of its own, so an inner `constant X`
         // may legitimately shadow an outer one without being a redeclaration.
@@ -114,12 +123,16 @@ impl Compiler {
                 std::mem::take(&mut self.accessed_dynamic_vars)
             },
             accessed_dynamic_vars_transparent: dynamic_reads_transparent,
+            owns_decls,
         }
     }
 
     pub(super) fn pop_dynamic_scope_lexical(&mut self, saved: LexicalScopeSnapshot) {
         // Drop the exiting block's local-slot scope frame (§1.4 groundwork).
         self.pop_local_scope();
+        if saved.owns_decls {
+            self.decl_scope_depth -= 1;
+        }
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.variables_pragma = saved.variables_pragma;
         self.dynamic_scope_names = saved.dynamic_scope_names;

@@ -174,7 +174,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // labelled `Expr::DoBlock` (the same node plain expression-position
     // `do { ... }` uses), not a loop, which already has exactly that
     // not-a-loop-but-`leave`-targetable behaviour
-    // (`vm/vm_misc_block.rs::exec_do_block_expr_op`).
+    // (`vm/vm_do_block.rs::exec_do_block_expr_op`).
     // Used to lower to a dummy `Stmt::For` carrying `Nil`, which made both
     // forms wrongly behave as a one-iteration loop
     // (`todo/tickets/labelled-bare-block-is-not-a-loop-construct.md`).

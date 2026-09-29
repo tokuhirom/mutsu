@@ -6247,11 +6247,11 @@ impl Interpreter {
                 // to find the next LEAVE phaser boundary on error.
                 *ip += 1;
             }
-            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(w + k + s), w = names written, k = names declared, s = special local slots; `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(w + k + s), w = names written, k = names declared, s = special local slots, and a source block (`DoBlockIsolation::Lexical`) O(w + k); `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
             OpCode::DoBlockExpr {
                 body_end,
                 label,
-                scope_isolate,
+                isolation,
                 isolate_decls_idx,
                 scope_routines,
             } => {
@@ -6260,7 +6260,7 @@ impl Interpreter {
                     code,
                     *body_end,
                     label,
-                    *scope_isolate,
+                    *isolation,
                     *isolate_decls_idx,
                     *scope_routines,
                     ip,

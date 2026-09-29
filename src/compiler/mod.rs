@@ -1109,6 +1109,7 @@ mod adverb_interp;
 mod begin_use;
 mod const_fold;
 pub(crate) mod control_block;
+mod control_block_placeholder;
 mod control_block_scope;
 mod control_for;
 mod control_for_tail;
@@ -1316,7 +1317,19 @@ pub(crate) struct Compiler {
     /// or shadowing an outer same-name — so its isolating exit reverts exactly
     /// those while letting OUTER-variable mutations persist. A nested closure
     /// compiles in a fresh `Compiler` (own scope) so it never pollutes this.
-    pub(crate) block_decl_tracker: Vec<Vec<String>>,
+    /// Each frame carries the [`Self::decl_scope_depth`] of the block's own
+    /// scope; a declaration in a deeper scope is not recorded.
+    pub(crate) block_decl_tracker: Vec<(u32, Vec<String>)>,
+    /// How many enclosing lexical scopes a `my` compiled right now is nested
+    /// in, counting only scopes that own their declarations: a
+    /// `SyntheticBlock` inlined in tail position and a desugar's
+    /// `Expr::DoBlock` are pushed as scope frames but declare into the
+    /// enclosing scope, so they leave it unchanged. Read by
+    /// [`Self::record_block_decl`].
+    pub(crate) decl_scope_depth: u32,
+    /// One-shot: the next `push_dynamic_scope_lexical` enters a scope that
+    /// does not own its declarations (see [`Self::decl_scope_depth`]).
+    pub(crate) next_scope_decl_transparent: bool,
     /// Expression declarations inside a synthesized WhateverCode belong to the
     /// surrounding source block and therefore store through its captured slot.
     promoted_expr_decl_names: HashSet<String>,
@@ -1845,6 +1858,8 @@ impl Compiler {
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
+            decl_scope_depth: 0,
+            next_scope_decl_transparent: false,
             promoted_expr_decl_names: HashSet::new(),
             call_arg_decl_slots: HashSet::new(),
             current_package_kind: None,
@@ -2148,9 +2163,16 @@ impl Compiler {
     /// Record a `my`/`state` declaration name for the innermost active
     /// scope-isolation tracker (see `block_decl_tracker`). No-op when no
     /// scope-isolating do-block is being compiled.
+    ///
+    /// Only a declaration in the tracked block's OWN scope counts: one in a
+    /// nested block (`do { { my $x }; $x = 5 }`) is that block's to revert,
+    /// and reverting it again here would undo the later write to the outer
+    /// same-named variable.
     pub(crate) fn record_block_decl(&mut self, name: &str) {
-        if let Some(top) = self.block_decl_tracker.last_mut() {
-            top.push(name.to_string());
+        if let Some((depth, decls)) = self.block_decl_tracker.last_mut()
+            && *depth == self.decl_scope_depth
+        {
+            decls.push(name.to_string());
         }
     }
 

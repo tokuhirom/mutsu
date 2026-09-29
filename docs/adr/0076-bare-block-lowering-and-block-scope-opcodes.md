@@ -4,8 +4,8 @@
 - **Date**: 2026-09-08
 - **Related**: `src/compiler/control_block.rs`, `src/compiler/control_block_scope.rs`,
   `src/compiler/helpers_do_expr.rs`, `src/compiler/stmt.rs`,
-  `src/vm/vm_misc_scope.rs` (`exec_block_scope_op`), `src/vm/vm_misc_block.rs`
-  (`exec_do_block_expr_op`, `exec_let_block_op`),
+  `src/vm/vm_misc_scope.rs` (`exec_block_scope_op`), `src/vm/vm_do_block.rs`
+  (`exec_do_block_expr_op`), `src/vm/vm_misc_block.rs` (`exec_let_block_op`),
   [ADR-0048](0048-placeholder-scope-is-a-block-invocation-contract.md) D3/D6 (placeholder attribution),
   [#7569](https://github.com/tokuhirom/mutsu/issues/7569),
   `news/2026-09/unify-statement-expression-control-construct-compilation.md`
@@ -199,7 +199,19 @@ have one opcode. It was considered and rejected **for now**, on three grounds:
 
 The cost of deferring is now bounded in a way it was not before: with one `BlockPlan` and
 one skeleton, the merge is a change to `emit_block_shape` and the VM, not a second archaeology
-of two drifting passes. The remaining value-position `my` leak is tracked separately.
+of two drifting passes.
+
+The value-position `my` leak itself was fixed without the merge
+([#9897](https://github.com/tokuhirom/mutsu/issues/9897)). `OpCode::DoBlockExpr`'s boolean
+`scope_isolate` became `isolation: DoBlockIsolation`, with a third policy next to "none" and the
+interpolation one: `Lexical`, taken by every `DoBlockOrigin::SourceBlock` node, reverts exactly the
+block's own declarations (any sigil, their type metadata and the `$*x` mirror of a `my $*x`) and
+lets every other write persist -- an outer lexical, a dynamic variable, `$!`, `$/`. The compile-time
+declaration list now records only declarations in the block's own scope (`decl_scope_depth`), so a
+nested block's `my $x` no longer reverts a later write to the outer `$x`. The `Stmt::SyntheticBlock`
+wrappers and the `$( ... )` contextualizer are `DoBlockOrigin::Desugar` (or not a `DoBlock` at all),
+so they keep declaring into the enclosing scope. Retiring the interpolation policy in favour of
+`BlockScope`'s remains part of the deferred merge.
 
 ## 7. Consequences
 
