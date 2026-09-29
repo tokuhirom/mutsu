@@ -4939,6 +4939,9 @@ pub struct Interpreter {
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
     pub(crate) check_phaser_depth: u32,
+    /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
+    /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.
+    pub(crate) check_phaser_kinds: Vec<&'static str>,
     /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
     /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time
     /// region (`constant` initializer, `BEGIN`/`CHECK` body) rolls these back

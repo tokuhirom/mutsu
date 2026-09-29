@@ -3793,6 +3793,9 @@ pub(crate) enum OpCode {
     CheckPhaserStart {
         /// IP of the CheckPhaserEnd instruction (jump target on error).
         end_ip: u32,
+        /// `true` for a `BEGIN` body, `false` for `CHECK` (and the other
+        /// BEGIN-time regions); names the phaser in X::Comp::BeginTime.
+        is_begin: bool,
     },
     /// Marks the end of a CHECK phaser body.
     CheckPhaserEnd,

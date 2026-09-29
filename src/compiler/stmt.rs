@@ -1607,7 +1607,10 @@ impl Compiler {
                     self.emit_default_before_array_initializer(name_idx, slot, default_trait_expr);
                 }
                 let constant_init_phaser_start = if is_constant_decl {
-                    Some(self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 }))
+                    Some(self.code.emit(OpCode::CheckPhaserStart {
+                        end_ip: 0,
+                        is_begin: false,
+                    }))
                 } else {
                     None
                 };
@@ -1758,7 +1761,9 @@ impl Compiler {
                 if let Some(start_idx) = constant_init_phaser_start {
                     self.code.emit(OpCode::CheckPhaserEnd);
                     let end_ip = self.code.ops.len() as u32;
-                    if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx]
+                    if let OpCode::CheckPhaserStart {
+                        end_ip: ref mut e, ..
+                    } = self.code.ops[start_idx]
                     {
                         *e = end_ip;
                     }
@@ -3755,7 +3760,7 @@ impl Compiler {
             } => {
                 // CHECK phasers run at compile time. If an error occurs inside
                 // a CHECK phaser, Raku wraps it in X::Comp::BeginTime.
-                self.compile_check_phaser(body);
+                self.compile_check_phaser(body, false);
             }
             Stmt::Phaser {
                 kind: PhaserKind::Begin,
@@ -3767,7 +3772,7 @@ impl Compiler {
                 // CheckPhaserStart/End opcodes raise the `check_phaser_depth`
                 // counter, and a throw at depth > 0 is wrapped). The opcodes don't
                 // touch the stack, so the body's value/side-effects are preserved.
-                self.compile_check_phaser(body);
+                self.compile_check_phaser(body, true);
             }
             Stmt::Phaser {
                 kind: PhaserKind::Init | PhaserKind::Enter,
