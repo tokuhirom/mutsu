@@ -501,10 +501,10 @@ impl Interpreter {
             && !spec.kv_mode
             && !spec.zero_positional_params
             && spec.source_var_names.is_empty()
-            && !self
+            && self
                 .container_ref_var
                 .as_ref()
-                .is_some_and(|(_, _, fp)| *fp == Self::resume_code_fp(code))
+                .is_none_or(|(_, _, fp)| *fp != Self::resume_code_fp(code))
     }
 
     /// Whether `for` iterates `iterable` in place (`ForItemIter::Live`): a
