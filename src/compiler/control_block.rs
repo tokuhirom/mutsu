@@ -30,6 +30,7 @@
 //! for what each guarantees and why merging them is a separate, later step.
 
 use super::*;
+use crate::opcode::DoBlockIsolation;
 
 /// The source position a bare block is being compiled for.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -60,8 +61,21 @@ impl BlockPosition {
         matches!(self, Self::Value { .. })
     }
 
-    fn isolate(self) -> bool {
-        matches!(self, Self::Value { isolate: true, .. })
+    /// What `OpCode::DoBlockExpr` reverts on exit. A genuine source block is
+    /// a lexical scope, so its own declarations never outlive it
+    /// (`do { my $zz = 9; 1 }; $::("zz")` finds nothing — #9897); a desugar
+    /// declares into the enclosing scope unless it asks for the
+    /// interpolation policy (`isolate`).
+    fn isolation(self) -> DoBlockIsolation {
+        match self {
+            Self::Statement => DoBlockIsolation::None,
+            Self::Value {
+                origin: crate::ast::DoBlockOrigin::SourceBlock,
+                ..
+            } => DoBlockIsolation::Lexical,
+            Self::Value { isolate: true, .. } => DoBlockIsolation::Interpolation,
+            Self::Value { .. } => DoBlockIsolation::None,
+        }
     }
 
     /// Whether a `let`/`temp` in the body resolves at THIS block.
@@ -265,96 +279,6 @@ impl Compiler {
         }
     }
 
-    /// The placeholder rules, which are the one part of the lowering that is
-    /// genuinely position-specific (ADR-0048 D3/D6). Returns true when a fatal
-    /// die was emitted and the body must not be compiled at all.
-    fn emit_block_placeholder_gate(&mut self, stmts: &[Stmt], position: BlockPosition) -> bool {
-        match position {
-            BlockPosition::Statement => self.emit_statement_block_placeholder_gate(stmts),
-            BlockPosition::Value { .. } => self.emit_value_block_placeholder_gate(stmts),
-        }
-    }
-
-    fn emit_statement_block_placeholder_gate(&mut self, stmts: &[Stmt]) -> bool {
-        // Check for placeholder conflicts in blocks. Use the *shallow*
-        // collector: a placeholder belongs to its innermost enclosing block, so
-        // placeholders nested inside an inner closure (`{ my $a; { $^a } }`)
-        // must NOT be attributed to this block and falsely flagged as
-        // redeclaring this block's `my $a`.
-        let placeholders = crate::ast::collect_placeholders_shallow(stmts);
-        if !placeholders.is_empty()
-            && let Some(err_val) = self.check_placeholder_conflicts(&placeholders, stmts, None)
-        {
-            let idx = self.code.add_constant(err_val);
-            self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
-            return true;
-        }
-        // ADR-0048 D3/D6: a bare `{ ... }` STATEMENT is a Block raku invokes
-        // with ZERO arguments, so a placeholder it declares is that block's own
-        // unsatisfied parameter -- `{ $^c }` dies with "Too few positionals
-        // passed; expected 1 argument but got 0".
-        //
-        // Two shapes are NOT such a block. A SYNTHESIZED body -- an
-        // `if`/`while`/`loop` branch the compile sites re-wrap in `Stmt::Block`
-        // -- is not a block of its own; `synthetic_block_body` marks those, so
-        // peek it here rather than consuming it (it is taken by
-        // `compile_block_construct` as `is_bare`). And a statement MODIFIER's
-        // modified statement (`{ $a = $^x } unless 0`) IS this construct's own
-        // block, supplied the modifier's value -- see `is_construct_body_block`.
-        !self.synthetic_block_body
-            && !self.is_construct_body_block(stmts)
-            && self.emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
-    }
-
-    fn emit_value_block_placeholder_gate(&mut self, body: &[Stmt]) -> bool {
-        // A `do {}` block does not take a signature, so a placeholder variable
-        // used directly inside it cannot be captured -> X::Placeholder::Block.
-        // Exception: inside a method, the legacy argument variable `%_` refers
-        // to the method's implicit `*%_` slurpy and is valid here. `@_` is NOT
-        // exempted: `raku` only auto-adds `*%_` to a method, never `*@_` —
-        // referencing `@_` anywhere in a method body (directly or nested in a
-        // `do {}`) is a compile-time error there too (`raku -e 'class A {
-        // method m { @_.raku.say } }'` => "Placeholder variables (eg. @_)
-        // cannot be used in a method. Please specify an explicit signature").
-        // Pin: t/placeholder-named-in-method-do.t.
-        // Exception: a placeholder that is already a bound parameter of the
-        // ENCLOSING block — its local exists in `local_map` — is attached, not
-        // stray. The chained-comparison desugar (`{ 0 <= $^p <= 5 }`) wraps the
-        // body in a compiler-generated DoBlock inside the very AnonSubParams
-        // that owns `^p`; dying here broke every subset/where written that way
-        // (Cro::Core's `Cro::Port`). Pin: t/subset-where-placeholder-chain.t.
-        let Some(ph) = crate::ast::collect_unattached_placeholders(body)
-            .into_iter()
-            .find(|ph| {
-                if self.lexically_in_method && ph == "%_" {
-                    return false;
-                }
-                // A CARET placeholder (`$^p`) already bound as the enclosing
-                // block's parameter is attached, not stray: the local exists in
-                // `local_map` (same-compiler case), or the interpret-path caller
-                // bound it in env and seeded `prebound_placeholder_params`
-                // (re-entrant block eval — `call_sub_value` → `eval_block_value`
-                // re-compiles the body alone). The `%_`/`@_` implicit slurpies
-                // keep the strict rule (only a METHOD provides them) — pin:
-                // t/placeholder-named-in-method-do.t.
-                let bare = ph.trim_start_matches(['$', '@', '%', '&']);
-                let attached_caret = bare.starts_with('^')
-                    && (self.local_map.contains_key(ph.as_str())
-                        || self.local_map.contains_key(bare)
-                        || self.prebound_placeholder_params.contains(bare));
-                !attached_caret
-            })
-        else {
-            return false;
-        };
-        let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
-        let idx = self.code.add_constant(err);
-        self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die { user_throw: false });
-        true
-    }
-
     /// Emit the scope opcode(s) the plan's [`BlockShape`] calls for, plus the
     /// body itself.
     fn emit_block_shape(
@@ -437,22 +361,33 @@ impl Compiler {
             return;
         }
         let idx = self.emit_do_block_expr(label, position, plan);
-        if position.isolate() {
-            // Record every `my`/`state` declaration compiled in the body
-            // (including ones nested in expressions like `(state $a)++` and ones
-            // shadowing an outer same-name) so the scope-isolating exit reverts
-            // exactly those while letting OUTER-variable mutations persist. A
-            // nested closure compiles in a fresh `Compiler`, so it never
-            // contributes here.
-            self.block_decl_tracker.push(Vec::new());
+        let isolation = position.isolation();
+        match isolation {
+            // Record every `my`/`state` declaration compiled in the body's own
+            // scope (including ones nested in expressions like `(state $a)++`
+            // and ones shadowing an outer same-name) so the scope-isolating
+            // exit reverts exactly those while letting OUTER-variable mutations
+            // persist. `compile_block_inline_body` opens that scope, one level
+            // below the current one. A nested closure compiles in a fresh
+            // `Compiler`, so it never contributes here.
+            DoBlockIsolation::Lexical | DoBlockIsolation::Interpolation => {
+                self.block_decl_tracker
+                    .push((self.decl_scope_depth + 1, Vec::new()));
+            }
+            // A desugar is not a scope of its own: a `my` in it belongs to the
+            // enclosing block, and so to that block's tracker.
+            DoBlockIsolation::None => self.next_scope_decl_transparent = true,
         }
         // `compile_block_construct` already opened this block's import scope.
         self.compile_block_inline_body(stmts);
-        if position.isolate() {
-            let mut decls = self.block_decl_tracker.pop().unwrap_or_default();
-            // Hashes are intentionally NOT isolated: a `my %h` (e.g.
-            // `:into(my %h := :{})`) must survive into the enclosing scope.
-            decls.retain(|n| !n.starts_with('%') && !n.starts_with('&'));
+        if isolation != DoBlockIsolation::None {
+            let (_, mut decls) = self.block_decl_tracker.pop().unwrap_or_default();
+            // The interpolation policy intentionally does NOT isolate hashes:
+            // a `my %h` (e.g. `:into(my %h := :{})`) must survive into the
+            // enclosing scope.
+            if isolation == DoBlockIsolation::Interpolation {
+                decls.retain(|n| !n.starts_with('%') && !n.starts_with('&'));
+            }
             if !decls.is_empty() {
                 let decls_idx = self.code.add_constant(Value::array(
                     decls.into_iter().map(Value::str).collect::<Vec<_>>(),
@@ -477,7 +412,7 @@ impl Compiler {
         self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),
-            scope_isolate: position.isolate(),
+            isolation: position.isolation(),
             isolate_decls_idx: u32::MAX,
             scope_routines: plan.declares_routines,
         })

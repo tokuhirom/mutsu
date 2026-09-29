@@ -815,6 +815,24 @@ pub(crate) enum DeclReset {
     Fresh,
 }
 
+/// How `OpCode::DoBlockExpr` treats the bindings its body made, on exit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DoBlockIsolation {
+    /// Nothing is reverted: a desugar's statements declare straight into the
+    /// enclosing scope.
+    None,
+    /// The `"{...}"`-interpolation policy: the block's own scalar/array
+    /// declarations revert, and so does every write to a special, internal
+    /// or dynamic name; only writes to plain outer user variables and new
+    /// hashes (the `:into(my %h := :{})` idiom) survive.
+    Interpolation,
+    /// A genuine source block (`do { }`, a labelled block, the inline
+    /// `lazy`/`sink`/`quietly` blocks): exactly the block's own declarations
+    /// revert, whatever their sigil, and every other write -- to an outer
+    /// lexical, a dynamic variable, `$!`, `$/` -- persists (#9897).
+    Lexical,
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -2690,12 +2708,15 @@ pub(crate) enum OpCode {
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
-        scope_isolate: bool,
-        /// Constant-pool index of a `Array` of the scalar/array variable
-        /// names the block declares with `my`/`state` (sigil-keyed as stored in
-        /// env). On a `scope_isolate` exit those names revert to their pre-block
-        /// values (block-local declarations don't leak), while mutations of OUTER
-        /// variables persist. `u32::MAX` when there are none / not isolated.
+        /// Which of the block's own bindings are reverted on exit; see
+        /// [`DoBlockIsolation`].
+        isolation: DoBlockIsolation,
+        /// Constant-pool index of a `Array` of the variable names the block
+        /// declares with `my`/`state` in its own scope (sigil-keyed as stored
+        /// in env). On an isolating exit those names revert to their pre-block
+        /// values (block-local declarations don't leak), while mutations of
+        /// OUTER variables persist. `u32::MAX` when there are none / not
+        /// isolated.
         isolate_decls_idx: u32,
         /// True when the body declares a routine (`sub`/`proto`) directly in
         /// its own scope. A `do { ... }` block is a block, so such a routine is

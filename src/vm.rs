@@ -192,6 +192,7 @@ mod vm_closure_build;
 mod vm_data_ops;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
+pub(crate) mod vm_do_block;
 mod vm_element_producers;
 mod vm_env_helpers;
 mod vm_exec_dispatch;
