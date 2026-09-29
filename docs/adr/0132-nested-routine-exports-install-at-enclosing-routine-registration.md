@@ -80,4 +80,5 @@ which live in the enclosing frame and so are reachable the same way.
 - **A call outside the enclosing routine's dynamic extent** reads the free variable by name in
   the caller's env: `my @t; test("x", sub {})` in the importer pushes onto the *importer's*
   `@t`. Rakudo binds the static outer frame instead (an implementation artefact: the write is
-  visible to the next call of `set`). Recorded as a known divergence, not fixed here.
+  visible to the next call of `set`). Recorded as a known divergence, not fixed here
+  ([#10114](https://github.com/tokuhirom/mutsu/issues/10114)).
