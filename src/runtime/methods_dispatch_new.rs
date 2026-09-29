@@ -1067,6 +1067,27 @@ impl Interpreter {
         for attr in class_attrs {
             let attr_name = attr.name;
             let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
+            // A `@`/`%` attribute is an empty container, never its element
+            // type's default (`has int @!a` must not seed `0`).
+            if attr.sigil == '@' {
+                let mut arr = Value::real_array(Vec::new());
+                if let Some(tc) = type_constraint {
+                    arr = self.tag_container_metadata(
+                        arr,
+                        super::ContainerTypeInfo {
+                            value_type: tc,
+                            key_type: None,
+                            declared_type: None,
+                        },
+                    );
+                }
+                attributes.insert(attr_name, arr);
+                continue;
+            }
+            if attr.sigil == '%' {
+                attributes.insert(attr_name, Value::hash(ValueMap::default()));
+                continue;
+            }
             let val = match type_constraint.as_deref() {
                 Some(
                     "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
