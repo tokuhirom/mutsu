@@ -12,9 +12,9 @@ use super::*;
 impl Interpreter {
     /// The value of `pd`'s `where` clause, before the caller's truthiness or
     /// smartmatch test: the result of a `where { … }` block, or the clause's
-    /// own value (`where * > 0` yields the WhateverCode, `where 1..5` the
-    /// Range). The caller has already bound `$_`, the parameter and any
-    /// placeholders in the env.
+    /// own value (`where 1..5` yields the Range). A one-argument WhateverCode
+    /// (`where * > 0`) is answered inline, as a Bool. The caller has already
+    /// bound `$_`, the parameter and any placeholders in the env.
     ///
     /// `record_free_var_writes` is
     /// [`Interpreter::eval_block_value_recording_writes`]'s flag: a clause
@@ -28,8 +28,24 @@ impl Interpreter {
         pd: &ParamDef,
         record_free_var_writes: bool,
     ) -> Result<Value, RuntimeError> {
-        if let Some(chunk) = pd.code.get().and_then(|c| c.where_chunk.as_ref()) {
-            return self.eval_precompiled_block_value(chunk, record_free_var_writes);
+        if let Some(chunks) = pd.code.get()
+            && let Some(chunk) = chunks.where_chunk.as_ref()
+        {
+            let value = self.eval_precompiled_block_value(chunk, record_free_var_writes);
+            if !chunks.where_inline_predicate {
+                return value;
+            }
+            // The chunk is the WhateverCode's body, so its value IS the
+            // verdict. Answer with a Bool, which every caller's smartmatch
+            // passes through unchanged. A throw inside the body rejects the
+            // value, as smartmatching against the closure did (rakudo agrees:
+            // `sub f($x where * < 100) { }; f("abc")` is a binding failure,
+            // not X::Str::Numeric).
+            return Ok(if value.is_ok_and(|v| v.truthy()) {
+                Value::TRUE
+            } else {
+                Value::FALSE
+            });
         }
         let where_expr = pd
             .where_constraint

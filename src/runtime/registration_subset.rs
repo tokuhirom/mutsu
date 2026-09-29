@@ -37,6 +37,20 @@ impl Interpreter {
                     param_sigilless: false,
                 };
             }
+            // A curried predicate (`where * < 100`) is stored as the closure
+            // the compiler would build for it, so a one-argument WhateverCode
+            // reaches the type check's inline path — its body runs with `$_`
+            // bound — instead of being built and called on every check
+            // (#10107). The `Lambda` compiles to the same closure wherever the
+            // predicate is used as a value.
+            if let Expr::WhateverCurry(curried) = pred
+                && let lambda @ Expr::Lambda {
+                    is_whatever_code: true,
+                    ..
+                } = crate::whatever_curry::build_closure(curried)
+            {
+                return lambda;
+            }
             pred.clone()
         });
         // Drop any cached compiled predicate for this name so a redeclaration

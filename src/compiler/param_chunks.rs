@@ -74,11 +74,18 @@ impl Compiler {
     ) {
         for pd in param_defs {
             if !pd.code.is_filled() && Self::param_has_evaluated_exprs(pd) {
+                let inline_where = pd
+                    .where_constraint
+                    .as_deref()
+                    .and_then(Self::inline_where_predicate_body);
                 pd.code.fill(|| crate::ast::ParamChunks {
-                    where_chunk: pd
-                        .where_constraint
-                        .as_deref()
-                        .map(|w| self.compile_param_chunk(&Self::where_chunk_body(w), sigilless, package)),
+                    where_inline_predicate: inline_where.is_some(),
+                    where_chunk: pd.where_constraint.as_deref().map(|w| {
+                        let body = inline_where
+                            .clone()
+                            .unwrap_or_else(|| Self::where_chunk_body(w));
+                        self.compile_param_chunk(&body, sigilless, package)
+                    }),
                     default_chunk: pd
                         .default
                         .as_ref()
@@ -114,6 +121,33 @@ impl Compiler {
         match where_expr {
             Expr::AnonSub { body, .. } => body.clone(),
             expr => vec![Stmt::Expr(expr.clone())],
+        }
+    }
+
+    /// The body of a `where` clause that is a one-argument WhateverCode over
+    /// the topic (`where * < 100`, `where *.defined`): the statements the
+    /// curried closure would run with its sole parameter `$_` bound. The
+    /// binder binds `$_` to the value under test before running a `where`, so
+    /// running this body answers the predicate directly — the same answer as
+    /// building the closure and smartmatching the value against it, minus the
+    /// closure creation and call on every check.
+    fn inline_where_predicate_body(where_expr: &Expr) -> Option<Vec<Stmt>> {
+        let built;
+        let lambda = match where_expr {
+            Expr::WhateverCurry(curried) => {
+                built = crate::whatever_curry::build_closure(curried);
+                &built
+            }
+            other => other,
+        };
+        match lambda {
+            Expr::Lambda {
+                param,
+                body,
+                is_whatever_code: true,
+                ..
+            } if param == "_" => Some(body.clone()),
+            _ => None,
         }
     }
 

@@ -137,6 +137,11 @@ pub(crate) struct ParamChunks {
     /// The `where` clause: the block's statements for `where { ... }`, the
     /// expression itself otherwise.
     pub(crate) where_chunk: Option<crate::opcode::CompiledDeclExpr>,
+    /// True when `where_chunk` is the BODY of a one-argument WhateverCode
+    /// (`where * < 100`) rather than the expression building it: the binder
+    /// has already bound `$_` to the value under test, so the chunk's result
+    /// is the predicate's answer, with no closure built or called per check.
+    pub(crate) where_inline_predicate: bool,
     /// A default expression that is not an immutable scalar literal.
     pub(crate) default_chunk: Option<crate::opcode::CompiledDeclExpr>,
     /// One entry per `shape_constraints` element; `None` for a `*` or literal
