@@ -450,6 +450,11 @@ impl Interpreter {
                 );
                 Ok(match value.view() {
                     ValueView::Array(..) | ValueView::Hash(_) | ValueView::Seq(_) => value.item(),
+                    // A Bool is not itemized but it is still container-held: a
+                    // raw one in a Hash renders as the shorthand Pair
+                    // (`:a`/`:!a`), a contained one as `:a(Bool::False)`, and
+                    // rakudo's JSON::Fast object holds Scalars.
+                    ValueView::Bool(_) => Value::scalar(value),
                     _ => value,
                 })
             }
