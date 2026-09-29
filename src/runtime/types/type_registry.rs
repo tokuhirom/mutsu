@@ -955,7 +955,8 @@ impl Interpreter {
             // short name `Hash`, shadowing CORE's `Hash` for its whole body
             // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
             // Real nesting (`unit module NL; class Hash`) still resolves.
-            if !self.compound_name_segment_is_not_a_scope(qualified)
+            if (crate::qualified::is_qualified(name_sym)
+                || !self.compound_name_segment_is_not_a_scope(qualified))
                 && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return Some(key);

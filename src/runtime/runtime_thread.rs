@@ -767,6 +767,7 @@ impl Interpreter {
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),
+            module_declared_unit_packages: self.module_declared_unit_packages.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             exported_sub_values: self.exported_sub_values.clone(),
