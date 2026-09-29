@@ -6,4 +6,4 @@ Working the `Commands` ecosystem distribution (`t/01-basic.rakutest`, 38 asserti
 - A statement whose last term is a pair with a block value (`@a.push: $key => { ... }`) now ends at that block's `}` at end of line, so the next line's `if COND -> $x { ... }` is a statement rather than a modifier that silently swallowed the pointy block.
 - `$obj.say(...)` / `$obj.put(...)` with arguments, on a class that has its own `print` but no `say`/`put`, now follows Rakudo's `Mu.say(\x)`/`Mu.say(|)` fallback: gist (or `Str`) of the arguments plus `nl-out`, passed to that `print`.
 
-Regression tests: `t/oo/role/punned-role-honours-is-built-false.t`, `t/lang/statement-ends-at-pair-block-value.t`, `t/oo/class/mu-say-put-with-args-use-own-print.t`.
+Regression tests: `t/oo/role/punned-role-honours-is-built-false.t`, `t/control/statement-mod-not-taken-after-pair-block-value.t`, `t/types/mu-say-put-with-args-use-own-print.t`.
