@@ -272,4 +272,10 @@ is elems(Date.new(2026, 1, 1)), 1, 'elems() on a plain instance terminates';
 is elems(Blob.new(1, 2, 3)), 3, 'elems() on a Blob answers its length';
 is Blob.new(1, 2, 3).elems(:zzz), 3, 'Blob.elems ignores an undeclared named';
 
+# --- `sort` declares no named argument --------------------------------------
+
+is-deeply (3, 1, 2).sort(:qqzz9).list, (1, 2, 3), 'List.sort ignores an undeclared named';
+is-deeply [3, 1, 2].sort(:qqzz9).list, (1, 2, 3), 'Array.sort ignores an undeclared named';
+is-deeply (3, 1, 2).sort({ $^b <=> $^a }, :qqzz9).list, (3, 2, 1), 'sort with a comparator ignores an undeclared named';
+
 done-testing;
