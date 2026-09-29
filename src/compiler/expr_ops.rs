@@ -30,7 +30,7 @@ impl Compiler {
                     nth,
                     x,
                     *perl5,
-                    *replacement_thunk,
+                    replacement_thunk.as_deref(),
                 );
             }
             Expr::NonDestructiveSubst {
@@ -57,7 +57,7 @@ impl Compiler {
                     nth,
                     x,
                     *perl5,
-                    *replacement_thunk,
+                    replacement_thunk.as_deref(),
                 );
             }
             Expr::Transliterate {
@@ -129,8 +129,10 @@ impl Compiler {
         nth: &Option<String>,
         x: &Option<String>,
         perl5: bool,
-        replacement_thunk: bool,
+        replacement_thunk: Option<&Expr>,
     ) {
+        self.compile_subst_replacement_thunk(replacement_thunk);
+        let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
@@ -174,8 +176,10 @@ impl Compiler {
         nth: &Option<String>,
         x: &Option<String>,
         perl5: bool,
-        replacement_thunk: bool,
+        replacement_thunk: Option<&Expr>,
     ) {
+        self.compile_subst_replacement_thunk(replacement_thunk);
+        let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth

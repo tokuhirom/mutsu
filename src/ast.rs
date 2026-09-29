@@ -875,12 +875,13 @@ pub(crate) enum Expr {
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
         perl5: bool,
-        /// True when `replacement` is the `{…}`-wrapped source of an
-        /// assignment-form RHS (`s[pat] = EXPR`, `S[pat] = EXPR`): the braces
-        /// delimit a thunk expression evaluated per match in the enclosing
-        /// scope, not a qq closure Block (so a placeholder in EXPR belongs to
-        /// the enclosing block, and EXPR is no call frame of its own).
-        replacement_thunk: bool,
+        /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
+        /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
+        /// a Block: it is evaluated per match with `$/` bound to that match, a
+        /// placeholder or an anonymous `state` (`$++`) in it belongs to the
+        /// enclosing block, and `replacement` is empty. `None` for the quote
+        /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
+        replacement_thunk: Option<Box<Expr>>,
     },
     NonDestructiveSubst {
         pattern: String,
@@ -895,12 +896,13 @@ pub(crate) enum Expr {
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
         perl5: bool,
-        /// True when `replacement` is the `{…}`-wrapped source of an
-        /// assignment-form RHS (`s[pat] = EXPR`, `S[pat] = EXPR`): the braces
-        /// delimit a thunk expression evaluated per match in the enclosing
-        /// scope, not a qq closure Block (so a placeholder in EXPR belongs to
-        /// the enclosing block, and EXPR is no call frame of its own).
-        replacement_thunk: bool,
+        /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
+        /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
+        /// a Block: it is evaluated per match with `$/` bound to that match, a
+        /// placeholder or an anonymous `state` (`$++`) in it belongs to the
+        /// enclosing block, and `replacement` is empty. `None` for the quote
+        /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
+        replacement_thunk: Option<Box<Expr>>,
     },
     Transliterate {
         from: String,
@@ -2977,15 +2979,22 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Subst {
             pattern,
             replacement,
+            replacement_thunk,
             ..
         }
         | Expr::NonDestructiveSubst {
             pattern,
             replacement,
+            replacement_thunk,
             ..
         } => {
             collect_placeholders_in_str(pattern, out);
             collect_placeholders_in_str(replacement, out);
+            // The assignment-form RHS is a thunk of the enclosing block, so
+            // its placeholders are the enclosing block's.
+            if let Some(thunk) = replacement_thunk {
+                collect_ph_expr(thunk, out);
+            }
         }
         Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {
@@ -3643,15 +3652,22 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         Expr::Subst {
             pattern,
             replacement,
+            replacement_thunk,
             ..
         }
         | Expr::NonDestructiveSubst {
             pattern,
             replacement,
+            replacement_thunk,
             ..
         } => {
             collect_placeholders_in_str(pattern, out);
             collect_placeholders_in_str(replacement, out);
+            // The assignment-form RHS is a thunk of the enclosing block, so
+            // its placeholders are the enclosing block's.
+            if let Some(thunk) = replacement_thunk {
+                collect_ph_expr_shallow(thunk, out);
+            }
         }
         Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {

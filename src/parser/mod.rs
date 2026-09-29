@@ -82,12 +82,6 @@ pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
     )
 }
 
-/// See [`crate::parse_dispatch::parse_subst_thunk_replacement`].
-pub(crate) fn parse_subst_thunk_replacement(src: &str) -> Option<crate::ast::Expr> {
-    let inner = src.strip_prefix('{')?.strip_suffix('}')?;
-    primary::parse_thunk_expr_body(inner.trim())
-}
-
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
 pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
