@@ -21,6 +21,7 @@ impl Interpreter {
     /// instance of that subclass as its `.HOW`, so one is built here and
     /// installed — and the builtin ancestor is recorded too, so behaviour that
     /// keys off the metaclass *kind* still sees a role/class/module HOW.
+    // Cost: O(a + d), a = call arguments, d = metaclass MRO depth.
     pub(crate) fn metamodel_new_type(
         &mut self,
         how_class: &str,
@@ -55,7 +56,7 @@ impl Interpreter {
         // A role metaclass mints a ROLE: its methods, added with `.^add_method`,
         // must reach whatever composes it (`.^mixin`, `does`, `but`), and
         // composition reads a role's `RoleDef`, not a class definition.
-        if native_short == Some("ParametricRoleHOW") {
+        if matches!(native_short, Some("ParametricRoleHOW" | "ConcreteRoleHOW")) {
             self.register_metamodel_role(&name);
         } else {
             // An EnumHOW-minted type carries the value list and compose state

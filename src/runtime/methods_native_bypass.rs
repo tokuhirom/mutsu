@@ -19,6 +19,7 @@ impl Interpreter {
             // group above (`types/role_candidate.rs`). Answers the same
             // introspection methods.
             || cn == "Perl6::Metamodel::ParametricRoleHOW"
+            || cn == "Perl6::Metamodel::ConcreteRoleHOW"
             || cn == "Perl6::Metamodel::CoercionHOW"
             // A definiteness-constrained type object's metaclass (ADR-0069).
             || cn == "Perl6::Metamodel::DefiniteHOW"
