@@ -37,8 +37,11 @@ pub(crate) fn builtin_type_is_a(type_name: &str, ancestor: &str) -> bool {
 }
 
 /// A builtin type's classes and roles in narrowness order, most specific
-/// first, with role parameterizations stripped (`Rat` ->
-/// `Rat, Rational, Real, Numeric, Cool, Any, Mu`). Multi-dispatch uses the
+/// first (`Rat` -> `Rat, Rational[Int,Int], Rational, Real, Numeric, Cool,
+/// Any, Mu`). A parameterized name is followed by its base, so a sized
+/// buffer ranks `Blob[uint8]` (`blob8`) before `Blob`, and `Buf[uint8]`
+/// before `Buf`; a generic parameter (`Blob[T]`) names only its base.
+/// Multi-dispatch uses the
 /// index as the candidate's distance, so a role sits right after the last
 /// (least derived) class in the MRO whose catalog row still composes it: the
 /// class that introduced it. `Array`'s `Positional` therefore follows `List`,
@@ -66,18 +69,30 @@ fn narrowness_chain_of(name: &'static str) -> Box<[&'static str]> {
         .collect();
     let mut chain: Vec<&'static str> = Vec::with_capacity(info.mro.len() + info.roles.len());
     for (level, class) in info.mro.iter().enumerate() {
-        chain.push(class);
+        push_spellings(&mut chain, class);
         for role in level_roles[level] {
-            let role = base_name(role);
             let composed_further_up = level_roles[level + 1..]
                 .iter()
-                .any(|roles| roles.iter().any(|r| base_name(r) == role));
-            if !composed_further_up && !chain.contains(&role) {
-                chain.push(role);
+                .any(|roles| roles.iter().any(|r| r == role));
+            if !composed_further_up {
+                push_spellings(&mut chain, role);
             }
         }
     }
     chain.into_boxed_slice()
+}
+
+/// Push `name` onto `chain`, followed by its base when it is parameterized
+/// by concrete types (`Blob[uint8]`, then `Blob`), skipping names already
+/// present. A generic parameterization (`Positional[T]`) pushes only the base.
+fn push_spellings(chain: &mut Vec<&'static str>, name: &'static str) {
+    let base = base_name(name);
+    let generic = name.strip_prefix(base).is_some_and(|args| args == "[T]");
+    for spelling in [name, base] {
+        if (spelling == base || !generic) && !chain.contains(&spelling) {
+            chain.push(spelling);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -104,7 +119,16 @@ mod tests {
         );
         assert_eq!(
             chain("Rat"),
-            ["Rat", "Rational", "Real", "Numeric", "Cool", "Any", "Mu"]
+            [
+                "Rat",
+                "Rational[Int,Int]",
+                "Rational",
+                "Real",
+                "Numeric",
+                "Cool",
+                "Any",
+                "Mu"
+            ]
         );
         assert_eq!(
             chain("Complex"),
@@ -167,6 +191,24 @@ mod tests {
     fn chains_carry_no_ancestor_rakudo_denies() {
         assert!(!chain("Pair").contains(&"Cool"));
         assert!(!chain("Seq").contains(&"Positional"));
+    }
+
+    /// A sized buffer ranks its parameterized spellings before their bases:
+    /// `"x".encode` (`utf8`) is narrower as a `blob8` than as a `Blob`, and a
+    /// `buf8` is a `Buf` before it is a `Blob`.
+    #[test]
+    fn parameterized_names_rank_before_their_base() {
+        let utf8 = chain("utf8");
+        let pos = |c: &[&str], n: &str| c.iter().position(|x| *x == n).unwrap();
+        assert!(pos(&utf8, "Blob[uint8]") < pos(&utf8, "Blob"));
+        assert!(pos(&utf8, "Blob") < pos(&utf8, "Stringy"));
+        let buf8 = chain("Buf[uint8]");
+        assert!(pos(&buf8, "Buf") < pos(&buf8, "Blob[uint8]"));
+        assert!(pos(&buf8, "Blob[uint8]") < pos(&buf8, "Blob"));
+        assert_eq!(
+            chain("Blob"),
+            ["Blob", "Positional", "Stringy", "Any", "Mu"]
+        );
     }
 
     #[test]
