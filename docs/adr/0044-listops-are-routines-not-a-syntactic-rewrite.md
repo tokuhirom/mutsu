@@ -302,7 +302,7 @@ under a competing `multi push` silently did nothing. With a competing candidate 
 the compiler now vivifies an *undefined* subscript slot to `[]` before routine dispatch
 (`slot // (slot = [])`) and passes the slot's value on, so the core candidate autovivifies
 and a defined slot still reaches user candidates. Pinned by
-`t/routines/listop-multi-subscript-autoviv.t`. The `push($obj.attr, ...)` form is unchanged.
+`t/routines/dispatch/listop-multi-subscript-autoviv.t`. The `push($obj.attr, ...)` form is unchanged.
 
 **D3 otherwise remains a recorded non-goal**, pending ADR-0036/ADR-0040's element
 containers: `push(@a[2], ...)` / `push($obj.attr, ...)` under a competing
