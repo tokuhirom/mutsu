@@ -429,6 +429,14 @@ impl RuntimeError {
         Self::new("Cannot assign to an immutable value")
     }
 
+    /// X::AdHoc - a definiteness-constrained type object has no instances of
+    /// its own; construction must target its unconstrained base type.
+    pub(crate) fn constrained_type_instantiation(type_name: &str) -> Self {
+        Self::new(format!(
+            "You cannot create an instance of this type ({type_name})"
+        ))
+    }
+
     /// X::AdHoc - assignment to a sigiled variable bound straight to a TYPE
     /// OBJECT (`$s := IB; $s = 1`), rakudo's own wording for a `Scalar`
     /// assignment whose container holds a `:U` value rather than a concrete

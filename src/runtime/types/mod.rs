@@ -103,15 +103,14 @@ pub(super) fn predicate_requires_defined(predicate: &Expr) -> bool {
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
-    if let Some(base) = constraint.strip_suffix(":U") {
-        (base, Some(":U"))
-    } else if let Some(base) = constraint.strip_suffix(":D") {
-        (base, Some(":D"))
-    } else if let Some(base) = constraint.strip_suffix(":_") {
-        (base, Some(":_"))
-    } else {
-        (constraint, None)
+    for smiley in [":U", ":D", ":_"] {
+        if let Some(base) = constraint.strip_suffix(smiley)
+            && !base.ends_with(':')
+        {
+            return (base, Some(smiley));
+        }
     }
+    (constraint, None)
 }
 
 /// Split an object-hash constraint of the form `ValueType{KeyType}` into its
