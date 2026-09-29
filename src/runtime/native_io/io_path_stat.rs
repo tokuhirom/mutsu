@@ -191,6 +191,7 @@ impl Interpreter {
     /// delegates to. Returns `None` for any other method (content reads
     /// `slurp`/`lines`/handle-opening `open`/`spurt`, which need flags/encoding/
     /// `io_handles` and stay in `native_io_path`).
+    /// Cost: O(p) plus one filesystem query, p = path length.
     pub(crate) fn try_io_path_fs_stat(
         &self,
         attributes: &AttrMap,
@@ -208,6 +209,9 @@ impl Interpreter {
                 | "rwx"
                 | "z"
                 | "mode"
+                | "inode"
+                | "dev"
+                | "devtype"
                 | "s"
                 | "created"
                 | "modified"
@@ -289,6 +293,28 @@ impl Interpreter {
                     Self::build_native_allomorph_value("IntStr", &[Value::int(mode), Value::str(s)])
                 }
                 Err(_) => Ok(io_path_missing_failure(p, "mode")),
+            },
+            "inode" | "dev" | "devtype" => match fs::metadata(path_buf) {
+                Ok(meta) => {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::MetadataExt;
+                        let number = match method {
+                            "inode" => meta.ino(),
+                            "dev" => meta.dev(),
+                            _ => meta.rdev(),
+                        };
+                        Ok(i64::try_from(number)
+                            .map(Value::int)
+                            .unwrap_or_else(|_| Value::bigint(number.into())))
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        let _ = meta;
+                        Ok(Value::NIL)
+                    }
+                }
+                Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "s" => match fs::metadata(path_buf) {
                 Ok(meta) => Ok(Value::int(meta.len() as i64)),
