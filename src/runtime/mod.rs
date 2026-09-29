@@ -685,6 +685,7 @@ mod io_pod_entries;
 mod io_pod_format;
 mod io_pod_heredoc;
 mod io_pod_table;
+mod io_spec_rel2abs;
 mod io_sysinfo;
 mod io_sysinfo_host;
 mod io_sysinfo_kernel;
