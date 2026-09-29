@@ -5,7 +5,8 @@
   "auth": "zef:mutsu",
   "perl": "6.d",
   "provides": {
-    "ResInner": "lib/ResInner.rakumod"
+    "ResInner": "lib/ResInner.rakumod",
+    "ResInnerProbe": "lib/ResInnerProbe.rakumod"
   },
   "resources": [
     "greeting.txt"
