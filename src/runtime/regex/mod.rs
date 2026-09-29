@@ -17,6 +17,7 @@ mod regex_ltm_litend;
 pub(crate) mod regex_ltm_nfa;
 mod regex_ltm_nfa_build;
 mod regex_ltm_nfa_run;
+mod regex_ltm_nfa_scratch;
 mod regex_ltm_rank;
 mod regex_match_at;
 mod regex_match_atom;
