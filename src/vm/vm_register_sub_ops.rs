@@ -431,6 +431,11 @@ impl Interpreter {
                 if *multi && !self.suppress_exports {
                     self.refresh_exported_multi_family(&resolved_name);
                 }
+                // mutsu#10050: `is export` routines nested in this body are
+                // exported at compile time, not when this routine runs.
+                if let Some(routine) = primary_compiled {
+                    self.register_nested_exported_subs(routine, compiled_fns)?;
+                }
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
                     let alt_compiled = plan_compiled(slot + 1);
