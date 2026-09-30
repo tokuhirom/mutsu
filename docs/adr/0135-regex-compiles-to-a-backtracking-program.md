@@ -1,6 +1,11 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Proposed (2026-09-30)
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day). Slices tracked as
+  [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
+  [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
+  [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
+  [#10254](https://github.com/tokuhirom/mutsu/issues/10254) (D),
+  [#10255](https://github.com/tokuhirom/mutsu/issues/10255) (E).
 - **Supersedes in part**: [ADR-0099](0099-regex-engine-performance-strategy.md) §4 Stage 2
   ("deferred, not decided") and Stage 3 ("the CPS→bytecode regex VM stays deferred"). ADR-0099's
   Stages 0 and 1, its measurements and its rejected alternatives stand.
@@ -294,7 +299,7 @@ Applied to the tickets open on 2026-09-30:
 
 ## 8. Implementation status
 
-Proposed; no slice started.
+Accepted; no slice started. Slice issues: A #10251, B #10252, C #10253, D #10254, E #10255.
 
 ### Reproducing §2
 
