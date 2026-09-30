@@ -1,5 +1,5 @@
 //! Declarator doc attachment: the parser, not a source re-scan, decides which
-//! declaration a `#|` / `#=` comment documents (ADR-0134).
+//! declaration a `#|` / `#=` comment documents (ADR-0136).
 //!
 //! Everything is keyed by source offset, so backtracking and memoization
 //! cannot disturb it (a recorded fact is a fact about the source text,

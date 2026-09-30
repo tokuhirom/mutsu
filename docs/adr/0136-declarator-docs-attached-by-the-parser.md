@@ -1,4 +1,4 @@
-# ADR-0134: Declarator docs are attached by the parser, not by a source line scanner
+# ADR-0136: Declarator docs are attached by the parser, not by a source line scanner
 
 - **Status**: Accepted (implemented)
 - **Date**: 2026-09-30

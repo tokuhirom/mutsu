@@ -160,4 +160,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0133](0133-no-per-call-ast-compile-at-runtime.md) | The runtime executes precompiled chunks — no per-call AST compile | Proposed (Slice 1, signature expressions, implemented) |
 | [0134](0134-begin-time-prologue.md) | BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals | Accepted (not yet implemented) |
 | [0135](0135-regex-compiles-to-a-backtracking-program.md) | A regex compiles to a flat backtracking program; the tree walk is retired | Proposed (no slice started) |
-| [0134](0134-declarator-docs-attached-by-the-parser.md) | Declarator docs (`#\|` / `#=`) are attached by the parser, not by a source line scanner | Accepted (implemented) |
+| [0136](0136-declarator-docs-attached-by-the-parser.md) | Declarator docs (`#\|` / `#=`) are attached by the parser, not by a source line scanner | Accepted (implemented) |

@@ -589,7 +589,7 @@ impl Interpreter {
             return Ok(pod.clone());
         }
         // An anonymous routine or block carries the documentation the parser
-        // attached to it on its code object (ADR-0134); remember the
+        // attached to it on its code object (ADR-0136); remember the
         // declarator block under the closure's identity so every `.WHY` on it
         // is the same object.
         if let ValueView::Sub(sub_data) = target.view()

@@ -6,7 +6,7 @@ let `.WHY` find an anonymous sub's doc by counting `&<anon>` lines or by source-
 Every new comment layout needed another heuristic — the latest being a rewrite pass for a `#|`
 written after `=` (roast `dd85d3c9`).
 
-The parser now decides it (ADR-0134, #10226). `ws` records each declarator comment it skips,
+The parser now decides it (ADR-0136, #10226). `ws` records each declarator comment it skips,
 every declaration records its extent when it parses, and once the unit is parsed a `#|` goes to
 the next declaration to start after it and a `#=` to the latest declaration still claiming it.
 Positions are source offsets, so backtracking and memoization cannot disturb the result.

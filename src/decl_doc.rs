@@ -1,7 +1,7 @@
 //! Declarator documentation (`#|` leading, `#=` trailing) as parser output.
 //!
 //! The parser attaches every declarator doc comment to the declaration it
-//! documents (`parser::decl_doc`, ADR-0134). What it hands the rest of the
+//! documents (`parser::decl_doc`, ADR-0136). What it hands the rest of the
 //! interpreter is described here:
 //!
 //! - [`DocSlot`] — the doc text on an anonymous code node (`anon sub`,

@@ -1,7 +1,7 @@
 # Regex Stage 2 decided: compile to a flat backtracking program
 
 ADR-0099 left its Stage 2 as a question: re-profile grammars once the ceremony around the regex
-engine is gone, and ask whether the tree walk has become the majority cost. [ADR-0135](../../docs/adr/0135-regex-compiles-to-a-backtracking-program.md)
+engine is gone, and ask whether the tree walk has become the majority cost. [ADR-0136](../../docs/adr/0135-regex-compiles-to-a-backtracking-program.md)
 answers it ([#9915](https://github.com/tokuhirom/mutsu/issues/9915)).
 
 The re-profile found that every loss ADR-0099 measured against warm rakudo is gone. The

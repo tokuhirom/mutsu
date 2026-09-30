@@ -25,7 +25,7 @@
 //!   and hyphenated qualified enum members, so omitting them made a warm cache
 //!   take a different compile path from a cold cache.
 //! - **declarator documentation** (`#|` / `#=`), which the parser attaches to
-//!   declarations (ADR-0134) and the module's `$=pod` / `.WHY` are built from.
+//!   declarations (ADR-0136) and the module's `$=pod` / `.WHY` are built from.
 //!
 //! Anything new the parser starts recording in a thread-local must be added to
 //! `ParseEffects` too, or it becomes the next cache-state-dependent bug. A
@@ -113,7 +113,7 @@ pub(crate) fn interpreter_version() -> String {
     // literal now carries its structured parameter data instead of an id
     // pointing at a side table the cache cannot reach.
     // 14: `Expr::AnonSub` gained `doc` and `ParseEffects` gained `decl_docs`
-    // (declarator docs attached by the parser, ADR-0134).
+    // (declarator docs attached by the parser, ADR-0136).
     const CACHE_FORMAT_VERSION: u32 = 14;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
@@ -270,7 +270,7 @@ pub(crate) struct ParseEffects {
     /// User enum values used by definite-return classification.
     #[serde(default)]
     pub(crate) enum_value_names: Vec<String>,
-    /// The declarator documentation the parse attached (ADR-0134), which the
+    /// The declarator documentation the parse attached (ADR-0136), which the
     /// module's `$=pod` and `.WHY` are built from.
     #[serde(default)]
     pub(crate) decl_docs: Vec<crate::decl_doc::DocComment>,

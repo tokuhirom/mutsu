@@ -3,7 +3,7 @@ use crate::value::ValueMap;
 
 impl Interpreter {
     /// Install the declarator documentation the parser attached to this
-    /// compilation unit's declarations (ADR-0134): `doc_comment_list` in
+    /// compilation unit's declarations (ADR-0136): `doc_comment_list` in
     /// source order for `$=pod`, and `doc_comments` keyed the way `.WHY`
     /// looks a named declaration up. An anonymous routine or block has no
     /// name to be found by -- its code object carries its documentation (see

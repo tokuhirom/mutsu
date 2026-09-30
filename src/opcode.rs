@@ -6559,7 +6559,7 @@ pub(crate) struct CompiledCode {
     pub(crate) immutable_topic: bool,
     /// The declarator documentation (`#|`/`#=`) of the anonymous sub or
     /// block this chunk is the body of; `.WHY` on the closure reads it
-    /// (ADR-0134).
+    /// (ADR-0136).
     pub(crate) declarator_doc: Option<std::sync::Arc<crate::decl_doc::DeclDoc>>,
     /// This body writes the implicit topic BY NAME (`$_ = ...`, `$_++`, ...).
     ///
