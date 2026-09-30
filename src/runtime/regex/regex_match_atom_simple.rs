@@ -757,6 +757,15 @@ impl Interpreter {
                     if candidates.is_empty() {
                         return composite_item_matches(item, chars_to_check);
                     }
+                    // Only a token of the invocant grammar overrides the
+                    // built-in. A lexical `my token upper` in the mainline is
+                    // not a method of the cursor, so there the built-in still
+                    // applies and the token is only an extra way to match.
+                    if crate::qualified::is_global_package(pkg)
+                        && composite_item_matches(item, chars_to_check)
+                    {
+                        return true;
+                    }
                     for (sub_pat, sub_pkg, _sym_key) in &candidates {
                         if self
                             .parse_regex_uncached(sub_pat, RegexParseMode::Match)
