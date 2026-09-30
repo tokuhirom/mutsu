@@ -206,7 +206,11 @@ impl Interpreter {
         block: Value,
     ) -> Result<Value, RuntimeError> {
         promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
-        let result = crate::vm::guard_worker_panic(|| self.call_value(block, vec![]));
+        // The body's failure breaks `promise`, so no `CATCH` around the cue
+        // site may run for it (ADR-0072): keep it behind a catch marker.
+        let result = self.with_catch_marker(|this| {
+            crate::vm::guard_worker_panic(|| this.call_value(block, vec![]))
+        });
         let (kept, value) = match result {
             Ok(v) => (true, v),
             Err(e) => {
