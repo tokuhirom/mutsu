@@ -26,8 +26,11 @@ fn next_temp_name() -> String {
 ///   are lifted to the parent scope before reordering.
 /// - INIT/CHECK PhaserExpr (rvalue) inside closures are extracted to the
 ///   enclosing scope so they run once, not per-call.
-pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) {
-    reorder_recursive(stmts, true);
+///
+/// Returns the length of the unit's BEGIN prologue (ADR-0134), which is left at
+/// the head of `stmts`.
+pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
+    reorder_recursive(stmts, true)
 }
 
 /// EVAL-specific phaser reordering.  In addition to the standard
@@ -103,10 +106,34 @@ fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
     }
 }
 
-fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) {
+/// Returns the length of the BEGIN prologue left at the head of `stmts` (zero
+/// below the top level).
+fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
     // Flatten SyntheticBlocks so VarDecls get hoisted properly.
     flatten_synthetic_blocks(stmts);
 
+    // At a compilation unit's top level, the BEGIN-time effects run first, in
+    // source order (ADR-0134). The prologue is taken out before the per-level
+    // reordering below, which then only sees the run-time remainder, so no
+    // bucketing can move a BEGIN above a declaration it observes.
+    let mut prologue = if is_top {
+        crate::runtime::begin_prologue::take_unit_prologue(stmts)
+    } else {
+        Vec::new()
+    };
+    for stmt in prologue.iter_mut() {
+        recurse_into_stmt(stmt);
+    }
+    reorder_level_and_children(stmts, is_top);
+    let prologue_len = prologue.len();
+    if prologue_len > 0 {
+        prologue.append(stmts);
+        *stmts = prologue;
+    }
+    prologue_len
+}
+
+fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool) {
     // Lift BEGIN/INIT/CHECK from transparent child blocks/closures to this level.
     let mut lifted_begin: Vec<Stmt> = Vec::new();
     let mut lifted_check: Vec<Stmt> = Vec::new();
@@ -889,74 +916,9 @@ fn reorder_at_level(
             }
             continue;
         }
-        if let Stmt::VarDecl {
-            name,
-            expr: init_expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic,
-            is_export,
-            export_tags,
-            custom_traits,
-            where_constraint,
-        } = &stmt
-        {
-            // A bare `my @a;`/`my %h;` (no explicit initializer) still parses
-            // with a sigil-based default literal (`Literal(Array([]))` /
-            // `Literal(Hash({}))`), not `Literal(NIL)` — so testing the
-            // initializer expression against a NIL literal wrongly treats
-            // those as "has an initializer" and splices a spurious `@a = []`
-            // reset into `rest`, clobbering any mutation a hoisted BEGIN
-            // performed on the array/hash between its declaration and this
-            // synthetic assign. The parser already marks a real explicit
-            // initializer with the `__has_initializer` custom trait (checked
-            // the same way at e.g. `compiler/stmt.rs`'s `has_init` sites) —
-            // use that instead of guessing from the expression shape.
-            let has_init = custom_traits
-                .iter()
-                .any(|(n, _)| n == "__has_initializer" || n == "__scalar_bind");
-            // The hoisted bare declaration's interim value (before any real
-            // initializer in `rest` runs) must match what an uninitialized
-            // declaration of this sigil actually holds: `Nil` for a scalar,
-            // but an EMPTY container for `@`/`%` — never a raw `Nil` literal.
-            // Compiling a `@`-sigil VarDecl with a `Literal(NIL)` initializer
-            // goes through the same path as an explicit `@a = Nil` assignment,
-            // which itemizes the Nil into a ONE-ELEMENT array `[(Any)]`
-            // instead of leaving the array empty (S02-types/assigning-refs.t
-            // semantics for `@a = Nil` are correct there — they just don't
-            // apply to "no initializer at all"). Using the sigil-based empty
-            // default here avoids that trap for both the `!has_init` case
-            // (this literal IS the whole value) and the `has_init` case (this
-            // is a throwaway interim value overwritten by the `rest`-bucket
-            // Assign moments later).
-            let hoisted_default = match name.as_bytes().first() {
-                Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
-                Some(b'%') => {
-                    Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default())))
-                }
-                _ => Expr::Literal(Value::NIL),
-            };
-            var_decls.push(Stmt::VarDecl {
-                name: name.clone(),
-                expr: hoisted_default,
-                type_constraint: type_constraint.clone(),
-                is_state: *is_state,
-                is_our: *is_our,
-                is_dynamic: *is_dynamic,
-                is_export: *is_export,
-                export_tags: export_tags.clone(),
-                custom_traits: custom_traits.clone(),
-                where_constraint: where_constraint.clone(),
-            });
-            if has_init {
-                rest.push(Stmt::Assign {
-                    name: name.clone(),
-                    expr: init_expr.clone(),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                });
-            }
+        if let Some((static_decl, assign)) = split_var_decl(&stmt) {
+            var_decls.push(static_decl);
+            rest.extend(assign);
             continue;
         }
 
@@ -1252,4 +1214,76 @@ fn recurse_into_expr(expr: &mut Expr) {
         }
         _ => {}
     }
+}
+
+/// Split a `VarDecl` into its *static* declaration and the run-time assignment
+/// of its initializer, if it has one. The static half is the container holding
+/// what an uninitialized declaration of its sigil holds; it is what a BEGIN-time
+/// effect observes (ADR-0134 §2.1.2), while the assignment stays at the
+/// declaration's source position. `None` for any other statement, and for a
+/// `constant`, whose initializer is itself a BEGIN-time effect.
+pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
+    let Stmt::VarDecl {
+        name,
+        expr: init_expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        is_export,
+        export_tags,
+        custom_traits,
+        where_constraint,
+    } = stmt
+    else {
+        return None;
+    };
+    if custom_traits.iter().any(|(t, _)| t == "__constant") {
+        return None;
+    }
+    // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
+    // sigil-based default literal (`Literal(Array([]))` / `Literal(Hash({}))`),
+    // not `Literal(NIL)` — so testing the initializer expression against a NIL
+    // literal wrongly treats those as "has an initializer" and splices a
+    // spurious `@a = []` reset after the static declaration, clobbering any
+    // mutation a BEGIN performed on the array/hash in between. The parser
+    // already marks a real explicit initializer with the `__has_initializer`
+    // custom trait (checked the same way at e.g. `compiler/stmt.rs`'s
+    // `has_init` sites) — use that instead of guessing from the expression shape.
+    let has_init = custom_traits
+        .iter()
+        .any(|(n, _)| n == "__has_initializer" || n == "__scalar_bind");
+    // The static declaration's value (before any real initializer runs) must
+    // match what an uninitialized declaration of this sigil actually holds:
+    // `Nil` for a scalar, but an EMPTY container for `@`/`%` — never a raw
+    // `Nil` literal. Compiling a `@`-sigil VarDecl with a `Literal(NIL)`
+    // initializer goes through the same path as an explicit `@a = Nil`
+    // assignment, which itemizes the Nil into a ONE-ELEMENT array `[(Any)]`
+    // instead of leaving the array empty (S02-types/assigning-refs.t semantics
+    // for `@a = Nil` are correct there — they just don't apply to "no
+    // initializer at all").
+    let static_default = match name.as_bytes().first() {
+        Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
+        Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
+        _ => Expr::Literal(Value::NIL),
+    };
+    let static_decl = Stmt::VarDecl {
+        name: name.clone(),
+        expr: static_default,
+        type_constraint: type_constraint.clone(),
+        is_state: *is_state,
+        is_our: *is_our,
+        is_dynamic: *is_dynamic,
+        is_export: *is_export,
+        export_tags: export_tags.clone(),
+        custom_traits: custom_traits.clone(),
+        where_constraint: where_constraint.clone(),
+    };
+    let assign = has_init.then(|| Stmt::Assign {
+        name: name.clone(),
+        expr: init_expr.clone(),
+        op: AssignOp::Assign,
+        target_is_sigilless: false,
+    });
+    Some((static_decl, assign))
 }

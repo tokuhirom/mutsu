@@ -854,7 +854,9 @@ impl Interpreter {
         // Each module may set its own `use v6.*` which should not leak
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
-        let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        let (mut stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        // The module's BEGIN-time effects run first, in source order (ADR-0134).
+        crate::runtime::begin_prologue::order_unit(&mut stmts);
         // `$=pod` belongs to the compilation unit that declares it. The main
         // program establishes its Pod variables before execution, but a module
         // used to skip that step and therefore saw the importer's (or no)

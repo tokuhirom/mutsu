@@ -815,6 +815,7 @@ mod user_accepts;
 mod why_docee;
 pub(crate) use native_io::{io_file_test, path_is_readable};
 pub(crate) mod attach_target;
+pub(crate) mod begin_prologue;
 mod dispatcher_wrap;
 mod enum_type_key;
 mod export_hook_routines;

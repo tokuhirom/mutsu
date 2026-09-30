@@ -321,12 +321,9 @@ impl Interpreter {
         {
             let mut stmts = crate::rakuast::lower(node)?;
             // A lowered tree is an EVAL'd compilation unit, so its phasers need
-            // the same treatment the mainline pipeline gives them: BEGIN runs at
-            // compile time, CHECK/INIT before the mainline, none of them in
-            // statement position. The two passes run in the same order as
-            // `run.rs`'s — BEGIN first, so the hoisted ones are gone before the
-            // reorder buckets declarations.
-            self.run_toplevel_begin_phasers(&mut stmts);
+            // the same treatment the mainline pipeline gives them: BEGIN runs in
+            // the unit's prologue (ADR-0134), CHECK/INIT before the mainline,
+            // none of them in statement position.
             crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
             return self.eval_block_value(&stmts);
         }
