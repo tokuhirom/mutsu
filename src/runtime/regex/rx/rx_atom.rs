@@ -86,32 +86,4 @@ impl Interpreter {
         }
         self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, false)
     }
-
-    /// Match `program.atoms[i]` repeatedly from `pos`, up to `max` times,
-    /// pushing the end of every iteration onto `ends` (so `ends[k]` is where
-    /// iteration `k + 1` stopped). Returns how many iterations matched.
-    // Cost: O(k·g), k = the iterations matched, g as in `rx_atom_at`.
-    pub(super) fn rx_atom_run(
-        &mut self,
-        program: &RxProgram,
-        i: usize,
-        chars: &[char],
-        mut pos: usize,
-        max: u32,
-        pkg: Symbol,
-        ends: &mut Vec<usize>,
-    ) -> u32 {
-        let mut n = 0u32;
-        while n < max {
-            match self.rx_atom_at(program, i, chars, pos, pkg) {
-                Some(next) => {
-                    pos = next;
-                    ends.push(pos);
-                    n += 1;
-                }
-                None => break,
-            }
-        }
-        n
-    }
 }

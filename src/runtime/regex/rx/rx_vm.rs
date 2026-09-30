@@ -185,7 +185,17 @@ impl Interpreter {
                     // iterations, so count 0 is the run's own start.
                     let base = ends.len();
                     ends.push(pos);
-                    let n = self.rx_atom_run(program, atom as usize, chars, pos, max, pkg, ends);
+                    let mut n = 0u32;
+                    let mut at = pos;
+                    while n < max {
+                        let Some(next) = self.rx_atom_at(program, atom as usize, chars, at, pkg)
+                        else {
+                            break;
+                        };
+                        at = next;
+                        ends.push(at);
+                        n += 1;
+                    }
                     if n < min {
                         ends.truncate(base);
                         false
@@ -336,50 +346,47 @@ impl Interpreter {
                 RxOp::Match => break 'run Some((pos, store.snapshot())),
             };
             if !ok {
-                loop {
-                    let Some(choice) = stack.pop() else {
-                        break 'run None;
-                    };
-                    let (to_pc, to_pos, cap_mark, reg_mark) = match choice {
-                        Choice::At {
-                            pc,
-                            pos,
-                            cap_mark,
-                            reg_mark,
-                        } => (pc, pos, cap_mark, reg_mark),
-                        Choice::Run {
-                            pc,
-                            base,
-                            lo,
-                            hi,
-                            cap_mark,
-                            reg_mark,
-                        } => {
-                            let at = ends[hi - 1];
-                            if hi - 1 > lo {
-                                stack.push(Choice::Run {
-                                    pc,
-                                    base,
-                                    lo,
-                                    hi: hi - 1,
-                                    cap_mark,
-                                    reg_mark,
-                                });
-                            } else {
-                                ends.truncate(base);
-                            }
-                            (pc, at, cap_mark, reg_mark)
+                let Some(choice) = stack.pop() else {
+                    break 'run None;
+                };
+                let (to_pc, to_pos, cap_mark, reg_mark) = match choice {
+                    Choice::At {
+                        pc,
+                        pos,
+                        cap_mark,
+                        reg_mark,
+                    } => (pc, pos, cap_mark, reg_mark),
+                    Choice::Run {
+                        pc,
+                        base,
+                        lo,
+                        hi,
+                        cap_mark,
+                        reg_mark,
+                    } => {
+                        let at = ends[hi - 1];
+                        if hi - 1 > lo {
+                            stack.push(Choice::Run {
+                                pc,
+                                base,
+                                lo,
+                                hi: hi - 1,
+                                cap_mark,
+                                reg_mark,
+                            });
+                        } else {
+                            ends.truncate(base);
                         }
-                    };
-                    store.rewind(cap_mark);
-                    while reg_trail.len() > reg_mark {
-                        let (r, old) = reg_trail.pop().expect("register trail entry");
-                        regs[r as usize] = old;
+                        (pc, at, cap_mark, reg_mark)
                     }
-                    pc = to_pc;
-                    pos = to_pos;
-                    break;
+                };
+                store.rewind(cap_mark);
+                while reg_trail.len() > reg_mark {
+                    let (r, old) = reg_trail.pop().expect("register trail entry");
+                    regs[r as usize] = old;
                 }
+                pc = to_pc;
+                pos = to_pos;
             }
         };
         super::super::regex_helpers::record_regex_farthest_position(farthest);
