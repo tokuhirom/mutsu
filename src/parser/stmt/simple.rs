@@ -457,7 +457,7 @@ sub helper() { }
         assert!(
             err.messages
                 .iter()
-                .any(|msg| msg.contains("comma or statement end after argument"))
+                .any(|msg| msg.contains("Confused. Two terms in a row"))
         );
     }
 

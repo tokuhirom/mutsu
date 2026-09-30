@@ -328,6 +328,22 @@ pub(crate) fn control_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse phasers: BEGIN, END, etc.
 pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
+    // `DOC BEGIN`/`DOC CHECK`/`DOC INIT`: a statement prefix over a phaser
+    // that only `--doc` runs.
+    if let Some(r) = keyword("DOC", input) {
+        let (r, _) = ws1(r)?;
+        let (r, phaser) = phaser_stmt(r)?;
+        if !matches!(
+            phaser,
+            Stmt::Phaser {
+                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
+                ..
+            }
+        ) {
+            return Err(PError::expected("DOC BEGIN, DOC CHECK or DOC INIT"));
+        }
+        return Ok((r, Stmt::DocPhaser(Box::new(phaser))));
+    }
     let (rest, kind) = if let Some(r) = keyword("BEGIN", input) {
         (r, PhaserKind::Begin)
     } else if let Some(r) = keyword("CHECK", input) {

@@ -3446,6 +3446,8 @@ impl Compiler {
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
+            // A `DOC` phaser runs only under `--doc` (`doc_mode`).
+            Stmt::DocPhaser(_) => {}
             // HasDecl outside class context.
             Stmt::HasDecl { is_our, is_my, .. } => {
                 // `our $.x` / `my $.x` in the mainline is not a fatal error in

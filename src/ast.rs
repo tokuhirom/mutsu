@@ -1900,6 +1900,9 @@ pub(crate) enum Stmt {
     Fail(Expr),
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
+    /// `DOC <phaser>` (e.g. `DOC INIT { ... }`): the phaser runs only under
+    /// `--doc` and is a no-op in an ordinary run, as in rakudo.
+    DocPhaser(Box<Stmt>),
     /// `take` / `take-rw`. The bool is `is_rw`: a `take-rw` of an lvalue captures
     /// the source container (a shared `ContainerRef` cell) so the gathered value
     /// keeps container identity with the original (`=:=`), instead of a snapshot.

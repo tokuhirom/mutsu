@@ -1,11 +1,10 @@
 # A `sub EXPORT` module in the French/lizmat "hand-built Map" shape, distinct
 # from the `UNIT::`-grep idiom `RuntimeExport/RuntimeExportListop.rakumod`
 # pins: every exported name is a LOCAL declaration inside the hook's own
-# body, not drawn from the compunit's unit scope. `&infix:<et>`/`&infix:<ou>`
-# need no special parse-time help (a custom infix word is accepted
-# speculatively and resolved at run time regardless of whether the parser
-# ever learns it is declared); `vrai`/`faux` do, because an unknown bareword
-# defaults to a listop-call head and has no such fallback.
+# body, not drawn from the compunit's unit scope. The importer's parse has to
+# learn both kinds: `&infix:<et>`/`&infix:<ou>` because an undeclared word is
+# not an infix ("Two terms in a row", #9918), and `vrai`/`faux` because an
+# unknown bareword defaults to a listop-call head.
 use v6.d;
 
 sub EXPORT(|) {

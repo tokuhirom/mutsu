@@ -203,7 +203,10 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
                     .next()
                     .is_some_and(crate::parser::helpers::is_raku_identifier_start)
             {
-                return Err(PError::expected("comma or statement end after argument"));
+                return Err(PError::fatal_at(
+                    "Confused. Two terms in a row".to_string(),
+                    r,
+                ));
             }
             return Ok((r, items));
         }
@@ -248,19 +251,6 @@ fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
             rest,
             crate::parser::primary::lift_list_infix_in_arg_list(items),
         )),
-        Err(err)
-            if err
-                .messages
-                .iter()
-                .any(|msg| msg.contains("comma or statement end after argument")) =>
-        {
-            Err(PError::fatal(
-                err.messages
-                    .first()
-                    .map(|m| m.clone().into_owned())
-                    .unwrap_or_else(|| "comma or statement end after argument".to_string()),
-            ))
-        }
         Err(err) => Err(err),
     }
 }

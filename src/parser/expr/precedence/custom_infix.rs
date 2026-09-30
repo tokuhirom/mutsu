@@ -54,6 +54,7 @@ pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
             && !is_declared_term
             && !is_compound_assign
             && !is_circumfix_closer
+            && is_known_infix_word(name)
         {
             word_match = Some((name.to_string(), end));
         }
@@ -100,6 +101,45 @@ pub(crate) fn parse_flipflop_infix(input: &str) -> Option<(String, usize)> {
         }
     }
     None
+}
+
+/// Whether a bare word is an infix operator the parser may take at all: one
+/// declared in scope (`sub`/`multi`/`my &infix:<word>`, or imported), or one
+/// rakudo's `CORE::` declares as `&infix:<word>`.
+///
+/// Anything else is a term following a term, and rakudo rejects it at compile
+/// time with "Two terms in a row" (#9918). mutsu used to take every
+/// non-reserved word here and resolve it at run time against a routine of the
+/// same bare name, so `(1,2) cross (3,4)`, `(1,2) join (3,4)` and
+/// `sub foo($a, $b) {...}; 1 foo 2` all ran, and even an unknown `1 foo 2`
+/// failed only once execution reached it.
+// Cost: O(s + log k), s = number of enclosing parser scopes, k = rakudo's core infix count.
+fn is_known_infix_word(name: &str) -> bool {
+    crate::parser::stmt::simple::is_user_defined_infix(name)
+        || crate::parser::stmt::simple::lookup_custom_infix_precedence(name).is_some()
+        || crate::runtime::core_infix_names::rakudo_declares_infix(name)
+}
+
+/// True when `input` opens with a bare word that could only have been a
+/// user-style infix, had one been declared: not reserved, not a declared term,
+/// and neither declared in scope nor a CORE infix. A statement that stopped in
+/// front of such a word on the same line is "Two terms in a row" (#9918).
+pub(crate) fn starts_with_undeclared_infix_word(input: &str) -> bool {
+    let Some(first) = input.chars().next() else {
+        return false;
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    let end = input
+        .char_indices()
+        .find(|&(_, ch)| !(ch.is_alphanumeric() || ch == '_' || ch == '-'))
+        .map_or(input.len(), |(i, _)| i);
+    let name = &input[..end];
+    !is_reserved_infix_word(name)
+        && !crate::parser::primary::ident::is_infix_word_op(name)
+        && crate::parser::stmt::simple::match_user_declared_term_symbol(input).is_none()
+        && !is_known_infix_word(name)
 }
 
 pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
@@ -207,11 +247,11 @@ pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
 }
 
 /// True when `input` opens with a custom infix word the parser has actually
-/// SEEN declared, as opposed to the speculative any-bareword match
-/// [`parse_custom_infix_word`] also makes for runtime-installed operators.
+/// SEEN declared, as opposed to a CORE infix word [`parse_custom_infix_word`]
+/// also matches.
 ///
 /// This is what lets a custom infix continue an expression across a newline.
-/// The speculative match may not: a bare identifier opening the next line is
+/// A CORE word may not: a bare identifier opening the next line is
 /// normally a new statement, and claiming it as an operator would swallow it. A
 /// *declared* operator carries no such ambiguity — it is in rakudo's operator
 /// table by then, so the newline before it is ordinary whitespace and
@@ -250,14 +290,13 @@ pub(crate) fn try_custom_infix_word<'a>(
     let Some((name, len)) = parse_custom_infix_word(r) else {
         return Ok(None);
     };
-    // `parse_custom_infix_word` is deliberately permissive: it accepts ANY
-    // non-reserved word, because an infix can also be installed at runtime
-    // (`my &infix:<same-in-Int> = ...`) with nothing for the parser to consult.
-    // Such a speculative match may only be taken at the loosest, last-resort
-    // list-infix level — claiming it at additive precedence would swallow every
-    // ordinary bareword that follows a term (`42 but Str` would become
-    // `infix:<but>`). Only an operator the parser has actually SEEN declared
-    // gets rakudo's real default precedence for a trait-less infix, additive.
+    // `parse_custom_infix_word` also matches CORE-declared infix words that
+    // have no dedicated parser (`minmax`, ...). Those are taken only at the
+    // loosest, last-resort list-infix level — claiming them at additive
+    // precedence would swallow ordinary barewords that follow a term (`42 but
+    // Str` would become `infix:<but>`). Only an operator the parser has SEEN
+    // declared gets rakudo's real default precedence for a trait-less infix,
+    // additive.
     let level = crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).unwrap_or({
         if crate::parser::stmt::simple::is_user_defined_infix(&name) {
             PREC_ADDITIVE

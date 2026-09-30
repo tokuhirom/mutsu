@@ -145,14 +145,12 @@ pub(super) fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
 /// `my \vrai = True;`, ...; lizmat's ecosystem leans on `UNIT::` instead, but
 /// not every `sub EXPORT` module does).
 ///
-/// A routine declared this way (`my &name = sub {...}`, or the operator-slot
-/// spelling `my &infix:<op> = ...`) needs no extra help: nothing here sees it,
-/// but the parser's custom-infix-word matcher (`parse_custom_infix_word` in
-/// `parser::expr::precedence::custom_infix`) already accepts ANY non-reserved
-/// word speculatively and resolves it at run time, so `1 et 2` parses
-/// regardless of whether the scan ever learns "et" is a declared operator.
+/// The operator-slot spelling `my &infix:<op> = ...` is collected by
+/// [`collect_export_hook_operator_subs`]: the custom-infix-word matcher takes a
+/// word only when it is a declared (or CORE) infix, so the importer's parse has
+/// to learn "et" is one (#9918).
 ///
-/// A plain VALUE term (`my \vrai = True;`) has no such fallback: an unknown
+/// A plain VALUE term (`my \vrai = True;`) needs this walk: an unknown
 /// bareword defaults to a listop-call head, so `vrai et 2` misparsed as
 /// `vrai(et, 2)` and died evaluating `et` as if it were a zero-arg call
 /// (`Unknown function: et`) — the infix guess never even got a chance,
@@ -199,9 +197,8 @@ pub(super) fn collect_export_hook_value_terms(stmts: &[Stmt], out: &mut Vec<Stri
 /// `Map.new: '&infix:<_>' => &infix:<_>`). It carries no `is export`, so the
 /// precise walker skips it.
 ///
-/// Plain infix use (`"a" _ "b"`) happened to parse anyway, through the
-/// speculative custom-infix-word matcher; but every form that asks whether an
-/// operator is DECLARED — the reduction metaop `[_]` above all — rejected it.
+/// Without it every form that asks whether an operator is DECLARED — plain
+/// word-infix use (#9918) and the reduction metaop `[_]` — rejects it.
 /// A categorical routine declared in the hook has no purpose other than being
 /// exported (the hook's body is a private lexical scope that ends when it
 /// returns), so it is collected, with the precedence/associativity traits the
@@ -235,6 +232,20 @@ fn collect_operator_subs_in(stmts: &[Stmt], exports: &mut HashMap<String, Inline
                         associativity.clone(),
                         false,
                     )
+                });
+            }
+            // The operator-slot variable spelling, `my &infix:<et> = sub {...}`
+            // (French). It is exported the same way, and the importer's parse
+            // must know it: an undeclared word is not an infix (#9918).
+            Stmt::VarDecl { name, .. } => {
+                let Some(resolved) = name.strip_prefix('&') else {
+                    continue;
+                };
+                if !is_operator_routine_name(resolved) {
+                    continue;
+                }
+                exports.entry(resolved.to_string()).or_insert_with(|| {
+                    super::sub_export_entry(resolved.to_string(), None, None, false)
                 });
             }
             Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {

@@ -62,7 +62,9 @@ pub(crate) use assign::{
 };
 pub(crate) use chain_cmp::{make_chain_cmp, wrap_smartmatch_rhs};
 pub(crate) use comparison::comparison_expr_mode;
-pub(crate) use custom_infix::{ListInfixOperand, parse_flipflop_infix};
+pub(crate) use custom_infix::{
+    ListInfixOperand, parse_flipflop_infix, starts_with_undeclared_infix_word,
+};
 pub(crate) use errors::{
     cannot_meta_assign_diffy_error, check_range_precedence_worry,
     conditional_precedence_too_loose_error, conditional_second_part_gobbled_error,

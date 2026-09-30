@@ -497,6 +497,7 @@ pub(crate) fn stmt_list_with_mode(
         // Emit source line info for deprecation tracking and error reporting.
         let line = crate::parser::primary::current_line_number(r);
         let line_valid = crate::parser::primary::is_within_original_source(r);
+        let input_before_stmt = r;
         match statement(r) {
             Ok((r, stmt)) => {
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
@@ -515,6 +516,29 @@ pub(crate) fn stmt_list_with_mode(
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                             .to_string(),
+                    ));
+                }
+                // A statement that stopped short of a separator on the same line
+                // in front of a word that is not an infix left a term behind:
+                // `my $x = (1,2) cross (3,4)`, where `cross` is not an infix,
+                // would otherwise silently become two statements. rakudo:
+                // "Two terms in a row" (#9918).
+                // TODO: this should hold for any leftover term, but the
+                // statement parser still stops early before some legitimate
+                // continuations (`temp our $x`, `... orelse Nil`); see #10257.
+                // The statement parser may already have consumed its `;` and
+                // any trailing whitespace or comment (and with it the newline).
+                let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
+                let consumed = consumed_raw.trim_end();
+                if !consumed.ends_with(';')
+                    && !consumed.ends_with('}')
+                    && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
+                    && !has_statement_separator(r)
+                    && crate::parser::expr::precedence::starts_with_undeclared_infix_word(r_ws)
+                {
+                    return Err(PError::fatal_at(
+                        "Confused. Two terms in a row".to_string(),
+                        r_ws,
                     ));
                 }
                 if matches!(

@@ -3,10 +3,8 @@
 # `UNIT::`-grep idiom `collect_unit_scope_routines` already approximates (that
 # one only walks the module file's TOP-LEVEL statements, so a declaration
 # nested inside `sub EXPORT`'s body is invisible to it) and not the
-# `my &infix:<op> = sub {...}` shape `ExportHookValueTerm.rakumod` pins
-# (which needs no parser help at all, since a custom infix WORD is accepted
-# speculatively regardless of static knowledge). An actual `multi prefix:<...>
-# (...) is export { ... }` declaration has no such fallback: `not3 5` parses
+# `my &infix:<op> = sub {...}` shape `ExportHookValueTerm.rakumod` pins.
+# An actual `multi prefix:<...>(...) is export { ... }` declaration: `not3 5` parses
 # as a plain listop call unless the parser already knows `not3` names a
 # prefix operator, and a nested-in-EXPORT declaration like this one is not
 # `UNIT::`-visible.
