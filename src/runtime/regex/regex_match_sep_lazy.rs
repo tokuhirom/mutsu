@@ -115,6 +115,12 @@ impl Interpreter {
             sep_caps: Vec::new(),
             nodes: 0,
         };
+        if token.frugal && min == 0 {
+            let delta = walk.names_delta();
+            if on(self, store, start, delta) {
+                return true;
+            }
+        }
         // First atom: every match length, highest-priority first. A frugal atom
         // matches as few chars as possible, but an outer anchor following the
         // quantifier may require it to expand, so the shorter/longer variants
@@ -153,7 +159,7 @@ impl Interpreter {
         }
         // Zero iterations is the lowest-priority outcome for a greedy
         // quantifier, so it goes last.
-        if min == 0 {
+        if !token.frugal && min == 0 {
             let delta = walk.names_delta();
             return on(self, store, start, delta);
         }
@@ -181,6 +187,9 @@ impl Interpreter {
         }
         walk.nodes += 1;
         super::regex_helpers::record_regex_farthest_position(cur);
+        if token.frugal && self.sep_emit_chain(walk, token, chars, cur, pkg, store, on) {
+            return true;
+        }
         let can_extend = walk.max.is_none_or(|m| walk.atom_caps.len() < m);
         if can_extend {
             let sep = token.separator.as_ref().unwrap();
@@ -233,7 +242,7 @@ impl Interpreter {
                 }
             }
         }
-        self.sep_emit_chain(walk, token, chars, cur, pkg, store, on)
+        !token.frugal && self.sep_emit_chain(walk, token, chars, cur, pkg, store, on)
     }
 
     /// Report the chain that stops at `cur` as this quantifier's candidate(s):

@@ -388,7 +388,11 @@ and `conjunction`, which also belong to later slices.
 The same part compiles `%` and `%%` over a capture-free atom and separator, in the order of
 `for_each_separated_candidate` (non-ratchet) and `match_separated_quantifier_ratchet`. Two new
 ops support it: `Advanced` for the per-step progress guard, and `AtLeast` for the minimum count.
-Frugal separated quantifiers decline, because the walk disagrees with rakudo on them (#10306).
+Frugal separated quantifiers now use the native separator parser, shortest-first candidates in the
+walk, and frugal `Split`/`Repeat` priorities in the compiled engine (#10306). The LTM text
+expansion leaves non-sigspace frugal separators intact so neither parser loses the modifier.
+Sigspace separated quantifiers still use the LTM text expansion; its frugal ordering and
+per-iteration whitespace remain #10339.
 
 **Slice A, sixth part: the rest of the capture language landed.** Slice A's atoms are now
 complete.
