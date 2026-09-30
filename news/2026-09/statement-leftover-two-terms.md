@@ -20,7 +20,11 @@ Each of those now parses as one statement:
 - `$@` is the item contextualizer over an anonymous array, and a sigil followed
   by a bare `::` (`%::{''}`) is rakudo's "Variable '%' is not declared".
 - A routine declaration takes a statement modifier on its line
-  (`sub a() { } given 3`).
+  (`sub a() { } given 3`), and `has method m() { ... }` is a method
+  declaration.
+- `$x .= new: ... andthen ...` is `($x .= new(...)) andthen ...`, and a
+  ternary whose else branch is a `do { ... }` block ends at the newline after
+  it (zef's `Zef::Client` install phase).
 - A statement-level call whose last argument ends in a block
   (`subtest 'x' => { ... }`) ends at the newline after that block, so the next
   line's `if COND { ... } else { ... }` is its own statement instead of a

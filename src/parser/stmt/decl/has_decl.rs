@@ -364,6 +364,16 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     if let Some(err) = scope_declaration_error(scope_kw, rest) {
         return Err(err);
     }
+    // `has method m() { ... }` is an ordinary method declaration. Leaving the
+    // `has` behind as a statement of its own was "Two terms in a row" (#10257).
+    if !is_embedded {
+        if keyword("method", rest).is_some() {
+            return crate::parser::stmt::sub::method_decl(rest);
+        }
+        if keyword("submethod", rest).is_some() {
+            return crate::parser::stmt::sub::submethod_decl(rest);
+        }
+    }
 
     // Handle parenthesized list form: has ($a, $.b, $!c), including a common
     // type constraint such as `has Int ($a, $.b)`.
