@@ -102,8 +102,8 @@ impl Interpreter {
     /// Run one code atom through `run` — or, under `MUTSU_RX_DIFF=1`, record it
     /// for the compiled run and replay it for the walk (see the module doc).
     /// `code` and `pos` identify the invocation; `caps` is what the code sees.
-    // Cost: one call of `run`; under `MUTSU_RX_DIFF` also O(c), c = the visible
-    // captures (the fingerprint).
+    // Cost: O(1) plus one call of `run`; under `MUTSU_RX_DIFF` also O(c),
+    // c = the captures visible to the code (the fingerprint).
     pub(in crate::runtime::regex) fn rx_code_call(
         &mut self,
         code: &str,

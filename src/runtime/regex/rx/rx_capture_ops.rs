@@ -58,8 +58,8 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }
-            // Cost: one run of the code body (`regex_code_atom`), plus O(1)
-            // amortized to merge the delta it returns.
+            // Cost: O(1) amortized to merge the delta, plus `regex_code_atom`'s
+            // own cost (one run of the user's code).
             RxOp::Code(i) => {
                 let (next, delta) = self.regex_code_atom(
                     &program.atoms[i as usize],
@@ -70,8 +70,9 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }
-            // Cost: one run of each initializer (`regex_var_decl_atom`), plus
-            // O(1) amortized per declared lexical to merge the delta.
+            // Cost: O(v) amortized to merge the delta, v = the lexicals the
+            // declaration introduces, plus `regex_var_decl_atom`'s own cost
+            // (one run of each initializer).
             RxOp::VarDecl(i) => {
                 let RegexAtom::VarDecl { code } = &program.atoms[i as usize] else {
                     unreachable!("a VarDecl op names a declaration atom");
