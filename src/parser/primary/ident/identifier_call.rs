@@ -329,6 +329,10 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             if r_mod.starts_with(":file(")
                 || !name_selectors.is_empty()
                 || after_selectors.len() != r_mod.len()
+                || matches!(
+                    bare_name,
+                    "Q" | "q" | "qq" | "qw" | "qqw" | "qx" | "qqx" | "m" | "s" | "rx" | "tr" | "y"
+                )
             {
                 dist_selectors = format!("{name_selectors}{trailing_selectors}");
                 (
