@@ -659,6 +659,21 @@ impl Compiler {
         // ADR-0061: the reserved `$self` lexical key names the enclosing
         // routine's `$self` parameter when its signature declares one.
         let name = self.resolve_self_lexical(name);
+        // A later bare `$x` in a block that declares `$^x` names that same
+        // placeholder parameter, not a same-named lexical of the caller. When
+        // an interpreter-path carrier (`.map`/`.grep`/`...` callback, `where`
+        // block) recompiles the body, the parameter is already bound in env
+        // under `^x` (`prebound_placeholder_params`) and a by-name `x` would
+        // find the caller's instead.
+        if !name.starts_with('^') && !self.local_map.contains_key(name) {
+            let caret = format!("^{name}");
+            if self.local_map.contains_key(&caret)
+                || self.prebound_placeholder_params.contains(&caret)
+            {
+                self.compile_expr_var(&caret);
+                return;
+            }
+        }
         // $.attr (public twigil) — compile as self.attr() method call.
         // In Raku, $.attr is syntactic sugar for self.attr(), not a variable lookup.
         if let Some(attr_name) = name.strip_prefix('.')

@@ -339,7 +339,13 @@ impl Interpreter {
                     let exec_result = if let Some((code, fns)) = precompiled {
                         self.eval_precompiled_block_fast(code, fns)
                     } else {
-                        self.eval_block_value(&data.body)
+                        let saved_placeholders = std::mem::replace(
+                            &mut self.pending_eval_placeholder_params,
+                            data.params.iter().map(|p| p.to_string()).collect(),
+                        );
+                        let r = self.eval_block_value(&data.body);
+                        self.pending_eval_placeholder_params = saved_placeholders;
+                        r
                     };
                     // Propagate genuinely-mutated captures into both the
                     // persistent closure env (so the next pull sees them) and the
@@ -1243,6 +1249,7 @@ impl Interpreter {
                                 self.current_package()
                             };
                             compiler.set_current_package(scope);
+                            compiler.seed_prebound_placeholders(&data.params);
                             if let Some(origin) = data.compiled_code.as_deref() {
                                 compiler.seed_amp_shadowed_calls_from(origin);
                             }
