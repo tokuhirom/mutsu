@@ -33,6 +33,16 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         ValueView::Array(data, _) => data.items().to_vec(),
         ValueView::Seq(items) => items.to_vec(),
         ValueView::Slip(items) => (**items).clone(),
+        // A plain scalar has no positional part: its `.Capture` is empty, so
+        // `sub f($x ($a)) {}; f('abc')` fails to bind in Rakudo rather than
+        // unpacking the value as a one-element list.
+        ValueView::Str(..)
+        | ValueView::Int(..)
+        | ValueView::BigInt(..)
+        | ValueView::Num(..)
+        | ValueView::Bool(..)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..) => Vec::new(),
         _ => crate::runtime::value_to_list(value),
     }
 }
@@ -523,7 +533,18 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     value: &Value,
 ) -> bool {
     let value = &interpreter.coerce_via_user_capture(value);
-    let positional = positional_values_from_unpack_target(value);
+    let mut positional = positional_values_from_unpack_target(value);
+    // A `Pair` element of a list is a named part of that list's Capture
+    // (`('item', :over-ride)` is `\('item', :over-ride)`), so once the
+    // sub-signature takes named parameters it is not a positional element.
+    if sub_params.iter().any(|p| p.named)
+        && matches!(
+            value.unwrap_varref().deref_container().descalarize().view(),
+            ValueView::Array(..) | ValueView::Seq(..)
+        )
+    {
+        positional.retain(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
+    }
     let mut positional_idx = 0usize;
     for pd in sub_params {
         if pd.slurpy {

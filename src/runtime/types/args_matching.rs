@@ -927,6 +927,17 @@ impl Interpreter {
                     }
                 }
 
+                // A named parameter's sub-signature (`:$x! (Str $a, $b?)`)
+                // unpacks the supplied value, so a value that does not unpack
+                // to it makes the candidate inapplicable (a bare Str does not).
+                if let Some(sub_params) = &pd.sub_signature
+                    && !super::signature::is_named_rename_sub_signature(pd)
+                    && let Some(ref val) = arg_val
+                    && !sub_signature_matches_value(self, sub_params, val)
+                {
+                    return false;
+                }
+
                 // Check where constraint on named param. When the named arg is
                 // absent, the constraint is still evaluated against the value the
                 // parameter would bind to (its default, or the type-object

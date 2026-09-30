@@ -207,7 +207,6 @@ impl Interpreter {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
             } else if current_package == "GLOBAL"
-                || resolved_name == current_package
                 || resolved_name.starts_with(&format!("{current_package}::"))
             {
                 resolved_name.clone()

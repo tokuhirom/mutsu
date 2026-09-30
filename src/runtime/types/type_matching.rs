@@ -356,6 +356,29 @@ impl Interpreter {
                 .type_matches_value(base, &Value::package(Symbol::intern(&metadata.value_type)));
         }
 
+        // A parametric container TYPE OBJECT (`Associative[Str]`,
+        // `Array[Int]`, as `Attribute.type` returns for `has Str %.h`)
+        // satisfies `Cool %o` / `Cool @o` by its element type, as in Rakudo.
+        if let ValueView::Package(pkg) = value.view() {
+            let full = pkg.resolve();
+            let kind_prefixes: &[&str] = if name.starts_with('@') {
+                &["Positional[", "Array["]
+            } else if name.starts_with('%') {
+                &["Associative[", "Hash["]
+            } else {
+                &[]
+            };
+            if let Some(elem) = kind_prefixes
+                .iter()
+                .find_map(|p| full.strip_prefix(p))
+                .and_then(|rest| rest.strip_suffix(']'))
+            {
+                let (base, _smiley) =
+                    crate::runtime::types::strip_type_smiley(&resolved_constraint);
+                return self.type_matches_value(base, &Value::package(Symbol::intern(elem)));
+            }
+        }
+
         // A typed aggregate parameter requires the argument's container type
         // to be declared, not merely inferred from its current elements. An
         // untyped Array/Hash containing only matching values is still an

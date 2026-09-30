@@ -857,6 +857,23 @@ impl Interpreter {
                     let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
                     let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
                     let base = nominal.as_ref();
+                    // A bare user type name in the candidate's signature names
+                    // the type visible from the package that DECLARED it
+                    // (`my role ContentX` inside `role XML::Class` registers as
+                    // `XML::Class::ContentX`); measuring the bare spelling
+                    // against the argument's composed roles found nothing and
+                    // scored the 500 "unrelated" distance, so a wider candidate
+                    // out-ranked the role-typed one (XML::Class t/065).
+                    let owner_resolved;
+                    let base = if !crate::runtime::utils::is_known_type_constraint(base)
+                        && !self.has_type_direct(base)
+                    {
+                        owner_resolved = self
+                            .resolve_type_name_for_owner(&def.package.resolve(), base.to_string());
+                        owner_resolved.as_str()
+                    } else {
+                        base
+                    };
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {
