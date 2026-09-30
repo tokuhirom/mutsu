@@ -2037,7 +2037,7 @@ impl Interpreter {
             let names_this_type = |p: &Symbol| {
                 let resolved = p.resolve();
                 let facing = crate::value::user_facing_type_name(&resolved);
-                facing.as_ref() == name || facing.rsplit("::").next() == Some(name)
+                facing.as_ref() == name
             };
             if matches!(val.view(), ValueView::Package(p) if names_this_type(&p))
                 && (self.var_type_constraint(name).is_none() || self.has_type_direct(name))
