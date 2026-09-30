@@ -9,7 +9,7 @@ use Test;
 # Buf/Blob arm calls the same helper, so the two stay byte-identical.
 # `utf8`/`utf16` keep their own (unmasked) construction arm on the interpreter.
 
-plan 18;
+plan 23;
 
 # --- basic Buf/Blob ---
 is Buf.new(1, 2, 3).elems, 3, 'Buf.new from a list';
@@ -46,3 +46,12 @@ is buf8.new.elems, 0, 'buf8.new with no args is empty';
 
 # --- canonical name normalization ---
 is buf8.new(1).^name, 'Buf[uint8]', 'buf8 normalizes to Buf[uint8]';
+
+# --- undeclared named arguments ---
+is Blob.new(1, 2, :zzz).list, (1, 2), 'Blob.new ignores an unknown named';
+is Buf.new(1, 2, :zzz).list, (1, 2), 'Buf.new ignores an unknown named';
+is blob8.new(3, :zzz).list, (3,), 'blob8.new ignores an unknown named';
+is Blob[uint16].new(70000, :zzz).list, (70000 +& 0xFFFF,),
+    'parametric Blob.new ignores an unknown named';
+is Blob.new(1, 2).new(:zzz).elems, 0,
+    'constructing from a Blob value ignores an unknown named';

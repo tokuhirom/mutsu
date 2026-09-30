@@ -15,10 +15,15 @@ impl Interpreter {
     /// `is_native_buf_constructible`) without entering generic dispatch, while
     /// `dispatch_new`'s Buf/Blob arm calls the same helper — keeping the two
     /// byte-identical. `utf8`/`utf16` are intentionally NOT handled here.
+    /// Cost: O(n), n = flattened input values.
     pub(crate) fn build_native_buf_value(class_name: Symbol, args: &[Value]) -> Value {
         let cn = class_name.resolve();
         let mut raw_vals = Vec::new();
         for arg in args {
+            // Buf/Blob.new has an implicit *%_: call-site nameds are not bytes.
+            if arg.is_string_pair_value() {
+                continue;
+            }
             Self::flatten_native_buf_arg(arg, &mut raw_vals);
         }
         // Mask values to unsigned range based on element size. For uint64, use
