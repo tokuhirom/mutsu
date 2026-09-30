@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
 use super::super::regex_trail::CapStore;
+use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::{RxOp, RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexPattern};
@@ -314,6 +315,21 @@ impl Interpreter {
                         pc = first;
                     }
                     true
+                }
+                // Cost: O(1).
+                RxOp::ZeroIter {
+                    ctr,
+                    start,
+                    min,
+                    max,
+                } => {
+                    pc += 1;
+                    pos != regs[start as usize]
+                        || zero_width_iter_counts(
+                            regs[ctr as usize],
+                            min as usize,
+                            (max != u32::MAX).then_some(max as usize),
+                        )
                 }
                 // Cost: O(1) amortized (one slot, one trail record).
                 RxOp::CloseCapture { start } => {

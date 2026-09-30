@@ -75,6 +75,16 @@ pub(super) enum RxOp {
         exit: u32,
         greedy: bool,
     },
+    /// The end of one iteration of a nullable loop body that began at
+    /// `regs[start]`: fail when it consumed nothing and, after `regs[ctr]`
+    /// iterations, such an iteration no longer counts toward `min..=max`
+    /// (`max == u32::MAX`: no bound) — the walk's `zero_width_iter_counts`.
+    ZeroIter {
+        ctr: u16,
+        start: u16,
+        min: u32,
+        max: u32,
+    },
     /// Close a `( … )` whose body captures nothing, opened at `regs[start]`.
     CloseCapture {
         start: u16,

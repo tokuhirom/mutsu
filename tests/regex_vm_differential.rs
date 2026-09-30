@@ -118,6 +118,10 @@ differential_case!(
     sequential_alternation,
     r#"say ("abcd" ~~ / a [ bc || b ] cd /).gist; say ("b1" ~~ / [ (a) || (b) ] (\d) /).gist; say ("b1" ~~ / [ (a) (x) || (b) ] (\d) /)[2].Str; say ("aab" ~~ / [ a || aa ]+ b /).gist; say ("aab" ~~ / :r [ a || aa ] b /).gist; say ("aab" ~~ / :r [ aa || a ] b /).gist; say ("q" ~~ / [ a || b ]? q /).gist; say ("ab" ~~ / $<x>=a [ $<x>=b || c ] /)<x>.elems; say ("cc" ~~ / [ <[ab]> || c ] ** 2 /).gist; say ("abc" ~~ / :r [ \w+ || \d ] 'c' /).gist; say ("x" ~~ / [ a || (b)+ || x ] /)[0].raku; say ("ab" ~~ / $<y>=[ a || b ] b /)<y>.Str; say ("adx" ~~ / [ a || b ]+ [ (c) || d ] (x) /).list.elems; say ("adx" ~~ / [ a || b ]+? [ (c) || d ] (x) /)[1].Str; say ("aaa" ~~ / ^ [ a || aa ] ** 2 $ /).gist; say ("abab" ~~ / ^ [ a || ab ] **? 2..3 b $ /).gist"#
 );
+differential_case!(
+    nullable_loop_bodies,
+    r#"say ("aab" ~~ / [ a? ]* b /).gist; say ("aab" ~~ / ( a? )+ b /)[0].elems; say ("xb" ~~ / [ a* ]+ b /).gist; say ("ab" ~~ / :r [ a? ]* b /).gist; say ("ab" ~~ / [ a? ]*? b /).gist; say ("abab" ~~ / ^ [ a b? ]* $ /).gist; say ("aaa" ~~ / ^ [ a? a? ] ** 2 $ /).gist; say ("aaa" ~~ / ^ ( a? a? ) ** 2..3 $ /)[0].elems; say ("abc" ~~ / [ \w* ]* c /).gist; say so "" ~~ / ^ [ x? ]+ $ /; say ("ab" ~~ / [ a || b? ]+ $ /).gist; say ("a b" ~~ / ^^ ** 2 a /).gist; say "a b c".comb(/ [ \s* \w ]+? /).join("|")"#
+);
 
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
