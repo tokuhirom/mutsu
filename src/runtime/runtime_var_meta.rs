@@ -801,8 +801,13 @@ impl Interpreter {
         class_name: &str,
         attr_name: &str,
     ) -> Option<String> {
-        self.registry()
-            .class_attribute_deprecated
+        let deprecated = &self.registry().class_attribute_deprecated;
+        // The map is keyed by owned strings; do not build a key just to miss
+        // in the (usual) empty map -- this runs on every accessor read.
+        if deprecated.is_empty() {
+            return None;
+        }
+        deprecated
             .get(&(class_name.to_string(), attr_name.to_string()))
             .cloned()
     }

@@ -395,10 +395,17 @@ impl Interpreter {
                 // A slot promoted to a `ContainerRef` cell (a prior `:=` bind /
                 // `.VAR` mixin) is transparent to a plain accessor read.
                 let out = v.deref_container();
-                let attr = self
-                    .collect_class_attributes(&cn)
-                    .into_iter()
-                    .find(|attr| attr.is_public && attr.name == method);
+                // Only an Array/Hash value is affected by either use of the
+                // declaration below (decontainerizing, type tagging), so a
+                // plain scalar read skips the MRO attribute collection, which
+                // clones every attribute definition (#10229).
+                let attr = if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+                    self.collect_class_attributes(&cn)
+                        .into_iter()
+                        .find(|attr| attr.is_public && attr.name == method)
+                } else {
+                    None
+                };
                 // The generated accessor decontainerizes: `self.a`/`$obj.a`
                 // (unlike `$!a`, which preserves the store's own item-ness)
                 // never returns an itemized Array/Hash, UNLESS the accessor is
