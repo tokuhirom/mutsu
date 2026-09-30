@@ -171,35 +171,38 @@ pub(crate) fn set_unit_docs(docs: Vec<DocComment>) {
 /// Split a declarator comment at the start of `input` into its kind and text.
 /// Returns `(trailing, text)`; `None` when `input` is an ordinary comment:
 /// `#|`/`#=` must be followed by horizontal whitespace (the line form) or an
-/// opening bracket (the block form, whose extent `after` gives), as in
-/// Rakudo, so `#====` and `#|x` are plain comments.
-fn comment_text(input: &str, after: &str) -> Option<(bool, String)> {
+/// opening bracket (the `block` form, which `ws` recognized and whose extent
+/// `after` gives), as in Rakudo, so `#====` and `#|x` are plain comments.
+fn comment_text(input: &str, after: &str, block: bool) -> Option<(bool, String)> {
     let trailing = input.starts_with("#=");
     if !trailing && !input.starts_with("#|") {
         return None;
     }
     let body = &input[2..input.len() - after.len()];
-    let text = if body.starts_with([' ', '\t']) {
-        body.trim().to_string()
-    } else {
-        // Block form: strip the opening and closing bracket runs.
+    let text = if block {
+        // Strip the opening and closing bracket runs.
         let open = body.chars().next()?;
         let run = body.chars().take_while(|&c| c == open).count();
         let inner = body.get(run * open.len_utf8()..)?;
         let inner = inner.get(..inner.len().checked_sub(run * open.len_utf8())?)?;
         inner.split_whitespace().collect::<Vec<_>>().join(" ")
+    } else if body.starts_with([' ', '\t']) {
+        body.trim().to_string()
+    } else {
+        return None;
     };
     (!text.is_empty()).then_some((trailing, text))
 }
 
 /// Record a declarator comment `ws` skipped: `input` starts at the `#`,
-/// `after` is the input after the comment. Returns true for a `#|`, whose
-/// following token [`note_next_token`] must then supply.
-pub(in crate::parser) fn note_comment(input: &str, after: &str) -> bool {
+/// `after` is the input after the comment, `block` tells the bracketed form
+/// from the line form. Returns true for a `#|`, whose following token
+/// [`note_next_token`] must then supply.
+pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> bool {
     if !active() {
         return false;
     }
-    let Some((trailing, text)) = comment_text(input, after) else {
+    let Some((trailing, text)) = comment_text(input, after, block) else {
         return false;
     };
     let Some(at) = source_offset(input) else {

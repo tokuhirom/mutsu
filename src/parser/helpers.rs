@@ -37,7 +37,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
         // or plain line comments.
         if r.starts_with('#') {
             if let Some(after) = skip_declarator_doc_comment(r) {
-                saw_leading_doc |= super::decl_doc::note_comment(r, after);
+                saw_leading_doc |= super::decl_doc::note_comment(r, after, true);
                 let consumed = &r[..r.len() - after.len()];
                 rest = after;
                 at_line_start = consumed.contains('\n');
@@ -81,7 +81,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
             }
             let end = r.find('\n').unwrap_or(r.len());
             if r.starts_with("#|") || r.starts_with("#=") {
-                saw_leading_doc |= super::decl_doc::note_comment(r, &r[end..]);
+                saw_leading_doc |= super::decl_doc::note_comment(r, &r[end..], false);
             }
             rest = &r[end..];
             at_line_start = true;
