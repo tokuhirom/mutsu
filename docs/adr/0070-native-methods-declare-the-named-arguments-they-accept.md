@@ -282,5 +282,7 @@ match-count, position, continuation, case/mark/space transforms, and the
 match-style short and long controls. The set for `trans` is the three options
 and their aliases that `dispatch_trans` reads. The focused test keeps real
 adverbs working and verifies that an unknown named remains invisible. The
-constructor `new` and the unrelated plain-call divergences listed in the
-campaign issue remain open for later slices.
+Buf/Blob constructor `new` residue was fixed in #9905 by filtering call-site
+named arguments in the shared native byte-buffer constructor. The remaining
+sweep divergences are plain-call differences that also occur with no named
+argument.
