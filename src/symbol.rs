@@ -910,6 +910,22 @@ pub fn interned_count() -> usize {
     global_table().read().unwrap().id_to_str.len()
 }
 
+/// Call `f` on every symbol whose id is `from` or later, in id order, and
+/// return the id one past the last one visited: the `from` to pass next time.
+/// Ids are append-only, so repeated calls visit every symbol exactly once --
+/// how a lazily built index catches up (#10228).
+///
+/// The table read lock is held while `f` runs, so `f` must not intern.
+// Cost: O(m), m = symbols interned at or after `from`.
+pub(crate) fn for_each_interned_since(from: usize, mut f: impl FnMut(Symbol, &'static str)) -> usize {
+    let table = global_table().read().unwrap();
+    let names = &table.id_to_str;
+    for (id, &text) in names.iter().enumerate().skip(from) {
+        f(Symbol(id as u32), text);
+    }
+    names.len()
+}
+
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Symbol({}: {:?})", self.0, self.as_str())

@@ -40,10 +40,28 @@ fn tail_index() -> &'static RwLock<TailMap> {
 /// that has a member under it (#9845). Keyed by each contiguous run of
 /// package components, so `Outer::P::x` is found under `Outer`, `Outer::P`
 /// and `P` -- the same suffix rule `stash_member_tail` applies.
-static PACKAGE_INDEX: OnceLock<RwLock<TailMap>> = OnceLock::new();
+///
+/// Built lazily (#10228): almost no program reads a package stash, yet every
+/// process interns thousands of qualified names at startup, so maintaining
+/// this map from [`record`] cost ~12% of startup instructions for a lookup
+/// that rarely happens. Instead [`names_under_package`] catches the map up
+/// from the symbol table's append-only id sequence: `scanned` is the first id
+/// not yet folded in. Because ids are never reused or remapped, the caught-up
+/// map is exactly what eager recording would have built.
+struct PackageIndex {
+    map: TailMap,
+    scanned: usize,
+}
 
-fn package_index() -> &'static RwLock<TailMap> {
-    PACKAGE_INDEX.get_or_init(|| RwLock::new(FxHashMap::default()))
+static PACKAGE_INDEX: OnceLock<RwLock<PackageIndex>> = OnceLock::new();
+
+fn package_index() -> &'static RwLock<PackageIndex> {
+    PACKAGE_INDEX.get_or_init(|| {
+        RwLock::new(PackageIndex {
+            map: FxHashMap::default(),
+            scanned: 0,
+        })
+    })
 }
 
 fn strip_sigil(s: &str) -> &str {
@@ -77,33 +95,29 @@ pub(crate) fn record(sym: Symbol, text: &'static str) {
             }
         }
     }
-    drop(index);
-    record_packages(sym, body);
 }
 
 /// Record `sym` under every package spelling `body` names a member of: each
 /// contiguous run of its components that stops before the last one.
 // Cost: O(c^2 + n), c = `::` components of `body`, n = its bytes.
-fn record_packages(sym: Symbol, body: &'static str) {
-    let mut starts = vec![0];
-    let mut ends = Vec::new();
-    let mut from = 0;
-    while let Some(off) = body[from..].find("::") {
-        ends.push(from + off);
-        from += off + 2;
-        starts.push(from);
-    }
-    let mut index = package_index().write().unwrap();
-    for (i, &start) in starts.iter().enumerate() {
-        for &end in &ends[i..] {
+fn record_packages(map: &mut TailMap, sym: Symbol, body: &'static str) {
+    let mut start = 0;
+    loop {
+        let mut from = start;
+        while let Some(off) = body[from..].find("::") {
+            let end = from + off;
             let package = &body[start..end];
-            if package.is_empty() {
-                continue;
+            if !package.is_empty() {
+                let names = map.entry(package).or_default();
+                if names.last() != Some(&sym) {
+                    names.push(sym);
+                }
             }
-            let names = index.entry(package).or_default();
-            if names.last() != Some(&sym) {
-                names.push(sym);
-            }
+            from = end + 2;
+        }
+        match body[start..].find("::") {
+            Some(off) => start += off + 2,
+            None => break,
         }
     }
 }
@@ -111,14 +125,29 @@ fn record_packages(sym: Symbol, body: &'static str) {
 /// Every interned qualified name with a member under the package spelled
 /// `package` (see [`PACKAGE_INDEX`]), in interning order. Owned for the same
 /// reason as [`names_ending_in`].
-// Cost: O(k), k = interned qualified names under `package`.
+///
+/// The first call folds in every symbol interned so far; later calls fold in
+/// only the ones interned since.
+// Cost: O(k + m), k = interned qualified names under `package`, m = symbols
+// interned since the previous call (amortized O(1) per symbol over the process).
 pub(crate) fn names_under_package(package: &str) -> Vec<Symbol> {
-    package_index()
-        .read()
-        .unwrap()
-        .get(package)
-        .cloned()
-        .unwrap_or_default()
+    let index = package_index();
+    {
+        let idx = index.read().unwrap();
+        if idx.scanned == crate::symbol::interned_count() {
+            return idx.map.get(package).cloned().unwrap_or_default();
+        }
+    }
+    let mut idx = index.write().unwrap();
+    let PackageIndex { map, scanned } = &mut *idx;
+    // Lock order: package index -> symbol table read. The intern path takes
+    // the table write lock and never this one, so there is no cycle.
+    *scanned = crate::symbol::for_each_interned_since(*scanned, |sym, text| {
+        if text.contains("::") {
+            record_packages(map, sym, strip_sigil(text));
+        }
+    });
+    map.get(package).cloned().unwrap_or_default()
 }
 
 /// Every interned qualified name with a member spelled `bare` (see the module

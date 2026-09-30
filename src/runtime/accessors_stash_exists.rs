@@ -33,8 +33,9 @@ impl Interpreter {
     /// module, package or enum, a built-in type, an export view, a package
     /// bound in the env, or a namespace some live qualified symbol sits under
     /// (`our $Foo::Bar::x` makes `Foo` and `Foo::Bar` packages implicitly).
-    // Cost: O(k), k = interned qualified names under `package`
-    // (`names_under_package`); every other probe is a hash lookup.
+    // Cost: O(k + m), k = interned qualified names under `package`, m = symbols
+    // interned since the last `names_under_package` catch-up (amortized O(1)
+    // per symbol); every other probe is a hash lookup.
     pub(crate) fn stash_package_exists(&self, package: &str) -> bool {
         if self.is_known_package(package)
             || self.is_declared_package(package)
