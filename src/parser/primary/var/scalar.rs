@@ -288,6 +288,22 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `$::Pkg::($name)`: a leading-`::` package head with a symbolic tail is the
+    // same lookup as `$Pkg::($name)`.
+    if let Some(after_colons) = input.strip_prefix("::")
+        && let Ok((after_name, name)) = parse_qualified_ident_prefix_with_hyphens(after_colons)
+        && after_name.starts_with("::(")
+    {
+        let (rest, combined) =
+            parse_symbolic_deref_segments(after_name, Expr::Literal(Value::str(name)))?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "$".to_string(),
+                expr: Box::new(combined),
+            },
+        ));
+    }
     // Named parameter variable inside blocks: $:name
     if let Some(after_colon) = input.strip_prefix(':') {
         let (rest, name) = parse_ident_with_hyphens(after_colon)?;
