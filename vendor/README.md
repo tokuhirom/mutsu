@@ -19,8 +19,8 @@ mzef install <dist>   ==>   mutsu -I vendor/zef/lib vendor/zef/bin/zef install <
 | Field      | Value                                                          |
 | ---------- | -------------------------------------------------------------- |
 | Upstream   | <https://github.com/ugexe/zef>                                 |
-| Version    | 1.1.3                                                          |
-| Commit     | `0aa54f53b55662d3a7a3b89981d34b9de97422f1` (2026-05-24)        |
+| Version    | 1.1.4                                                          |
+| Commit     | `a5289115b669adfe8afd2bea52d031320fed5d78` (2026-09-17)        |
 | License    | **Artistic-2.0** (see `zef/LICENSE`), `auth<zef:ugexe>`        |
 
 **License compliance:** Artistic-2.0 permits verbatim copying and redistribution

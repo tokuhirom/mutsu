@@ -283,6 +283,23 @@ impl Interpreter {
             compiler.seed_amp_shadowed_calls_from(origin);
         }
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
+        // The body is compiled as a top-level chunk, where a bare LEAVE /
+        // KEEP / UNDO statement compiles to nothing: those phasers are driven
+        // by the enclosing block's scope. Each call of the callback is one
+        // run of its block, so compile a phaser-bearing body as that block
+        // (`do { ... }`), whose scope fires the phasers on every exit --
+        // normal, `next`, `last` or an exception -- and whose value is the
+        // body's value.
+        let normalized_body =
+            if crate::compiler::Compiler::has_block_leave_worthy_phasers(&normalized_body) {
+                vec![crate::ast::Stmt::Expr(crate::ast::Expr::DoBlock {
+                    body: normalized_body,
+                    label: None,
+                    origin: crate::ast::DoBlockOrigin::SourceBlock,
+                })]
+            } else {
+                normalized_body
+            };
         let (mut code, mut fns) = compiler.compile(&normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
