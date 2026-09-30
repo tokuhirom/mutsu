@@ -497,7 +497,13 @@ impl Interpreter {
                 }
             }
         }
-        None
+        // Last resort: a `constant` / `our` the running module imported from
+        // another module (`use Vars;` then `s/ $WS /X/`), which lives only in
+        // the module-scope table, never in this frame's env.
+        let bare = name.trim_start_matches('$');
+        self.module_scope_lexical(name)
+            .or_else(|| self.module_scope_lexical(bare))
+            .cloned()
     }
 
     /// Return the value of a bare package-block `my` lexical (`package P { my $x;
