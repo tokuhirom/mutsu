@@ -123,6 +123,8 @@ impl Interpreter {
         }
         let parsed = std::sync::Arc::clone(parsed);
         let sub_pkg = *sub_pkg;
+        // The body walk below is a different regex from the caller's.
+        let _barrier = Self::arm_subrule_barrier();
 
         let outer_seed_read = lr_key
             .as_ref()

@@ -2088,6 +2088,7 @@ impl Interpreter {
                         super::regex::regex_helpers::declare_enclosing_regex_var(&name);
                         declared_regex_vars.insert(name);
                     }
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     tokens.push(RegexToken {
                         atom: RegexAtom::VarDecl { code: decl_code },
                         quant: RegexQuant::One,
@@ -3166,6 +3167,7 @@ impl Interpreter {
                             if is_closure_interp {
                                 RegexAtom::ClosureInterpolation { code, body: None }
                             } else {
+                                super::regex::regex_helpers::note_regex_code_lowered();
                                 RegexAtom::CodeAssertion {
                                     code,
                                     negated,
@@ -4508,6 +4510,7 @@ impl Interpreter {
                             return None;
                         }
                     }
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     RegexAtom::CodeAssertion {
                         code,
                         negated: false,
