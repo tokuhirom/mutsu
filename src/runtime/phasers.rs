@@ -1270,10 +1270,25 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // instead of leaving the array empty (S02-types/assigning-refs.t semantics
     // for `@a = Nil` are correct there — they just don't apply to "no
     // initializer at all").
+    // A native type the static half cannot give a zero to (a NativeCall
+    // `ulong`, say) keeps its declaration whole: it holds no Nil.
+    if let Some(tc) = type_constraint.as_deref()
+        && tc.starts_with(|c: char| c.is_ascii_lowercase())
+        && crate::runtime::Interpreter::native_scalar_default(tc).is_none()
+        && !name.starts_with(['@', '%'])
+    {
+        return None;
+    }
     let static_default = match name.as_bytes().first() {
         Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
         Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
-        _ => Expr::Literal(Value::NIL),
+        // A native scalar (`my int $x`) holds its zero, never Nil.
+        _ => Expr::Literal(
+            type_constraint
+                .as_deref()
+                .and_then(crate::runtime::Interpreter::native_scalar_default)
+                .unwrap_or(Value::NIL),
+        ),
     };
     let static_decl = Stmt::VarDecl {
         name: name.clone(),

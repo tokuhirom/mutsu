@@ -1745,8 +1745,9 @@ pub(crate) enum Stmt {
         /// Empty means default import (:DEFAULT).
         tags: Vec<String>,
         /// Condition from the `if` pragma's `:if(EXPR)` adverb
-        /// (`use Foo:if($cond)`): the module is loaded only when `EXPR` is true,
-        /// evaluated at runtime. `None` for an unconditional `use`.
+        /// (`use Foo:if($cond)`): the module is loaded only when `EXPR` is true.
+        /// At a unit's top level it is evaluated in the BEGIN prologue
+        /// (ADR-0134 §2.1.6). `None` for an unconditional `use`.
         condition: Option<Box<Expr>>,
     },
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
