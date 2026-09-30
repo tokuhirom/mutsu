@@ -580,6 +580,7 @@ mod builtins_collection_mapgrep;
 mod builtins_collection_minmax;
 mod builtins_control_flow;
 mod builtins_dispatch_next;
+mod builtins_dispatch_next_core;
 mod builtins_eval_misc;
 mod builtins_feed;
 mod builtins_io;
@@ -4761,6 +4762,13 @@ pub struct Interpreter {
     /// See that function for why the type half is an address and not a
     /// `Symbol`.
     pub(crate) native_lever_a_override_cache: rustc_hash::FxHashMap<(usize, Symbol), bool>,
+    /// The one `(type-name address, method, receiver NaN-box word)` whose user
+    /// augmentation [`Interpreter::native_lever_a_user_override_sym`] must not
+    /// report while a deferral out of that augmentation runs the builtin
+    /// method as its final candidate (#10198); see
+    /// `builtins_dispatch_next_core`. Keyed by receiver identity so a nested
+    /// call on another receiver still reaches the user method.
+    pub(crate) native_base_bypass: Option<(usize, Symbol, u64)>,
     /// Memoized `(class, method) -> does this name have >= 2 structural dispatch
     /// candidates across the MRO` (counting overloads BEFORE arg-matching).
     /// `false` means the name resolves to at most one candidate, so

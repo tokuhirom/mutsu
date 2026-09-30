@@ -3463,6 +3463,7 @@ impl Interpreter {
             multi_resolve_cache: rustc_hash::FxHashMap::default(),
             multi_type_cacheable: rustc_hash::FxHashMap::default(),
             native_lever_a_override_cache: rustc_hash::FxHashMap::default(),
+            native_base_bypass: None,
             resolved_seq_cache: rustc_hash::FxHashMap::default(),
             dispatch_multi_candidate: rustc_hash::FxHashMap::default(),
             deferral_build_context_free: rustc_hash::FxHashMap::default(),
