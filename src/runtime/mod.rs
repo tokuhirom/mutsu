@@ -682,6 +682,7 @@ pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
 mod io;
 mod io_doc;
+mod io_doc_hoist;
 mod io_env;
 mod io_handles;
 mod io_pod;

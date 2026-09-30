@@ -596,11 +596,13 @@ impl Interpreter {
         // Masking rather than dropping keeps every line number intact.
         let raw_lines: Vec<&str> = input.lines().collect();
         let in_heredoc = Self::heredoc_body_lines(&raw_lines);
-        let lines: Vec<&str> = raw_lines
+        let masked_lines: Vec<&str> = raw_lines
             .iter()
             .zip(&in_heredoc)
             .map(|(line, masked)| if *masked { "" } else { *line })
             .collect();
+        let owned_lines = Self::hoist_initializer_leading_docs(&masked_lines);
+        let lines: Vec<&str> = owned_lines.iter().map(String::as_str).collect();
         let mut idx = 0usize;
         while idx < lines.len() {
             let line = lines[idx];
