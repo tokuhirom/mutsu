@@ -124,7 +124,7 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0096](0096-batteries-adoption-policy.md) | A battery is the real upstream module; the interpreter is what grows (rung-3 native provision banned; a performance measurement justifies an optimization, never a substitution) | Accepted |
 | [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
 | [0098](0098-if-pragma-actions-slang.md) | mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name (the `if` pragma) | Accepted (implemented 2026-09-13) |
-| [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 implemented; Stage 2 decision #9916, Stage 3 deferred — see §8) |
+| [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 implemented; Stages 2-3 re-decided by 0135 — see §8) |
 | [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented; point 7 amended by ADR-0123) |
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Accepted (implemented, #8148) |
 | [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
@@ -159,3 +159,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0132](0132-nested-routine-exports-install-at-enclosing-routine-registration.md) | An `is export` routine nested in a routine body is exported when the enclosing routine is installed | Accepted (implemented) |
 | [0133](0133-no-per-call-ast-compile-at-runtime.md) | The runtime executes precompiled chunks — no per-call AST compile | Proposed (Slice 1, signature expressions, implemented) |
 | [0134](0134-begin-time-prologue.md) | BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals | Accepted (not yet implemented) |
+| [0135](0135-regex-compiles-to-a-backtracking-program.md) | A regex compiles to a flat backtracking program; the tree walk is retired | Proposed (no slice started) |
