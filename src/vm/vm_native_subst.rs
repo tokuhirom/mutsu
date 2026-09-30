@@ -20,7 +20,6 @@
 
 use super::*;
 use crate::value::Value;
-use std::collections::HashMap;
 
 impl Interpreter {
     /// Try to run `target.subst(pattern, replacement, :g?)` natively. Returns
@@ -122,18 +121,19 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // Collect non-overlapping matches with their positional captures, using
         // the same iterative walk the operator form uses in `exec_subst_op`.
-        let mut matches: Vec<(usize, usize, Vec<String>)> = Vec::new();
+        let mut matches: Vec<(usize, usize, Vec<String>, crate::runtime::RegexCaptures)> =
+            Vec::new();
         let mut pos = 0usize;
         // One target for the whole scan: the subject never changes, and building
         // it copies the whole string plus its char vector, so a per-match target
         // made a global substitution quadratic in subject length (#8247).
         let target = crate::runtime::MatchTarget::new(text);
-        while let Some((start, end, caps, _named)) = loan_env!(
+        while let Some((start, end, caps, _named, spans)) = loan_env!(
             self,
             regex_find_first_from_with_all_captures_in_value(pattern, &target, pos)
         ) {
             pos = if end > start { end } else { start + 1 };
-            matches.push((start, end, caps));
+            matches.push((start, end, caps, spans));
             // A non-global `.subst` replaces only the first match, so scanning
             // on is pure waste -- and not harmless: a `{ ... }` block in the
             // pattern runs for every extra attempt
@@ -149,7 +149,7 @@ impl Interpreter {
             // List for a global subst (Rakudo: `$/` is always a List under `:g`),
             // or Nil for a non-global subst.
             let empty = if global {
-                Value::array(Vec::new())
+                Value::array(Vec::new()).item()
             } else {
                 Value::NIL
             };
@@ -160,13 +160,13 @@ impl Interpreter {
         // A non-global `.subst` replaces only the first match and sets `$/` to
         // that match; a global `.subst` replaces every match and leaves `$/`
         // untouched (matching `dispatch_subst`).
-        let selected: &[(usize, usize, Vec<String>)] =
+        let selected: &[(usize, usize, Vec<String>, crate::runtime::RegexCaptures)] =
             if global { &matches } else { &matches[..1] };
 
         let chars: Vec<char> = text.chars().collect();
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0usize;
-        for (start, end, caps) in selected {
+        for (start, end, caps, _) in selected {
             result.extend(chars[last_end..*start].iter());
             // Expand `$0`/`$1`/… only when the match actually captured groups,
             // matching `eval_subst_replacement` (a literal `$0` with no capture
@@ -187,26 +187,25 @@ impl Interpreter {
         // a global `.subst` sets it to a List of every Match object (matching
         // `s:g///` and Rakudo's `.subst(:g)` — `$/` is always a List, even for a
         // single match).
-        let target = crate::runtime::MatchTarget::new(text);
-        let make_match = |start: usize, end: usize, caps: &[String]| {
-            Value::make_match_object_with_captures(
+        let make_match = |start: usize, end: usize, caps: &crate::runtime::RegexCaptures| {
+            Value::make_match_object_full_visible(
                 start as i64,
                 end as i64,
-                caps,
-                &HashMap::new(),
+                &caps.positional,
+                &caps.named,
                 target.clone(),
             )
         };
         if global {
             let list: Vec<Value> = matches
                 .iter()
-                .map(|(start, end, caps)| make_match(*start, *end, caps))
+                .map(|(start, end, _, caps)| make_match(*start, *end, caps))
                 .collect();
-            let slash = Value::array(list);
+            let slash = Value::array(list).item();
             self.env_mut().insert("/".to_string(), slash.clone());
             self.publish_subst_capture_env(&slash);
         } else {
-            let (start, end, caps) = &matches[0];
+            let (start, end, _, caps) = &matches[0];
             let slash = make_match(*start, *end, caps);
             self.env_mut().insert("/".to_string(), slash.clone());
             self.publish_subst_capture_env(&slash);

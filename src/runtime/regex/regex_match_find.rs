@@ -2,10 +2,15 @@ use super::super::*;
 use super::regex_helpers::{map_pos, strip_marks_pattern};
 use super::regex_prefilter::regex_scan_positions;
 
-/// One match's span plus every capture text it produced: the positional list
-/// (`$0`, `$1`, ...) and the per-name list (`$<name>`, which is a list because a
-/// quantified named capture matches repeatedly).
-pub(crate) type MatchWithAllCaptures = (usize, usize, Vec<String>, HashMap<String, Vec<String>>);
+/// One match's span, capture texts for replacements, and span-bearing capture
+/// slots for the Match object left in `$/`.
+pub(crate) type MatchWithAllCaptures = (
+    usize,
+    usize,
+    Vec<String>,
+    HashMap<String, Vec<String>>,
+    RegexCaptures,
+);
 
 impl Interpreter {
     /// Ranking key for selecting the best full (anchored) match: prefer the
@@ -421,14 +426,11 @@ impl Interpreter {
                     // Remap the capture spans back to original-subject space so
                     // the derived texts keep their combining marks (pre-P4 the
                     // stored text axis returned mark-stripped text here).
-                    for slot in caps.positional.iter_mut() {
-                        super::regex_helpers::remap_pos_slot(
-                            slot,
-                            stripped.stripped_map(),
-                            orig_len,
-                            0,
-                        );
-                    }
+                    super::regex_helpers::remap_caps_spans(
+                        &mut caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                    );
                     return Some((
                         map_pos(
                             caps.capture_start.unwrap_or(start),
@@ -442,6 +444,7 @@ impl Interpreter {
                         ),
                         super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
                         super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
+                        caps,
                     ));
                 }
             }
@@ -463,6 +466,7 @@ impl Interpreter {
                     caps.capture_end.unwrap_or(end),
                     super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
                     super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
+                    caps,
                 ));
             }
         }

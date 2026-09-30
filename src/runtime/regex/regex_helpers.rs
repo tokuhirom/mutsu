@@ -1087,17 +1087,6 @@ fn remap_caps_spans_mapped(
     }
 }
 
-/// Remap one positional slot's spans (its own, its subcap tree, and every
-/// quantified iteration entry).
-pub(super) fn remap_pos_slot(
-    slot: &mut PosSlot,
-    pos_map: &[usize],
-    orig_len: usize,
-    offset: usize,
-) {
-    remap_pos_slot_mapped(slot, pos_map, orig_len, offset, 0);
-}
-
 fn remap_pos_slot_mapped(
     slot: &mut PosSlot,
     pos_map: &[usize],

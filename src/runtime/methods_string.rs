@@ -141,7 +141,7 @@ impl Interpreter {
             )
         };
         if result_is_list {
-            Value::array(selected.iter().map(to_match).collect())
+            Value::array(selected.iter().map(to_match).collect()).item()
         } else if let Some(c) = selected.first() {
             to_match(c)
         } else {
@@ -410,7 +410,7 @@ impl Interpreter {
                     !single_nth && (pat_global || x_count.is_some() || nth_is_multi);
                 let empty_match_var = |me: &mut Self| {
                     let v = if result_is_list {
-                        Value::array(Vec::new())
+                        Value::array(Vec::new()).item()
                     } else {
                         Value::NIL
                     };

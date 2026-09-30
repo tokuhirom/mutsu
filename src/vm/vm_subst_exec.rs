@@ -96,6 +96,7 @@ impl Interpreter {
                         SubstMatchCaps {
                             positional,
                             named: std::collections::HashMap::new(),
+                            spans: None,
                         },
                     )
                 })
@@ -105,11 +106,19 @@ impl Interpreter {
         let mut pos = 0usize;
         // One target for the whole scan — see the note in `native_subst_regex`:
         // rebuilding it per match is what made `s:g///` quadratic (#8247).
-        while let Some((start, end, positional, named)) = loan_env!(
+        while let Some((start, end, positional, named, spans)) = loan_env!(
             self,
             regex_find_first_from_with_all_captures_in(&op.pattern, target, pos)
         ) {
-            out.push((start, end, SubstMatchCaps { positional, named }));
+            out.push((
+                start,
+                end,
+                SubstMatchCaps {
+                    positional,
+                    named,
+                    spans: Some(spans),
+                },
+            ));
             if first_only {
                 break;
             }
@@ -169,7 +178,7 @@ impl Interpreter {
             return Ok(SubstOutcome {
                 text,
                 slash: if is_list {
-                    Value::array(Vec::new())
+                    Value::array(Vec::new()).item()
                 } else {
                     Value::NIL
                 },
@@ -230,7 +239,7 @@ impl Interpreter {
                     )
                 })
                 .collect();
-            Value::array(matches)
+            Value::array(matches).item()
         } else {
             let (s, e) = selected[0];
             Self::make_subst_match(&target, s, e, caps.first().unwrap_or(&Default::default()))

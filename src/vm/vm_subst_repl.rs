@@ -28,6 +28,7 @@ use std::sync::Arc;
 pub(crate) struct SubstMatchCaps {
     pub(crate) positional: Vec<String>,
     pub(crate) named: std::collections::HashMap<String, Vec<String>>,
+    pub(crate) spans: Option<crate::runtime::RegexCaptures>,
 }
 
 /// One piece of a replacement whose interpolations are nothing but capture
