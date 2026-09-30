@@ -114,7 +114,7 @@ impl Compiler {
     /// own topic binding was never threaded to the POST-phase run of
     /// `compile_post_phasers` — the pushed value read back as `Nil` instead
     /// of the loop's per-iteration topic.
-    pub(super) fn has_block_leave_worthy_phasers(stmts: &[Stmt]) -> bool {
+    pub(crate) fn has_block_leave_worthy_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(
                 s,

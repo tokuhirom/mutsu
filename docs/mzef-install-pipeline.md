@@ -25,7 +25,7 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 
 | # | Phase | Status | Evidence / blocker |
 |---|-------|--------|--------------------|
-| 0 | CLI load + command dispatch | ✅ | `zef --version` → 1.1.3; `--help` prints usage |
+| 0 | CLI load + command dispatch | ✅ | `zef --version` → 1.1.4; `--help` prints usage |
 | 1 | Ecosystem index (populate) | ✅ | fez index parsed: **9260 keys / 7648 dists**, ~6.5s release |
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
 | 3 | **Fetch** (download archive) | ✅ | Downloads via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617; the **concurrent** multi-candidate fetch `install` drives by #4658 (ADR-0010) — all 16 of Test::META's candidates now fetch their own archive |

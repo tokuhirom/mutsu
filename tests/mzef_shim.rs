@@ -36,8 +36,8 @@ fn mzef_version_runs_vendored_zef() {
     let (out, err, ok) = run_mzef(&["--version"], &[]);
     assert!(ok, "mzef --version failed: stderr={err}");
     assert!(
-        out.contains("1.1.3"),
-        "expected vendored zef version 1.1.3 in stdout, got: {out:?} (stderr={err})"
+        out.contains("1.1.4"),
+        "expected vendored zef version 1.1.4 in stdout, got: {out:?} (stderr={err})"
     );
 }
 
@@ -51,8 +51,8 @@ fn mzef_zef_home_override_is_honored() {
     let (out, err, ok) = run_mzef(&["--version"], &[("MZEF_ZEF_HOME", zef_home.as_str())]);
     assert!(ok, "mzef --version with MZEF_ZEF_HOME failed: stderr={err}");
     assert!(
-        out.contains("1.1.3"),
-        "expected 1.1.3 via MZEF_ZEF_HOME override, got: {out:?} (stderr={err})"
+        out.contains("1.1.4"),
+        "expected 1.1.4 via MZEF_ZEF_HOME override, got: {out:?} (stderr={err})"
     );
 }
 
@@ -65,6 +65,6 @@ fn mzef_bogus_zef_home_falls_through() {
         &["--version"],
         &[("MZEF_ZEF_HOME", "/nonexistent/zef/home")],
     );
-    // Falls through to the exe-relative vendor/zef, so it still prints 1.1.3.
-    assert!(ok && out.contains("1.1.3"));
+    // Falls through to the exe-relative vendor/zef, so it still prints 1.1.4.
+    assert!(ok && out.contains("1.1.4"));
 }
