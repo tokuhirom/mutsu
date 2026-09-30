@@ -15,3 +15,9 @@ be silently read as a second statement. The export-hook scan also picks up
 operators that a `sub EXPORT` binds as `my &infix:<op> = ...`, so an importer's
 parse still knows about them. This closes the divergence ADR-0093 left open
 (#9918).
+
+The stricter statement boundary uncovered one more instance of the old
+leniency. `DOC INIT { ... }` had been parsed as a bareword `DOC` followed by an
+`INIT` phaser with no separator between them, so the phaser ran in every
+program. `DOC BEGIN`/`CHECK`/`INIT` is now a real statement prefix: the phaser
+runs only under `--doc`, as in rakudo.

@@ -519,14 +519,23 @@ pub(crate) fn stmt_list_with_mode(
                     ));
                 }
                 // Any other statement that stopped short of a separator on the
-                // same line left a term behind it: `my $x = (1,2) cross (3,4)`,
-                // where `cross` is not an infix, would otherwise silently become
-                // two statements. rakudo: "Two terms in a row" (#9918).
-                let consumed = input_before_stmt[..input_before_stmt.len() - r.len()].trim_end();
+                // same line, with a term following it, left that term behind:
+                // `my $x = (1,2) cross (3,4)`, where `cross` is not an infix,
+                // would otherwise silently become two statements. rakudo:
+                // "Two terms in a row" (#9918).
+                // The statement parser may already have consumed its `;` and
+                // any trailing whitespace or comment (and with it the newline).
+                let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
+                let consumed = consumed_raw.trim_end();
                 if !consumed.ends_with(';')
                     && !consumed.ends_with('}')
+                    && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
                     && !has_statement_separator(r)
-                    && !r_ws.starts_with(')')
+                    && (r_ws
+                        .chars()
+                        .next()
+                        .is_some_and(crate::parser::helpers::is_raku_identifier_start)
+                        || crate::parser::term_boundary::starts_with_unambiguous_term(r_ws))
                 {
                     return Err(PError::fatal_at(
                         "Confused. Two terms in a row".to_string(),

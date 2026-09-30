@@ -3,7 +3,7 @@
 //! Handles `#|` (leading) and `#=` (trailing) declarator comments attached to
 //! declarations like `sub`, `method`, `class`, `role`, `module`, `grammar`,
 //! `token`, `rule`, `regex`, `enum`, `subset`, `constant`, `my`, `our`, `has`.
-use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast::Stmt;
 use crate::{Interpreter, RuntimeError, parse_dispatch};
 
 /// Strip the `#|` or `#=` prefix from a doc comment line.
@@ -364,31 +364,17 @@ fn validate_pod_blocks(source: &str) -> Result<(), RuntimeError> {
 fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError> {
     let (stmts, _) = parse_dispatch::parse_source(source)?;
     let docs = crate::parser::decl_doc::take_unit_docs();
-    // Filter out SetLine annotations for DOC INIT block detection
-    let stmts: Vec<_> = stmts
-        .into_iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(_)))
-        .collect();
     let mut interpreter = Interpreter::new();
     interpreter.establish_pod_variables_from_stmts(source, &stmts, docs)?;
-    let mut i = 0usize;
-    while i + 1 < stmts.len() {
-        let is_doc_marker = matches!(&stmts[i], Stmt::Expr(Expr::BareWord(name)) if name == "DOC");
-        if is_doc_marker
-            && let Stmt::Phaser {
-                kind: PhaserKind::Init,
-                body,
-                ..
-            } = &stmts[i + 1]
+    for stmt in &stmts {
+        if let Stmt::DocPhaser(phaser) = stmt
+            && let Stmt::Phaser { body, .. } = phaser.as_ref()
         {
             interpreter.eval_block_value(body)?;
             if interpreter.is_halted() {
                 break;
             }
-            i += 2;
-            continue;
         }
-        i += 1;
     }
     Ok((
         interpreter.output(),

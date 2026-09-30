@@ -133,6 +133,7 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
             mark_opt_box_expr(condition);
         }
         Stmt::No { arg, .. } => mark_opt_expr(arg),
+        Stmt::DocPhaser(inner) => mark_stmt(inner),
         // Body-only statements: recurse into the block, nothing else to mark.
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
