@@ -193,11 +193,28 @@ impl Compiler {
                 // like the statement form. Give it a declaration slot before its
                 // initializer is compiled, preventing an inherited same-named binding
                 // (including a captured ContainerRef cell) from being overwritten.
+                //
+                // A defaulted array with an initializer (`(my @a is default(1)
+                // = Nil, Any)`) also needs its slot up front: like the
+                // statement form it creates the default-aware container BEFORE
+                // the initializer runs (see `wants_preapply_default`).
+                //
+                // A `state` whose initializer itself declares a `state` cannot
+                // sit behind the state guard (the inner one must run on every
+                // entry), so it keeps the unguarded route.
+                let nested_state_init = *is_state && Self::expr_has_state_decl(expr);
+                let wants_preapply_default = !*is_our
+                    && !is_constant_decl
+                    && !nested_state_init
+                    && name.starts_with('@')
+                    && custom_traits.iter().any(|(t, _)| t == "default")
+                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer");
                 let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
                     self.local_map.get(name).copied()
                 } else if !*is_our
                     && !is_promoted
                     && (shadows_outer
+                        || wants_preapply_default
                         || Self::container_slot_read_applies(name)
                         || (name.starts_with('@')
                             && crate::runtime::utils::has_anon_marker(name)
@@ -245,9 +262,17 @@ impl Compiler {
                         },
                     });
                 }
+                // The pre-created default container makes the store see the
+                // default, so an explicit `Any` element stays `Any` while a
+                // `Nil` one becomes the default (as for the statement form).
+                let preapply_default = wants_preapply_default && decl_slot.is_some();
+                let default_trait_expr = custom_traits
+                    .iter()
+                    .find_map(|(t, a)| (t == "default").then_some(a.as_ref()))
+                    .flatten();
                 let mark_explicit_local_init = decl_slot.is_some()
                     && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
-                    && !custom_traits.iter().any(|(t, _)| t == "default");
+                    && (preapply_default || !custom_traits.iter().any(|(t, _)| t == "default"));
                 // Expression-position scalar declarations normally emit their
                 // `SetVarDynamic` after the initializer so the declaration's
                 // value can be returned through the env-only path. Reset the
@@ -271,6 +296,36 @@ impl Compiler {
                 }
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
+                    // `(state @a is default(D) = RHS)`: the default-aware
+                    // container exists before the initializer runs, exactly as
+                    // in the statement form, so the expression's value is that
+                    // container and not the raw initializer list. The whole
+                    // sequence sits behind the state guard: every store to a
+                    // `state` slot is published to the state store
+                    // (`publish_state_local`), so re-running the pre-created
+                    // container and the initializer store on a later call
+                    // would overwrite the persisted value.
+                    let state_guard = if preapply_default {
+                        let key = format!(
+                            "__state_{}::{}@{}",
+                            self.current_package,
+                            name,
+                            self.code.ops.len()
+                        );
+                        let key_sym = crate::symbol::Symbol::intern(&key);
+                        let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym.id(), 0));
+                        Some((guard_idx, key_sym))
+                    } else {
+                        None
+                    };
+                    if preapply_default && let Some(slot) = decl_slot {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.emit_default_before_array_initializer(
+                            name_idx,
+                            slot,
+                            default_trait_expr,
+                        );
+                    }
                     // Register the declared type constraint BEFORE the init,
                     // exactly as the statement-position decl does: assignments
                     // must re-check it, and `StateVarInit` reads it to keep a
@@ -283,9 +338,19 @@ impl Compiler {
                     }
                     self.compile_expr(expr);
                     let slot = decl_slot.unwrap_or_else(|| self.alloc_local(name));
+                    if preapply_default {
+                        self.emit_state_array_store_into_defaulted(slot);
+                    }
                     let ip = self.code.ops.len();
-                    let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                    let key_sym = crate::symbol::Symbol::intern(&key);
+                    let key_sym = if let Some((guard_idx, key_sym)) = state_guard {
+                        // A taken guard lands on the `StateVarInit` below.
+                        self.code.ops[guard_idx] =
+                            OpCode::StateVarInitGuard(key_sym.id(), ip as u32);
+                        key_sym
+                    } else {
+                        let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
+                        crate::symbol::Symbol::intern(&key)
+                    };
                     self.code.state_locals.push((slot as usize, key_sym));
                     self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
                     self.code.emit(OpCode::GetLocal(slot));
@@ -364,6 +429,14 @@ impl Compiler {
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::GetOurVar(idx));
                     } else {
+                        if preapply_default && let Some(slot) = decl_slot {
+                            let name_idx = self.code.add_constant(Value::str(name.clone()));
+                            self.emit_default_before_array_initializer(
+                                name_idx,
+                                slot,
+                                default_trait_expr,
+                            );
+                        }
                         self.compile_expr(expr);
                     }
                     // An `@` declaration whose RHS is a `$` scalar variable
@@ -412,7 +485,12 @@ impl Compiler {
                     if mark_explicit_local_init {
                         self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
-                    self.code.emit(OpCode::MarkVarDeclContext);
+                    // The pre-created container is stored INTO, not replaced: a
+                    // declaration mark would make the store build a fresh
+                    // container and lose the default.
+                    if !preapply_default {
+                        self.code.emit(OpCode::MarkVarDeclContext);
+                    }
                     // A shaped declaration (`(my @b[3] = <a b c>)`) keeps its
                     // declared shape; mark it so the `SetLocal` store does not
                     // strip the shape the way an unshaped value-copy
@@ -436,9 +514,10 @@ impl Compiler {
                     // returned by this expression (`(my % is default(42))`). The
                     // statement-position VarDecl applies traits via `ApplyVarTrait`;
                     // the expression path must do the same or the default is lost.
-                    if let Some(trait_arg) = custom_traits
-                        .iter()
-                        .find_map(|(t, a)| if t == "default" { Some(a) } else { None })
+                    if !preapply_default
+                        && let Some(trait_arg) = custom_traits
+                            .iter()
+                            .find_map(|(t, a)| if t == "default" { Some(a) } else { None })
                     {
                         if let Some(arg) = trait_arg {
                             let escaping = Self::is_closure_literal_arg(arg);
@@ -836,6 +915,10 @@ impl Compiler {
                 // would lose the default trait on the inner variable.
                 for (trait_name, trait_arg) in custom_traits {
                     if trait_name.starts_with("__") {
+                        continue;
+                    }
+                    // Already applied to the pre-created container.
+                    if trait_name == "default" && preapply_default {
                         continue;
                     }
                     if let Some(arg) = trait_arg {
