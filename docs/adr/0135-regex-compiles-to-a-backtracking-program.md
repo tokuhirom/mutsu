@@ -517,7 +517,7 @@ backtracking reaches it. The body's compile is the cached one of ADR-0133 and #1
   way one that holds a backreference already did (`atom_contains_code`, `OuterBackrefCaps::match_from`;
   the parser's `note_regex_code_lowered` keeps the cost at zero for a process with no code in a
   regex). A capture group and a lookaround still get a scope of their own, as in rakudo.
-  `t/regex/syntax/regex-code-atom-capture-scope.t` pins the rakudo values.
+  `t/regex/match/regex-code-atom-capture-scope.t` pins the rakudo values.
 - **Two shapes still decline**, for the reason `separator-backref` does: code reads the enclosing
   captures, and these shapes hide them. Code inside a `%` / `%%` quantifier (`separator-code`) sees
   the iterations folded so far in the walk (Net::Whois's `$/[*-1][*-1] < 256` octet check, pinned by

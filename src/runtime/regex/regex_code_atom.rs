@@ -34,7 +34,8 @@ impl Interpreter {
             code_cache_id,
         } = atom
         else {
-            unreachable!("regex_code_atom takes a CodeAssertion");
+            debug_assert!(false, "regex_code_atom takes a CodeAssertion");
+            return None;
         };
         // Declarative-prefix (LTM) measurement: never execute the code
         // (ADR-0009). The two kinds are treated differently, per

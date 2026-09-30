@@ -17,7 +17,7 @@ The comparison found a bug in the walk. A non-capturing group, a branch or a qua
 the walk a capture scope of its own, so `"abc" ~~ / a [ b { say $/.Str } ] c /` printed `b` where
 rakudo prints `ab`, and `/ (a) [ b { say $0 } ] c /` could not see `$0` at all. A sub-pattern that
 shares the regex's scope and holds code now sees the enclosing regex's captures and match start,
-as one that holds a backreference already did (`t/regex/syntax/regex-code-atom-capture-scope.t`).
+as one that holds a backreference already did (`t/regex/match/regex-code-atom-capture-scope.t`).
 
 Two shapes keep the walk because the compiled form would hide the enclosing captures from the code:
 code inside a `%` quantifier (`separator-code`) and inside a `&` branch (`conjunction-code`).

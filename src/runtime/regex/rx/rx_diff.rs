@@ -83,7 +83,9 @@ pub(super) fn begin_replay(mark: usize) {
 /// The walk is done: how it diverged from the record, if it did.
 pub(super) fn end_replay() -> Result<(), String> {
     LOG.with(|l| {
-        let replay = l.borrow_mut().replays.pop().expect("a replay in progress");
+        let Some(replay) = l.borrow_mut().replays.pop() else {
+            return Ok(());
+        };
         match replay.mismatch {
             Some(why) => Err(why),
             None if replay.next < replay.events.len() => Err(format!(

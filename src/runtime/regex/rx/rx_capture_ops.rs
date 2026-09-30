@@ -75,7 +75,8 @@ impl Interpreter {
             // (one run of each initializer).
             RxOp::VarDecl(i) => {
                 let RegexAtom::VarDecl { code } = &program.atoms[i as usize] else {
-                    unreachable!("a VarDecl op names a declaration atom");
+                    debug_assert!(false, "a VarDecl op names a declaration atom");
+                    return None;
                 };
                 let (next, delta) =
                     self.regex_var_decl_atom(code, chars, pos, levels.top().caps())?;
