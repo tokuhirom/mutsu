@@ -39,6 +39,11 @@
 //!
 //! Slice 6's sweep (2026-09-01) re-measured the whole of ADR-0045 §1.3 against
 //! raku: all 45 rows agree.
+//!
+//! Slice 7 (#10349): an immutable `List`/`ItemList` source never promotes
+//! (`array_is_aliasable`, `aliasable_source_array`) — it has no element
+//! containers to hand out — and `for_source_is_value_sequence` tells the bind
+//! site that its bare items are values, not cells.
 
 use super::vm_control_ops::ForLoopSpec;
 use super::*;
@@ -274,7 +279,8 @@ impl Interpreter {
                 if !matches!(
                     kind,
                     crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
-                ) && data.shape.is_none()
+                ) && !kind.is_immutable_list()
+                    && data.shape.is_none()
                     && data.native_storage_node().is_none() =>
             {
                 (data.len(), data.items().first().cloned())
@@ -540,13 +546,22 @@ impl Interpreter {
         Some(self.get_env_with_main_alias(source)?.deref_container())
     }
 
-    /// Whether a `for` loop's tagged source is an object backed by a VM
+    /// Whether a `for` loop's tagged source holds VALUES rather than element
+    /// containers: an immutable `List`/`ItemList`, or an object backed by a VM
     /// array (`IterationBuffer` and its subclasses, `is repr('VMArray')`).
-    /// Its slots hold the stored objects themselves, not `Scalar`s, so an
-    /// item iterated out of it is not assignable unless it is a container
-    /// (ValueList/Tuple: `$_ = 42 for @tuple` dies in raku).
+    ///
+    /// Such a slot is not a `Scalar`, so an item iterated out of it is not
+    /// assignable unless the item is itself a container (a list built from
+    /// variables, `($a, $b)`, keeps those containers; ValueList/Tuple:
+    /// `$_ = 42 for @tuple` dies in raku). The decision is per item at the bind
+    /// site, so a source holding both stays partly writable.
+    ///
+    /// Resolved from the source's runtime value, not from how the loop was
+    /// written: `for $l.list`, `for @l` over a parameter bound to a `List`, and
+    /// `for @l.kv` all reach the same answer, which the compiler's syntactic
+    /// `source_items_are_bare` cannot give.
     // Cost: O(1).
-    pub(super) fn for_source_is_value_buffer(
+    pub(super) fn for_source_is_value_sequence(
         &self,
         code: &CompiledCode,
         source: Option<&str>,
@@ -560,7 +575,16 @@ impl Interpreter {
             .filter(|v| !v.is_nil())
             .map(Value::deref_container)
             .or_else(|| self.resolve_for_source_array(code, name))
-            .is_some_and(|v| crate::runtime::nqp_ops_list::is_iteration_buffer(&v))
+            .is_some_and(|v| Self::is_value_sequence(&v))
+    }
+
+    /// The shape test behind [`Interpreter::for_source_is_value_sequence`].
+    // Cost: O(1).
+    fn is_value_sequence(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Array(_, kind) => kind.is_immutable_list(),
+            _ => crate::runtime::nqp_ops_list::is_iteration_buffer(v),
+        }
     }
 
     /// Whether a `for` loop's tagged `%`-source is a real mutable `Hash`
@@ -573,12 +597,14 @@ impl Interpreter {
     /// Shared shape test for the array entry points. `idx` additionally
     /// requires that index to exist today.
     ///
-    /// The kind test is a **denial list**, not an allow list. Only `Shaped` and
-    /// `Lazy` are genuinely unable to hand out an element container; every other
-    /// kind is an ordinary `ArrayData` whose elements promote normally. An allow
-    /// list of `Array | List` looked equivalent and was not: ADR-0040 stores an
-    /// `Array` element *itemized*, so the very common
-    /// `for @m -> @row { for @row <-> $x { … } }` binds `@row` to an
+    /// The kind test is a **denial list**, not an allow list. `Shaped` and
+    /// `Lazy` are unable to hand out an element container, and an immutable
+    /// `List`/`ItemList` has no element containers to hand out (#10349:
+    /// promoting its items would turn raku's refusal into a silent write into
+    /// the List); every other kind is an ordinary `ArrayData` whose elements
+    /// promote normally. An allow list of `Array | List` looked equivalent and
+    /// was not: ADR-0040 stores an `Array` element *itemized*, so the very
+    /// common `for @m -> @row { for @row <-> $x { … } }` binds `@row` to an
     /// `ItemArray`, which an allow list silently dropped back onto the
     /// writeback — and that writeback rebuilds a fresh `ArrayData`, severing
     /// `@row` from the `@m` element it was sharing (row 37).
@@ -588,7 +614,8 @@ impl Interpreter {
                 !matches!(
                     kind,
                     crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
-                ) && data.shape.is_none()
+                ) && !kind.is_immutable_list()
+                    && data.shape.is_none()
                     && data.native_storage_node().is_none()
                     && idx.is_none_or(|i| i < data.len())
             }

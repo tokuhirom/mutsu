@@ -153,6 +153,13 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         rest.extend(assign);
         return;
     }
+    let stmt = match stmt {
+        Stmt::SyntheticBlock(inner) if is_will_begin_group(&inner) => {
+            partition_will_begin(inner, prologue, rest);
+            return;
+        }
+        other => other,
+    };
     // A group declaration `my ($a, @b);` arrives as a `SyntheticBlock` of plain
     // declarations. It splits member by member.
     if let Stmt::SyntheticBlock(inner) = &stmt
@@ -239,6 +246,7 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
         Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => !is_positional_pragma(stmt),
         Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
+        Stmt::SyntheticBlock(inner) => is_will_begin_group(inner),
         _ => false,
     }
 }
@@ -256,6 +264,67 @@ fn is_positional_pragma(stmt: &Stmt) -> bool {
         _ => return false,
     };
     module.starts_with(|c: char| c.is_ascii_lowercase()) && !matches!(module.as_str(), "lib" | "if")
+}
+
+/// `my $x will begin { ... }` parses to a `SyntheticBlock` of the declaration
+/// followed by its trait phasers. Its `begin` phaser is a BEGIN-time effect.
+fn is_will_begin_group(inner: &[Stmt]) -> bool {
+    matches!(inner.first(), Some(Stmt::VarDecl { .. }))
+        && inner
+            .iter()
+            .skip(1)
+            .all(|s| matches!(s, Stmt::Phaser { .. }))
+        && inner.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Begin,
+                    ..
+                }
+            )
+        })
+}
+
+/// Split a `will begin` group: the declaration's static half and each `begin`
+/// phaser go to the prologue, in source order, with `$_` bound to the declared
+/// container. The initializer and the other trait phasers stay at run time.
+fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
+    let mut members = inner.into_iter();
+    let Some(decl) = members.next() else {
+        return;
+    };
+    let name = match &decl {
+        Stmt::VarDecl { name, .. } => name.clone(),
+        _ => {
+            rest.push(decl);
+            rest.extend(members);
+            return;
+        }
+    };
+    partition_stmt(decl, prologue, rest);
+    let mut later = Vec::new();
+    for member in members {
+        match member {
+            Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                mut body,
+                condition,
+                end_index,
+            } => {
+                if let [Stmt::Given { topic, .. }] = body.as_mut_slice() {
+                    *topic = Expr::Var(name.clone());
+                }
+                prologue.push(Stmt::Phaser {
+                    kind: PhaserKind::Begin,
+                    body,
+                    condition,
+                    end_index,
+                });
+            }
+            other => later.push(other),
+        }
+    }
+    rest.extend(later);
 }
 
 /// A statement whose whole effect happens at BEGIN time in Rakudo: the `BEGIN`
