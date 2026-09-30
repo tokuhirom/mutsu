@@ -113,6 +113,19 @@ impl Interpreter {
         }
 
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+        // `=` copies: an element container that came straight off a call
+        // (`$v = $it.pull-one`, `$v = @a.values[1]`) is decontainerized, as
+        // the statement-form `SetLocal` does. Kept raw, the slot held the
+        // SOURCE element's cell, so the next assignment to the variable — a
+        // `while $it.pull-one -> \r` loop re-binding its parameter each
+        // iteration — wrote into the source array (Text::CSV `90_csv.t`).
+        let raw_val = if raw_val.is_container_ref()
+            || matches!(raw_val.view(), ValueView::HashEntryRef { .. })
+        {
+            raw_val.deref_container()
+        } else {
+            raw_val
+        };
         let name = &code.locals[idx];
         self.check_readonly_for_modify(name)?;
         // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =

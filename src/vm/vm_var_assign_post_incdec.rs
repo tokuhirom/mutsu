@@ -516,7 +516,10 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::real_array(Vec::new()));
             let old = match storage.view() {
-                ValueView::Array(items, ..) => items.get(i).cloned().unwrap_or(Value::NIL),
+                ValueView::Array(items, ..) => items
+                    .get(i)
+                    .map(Value::deref_container)
+                    .unwrap_or(Value::NIL),
                 _ => Value::NIL,
             };
             let effective = Self::normalize_incdec_source(if old.is_nil() {
@@ -549,7 +552,7 @@ impl Interpreter {
                     // only `ArrayData::initialized` is.
                     items.resize(i + 1, Self::native_fill_for_constraint(None));
                 }
-                items.live_mut()[i] = new_val.clone();
+                Value::assign_element_slot(&mut items.live_mut()[i], new_val.clone());
                 // Materialize the "all present" range before recording `i`
                 // as present, so a skipped intermediate slot from the resize
                 // above is correctly left OUT and reads as a gap via
