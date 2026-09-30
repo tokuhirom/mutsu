@@ -65,7 +65,10 @@ impl Value {
             {
                 "array"
             }
-            ValueView::Array(..) | ValueView::LazyList(_) => "Array",
+            ValueView::Array(..) => "Array",
+            // A lazy list presents as `Seq` (gather, closure sequence) or
+            // `List`/`Array` (context-tagged); `.isa` follows that same type.
+            ValueView::LazyList(_) => crate::runtime::utils::value_type_name(self),
             ValueView::Seq(_) => "Seq",
             ValueView::HyperSeq(_) => "HyperSeq",
             ValueView::RaceSeq(_) => "RaceSeq",

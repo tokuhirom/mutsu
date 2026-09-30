@@ -315,6 +315,20 @@ impl Interpreter {
         Ok(result)
     }
 
+    // Cost: O(n), n = total number of nested items.
+    /// Append `items` to `out`, recursively expanding plain `List` items (the
+    /// way a `*@` slurpy flattens); itemized lists and real Arrays stay whole.
+    fn extend_flatten_plain_lists(out: &mut Vec<Value>, items: Vec<Value>) {
+        for item in items {
+            match item.view() {
+                ValueView::Array(inner, kind) if matches!(kind, crate::value::ArrayKind::List) => {
+                    Self::extend_flatten_plain_lists(out, inner.to_vec());
+                }
+                _ => out.push(item),
+            }
+        }
+    }
+
     /// Construct a `Hash`/`Map` from `.new` arguments.
     ///
     /// Flattens the args into key/value pairs (named args become data — unlike the
@@ -374,7 +388,9 @@ impl Interpreter {
                 };
                 flat.extend(pair_items);
             } else {
-                flat.extend(Self::value_to_list(arg));
+                // `*@args` flattens nested non-itemized Lists too, so
+                // `Hash.new(((0,1),(1,2)))` is `{0 => 1, 1 => 2}`.
+                Self::extend_flatten_plain_lists(&mut flat, Self::value_to_list(arg));
             }
         }
         let mut map = ValueMap::default();
