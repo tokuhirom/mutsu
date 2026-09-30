@@ -420,8 +420,25 @@ impl Interpreter {
         box_type_objects: bool,
         slot_hint: Option<u32>,
     ) -> Value {
+        self.capture_var_cell_located(code, name, inner, box_type_objects, slot_hint)
+            .0
+    }
+
+    /// [`Self::capture_var_cell_inner`], also answering whether the name
+    /// resolved to a local slot of this frame. A slot holding a reference
+    /// value (`Array`/`Instance`/...) is handed back unboxed, which a caller
+    /// cannot tell apart from the no-slot fallback by the value alone.
+    // Cost: O(l), l = locals of the frame (the by-name slot fallback).
+    pub(super) fn capture_var_cell_located(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+        box_type_objects: bool,
+        slot_hint: Option<u32>,
+    ) -> (Value, bool) {
         if inner.is_container_ref() {
-            return inner;
+            return (inner, true);
         }
         // An `is raw`/`is rw` PARAMETER's own local slot may already hold the
         // caller's real shared cell: `bind_function_args_values`'s
@@ -442,7 +459,7 @@ impl Interpreter {
             && code.locals.get(hint as usize).map(String::as_str) == Some(name)
             && Self::is_lvalue_container_value(&self.locals[hint as usize])
         {
-            return self.locals[hint as usize].clone();
+            return (self.locals[hint as usize].clone(), true);
         }
         // A `:=`-bound scalar shares its binding root's container, so it must box
         // into the SAME cell (`$c := $b; $a, $b X=:= $c, $d` has exactly one True
@@ -488,7 +505,7 @@ impl Interpreter {
                 };
                 self.sync_anon_state_value(name, &cell);
                 self.set_env_with_main_alias(name, cell.clone());
-                return cell;
+                return (cell, true);
             }
             // The named scalar is not a local of this frame (a captured/outer
             // variable read through the closure env), so there is no slot to box
@@ -500,12 +517,12 @@ impl Interpreter {
             // a captured variable anyway, so itemize the value to preserve the
             // non-flatten semantics (mirrors the old compiler `Itemize` path).
             if box_type_objects {
-                return Self::itemize_value(inner);
+                return (Self::itemize_value(inner), false);
             }
-            return inner;
+            return (inner, false);
         };
         if Self::is_lvalue_container_value(&self.locals[idx]) {
-            return self.locals[idx].clone();
+            return (self.locals[idx].clone(), true);
         }
         // Only box a plain scalar container; genuine reference values are not
         // re-containerized (mirrors the box-on-capture guard). A bare type object
@@ -521,7 +538,7 @@ impl Interpreter {
         );
         let is_type_object = matches!(self.locals[idx].view(), ValueView::Package(_));
         if is_reference || (is_type_object && !box_type_objects) {
-            return self.locals[idx].clone();
+            return (self.locals[idx].clone(), true);
         }
         let cell = self.locals[idx].clone().into_container_ref();
         self.locals[idx] = cell.clone();
@@ -533,7 +550,7 @@ impl Interpreter {
         // directly here.
         let sym = code.locals_sym.get(idx).copied();
         self.set_env_with_main_alias_sym(name, sym, cell.clone());
-        cell
+        (cell, true)
     }
 
     pub(super) fn exec_make_capture_op(&mut self, code: &CompiledCode, n: u32) {

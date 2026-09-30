@@ -540,6 +540,29 @@ impl Interpreter {
         Some(self.get_env_with_main_alias(source)?.deref_container())
     }
 
+    /// Whether a `for` loop's tagged source is an object backed by a VM
+    /// array (`IterationBuffer` and its subclasses, `is repr('VMArray')`).
+    /// Its slots hold the stored objects themselves, not `Scalar`s, so an
+    /// item iterated out of it is not assignable unless it is a container
+    /// (ValueList/Tuple: `$_ = 42 for @tuple` dies in raku).
+    // Cost: O(1).
+    pub(super) fn for_source_is_value_buffer(
+        &self,
+        code: &CompiledCode,
+        source: Option<&str>,
+        slot: Option<u32>,
+    ) -> bool {
+        let Some(name) = source else {
+            return false;
+        };
+        // A frame-local `@a` lives in its slot, not in env.
+        slot.and_then(|s| self.locals.get(s as usize))
+            .filter(|v| !v.is_nil())
+            .map(Value::deref_container)
+            .or_else(|| self.resolve_for_source_array(code, name))
+            .is_some_and(|v| crate::runtime::nqp_ops_list::is_iteration_buffer(&v))
+    }
+
     /// Whether a `for` loop's tagged `%`-source is a real mutable `Hash`
     /// whose elements may be promoted.
     fn for_source_is_aliasable_hash(&self, source: &str) -> bool {
