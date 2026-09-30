@@ -224,6 +224,23 @@ impl Interpreter {
         self.stack.push(Value::truth(!t));
     }
 
+    /// `Not` applied to every eigenstate of a Junction (recursively), keeping
+    /// its kind.
+    pub(super) fn exec_not_threaded_op(&mut self) {
+        let val = self.stack.pop().unwrap();
+        let out = self.not_threaded(&val);
+        self.stack.push(out);
+    }
+
+    fn not_threaded(&mut self, val: &Value) -> Value {
+        if let ValueView::Junction { kind, values } = val.view() {
+            let negated = values.iter().map(|v| self.not_threaded(v)).collect();
+            return Value::junction(kind, negated);
+        }
+        val.mark_failure_handled();
+        Value::truth(!self.eval_truthy(val))
+    }
+
     pub(super) fn exec_bool_coerce_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let out = match val.view() {
