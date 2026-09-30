@@ -697,6 +697,8 @@ impl Interpreter {
             installing_code: self.current_code,
             installing_base: self.locals.base(),
             installing_call_depth: self.call_frames.len(),
+            installing_routine_depth: self.routine_stack_len(),
+            installing_method_depth: self.method_class_depth(),
             return_target,
             installing_package: self.current_package_sym(),
             handler,

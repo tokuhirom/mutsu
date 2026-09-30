@@ -292,6 +292,8 @@ impl Interpreter {
             let return_target = entry.return_target;
             let installing_base = entry.installing_base;
             let installing_call_depth = entry.installing_call_depth;
+            let routine_depth = entry.installing_routine_depth;
+            let method_depth = entry.installing_method_depth;
             let installing_package = entry.installing_package;
             let code = handler.code.clone();
             let catch_begin = handler.catch_begin;
@@ -299,6 +301,17 @@ impl Interpreter {
             let fns = handler.compiled_fns.clone();
             let inner = self.catch_handlers.split_off(idx);
             let throw_package = self.current_package_sym();
+            let routine_len = self.routine_stack.len();
+            let method_tail = if same_frame {
+                None
+            } else {
+                if routine_depth > 0 && routine_len > routine_depth {
+                    let frame = self.routine_stack[routine_depth - 1];
+                    self.routine_stack.push(frame);
+                }
+                (self.method_class_stack.len() > method_depth)
+                    .then(|| self.method_class_stack.split_off(method_depth))
+            };
             if installing_package != throw_package {
                 self.set_current_package_with_sym(
                     installing_package.resolve().to_string(),
@@ -313,6 +326,11 @@ impl Interpreter {
                 err,
             );
             self.catch_handlers.extend(inner);
+            self.routine_stack.truncate(routine_len);
+            if let Some(tail) = method_tail {
+                self.method_class_stack.truncate(method_depth);
+                self.method_class_stack.extend(tail);
+            }
             if installing_package != throw_package {
                 self.set_current_package_with_sym(
                     throw_package.resolve().to_string(),

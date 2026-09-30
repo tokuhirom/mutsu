@@ -420,6 +420,12 @@ pub(crate) struct CatchHandlerEntry {
     /// pushed by the installing activation holds its saved upvalue array,
     /// which the handler's upvalue reads address.
     pub installing_call_depth: usize,
+    /// `routine_stack` and `method_class_stack` depths when the region was
+    /// entered. A cross-frame handler runs with the installing activation's
+    /// routine frame on top and no method frame above its own, so its
+    /// private-method trust check and `&?ROUTINE` are the installing ones.
+    pub installing_routine_depth: usize,
+    pub installing_method_depth: usize,
     /// The routine a `return` in the handler targets: the one running when the
     /// region was entered. An inline run raises that `return` at the throw
     /// site, below routines that must not take it as their own.

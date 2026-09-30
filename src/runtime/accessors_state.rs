@@ -783,6 +783,12 @@ impl Interpreter {
         self.method_class_stack.pop();
     }
 
+    /// Current `method_class_stack` depth (ADR-0072: recorded when a `CATCH`
+    /// region is entered).
+    pub(crate) fn method_class_depth(&self) -> usize {
+        self.method_class_stack.len()
+    }
+
     /// The package a closure created right now is lexically inside. A closure
     /// declared in a method of `C` is still lexically inside `C` — `self!priv`
     /// from its body is an in-class call, and it must stay legal when the Sub is

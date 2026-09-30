@@ -5,7 +5,7 @@ use Test;
 # dynamic scope of the `die`, before anything unwinds -- innermost first. Each
 # expectation was taken from `raku`.
 
-plan 13;
+plan 14;
 
 # The issue's repro: an inner handler that rethrows passes the exception on to
 # an outer one, still at the throw point, so the outer `.resume` reaches the
@@ -139,6 +139,16 @@ plan 13;
         }
     }
     is CatchPkg::run({ die "m" }), 'helper:m', "a handler resolves routines in its own package";
+}
+
+# ... and calls a private method of its own class, whatever class threw.
+{
+    class PrivThrower { method go { die "priv" } }
+    class PrivCatcher {
+        method !seen($e) { "private:" ~ $e.message }
+        method run { my $r; { PrivThrower.go; CATCH { default { $r = self!seen($_) } } }; $r }
+    }
+    is PrivCatcher.run, 'private:priv', 'a handler calls a private method of its own class';
 }
 
 # A recursive routine: the handler of the outer activation sees its own frame.
