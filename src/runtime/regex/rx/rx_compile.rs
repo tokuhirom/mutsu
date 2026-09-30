@@ -327,7 +327,9 @@ impl Compiler {
                 return Err("isolated-group");
             }
             RegexAtom::Conjunction(_) => return Err("conjunction"),
-            RegexAtom::VarInterp(..) | RegexAtom::CodeInterp { .. } | RegexAtom::QqInterp { .. } => {
+            RegexAtom::VarInterp(..)
+            | RegexAtom::CodeInterp { .. }
+            | RegexAtom::QqInterp { .. } => {
                 return Err("interpolation");
             }
             RegexAtom::TildeMarker | RegexAtom::GoalMatch { .. } => return Err("goal-match"),
