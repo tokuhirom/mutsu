@@ -518,11 +518,15 @@ pub(crate) fn stmt_list_with_mode(
                             .to_string(),
                     ));
                 }
-                // Any other statement that stopped short of a separator on the
-                // same line, with a term following it, left that term behind:
+                // A statement that stopped short of a separator on the same line
+                // in front of a word that is not an infix left a term behind:
                 // `my $x = (1,2) cross (3,4)`, where `cross` is not an infix,
                 // would otherwise silently become two statements. rakudo:
                 // "Two terms in a row" (#9918).
+                // TODO: this should hold for any leftover term, but the
+                // statement parser still stops early before some legitimate
+                // continuations (`temp our $x`, `... orelse Nil`); see the
+                // follow-up issue linked from #9918.
                 // The statement parser may already have consumed its `;` and
                 // any trailing whitespace or comment (and with it the newline).
                 let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
@@ -531,11 +535,7 @@ pub(crate) fn stmt_list_with_mode(
                     && !consumed.ends_with('}')
                     && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
                     && !has_statement_separator(r)
-                    && (r_ws
-                        .chars()
-                        .next()
-                        .is_some_and(crate::parser::helpers::is_raku_identifier_start)
-                        || crate::parser::term_boundary::starts_with_unambiguous_term(r_ws))
+                    && crate::parser::expr::precedence::starts_with_undeclared_infix_word(r_ws)
                 {
                     return Err(PError::fatal_at(
                         "Confused. Two terms in a row".to_string(),

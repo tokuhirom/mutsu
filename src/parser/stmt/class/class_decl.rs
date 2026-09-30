@@ -351,6 +351,10 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
         break;
     }
     let (rest, body) = package_body_block(rest)?;
+    // An `is export` operator method added by the augment is importable like
+    // one in the original declaration (`import Name` teaches the parser it).
+    let exported_ops = super::package_decl::extract_exported_operator_methods(&body);
+    super::super::simple::register_inline_module_exports(&name, exported_ops);
     Ok((
         rest,
         Stmt::AugmentClass {

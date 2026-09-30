@@ -120,6 +120,28 @@ fn is_known_infix_word(name: &str) -> bool {
         || crate::runtime::core_infix_names::rakudo_declares_infix(name)
 }
 
+/// True when `input` opens with a bare word that could only have been a
+/// user-style infix, had one been declared: not reserved, not a declared term,
+/// and neither declared in scope nor a CORE infix. A statement that stopped in
+/// front of such a word on the same line is "Two terms in a row" (#9918).
+pub(crate) fn starts_with_undeclared_infix_word(input: &str) -> bool {
+    let Some(first) = input.chars().next() else {
+        return false;
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    let end = input
+        .char_indices()
+        .find(|&(_, ch)| !(ch.is_alphanumeric() || ch == '_' || ch == '-'))
+        .map_or(input.len(), |(i, _)| i);
+    let name = &input[..end];
+    !is_reserved_infix_word(name)
+        && !crate::parser::primary::ident::is_infix_word_op(name)
+        && crate::parser::stmt::simple::match_user_declared_term_symbol(input).is_none()
+        && !is_known_infix_word(name)
+}
+
 pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
     // Under an L10N slang vocabulary the reserved words wear localized
     // spellings, and a word that spells `if` is as reserved as `if` itself —

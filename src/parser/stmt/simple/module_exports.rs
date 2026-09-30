@@ -429,7 +429,7 @@ pub(crate) fn register_inline_module_exports(module: &str, exports: Vec<InlineMo
     if exports.is_empty() {
         return;
     }
-    let exports = exports
+    let exports: Vec<InlineModuleExport> = exports
         .into_iter()
         .map(|(name, precedence_trait, associativity)| {
             let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
@@ -450,8 +450,13 @@ pub(crate) fn register_inline_module_exports(module: &str, exports: Vec<InlineMo
             }
         })
         .collect();
+    // Extend rather than replace: an `augment class` adds to the exports its
+    // original declaration registered.
     INLINE_MODULE_EXPORTS.with(|m| {
-        m.borrow_mut().insert(module.to_string(), exports);
+        m.borrow_mut()
+            .entry(module.to_string())
+            .or_default()
+            .extend(exports);
     });
 }
 
