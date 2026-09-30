@@ -3,6 +3,7 @@
 //! body are registered when the role is declared, not only at composition.
 
 use super::*;
+use serde_json::Value as Json;
 
 impl Interpreter {
     /// Register every lexical TYPE declaration (`my class`, `my grammar`, `my
@@ -141,13 +142,13 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     json_mentions_any(&json, &params)
 }
 
-fn json_mentions_any(json: &serde_json::Value, params: &[&str]) -> bool {
+fn json_mentions_any(json: &Json, params: &[&str]) -> bool {
     match json {
-        serde_json::Value::String(s) => params.iter().any(|p| contains_word(s, p)),
-        serde_json::Value::Array(items) => items.iter().any(|v| json_mentions_any(v, params)),
-        serde_json::Value::Object(map) => map
-            .iter()
-            .any(|(k, v)| params.iter().any(|p| contains_word(k, p)) || json_mentions_any(v, params)),
+        Json::String(s) => params.iter().any(|p| contains_word(s, p)),
+        Json::Array(items) => items.iter().any(|v| json_mentions_any(v, params)),
+        Json::Object(map) => map.iter().any(|(k, v)| {
+            params.iter().any(|p| contains_word(k, p)) || json_mentions_any(v, params)
+        }),
         _ => false,
     }
 }
