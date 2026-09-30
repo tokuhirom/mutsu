@@ -1429,55 +1429,18 @@ impl Interpreter {
                             .as_map()
                             .get("__mutsu_precomp_enabled")
                             .is_none_or(Value::truthy);
-                        // Load the module, using precompilation cache when available.
-                        // Explicitly constructed FileSystem repositories default to
+                        // Load the module as its own compilation unit (the same
+                        // machinery as a `use`, minus the import), using the
+                        // precompilation cache when available. Explicitly
+                        // constructed FileSystem repositories default to
                         // precomp-disabled behavior.
-                        // The compunit's own `use vX` pragma is lexical to it;
-                        // restore ours once its mainline has run (same contract
-                        // as `load_module`).
-                        let saved_language_version = crate::parser::current_language_version();
-                        let (stmts, precompiled) = if repo_precomp_enabled {
-                            self.parse_module_source(&short_name_str, &source_path)?
-                        } else {
-                            let saved = self.precomp_enabled;
+                        let saved_precomp = self.precomp_enabled;
+                        if !repo_precomp_enabled {
                             self.precomp_enabled = false;
-                            let parsed = self.parse_module_source(&short_name_str, &source_path);
-                            self.precomp_enabled = saved;
-                            parsed?
-                        };
-                        let compile_time_only = !stmts.is_empty()
-                            && stmts
-                                .iter()
-                                .all(|stmt| matches!(stmt, crate::ast::Stmt::Use { .. }));
-                        let non_version_use_count = if compile_time_only {
-                            stmts
-                                .iter()
-                                .filter_map(|stmt| match stmt {
-                                    crate::ast::Stmt::Use { module, .. } => Some(module.as_str()),
-                                    _ => None,
-                                })
-                                .filter(|module| *module != "v6")
-                                .count()
-                        } else {
-                            0
-                        };
-                        let skip_runtime = compile_time_only && non_version_use_count > 1;
-                        if !skip_runtime {
-                            // A compunit is a fresh compilation unit: run it under
-                            // GLOBAL, not the package of whatever routine called
-                            // `.need` (Test::Compile's `do_compunit` runs in
-                            // `Test::Compile`, which would otherwise register the
-                            // compunit's `package Pod { class Ber {} }` as
-                            // `Test::Compile::Pod::Ber`). Mirrors `load_module`.
-                            let saved_package = self.current_package();
-                            self.set_current_package("GLOBAL".to_string());
-                            let result = self.run_block(&stmts);
-                            self.set_current_package(saved_package);
-                            crate::parser::set_current_language_version(&saved_language_version);
-                            result?;
-                        } else {
-                            crate::parser::set_current_language_version(&saved_language_version);
                         }
+                        let loaded = self.load_module_from_path(&short_name_str, source_path);
+                        self.precomp_enabled = saved_precomp;
+                        let precompiled = loaded?;
                         crate::runtime::cow_table_mut(&mut self.loaded_modules)
                             .insert(short_name_str.clone());
                         let mut attrs = HashMap::new();

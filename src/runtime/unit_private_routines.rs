@@ -206,8 +206,9 @@ impl Interpreter {
     /// `aliases` is the `imported_routine_aliases` set the module body built;
     /// only its `GLOBAL::name` members are candidates. Multi imports are left
     /// in place (the private table holds one routine per name, and multi
-    /// candidates are additive across compunits by design), as are keys a
-    /// module load owns (`module_registered_functions`).
+    /// candidates are additive across compunits by design). A key a module
+    /// load owns (`module_registered_functions`) is copied rather than moved,
+    /// so the providing module keeps it.
     // Cost: O(a + f), a = the module's import aliases, f = registry functions
     // (one scan for multi candidates, only when there is a candidate alias).
     pub(crate) fn seclude_module_import_aliases(
@@ -225,10 +226,7 @@ impl Interpreter {
                 }
                 Some((*key, Symbol::intern(name)))
             })
-            .filter(|(key, _)| {
-                self.registry().functions.contains_key(key)
-                    && !self.module_registered_functions.contains(key)
-            })
+            .filter(|(key, _)| self.registry().functions.contains_key(key))
             .collect();
         if candidates.is_empty() {
             return;
@@ -251,10 +249,27 @@ impl Interpreter {
             {
                 continue;
             }
-            let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
-                continue;
+            // A key an earlier module load owns is that provider's OWN
+            // definition, not just this compunit's alias: a package-less
+            // provider (no `unit` declarator) registers its `sub foo is export`
+            // as `GLOBAL::foo`, the very key the import aliases it under. It
+            // stays in the registry for the provider, but this compunit still
+            // gets its own private copy -- otherwise a registry rollback that
+            // does not reinstate `GLOBAL::` keys (a parameter default or any
+            // other scope the load happened to run inside) left the importer's
+            // bodies with "Unknown function" (#10232).
+            let def = if self.module_registered_functions.contains(&key) {
+                let Some(def) = self.registry().functions.get(&key).cloned() else {
+                    continue;
+                };
+                def
+            } else {
+                let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+                    continue;
+                };
+                self.registry_mut().our_scoped_functions.remove(&key);
+                def
             };
-            self.registry_mut().our_scoped_functions.remove(&key);
             crate::runtime::cow_table_mut(&mut self.unit_private_routines)
                 .entry(unit)
                 .or_default()

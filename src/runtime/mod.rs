@@ -954,6 +954,7 @@ pub(crate) mod thread_compat;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
+mod mixin_wrapped_methods;
 mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;

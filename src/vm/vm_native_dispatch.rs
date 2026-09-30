@@ -272,8 +272,11 @@ impl Interpreter {
         {
             return Some(result);
         }
-        // Mixin role method bypass
-        if self.mixin_role_has_method(target, method_name) {
+        // Mixin role method bypass -- and the wrapped instance's own methods
+        // and accessors (`has $.cache` must not answer as `Any.cache`).
+        if self.mixin_role_has_method(target, method_name)
+            || self.mixin_wrapped_instance_has_method(target, method_name)
+        {
             return None;
         }
         if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {

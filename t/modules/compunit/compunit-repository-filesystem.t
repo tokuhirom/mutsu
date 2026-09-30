@@ -17,7 +17,7 @@ my $tmpdir = $*SPEC.catdir($cwd, "tmp", "mutsu-compunit-repo");
 mkdir($tmpdir);
 my $module-name = "MutsuRepoSmoke";
 my $module-path = $*SPEC.catfile($tmpdir, "$module-name.rakumod");
-spurt $module-path, "class $module-name { }\n";
+spurt $module-path, "class $module-name \{ \}\n";
 
 my $repo3 = CompUnit::Repository::FileSystem.new(prefix => $tmpdir);
 my $dep = CompUnit::DependencySpecification.new(short-name => $module-name);
