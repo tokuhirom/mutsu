@@ -208,6 +208,11 @@ impl Interpreter {
                 stripped.to_string()
             } else if current_package == "GLOBAL"
                 || resolved_name.starts_with(&format!("{current_package}::"))
+                // `require "Foo.rakumod"` runs the file with the package set to
+                // `Foo` before `class Foo` is declared; only a class that is
+                // already registered (we are inside its body) makes a same-named
+                // declaration a nested `Foo::Foo`.
+                || (resolved_name == current_package && !self.has_class(&current_package))
             {
                 resolved_name.clone()
             } else {
