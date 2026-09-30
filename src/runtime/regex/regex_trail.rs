@@ -115,6 +115,11 @@ impl CapStore {
     /// Read access to the accumulated captures (backrefs, code assertions,
     /// argument evaluation, pos_base reads).
     #[inline]
+    /// The captures, consuming the store (its undo trail is dropped).
+    pub(super) fn into_caps(self) -> RegexCaptures {
+        self.caps
+    }
+
     pub(super) fn caps(&self) -> &RegexCaptures {
         &self.caps
     }

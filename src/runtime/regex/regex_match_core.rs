@@ -765,9 +765,10 @@ impl Interpreter {
                                store: &mut CapStore,
                                next: usize,
                                delta: RegexCaptures| {
+                // The token's own capture name was applied per item
+                // (`with_iteration_capture`); a whole-span alias is a group.
                 let m = store.mark();
                 store.merge_delta(delta);
-                Self::store_apply_named_capture(store, token, pos, next, pos_base);
                 let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 stop
