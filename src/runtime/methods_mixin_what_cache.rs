@@ -21,12 +21,27 @@ impl Interpreter {
         mixins: &crate::value::MixinOverrides,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let base_what =
-            self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.to_vec())?;
+        let base_what = self.mixin_base_what(inner, mixins, args)?;
         let base_type_name = base_what.to_string_value();
         let key = crate::value::types::mixin_composition_key(&base_type_name, mixins);
         let overrides = self.mixin_composition_overrides(key, mixins);
         Ok(Value::mixin_parts(Arc::new(base_what), overrides))
+    }
+
+    /// The type a role composition is layered on: `inner`'s own `.WHAT`, or
+    /// the allomorph type when the mixin is itself an allomorph that also
+    /// carries a role (`<42> but R` composes onto `IntStr`, not `Int`).
+    // Cost: O(k) + inner's `.WHAT`, k = number of mixin override keys.
+    fn mixin_base_what(
+        &mut self,
+        inner: &Arc<Value>,
+        mixins: &crate::value::MixinOverrides,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
+            return Ok(Value::package(crate::symbol::Symbol::intern(&allo)));
+        }
+        self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.to_vec())
     }
 
     /// Get-or-create the shared `Gc<MixinOverrides>` node for a composition
@@ -68,7 +83,7 @@ impl Interpreter {
         inner: &Arc<Value>,
         mixins: &crate::value::MixinOverrides,
     ) -> Result<crate::gc::Gc<crate::value::MixinOverrides>, RuntimeError> {
-        let base_what = self.call_method_with_values(inner.as_ref().clone(), "WHAT", Vec::new())?;
+        let base_what = self.mixin_base_what(inner, mixins, &[])?;
         let base_type_name = base_what.to_string_value();
         let key = crate::value::types::mixin_composition_key(&base_type_name, mixins);
         Ok(self.mixin_composition_overrides(key, mixins))

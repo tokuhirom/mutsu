@@ -583,6 +583,16 @@ pub(crate) fn mixin_identity_key(mixins: &MixinOverrides) -> String {
     format!("{}\u{2}{}", roles.join("\u{1}"), rest.join("\u{1}"))
 }
 
+/// Whether `mixins` records at least one mixed-in role (named or anonymous),
+/// i.e. whether the value's `.WHAT` is a composed `Base+{...}` type rather
+/// than its bare base (an allomorph's `{Str => ...}` alone is not a role).
+// Cost: O(k), k = number of mixin override keys.
+pub(crate) fn has_role_composition(mixins: &MixinOverrides) -> bool {
+    mixins
+        .keys()
+        .any(|k| k.starts_with("__mutsu_role__") || k.starts_with(ANON_ROLE_MARKER_PREFIX))
+}
+
 /// Filter a `Mixin` value's `overrides` down to just the composition-
 /// defining markers (`__mutsu_role__*`, `__mutsu_role_id__*`,
 /// `__mutsu_role_typeargs__*`, `__mutsu_role_param__*`) — the subset that
