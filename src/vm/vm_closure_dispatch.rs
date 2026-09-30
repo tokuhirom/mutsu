@@ -270,6 +270,14 @@ impl Interpreter {
         // `Interpreter::pending_call_topic_source`.
         let topic_alias_source = std::mem::take(&mut self.pending_call_topic_source)
             .filter(|_| !cc.is_routine && explicit_topic.is_none() && !capture_rw_topic);
+        // Resolve an existing source cell while the caller's env is still
+        // current. The closure may later install its captured `$_` over that
+        // key, which is a different lexical binding from the caller's topic.
+        let topic_alias_cell = topic_alias_source
+            .as_ref()
+            .and_then(|source| self.env().get(source))
+            .filter(|value| value.is_container_ref())
+            .cloned();
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -877,9 +885,9 @@ impl Interpreter {
                             && !topic_arg_is_bare
                             && !cc.immutable_topic =>
                     {
-                        let cell = match self.env().get(source) {
-                            Some(existing) if existing.is_container_ref() => existing.clone(),
-                            _ => {
+                        let cell = match topic_alias_cell.as_ref() {
+                            Some(existing) => existing.clone(),
+                            None => {
                                 let cell = Value::container_ref(crate::gc::Gc::new(
                                     crate::value::ContainerCell::new(first.clone()),
                                 ));
