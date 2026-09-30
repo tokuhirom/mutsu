@@ -941,9 +941,12 @@ impl Interpreter {
             return;
         }
         let slot_hint = val.varref_slot();
-        let captured =
-            self.capture_var_cell_inner(code, &source_name, inner.clone(), true, slot_hint);
-        if captured.is_container_ref() {
+        let (captured, has_slot) =
+            self.capture_var_cell_located(code, &source_name, inner.clone(), true, slot_hint);
+        // A local holding a reference value (a List, an object) is handed back
+        // as that value: it is not re-boxed, and the env entry below may be a
+        // stale pre-slot copy (`sub f is raw { my $v = (1,2); $v }` read `Any`).
+        if has_slot || captured.is_container_ref() {
             self.stack.push(captured);
             return;
         }

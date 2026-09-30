@@ -753,6 +753,7 @@ mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod methods_introspect;
 mod methods_io_dispatch;
+mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
 mod methods_mixin_what_cache;
