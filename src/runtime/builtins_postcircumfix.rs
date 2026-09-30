@@ -137,6 +137,89 @@ impl Interpreter {
         }
     }
 
+    /// A subscript carrying an adverb that is not a built-in subscript adverb
+    /// (`@a[0]:foo`, `%h<a>:$no`, `@a[1;0]:foo`, `@a[0]:k:foo`), with no user
+    /// `postcircumfix` candidate in scope (see
+    /// `parser::expr::postfix::named_adverb`). Raises what rakudo's CORE
+    /// candidates raise for these arguments:
+    ///
+    /// - the multi-dimensional `postcircumfix:<[; ]>` / `<{; }>` have no
+    ///   candidate taking an arbitrary named argument: `X::Multi::NoMatch`;
+    /// - a single positional element (`Int:D`/`Any:D`/`Callable:D` index) has
+    ///   only candidates that require a built-in adverb (`:$k!, *%_`), so
+    ///   unknown adverbs alone are an `X::Multi::NoMatch`, and together with a
+    ///   built-in one an `X::Adverb` on "element access";
+    /// - every slice candidate (`Iterable`/`Range`/`Whatever`, the zen slice,
+    ///   and every associative subscript) slurps `*%_`: an `X::Adverb`.
+    ///
+    /// Args: `(target, index, source, shape, |named adverbs)`, where `source`
+    /// is the variable name the parser saw (empty when the target is not a
+    /// variable) and `shape` names the subscript form (`"[ ]"`, `"[ ] zen"`,
+    /// `"{ }"`, `"{ } zen"`, `"[; ]"`, `"{; }"`).
+    // Cost: O(a log a), a = number of adverbs (sorted for the X::Adverb report).
+    pub(crate) fn builtin_subscript_named_adverbs(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let [target, index, source, shape, adverbs @ ..] = args else {
+            return Err(RuntimeError::new(
+                "__mutsu_subscript_named_adverbs: missing arguments",
+            ));
+        };
+        let shape = shape.to_string_value();
+        let op = match shape.as_str() {
+            "[ ]" | "[ ] zen" => "postcircumfix:<[ ]>",
+            "{ }" | "{ } zen" => "postcircumfix:<{ }>",
+            "[; ]" => "postcircumfix:<[; ]>",
+            _ => "postcircumfix:<{; }>",
+        };
+        let no_match = |this: &Self| {
+            let mut call_args = vec![target.clone(), index.clone()];
+            call_args.extend(adverbs.iter().cloned());
+            this.multi_no_match_error(op, &call_args)
+        };
+        if shape.starts_with("[;") || shape.starts_with("{;") {
+            return Err(no_match(self));
+        }
+        let mut nogo = Vec::new();
+        let mut unexpected = Vec::new();
+        for adverb in adverbs {
+            let ValueView::Pair(name, value) = adverb.view() else {
+                continue;
+            };
+            if matches!(name.as_str(), "k" | "v" | "kv" | "p" | "exists" | "delete") {
+                // A built-in adverb is reported the way it was passed: `:!k`
+                // (or `:k(0)`) is `!k`.
+                nogo.push(if value.truthy() {
+                    name.to_string()
+                } else {
+                    format!("!{name}")
+                });
+            } else {
+                unexpected.push(name.to_string());
+            }
+        }
+        let what = match shape.as_str() {
+            "[ ] zen" => "zen slice",
+            "{ } zen" if nogo.is_empty() => "{} slice",
+            "{ }" | "{ } zen" => "slice",
+            _ => match index.view() {
+                ValueView::Whatever => "whatever slice",
+                ValueView::Array(_, kind) if !kind.is_itemized() => "slice",
+                ValueView::LazyList(ll) if !ll.is_itemized() => "slice",
+                ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => "slice",
+                _ if index.is_range() => "slice",
+                _ if nogo.is_empty() => return Err(no_match(self)),
+                _ => "element access",
+            },
+        };
+        let source = match source.to_string_value() {
+            s if s.is_empty() => crate::value::what_type_name(target),
+            s => s,
+        };
+        Err(RuntimeError::x_adverb(what, &source, &nogo, &unexpected))
+    }
+
     /// `$x.AT-POS($i)` on a builtin positional (an Array/List or a Str): the
     /// CORE `postcircumfix:<[ ]>` itself, so the method and the subscript
     /// cannot disagree (ADR-0118). They used to: `@a.AT-POS(-1)` was `Nil`

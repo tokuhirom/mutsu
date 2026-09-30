@@ -658,6 +658,7 @@ impl Interpreter {
             )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_subscript_adverb_error" => Self::builtin_subscript_adverb_error(&args),
+            "__mutsu_subscript_named_adverbs" => self.builtin_subscript_named_adverbs(&args),
             "__mutsu_multidim_adverb" => self.builtin_multidim_adverb(&args),
             "__mutsu_multidim_subscript_adverb" => self.builtin_multidim_subscript_adverb(&args),
             "__mutsu_multidim_exists_adverb" => self.builtin_multidim_exists_adverb(&args),
