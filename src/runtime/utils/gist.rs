@@ -444,7 +444,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
             } else {
                 " "
             };
-            let inner = gist_elements(items.iter(), sep);
+            // A hole gists as the container's `is default(...)` value, not the
+            // `Any` marker the slot holds (`items_with_default`).
+            let inner = gist_elements(items.items_with_default().iter(), sep);
             let looped = SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             let rendered = match kind {
                 crate::value::ArrayKind::Array

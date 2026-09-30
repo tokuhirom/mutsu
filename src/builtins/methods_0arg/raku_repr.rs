@@ -749,7 +749,9 @@ pub fn raku_value(v: &Value) -> String {
             if is_top {
                 ARRAY_CYCLE_FOUND.with(|f| f.set(false));
             }
-            let result = raku_value_array(&items, kind, v);
+            // A hole renders as the container's `is default(...)` value, not
+            // the `Any` marker the slot holds (`items_with_default`).
+            let result = raku_value_array(&items.items_with_default(), kind, v);
             let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
             SEEN_PTRS.with(|seen| {
                 let mut s = seen.borrow_mut();
