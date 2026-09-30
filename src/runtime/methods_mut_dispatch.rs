@@ -694,7 +694,8 @@ impl Interpreter {
             let mut updated_attrs = attributes.to_map();
             set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
-            self.env.insert(target_var.to_string(), updated.clone());
+            self.env
+                .insert_through(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
 
@@ -793,7 +794,8 @@ impl Interpreter {
             let mut updated_attrs = attributes.to_map();
             set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
-            self.env.insert(target_var.to_string(), updated.clone());
+            self.env
+                .insert_through(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
 

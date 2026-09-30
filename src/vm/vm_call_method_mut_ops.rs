@@ -3414,8 +3414,9 @@ impl Interpreter {
             )),
             inst_id,
         );
+        // Through the shared cell, not over it: see `Env::insert_through`.
         self.env_mut()
-            .insert(target_name.to_string(), updated_instance.clone());
+            .insert_through(target_name.to_string(), updated_instance.clone());
         updated_instance
     }
 
@@ -3620,12 +3621,12 @@ impl Interpreter {
         };
         // Write the updated bytes straight into the receiver's live shared cell
         // (so aliases observing the same buf see the mutation), then refresh the
-        // receiver binding to match the interpreter's `env.insert(target_var, ...)`.
+        // receiver binding to match the interpreter's `env.insert_through(target_var, ...)`.
         let mut updated_attrs = attributes.to_map();
         crate::value::value_buf::set_buf_raw_bytes(&mut updated_attrs, class_name, new_bytes);
         let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
         self.env_mut()
-            .insert(target_name.to_string(), updated.clone());
+            .insert_through(target_name.to_string(), updated.clone());
         Some(Ok(updated))
     }
 }
