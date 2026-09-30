@@ -36,6 +36,12 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<usize> {
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        // It honors ratchet, which this position-only walk does not, so a
+        // covered pattern gets the same end here as through the capture walk.
+        if let Some(found) = self.rx_try_match(pattern, chars, start, pkg) {
+            return found.map(|(end, _)| end);
+        }
         if pattern.anchor_start && start != 0 {
             return None;
         }
