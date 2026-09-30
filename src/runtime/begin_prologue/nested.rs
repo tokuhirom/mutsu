@@ -99,11 +99,11 @@ struct Binding {
 enum BindingKind {
     Param,
     /// An `our` declaration. Re-declaring it binds the same package variable.
-    Our(Stmt),
+    Our(Box<Stmt>),
     Local {
         index: usize,
-        static_decl: Stmt,
-        assign: Option<Stmt>,
+        static_decl: Box<Stmt>,
+        assign: Option<Box<Stmt>>,
         cell: Option<String>,
     },
     Opaque,
@@ -111,18 +111,18 @@ enum BindingKind {
 
 enum Edit {
     Remove,
-    Replace(Stmt),
+    Replace(Box<Stmt>),
     /// Move the declaration to the head of its scope, starting from its cell.
     /// The initializer's assignment stays in place.
     Split {
-        head: Stmt,
-        assign: Option<Stmt>,
+        head: Box<Stmt>,
+        assign: Option<Box<Stmt>>,
     },
 }
 
 /// How the lifted body reaches one inner name.
 enum Access {
-    CopyIn(Stmt),
+    CopyIn(Box<Stmt>),
     Cell { frame: usize, binding: usize },
 }
 
@@ -147,10 +147,10 @@ impl Walker<'_> {
             match edit {
                 None => out.push(stmt),
                 Some(Edit::Remove) => {}
-                Some(Edit::Replace(replacement)) => out.push(replacement),
+                Some(Edit::Replace(replacement)) => out.push(*replacement),
                 Some(Edit::Split { head: decl, assign }) => {
-                    head.push(decl);
-                    out.extend(assign);
+                    head.push(*decl);
+                    out.extend(assign.map(|a| *a));
                 }
             }
         }
@@ -188,7 +188,7 @@ impl Walker<'_> {
                 let slot = is_tail.then(|| next_slot("__begin_value_"));
                 if self.lift(body, slot.as_deref()) {
                     let edit = match slot {
-                        Some(slot) => Edit::Replace(Stmt::Expr(Expr::Var(slot))),
+                        Some(slot) => Edit::Replace(Box::new(Stmt::Expr(Expr::Var(slot)))),
                         None => Edit::Remove,
                     };
                     self.current_frame().edits.push((index, edit));
@@ -434,11 +434,11 @@ impl Walker<'_> {
         }
         let split = crate::runtime::phasers::split_var_decl(stmt);
         let kind = match (split, index) {
-            (Some((static_decl, _)), _) if *is_our => BindingKind::Our(static_decl),
+            (Some((static_decl, _)), _) if *is_our => BindingKind::Our(Box::new(static_decl)),
             (Some((static_decl, assign)), Some(index)) if !*is_state => BindingKind::Local {
                 index,
-                static_decl,
-                assign,
+                static_decl: Box::new(static_decl),
+                assign: assign.map(Box::new),
                 cell: None,
             },
             _ => BindingKind::Opaque,
@@ -498,7 +498,7 @@ impl Walker<'_> {
         let mut copy_out = Vec::new();
         for access in accesses {
             match access {
-                Access::CopyIn(decl) => copy_in.push(decl),
+                Access::CopyIn(decl) => copy_in.push(*decl),
                 Access::Cell { frame, binding } => {
                     let (decl, back) = self.cell_access(frame, binding);
                     copy_in.push(decl);
@@ -543,7 +543,9 @@ impl Walker<'_> {
             }
             match self.find_binding(&name) {
                 Some((frame, binding)) => match &self.frames[frame].bindings[binding].kind {
-                    BindingKind::Param => accesses.push(Access::CopyIn(unbound_decl(&name))),
+                    BindingKind::Param => {
+                        accesses.push(Access::CopyIn(Box::new(unbound_decl(&name))))
+                    }
                     BindingKind::Our(decl) => accesses.push(Access::CopyIn(decl.clone())),
                     BindingKind::Local { .. } => accesses.push(Access::Cell { frame, binding }),
                     BindingKind::Opaque => return None,
@@ -591,7 +593,7 @@ impl Walker<'_> {
                     .push(renamed_static_decl(static_decl, &cell_name));
                 let head = decl_from_cell(static_decl, &cell_name);
                 let edit = Edit::Split {
-                    head,
+                    head: Box::new(head),
                     assign: assign.take(),
                 };
                 let index = *index;
