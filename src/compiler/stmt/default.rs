@@ -4,7 +4,10 @@ impl Compiler {
     /// Declare a fresh array and apply its default before the initializer
     /// expression runs. The later SetLocal assigns into this container and
     /// therefore preserves an explicit Any that came from an inner `[Nil]`.
-    pub(super) fn emit_default_before_array_initializer(
+    /// Shared by the statement-position declaration (`stmt.rs`) and the
+    /// expression-position one (`expr_block.rs`), so `(my @a is default(1) =
+    /// Nil, Any)` yields the same default-aware container as the statement.
+    pub(in crate::compiler) fn emit_default_before_array_initializer(
         &mut self,
         name_idx: u32,
         slot: u32,
@@ -34,7 +37,7 @@ impl Compiler {
     /// element stays `Any` while a `Nil` one becomes the default. The whole
     /// sequence sits behind the state guard, so it runs on the first entry
     /// only.
-    pub(super) fn emit_state_array_store_into_defaulted(&mut self, slot: u32) {
+    pub(in crate::compiler) fn emit_state_array_store_into_defaulted(&mut self, slot: u32) {
         self.code.emit(OpCode::MarkExplicitInitializerContext);
         self.code.emit(OpCode::SetLocal(slot));
         self.code.emit(OpCode::GetLocal(slot));
