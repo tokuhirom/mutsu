@@ -93,13 +93,17 @@ Some crates raise the **minimum supported Rust version**. When a bump reports
 `requires Rust 1.NN`, update all of these together, in their own PR:
 
 - `Cargo.toml` `rust-version` — set to the true floor the dependency demands.
-- The toolchain pins in the workflows. They are **not** all the same and must be
-  kept ≥ the MSRV:
-  - `.github/workflows/ci.yml`, `bench.yml` — the test/roast/bench builders.
-  - `.github/workflows/release.yml`, `pages.yml`, `tag-release.yml` — the
-    release/docs builders. `tag-release.yml` is **SHA-pinned** (with a
-    `# <version>` comment); resolve the new tag's commit with
-    `gh api repos/dtolnay/rust-toolchain/commits/<version> --jq .sha`.
+- The toolchain pins in the workflows. Every `dtolnay/rust-toolchain` step is
+  pinned by **SHA** and carries an explicit `toolchain: <version>` input, which
+  is the version the job builds with. The SHA names the action, not the
+  toolchain, so it stays put on a bump (and no third-party lookup is needed);
+  change the `toolchain:` value. Keep them all equal and ≥ the MSRV:
+  - `.github/workflows/ci.yml`, `bench.yml`, `ecosystem-sweep.yml` — the
+    test/roast/bench builders (the miri job in `ci.yml` pins its own dated
+    nightly instead).
+  - `.github/workflows/release.yml`, `tag-release.yml` — the release builders.
+- `.mise.toml` — the pin a local checkout uses (the session-start hook reads it
+  too, next to `rust-version`).
 - **`Dockerfile`** — the builder stage pins a `rust:<version>-bookworm` base
   image (and `README.md` documents it). This is easy to forget because it is not
   a `dtolnay/rust-toolchain` pin; grep the whole repo for the old version string

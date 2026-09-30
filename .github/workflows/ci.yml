@@ -146,7 +146,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
+        with:
+          toolchain: 1.97.0
 
       # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
       # registry and the built dependencies (pruning the workspace crate so the
@@ -344,8 +346,9 @@ jobs:
         # through. Stdlib Python, no build, seconds.
         run: make check-dev
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
         with:
+          toolchain: 1.97.0
           components: clippy, rustfmt
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
@@ -769,8 +772,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
         with:
+          toolchain: 1.97.0
           components: clippy
           targets: wasm32-unknown-unknown
 
@@ -946,8 +950,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
         with:
+          toolchain: 1.97.0
           targets: wasm32-unknown-unknown
 
       # Own cache (wasm32 target artifacts differ from the native jobs). No mold
@@ -1061,7 +1066,9 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
+        with:
+          toolchain: 1.97.0
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build
@@ -1402,7 +1409,9 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e
+        with:
+          toolchain: 1.97.0
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build
