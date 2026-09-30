@@ -55,9 +55,11 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
         effects.push(lifted.effects.split_off(before));
     }
     let decls = lifted.decls;
-    let last_begin = stmts.iter().rposition(is_begin_phaser);
+    // `use` and `constant` are BEGIN-time effects on their own (slice 3), so
+    // the prologue reaches the last of them too.
+    let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
-    let Some(last) = last_begin.max(last_lifted) else {
+    let Some(last) = last_effect.max(last_lifted) else {
         return Vec::new();
     };
     let tail = stmts.split_off(last + 1);
@@ -106,6 +108,23 @@ pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
 }
 
 fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
+    let stmt = match stmt {
+        Stmt::Use {
+            module,
+            arg,
+            tags,
+            condition: Some(condition),
+        } => {
+            prologue.extend(if_condition_check(*condition));
+            Stmt::Use {
+                module,
+                arg,
+                tags,
+                condition: Some(Box::new(Expr::Var(IF_CONDITION_SLOT.to_string()))),
+            }
+        }
+        other => other,
+    };
     if is_begin_time_stmt(&stmt) {
         // Carry the line marker with the statement, so an error raised in the
         // prologue still names the statement's own line.
@@ -210,14 +229,15 @@ fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
     }
 }
 
-fn is_begin_phaser(stmt: &Stmt) -> bool {
-    matches!(
-        stmt,
-        Stmt::Phaser {
-            kind: PhaserKind::Begin,
-            ..
-        }
-    )
+/// A statement that is itself a BEGIN-time effect rather than a declaration a
+/// BEGIN may observe: a `BEGIN`, a module load, or a `constant`.
+fn is_begin_time_effect(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
+        Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
+        Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => true,
+        _ => false,
+    }
 }
 
 /// A statement whose whole effect happens at BEGIN time in Rakudo: the `BEGIN`
@@ -262,4 +282,51 @@ impl crate::runtime::Interpreter {
         let (code, compiled_fns) = compiler.compile(prologue);
         self.run_top(&code, &compiled_fns).map(|_| ())
     }
+}
+
+/// The unit-level slot a conditional `use` reads its evaluated `:if` value from.
+const IF_CONDITION_SLOT: &str = "__begin_use_if";
+
+/// `use Foo:if(EXPR)` under the `if` pragma evaluates `EXPR` as a BEGIN-time
+/// effect (ADR-0134 §2.1.6). Running in the prologue, it sees lexicals in
+/// their static state, so a condition that only a run-time assignment would
+/// define is undefined here. That is the rakudo `if` module's compile error.
+/// Each conditional `use` stores its value in the same slot just before the
+/// `use` reads it, so one slot serves them all.
+fn if_condition_check(condition: Expr) -> Vec<Stmt> {
+    let slot = || Expr::Var(IF_CONDITION_SLOT.to_string());
+    vec![
+        Stmt::VarDecl {
+            name: IF_CONDITION_SLOT.to_string(),
+            expr: condition,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: vec![],
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        },
+        Stmt::If {
+            cond: Expr::Unary {
+                op: crate::token_kind::TokenKind::Bang,
+                expr: Box::new(Expr::MethodCall {
+                    target: Box::new(slot()),
+                    name: crate::symbol::Symbol::intern("defined"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                }),
+            },
+            then_branch: vec![Stmt::Die(Expr::Literal(crate::value::Value::str(
+                "Did not provide compile-time-value for :if adverb in use statement".to_string(),
+            )))],
+            else_branch: vec![],
+            binding_var: None,
+            is_statement_modifier: true,
+            is_unless: false,
+            with_kind: None,
+        },
+    ]
 }
