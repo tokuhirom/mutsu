@@ -1,14 +1,15 @@
 use Test;
 
-plan 24;
+plan 22;
 
 # `ArrayData` keeps a head offset so `shift`/`unshift` are amortized O(1)
 # (#9121). Every other mutator used to compact that offset away first (an
 # O(e) memmove per call), and a multi-element `unshift`/`prepend` or a
 # `splice` moved the whole tail once per inserted element (#9156). They now
 # work on the live range directly. These pin that the results -- including
-# the hole bitmap `:exists` reads -- are unchanged, then time the three
-# shapes that were quadratic.
+# the hole bitmap `:exists` reads -- are unchanged, then time the queue
+# shape that was quadratic. (One-shot prepend/splice timings were dropped:
+# each sample was ~1-3 ms, so their ratio failed on scheduler noise, #10242.)
 
 sub holes(@a) { (^@a.elems).map({ @a[$_]:exists ?? 1 !! 0 }).join }
 
@@ -90,23 +91,4 @@ sub timed(&body --> Num) { my $t0 = now; body(); (now - $t0).Num }
     my $small = queue(20000);
     my $large = queue(80000);
     cmp-ok $large / $small, '<', 3, 'queue push+shift does not scale with the array size';
-}
-
-{
-    # One prepend/splice of N elements onto N elements: linear is ~4x for
-    # 4x N, the old per-element insert was ~16x.
-    sub prepend(int $n) {
-        my @a = ^$n;
-        my @b = ^$n;
-        timed { @a.prepend(@b) }
-    }
-    prepend(1000);
-    cmp-ok prepend(80000) / prepend(20000), '<', 9, 'prepend of many elements is linear';
-
-    sub splice-front(int $n) {
-        my @a = ^$n;
-        timed { @a.splice(0, 1) while @a }
-    }
-    splice-front(1000);
-    cmp-ok splice-front(80000) / splice-front(20000), '<', 9, 'a splice(0, 1) loop is linear';
 }
