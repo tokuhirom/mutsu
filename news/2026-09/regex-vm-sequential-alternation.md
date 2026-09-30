@@ -22,10 +22,10 @@ Comparing the two engines turned up a walk bug. The flag that turns off a quanti
 alternation's padding stayed set while the walk ran the rest of the pattern after the loop. So in
 `/ [ a || b ]+ [ (c) || d ] (x) /` on `"adx"`, `(x)` became `$0`, where rakudo numbers it
 `$1`. The walk now clears the flag before running the continuation, and
-`t/regex/match/regex-alternation-padding-after-quantified-loop.t` pins the rakudo numbering.
+`t/regex/syntax/regex-alternation-padding-after-quantified-loop.t` pins the rakudo numbering.
 
 It also turned up a second walk bug. A counted quantifier over an alternation grew its chain
 from each iteration's first branch only, and never went back to try another branch in an
 earlier iteration. So `"aaa" ~~ / ^ [ a || aa ] ** 2 $ /` failed, while `*` and `+` already
 backtracked correctly. `**` now takes the same fully backtracking path as `*` and `+`, pinned by
-`t/regex/match/regex-counted-quantifier-alternation-backtrack.t`.
+`t/regex/syntax/regex-counted-quantifier-alternation-backtrack.t`.
