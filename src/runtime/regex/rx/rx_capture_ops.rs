@@ -43,7 +43,9 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(capture_group_delta(from, pos, inner)));
             }
             // Cost: O(n), n = the characters a backreference compares; O(1)
-            // for a marker.
+            // for a marker; one run of the body for a lookahead, and one per
+            // candidate start (at most the body's longest match back) for a
+            // lookbehind.
             RxOp::CapAtom(i) => {
                 let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
                     &program.atoms[i as usize],

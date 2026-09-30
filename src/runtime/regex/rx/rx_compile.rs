@@ -304,7 +304,19 @@ impl Compiler {
             RegexAtom::Named(_) => return Err("subrule"),
             RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
-            RegexAtom::Lookaround { .. } => return Err("lookaround"),
+            RegexAtom::Lookaround { pattern, .. } => {
+                // The walk's own lookaround test (`<?before …>`, `<!after …>`)
+                // runs the body through `regex_match_end_from_caps_in_pkg`,
+                // which answers from the body's own compiled program. Compile
+                // the lookaround only when that program exists, so the body
+                // never drops back to the walk in mid-program (D5).
+                if super::rx_vm::program_for(pattern).is_none() {
+                    return Err("lookaround-body");
+                }
+                let i = self.atoms.len() as u32;
+                self.atoms.push(token.atom.clone());
+                self.ops.push(RxOp::CapAtom(i));
+            }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
             | RegexAtom::CaptureStartMarker

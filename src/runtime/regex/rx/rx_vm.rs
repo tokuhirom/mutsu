@@ -42,8 +42,8 @@ enum Choice {
 }
 
 /// The VM's growable state, reused across engine entries instead of being
-/// reallocated per start position. Taken out of the thread-local for one run
-/// and put back after, so a nested run (none today) would just allocate.
+/// reallocated per start position. Taken out of the thread-local pool for
+/// one run and put back after.
 #[derive(Default)]
 struct Scratch {
     regs: Vec<usize>,
@@ -55,14 +55,18 @@ struct Scratch {
 }
 
 thread_local! {
-    // Boxed, so taking it out for a run moves a pointer rather than the whole
-    // struct: a run happens once per unanchored start position.
-    static SCRATCH: std::cell::Cell<Option<Box<Scratch>>> = const { std::cell::Cell::new(None) };
+    // Boxed, so taking one out for a run moves a pointer rather than the
+    // whole struct: a run happens once per unanchored start position. A pool,
+    // because a run can nest (a lookaround's pattern runs inside the run that
+    // tests it), and each level keeps its own warm scratch. The boxes are
+    // the point: popping one out moves a pointer, not the struct.
+    #[allow(clippy::vec_box)]
+    static SCRATCH: std::cell::RefCell<Vec<Box<Scratch>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The pattern's compiled program, compiled at most once per pattern.
 // Cost: O(1) after the first call per pattern; O(t) on it, t = tokens.
-fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
+pub(super) fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
     pattern
         .derived
         .rx_program
@@ -126,9 +130,9 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
-        let mut scratch = SCRATCH.with(std::cell::Cell::take).unwrap_or_default();
+        let mut scratch = SCRATCH.with(|s| s.borrow_mut().pop()).unwrap_or_default();
         let result = self.rx_run_in(program, chars, start, pkg, &mut scratch);
-        SCRATCH.with(|s| s.set(Some(scratch)));
+        SCRATCH.with(|s| s.borrow_mut().push(scratch));
         result
     }
 
