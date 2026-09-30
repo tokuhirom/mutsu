@@ -7,44 +7,21 @@
     "unresolved": []
   },
   "dist": "ClassicalChinese",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 13.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "ClassicalChinese": "ok",
-    "古文": "ok",
-    "文言": "ok",
-    "文言文": "ok",
-    "漢文": "ok"
+    "ClassicalChinese": "Failed to parse module 'ClassicalChinese': Confused. Two terms in a row [at dist/lib/ClassicalChinese.rakumod:26]",
+    "古文": "raku_also_fails",
+    "文言": "raku_also_fails",
+    "文言文": "raku_also_fails",
+    "漢文": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
+    "mutsu_commit": "6748c2a6",
+    "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -54,12 +31,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/LA/CLASSICALCHINESE/5f091f8b4d0b9fc443bcef6f061caa57991d9a60.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 56,
-    "baseline_files": 1,
-    "mutsu_assertions": 56,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.2"
