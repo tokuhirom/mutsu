@@ -76,6 +76,19 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         prologue.push(stmt);
         return;
     }
+    // A `require` of a statically named module installs a stub package under
+    // that name at BEGIN time, even though the load itself happens at run time.
+    // That stub is Rakudo's `package Foo {}`, so the prologue declares one.
+    // The real load then fills it in.
+    for name in static_require_targets(&stmt) {
+        prologue.push(Stmt::Package {
+            name: crate::symbol::Symbol::intern(&name),
+            body: Vec::new(),
+            kind: crate::ast::PackageKind::Package,
+            is_unit: false,
+            is_my: false,
+        });
+    }
     if let Some((static_decl, assign)) = crate::runtime::phasers::split_var_decl(&stmt) {
         prologue.push(static_decl);
         rest.extend(assign);
@@ -94,19 +107,6 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
             partition_stmt(member, prologue, rest);
         }
         return;
-    }
-    // A `require` of a statically named module installs a stub package under
-    // that name at BEGIN time, even though the load itself happens at run time.
-    // That stub is Rakudo's `package Foo {}`, so the prologue declares one.
-    // The real load then fills it in.
-    for name in static_require_targets(&stmt) {
-        prologue.push(Stmt::Package {
-            name: crate::symbol::Symbol::intern(&name),
-            body: Vec::new(),
-            kind: crate::ast::PackageKind::Package,
-            is_unit: false,
-            is_my: false,
-        });
     }
     rest.push(stmt);
 }
