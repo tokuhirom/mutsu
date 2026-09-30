@@ -336,9 +336,26 @@ Both rows clear the 5x bar. `bench-regex-scan-walk`'s warm section goes from 0.5
 That file adds a `:g` capture scan, which includes `Match` construction and improves 2.4x on its
 own.
 
-Still to come in Slice A: `||`, backreferences, `%` separators, quantified captures, `<( )>`
-markers, `CompositeClass`, the capture-free engine (`regex_match_nocap.rs`, which `.comb` without
-captures takes), and moving the unanchored scan loop into the VM.
+**Slice A, second part: landed.**
+
+- The position-only matcher (`regex_match_nocap.rs`, used by `.comb` without captures, by
+  `find_first` and by the walk's group probes) consults the compiled engine first. That fixed a
+  bug on the way: the matcher ignored `:r`, so `"aaax bbx".comb(/ :r \w+ 'x' /)` found two
+  matches where rakudo finds none.
+- Quantified capture groups one level deep compile (`(\w)+`, `[ (\w) (\d) ]+`). They mark
+  their names quantified before the first iteration and fold at the loop's exit through the
+  walk's own `fold_quantified`.
+- So do captures and aliases under `?`. The empty arm replays `walk_zero_or_one_zero_arm`'s
+  slot reservation.
+
+A `MUTSU_VM_STATS` sweep over the first half of `t/` puts the patterns still declined at:
+`subrule` 191 (Slice D), `code` 49 (C), `alternation` 41 (B), `ignorecase` 23 (B), and a tail of
+Slice A shapes (`sequential-alternation` 11, `composite-class` 8, `nullable-loop` 7,
+`separator` 4).
+
+Still to come in Slice A: `||`, backreferences, `%` separators, nested quantified captures,
+nullable loop bodies, `<( )>` markers, `CompositeClass`, and moving the unanchored scan loop into
+the VM.
 
 ### Reproducing §2
 
