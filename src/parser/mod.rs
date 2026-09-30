@@ -1,4 +1,5 @@
 pub(crate) mod core_type_fold;
+pub(crate) mod decl_doc;
 mod expr;
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
 // construction that moved out of the parser) needs these priming-scope
@@ -247,9 +248,13 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
     let saved_scopes = stmt::simple::snapshot_scopes();
     let saved_package_path = stmt::simple::snapshot_package_path();
     let saved_language_version = stmt::simple::current_language_version();
+    // A fragment is not a compilation unit: it must not replace the
+    // declarator docs the enclosing unit's parse published.
+    let saved_unit_docs = decl_doc::take_unit_docs();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     let result = parse_program(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    decl_doc::set_unit_docs(saved_unit_docs);
     PARSE_WARNINGS.with(|w| *w.borrow_mut() = saved_warnings);
     VCS_CONFLICT_MARKERS.with(|m| *m.borrow_mut() = saved_markers);
     primary::restore_source_state(saved_source_state);
@@ -654,6 +659,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     } else {
         (input, None)
     };
+    let _doc_unit = decl_doc::begin_unit(source);
     let result = match stmt::program(source) {
         Ok((rest, mut stmts)) => {
             // ADR-0033 Phase 2: classify every `*` leaf as a value
@@ -696,6 +702,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 } else {
                     sink_warn::add_sink_warnings(&stmts);
                 }
+                decl_doc::finish_unit();
                 Ok((stmts, finish_content))
             }
         }
@@ -839,6 +846,9 @@ pub(crate) fn parse_program_recovering(
     // caller's source state and restore it before returning.
     let saved_source_state = primary::snapshot_source_state();
     primary::set_original_source(input);
+    // Its offsets are into `input`, not the enclosing unit's source: keep its
+    // declarator comments out of the enclosing unit's doc table.
+    let _doc_unit = decl_doc::mute_unit();
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];
         let content = if let Some(nl) = content.find('\n') {

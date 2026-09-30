@@ -22,6 +22,9 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
     // whitespace that contains a newline, or when the caller explicitly
     // indicates we are at a line start via `ws_bol`.
     let mut at_line_start = bol;
+    // A `#|` comment documents the declaration at the token this call stops
+    // at; tell the declarator-doc table where that is once it is known.
+    let mut saw_leading_doc = false;
     loop {
         // Try whitespace
         let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
@@ -34,6 +37,7 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
         // or plain line comments.
         if r.starts_with('#') {
             if let Some(after) = skip_declarator_doc_comment(r) {
+                saw_leading_doc |= super::decl_doc::note_comment(r, after);
                 let consumed = &r[..r.len() - after.len()];
                 rest = after;
                 at_line_start = consumed.contains('\n');
@@ -76,6 +80,9 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                 ));
             }
             let end = r.find('\n').unwrap_or(r.len());
+            if r.starts_with("#|") || r.starts_with("#=") {
+                saw_leading_doc |= super::decl_doc::note_comment(r, &r[end..]);
+            }
             rest = &r[end..];
             at_line_start = true;
             continue;
@@ -121,6 +128,9 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
             }
         }
         break;
+    }
+    if saw_leading_doc {
+        super::decl_doc::note_next_token(rest);
     }
     Ok((rest, ()))
 }

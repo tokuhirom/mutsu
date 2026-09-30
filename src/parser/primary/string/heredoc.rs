@@ -201,6 +201,8 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
             rest_of_line.len() + 1,
             decl_line,
             after_term_line,
+            rest_of_line,
+            after_terminator,
         );
         return Ok((leaked, expr));
     }

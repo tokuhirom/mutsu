@@ -99,7 +99,8 @@ impl Interpreter {
                 // runs.  This also adds declarator blocks from `#|` comments;
                 // without it a module such as Pod::EOD sees only its ordinary
                 // Pod blocks and loses the declaration it is meant to move.
-                self.establish_pod_variables_from_stmts(src, &stmts)?;
+                let docs = crate::parser::decl_doc::take_unit_docs();
+                self.establish_pod_variables_from_stmts(src, &stmts, docs)?;
                 // A placeholder parameter used directly in the mainline is
                 // `X::Placeholder::Mainline`, and this has to run BEFORE the
                 // undeclared check -- otherwise `@_` / `%_` are reported as

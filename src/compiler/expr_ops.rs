@@ -396,6 +396,7 @@ impl Compiler {
                     is_rw: false,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 })
                 .collect();
             Expr::ArrayLiteral(thunks)
@@ -422,6 +423,7 @@ impl Compiler {
                     is_rw: false,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 })
                 .collect(),
         ))
@@ -473,6 +475,7 @@ impl Compiler {
                 is_rw: false,
                 is_raw: false,
                 is_block: true,
+                doc: Default::default(),
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_cross_shortcircuit"),
@@ -535,6 +538,7 @@ impl Compiler {
                 is_rw: false,
                 is_raw: false,
                 is_block: true,
+                doc: Default::default(),
             };
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_zip_shortcircuit_topic"),
@@ -568,6 +572,7 @@ impl Compiler {
                     is_rw: false,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 };
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_andthen"),
@@ -601,6 +606,7 @@ impl Compiler {
                     is_rw: false,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 };
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_xx"),

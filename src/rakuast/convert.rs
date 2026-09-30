@@ -1985,6 +1985,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw,
             is_raw,
             is_block,
+            ..
         } => {
             if *is_rw {
                 return Err(unsupported("`is rw` block"));

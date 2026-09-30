@@ -459,7 +459,7 @@ impl Interpreter {
             });
         let info = param_defs_to_sig_info(&param_defs, return_type);
         // Build the owner sub key for parameter doc comment lookup.
-        // Must match the key format used by collect_doc_comments:
+        // Must match the key format the parser's doc table (`parser::decl_doc`) uses:
         // - Subs use "&name" prefix
         // - Methods use "ClassName::name" format
         let owner_key = if !data.name.is_empty() {

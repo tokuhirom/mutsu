@@ -24,6 +24,8 @@
 //!   The compiler consults these facts when classifying lowercase native aliases
 //!   and hyphenated qualified enum members, so omitting them made a warm cache
 //!   take a different compile path from a cold cache.
+//! - **declarator documentation** (`#|` / `#=`), which the parser attaches to
+//!   declarations (ADR-0134) and the module's `$=pod` / `.WHY` are built from.
 //!
 //! Anything new the parser starts recording in a thread-local must be added to
 //! `ParseEffects` too, or it becomes the next cache-state-dependent bug. A
@@ -110,7 +112,9 @@ pub(crate) fn interpreter_version() -> String {
     // 12: `SerValue::Instance` gained `sig_info`, so a cached `Signature`
     // literal now carries its structured parameter data instead of an id
     // pointing at a side table the cache cannot reach.
-    const CACHE_FORMAT_VERSION: u32 = 13;
+    // 14: `Expr::AnonSub` gained `doc` and `ParseEffects` gained `decl_docs`
+    // (declarator docs attached by the parser, ADR-0134).
+    const CACHE_FORMAT_VERSION: u32 = 14;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -266,6 +270,10 @@ pub(crate) struct ParseEffects {
     /// User enum values used by definite-return classification.
     #[serde(default)]
     pub(crate) enum_value_names: Vec<String>,
+    /// The declarator documentation the parse attached (ADR-0134), which the
+    /// module's `$=pod` and `.WHY` are built from.
+    #[serde(default)]
+    pub(crate) decl_docs: Vec<crate::decl_doc::DocComment>,
 }
 
 /// A cached compilation unit: the AST plus the parse effects to replay.
@@ -751,6 +759,16 @@ mod tests {
             type_names: vec!["time".to_string()],
             enum_type_names: vec!["RuleType".to_string()],
             enum_value_names: vec!["julian-day".to_string()],
+            decl_docs: vec![crate::decl_doc::DocComment {
+                doc: crate::decl_doc::DeclDoc {
+                    leading: Some("documented".to_string()),
+                    trailing: None,
+                },
+                wherefore_name: "&f".to_string(),
+                key: "&f".to_string(),
+                kind: crate::decl_doc::DocDeclKind::Sub,
+                ..Default::default()
+            }],
         };
 
         let dir = tempdir("effects");

@@ -1067,6 +1067,10 @@ pub(crate) enum Expr {
         /// true when this is a bare block `{ }`, false when it's `sub { }`.
         /// Bare blocks are NOT routine boundaries for `return`.
         is_block: bool,
+        /// Declarator documentation the parser attached (`my $b = #| doc
+        /// {; ... }`); the compiler carries it to the code object.
+        #[serde(default)]
+        doc: crate::decl_doc::DocSlot,
     },
     AnonSubParams {
         params: Vec<String>,
@@ -4114,6 +4118,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         }
     } else {
         let uses_hash_underscore = body_reads_args_hash(&stmts);
@@ -4305,26 +4310,49 @@ mod env_only_decl_tests {
 }
 
 /// The custom routine traits of an anonymous sub (`sub () is foo(1) { }`),
-/// stored as an optional boxed slice. Almost every anonymous sub has none, and an
-/// inline `Vec` made `AnonSubParams` the widest variant, taking every `Expr`
+/// together with its declarator documentation (`my $f = #| doc\n sub () { }`),
+/// stored behind one optional box. Almost every anonymous sub has neither, and
+/// an inline `Vec` made `AnonSubParams` the widest variant, taking every `Expr`
 /// from 120 to 128 bytes. The parser and compiler recurse on `Expr` values, so that width
 /// is paid in every stack frame; it was enough to overflow the 2 MiB test
 /// thread stack in a debug build (`expr_size_guard` pins the size).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AnonSubTraits(Option<Box<[AnonSubTrait]>>);
+pub(crate) struct AnonSubTraits(Option<Box<AnonSubExtras>>);
+
+/// The boxed payload of [`AnonSubTraits`].
+#[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AnonSubExtras {
+    traits: Vec<AnonSubTrait>,
+    doc: crate::decl_doc::DocSlot,
+}
 
 /// One custom routine trait: its name and optional argument.
 pub(crate) type AnonSubTrait = (String, Option<Expr>);
 
 impl AnonSubTraits {
     pub(crate) fn as_slice(&self) -> &[AnonSubTrait] {
-        self.0.as_deref().unwrap_or(&[])
+        self.0.as_deref().map_or(&[], |extras| &extras.traits)
+    }
+
+    /// The declarator documentation the parser attached to this sub.
+    pub(crate) fn doc(&self) -> Option<&crate::decl_doc::DeclDoc> {
+        self.0.as_deref().and_then(|extras| extras.doc.get())
+    }
+
+    /// Give this sub a documentation slot for the parser to fill.
+    pub(crate) fn set_doc_slot(&mut self, slot: crate::decl_doc::DocSlot) {
+        self.0.get_or_insert_with(Box::default).doc = slot;
     }
 }
 
 impl From<Vec<AnonSubTrait>> for AnonSubTraits {
     fn from(v: Vec<AnonSubTrait>) -> Self {
-        Self((!v.is_empty()).then(|| v.into_boxed_slice()))
+        Self((!v.is_empty()).then(|| {
+            Box::new(AnonSubExtras {
+                traits: v,
+                doc: Default::default(),
+            })
+        }))
     }
 }
 

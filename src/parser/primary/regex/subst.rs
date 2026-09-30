@@ -125,6 +125,7 @@ pub(super) fn build_topic_subst_compound_expr(
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         },
     ];
     if adverbs.global {
@@ -173,6 +174,7 @@ pub(super) fn build_topic_subst_expr(
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         },
     ];
     if adverbs.global {
@@ -220,6 +222,7 @@ pub(super) fn build_non_destructive_subst_expr(
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         },
     ];
     if adverbs.global {

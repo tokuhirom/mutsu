@@ -671,6 +671,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_rw: false,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 },
             )
         } else {

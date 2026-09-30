@@ -19,6 +19,7 @@ pub(crate) fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
                 is_rw: false,
                 is_raw: false,
                 is_block: true,
+                doc: Default::default(),
             },
         ));
     }

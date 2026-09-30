@@ -1265,7 +1265,9 @@ impl Compiler {
                 is_rw,
                 is_raw,
                 is_block,
+                doc,
             } => {
+                self.pending_declarator_doc = doc.get().cloned();
                 self.compile_expr_anon_sub(body, *is_rw || *is_raw, *is_block);
             }
             Expr::AnonSubParams {
@@ -1283,6 +1285,7 @@ impl Compiler {
                 // `{ $^a }` is a `Block` like raku's, not an anonymous `Sub`.
                 declarator,
             } => {
+                self.pending_declarator_doc = custom_traits.doc().cloned();
                 self.compile_expr_anon_sub_params(
                     params,
                     param_defs,

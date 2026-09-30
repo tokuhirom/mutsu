@@ -243,6 +243,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             is_rw,
             is_raw,
             is_block,
+            doc: Default::default(),
         },
         Expr::AnonSubParams {
             params,

@@ -1082,6 +1082,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             is_rw: false,
                             is_raw: false,
                             is_block: false,
+                            doc: Default::default(),
                         },
                     ));
                 }
@@ -1179,6 +1180,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         is_rw: false,
                         is_raw: false,
                         is_block: false,
+                        doc: Default::default(),
                     },
                 ));
             }
@@ -1201,6 +1203,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     is_rw: traits.is_rw,
                     is_raw: traits.is_raw,
                     is_block: false,
+                    doc: Default::default(),
                 };
                 if traits.is_rw {
                     expr = set_anon_sub_rw(expr, true);

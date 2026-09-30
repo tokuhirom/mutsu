@@ -14,6 +14,7 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.required = true;
         p.traits.retain(|t| t != "required");
     }
+    crate::parser::decl_doc::attach_param(input, rest, &p);
     Ok((rest, p))
 }
 

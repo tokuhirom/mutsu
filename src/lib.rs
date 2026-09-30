@@ -9,6 +9,7 @@ pub(crate) mod chain_compare;
 mod compiled_operator;
 mod compiler;
 pub mod crash_report;
+pub(crate) mod decl_doc;
 pub mod doc_mode;
 pub(crate) mod env;
 pub(crate) mod env_tier;
