@@ -53,7 +53,7 @@ impl Interpreter {
                     pos,
                     levels.top().caps(),
                     pkg,
-                    false,
+                    program.atom_ic[i as usize],
                 )?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);

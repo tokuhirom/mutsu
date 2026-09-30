@@ -102,6 +102,9 @@ impl Interpreter {
         {
             return None;
         }
+        if pattern.ignore_mark {
+            return self.rx_try_ignoremark(pattern, start, pkg);
+        }
         let program = Arc::clone(program_for(pattern)?);
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
         let result = self.rx_run(&program, chars, start, pkg);
@@ -117,6 +120,30 @@ impl Interpreter {
             }
         }
         Some(result)
+    }
+
+    /// A whole-pattern `:m`: the mark-stripped pattern's compiled program
+    /// over the subject's stripped view, mapped back by the walk's own
+    /// `ignoremark_on_target`. `None` (take the walk) without a published
+    /// subject or when the stripped pattern does not compile.
+    // Cost: the stripped match, plus O(c) to map c capture spans back.
+    fn rx_try_ignoremark(
+        &mut self,
+        pattern: &RegexPattern,
+        start: usize,
+        pkg: Symbol,
+    ) -> Option<Option<(usize, RegexCaptures)>> {
+        let target = super::super::regex_helpers::current_match_target()?;
+        program_for(&super::super::regex_helpers::strip_marks_pattern(pattern))?;
+        let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
+            interp
+                .rx_try_match(stripped, chars, 0, pkg)
+                .flatten()
+                .into_iter()
+                .collect()
+        };
+        let mut found = self.ignoremark_on_target(pattern, &target, start, &mut run);
+        Some(found.pop())
     }
 
     /// Run `program` at `start`.
@@ -230,7 +257,13 @@ impl Interpreter {
                 // Cost: O(1) for every assertion Slice A compiles.
                 RxOp::Assert(i) => {
                     let hit = self
-                        .regex_match_atom_in_pkg(&program.atoms[i as usize], chars, pos, pkg, false)
+                        .regex_match_atom_in_pkg(
+                            &program.atoms[i as usize],
+                            chars,
+                            pos,
+                            pkg,
+                            program.atom_ic[i as usize],
+                        )
                         .is_some();
                     pc += 1;
                     hit

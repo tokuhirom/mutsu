@@ -173,6 +173,8 @@ pub(super) enum RxOp {
 pub(crate) struct RxProgram {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<RegexAtom>,
+    /// Per atom: whether it is tested under `:i` (its pattern level's flag).
+    pub(super) atom_ic: Vec<bool>,
     pub(super) toks: Vec<RegexToken>,
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,

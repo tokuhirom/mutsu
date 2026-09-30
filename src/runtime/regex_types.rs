@@ -56,6 +56,10 @@ pub(crate) struct PatternDerived {
     /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
     /// pattern many times during one match).
     pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
+    /// Case-folded form, for a whole-pattern `:i` over a subject or pattern
+    /// with a multi-character fold (matched on the folded subject), so its
+    /// compiled program is built once rather than per match.
+    pub(crate) folded: std::sync::OnceLock<Arc<RegexPattern>>,
     /// The unanchored-scan prefilter (ADR-0099 Stage 1), for a pattern that
     /// mentions no rule name — a pure function of the pattern, so one slot.
     pub(crate) prefilter:

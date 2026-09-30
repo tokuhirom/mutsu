@@ -458,6 +458,20 @@ a lookaround compiles only when its body does. Otherwise the pattern declines wi
 therefore runs as a nested `rx_run`. The per-run scratch is now a small pool, so a nested run
 reuses its own warm scratch instead of allocating one per test.
 
+**Slice B, third part: `:i` and `:m` landed.**
+
+- **`:i`.** Every atom records its pattern level's `:i` and passes it to the walk's own
+  tests, as the walk passes `ctx.pattern.ignore_case`. A scoped `[:i …]` therefore covers its
+  body only. The ASCII probe runs under the same flag. An atom whose probe ever consumes more
+  than the one character (a fold that expands) gets no table and takes the full test. A
+  whole-pattern `:i` over a multi-character fold still matches on the case-folded subject. Its
+  folded pattern is now memoized in `PatternDerived` (`casefold_pattern_cached`), so its program
+  is compiled once rather than on every match.
+- **`:m`.** A whole-pattern `:m` runs the mark-stripped pattern's compiled program over the
+  subject's stripped view. It is mapped back by `ignoremark_on_target`, the walk's own remapping,
+  moved into `regex_ignoremark.rs` so both engines share it. A scoped `[:m …]` inside a larger
+  pattern still declines (`ignoremark`), since it would need that remapping at a group boundary.
+
 ### Reproducing §2
 
 ```raku
