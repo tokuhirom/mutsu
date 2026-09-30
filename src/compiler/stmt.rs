@@ -1470,9 +1470,7 @@ impl Compiler {
                     && has_explicit_initializer
                     && name.starts_with('@')
                     && !bind_vardecl
-                    && !is_constant_decl
-                    && !*is_state
-                    && !*is_our;
+                    && !is_constant_decl;
                 let default_trait_expr =
                     custom_traits.iter().find_map(|(trait_name, trait_arg)| {
                         if trait_name == "default" {
@@ -1612,6 +1610,14 @@ impl Compiler {
                 if preapply_container_default {
                     let slot = early_slot.expect("defaulted container has an early slot");
                     self.emit_default_before_array_initializer(name_idx, slot, default_trait_expr);
+                    // The default is in place, so the constraint the deferred
+                    // registration below would add can be registered now: a
+                    // `state Int @a` container is tagged with its element type
+                    // by `StateVarInit`, which runs before that registration.
+                    if *is_state && let Some(tc) = type_constraint {
+                        let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                        self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
+                    }
                 }
                 let constant_init_phaser_start = if is_constant_decl {
                     Some(self.code.emit(OpCode::CheckPhaserStart {
@@ -1867,6 +1873,9 @@ impl Compiler {
                 }
                 if *is_state {
                     if let Some((guard_idx, key_sym)) = state_guard_idx {
+                        if preapply_container_default {
+                            self.emit_state_array_store_into_defaulted(slot);
+                        }
                         // Patch the guard jump target to the StateVarInit instruction
                         let state_init_ip = self.code.ops.len();
                         self.code.ops[guard_idx] =
@@ -1876,6 +1885,9 @@ impl Compiler {
                     } else {
                         // No guard (e.g., chained state declarations) — use the
                         // original approach where RHS is always evaluated.
+                        if preapply_container_default {
+                            self.emit_state_array_store_into_defaulted(slot);
+                        }
                         let ip = self.code.ops.len();
                         let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                         let key_sym = Symbol::intern(&key);
@@ -1926,7 +1938,11 @@ impl Compiler {
                         // value a second time would invoke that side-effecting coercion
                         // twice. Instead, for constants we re-read the already-coerced
                         // value from the local slot via `GetLocal` after `SetLocal`.
-                        if *is_our && !is_constant {
+                        // A defaulted `our @a` re-reads its local after the store
+                        // instead (below): the global must hold the container the
+                        // default-aware store filled, not a second copy of the raw
+                        // initializer list.
+                        if *is_our && !is_constant && !preapply_container_default {
                             self.code.emit(OpCode::Dup);
                         }
                         // A sigilless bind (`my \x := EXPR`) settles its
@@ -2028,10 +2044,12 @@ impl Compiler {
                             // Constants should not have their values coerced by the
                             // @/% container rules: `constant @x` stores a List,
                             // `constant %x` stores a Map (not Array/Hash).
-                            if is_constant {
+                            if is_constant || preapply_container_default {
                                 // Re-read the value `SetLocal` already coerced (and
                                 // cached in the slot) so `SetGlobalRaw` does not run
                                 // the coercion — and its side effects — a second time.
+                                // A defaulted `our @a` publishes that same
+                                // default-aware container for the same reason.
                                 self.code.emit(OpCode::GetLocal(slot));
                                 self.code.emit(OpCode::SetGlobalRaw(idx));
                             } else {
