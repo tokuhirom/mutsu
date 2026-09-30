@@ -3,6 +3,15 @@
 # runs and print one TSV row per benchmark to stdout.
 #
 # Columns: benchmark  mutsu_median_s  mutsu_min_s  raku_median_s  ratio  runs
+#          rakupp_median_s  ratio_rakupp
+#
+# `ratio` is mutsu/raku (Rakudo). The last two columns measure Raku++
+# (https://github.com/ash/rakupp, a from-scratch C++ implementation) the same
+# way, as a second reference point: Rakudo is the language's reference, rakupp
+# is the other independent implementation. They are APPENDED after `runs` so a
+# consumer that reads the first six columns by position still sees the same
+# row. Both are NA when no rakupp binary is found (RAKUPP_BIN, default
+# `rakupp` on PATH) -- a local run without it prints the same rows as before.
 #
 # Notes for consumers (.github/workflows/bench.yml):
 # - Shared CI runners are noisy; single absolute numbers are not comparable
@@ -17,16 +26,17 @@
 #   timing the operation it exists to measure, from inside the process. Its
 #   whole-script row is still recorded as usual, and an extra `<name>@section`
 #   row (and `<name>@section+jit`) records the median of those in-process
-#   times, with raku's own in-process median in the raku column. Use it when
-#   the operation is small next to either interpreter's startup and module
-#   loading, where the whole-script ratio is dominated by startup and reads
-#   near 1 regardless of how slow the operation is (#8673:
+#   times, with raku's and rakupp's own in-process medians in their columns.
+#   Use it when the operation is small next to either interpreter's startup
+#   and module loading, where the whole-script ratio is dominated by startup
+#   and reads near 1 regardless of how slow the operation is (#8673:
 #   benchmarks/bench-json-fast-spdx.raku). The section row's min column is the
 #   in-process minimum.
 set -euo pipefail
 
 MUTSU=${MUTSU_BIN:-target/release/mutsu}
 RAKU=${RAKU_BIN:-raku}
+RAKUPP=${RAKUPP_BIN:-rakupp}
 RUNS=${BENCH_RUNS:-7}
 TIMEOUT=${BENCH_TIMEOUT:-120}
 
@@ -85,6 +95,17 @@ have_raku=0
 if command -v "$RAKU" >/dev/null 2>&1; then
     have_raku=1
 fi
+have_rakupp=0
+if command -v "$RAKUPP" >/dev/null 2>&1; then
+    have_rakupp=1
+fi
+
+# One output row: name, the mutsu median/min, then each reference's median and
+# the mutsu/reference ratio.
+row() { # name m_med m_min r_med p_med
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(ratio "$2" "$4")" "$RUNS" \
+        "$5" "$(ratio "$2" "$5")"
+}
 
 for bench in benchmarks/*.raku; do
     name=$(basename "$bench" .raku)
@@ -99,21 +120,27 @@ for bench in benchmarks/*.raku; do
         r_med=NA
         rs_med=NA
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$m_med" "$m_min" "$r_med" "$(ratio "$m_med" "$r_med")" "$RUNS"
+    if [ "$have_rakupp" = 1 ]; then
+        read -r p_med _ ps_med _ <<<"$(bench_binary "$RAKUPP" "$bench")"
+    else
+        p_med=NA
+        ps_med=NA
+    fi
+    row "$name" "$m_med" "$m_min" "$r_med" "$p_med"
 
     # JIT-on pass (ADR-0004 layer 4; the default configuration since J5):
     # recorded as its own benchmark name so the history/regression tooling
-    # treats it as a separate series. The raku median from the plain pass
-    # above is reused for the ratio (same runner, same job — measuring raku
-    # twice would only add noise).
+    # treats it as a separate series. The raku and rakupp medians from the
+    # plain pass above are reused for the ratios (same runner, same job —
+    # measuring them twice would only add noise).
     read -r j_med j_min js_med js_min <<<"$(export MUTSU_JIT=on; bench_binary "$MUTSU" "$bench")"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name+jit" "$j_med" "$j_min" "$r_med" "$(ratio "$j_med" "$r_med")" "$RUNS"
+    row "$name+jit" "$j_med" "$j_min" "$r_med" "$p_med"
 
     # Section series (see the header): only for a benchmark that reports one.
     # Emitted after both whole-script rows so a consumer reading rows by name
     # sees nothing new for any other benchmark.
     if [ "$ms_med" != NA ] || [ "$js_med" != NA ]; then
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name@section" "$ms_med" "$ms_min" "$rs_med" "$(ratio "$ms_med" "$rs_med")" "$RUNS"
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name@section+jit" "$js_med" "$js_min" "$rs_med" "$(ratio "$js_med" "$rs_med")" "$RUNS"
+        row "$name@section" "$ms_med" "$ms_min" "$rs_med" "$ps_med"
+        row "$name@section+jit" "$js_med" "$js_min" "$rs_med" "$ps_med"
     fi
 done

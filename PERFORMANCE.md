@@ -71,7 +71,9 @@ same change added three things:
 > `bench-data` branch; median of 7 runs per main push, raku measured on the
 > same runner in the same job so the ratio normalizes runner speed). The
 > `+jit` column is the JIT-on series (recorded since #4480; the **default**
-> configuration since J5 — the plain series pins `MUTSU_JIT=off`). Local
+> configuration since J5 — the plain series pins `MUTSU_JIT=off`). Raku++
+> (`rakupp`, an independent C++ implementation) is measured alongside as a
+> second reference (`ratio_mutsu_over_rakupp`, recorded since 2026-09). Local
 > numbers drift with thermals/binary layout — use them only for in-flight
 > A/B decisions, and check for stray `mutsu` processes before measuring.
 
