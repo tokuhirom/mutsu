@@ -312,6 +312,16 @@ pub(crate) struct ForLoopSpec {
     /// `multi_param_names`. This lets the VM reify a copied `@` parameter's
     /// List value into a mutable Array before the bind-prefix assignments run.
     pub(crate) multi_param_is_copy: Vec<bool>,
+    /// Whether each multi-param binding DECLARES a writable container
+    /// (`is rw`, or any non-sigilless parameter of a `<->` block), parallel to
+    /// `multi_param_names`. Such a parameter cannot bind an item that has no
+    /// container behind it, and raku fails the bind with `X::Parameter::RW`
+    /// whether or not the body assigns. A sigilless `\v` is excluded (it binds
+    /// the bare item and only dies on assignment), and so is a slurpy.
+    ///
+    /// Distinct from [`Self::rw_param_names`], which also names the `.kv` key
+    /// and every sigilless slot because it drives the writeback, not the bind.
+    pub(crate) multi_param_declared_rw: Vec<bool>,
     /// Compiler-baked local slot for each `multi_param_names` entry, when the
     /// name already has one in the enclosing scope. A multi-param loop
     /// declares its parameters (`build_for_bind_stmts`), so a name an enclosing
