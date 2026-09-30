@@ -201,6 +201,7 @@ real module, whose `sub EXPORT` runs for real and registers the slang. Record:
 - BEGIN-time evaluation of the `:if` value (§3) is the remaining divergence.
   Closing it needs a general compile-time-`use` evaluation slice, which is the
   same ADR-0026 §2.1 gap that a genuine compile-time `use` has always needed.
+  Decided by [ADR-0134](0134-begin-time-prologue.md) §2.1.6 (2026-09-30).
 - A grammar role that happens to carry a plain helper method is still read the
   old way (methods ignored unless they are a vocabulary map); an *actions* role
   with a helper method would fail loudly. No corpus module does this, and
