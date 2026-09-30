@@ -198,9 +198,14 @@ impl Compiler {
                 // = Nil, Any)`) also needs its slot up front: like the
                 // statement form it creates the default-aware container BEFORE
                 // the initializer runs (see `wants_preapply_default`).
+                //
+                // A `state` whose initializer itself declares a `state` cannot
+                // sit behind the state guard (the inner one must run on every
+                // entry), so it keeps the unguarded route.
+                let nested_state_init = *is_state && Self::expr_has_state_decl(expr);
                 let wants_preapply_default = !*is_our
                     && !is_constant_decl
-                    && !(*is_state && Self::expr_has_state_decl(expr))
+                    && !nested_state_init
                     && name.starts_with('@')
                     && custom_traits.iter().any(|(t, _)| t == "default")
                     && custom_traits.iter().any(|(t, _)| t == "__has_initializer");
