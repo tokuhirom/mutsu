@@ -1078,6 +1078,13 @@ impl Interpreter {
                                 class_name,
                                 crate::symbol::Symbol::intern(&self.current_package()),
                             ));
+                    // A grammar's own token of a built-in's name replaces the
+                    // built-in, so a negation of it must resolve at match time.
+                    let overrides_builtin = is_known_builtin
+                        && !crate::qualified::is_global_package(crate::symbol::Symbol::intern(
+                            &self.current_package(),
+                        ))
+                        && self.resolve_token_defs(class_name).is_some();
                     if !is_known_builtin && !is_grammar_token {
                         // "No such method" is a runtime resolution failure, not a
                         // parse-time syntax error: such patterns are meant to die
@@ -1127,7 +1134,7 @@ impl Interpreter {
                                 if adding {
                                     positive_items.push(item);
                                 } else {
-                                    if is_grammar_token {
+                                    if is_grammar_token || overrides_builtin {
                                         negative_has_grammar_token = true;
                                     }
                                     negative_items.push(item);
