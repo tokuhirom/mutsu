@@ -227,6 +227,31 @@ impl Interpreter {
         if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
+        // An `IterationBuffer` (or an `is IterationBuffer` subclass, which
+        // renders through the same method and so under the base type's name)
+        // is its elements' List repr followed by `.IterationBuffer`:
+        // `().IterationBuffer`, `(5,).IterationBuffer`,
+        // `(1, "two").IterationBuffer`. `.gist` is the same text, since
+        // rakudo renders the elements with `.raku` in both. A buffer that has
+        // not been pushed to yet holds no storage, which reads as empty.
+        if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
+            let elements = attributes
+                .as_map()
+                .get(crate::runtime::nqp_ops_list::iteration_buffer_items_key())
+                .and_then(|items| match items.view() {
+                    ValueView::Array(data, _) => Some(data.to_vec()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let list = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
+                crate::value::ArrayKind::List,
+            );
+            return Some(
+                self.call_method_with_values(list, "raku", vec![])
+                    .map(|repr| Value::str(format!("{}.IterationBuffer", repr.to_string_value()))),
+            );
+        }
         // A QuantHash (`is BagHash`/`is Set`/...) subclass renders under its own
         // type name: `ABH(a(2) b)` for `.gist`, `("a"=>2).ABH` for `.raku` —
         // see `runtime/quanthash_subclass.rs`.
