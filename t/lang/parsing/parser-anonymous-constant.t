@@ -3,7 +3,9 @@ use Test;
 plan 3;
 
 # `constant = EXPR` is an anonymous constant declaration (Language/terms.rakudoc).
-my $ran = 0;
+# Its initializer runs at BEGIN time (ADR-0134), so `$ran` is declared without a
+# run-time initializer that would overwrite what it stores.
+my $ran;
 constant = ($ran = 1);
 is $ran, 1, 'anonymous constant initializer is evaluated';
 

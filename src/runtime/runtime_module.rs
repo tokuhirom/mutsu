@@ -71,6 +71,7 @@ impl Interpreter {
                 shadowed_proto_functions: HashMap::new(),
                 shadowed_proto_names: HashSet::new(),
                 imported_env_keys: HashSet::new(),
+                shadowed_env_values: HashMap::new(),
                 imported_routine_aliases: self.imported_routine_aliases.clone(),
                 imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
                 newline_mode: self.newline_mode,
@@ -103,8 +104,16 @@ impl Interpreter {
         };
         self.imported_env_aliases
             .insert(key_sym, Symbol::intern(&display));
-        if let Some(top) = self.import_scope_stack.last_mut() {
-            top.imported_env_keys.insert(key_sym);
+        // A block's import over a name an enclosing import already bound
+        // shadows that binding, and its scope exit puts it back (`use M :t;
+        // { use M } t`). Only an import visible when the scope opened counts:
+        // an alias a BEGIN-time preload left in `env` is not one.
+        if let Some(top) = self.import_scope_stack.last_mut()
+            && top.imported_env_keys.insert(key_sym)
+            && top.imported_env_aliases.contains_key(&key_sym)
+            && let Some(previous) = self.env.get_sym(key_sym)
+        {
+            top.shadowed_env_values.insert(key_sym, previous.clone());
         }
     }
 
@@ -291,6 +300,7 @@ impl Interpreter {
                 shadowed_proto_functions,
                 shadowed_proto_names: _,
                 imported_env_keys,
+                mut shadowed_env_values,
                 imported_env_aliases,
                 imported_routine_aliases,
                 imported_exported_proto_tags,
@@ -453,8 +463,16 @@ impl Interpreter {
                     let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
                     let is_module_owned_qualified =
                         unqualified.contains("::") && !unqualified.starts_with("GLOBAL::");
-                    if !is_module_owned_qualified {
-                        self.env.remove_sym(key);
+                    if is_module_owned_qualified {
+                        continue;
+                    }
+                    match shadowed_env_values.remove(&key) {
+                        Some(previous) => {
+                            self.env.insert_sym(key, previous);
+                        }
+                        None => {
+                            self.env.remove_sym(key);
+                        }
                     }
                 }
             }
