@@ -159,6 +159,9 @@ impl Interpreter {
                 return Err(RuntimeError::cannot_lazy_what("set"));
             }
         }
+        // Elements become store keys below; resolve user `WHICH` first
+        // (see `runtime::which_identity`).
+        self.warm_which_identity_all(&args);
         let mut elems = HashSet::new();
         let mut original_keys = ValueMap::default();
 
@@ -257,6 +260,9 @@ impl Interpreter {
                 return Err(RuntimeError::cannot_lazy_what("bag"));
             }
         }
+        // Elements become store keys below; resolve user `WHICH` first
+        // (see `runtime::which_identity`).
+        self.warm_which_identity_all(&args);
         // The `bag` function counts occurrences of each element.
         // Unlike .Bag coercion, `bag` does NOT decompose pairs into key=>count.
         // Each element (including pairs) is treated as an opaque value to count.
@@ -316,6 +322,9 @@ impl Interpreter {
                 return Err(RuntimeError::cannot_lazy_what("mix"));
             }
         }
+        // Elements become store keys below; resolve user `WHICH` first
+        // (see `runtime::which_identity`).
+        self.warm_which_identity_all(&args);
         let mut weights: HashMap<String, f64> = HashMap::new();
         let mut original_keys: ValueMap = ValueMap::default();
 

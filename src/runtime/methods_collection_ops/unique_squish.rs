@@ -129,6 +129,11 @@ impl Interpreter {
             Some(func) => cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?),
             None => item.clone(),
         };
+        // The default comparison is `===`, i.e. `.WHICH`; resolve a user
+        // `WHICH` for the (pure) identity layer (see `runtime::which_identity`).
+        if state.with_fn.is_none() {
+            self.warm_which_identity_for_identity(&key);
+        }
         if state.mode == DistinctMode::Squish {
             let duplicate = match (state.prev.take(), state.with_fn.clone()) {
                 (None, _) => false,
@@ -328,6 +333,9 @@ impl Interpreter {
                 self.call_sub_value(func, vec![prev_key.clone(), key.clone()], true)?
                     .truthy()
             } else {
+                // `===` is `.WHICH`; resolve a user `WHICH` (see `runtime::which_identity`).
+                self.warm_which_identity_for_identity(&prev_key);
+                self.warm_which_identity_for_identity(&key);
                 values_identical(&prev_key, &key)
             };
 
