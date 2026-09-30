@@ -1072,6 +1072,7 @@ impl Interpreter {
                         | "set_body_block"
                         | "compose"
                         | "methods"
+                        | "method_names"
                         | "attributes"
                         | "parents"
                         | "roles"
