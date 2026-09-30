@@ -70,6 +70,10 @@ differential_case!(
     r#"say ("a,a,a" ~~ / a+? % ',' /).gist; say ("a,a,a" ~~ / a*? % ',' /).gist; say ("a,a,a" ~~ / a**?2..3 % ',' /).gist; say ("a,a,a" ~~ / ^ a+? % ',' ',a' /).gist; say ("a,a,a" ~~ / ^ a**?2..3 % ',' $ /).gist"#
 );
 differential_case!(
+    sigspace_separated_quantifiers,
+    r#"say ("a, a, a" ~~ / :s a*? % "," /).gist; say ("a, a, a" ~~ / :s a**?2..3 % "," /).gist; say ("a , a , a" ~~ / :s a+ % "," /).gist; say ("a , a , a" ~~ / :s a +% "," /).gist; say ("a, a, a," ~~ / :s a+? %% "," $ /).gist; say ("1, 2" ~~ / :s <digit>+ % "," /).gist; say ("1,2" ~~ / <digit>+ % "," /).gist; say ("1, 2" ~~ / :s $<x>=\d ** 2 % "," /).gist"#
+);
+differential_case!(
     ratchet_quantifiers,
     r#"say so "aaa" ~~ / :r a+ a /; say so "aab" ~~ / :r a+ b /; say ("ab" ~~ / :r a? b /).gist; say so "a" ~~ / :r a? a /"#
 );

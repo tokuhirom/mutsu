@@ -8,6 +8,7 @@
 
 use super::super::*;
 use super::regex_helpers::count_capture_groups;
+use super::regex_trail::CapStore;
 use std::collections::HashSet;
 
 /// How many positional slots one match of a separator pattern takes.
@@ -44,6 +45,28 @@ pub(super) fn separated_capture_delta(
         sep_stride,
     );
     caps
+}
+
+/// Apply a separated token's own capture name to ONE iteration's atom match
+/// (`from..to`, captures `caps`). A capture name left on a separated token
+/// (a builtin subrule `<digit>+ % ','`, an angle alias, an aliased capture
+/// group or subrule call) names each item, so `$<digit>` is a List with one
+/// Match per item, exactly like the unseparated `<digit>+`. A sigil alias of
+/// the whole quantified span (`$<x>=\d+ % ','`) is wrapped in a group by the
+/// parser and never reaches here.
+// Cost: O(c), c = the iteration's captures.
+pub(super) fn with_iteration_capture(
+    token: &RegexToken,
+    from: usize,
+    to: usize,
+    caps: RegexCaptures,
+) -> RegexCaptures {
+    if token.named_capture.is_none() {
+        return caps;
+    }
+    let mut store = CapStore::new(caps);
+    Interpreter::store_apply_named_capture(&mut store, token, from, to, 0);
+    store.into_caps()
 }
 
 impl Interpreter {
@@ -240,7 +263,7 @@ impl Interpreter {
                 )
                 .pop()
         {
-            atom_caps.push(caps);
+            atom_caps.push(with_iteration_capture(token, start, end, caps));
             super::regex_helpers::record_regex_farthest_position(end);
             cur = end;
             while can_extend(atom_caps.len()) {
@@ -268,7 +291,7 @@ impl Interpreter {
                     break;
                 }
                 sep_caps.push(scaps);
-                atom_caps.push(acaps);
+                atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
                 cur = atom_end;
             }
         }
@@ -357,7 +380,7 @@ impl Interpreter {
         // the 20_000 chain cap), so a zero-width atom cannot loop forever.
         for (end, caps) in first_matches.into_iter().rev() {
             super::regex_helpers::record_regex_farthest_position(end);
-            let mut atom_caps = vec![caps];
+            let mut atom_caps = vec![with_iteration_capture(token, start, end, caps)];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
                 token,
@@ -427,7 +450,7 @@ impl Interpreter {
                     if atom_end <= cur {
                         continue;
                     }
-                    atom_caps.push(acaps);
+                    atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
                     sep_caps.push(scaps.clone());
                     self.extend_separated_chain(
                         token,
