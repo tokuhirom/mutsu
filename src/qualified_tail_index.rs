@@ -199,4 +199,18 @@ mod tests {
         assert!(names_under_package("PkgIdxP::pkgx/2").is_empty());
         assert!(names_under_package("pkgx").is_empty());
     }
+
+    #[test]
+    fn package_index_catches_up_with_later_interns() {
+        // The first read builds the index; a name interned afterwards must
+        // still be found by the next read (#10228).
+        let early = Symbol::intern("$PkgLateRoot::early");
+        assert!(names_under_package("PkgLateRoot").contains(&early));
+        let late = Symbol::intern("@PkgLateRoot::PkgLateSub::late");
+        let found = names_under_package("PkgLateRoot");
+        assert!(found.contains(&early) && found.contains(&late));
+        assert_eq!(names_under_package("PkgLateSub"), vec![late]);
+        // Each name is recorded once, however often the index catches up.
+        assert_eq!(found.iter().filter(|s| **s == late).count(), 1);
+    }
 }

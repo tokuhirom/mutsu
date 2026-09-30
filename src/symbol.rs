@@ -917,7 +917,10 @@ pub fn interned_count() -> usize {
 ///
 /// The table read lock is held while `f` runs, so `f` must not intern.
 // Cost: O(m), m = symbols interned at or after `from`.
-pub(crate) fn for_each_interned_since(from: usize, mut f: impl FnMut(Symbol, &'static str)) -> usize {
+pub(crate) fn for_each_interned_since(
+    from: usize,
+    mut f: impl FnMut(Symbol, &'static str),
+) -> usize {
     let table = global_table().read().unwrap();
     let names = &table.id_to_str;
     for (id, &text) in names.iter().enumerate().skip(from) {
