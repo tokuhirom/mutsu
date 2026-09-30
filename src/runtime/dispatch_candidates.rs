@@ -48,7 +48,7 @@ pub(crate) type CandidateRankKey = (
 
 /// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
 /// `Str()` is short for `Str(Any)`, so it accepts anything.
-fn coercion_accepted_constraint(constraint: &str) -> Option<&str> {
+pub(super) fn coercion_accepted_constraint(constraint: &str) -> Option<&str> {
     if !is_coercion_constraint(constraint) {
         return None;
     }
