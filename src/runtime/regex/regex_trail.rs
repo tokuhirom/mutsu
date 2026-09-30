@@ -83,6 +83,35 @@ impl CapStore {
         }
     }
 
+    /// Start over with no captures and a match starting at `from`, keeping
+    /// the trail's allocation (the compiled engine reuses one store across
+    /// start positions).
+    #[inline]
+    pub(super) fn reset_empty(&mut self, from: usize) {
+        // Exhaustive, so a new field cannot be left holding the last run's.
+        let RegexCaptures {
+            named,
+            positional,
+            from: span_from,
+            to,
+            capture_start,
+            capture_end,
+            match_from,
+            ast,
+            rare,
+        } = &mut self.caps;
+        named.clear();
+        positional.clear();
+        *span_from = 0;
+        *to = 0;
+        *capture_start = None;
+        *capture_end = None;
+        *match_from = from;
+        *ast = None;
+        *rare = None;
+        self.trail.clear();
+    }
+
     /// Read access to the accumulated captures (backrefs, code assertions,
     /// argument evaluation, pos_base reads).
     #[inline]

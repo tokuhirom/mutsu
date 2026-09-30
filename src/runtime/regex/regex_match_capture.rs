@@ -624,13 +624,7 @@ impl Interpreter {
                 // so no text is materialized (ADR-0016 P4).
                 // A backreference inside an inline sub-pattern resolves against
                 // the enclosing level's captures too (`/ (\w) [ $0 ] /`).
-                let slot = match current_caps.positional.get(*idx) {
-                    Some(slot) => slot,
-                    None => current_caps
-                        .outer_backref()
-                        .as_ref()
-                        .and_then(|outer| outer.lookup_positional(*idx))?,
-                };
+                let slot = current_caps.backref_positional(*idx)?;
                 let mut cursor = pos;
                 let compare_span = |a: usize, b: usize, cursor: &mut usize| -> bool {
                     let (a, b) = (a.min(chars.len()), b.min(chars.len()));

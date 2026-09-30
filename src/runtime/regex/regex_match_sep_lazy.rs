@@ -44,16 +44,14 @@ impl SepChainWalk {
     /// Assemble this chain's capture delta, optionally with a `%%` trailing
     /// separator's captures folded in.
     fn assemble(&self, trailing: Option<&RegexCaptures>) -> RegexCaptures {
-        let mut caps = self.names_delta();
-        Interpreter::append_separated_captures(
-            &mut caps,
+        super::regex_match_sep::separated_capture_delta(
+            &self.names,
             &self.atom_caps,
             &self.sep_caps,
             trailing,
             self.atom_stride,
             self.sep_stride,
-        );
-        caps
+        )
     }
 
     /// The names still have to render as an EMPTY list when the quantifier
@@ -106,12 +104,7 @@ impl Interpreter {
         let Some((min, max)) = self.separated_quantifier_bounds(token, &current_caps) else {
             return false;
         };
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = super::regex_match_sep::separator_stride(&sep.pattern);
         let mut walk = SepChainWalk {
             min,
             max,

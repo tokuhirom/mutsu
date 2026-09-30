@@ -8,6 +8,43 @@
 
 use super::super::*;
 use super::regex_helpers::count_capture_groups;
+use std::collections::HashSet;
+
+/// How many positional slots one match of a separator pattern takes.
+pub(super) fn separator_stride(sep: &RegexPattern) -> usize {
+    sep.tokens
+        .iter()
+        .map(|t| count_capture_groups(&t.atom))
+        .sum()
+}
+
+/// A separated quantifier's capture delta for one chain: every name under the
+/// quantifier marked quantified, then the atoms' and the separators' captures
+/// folded side by side (`append_separated_captures`). Every engine that
+/// matches a separated quantifier builds its delta here.
+// Cost: O(n + c), n = the names, c = the captures across the chain.
+pub(super) fn separated_capture_delta(
+    names: &HashSet<String>,
+    atom_caps: &[RegexCaptures],
+    sep_caps: &[RegexCaptures],
+    trailing: Option<&RegexCaptures>,
+    atom_stride: usize,
+    sep_stride: usize,
+) -> RegexCaptures {
+    let mut caps = RegexCaptures::default();
+    for n in names {
+        caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+    }
+    Interpreter::append_separated_captures(
+        &mut caps,
+        atom_caps,
+        sep_caps,
+        trailing,
+        atom_stride,
+        sep_stride,
+    );
+    caps
+}
 
 impl Interpreter {
     /// Resolve a separator quantifier's bounds once for the current match
@@ -56,12 +93,7 @@ impl Interpreter {
             return Vec::new();
         };
         let atom_stride = count_capture_groups(&token.atom);
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
 
         // Enumerate every valid `atom (sep atom)*` chain via DFS, backtracking
@@ -94,12 +126,8 @@ impl Interpreter {
                 continue;
             }
             let assemble = |trailing: Option<&RegexCaptures>, end: usize| {
-                let mut caps = RegexCaptures::default();
-                for n in names.iter() {
-                    caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-                }
-                Self::append_separated_captures(
-                    &mut caps,
+                let caps = separated_capture_delta(
+                    &names,
                     atom_caps,
                     sep_caps,
                     trailing,
@@ -245,17 +273,8 @@ impl Interpreter {
             return vec![(start, caps)];
         }
         let atom_stride = count_capture_groups(&token.atom);
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
-        let mut caps = RegexCaptures::default();
-        for n in names.iter() {
-            caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-        }
         // Trailing separator for `%%`: Rakudo consumes it greedily, and
         // ratchet commits to that single choice.
         let mut end = cur;
@@ -268,8 +287,8 @@ impl Interpreter {
             end = ts_end;
             trailing = Some(ts_caps);
         }
-        Self::append_separated_captures(
-            &mut caps,
+        let caps = separated_capture_delta(
+            &names,
             &atom_caps,
             &sep_caps,
             trailing.as_ref(),

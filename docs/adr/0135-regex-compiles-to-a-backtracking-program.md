@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A in progress (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A landed (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -390,8 +390,47 @@ The same part compiles `%` and `%%` over a capture-free atom and separator, in t
 ops support it: `Advanced` for the per-step progress guard, and `AtLeast` for the minimum count.
 Frugal separated quantifiers decline, because the walk disagrees with rakudo on them (#10306).
 
-Still to come in Slice A: captures under `%`, backreferences, nested quantified captures,
-quantified aliases, `<( )>` markers, and moving the unanchored scan loop into the VM.
+**Slice A, sixth part: the rest of the capture language landed.** Slice A's atoms are now
+complete.
+
+- **Capture levels.** A `( … )` whose body captures opens a capture level of its own
+  (`rx_levels.rs`), so its captures number from zero and become the group's sub-Match through
+  the walk's `capture_group_delta`. Backtracking can resume inside a group that has already
+  closed. So every change to the level stack is journaled: a store edit keeps its level and
+  trail mark, and a close keeps the popped store whole. A choice point records one journal
+  length. Nested quantified captures (`((a)(b))+`, `[ (a)* ]+`) then need nothing new: each
+  iteration pushes its slots and the loop folds them with `fold_quantified`.
+- **Backreferences and `<(` / `)>`** are one op, `CapAtom`. It calls the walk's own
+  single-candidate matcher and merges the delta it returns. A capture group whose body holds a
+  backreference also opens a level, because a group is its own capture scope
+  (`/ $<x>=(\w) ( $<x> ) /` fails in rakudo).
+- **Quantified aliases** (`$<x>=(\d)+`, `$<x>=[a]+`) apply the alias once per iteration, over
+  that iteration's span, as `grow_one_iter` does.
+- **Captures under `%` / `%%`.** Each atom and each separator matches in a level of its own,
+  and the closed levels are collected in match order. At the quantifier's end, `SepEmit` folds
+  them side by side through `separated_capture_delta`, a helper the walk's three separated
+  paths now share. A separated quantifier whose atom or separator holds a backreference still
+  declines (`separator-backref`), because the walk matches each iteration against the captures
+  folded so far. An aliased one declines too (`separator-alias`).
+
+The comparison found one more walk bug, fixed against rakudo: a backreference inside `[ … ]`
+or a `||` branch numbered from the group's own captures. So `/ (a) [ (b) $0 ] /` compared `$0`
+against `b`. The walk now continues the enclosing level's numbering
+(`RegexCaptures::backref_positional`).
+
+The same part compiles `@<x>=` and secondary-name aliases, `<?same>` and `<at(N)>`, and
+reports `<~~>` as `recurse-self` instead of `other-atom`. `scripts/rx-decline-survey.sh` now sums
+the D5 counter over all of `t/` and the roast whitelist. Its totals went from 5,154 compiled and
+2,149 declined to 5,290 and 2,007. The declines are now almost all later slices: `subrule` 521
+(D), `code` 375 (C), `alternation` 375, `ignorecase` 255, `lookaround` 226, `ignoremark` 22 and
+`conjunction` 20 (B). A small tail of Slice A shapes remains, each of them a walk behavior the
+compiled engine would have to copy first: `nullable-loop` 17 (a non-DFS nullable body whose
+first candidate the walk's chain keeps), `separator-frugal` 3 (#10306), `frugal-ratchet` 3,
+`seqalt-nullable-ratchet` 2 and `empty-range` 2. Slice E's deletion criterion covers them.
+
+The unanchored scan loop still runs outside the VM, one `rx_run` per start position. Moving it
+in is a performance change, not a language one, and it is tracked as
+[#10315](https://github.com/tokuhirom/mutsu/issues/10315) (`todo:perf`).
 
 ### Reproducing §2
 
