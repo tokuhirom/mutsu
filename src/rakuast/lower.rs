@@ -2406,6 +2406,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         is_rw: false,
                         is_raw: false,
                         is_block: true,
+                        doc: Default::default(),
                     })
                 }
             } else {
@@ -2433,6 +2434,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     is_rw: false,
                     is_raw: false,
                     is_block: false,
+                    doc: Default::default(),
                 });
             }
             Ok(Expr::AnonSubParams {

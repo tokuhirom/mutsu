@@ -596,6 +596,7 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         };
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));

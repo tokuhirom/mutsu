@@ -6557,6 +6557,10 @@ pub(crate) struct CompiledCode {
     /// `call_compiled_closure_with_topic`), never as a body prologue — see
     /// `pointy_alias_param` above for why a prologue leaks the mark.
     pub(crate) immutable_topic: bool,
+    /// The declarator documentation (`#|`/`#=`) of the anonymous sub or
+    /// block this chunk is the body of; `.WHY` on the closure reads it
+    /// (ADR-0136).
+    pub(crate) declarator_doc: Option<std::sync::Arc<crate::decl_doc::DeclDoc>>,
     /// This body writes the implicit topic BY NAME (`$_ = ...`, `$_++`, ...).
     ///
     /// Read by `call_compiled_closure_with_topic`, which only aliases a bare
@@ -7726,6 +7730,7 @@ impl CompiledCode {
             is_pointy_block: false,
             pointy_alias_param: false,
             immutable_topic: false,
+            declarator_doc: None,
             writes_topic: false,
             reads_args_array: false,
             reads_args_hash: false,

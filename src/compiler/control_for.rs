@@ -72,6 +72,7 @@ impl Compiler {
                     is_rw: rw_block,
                     is_raw: false,
                     is_block: true,
+                    doc: Default::default(),
                 }
             } else {
                 let (closure_params, closure_param_defs) = if params.is_empty() {

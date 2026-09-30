@@ -313,6 +313,9 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
             }
         }
     };
+    if let Ok((rest, stmt)) = &result {
+        crate::parser::decl_doc::attach_stmt(input, rest, stmt);
+    }
     STMT_MEMO.store(input, &result);
     let minted = simple::current_scope_anon_state_names_from(anon_states_before);
     if !minted.is_empty() {

@@ -98,6 +98,10 @@ struct LeakedRegion {
     /// Newline offsets within the leaked buffer, for the same reason the
     /// original source carries one.
     newlines: NewlineIndex,
+    /// Where the two halves of the leaked buffer were copied from: the text
+    /// before the jump and the text after it (see [`source_offset`]).
+    before_src: usize,
+    after_src: usize,
 }
 
 /// Set the original source for $?LINE computation.
@@ -140,11 +144,15 @@ pub(in crate::parser) fn restore_source_state(state: SourceState) {
 /// `jump_offset` is the byte offset within the leaked string where a line jump occurs.
 /// Before the jump, line numbers start at `line_before_jump`.
 /// After the jump, line numbers start at `line_after_jump`.
+/// `before_src` and `after_src` are the slices the halves before and after
+/// the jump were copied from.
 pub(in crate::parser) fn register_leaked_region_with_jump(
     leaked: &str,
     jump_offset: usize,
     line_before_jump: i64,
     line_after_jump: i64,
+    before_src: &str,
+    after_src: &str,
 ) {
     let newlines = newline_index(leaked);
     LEAKED_REGIONS.with(|r| {
@@ -155,8 +163,45 @@ pub(in crate::parser) fn register_leaked_region_with_jump(
             line_before_jump,
             line_after_jump,
             newlines,
+            before_src: before_src.as_ptr() as usize,
+            after_src: after_src.as_ptr() as usize,
         });
     });
+}
+
+/// The byte offset in the original source that the parser position `input`
+/// was copied from, following heredoc leaked buffers back to the text they
+/// copy; `None` for a buffer the source never contained. Positions compare in
+/// source order through this, whichever buffer they were parsed from.
+// Cost: O(h), h = leaked heredoc regions registered by this parse.
+pub(in crate::parser) fn source_offset(input: &str) -> Option<usize> {
+    let mut addr = input.as_ptr() as usize;
+    ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        if origin.ptr == 0 {
+            return None;
+        }
+        LEAKED_REGIONS.with(|r| {
+            let regions = r.borrow();
+            // Each step moves into the buffer a region was copied from, which
+            // was registered earlier, so the walk ends within `regions.len()`.
+            for _ in 0..=regions.len() {
+                if addr >= origin.ptr && addr <= origin.ptr + origin.len {
+                    return Some(addr - origin.ptr);
+                }
+                let region = regions
+                    .iter()
+                    .find(|region| addr >= region.ptr && addr <= region.ptr + region.len)?;
+                let offset = addr - region.ptr;
+                addr = if offset < region.jump_offset {
+                    region.before_src + offset.min(region.jump_offset.saturating_sub(1))
+                } else {
+                    region.after_src + (offset - region.jump_offset)
+                };
+            }
+            None
+        })
+    })
 }
 
 pub(crate) fn angle_word_value(word: &str) -> Value {
@@ -427,6 +472,10 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
             }
         }
     })();
+    let mut result = result;
+    if let Ok((rest, expr)) = &mut result {
+        super::decl_doc::attach_anon(input, rest, expr);
+    }
     PRIMARY_MEMO.store(input, &result);
     result
 }

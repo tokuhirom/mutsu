@@ -88,6 +88,7 @@ impl Compiler {
             is_rw: false,
             is_raw: false,
             is_block: true,
+            doc: Default::default(),
         })
     }
 

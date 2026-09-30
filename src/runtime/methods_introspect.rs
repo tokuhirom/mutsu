@@ -588,6 +588,20 @@ impl Interpreter {
         {
             return Ok(pod.clone());
         }
+        // An anonymous routine or block carries the documentation the parser
+        // attached to it on its code object (ADR-0136); remember the
+        // declarator block under the closure's identity so every `.WHY` on it
+        // is the same object.
+        if let ValueView::Sub(sub_data) = target.view()
+            && let Some(doc) = sub_data
+                .compiled_code
+                .as_ref()
+                .and_then(|code| code.declarator_doc.clone())
+        {
+            let pod = Self::make_pod_declarator(&doc, target.clone());
+            self.why_object_cache.insert(sub_data.id, pod.clone());
+            return Ok(pod);
+        }
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -793,9 +807,6 @@ impl Interpreter {
                     // Try &-prefixed key first (to disambiguate from package names)
                     k.push(format!("&{}", sub_data.name.resolve()));
                     k.push(sub_data.name.resolve());
-                } else if !sub_data.is_bare_block {
-                    // Anonymous sub (not bare block): try the &<anon> key
-                    k.push("&<anon>".to_string());
                 }
                 k
             }
@@ -818,53 +829,16 @@ impl Interpreter {
                 return Ok(cached.clone());
             }
             if let Some(doc) = self.doc_comments.get(&key) {
-                let pod = Self::make_pod_declarator(doc, target.clone());
+                let pod = Self::make_pod_declarator(&doc.doc, target.clone());
                 self.why_cache.insert(key, pod.clone());
                 return Ok(pod);
-            }
-        }
-        // For anonymous subs/bare blocks, try to find a doc comment by source line proximity
-        if let ValueView::Sub(sub_data) = target.view()
-            && sub_data.name.is_empty()
-            && let Some(src_line) = sub_data.source_line
-        {
-            let prefix = if sub_data.is_bare_block {
-                "block:"
-            } else {
-                "&<anon>"
-            };
-            // Find the doc comment whose source_line is closest
-            // to (and at or after) the sub's source line
-            let mut best_match: Option<&super::DocComment> = None;
-            let mut best_dist = u32::MAX;
-            for dc in self.doc_comments.values() {
-                if dc.wherefore_name.starts_with(prefix)
-                    && let Some(dc_line) = dc.source_line
-                {
-                    let dist = if dc_line >= src_line {
-                        dc_line - src_line
-                    } else if src_line - dc_line <= 2 {
-                        // Allow the sub to be 1-2 lines before the
-                        // declaration (source_line might be off)
-                        src_line - dc_line
-                    } else {
-                        continue;
-                    };
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_match = Some(dc);
-                    }
-                }
-            }
-            if let Some(dc) = best_match {
-                return Ok(Self::make_pod_declarator(dc, target.clone()));
             }
         }
         Ok(Value::NIL)
     }
 
-    /// Create a Pod::Block::Declarator instance from a DocComment
-    pub(crate) fn make_pod_declarator(doc: &super::DocComment, wherefore: Value) -> Value {
+    /// Create a Pod::Block::Declarator instance documenting `wherefore`.
+    pub(crate) fn make_pod_declarator(doc: &crate::decl_doc::DeclDoc, wherefore: Value) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(
             "leading".to_string(),

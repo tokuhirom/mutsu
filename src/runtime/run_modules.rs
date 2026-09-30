@@ -548,6 +548,7 @@ impl Interpreter {
                 &unit.effects.enum_type_names,
                 &unit.effects.enum_value_names,
             );
+            crate::parser::decl_doc::set_unit_docs(unit.effects.decl_docs.clone());
             // The on-disk cache entry stores plain warning text (no per-warning
             // origin tag, see `precomp::ParseEffects`); every warning in this
             // batch was raised while parsing exactly this module, so tag them
@@ -579,12 +580,17 @@ impl Interpreter {
         // the cache-hit branch above).
         let tagged_warnings = crate::parser::take_parse_warnings();
         let (type_names, enum_type_names, enum_value_names) = crate::parser::cached_type_names();
+        // The declarator docs stay published for the caller (the module's
+        // `$=pod` is established from them) and are cached for a later hit.
+        let decl_docs = crate::parser::decl_doc::take_unit_docs();
+        crate::parser::decl_doc::set_unit_docs(decl_docs.clone());
         let effects = crate::precomp::ParseEffects {
             language_version: crate::parser::current_language_version(),
             warnings: tagged_warnings.iter().map(|(_, m)| m.clone()).collect(),
             type_names,
             enum_type_names,
             enum_value_names,
+            decl_docs,
         };
         self.emit_parse_warnings(tagged_warnings);
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at
@@ -1074,7 +1080,14 @@ impl Interpreter {
             // then `12pt`) landed in the role's package and the module's own
             // `12pt` died with "Bogus postfix".
             let saved_import_target = self.import_target_package.take();
-            let result = match self.establish_pod_variables_from_stmts(&module_source, &stmts) {
+            // `parse_module_source` left the module's declarator docs behind
+            // (from its parse, or replayed from the precompilation cache).
+            let module_docs = crate::parser::decl_doc::take_unit_docs();
+            let result = match self.establish_pod_variables_from_stmts(
+                &module_source,
+                &stmts,
+                module_docs,
+            ) {
                 Ok(()) => self.run_compunit(|interp| interp.run_block(&stmts)),
                 Err(err) => Err(err),
             };

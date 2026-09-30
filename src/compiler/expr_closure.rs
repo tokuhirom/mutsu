@@ -77,6 +77,7 @@ impl Compiler {
         // picks up the enclosing `.map`/`.grep`-over-a-literal verdict the
         // caller set -- see `CompiledCode::immutable_topic`.
         let immutable_topic = std::mem::take(&mut self.pending_immutable_topic_block);
+        let declarator_doc = self.pending_declarator_doc.take().map(std::sync::Arc::new);
         if is_rw {
             // A bare `is rw` block (a `<->`-style loop body) keeps its tail
             // as a value; only an anonymous `sub ... is rw` hands out its
@@ -87,6 +88,7 @@ impl Compiler {
                 self.compile_routine_closure_body(&[], &[], body, true)
             };
             compiled.immutable_topic = immutable_topic;
+            compiled.declarator_doc = declarator_doc;
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::SubDecl {
@@ -136,6 +138,7 @@ impl Compiler {
             // placeholder block (`{ $^a }`) binds its own parameter and keeps
             // the enclosing `$_`.
             compiled.immutable_topic = immutable_topic && placeholders.is_empty();
+            compiled.declarator_doc = declarator_doc;
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
@@ -196,6 +199,7 @@ impl Compiler {
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
     ) {
+        let declarator_doc = self.pending_declarator_doc.take().map(std::sync::Arc::new);
         // The parser synthesizes `*%_` for a signature-less block that reads
         // `%_`. Inside a method, however, an ordinary nested block captures
         // the method's implicit `%_`; it does not shadow it with a new empty
@@ -355,6 +359,7 @@ impl Compiler {
         if is_pointy {
             compiled.is_pointy_block = true;
         }
+        compiled.declarator_doc = declarator_doc;
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
@@ -952,6 +957,7 @@ impl Compiler {
                             is_rw: false,
                             is_raw: false,
                             is_block: true,
+                            doc: Default::default(),
                         },
                     ],
                     modifier: None,

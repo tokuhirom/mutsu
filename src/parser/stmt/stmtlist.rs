@@ -489,6 +489,7 @@ pub(crate) fn stmt_list_with_mode(
                 }
                 _ => {}
             }
+            crate::parser::decl_doc::attach_unit_stmt(r, &decl);
             stmts.append(&mut meta_stmts);
             stmts.push(decl);
             return Ok((tail_rest, stmts));

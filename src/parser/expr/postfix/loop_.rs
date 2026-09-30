@@ -3576,6 +3576,7 @@ fn postfix_expr_loop_from(
                             is_rw: false,
                             is_raw: false,
                             is_block: true,
+                            doc: Default::default(),
                         },
                     ) {
                         rest = r_next;

@@ -332,11 +332,13 @@ impl Interpreter {
                 is_rw,
                 is_raw,
                 is_block,
+                doc,
             } => Expr::AnonSub {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 is_block: *is_block,
+                doc: doc.clone(),
             },
             Expr::AnonSubParams {
                 params,

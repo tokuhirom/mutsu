@@ -683,7 +683,6 @@ pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
 mod io;
 mod io_doc;
-mod io_doc_hoist;
 mod io_env;
 mod io_handles;
 mod io_pod;
@@ -1616,56 +1615,7 @@ pub(crate) enum ConstructionPhaseStep {
     },
 }
 
-/// Kind of declaration a doc comment is attached to.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) enum DocDeclKind {
-    #[default]
-    Package, // class, module, package, grammar, role, enum, subset
-    Sub,         // sub, method, submethod
-    GrammarRule, // token, rule, regex (inside grammar)
-    Attr,        // has $.attr
-    Param,       // documented parameter
-}
-
-/// A declarator doc comment with leading (#|) and trailing (#=) parts.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct DocComment {
-    pub leading: Option<String>,
-    pub trailing: Option<String>,
-    /// The name of the thing this comment is attached to (for WHEREFORE).
-    pub wherefore_name: String,
-    /// The key this comment is filed under in `doc_comments` -- the same name
-    /// as `wherefore_name` for an ordinary declaration, but uniquified for the
-    /// cases where one name covers several declarations (`&mm/multi.1`,
-    /// `&<anon>.2`, `R/role.1`) and scoped to its owner for a parameter
-    /// (`&doc-sub::$a`). `collect_pod_declarants` files its concrete declarant
-    /// values under the same keys, so this is what tells two multi candidates
-    /// -- or two same-named parameters of different routines -- apart when the
-    /// `$=pod` declarator entries are built.
-    pub declarant_key: Option<String>,
-    /// Kind of declaration.
-    pub kind: DocDeclKind,
-    /// Whether this is a proto declaration (affects WHEREFORE type in $=pod).
-    pub is_proto: bool,
-    /// Optional return type for subs (e.g., `anon Str sub {}` has return_type "Str").
-    pub return_type: Option<String>,
-    /// Source line number (1-based) where the declaration appears.
-    pub source_line: Option<u32>,
-    /// For Sub kind: what type to use in $=pod WHEREFORE (e.g. "Method", "Submethod").
-    /// None means use default logic (Sub/Routine).
-    pub callable_type_override: Option<String>,
-}
-
-impl DocComment {
-    fn contents(&self) -> String {
-        match (&self.leading, &self.trailing) {
-            (Some(l), Some(t)) => format!("{}\n{}", l, t),
-            (Some(l), None) => l.clone(),
-            (None, Some(t)) => t.clone(),
-            (None, None) => String::new(),
-        }
-    }
-}
+pub(crate) use crate::decl_doc::{DocComment, DocDeclKind};
 
 /// Intern a static name list into the `Arc<[Symbol]>` shape used by
 /// [`ClassDef::mro`]. Registration-time helper (not a dispatch hot path).
