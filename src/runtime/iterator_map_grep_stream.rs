@@ -22,6 +22,7 @@
 use crate::symbol::Symbol;
 use crate::value::{InstanceAttrs, RuntimeError, SeqSource, Value, ValueView};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 /// The instance attribute holding the stream body.
 pub(crate) const MAP_GREP_STREAM_ATTR: &str = "map_grep_stream";
@@ -44,30 +45,59 @@ pub(crate) fn map_grep_stream_iterator(prefix: Vec<Value>, source: SeqSource, la
     Value::make_instance(Symbol::intern("Iterator"), attrs)
 }
 
-/// The window and cursor read off an instance, plus its stream.
+/// The window and cursor read off an instance, plus its stream. `window`
+/// is the instance's `items` Array as stored (a shared handle, not a copy),
+/// so a call the window already covers never rebuilds it.
 struct StreamState {
     stream: Value,
-    items: Vec<Value>,
+    window: Value,
     index: usize,
     lazy: bool,
 }
 
+fn items_sym() -> Symbol {
+    static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("items"));
+    *SYM
+}
+
+fn index_sym() -> Symbol {
+    static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("index"));
+    *SYM
+}
+
+// Cost: O(1).
+fn window_len(window: &Value) -> usize {
+    match window.view() {
+        ValueView::Array(values, ..) => values.len(),
+        _ => 0,
+    }
+}
+
 // Cost: O(w), w = elements in the window.
+fn window_to_vec(window: &Value) -> Vec<Value> {
+    match window.view() {
+        ValueView::Array(values, ..) => values.to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+// Cost: O(1).
 fn read_state(attributes: &InstanceAttrs) -> Option<StreamState> {
     let map = attributes.as_map();
     let stream = map.get(MAP_GREP_STREAM_ATTR)?.clone();
-    let items = match map.get("items").map(Value::view) {
-        Some(ValueView::Array(values, ..)) => values.to_vec(),
-        _ => Vec::new(),
+    let window = match map.get(items_sym()) {
+        Some(v) if matches!(v.view(), ValueView::Array(..)) => v.clone(),
+        _ => Value::array(Vec::new()),
     };
-    let index = match map.get("index").map(Value::view) {
-        Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(items.len()),
+    let len = window_len(&window);
+    let index = match map.get(index_sym()).map(Value::view) {
+        Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(len),
         _ => 0,
     };
     let lazy = map.contains_key("is_lazy");
     Some(StreamState {
         stream,
-        items,
+        window,
         index,
         lazy,
     })
@@ -105,6 +135,9 @@ impl crate::Interpreter {
         Some(self.map_grep_stream_call(attributes, state, method, args))
     }
 
+    // Cost: one callback call per source element the call consumes, plus
+    // O(w), w = elements in the window, when the window is topped up; O(1)
+    // for a call the window already covers.
     fn map_grep_stream_call(
         &mut self,
         attributes: &InstanceAttrs,
@@ -123,17 +156,32 @@ impl crate::Interpreter {
         };
         let StreamState {
             stream,
-            mut items,
-            mut index,
+            window,
+            index: start_index,
             ..
         } = state;
-        let mut window_changed =
-            self.map_grep_stream_fill(&stream, &mut items, &mut index, need)?;
+        let mut index = start_index;
+        let stored_len = window_len(&window);
+        // Only a top-up copies the window; a call it already covers reads
+        // the stored Array in place.
+        let mut topped_up: Option<Vec<Value>> = None;
+        if need.is_none_or(|n| n > stored_len) {
+            let mut items = window_to_vec(&window);
+            if self.map_grep_stream_fill(&stream, &mut items, &mut index, need)? {
+                topped_up = Some(items);
+            }
+        }
+        let window_view = window.view();
+        let items: &[Value] = match (&topped_up, &window_view) {
+            (Some(items), _) => items,
+            (None, ValueView::Array(values, ..)) => values.items(),
+            (None, _) => &[],
+        };
         let ret = match method {
             "count-only" => Value::int((items.len() - index) as i64),
             "bool-only" => Value::truth(index < items.len()),
             _ => {
-                let step = super::iterator_protocol::step(method, &items, index, args)
+                let step = super::iterator_protocol::step(method, items, index, args)
                     .expect("every other method in the family is a stepping method");
                 if let Some(range) = step.append {
                     let vals = items[range].to_vec();
@@ -143,17 +191,25 @@ impl crate::Interpreter {
                 step.ret
             }
         };
-        // A fully consumed window holds nothing anyone can read again.
-        if index >= items.len() && !items.is_empty() {
-            items.clear();
+        // A fully consumed window holds nothing anyone can read again. An
+        // empty window that stays empty needs no write, so draining with
+        // `pull-one` one element per top-up commits nothing at all.
+        let new_window = if index >= items.len() && !items.is_empty() {
             index = 0;
-            window_changed = true;
+            (stored_len != 0).then(Vec::new)
+        } else {
+            topped_up
+        };
+        let mut ops = Vec::new();
+        if index != start_index || new_window.is_some() {
+            ops.push((index_sym(), Some(Value::int(index as i64))));
         }
-        let mut ops = vec![(Symbol::intern("index"), Some(Value::int(index as i64)))];
-        if window_changed {
-            ops.push((Symbol::intern("items"), Some(Value::array(items))));
+        if let Some(items) = new_window {
+            ops.push((items_sym(), Some(Value::array(items))));
         }
-        attributes.write_keys(ops);
+        if !ops.is_empty() {
+            attributes.write_keys(ops);
+        }
         Ok(ret)
     }
 
@@ -211,15 +267,16 @@ impl crate::Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         let StreamState {
             stream,
-            mut items,
+            window,
             mut index,
             ..
         } = state;
+        let mut items = window_to_vec(&window);
         self.map_grep_stream_fill(&stream, &mut items, &mut index, None)?;
         let rest = items.split_off(index);
         attributes.write_keys(vec![
-            (Symbol::intern("index"), Some(Value::int(0))),
-            (Symbol::intern("items"), Some(Value::array(Vec::new()))),
+            (index_sym(), Some(Value::int(0))),
+            (items_sym(), Some(Value::array(Vec::new()))),
         ]);
         Ok(rest)
     }
