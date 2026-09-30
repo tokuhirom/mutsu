@@ -1000,25 +1000,25 @@ impl Interpreter {
         if !post_ph.is_empty() {
             body_main.extend(post_ph);
         }
-        // Run top-level BEGIN phasers at compile time (before the mainline), so
-        // reads textually preceding a BEGIN see its side effects. Removes the
-        // pre-run BEGINs from `body_main`; leaves non-hoistable ones (see
-        // `run_toplevel_begin_phasers`) in place. This runs *before*
-        // `reorder_phasers` so the hoisted BEGINs are gone before that pass
-        // buckets declarations — otherwise a `my $c = @a.elems` initializer
-        // could be reordered ahead of a BEGIN that populates `@a`. Hoistable
-        // BEGINs make no calls, so they do not need `preregister_top_level_subs`
-        // to have run first.
-        self.run_toplevel_begin_phasers(&mut body_main);
-        crate::runtime::phasers::reorder_phasers(&mut body_main);
+        // Reorder phasers. The unit's BEGIN-time effects move to its head, in
+        // source order, as the BEGIN prologue (ADR-0134); CHECK (reverse) and
+        // INIT (forward) run before the rest of the mainline.
+        let prologue_len = crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.update_raku_version_from_parser();
         self.check_eval_param_type_constraints(&body_main)?;
         self.check_type_capture_inheritance(&body_main)?;
         self.preregister_top_level_subs(&body_main)?;
         self.preregister_inline_package_subs(&body_main)?;
         // Rakudo rejects a call to a routine declared nowhere in the unit at
-        // CHECK time, before anything runs (X::Undeclared::Symbols).
-        self.check_undeclared_routines_mainline(&body_main)?;
+        // CHECK time, before anything runs (X::Undeclared::Symbols) -- but after
+        // the BEGIN-time effects, which ran while the unit was being parsed
+        // (ADR-0134 §2.1.5). So a failing check runs the prologue first.
+        if let Err(err) = self.check_undeclared_routines_mainline(&body_main) {
+            if prologue_len > 0 {
+                self.run_begin_prologue_only(&body_main[..prologue_len])?;
+            }
+            return Err(err);
+        }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;

@@ -1,6 +1,6 @@
 # ADR-0134: BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals
 
-- Status: Accepted (2026-09-30; not yet implemented — see §6)
+- Status: Accepted (2026-09-30; slice 1 implemented — see §7)
 - Date: 2026-09-30
 - Deciders: tokuhirom, Claude
 - Addresses: [#9919](https://github.com/tokuhirom/mutsu/issues/9919)
@@ -237,14 +237,54 @@ three approximations are deleted.
 
 ## 6. Implementation plan
 
-1. **Unit-level prologue.** Statement and value BEGIN directly in the unit
+1. **Unit-level prologue.** Statement-form BEGIN directly in the unit
    (program, module, EVAL). Unit lexicals are in their static state, and the
    post-parse checks run after the prologue. Retires
-   `run_toplevel_begin_phasers` and the BEGIN half of the reorder passes.
-2. **Nested effects.** BEGIN inside routines, closures, loops and package
-   bodies, with the §2.2 static cells.
+   `run_toplevel_begin_phasers` and the top-level BEGIN handling of the
+   reorder passes.
+2. **Nested and value-form effects.** BEGIN inside routines, closures, loops
+   and package bodies, with the §2.2 static cells, and value-form BEGIN at any
+   depth through the pre-fulfilled site slot. Retires the rest of the BEGIN
+   half of the reorder passes.
 3. **`constant`, `use` and `:if` as prologue effects.** Closes #9919 and
    retires the `:if` run-time guard and `PreloadModule`.
 
 Each slice keeps every whitelisted `S04-phasers/*.t` green and records its
 status here.
+
+## 7. Implementation status
+
+**Slice 1 — implemented** (`src/runtime/begin_prologue.rs`,
+`t/control/begin-prologue-static-state.t`).
+
+- The prologue is produced as an AST partition of the unit's top level,
+  before the unit's single compile. The prologue and the run-time remainder
+  are then compiled together, so the prologue runs in the unit's own frame, as
+  §2.2 requires. The mainline and EVAL take the partition as the first step of
+  `phasers::reorder_phasers`. A module takes it on its own
+  (`begin_prologue::order_unit`), because a module's top level gets no other
+  reordering.
+- The partition covers the unit up to its last top-level statement-form
+  `BEGIN`. Within that prefix, the prologue takes:
+  - the `BEGIN`s;
+  - every declarator (`use`, routines, packages including a `unit` marker,
+    types, `constant`);
+  - the static half of each variable declaration.
+
+  The initializers stay in place as assignments. Nothing after the last
+  `BEGIN` moves, because no BEGIN observes it. Slice 3 removes this bound for
+  `use` and `constant`.
+- A statically named `require` in that prefix adds a stub `package Foo {}`
+  to the prologue. Rakudo installs that stub at compile time, and the load
+  still happens at run time.
+- The compiler's `use Test` hoist (`hoist_test_use_decls`) no longer moves
+  the module above a BEGIN that precedes it.
+- When the mainline's undeclared-routine check fails, the prologue alone runs
+  first (`run_begin_prologue_only`), so the BEGIN's output precedes the
+  compile error, as on rakudo.
+- **Residue until slice 2:**
+  - A package body moves whole, so a bare run-time statement inside a class
+    or `module Foo { ... }` body that precedes a unit-level BEGIN runs with
+    the prologue instead of in its source position.
+  - Value-form BEGIN and nested BEGIN keep their pre-ADR handling
+    (`BeginOnceExpr`, the nested reorder rules).
