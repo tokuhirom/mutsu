@@ -634,6 +634,19 @@ impl Interpreter {
             return Some(Ok(target.clone()));
         }
 
+        // `.Slip` on a not-yet-forced `gather` LazyList: its cache is empty, so
+        // the pure coercion above answered `Empty`; force the body here.
+        // TODO: rakudo keeps `(gather { ... }).Slip` lazy; an infinite gather
+        // is forced eagerly here and would hang.
+        if method_name == "Slip"
+            && args.is_empty()
+            && let ValueView::LazyList(ll) = target.view()
+            && ll.coroutine.is_some()
+            && ll.cache.lock().unwrap().is_none()
+        {
+            return Some(self.force_lazy_list_vm(&ll).map(Value::slip));
+        }
+
         // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via Interpreter.
         if result.is_none()
             && let ValueView::LazyList(ll) = target.view()
