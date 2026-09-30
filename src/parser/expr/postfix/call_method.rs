@@ -128,8 +128,8 @@ pub(crate) fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBrac
         if r2.starts_with(',') {
             let (r3, _) = parse_char(r2, ',')?;
             let (r3, _) = ws(r3)?;
-            // Handle trailing comma before ']' or ';'
-            if r3.starts_with(']') || r3.starts_with(';') {
+            // Handle trailing comma before ']', '}' (`%h{"a",}`) or ';'
+            if r3.starts_with([']', '}', ';']) {
                 has_trailing_comma = true;
                 r = r3;
                 continue;
