@@ -185,12 +185,11 @@ impl Interpreter {
     /// package, or a key that is not a sigiled member name) and the caller must
     /// build the whole stash.
     ///
-    /// Each store contributes in the order the whole build merges it: an env
-    /// key overwrites, every later store only fills a missing entry.
-    // Cost: O(k), k = interned qualified names ending in the key's bare name
-    // (`qualified_tail_index`), independent of the env, the package and the
-    // registries; plus O(e), e = the package's members, when the package is
-    // itself an enum.
+    /// Registered routines own their `&` keys; other keys follow the whole
+    /// build's env, export, our, enum order.
+    // Cost: O(k + c), k = interned qualified names ending in the key's bare
+    // name (`qualified_tail_index`), c = this routine's multi candidates;
+    // plus O(e), e = the package's members, when it is an enum.
     pub(crate) fn package_stash_symbol(&self, package: &str, key: &str) -> Option<Option<Value>> {
         let package_name = Self::normalize_stash_package(package);
         if Self::stash_needs_whole_build(package, &package_name) {
@@ -210,7 +209,32 @@ impl Interpreter {
         }
         let candidates = crate::qualified_tail_index::names_ending_in(bare);
 
-        // 1. The env (its own tier, as the whole build's `env.iter()` sees it).
+        // A declared routine owns its `&name` stash entry. The env also holds
+        // a first-class Sub for lexical lookup, but that value may have
+        // captured the declaring frame's callable-kind marker, and a proto
+        // dispatcher built there has only the bare name. Serve the registered
+        // package-qualified routine instead, as the whole-stash path does.
+        if sigil == '&' {
+            let registry = self.registry();
+            for &name in &candidates {
+                if let Some(def) = registry.functions.get(&name)
+                    && self.routine_stash_member(name.as_str(), &package_name, true) == Some(bare)
+                {
+                    let qualified = crate::qualified::qualified(def.package, def.name);
+                    return Some(Some(self.resolve_code_var(qualified.as_str())));
+                }
+            }
+            for &name in &candidates {
+                if let Some(def) = registry.proto_functions.get(&name)
+                    && self.routine_stash_member(name.as_str(), &package_name, false) == Some(bare)
+                {
+                    let qualified = crate::qualified::qualified(def.package, def.name);
+                    return Some(Some(self.resolve_code_var(qualified.as_str())));
+                }
+            }
+        }
+
+        // 1. The env (the first tier for keys without a declared routine).
         //    A sigiled key never names a sub-package, so only `Value` counts.
         for &name in &candidates {
             let Some(value) = self.env.overlay_get_sym(name) else {
@@ -254,24 +278,6 @@ impl Interpreter {
                 value.clone(),
                 index,
             )));
-        }
-        // 5. Routines and protos: only `&` members.
-        if sigil == '&' {
-            let registry = self.registry();
-            for &name in &candidates {
-                if let Some(def) = registry.functions.get(&name)
-                    && self.routine_stash_member(name.as_str(), &package_name, true) == Some(bare)
-                {
-                    return Some(Some(Value::routine_parts(def.package, def.name, false)));
-                }
-            }
-            for &name in &candidates {
-                if let Some(def) = registry.proto_functions.get(&name)
-                    && self.routine_stash_member(name.as_str(), &package_name, false) == Some(bare)
-                {
-                    return Some(Some(Value::routine_parts(def.package, def.name, false)));
-                }
-            }
         }
         // The remaining stores (classes, roles, the `EXPORT` member) only ever
         // contribute unsigiled keys.

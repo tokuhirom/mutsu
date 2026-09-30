@@ -5,8 +5,8 @@ use crate::value::ValueMap;
 use crate::value::ValueView;
 
 impl Interpreter {
-    // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL), independent of the
-    // package's own symbol count: the stash is rebuilt by scanning env on every call.
+    // Cost: O(v + c), v = entries scanned across the env and registries, c =
+    // candidate code values captured for the package's multi routines.
     // Rakudo: O(1) (the package's persistent Stash) -- see #9171.
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
         let package_name = Self::normalize_stash_package(package);
@@ -231,27 +231,35 @@ impl Interpreter {
             }
         }
 
+        let mut registered_routines = std::collections::HashSet::new();
         for (key, def) in self.registry().functions.iter() {
             let key_s = key.resolve();
             let Some(base) = self.routine_stash_member(&key_s, &package_name, true) else {
                 continue;
             };
+            if !registered_routines.insert(base.to_string()) {
+                continue;
+            }
             // A custom EXPORT hook reads the lowercase stash as a source of
             // first-class code values (`EXPORT::all::{...}:p`). Preserve the
-            // compiled definition there; ordinary package stashes keep their
-            // routine references and therefore retain normal import lookup.
-            symbols.entry(format!("&{base}")).or_insert_with(|| {
-                if is_lowercase_export_stash {
+            // compiled definition there; ordinary package stashes resolve
+            // their qualified routine values.
+            if is_lowercase_export_stash {
+                symbols.entry(format!("&{base}")).or_insert_with(|| {
                     let candidates = self.resolve_all_multi_candidates(base);
                     if candidates.len() > 1 {
                         self.sub_value_from_multi_candidates(base, candidates)
                     } else {
                         self.sub_value_from_function_def((**def).clone())
                     }
-                } else {
-                    Value::routine_parts(def.package, def.name, false)
-                }
-            });
+                });
+            } else {
+                let qualified = crate::qualified::qualified(def.package, def.name);
+                symbols.insert(
+                    format!("&{base}"),
+                    self.resolve_code_var(qualified.as_str()),
+                );
+            }
         }
 
         // A custom EXPORT hook commonly reads the lowercase stash as a
@@ -312,9 +320,14 @@ impl Interpreter {
             let Some(base) = self.routine_stash_member(&key_s, &package_name, false) else {
                 continue;
             };
-            symbols
-                .entry(format!("&{base}"))
-                .or_insert_with(|| Value::routine_parts(def.package, def.name, false));
+            if !registered_routines.insert(base.to_string()) {
+                continue;
+            }
+            let qualified = crate::qualified::qualified(def.package, def.name);
+            symbols.insert(
+                format!("&{base}"),
+                self.resolve_code_var(qualified.as_str()),
+            );
         }
 
         for class_name in self.registry().classes.keys() {
