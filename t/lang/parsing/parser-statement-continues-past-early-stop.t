@@ -5,7 +5,7 @@ use Test;
 # statements: the operator became a bare-word statement and its right-hand
 # side ran on its own (#10257). Each of these is one statement.
 
-plan 23;
+plan 26;
 
 # --- `{ ... }()` is an infix operand ------------------------------------------
 
@@ -75,6 +75,24 @@ throws-like q[%::{''}], X::Undeclared, 'a sigil with a bare :: is an undeclared 
         @seen.push: 'else';
     }
     is-deeply @seen, ['call', 'else'], 'the next line if/else is its own statement';
+}
+
+# --- `only method`, compound assignment ending in a block -------------------
+
+{
+    my class OnlyM { only method m() { 7 } }
+    is OnlyM.m, 7, 'only method declares a method';
+
+    my $x;
+    my @seen;
+    $x //= do if True {
+        5
+    }
+    if $x == 5 {
+        @seen.push: 'if';
+    }
+    is $x, 5, '//= do if ... assigns';
+    is-deeply @seen, ['if'], 'the next line if is its own statement';
 }
 
 # --- errors keep their own class -----------------------------------------------

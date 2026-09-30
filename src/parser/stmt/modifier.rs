@@ -333,6 +333,10 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
             expr_ends_with_block(value)
         }
+        // `$x //= do if COND { ... } else { ... }` / `$!a = do { ... }` in
+        // expression form (HTTP::UserAgent's `get-proxy`).
+        Expr::CompoundAssign { rhs, .. } => expr_ends_with_block(rhs),
+        Expr::AssignExpr { expr, .. } => expr_ends_with_block(expr),
         // A pair whose value is a block closes the line with that block's `}`:
         // `@a.push: $key => { ... }` followed by a newline and `if COND -> $x {`
         // is two statements, exactly like a direct block argument (Commands'
