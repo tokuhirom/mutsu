@@ -229,6 +229,13 @@ impl Interpreter {
                 current.push(ch);
                 continue;
             }
+            if (ch == '<' && chars.peek() == Some(&'('))
+                || (ch == ')' && chars.peek() == Some(&'>') && depth_angle == 0)
+            {
+                current.push(ch);
+                current.push(chars.next().unwrap());
+                continue;
+            }
             // Delimiters inside an assertion belong to its nested regex, not
             // to the outer pattern being split. This is especially important
             // for quoted assertion literals: quote tracking is intentionally
@@ -363,6 +370,13 @@ impl Interpreter {
             {
                 quote = Some(closer);
                 current.push(ch);
+                continue;
+            }
+            if (ch == '<' && chars.peek() == Some(&'('))
+                || (ch == ')' && chars.peek() == Some(&'>') && depth_angle == 0)
+            {
+                current.push(ch);
+                current.push(chars.next().unwrap());
                 continue;
             }
             match ch {
