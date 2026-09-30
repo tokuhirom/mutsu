@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slice C in part (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -486,6 +486,51 @@ The position-only matcher (`.comb`) took the longest branch end instead of requi
 span, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`. It now asks the capture matcher. Found
 on the way: `:r` does not reach conjunction branches (#10353), and `.comb` with `:m` misses
 matches (#10352). Both are pre-existing, and both engines agree on them.
+
+**Slice C, first part (#10253): `{ }`, `<?{ }>`, `<!{ }>` and `:my` landed.** A code atom is a
+call-out. The walk's `CodeAssertion` and `VarDecl` arms moved into one leaf, `regex_code_atom.rs`
+(`regex_code_atom`, `regex_var_decl_atom`). The walk's single-candidate matcher now calls them, and
+so do the compiled engine's `Code` and `VarDecl` ops, which pass the innermost capture level as the
+code's view and merge the delta that comes back (the `:my` lexicals written, the `make` value).
+Nothing is precomputed, so a code atom runs only where the cursor reaches it, in the order
+backtracking reaches it. The body's compile is the cached one of ADR-0133 and #10121
+(`eval_regex_inline_code`), so there is no per-attempt AST compile and no new `Interpreter`.
+
+- **The position-only matcher** (`.comb` without captures, the walk's group probes) treats a code
+  atom as an inert zero-width pass. A program that runs code (`RxProgram::has_code`, which includes
+  a lookaround body's) therefore declines there and keeps that matcher.
+- **A capture group whose body holds code** opens a capture level of its own, as one whose body
+  captures or back-references does. `$/` inside `( … { … } )` is the group's own match so far, and
+  `$0` its first capture.
+- **Differential mode compares the code.** Running the walk a second time over a pattern with code
+  would run the user's code twice. So the compiled run *records* each invocation (code text,
+  position, the captures visible to it, the result it gave) and the walk *replays* them
+  (`rx_diff.rs`): the walk's n-th invocation must be the recorded n-th one, and it is answered from
+  the record instead of being run. Nested runs (a lookaround body) share the record, and only the
+  outermost run compares. This is the order comparison D6 asks for, and it keeps
+  `MUTSU_RX_DIFF=1` free of doubled side effects.
+- **A bug in the walk, found by that comparison.** A non-capturing group, a `|` / `||` branch or a
+  quantified group gave the walk a capture scope of its own, so `{ say $/.Str }` inside
+  `/ a [ b { … } ] c /` printed `b` where rakudo prints `ab`, and `$0` of the enclosing regex was
+  invisible to the block (`/ (a) [ b { say $0 } ] c /` printed `Nil`). A same-scope sub-pattern that
+  holds code now publishes the enclosing level's captures and match start for the nested walk, the
+  way one that holds a backreference already did (`atom_contains_code`, `OuterBackrefCaps::match_from`;
+  the parser's `note_regex_code_lowered` keeps the cost at zero for a process with no code in a
+  regex). A capture group and a lookaround still get a scope of their own, as in rakudo.
+  `t/regex/syntax/regex-code-atom-capture-scope.t` pins the rakudo values.
+- **Two shapes still decline**, for the reason `separator-backref` does: code reads the enclosing
+  captures, and these shapes hide them. Code inside a `%` / `%%` quantifier (`separator-code`) sees
+  the iterations folded so far in the walk (Net::Whois's `$/[*-1][*-1] < 256` octet check, pinned by
+  `t/regex/match/regex-separated-quantifier-code-assertion-captures.t`), where the compiled form
+  matches each iteration in a level of its own. Code inside a `&` branch (`conjunction-code`) runs in
+  a level or a nested run of its own.
+
+`scripts/rx-decline-survey.sh` (all of `t/` and the roast whitelist) puts `code` at 83 (from 406),
+`separator-code` at 7 and `conjunction-code` at 2; compiled patterns went from 5,981 to 6,319.
+D6 agreed with the walk on all of `t/` and the roast whitelist (6,933 files), once the two declines above were in. The
+remaining `code` declines are the parts of Slice C not yet landed: `<{ … }>` closure interpolation and
+`** {n}` (the count is evaluated when the quantifier is reached, so it needs run-time bounds on the
+loop ops), then `<$var>` / `<@var>` / `$( … )` interpolation.
 
 ### Reproducing §2
 
