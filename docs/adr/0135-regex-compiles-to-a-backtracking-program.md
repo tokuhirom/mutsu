@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A in progress (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -299,7 +299,46 @@ Applied to the tickets open on 2026-09-30:
 
 ## 8. Implementation status
 
-Accepted; no slice started. Slice issues: A #10251, B #10252, C #10253, D #10254, E #10255.
+Slice issues: A #10251, B #10252, C #10253, D #10254, E #10255.
+
+**Slice A, first part (#10251): landed.** The engine lives in `src/runtime/regex/rx/`:
+`rx_compile.rs` (the compiler), `rx_vm.rs` (the loop and the entry point), `rx_atom.rs` (atom
+tests) and `rx_diff.rs` (D6). It is consulted from the walk's first-match chokepoint,
+`regex_match_end_from_caps_in_pkg`, and so answers `~~`, the prefiltered scan, `:g`, `.subst`,
+`.split` and every other caller of that function. It compiles:
+
+- one-grapheme atoms and the zero-width assertions;
+- `[ … ]`, and `( … )` whose body captures nothing;
+- `$<x>=` / `$N=` aliases on non-quantified tokens;
+- greedy, frugal, ratcheted and counted quantifiers over non-nullable bodies that capture
+  nothing.
+
+A greedy or ratcheted quantifier over a single one-grapheme atom is one `AtomRun` op. It scans the
+iterations up front and gives them back from a position list.
+
+`rx_atom.rs` adds an ASCII fast path that D4 allows. Each atom's acceptance of every printable
+ASCII character is probed once, *through* `match_consuming_atom`, and consulted only where the
+grapheme is provably that one character.
+
+Everything else declines per pattern. The reason is reported on `MUTSU_VM_STATS`'s `regex-vm:`
+line. `MUTSU_RX_VM=off` routes every pattern back to the walk. D6's `MUTSU_RX_DIFF=1` agreed with
+the walk on every file of `t/regex/`, `t/grammar/` and the whitelisted `roast/S05-*`.
+`tests/regex_vm_differential.rs` runs a corpus both ways in `cargo test`.
+
+Kill criterion (release, 640 KB, best of 3):
+
+| row | walk | compiled | ratio |
+|---|---:|---:|---:|
+| failing `\w+ \s \d ** 6` | 370 ms | 45 ms | 8.2x |
+| failing `[ \w+ \s ] ** 3 \d ** 6` | 1,330 ms | 91 ms | 14.6x |
+
+Both rows clear the 5x bar. `bench-regex-scan-walk`'s warm section goes from 0.58 s to 0.075 s.
+That file adds a `:g` capture scan, which includes `Match` construction and improves 2.4x on its
+own.
+
+Still to come in Slice A: `||`, backreferences, `%` separators, quantified captures, `<( )>`
+markers, `CompositeClass`, the capture-free engine (`regex_match_nocap.rs`, which `.comb` without
+captures takes), and moving the unanchored scan loop into the VM.
 
 ### Reproducing §2
 

@@ -1465,6 +1465,7 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits} subrule_derivations=(resolved={prefilter_subrule_resolved} declined={prefilter_subrule_declined}) chain=(engaged={prefilter_chain_engaged} rejections={prefilter_chain_rejections})"
     );
+    super::vm_stats_regex_vm::dump();
     let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
     let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);
     eprintln!(

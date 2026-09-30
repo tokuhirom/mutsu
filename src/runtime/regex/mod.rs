@@ -55,3 +55,5 @@ mod regex_token_method;
 mod regex_token_resolve;
 mod regex_trail;
 mod regex_zero_width_iter;
+mod rx;
+pub(crate) use rx::RxProgram;
