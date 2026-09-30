@@ -5689,6 +5689,7 @@ mod tests {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
+            captured_readonly: None,
         });
 
         let mut interp = Interpreter::new();

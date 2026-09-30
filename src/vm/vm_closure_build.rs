@@ -128,6 +128,11 @@ impl Interpreter {
             .as_ref()
             .and_then(|cc| cc.compiled_fns.clone());
         let id = crate::value::next_instance_id();
+        // Which captured variables this closure writes are readonly HERE, so a
+        // later call can restore exactly that (#10389).
+        let captured_readonly = compiled_code
+            .as_ref()
+            .and_then(|cc| self.capture_readonly_state(cc));
         // A body with `state` variables gets a guard that reaps this clone's
         // state entries once the clone is dead (#9504).
         let state_scope_guard = compiled_code
@@ -173,6 +178,7 @@ impl Interpreter {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard,
+            captured_readonly,
         }))
     }
 
