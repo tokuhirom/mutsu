@@ -92,6 +92,33 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<Option<(usize, RegexCaptures)>> {
+        self.rx_try_match_in(pattern, chars, start, pkg, true)
+    }
+
+    /// [`Self::rx_try_match`] for the position-only matcher
+    /// (`regex_match_end_from_in_pkg`). That matcher treats a code atom as an
+    /// inert zero-width pass — it is how the walk probes a group without running
+    /// the user's code — so a pattern with any code atom declines here and keeps
+    /// it.
+    // Cost: O(1) to decline; otherwise the match itself.
+    pub(in crate::runtime::regex) fn rx_try_match_no_code(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+    ) -> Option<Option<(usize, RegexCaptures)>> {
+        self.rx_try_match_in(pattern, chars, start, pkg, false)
+    }
+
+    fn rx_try_match_in(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        allow_code: bool,
+    ) -> Option<Option<(usize, RegexCaptures)>> {
         use super::super::regex_helpers as h;
         if !rx_vm_enabled()
             || h::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
@@ -103,14 +130,25 @@ impl Interpreter {
             return None;
         }
         if pattern.ignore_mark {
-            return self.rx_try_ignoremark(pattern, start, pkg);
+            return self.rx_try_ignoremark(pattern, start, pkg, allow_code);
         }
         let program = Arc::clone(program_for(pattern)?);
+        if program.has_code && !allow_code {
+            return None;
+        }
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
+        // D6: the compiled run records the code atoms it invokes and the walk
+        // replays them (`rx_diff`). A nested run inside a replay is answered
+        // from the same record, so only the outermost one compares.
+        let diffing = rx_diff_enabled() && !super::rx_diff::replaying();
+        let mark = diffing.then(super::rx_diff::begin_record);
         let result = self.rx_run(&program, chars, start, pkg, None);
-        if rx_diff_enabled() {
+        if let Some(mark) = mark {
+            super::rx_diff::begin_replay(mark);
             let walked = self.regex_walk_first_for_diff(pattern, chars, start, pkg);
-            if let Err(why) = super::rx_diff::same_match(&result, &walked) {
+            let replay = super::rx_diff::end_replay();
+            let same = super::rx_diff::same_match(&result, &walked);
+            if let Err(why) = replay.and(same) {
                 panic!(
                     "MUTSU_RX_DIFF: compiled engine and walk disagree at start {start} \
                      of a {}-char subject: {why}\nprogram: {:?}",
@@ -132,12 +170,17 @@ impl Interpreter {
         pattern: &RegexPattern,
         start: usize,
         pkg: Symbol,
+        allow_code: bool,
     ) -> Option<Option<(usize, RegexCaptures)>> {
         let target = super::super::regex_helpers::current_match_target()?;
-        program_for(&super::super::regex_helpers::strip_marks_pattern(pattern))?;
+        let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
+        if !allow_code && program_for(&stripped)?.has_code {
+            return None;
+        }
+        program_for(&stripped)?;
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
             interp
-                .rx_try_match(stripped, chars, 0, pkg)
+                .rx_try_match_in(stripped, chars, 0, pkg, allow_code)
                 .flatten()
                 .into_iter()
                 .collect()
@@ -415,6 +458,8 @@ impl Interpreter {
                 op @ (RxOp::OpenCapture
                 | RxOp::CloseCapture { .. }
                 | RxOp::CapAtom(_)
+                | RxOp::Code(_)
+                | RxOp::VarDecl(_)
                 | RxOp::Named { .. }
                 | RxOp::ZeroArm { .. }
                 | RxOp::QuantNames { .. }

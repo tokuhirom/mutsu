@@ -397,6 +397,11 @@ impl Interpreter {
         // Backreference read-through to the enclosing pattern level (see
         // `OuterBackrefCaps`). Never published outward — cleared below.
         base.set_outer_backref(super::regex_helpers::take_inline_outer_caps_seed());
+        // A same-scope sub-pattern belongs to the regex that contains it, so the
+        // `$/` a code block inside it sees starts where that regex's match did.
+        if let Some(outer) = base.outer_backref() {
+            base.match_from = outer.match_from;
+        }
         let mut store = CapStore::new(base);
         let ctx = WalkCtx {
             pattern,

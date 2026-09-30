@@ -184,22 +184,28 @@ pub(crate) fn grammar_dynvar_scope_active(name: &str) -> bool {
         .with(|stack| stack.borrow().iter().rev().any(|keys| keys.contains(name)))
 }
 
-/// Set the first time the regex parser lowers a `$0` / `$<name>` backreference
-/// atom anywhere in the process. Until then, none of the outer-capture seeding
-/// below can matter, so the whole mechanism (including the per-atom sub-pattern
-/// scan) is skipped with a single relaxed load. Process-global rather than
-/// thread-local on purpose: a grammar is often parsed on one thread and matched
-/// on another.
-pub(crate) static REGEX_BACKREF_LOWERED: std::sync::atomic::AtomicBool =
+/// Set the first time the regex parser lowers an atom that READS the enclosing
+/// captures — a `$0` / `$<name>` backreference, or a code atom (`{ … }`,
+/// `<?{ … }>`, `:my …;`), whose body sees `$/` and `$0…`. Until then, none of
+/// the outer-capture seeding below can matter, so the whole mechanism
+/// (including the per-atom sub-pattern scan) is skipped with a single relaxed
+/// load. Process-global rather than thread-local on purpose: a grammar is often
+/// parsed on one thread and matched on another.
+pub(crate) static REGEX_CAPTURE_READER_LOWERED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Called by the regex parser when it emits a backreference atom.
 pub(crate) fn note_regex_backref_lowered() {
-    REGEX_BACKREF_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+    REGEX_CAPTURE_READER_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-pub(crate) fn any_regex_backref_lowered() -> bool {
-    REGEX_BACKREF_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
+/// Called by the regex parser when it emits a code atom.
+pub(crate) fn note_regex_code_lowered() {
+    REGEX_CAPTURE_READER_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn any_regex_capture_reader_lowered() -> bool {
+    REGEX_CAPTURE_READER_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Arms [`INLINE_OUTER_CAPS_SEED`] for the duration of one atom match,
@@ -242,7 +248,7 @@ impl Drop for OuterCapsSeed {
 /// backreferences through (see [`INLINE_OUTER_CAPS_SEED`]).
 pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
     let scope = INLINE_CAPTURE_SCOPE.with(Cell::get);
-    if !any_regex_backref_lowered() && scope.is_none() {
+    if !any_regex_capture_reader_lowered() && scope.is_none() {
         return None;
     }
     INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
@@ -292,6 +298,33 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
         | RegexAtom::CaptureIsolatedGroup(p)
         | RegexAtom::CaptureIsolatedGroupScoped(p, _)
         | RegexAtom::Lookaround { pattern: p, .. } => pattern_has(p),
+        RegexAtom::Alternation(alts)
+        | RegexAtom::SequentialAlternation(alts)
+        | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has),
+        RegexAtom::GoalMatch { goal, inner, .. } => pattern_has(goal) || pattern_has(inner),
+        _ => false,
+    }
+}
+
+/// Does this atom's sub-pattern contain a code atom (`{ … }`, `<?{ … }>`,
+/// `:my …;`) anywhere inside it, at its own capture level? Only such an atom
+/// needs the enclosing level's captures published for the code to see (`$/`
+/// and `$0` inside a `[ … ]` block are the enclosing regex's, as in raku).
+pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
+    fn pattern_has(pattern: &RegexPattern) -> bool {
+        *pattern.derived.contains_code.get_or_init(|| {
+            pattern.tokens.iter().any(|tok| {
+                atom_contains_code(&tok.atom)
+                    || tok
+                        .separator
+                        .as_ref()
+                        .is_some_and(|sep| pattern_has(&sep.pattern))
+            })
+        })
+    }
+    match atom {
+        RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => true,
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
         | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has),

@@ -2,6 +2,7 @@ pub(crate) mod regex_arg_purity;
 mod regex_backref_scope;
 mod regex_call_graph;
 mod regex_casefold;
+mod regex_code_atom;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;

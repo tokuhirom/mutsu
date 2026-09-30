@@ -28,6 +28,8 @@ pub(super) struct Compiler {
     pub(super) alts: Vec<AlternationListFlags>,
     pub(super) ltm_alts: Vec<super::LtmAltTable>,
     pub(super) nregs: usize,
+    /// Set when a `Code` or `VarDecl` op is emitted.
+    has_code: bool,
     /// How many enclosing quantified bodies contain an alternation: the walk
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
@@ -46,6 +48,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         alts: Vec::new(),
         ltm_alts: Vec::new(),
         nregs: 0,
+        has_code: false,
         quant_alt_depth: 0,
     };
     c.pattern(pattern)?;
@@ -61,6 +64,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         alts: c.alts,
         ltm_alts: c.ltm_alts,
         nregs: c.nregs,
+        has_code: c.has_code,
         ascii: std::sync::OnceLock::new(),
     })
 }
@@ -128,6 +132,25 @@ pub(super) fn pattern_contains_backref(pattern: &RegexPattern) -> bool {
             || t.separator
                 .as_ref()
                 .is_some_and(|sep| pattern_contains_backref(&sep.pattern))
+    })
+}
+
+/// Does `pattern` hold a code atom (`{ … }`, `<?{ … }>`, `:my …;`) at its own
+/// capture level — that is, not inside a lookaround, which matches in a nested
+/// run of its own?
+pub(super) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().any(|t| {
+        t.separator
+            .as_ref()
+            .is_some_and(|sep| pattern_contains_code(&sep.pattern))
+            || match &t.atom {
+                RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => true,
+                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_contains_code(p),
+                RegexAtom::Alternation(alts)
+                | RegexAtom::SequentialAlternation(alts)
+                | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_contains_code),
+                _ => false,
+            }
     })
 }
 
@@ -305,7 +328,10 @@ impl Compiler {
                 // So does one with a backreference: a capture group is its own
                 // capture scope, and `$0` / `$<x>` inside it do not see the
                 // enclosing level's captures (`/ $<x>=(\w) ( $<x> ) /` fails).
-                let nested = pattern_captures(p) || pattern_contains_backref(p);
+                // So does one with code: `$/` inside a capture group's block is
+                // the group's own match so far, and `$0` its own first capture.
+                let nested =
+                    pattern_captures(p) || pattern_contains_backref(p) || pattern_contains_code(p);
                 let start = self.reg();
                 self.ops.push(RxOp::Mark(start));
                 if nested {
@@ -343,9 +369,20 @@ impl Compiler {
                 let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::CapAtom(i));
             }
-            RegexAtom::CodeAssertion { .. }
-            | RegexAtom::ClosureInterpolation { .. }
-            | RegexAtom::VarDecl { .. } => return Err("code"),
+            RegexAtom::CodeAssertion { .. } => {
+                // A call-out: the code runs on the caller's interpreter where
+                // the cursor reaches it (ADR-0135 D4, ADR-0009). Nothing is
+                // precomputed, so a code atom never runs speculatively.
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::Code(i));
+                self.has_code = true;
+            }
+            RegexAtom::VarDecl { .. } => {
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::VarDecl(i));
+                self.has_code = true;
+            }
+            RegexAtom::ClosureInterpolation { .. } => return Err("code"),
             RegexAtom::WsRule => return Err("ws-rule"),
             RegexAtom::CaptureIsolatedGroup(_) | RegexAtom::CaptureIsolatedGroupScoped(..) => {
                 return Err("isolated-group");

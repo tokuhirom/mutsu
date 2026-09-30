@@ -7,10 +7,12 @@
 //! capture levels of their own, `rx_levels`), aliases, backreferences, the
 //! `<(` / `)>` markers, sequential alternation (`||`), and greedy / frugal /
 //! ratcheted / counted / separated quantifiers over any of these. Slice B
-//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`). A
-//! pattern
-//! holding anything else is declined as a whole and keeps the tree walk
-//! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
+//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`),
+//! lookaround, `:i` / `:m` and `&`. Slice C (#10253) adds the call-out atoms
+//! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
+//! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`). A pattern holding
+//! anything else is declined as a whole and keeps the tree walk (ADR-0135
+//! D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -172,6 +174,14 @@ pub(super) enum RxOp {
         pos_base: u16,
         suppress_padding: bool,
     },
+    /// A call-out: run the `{ … }` block, `<?{ … }>` or `<!{ … }>` assertion
+    /// `atoms[i]` on the caller's interpreter and merge the capture delta it
+    /// returns (`regex_code_atom`, the walk's own). Fails when an assertion
+    /// fails or the block dies.
+    Code(u32),
+    /// A call-out: run the `:my` / `:our` / `:temp` / `:let` declaration
+    /// `atoms[i]` and merge the lexicals it declared (`regex_var_decl_atom`).
+    VarDecl(u32),
     /// A complete match ending at `pos`.
     Match,
 }
@@ -187,6 +197,10 @@ pub(crate) struct RxProgram {
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
+    /// Whether the program runs Raku code (a `Code` or `VarDecl` op). The
+    /// position-only matcher treats code atoms as inert, so it must not run a
+    /// program that has any.
+    pub(super) has_code: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
