@@ -26,9 +26,10 @@ impl Interpreter {
     ///
     /// A block takes exactly one topic, so a multi-argument call has no topic
     /// to alias; a `@`/`%`/`&` source is a container in its own right (the
-    /// topic would alias the whole array, not an element); `_` is the caller's
-    /// OWN topic, which aliasing would make self-referential; and the `key=src`
-    /// spelling is a named argument, which never becomes the topic.
+    /// topic would alias the whole array, not an element); and the `key=src`
+    /// spelling is a named argument, which never becomes the topic. The caller's
+    /// own `_` is a valid source: the call frame keeps its binding separate from
+    /// the block's topic and writes the final value back on return.
     pub(crate) fn topic_alias_source(
         args: &[Value],
         arg_sources: Option<&Vec<Option<String>>>,
@@ -40,7 +41,7 @@ impl Interpreter {
             return None;
         }
         let name = arg_sources?.first()?.as_ref()?;
-        if name == "_" || name.contains('=') {
+        if name.contains('=') {
             return None;
         }
         name.as_bytes()
