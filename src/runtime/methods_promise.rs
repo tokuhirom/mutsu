@@ -93,7 +93,9 @@ impl Interpreter {
             let status = orig.status();
             if should_run(&status) {
                 let promise_val = Value::promise(orig);
-                let cb_result = self.vm_call_on_value(block, vec![promise_val], None);
+                let cb_result = self.with_catch_regions_isolated(|interp| {
+                    interp.vm_call_on_value(block, vec![promise_val], None)
+                });
                 self.resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {
                 new_promise.keep(result, output, stderr);
