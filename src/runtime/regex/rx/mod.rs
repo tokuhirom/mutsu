@@ -6,7 +6,9 @@
 //! atoms, zero-width assertions, groups, capture groups (nested ones in
 //! capture levels of their own, `rx_levels`), aliases, backreferences, the
 //! `<(` / `)>` markers, sequential alternation (`||`), and greedy / frugal /
-//! ratcheted / counted / separated quantifiers over any of these. A pattern
+//! ratcheted / counted / separated quantifiers over any of these. Slice B
+//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`). A
+//! pattern
 //! holding anything else is declined as a whole and keeps the tree walk
 //! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
@@ -23,6 +25,7 @@ mod rx_compile;
 mod rx_compile_compound;
 mod rx_diff;
 mod rx_levels;
+mod rx_ltm;
 mod rx_vm;
 
 use crate::runtime::regex_types::{RegexAtom, RegexToken};
@@ -148,6 +151,10 @@ pub(super) enum RxOp {
         tok: u32,
         base: u16,
     },
+    /// A `|` alternation, `ltm_alts[i]`: rank its branches at `pos` by the
+    /// walk's LTM key and enter them best first, each lower-ranked one only
+    /// when everything above it has failed (ADR-0135 D4).
+    LtmAlt(u32),
     /// The end of one `||` branch: pad the alternation `alts[alt]`'s
     /// positional slot space past what the branch took since `regs[pos_base]`
     /// (unless `suppress_padding`), and mark its list-valued names quantified.
@@ -169,9 +176,18 @@ pub(crate) struct RxProgram {
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
+    /// One per `|`: its token (in `toks`) and each branch's first op.
+    pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
     pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+}
+
+/// A compiled `|`: the alternation token (`toks[tok]`, whose atom holds the
+/// branches the LTM ranking measures) and the pc each branch starts at.
+pub(super) struct LtmAltTable {
+    pub(super) tok: u32,
+    pub(super) pcs: Box<[u32]>,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.
