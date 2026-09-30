@@ -160,7 +160,9 @@ impl Interpreter {
     pub(super) fn builtin_start(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         let block = args.into_iter().next().unwrap_or(Value::NIL);
         // Under a user `$*SCHEDULER` the body is cued through it (ADR-0105 D1).
-        let scheduler = self.user_scheduler();
+        let scheduler = self
+            .user_scheduler()
+            .or_else(|| self.current_thread_scheduler());
         self.start_callable_promise(block, Symbol::intern("Promise"), scheduler)
     }
 
