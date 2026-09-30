@@ -12490,6 +12490,7 @@ impl CompiledFunction {
             let match_key = match_key
                 .strip_prefix('!')
                 .or_else(|| match_key.strip_prefix('.'))
+                .or_else(|| match_key.strip_prefix('*'))
                 .unwrap_or(match_key)
                 .to_string();
             let slot = slot_of(&pd.name);
