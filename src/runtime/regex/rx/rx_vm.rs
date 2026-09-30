@@ -331,6 +331,16 @@ impl Interpreter {
                             (max != u32::MAX).then_some(max as usize),
                         )
                 }
+                // Cost: O(1).
+                RxOp::Advanced { start } => {
+                    pc += 1;
+                    pos > regs[start as usize]
+                }
+                // Cost: O(1).
+                RxOp::AtLeast { ctr, min } => {
+                    pc += 1;
+                    regs[ctr as usize] >= min as usize
+                }
                 // Cost: O(1) amortized (one slot, one trail record).
                 RxOp::CloseCapture { start } => {
                     let from = regs[start as usize];

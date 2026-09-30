@@ -85,6 +85,15 @@ pub(super) enum RxOp {
         min: u32,
         max: u32,
     },
+    /// `pos` has moved past `regs[start]` (a separated quantifier's step).
+    Advanced {
+        start: u16,
+    },
+    /// `regs[ctr] >= min` (a separated quantifier's minimum count).
+    AtLeast {
+        ctr: u16,
+        min: u32,
+    },
     /// Close a `( … )` whose body captures nothing, opened at `regs[start]`.
     CloseCapture {
         start: u16,
