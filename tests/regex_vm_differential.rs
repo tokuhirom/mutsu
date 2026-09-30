@@ -116,7 +116,7 @@ differential_case!(
 );
 differential_case!(
     sequential_alternation,
-    r#"say ("abcd" ~~ / a [ bc || b ] cd /).gist; say ("b1" ~~ / [ (a) || (b) ] (\d) /).gist; say ("b1" ~~ / [ (a) (x) || (b) ] (\d) /)[2].Str; say ("aab" ~~ / [ a || aa ]+ b /).gist; say ("aab" ~~ / :r [ a || aa ] b /).gist; say ("aab" ~~ / :r [ aa || a ] b /).gist; say ("q" ~~ / [ a || b ]? q /).gist; say ("ab" ~~ / $<x>=a [ $<x>=b || c ] /)<x>.elems; say ("cc" ~~ / [ <[ab]> || c ] ** 2 /).gist; say ("abc" ~~ / :r [ \w+ || \d ] 'c' /).gist; say ("x" ~~ / [ a || (b)+ || x ] /)[0].raku; say ("ab" ~~ / $<y>=[ a || b ] b /)<y>.Str; say ("adx" ~~ / [ a || b ]+ [ (c) || d ] (x) /).list.elems; say ("adx" ~~ / [ a || b ]+? [ (c) || d ] (x) /)[1].Str"#
+    r#"say ("abcd" ~~ / a [ bc || b ] cd /).gist; say ("b1" ~~ / [ (a) || (b) ] (\d) /).gist; say ("b1" ~~ / [ (a) (x) || (b) ] (\d) /)[2].Str; say ("aab" ~~ / [ a || aa ]+ b /).gist; say ("aab" ~~ / :r [ a || aa ] b /).gist; say ("aab" ~~ / :r [ aa || a ] b /).gist; say ("q" ~~ / [ a || b ]? q /).gist; say ("ab" ~~ / $<x>=a [ $<x>=b || c ] /)<x>.elems; say ("cc" ~~ / [ <[ab]> || c ] ** 2 /).gist; say ("abc" ~~ / :r [ \w+ || \d ] 'c' /).gist; say ("x" ~~ / [ a || (b)+ || x ] /)[0].raku; say ("ab" ~~ / $<y>=[ a || b ] b /)<y>.Str; say ("adx" ~~ / [ a || b ]+ [ (c) || d ] (x) /).list.elems; say ("adx" ~~ / [ a || b ]+? [ (c) || d ] (x) /)[1].Str; say ("aaa" ~~ / ^ [ a || aa ] ** 2 $ /).gist; say ("abab" ~~ / ^ [ a || ab ] **? 2..3 b $ /).gist"#
 );
 
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's

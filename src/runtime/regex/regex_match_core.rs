@@ -1028,6 +1028,13 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 };
+                if !token.ratchet && atom_contains_alternation(&token.atom) {
+                    // As for `*`/`+`: a later constraint can force another
+                    // branch in an earlier iteration (`[ a || aa ] ** 2`).
+                    return self.walk_quant_group_candidates(
+                        ctx, idx, pos, min, max, false, store, matches,
+                    );
+                }
                 self.walk_quant_chain(ctx, idx, pos, min, max, false, store, matches)
             }
         }
