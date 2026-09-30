@@ -905,7 +905,7 @@ and — through `ForLoopSpec::multi_param_declared_rw` — per chunk slot of a m
 assignable, and a `@`-parameter bound to an Array item still propagates through the shared `Gc`.
 
 Measured against rakudo in one file per statement; pinned by
-`t/collections/for-immutable-list-source-readonly.t`. Out of scope and filed: a list-valued expression
+`t/control/for-immutable-list-source-readonly.t`. Out of scope and filed: a list-valued expression
 as source (#10397), `List.values` decontainerizing a List of variables (#10396), an immutable `Map`'s
 `.kv` with an `is rw` parameter (#10398).
 

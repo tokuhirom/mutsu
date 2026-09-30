@@ -31,7 +31,7 @@ both).
   that holds a container binds normally. The parser folds "some parameter says `is rw`" into
   `rw_block`, so a `<->` block is recognised as an rw block with no per-parameter `rw` trait.
 
-Pinned by `t/collections/for-immutable-list-source-readonly.t`, every expectation measured against
+Pinned by `t/control/for-immutable-list-source-readonly.t`, every expectation measured against
 rakudo. ADR-0045 §8 records this as slice 7.
 
 Left for their own issues: a list-valued *expression* as the source (`(1,2).values`, `.sort`,
