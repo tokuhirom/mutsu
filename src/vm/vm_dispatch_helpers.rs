@@ -499,6 +499,14 @@ impl Interpreter {
                 return val.truthy();
             }
         }
+        // A bare `Proxy` (e.g. the result of an `is rw` `AT-KEY`) is a
+        // container: its truth is that of the FETCHed value, as rakudo's
+        // decontainerizing `Bool` sees it. Tag-probed, one check otherwise.
+        if val.is_proxy_value()
+            && let Ok(fetched) = loan_env!(self, auto_fetch_proxy(val))
+        {
+            return self.eval_truthy(&fetched);
+        }
         // ADR-0058: `Value::truthy` cannot pull, so it reports a not-yet-run
         // `.map`/`.grep` Seq as TRUE rather than reading its still-empty seed
         // (see the `is_map_grep_source` arm there). This IS the boolean
