@@ -525,8 +525,7 @@ pub(crate) fn stmt_list_with_mode(
                 // "Two terms in a row" (#9918).
                 // TODO: this should hold for any leftover term, but the
                 // statement parser still stops early before some legitimate
-                // continuations (`temp our $x`, `... orelse Nil`); see the
-                // follow-up issue linked from #9918.
+                // continuations (`temp our $x`, `... orelse Nil`); see #10257.
                 // The statement parser may already have consumed its `;` and
                 // any trailing whitespace or comment (and with it the newline).
                 let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
