@@ -161,6 +161,39 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             value,
         );
     }
+    // The CORE subscript routines called by name (`postcircumfix:<{; }>(%h,
+    // @keys) = v`) assign exactly like the syntax they back. The `{; }` /
+    // `[; ]` forms take their dimensions as one list, which is the
+    // single-dimension `||` shape of `MultiDimIndexAssign`.
+    if call_args.len() == 2 {
+        let subscript = match name.as_str() {
+            "postcircumfix:<[ ]>" => Some((false, true)),
+            "postcircumfix:<{ }>" => Some((false, false)),
+            "postcircumfix:<[; ]>" => Some((true, true)),
+            "postcircumfix:<{; }>" => Some((true, false)),
+            _ => None,
+        };
+        if let Some((multidim, is_positional)) = subscript {
+            let mut it = call_args.into_iter();
+            let target = Box::new(it.next().expect("two args"));
+            let index = it.next().expect("two args");
+            return if multidim {
+                Expr::MultiDimIndexAssign {
+                    target,
+                    dimensions: vec![index],
+                    value: Box::new(value),
+                    is_positional,
+                }
+            } else {
+                Expr::IndexAssign {
+                    target,
+                    index: Box::new(index),
+                    value: Box::new(value),
+                    is_positional,
+                }
+            };
+        }
+    }
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![

@@ -44,6 +44,11 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("PseudoStash") => {
             "PseudoStash"
         }
+        // `%?RESOURCES` is a `Distribution::Resources` in raku; mutsu keeps the
+        // resource map as a hash and carries the type as its declared type.
+        ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Distribution::Resources") => {
+            "Distribution::Resources"
+        }
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
         | ValueView::RangeExcl(_, _)

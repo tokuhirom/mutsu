@@ -151,7 +151,12 @@ impl Interpreter {
             }
             _ => {}
         }
-        Value::hash_with_data(Value::hash_arc(result))
+        // Rakudo's `%?RESOURCES` is a `Distribution::Resources` object that
+        // behaves as an Associative; carry the type name so `.^name` and type
+        // constraints (`has Distribution::Resources $.resources`) see it.
+        let mut data: crate::value::HashData = result.into();
+        data.declared_type = Some("Distribution::Resources".to_string());
+        Value::hash_with_data(Value::hash_arc(data))
     }
 
     /// Resolve the distribution for a routine's defining package when compiling
