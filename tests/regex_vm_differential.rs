@@ -131,6 +131,32 @@ differential_case!(
     "say \"a,b,c\" ~~ / \\w+ % ',' /; say \"a,b,c,\" ~~ / \\w+ %% ',' /; say \"a,b,c,x\" ~~ / \\w+ % ',' ',x' /; say \"a,b\" ~~ / ^ \\w* % ',' $ /; say \"\" ~~ / ^ \\w* % ',' $ /; say \";b\" ~~ / ^ <-[;]>* % ';' $ /; say \"a,b,c\" ~~ / \\w ** 2 % ',' /; say \"a,b,c\" ~~ / ^ \\w ** 1..2 % ',' /; say \"a, b ,c\" ~~ / \\w+ % [ \\s* ',' \\s* ] /; say \"a,b,c\" ~~ / :r \\w+ % ',' /; say \"a,b,c,\" ~~ / :r \\w+ %% ',' /; say \"a,b,c,x\" ~~ / :r \\w+ % ',' ',x' /; say \"a,b,c\" ~~ / :r \\w+ % ',' ',' /; say \"ab,cd\" ~~ / [ a || ab ]+ % ',' cd /; say \"aa,aa\" ~~ / ^ [ a+ ]+ % ',' $ /; say \"1-2--3\" ~~ / \\d+ % '-'+ /; say \"x\" ~~ / :r \\d* % ',' x /; say \"a,,b\" ~~ / ^ \\w* % ',' $ /;"
 );
 
+differential_case!(
+    backreferences,
+    r#"say ("xyzzy" ~~ / (.) $0 /).gist; say ("abcabc" ~~ / (\w+) $0 /).gist; say ("abba" ~~ / (.)(.) $1 $0 /).gist; say ("aba" ~~ / (a) [ (b) $0 ] /).gist; say ("abb" ~~ / (a) [ (b) $0 ] /).gist; say ("aXa" ~~ / $<q>=. X $<q> /).gist; say ("aa" ~~ / $<x>=(\w) ( $<x> ) /).gist; say ("abab" ~~ / (a)(b) $0 $1 /).gist; say ("aa bb" ~~ / (\w) $0 ' ' (\w) $1 /).gist; say ("abcab" ~~ / (a)(b) .* $0 $1 /).gist; say ("aab" ~~ / (a)+ $0 /).gist"#
+);
+differential_case!(
+    capture_markers,
+    r#"say ("foobar" ~~ / foo <( bar )> /).gist; say ("foobar" ~~ / foo <( bar /).gist; say ("foobar" ~~ / foo )> bar /).gist; say "a1 b2".match(/ \w <( \d /, :g).join(","); say ("xab" ~~ / x [ a <( b ] /).gist; say "a-b".subst(/ a <( '-' )> b /, "+"); say ~("xab" ~~ / x [ c || a <( b ] /); say ~("xab" ~~ / [ c || x a )> ] b /)"#
+);
+differential_case!(
+    nested_captures,
+    r#"say ("ab ab" ~~ / ((a)(b)) ' ' $0 /).gist; say ("abab" ~~ / ((a)(b))+ /).gist; say ("aaa" ~~ / ( (a)* ) /).gist; say ("a1b2" ~~ / ( (\w) (\d) )+ /)[0][1][0].Str; say ("xay" ~~ / x ( $<in>=a ) y /)[0]<in>.Str; say ("ab" ~~ / $<o>=( (a) b ) /)<o>[0].Str; say ("aab" ~~ / ( (a)+? ) b /).gist; say ("ab" ~~ / :r ( (a) ) b /).gist; say ("abc" ~~ / ( [ (a) || (b) ] ) /).gist; say ("b" ~~ / ( (a) )? b /).gist"#
+);
+differential_case!(
+    quantified_aliases,
+    r#"say ("123" ~~ / $<x>=(\d)+ /).gist; say ("a1b2" ~~ / [ $<x>=\w $<y>=(\d) ]+ /).gist; say ("aaab" ~~ / $<x>=[a]+ b /).gist; say ("ab" ~~ / $<x>=(a)* b /)<x>.elems; say ("b" ~~ / $<x>=(a)* b /)<x>.elems; say ("aab" ~~ / $<x>=(a)+? b /)<x>.elems; say ("aa" ~~ / :r $<x>=(a) ** 2 /).gist; say ("abc" ~~ / $<x>=[ (\w) ]+ /).gist"#
+);
+differential_case!(
+    separated_captures,
+    r#"say "a,b,c" ~~ / (\w)+ % ',' /; say "a,b,c," ~~ / (\w)+ %% (',') /; say "a1-b2-c3" ~~ / [ (\w)(\d) ]+ % '-' /; say "x=1;y=2" ~~ / [ $<k>=\w '=' $<v>=\d ]+ % ';' /; say "a, b ,c" ~~ / (\w) ** 2..3 % [ \s* (',') \s* ] /; say "ab" ~~ / :r (\w)* % ',' b /; say "a,b" ~~ / :r (\w)+ %% ',' /; say "" ~~ / (\w)* % ',' /; say "a;;b" ~~ / (\w*)+ % ';' /; say "1,2,3" ~~ / ^ (\d)+ % (',') $ /; say "aXbXc" ~~ / ((\w))+ % X /; say "a,b,c,x" ~~ / (\w)+ % ',' ',x' /"#
+);
+
+differential_case!(
+    alias_forms_and_position_assertions,
+    r#"say ("ab12" ~~ / $<a>=<alpha>+ /)<a>.Str; say ("abc" ~~ / @<x>=(.(.)) /)<x>.elems; say ("abc" ~~ / @<x>=[ \w ] /)<x>.elems; say ("aab" ~~ / a <?same> a /).gist; say ("abc" ~~ / <at(1)> b /).Str; say ("abc" ~~ / \w <!same> \w /).Str"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

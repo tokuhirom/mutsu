@@ -3,11 +3,12 @@
 //! (`rx_vm`).
 //!
 //! Slice A (#10251) covers the regular core of the language: one-grapheme
-//! atoms, zero-width assertions, groups, capture groups whose body captures
-//! nothing, sequential alternation (`||`), and greedy / frugal / ratcheted /
-//! counted quantifiers over bodies whose captures fold one level deep. A pattern holding anything else is declined as a
-//! whole and keeps the tree walk (ADR-0135 D5); the reason is reported under
-//! `MUTSU_VM_STATS`.
+//! atoms, zero-width assertions, groups, capture groups (nested ones in
+//! capture levels of their own, `rx_levels`), aliases, backreferences, the
+//! `<(` / `)>` markers, sequential alternation (`||`), and greedy / frugal /
+//! ratcheted / counted / separated quantifiers over any of these. A pattern
+//! holding anything else is declined as a whole and keeps the tree walk
+//! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -17,8 +18,11 @@
 //! produces the captures the walk would have produced.
 
 mod rx_atom;
+mod rx_capture_ops;
 mod rx_compile;
+mod rx_compile_compound;
 mod rx_diff;
+mod rx_levels;
 mod rx_vm;
 
 use crate::runtime::regex_types::{RegexAtom, RegexToken};
@@ -94,10 +98,18 @@ pub(super) enum RxOp {
         ctr: u16,
         min: u32,
     },
-    /// Close a `( … )` whose body captures nothing, opened at `regs[start]`.
+    /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
+    OpenCapture,
+    /// Close a `( … )` opened at `regs[start]`: its captures are the level
+    /// `OpenCapture` opened when `nested`, else none.
     CloseCapture {
         start: u16,
+        nested: bool,
     },
+    /// Match `atoms[i]`, whose match reads or writes captures (a
+    /// backreference, a `<(` / `)>` marker), through the walk's own
+    /// single-candidate matcher, and merge the capture delta it returns.
+    CapAtom(u32),
     /// Apply `toks[tok]`'s `$<name>=` / `$N=` alias over `regs[start]..pos`,
     /// with the positional count at token start in `regs[pos_base]`.
     Named {
@@ -122,6 +134,19 @@ pub(super) enum RxOp {
     Fold {
         tok: u32,
         pos_base: u16,
+    },
+    /// `regs[r] =` the number of collected separated-quantifier iterations.
+    SepBase(u16),
+    /// Close the innermost capture level as one collected iteration: a
+    /// separator's when `sep`, else an atom's.
+    Collect {
+        sep: bool,
+    },
+    /// The end of the separated quantifier `toks[tok]`: fold the iterations
+    /// collected since `regs[base]` into its capture delta.
+    SepEmit {
+        tok: u32,
+        base: u16,
     },
     /// The end of one `||` branch: pad the alternation `alts[alt]`'s
     /// positional slot space past what the branch took since `regs[pos_base]`

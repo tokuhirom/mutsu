@@ -1,21 +1,21 @@
 //! The backtracking loop that runs an [`RxProgram`] (ADR-0135 D2), and the
 //! entry point the walk's chokepoint consults.
 //!
-//! State: `pc`, `pos`, the walk's own `CapStore` (whose undo trail restores
-//! captures on backtrack), a register file whose writes go through a second
-//! undo trail, and one explicit stack of choice points. A choice point
-//! records the capture-trail and register-trail lengths to rewind to; a
+//! State: `pc`, `pos`, the capture levels (`rx_levels`: the walk's own
+//! `CapStore`s, whose journal restores captures on backtrack), a register
+//! file whose writes go through a second undo trail, and one explicit stack
+//! of choice points. A choice point records the capture-journal and
+//! register-trail lengths to rewind to; a
 //! ratchet cut drops choice points only, never trail entries, so an earlier
 //! choice point still rewinds correctly.
 
 use std::sync::Arc;
 
-use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
-use super::super::regex_trail::CapStore;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
+use super::rx_levels::Levels;
 use super::{RxOp, RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
-use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexPattern};
+use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
 use crate::symbol::Symbol;
 
 /// A point to resume from on failure. Both kinds record the capture-trail
@@ -50,10 +50,13 @@ struct Scratch {
     reg_trail: Vec<(u16, usize)>,
     stack: Vec<Choice>,
     ends: Vec<usize>,
+    levels: Levels,
 }
 
 thread_local! {
-    static SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::default());
+    // Boxed, so taking it out for a run moves a pointer rather than the whole
+    // struct: a run happens once per unanchored start position.
+    static SCRATCH: std::cell::Cell<Option<Box<Scratch>>> = const { std::cell::Cell::new(None) };
 }
 
 /// The pattern's compiled program, compiled at most once per pattern.
@@ -122,9 +125,9 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
-        let mut scratch = SCRATCH.with(|s| std::mem::take(&mut *s.borrow_mut()));
+        let mut scratch = SCRATCH.with(std::cell::Cell::take).unwrap_or_default();
         let result = self.rx_run_in(program, chars, start, pkg, &mut scratch);
-        SCRATCH.with(|s| *s.borrow_mut() = scratch);
+        SCRATCH.with(|s| s.set(Some(scratch)));
         result
     }
 
@@ -141,16 +144,14 @@ impl Interpreter {
             reg_trail,
             stack,
             ends,
+            levels,
         } = scratch;
         regs.clear();
         regs.resize(program.nregs, 0);
         reg_trail.clear();
         stack.clear();
         ends.clear();
-        let mut store = CapStore::new(RegexCaptures {
-            match_from: start,
-            ..Default::default()
-        });
+        levels.reset(start);
         let mut pc = 0u32;
         let mut pos = start;
         let mut farthest = start;
@@ -212,7 +213,7 @@ impl Interpreter {
                                 base,
                                 lo: base + min as usize,
                                 hi: base + n as usize,
-                                cap_mark: store.mark(),
+                                cap_mark: levels.mark(),
                                 reg_mark: reg_trail.len(),
                             });
                         }
@@ -243,7 +244,7 @@ impl Interpreter {
                     stack.push(Choice::At {
                         pc: alt,
                         pos,
-                        cap_mark: store.mark(),
+                        cap_mark: levels.mark(),
                         reg_mark: reg_trail.len(),
                     });
                     pc = prefer;
@@ -262,7 +263,13 @@ impl Interpreter {
                 }
                 // Cost: O(1) amortized.
                 RxOp::PosBase(r) => {
-                    set_reg!(r, store.caps().positional.len());
+                    set_reg!(r, levels.top().caps().positional.len());
+                    pc += 1;
+                    true
+                }
+                // Cost: O(1) amortized.
+                RxOp::SepBase(r) => {
+                    set_reg!(r, levels.collected_len());
                     pc += 1;
                     true
                 }
@@ -309,7 +316,7 @@ impl Interpreter {
                         stack.push(Choice::At {
                             pc: second,
                             pos,
-                            cap_mark: store.mark(),
+                            cap_mark: levels.mark(),
                             reg_mark: reg_trail.len(),
                         });
                         pc = first;
@@ -341,95 +348,29 @@ impl Interpreter {
                     pc += 1;
                     regs[ctr as usize] >= min as usize
                 }
-                // Cost: O(1) amortized (one slot, one trail record).
-                RxOp::CloseCapture { start } => {
-                    let from = regs[start as usize];
-                    let inner = RegexCaptures {
-                        match_from: from,
-                        ..Default::default()
-                    };
-                    store.merge_delta(capture_group_delta(from, pos, inner));
+                // Cost: see `rx_capture_op`.
+                op @ (RxOp::OpenCapture
+                | RxOp::CloseCapture { .. }
+                | RxOp::CapAtom(_)
+                | RxOp::Named { .. }
+                | RxOp::ZeroArm { .. }
+                | RxOp::QuantNames { .. }
+                | RxOp::Fold { .. }
+                | RxOp::AltTail { .. }
+                | RxOp::Collect { .. }
+                | RxOp::SepEmit { .. }) => {
                     pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized for the aliases Slice A compiles.
-                RxOp::Named {
-                    tok,
-                    start,
-                    pos_base,
-                } => {
-                    Self::store_apply_named_capture(
-                        &mut store,
-                        &program.toks[tok as usize],
-                        regs[start as usize],
-                        pos,
-                        regs[pos_base as usize],
-                    );
-                    pc += 1;
-                    true
-                }
-                // Cost: O(a + n), a = the atom's capture groups, n = the
-                // names under it (the walk's zero arm, same order).
-                RxOp::ZeroArm { tok, pos_base } => {
-                    let token = &program.toks[tok as usize];
-                    let flags =
-                        super::super::regex_helpers::capture_group_list_flags(&token.atom, false);
-                    store.reserve_nil(&flags);
-                    let named_zero_capture =
-                        !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
-                            && !token.subrule_call_capture;
-                    if named_zero_capture {
-                        Self::store_apply_named_capture(
-                            &mut store,
-                            token,
-                            pos,
-                            pos,
-                            regs[pos_base as usize],
-                        );
+                    match self.rx_capture_op(program, op, regs, levels, chars, pos, pkg) {
+                        Some(next) => {
+                            pos = next;
+                            farthest = farthest.max(pos);
+                            true
+                        }
+                        None => false,
                     }
-                    let mut list_names = std::collections::HashSet::new();
-                    Self::collect_nested_list_quantified_names(&token.atom, &mut list_names);
-                    for n in list_names {
-                        store.insert_named_quantified(n);
-                    }
-                    pc += 1;
-                    true
-                }
-                // Cost: O(n), n = the names under the token.
-                RxOp::QuantNames { tok } => {
-                    for n in Self::collect_quantified_names_for_token(&program.toks[tok as usize]) {
-                        store.insert_named_quantified(n);
-                    }
-                    pc += 1;
-                    true
-                }
-                // Cost: O(k), k = the slots folded.
-                RxOp::Fold { tok, pos_base } => {
-                    let stride = super::super::regex_helpers::count_capture_groups(
-                        &program.toks[tok as usize].atom,
-                    );
-                    store.fold_quantified(regs[pos_base as usize], stride, true);
-                    pc += 1;
-                    true
-                }
-                // Cost: O(p + n), p = the padding slots, n = the
-                // alternation's list-valued names; O(1) when it has neither.
-                RxOp::AltTail {
-                    alt,
-                    pos_base,
-                    suppress_padding,
-                } => {
-                    let taken = store.caps().positional.len() - regs[pos_base as usize];
-                    if let Some(delta) =
-                        alternation_tail_delta(&program.alts[alt as usize], taken, suppress_padding)
-                    {
-                        store.merge_delta(delta);
-                    }
-                    pc += 1;
-                    true
                 }
                 // Cost: O(c), c = this level's captures (one snapshot).
-                RxOp::Match => break 'run Some((pos, store.snapshot())),
+                RxOp::Match => break 'run Some((pos, levels.top().snapshot())),
             };
             if !ok {
                 let Some(choice) = stack.pop() else {
@@ -466,7 +407,7 @@ impl Interpreter {
                         (pc, at, cap_mark, reg_mark)
                     }
                 };
-                store.rewind(cap_mark);
+                levels.rewind(cap_mark);
                 while reg_trail.len() > reg_mark {
                     let (r, old) = reg_trail.pop().expect("register trail entry");
                     regs[r as usize] = old;
