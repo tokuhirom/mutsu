@@ -57,6 +57,24 @@ pub(crate) fn block_keeps_outer_topic(data: &SubData) -> bool {
     !data.params.is_empty() && !data.params.iter().any(|p| p == "_")
 }
 
+/// Whether the block's own bytecode reads `&?BLOCK`. The batched inline loops
+/// run the body without the call machinery that installs the `&?BLOCK`
+/// self-reference, so such a block must take the full per-element call path.
+// Cost: O(n), n = opcodes in the block body (a nested closure has its own code).
+pub(crate) fn sub_reads_block_var(data: &SubData) -> bool {
+    let Some(cc) = data.compiled_code.as_ref() else {
+        return false;
+    };
+    cc.ops.iter().any(|op| {
+        crate::opcode::CompiledCode::op_code_var_read_const_idx(op).is_some_and(|idx| {
+            matches!(
+                cc.constants.get(idx as usize).map(Value::view),
+                Some(ValueView::Str(s)) if s.as_str() == "?BLOCK"
+            )
+        })
+    })
+}
+
 /// A carrier Sub delegates its behaviour through env markers instead of its
 /// own body: an `.assuming` routine wrapper (`__mutsu_routine_name`), a
 /// composed callable (`__mutsu_compose_left`/`right`), or the multi-candidate
@@ -431,7 +449,8 @@ impl Interpreter {
                         || pd.code_signature.is_some()
                         || pd.shape_constraints.is_some()
                 }) || !data.assumed_positional.is_empty()
-                    || !data.assumed_named.is_empty());
+                    || !data.assumed_named.is_empty()
+                    || sub_reads_block_var(&data));
             // A routine callback (`map $f, @xs` / `@xs.map($f)` where `$f` is a
             // `sub`) must run through the real call path so a `return` in its
             // body ends THAT call with the returned value (routine semantics).
@@ -911,7 +930,7 @@ impl Interpreter {
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
             return None;
         }
-        if sub_is_call_carrier(&data) {
+        if sub_is_call_carrier(&data) || sub_reads_block_var(&data) {
             return None;
         }
         // A body-less routine Sub (plan-derived, ADR-0019 C6e-3) has nothing
