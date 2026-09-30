@@ -77,6 +77,62 @@ impl Compiler {
         Ok(())
     }
 
+    /// `a | b | c`, as `drive_alternation_candidates` drives it: one
+    /// `LtmAlt` ranks the branches at run time and enters them best first,
+    /// each one only after every higher-ranked branch has failed against the
+    /// rest of the pattern. Branch captures merge as for `||` (`AltTail`).
+    /// Under ratchet the alternation commits to the first branch that
+    /// matches, and to that branch's first end.
+    pub(super) fn ltm_alternation(
+        &mut self,
+        token: &RegexToken,
+        alts: &[RegexPattern],
+    ) -> Result<(), Decline> {
+        if alts.iter().any(has_numbered_alias) {
+            return Err("alt-numbered-alias");
+        }
+        let alt = self.alts.len() as u32;
+        self.alts.push(alternation_list_flags(alts));
+        let pos_base = self.reg();
+        self.ops.push(RxOp::PosBase(pos_base));
+        let height = token.ratchet.then(|| self.reg());
+        if let Some(h) = height {
+            self.ops.push(RxOp::Height(h));
+        }
+        // Reserved before the branches, which may hold `|`s of their own.
+        let table = self.ltm_alts.len();
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        self.ltm_alts.push(super::LtmAltTable {
+            tok,
+            pcs: Box::default(),
+        });
+        self.ops.push(RxOp::LtmAlt(table as u32));
+        let suppress_padding = self.quant_alt_depth > 0;
+        let mut pcs = Vec::with_capacity(alts.len());
+        let mut joins = Vec::with_capacity(alts.len());
+        for branch in alts {
+            pcs.push(self.pc());
+            self.pattern(branch)?;
+            self.ops.push(RxOp::AltTail {
+                alt,
+                pos_base,
+                suppress_padding,
+            });
+            if let Some(h) = height {
+                self.ops.push(RxOp::Cut(h));
+            }
+            joins.push(self.pc());
+            self.ops.push(RxOp::Jmp(0)); // patched below
+        }
+        let end = self.pc();
+        for j in joins {
+            self.ops[j as usize] = RxOp::Jmp(end);
+        }
+        self.ltm_alts[table].pcs = pcs.into_boxed_slice();
+        Ok(())
+    }
+
     /// `atom ** min..max % sep` (and `%%`, which may end on a separator), as
     /// the walk's separated quantifier matches it. The first atom is not
     /// required to advance; every later separator-and-atom step is. Without
@@ -85,8 +141,7 @@ impl Compiler {
     /// before its plain end, and zero iterations first when frugal. Under ratchet
     /// (`match_separated_quantifier_ratchet`) each atom and separator takes
     /// its first match, the chain grows while it can, and nothing is given
-    /// back. Captures under a separated quantifier fold side by side
-    /// (`append_separated_captures`).
+    /// back. Captures fold side by side (`SepEmit`).
     pub(super) fn separated(
         &mut self,
         token: &RegexToken,

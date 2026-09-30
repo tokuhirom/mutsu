@@ -65,6 +65,14 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         use crate::runtime::utils::collection_contains_instance;
+        // `Any.kv`/`.pairs`/... are `self.list.<method>`: an object that
+        // overrides `list` answers from that list, not as one item.
+        if let Some(view) = self
+            .try_any_list_view_method(target, method_sym.as_str(), args)
+            .transpose()
+        {
+            return Some(view);
+        }
         // The `(receiver kind, method symbol)` table (#8888). For a plain
         // aggregate or `Str` calling one of the pure value queries the table
         // lists, every probe between here and the family cascade is known to

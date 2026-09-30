@@ -7,7 +7,7 @@ use Test;
 # (Exported sub names avoid Raku builtins like `val` so a bareword call resolves
 # to the export, not the builtin.)
 
-plan 14;
+plan 15;
 
 # A scratch lib directory for the generated modules.
 my $lib = $*TMPDIR.add("mutsu-sub-export-{$*PID}");
@@ -97,12 +97,16 @@ write-mod 'EPlain', q:to/END/;
 is run-out('use EPlain; print plainsub()'), 'plain',
     'a module without EXPORT still imports normally';
 
-# 10) EXPORT args can be dynamic expressions, not just literals.
+# 10) EXPORT args can be dynamic expressions, not just literals. The `use`
+# runs at BEGIN time (ADR-0134), so the argument sees what a BEGIN stored and
+# not a run-time initializer.
 write-mod 'EDyn', q:to/END/;
     sub EXPORT($x) { Map.new: '&echo' => sub { $x } }
     END
-is run-out('my $v = "runtime-" ~ (3 + 4); use EDyn $v; print echo()'),
-    'runtime-7', 'EXPORT receives a runtime-evaluated argument';
+is run-out('my $v; BEGIN $v = "begin-" ~ (3 + 4); use EDyn $v; print echo()'),
+    'begin-7', 'EXPORT receives a BEGIN-time-evaluated argument';
+is run-out('my $v = "runtime"; use EDyn $v; print echo().raku'),
+    'Any', 'a run-time initializer has not run when the use does';
 
 # 11) EXPORT selecting among existing module subs by argument.
 write-mod 'ESelect', q:to/END/;

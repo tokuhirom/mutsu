@@ -619,7 +619,10 @@ impl Value {
                     return "[...]".to_string();
                 }
                 SEEN_ARR_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                // A hole stringifies as the container's `is default(...)` value,
+                // not the `Any` marker the slot holds (`items_with_default`).
                 let result = items
+                    .items_with_default()
                     .iter()
                     .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()

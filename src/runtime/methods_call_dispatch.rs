@@ -3283,7 +3283,11 @@ impl Interpreter {
                         } else {
                             " "
                         };
-                        let inner = gist_capped(interp, items.iter(), sep);
+                        // A hole gists as the container's `is default(...)` value,
+                        // not the `Package("Any")` marker the slot holds -- the
+                        // marker is also what routed this array here in the
+                        // first place (`collection_contains_instance`).
+                        let inner = gist_capped(interp, items.items_with_default().iter(), sep);
                         match kind {
                             ArrayKind::List | ArrayKind::ItemList => format!("({inner})"),
                             _ => format!("[{inner}]"),
@@ -4073,7 +4077,9 @@ impl Interpreter {
             && info.value_type != "Mu"
             && let ValueView::Array(items, _) = target.view()
         {
-            let items = items.to_vec();
+            // A hole renders as the container's `is default(...)` value, not
+            // the element type object the slot holds (`items_with_default`).
+            let items = items.items_with_default().into_owned();
             let inner = items
                 .iter()
                 .map(|item| self.raku_element_repr(item))

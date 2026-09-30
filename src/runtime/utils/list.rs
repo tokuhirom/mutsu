@@ -68,7 +68,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         {
             value_to_list(inner)
         }
-        ValueView::Array(items, ..) => items.to_vec(),
+        // Iterating an array reads each slot the way `@a[$i]` does, so a hole
+        // yields the container's `is default(...)` value (`items_with_default`).
+        ValueView::Array(items, ..) => items.items_with_default().into_owned(),
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             items.to_vec()
         }

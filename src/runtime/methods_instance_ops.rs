@@ -791,7 +791,11 @@ impl Interpreter {
                 ));
             }
 
-            if crate::runtime::nqp_ops_list::is_iteration_buffer(&target) {
+            // A subclass's own `BIND-POS`/`push`/... (ValueList's throwing
+            // ones) override the buffer's native operations.
+            if crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
+                && !self.has_user_method(&class_name.resolve(), method)
+            {
                 let mut items = match attributes
                     .as_map()
                     .get("__mutsu_iterationbuffer_items")

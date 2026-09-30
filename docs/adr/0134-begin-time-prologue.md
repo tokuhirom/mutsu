@@ -1,6 +1,6 @@
 # ADR-0134: BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals
 
-- Status: Accepted (2026-09-30; slices 1–2 implemented, slice 3 partly — see §7)
+- Status: Accepted (2026-09-30; slices 1–3 implemented — see §7)
 - Date: 2026-09-30
 - Deciders: tokuhirom, Claude
 - Addresses: [#9919](https://github.com/tokuhirom/mutsu/issues/9919)
@@ -337,11 +337,32 @@ status here.
   lifting it would run it ahead of an effect that precedes it in the source
   (`roast/S04-declarations/will.t`).
 
-**Slice 3 — conditional `use` implemented** (`src/runtime/begin_prologue/mod.rs`,
-`t/modules/import-export/use-if-begin-time.t`; closes #9919).
+**Slice 3 — `use`, `constant` and conditional `use` implemented**
+(`src/runtime/begin_prologue/mod.rs`,
+`t/modules/import-export/use-if-begin-time.t`,
+`t/modules/import-export/use-constant-begin-time.t`; closes #9919 and #10336).
 
-- **Bound.** The prologue's bound reaches the last top-level conditional
-  `use` as well as the last BEGIN.
+- **Bound.** The prologue's bound reaches the last top-level BEGIN-time
+  effect: a BEGIN, a `constant`, and every `use` / `need` / `import` except a
+  positional pragma. So a unit's loads and constants all run in the prologue,
+  in source order, ahead of the run-time statements that precede them.
+- **Positional pragmas.** A lowercase pragma other than `use lib` and `use if`
+  (`use strict`, `no strict`, `use fatal`, `use soft`, ...) is applied by
+  mutsu as run-time state at its own position. It stays in the run-time
+  remainder and does not extend the bound; moving it would switch the mode on
+  for the statements before it. `use lib` and `use if` move, because later
+  loads depend on them.
+- **Multi-statement declarations.** The mainline takes its prologue before
+  flattening its `SyntheticBlock`s, so a desugared declaration (`my ($a, $b) =
+  f()`, whose members carry no `__has_initializer` marker) stays whole in the
+  run-time remainder instead of losing its initializers. An exported type
+  (`class C is export { }`, the declaration plus its `__MUTSU_EXPORT_TYPE__`
+  marker) moves whole into the prologue.
+- **Block imports over an outer import.** A block's `use` that re-imports a
+  name the unit already imported (`use M :t; { use M } t`) used to remove the
+  name on block exit. The import scope now remembers the value it shadowed
+  and puts it back. The prologue made this common (the unit's `use` now runs
+  before the block's), but the bug was independent of it.
 - **Conditional `use`.** `use Foo:if(EXPR)` evaluates `EXPR` in the prologue,
   into a unit slot the `use` then reads. An undefined value dies with `Did not
   provide compile-time-value for :if adverb in use statement`, before the
@@ -350,15 +371,13 @@ status here.
 - **Native types.** A native variable split ahead of a prologue effect starts
   its static half from the native zero. A native type with no known zero (a
   NativeCall `ulong`) keeps its declaration whole.
-- **Not done: every unconditional `use` and every `constant` as a prologue
-  effect (#10336).** Widening the bound to all of them failed 13 `t/` files,
-  each a separate partition gap: positional pragmas, group declarations, and
-  imports reached ahead of the code depending on them. So a plain `use` or
-  `constant` still runs in source position unless a later BEGIN or
-  conditional `use` pulls it into the prologue.
 - **Residue:**
   - A `False` condition still leaves the names the parse-time scan registered
     for the module in place (#10331). Calling one therefore fails at run time
     rather than at compile time. Fixing it needs §2.4's parse feedback.
   - The undefined-condition error is a plain `die` raised in the prologue, not
     a `===SORRY!===` compile error.
+  - A `use` nested in a block still loads through GH-8201's `PreloadModule`
+    hoist, not the prologue, and `constant`s nested in inner scopes run in
+    position unless slice 2 lifts them. Only top-level loads and constants
+    are prologue effects.

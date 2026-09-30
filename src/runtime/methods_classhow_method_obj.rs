@@ -291,22 +291,7 @@ impl Interpreter {
         owner: &str,
         is_rw: bool,
     ) -> Value {
-        let obj = self.make_native_method_object(name, owner);
-        if !is_rw {
-            return obj;
-        }
-        let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = obj.view()
-        else {
-            return obj;
-        };
-        let mut attrs = attributes.as_map().clone();
-        attrs.insert("rw".to_string(), Value::TRUE);
-        attrs.insert("readonly".to_string(), Value::FALSE);
-        Value::make_instance(class_name, attrs)
+        self.accessor_method_object(name, owner, is_rw, None, None, true)
     }
 
     /// `is_regex`: the method is a grammar `token`/`rule`/`regex` -- its

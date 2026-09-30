@@ -753,6 +753,7 @@ mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod methods_introspect;
 mod methods_io_dispatch;
+mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
 mod methods_mixin_what_cache;
@@ -5205,6 +5206,12 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: HashSet<Symbol>,
+    /// The value each of `imported_env_keys` held before this scope first
+    /// imported over it, for the keys that already had one. The block's
+    /// import shadows that outer binding, so `pop_import_scope` puts it back
+    /// instead of removing the key (`use M :t; { use M } t` still sees the
+    /// outer import of `t`).
+    pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
     /// Imported environment aliases visible before this scope was pushed.
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     /// Imported routine aliases visible before this scope was pushed. The

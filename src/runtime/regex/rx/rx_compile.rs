@@ -22,6 +22,7 @@ pub(super) struct Compiler {
     pub(super) atoms: Vec<crate::runtime::regex_types::RegexAtom>,
     pub(super) toks: Vec<RegexToken>,
     pub(super) alts: Vec<AlternationListFlags>,
+    pub(super) ltm_alts: Vec<super::LtmAltTable>,
     pub(super) nregs: usize,
     /// How many enclosing quantified bodies contain an alternation: the walk
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
@@ -37,6 +38,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         atoms: Vec::new(),
         toks: Vec::new(),
         alts: Vec::new(),
+        ltm_alts: Vec::new(),
         nregs: 0,
         quant_alt_depth: 0,
     };
@@ -50,6 +52,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         atoms: c.atoms,
         toks: c.toks,
         alts: c.alts,
+        ltm_alts: c.ltm_alts,
         nregs: c.nregs,
         ascii: std::sync::OnceLock::new(),
     })
@@ -104,7 +107,9 @@ pub(super) fn atom_captures(atom: &RegexAtom) -> bool {
     match atom {
         RegexAtom::CaptureGroup(_) => true,
         RegexAtom::Group(p) => pattern_captures(p),
-        RegexAtom::SequentialAlternation(alts) => alts.iter().any(pattern_captures),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.iter().any(pattern_captures)
+        }
         _ => false,
     }
 }
@@ -129,7 +134,9 @@ pub(super) fn has_numbered_alias(pattern: &RegexPattern) -> bool {
             .is_some_and(|n| n.parse::<usize>().is_ok())
             || match &t.atom {
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => has_numbered_alias(p),
-                RegexAtom::SequentialAlternation(alts) => alts.iter().any(has_numbered_alias),
+                RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+                    alts.iter().any(has_numbered_alias)
+                }
                 _ => false,
             }
     })
@@ -167,7 +174,9 @@ fn atom_min_len(atom: &RegexAtom) -> usize {
     match atom {
         a if is_consuming(a) => 1,
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => min_len(p),
-        RegexAtom::SequentialAlternation(alts) => alts.iter().map(min_len).min().unwrap_or(0),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.iter().map(min_len).min().unwrap_or(0)
+        }
         _ => 0,
     }
 }
@@ -293,9 +302,21 @@ impl Compiler {
                 self.ops.push(RxOp::CloseCapture { start, nested });
             }
             RegexAtom::Named(_) => return Err("subrule"),
-            RegexAtom::Alternation(_) => return Err("alternation"),
+            RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
-            RegexAtom::Lookaround { .. } => return Err("lookaround"),
+            RegexAtom::Lookaround { pattern, .. } => {
+                // The walk's own lookaround test (`<?before …>`, `<!after …>`)
+                // runs the body through `regex_match_end_from_caps_in_pkg`,
+                // which answers from the body's own compiled program. Compile
+                // the lookaround only when that program exists, so the body
+                // never drops back to the walk in mid-program (D5).
+                if super::rx_vm::program_for(pattern).is_none() {
+                    return Err("lookaround-body");
+                }
+                let i = self.atoms.len() as u32;
+                self.atoms.push(token.atom.clone());
+                self.ops.push(RxOp::CapAtom(i));
+            }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
             | RegexAtom::CaptureStartMarker

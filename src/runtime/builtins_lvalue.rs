@@ -722,6 +722,33 @@ impl Interpreter {
                 ),
                 None => Err(RuntimeError::new("Callable has been freed")),
             },
+            // A `Method`/`Submethod` object called with its invocant
+            // (`D.^lookup('y')($d) = 5`, `D.^can('y')[0]($d) = 5`) is the
+            // callable spelling of `$d.$m() = 5`, so it assigns through the
+            // same method-lvalue path: that path owns the rw-accessor store,
+            // the `is rw` method container return (ADR-0059) and the wrap
+            // chain (`try_wrapped_accessor_lvalue`). Invoking the carried
+            // callable here instead would hand back an already
+            // decontainerized value with nothing left to write through.
+            // TODO: compile to bytecode -- like `$d.$m() = 5`, this resolves
+            // the method by name on the invocant rather than binding the
+            // object's own candidate (#10344).
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.as_str(), "Method" | "Submethod") && !call_args.is_empty() => {
+                let method = attributes
+                    .as_map()
+                    .get("name")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default();
+                let mut call_args = call_args;
+                let invocant = call_args.remove(0);
+                self.assign_method_lvalue_with_values(
+                    None, invocant, &method, call_args, value, false,
+                )
+            }
             // `(1 + $x) = 3`, `@a[1]:v = 3`, `(1, 2) = 3`: the LHS is an
             // expression's value, not a routine to call. Assign to that value
             // the way Rakudo does (#9811).

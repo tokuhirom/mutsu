@@ -109,18 +109,20 @@ fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
 /// Returns the length of the BEGIN prologue left at the head of `stmts` (zero
 /// below the top level).
 fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
-    // Flatten SyntheticBlocks so VarDecls get hoisted properly.
-    flatten_synthetic_blocks(stmts);
-
     // At a compilation unit's top level, the BEGIN-time effects run first, in
     // source order (ADR-0134). The prologue is taken out before the per-level
     // reordering below, which then only sees the run-time remainder, so no
-    // bucketing can move a BEGIN above a declaration it observes.
+    // bucketing can move a BEGIN above a declaration it observes. It is taken
+    // before the flattening, so a desugared multi-statement declaration
+    // (`my ($a, $b) = f()`) reaches the partition as the one unit it is.
     let mut prologue = if is_top {
         crate::runtime::begin_prologue::take_unit_prologue(stmts)
     } else {
         Vec::new()
     };
+
+    // Flatten SyntheticBlocks so VarDecls get hoisted properly.
+    flatten_synthetic_blocks(stmts);
     for stmt in prologue.iter_mut() {
         recurse_into_stmt(stmt);
     }

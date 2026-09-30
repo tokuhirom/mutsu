@@ -1,4 +1,4 @@
-//! The unit-level BEGIN prologue (ADR-0134, slices 1 and 2).
+//! The unit-level BEGIN prologue (ADR-0134, slices 1 to 3).
 //!
 //! Rakudo runs a `BEGIN` block as soon as the parser reaches its end, before
 //! any run-time code of the compilation unit. The block sees every lexical in
@@ -9,8 +9,8 @@
 //! lexical slots. No second environment exists to keep in sync.
 //!
 //! [`take_unit_prologue`] performs that split on a unit's top-level statement
-//! list. Everything up to and including the last top-level statement-form
-//! `BEGIN` is partitioned into two parts:
+//! list. Everything up to and including the last top-level BEGIN-time effect
+//! is partitioned into two parts:
 //!
 //! - the **prologue**, which holds the `BEGIN` phasers themselves, the
 //!   declarations a BEGIN can observe (`use`, routines, packages, types,
@@ -19,10 +19,11 @@
 //!   of each split variable declaration as an assignment at its original
 //!   position.
 //!
-//! Statements after the last `BEGIN` are left as they are. No BEGIN observes
-//! them, so moving them would only change run-time order without gaining
-//! anything. Slice 3 widens the prologue to every `use` and `constant`, which
-//! do not need a `BEGIN` to be BEGIN-time effects.
+//! A `use` (other than a positional pragma such as `use strict`) and a
+//! `constant` are BEGIN-time effects too (slice 3), so the bound reaches the
+//! last of them as well. Statements after the last effect are left as they
+//! are. No effect observes them, so moving them would only change run-time
+//! order without gaining anything.
 //!
 //! Known residue of this slice: a class or module body is a declaration and
 //! moves whole, so a bare run-time statement *inside* such a body (`class A {
@@ -41,7 +42,7 @@ use std::collections::HashSet;
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
 /// run-time remainder, as described in the module docs. The prologue is
 /// returned, and `stmts` is left holding the remainder. If the unit has no
-/// top-level statement-form `BEGIN`, the prologue is empty and `stmts` is
+/// BEGIN-time effect, the prologue is empty and `stmts` is
 /// untouched.
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     // Lift the BEGINs nested in each top-level statement first (slice 2):
@@ -55,8 +56,8 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
         effects.push(lifted.effects.split_off(before));
     }
     let decls = lifted.decls;
-    // A conditional `use` is a BEGIN-time effect on its own (slice 3), so the
-    // prologue reaches the last of them too.
+    // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),
+    // so the prologue reaches the last of them too.
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
     let Some(last) = last_effect.max(last_lifted) else {
@@ -125,7 +126,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         }
         other => other,
     };
-    if is_begin_time_stmt(&stmt) {
+    if is_begin_time_stmt(&stmt) && !is_positional_pragma(&stmt) {
         // Carry the line marker with the statement, so an error raised in the
         // prologue still names the statement's own line.
         if let Some(line @ Stmt::SetLine(_)) = rest.last() {
@@ -229,17 +230,32 @@ fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
     }
 }
 
-/// A statement that extends the prologue's bound: a `BEGIN`, or a conditional
-/// `use` (`use Foo:if(EXPR)`), whose condition must be evaluated at BEGIN time.
-/// An unconditional `use` and a `constant` do not extend it yet (#10336):
-/// moving every load and constant ahead of the run-time statements that
-/// precede them surfaced partition gaps that need their own slice.
+/// A statement that extends the prologue's bound: a `BEGIN`, a `constant`, and
+/// every module load (`use`, `need`, `import`) except a positional pragma
+/// (ADR-0134 §2.1.1). A conditional `use` (`use Foo:if(EXPR)`) is one of them;
+/// its condition is evaluated in the prologue too.
 fn is_begin_time_effect(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
-        Stmt::Use { condition, .. } => condition.is_some(),
+        Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => !is_positional_pragma(stmt),
+        Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
         _ => false,
     }
+}
+
+/// A lexical pragma that mutsu applies as run-time state at the statement's
+/// own position (`use strict`, `no strict`, `use fatal`, `use soft`, ...). It
+/// stays where it is: moving it into the prologue would switch the mode on for
+/// the run-time statements that precede it. Every lowercase pragma counts,
+/// except the ones a later BEGIN-time effect depends on: `use lib` extends the
+/// search path the prologue's loads resolve against, and `use if` enables the
+/// `:if` adverb of a later conditional `use`.
+fn is_positional_pragma(stmt: &Stmt) -> bool {
+    let module = match stmt {
+        Stmt::Use { module, .. } | Stmt::No { module, .. } | Stmt::Need { module } => module,
+        _ => return false,
+    };
+    module.starts_with(|c: char| c.is_ascii_lowercase()) && !matches!(module.as_str(), "lib" | "if")
 }
 
 /// A statement whose whole effect happens at BEGIN time in Rakudo: the `BEGIN`
@@ -266,6 +282,18 @@ fn is_begin_time_stmt(stmt: &Stmt) -> bool {
         | Stmt::EnumDecl { .. }
         | Stmt::SubsetDecl { .. }
         | Stmt::AugmentClass { .. } => true,
+        // An exported type declaration (`class C is export { }`) arrives as the
+        // declaration followed by its `__MUTSU_EXPORT_TYPE__` marker; the pair is
+        // one declaration.
+        Stmt::SyntheticBlock(inner) => {
+            !inner.is_empty()
+                && inner.iter().all(|s| {
+                    is_begin_time_stmt(s)
+                        || matches!(s, Stmt::Expr(Expr::Call { name, .. })
+                            if name.resolve() == "__MUTSU_EXPORT_TYPE__")
+                })
+                && inner.iter().any(is_begin_time_stmt)
+        }
         _ => false,
     }
 }

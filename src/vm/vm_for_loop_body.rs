@@ -642,6 +642,13 @@ impl Interpreter {
         // throws, so the deep flag must NOT follow `source_items_are_bare`.
         let topic_readonly = topic_deep_readonly
             || (!spec.is_rw && binds_implicit_topic && spec.source_items_are_bare);
+        // Per item, not per loop: a VM-array object's slot may still hold a
+        // container (see `for_source_is_value_buffer`).
+        let source_value_buffer = self.for_source_is_value_buffer(
+            code,
+            container_binding.as_deref(),
+            container_source_slot,
+        );
         let total_items = match live {
             Some(array) => live_array_len(array),
             None => chunked_items.len(),
@@ -893,6 +900,8 @@ impl Interpreter {
                 _ => false,
             };
             let aliased = promoted.is_some() || (item_carries_cell && !item_is_quanthash_weight);
+            let bare_buffer_item =
+                source_value_buffer && !aliased && !matches!(item.view(), ValueView::Proxy { .. });
             // A cell handed out by a container-aware producer (`.values`,
             // `.reverse`, `.sort`) carries its container's element constraint
             // but not the container's NAME -- `vm_element_producers.rs` sees a
@@ -988,7 +997,7 @@ impl Interpreter {
             // `ReadonlyKind::ImmutableDeep` rather than a second, independent
             // marker, so the two facts can never drift out of sync (see
             // `restore_topic_readonly`, which now restores this mark in full).
-            if topic_readonly {
+            if topic_readonly || (binds_implicit_topic && bare_buffer_item) {
                 // The topic aliases an immutable item directly, with no
                 // container of its own: rakudo throws X::AdHoc "Cannot assign
                 // to an immutable value" (not the readonly-*variable* wording
@@ -1008,7 +1017,9 @@ impl Interpreter {
             // Skip @-sigil and %-sigil params: they bind to a mutable
             // Array/Hash container, so assignments like `@a = values` must
             // be allowed (matching Raku semantics).
-            if !spec.is_rw
+            // So is an `is rw` / sigilless one bound to a VM-array object's
+            // bare slot value: there is no container behind it to write.
+            if (!spec.is_rw || bare_buffer_item)
                 && let Some(ref name) = param_name
                 && !name.starts_with('@')
                 && !name.starts_with('%')
@@ -1052,7 +1063,15 @@ impl Interpreter {
                 // chunk holds before the body runs; comparing against it after
                 // is the only way left to see that the body assigned through
                 // such an alias.
-                let quant_chunk_before: Option<Vec<Value>> = (source_immutable_quant
+                // A VM-array object's bare slot values are just as immutable
+                // (`for @tuple.kv -> \k, \v { v = 42 }`); a chunk carrying a
+                // container is left alone, since that slot is writable.
+                let buffer_chunk_bare = source_value_buffer
+                    && !spec.multi_param_names.is_empty()
+                    && matches!(item.view(), ValueView::Array(chunk, ..)
+                        if !chunk.items().iter().any(Self::binding_carries_element_cell));
+                let quant_chunk_before: Option<Vec<Value>> = ((source_immutable_quant
+                    || buffer_chunk_bare)
                     && !spec.multi_param_names.is_empty())
                 .then(|| match item.view() {
                     ValueView::Array(chunk, ..) => chunk
@@ -1075,7 +1094,7 @@ impl Interpreter {
                 // a successful body into the same error, so the shared Err arm runs
                 // its readonly/topic cleanup before propagating.
                 if body_result.is_ok()
-                    && source_immutable_quant
+                    && (source_immutable_quant || buffer_chunk_bare)
                     && let Some(err) = self.immutable_quant_param_mutation(
                         &param_name,
                         &spec.multi_param_names,
