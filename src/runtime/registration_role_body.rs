@@ -738,10 +738,14 @@ impl Interpreter {
                         .collect(),
                     _ => vec!["DEFAULT".to_string()],
                 };
-                let resolved = name.resolve();
-                let (pkg, short) = match resolved.rsplit_once("::") {
-                    Some((p, s)) => (p.to_string(), s.to_string()),
-                    None => (role_name.to_string(), resolved.clone()),
+                let (pkg, short) = match crate::qualified::package_parent(*name) {
+                    Some(parent) => (
+                        parent.resolve().to_string(),
+                        crate::qualified::unqualified_part(*name)
+                            .resolve()
+                            .to_string(),
+                    ),
+                    None => (role_name.to_string(), name.resolve().to_string()),
                 };
                 self.register_exported_var(pkg, short, tags);
             }
