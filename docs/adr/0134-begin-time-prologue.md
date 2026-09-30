@@ -323,7 +323,7 @@ status here.
   nested reorder rules):
   - a BEGIN whose enclosing inner scopes declare ahead of it a routine, a
     code variable (which can declare an operator), a type, a package or an
-    import;
+    import (a plain routine no longer does: see "Slice 2 follow-up" below);
   - a BEGIN in a package body, including a method's;
   - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
     scope;
@@ -336,6 +336,47 @@ status here.
   Once one BEGIN-time effect is not lifted, no later nested one is, because
   lifting it would run it ahead of an effect that precedes it in the source
   (`roast/S04-declarations/will.t`).
+
+**Slice 2 follow-up — a routine declared ahead of a nested BEGIN, implemented**
+(`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-routines.t`; closes #10329).
+
+- **The gap.** An inner scope that had declared a `sub` ahead of a BEGIN
+  blocked the lift, because the prologue runs before that scope is entered and
+  the routine does not exist there. `sub f { sub helper { 1 }; BEGIN say "b" }`
+  never ran its BEGIN when `f` was not called.
+- **The mechanism.** The lifted body gets a copy of each routine it calls. It
+  runs in one block per scope it reads from, nested as those scopes are. A
+  scope's block declares the copies of the variables the body (or a copied
+  routine) reads from that scope, taken from the same static cells as before,
+  then the routines declared in that scope, then the body. So a routine closes
+  over the same declarations it does in place, and a name shadows as it does
+  there. The routine's own declaration stays in place, so each frame of the
+  scope still gets its own. This is the first alternative of the issue
+  (re-declare the routine in the lifted body's block). Giving routines static
+  cells was not needed.
+- **Which routines.** The compiled body is scanned for the routines it calls by
+  bare name and reads as `&name`. Each routine it selects is scanned the same
+  way, so the closure is transitive, and its free variables resolve against the
+  bindings that preceded its own declaration. A plain `sub` is copyable. A
+  `multi`, an `our sub`, an exported routine, an operator or other category
+  routine (its syntax is already registered by the parser, which a scan of the
+  called names cannot see), and a redeclaring one still block the scope
+  ([#10395](https://github.com/tokuhirom/mutsu/issues/10395)).
+- **Dynamic access.** `EVAL`, `CALLER::`/`OUTER::`/`MY::`, a pseudo-package
+  qualified call (`MY::helper()`) and `::($name)` can name any routine in
+  scope. A body that uses one in a scope that declares a routine keeps its
+  pre-ADR handling, as before. Lifting it instead would fail at startup, where
+  the old handling was silent.
+- **Still not lifted.** A type, package, import or `my &code` declared ahead,
+  because the body's references to a type cannot be listed soundly from the
+  compiled code: `::($name)` and a parameter's type constraint do not reach the
+  constant pool, and a type cannot simply be declared twice, since two
+  declarations are two type objects
+  ([#10394](https://github.com/tokuhirom/mutsu/issues/10394)). The first
+  non-liftable BEGIN still halts lifting for the rest of the unit
+  (`Lifted::halted`), so one of these also keeps the BEGINs after it on the old
+  path.
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,

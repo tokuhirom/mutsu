@@ -29,18 +29,28 @@
 //! An `our` variable is re-declared in the body's block, which binds the same
 //! package variable.
 //!
+//! A routine an enclosing inner scope declares ahead of the BEGIN does not
+//! exist in the prologue either. The body gets a copy of each one it calls (see
+//! [`routines`]).
+//!
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
-//! - an enclosing inner scope declares, ahead of it, a routine, a type, a
-//!   package or an import, which the prologue cannot reproduce yet;
+//! - an enclosing inner scope declares, ahead of it, a type, a package, an
+//!   import, a code variable, or a routine that is not a plain `sub` (a
+//!   `multi`, an `our sub`, an operator, an exported one), which the prologue
+//!   cannot reproduce yet;
+//! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup) in a
+//!   scope that declares a routine, since it cannot say which one it needs;
 //! - it sits in a package body;
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);
 //! - it reads a `state`, `constant` or group-declared inner lexical.
 
+mod routines;
+
 use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::opcode::CompiledCode;
-use std::collections::HashSet;
+use routines::{Access, FrameBlock, Routine, Scan};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SLOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -84,9 +94,13 @@ struct Walker<'a> {
 #[derive(Default)]
 struct Frame {
     bindings: Vec<Binding>,
-    /// A routine, type, package or import was declared in this scope ahead of
-    /// the current statement.
+    /// A type, package, import, operator or other routine the prologue cannot
+    /// reproduce was declared in this scope ahead of the current statement.
     blocked: bool,
+    /// The plain routines declared in this scope ahead of the current
+    /// statement. A lifted BEGIN that calls one gets its own copy
+    /// ([`Routine`]).
+    routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
 }
@@ -118,12 +132,6 @@ enum Edit {
         head: Box<Stmt>,
         assign: Option<Box<Stmt>>,
     },
-}
-
-/// How the lifted body reaches one inner name.
-enum Access {
-    CopyIn(Box<Stmt>),
-    Cell { frame: usize, binding: usize },
 }
 
 impl Walker<'_> {
@@ -287,7 +295,7 @@ impl Walker<'_> {
             Stmt::Label { stmt: inner, .. } => self.walk_stmt(inner, loc),
             Stmt::SubDecl { params, body, .. } => {
                 self.walk_list(body, Self::params_frame(params.iter().cloned()));
-                self.block_current_frame();
+                self.declare_routine(stmt);
             }
             Stmt::ProtoDecl { .. }
             | Stmt::MethodDecl { .. }
@@ -461,13 +469,14 @@ impl Walker<'_> {
             return;
         }
         let body = [Stmt::Expr(expr.clone())];
-        let reads_cell = free_names(&body).iter().any(|sym| {
-            self.find_binding(&sym.resolve()).is_some_and(|(f, b)| {
-                matches!(
-                    self.frames[f].bindings[b].kind,
-                    BindingKind::Local { cell: Some(_), .. }
-                )
-            })
+        let reads_cell = Scan::of(&body).free().iter().any(|sym| {
+            self.find_binding(&sym.resolve(), None)
+                .is_some_and(|(f, b)| {
+                    matches!(
+                        self.frames[f].bindings[b].kind,
+                        BindingKind::Local { cell: Some(_), .. }
+                    )
+                })
         });
         if !reads_cell {
             return;
@@ -492,32 +501,33 @@ impl Walker<'_> {
         // A placeholder makes the body an error (`X::Placeholder::Block`), which
         // the in-place path reports and the lifted body would not.
         let has_placeholder = !crate::ast::collect_unattached_placeholders(body).is_empty();
-        let accesses = if declares || has_placeholder || self.frames.iter().any(|f| f.blocked) {
+        let deps = if declares || has_placeholder || self.frames.iter().any(|f| f.blocked) {
             None
         } else {
-            self.resolve_free_names(body)
+            self.resolve_dependencies(body)
         };
-        let Some(accesses) = accesses else {
+        let Some(deps) = deps else {
             self.lifted.halted = true;
             return false;
         };
-        let mut copy_in = Vec::new();
-        let mut copy_out = Vec::new();
-        for access in accesses {
+        let mut blocks: BTreeMap<usize, FrameBlock> = BTreeMap::new();
+        self.add_routines(&deps, &mut blocks);
+        for ((frame, binding), access) in deps.bindings {
+            let block = blocks.entry(frame).or_default();
             match access {
-                Access::CopyIn(decl) => copy_in.push(*decl),
-                Access::Cell { frame, binding } => {
+                Access::CopyIn(decl) => block.copy_in.push(*decl),
+                Access::Cell => {
                     let (decl, back) = self.cell_access(frame, binding);
-                    copy_in.push(decl);
-                    copy_out.push(back);
+                    block.copy_in.push(decl);
+                    block.copy_out.push(back);
                 }
             }
         }
-        let mut block = copy_in;
+        let mut inner = Vec::new();
         match slot {
             Some(slot) => {
                 self.lifted.decls.push(static_scalar(slot));
-                block.push(Stmt::Assign {
+                inner.push(Stmt::Assign {
                     name: slot.to_string(),
                     expr: Expr::DoBlock {
                         body: body.to_vec(),
@@ -528,58 +538,16 @@ impl Walker<'_> {
                     target_is_sigilless: false,
                 });
             }
-            None => block.extend_from_slice(body),
+            None => inner.extend_from_slice(body),
         }
-        block.extend(copy_out);
+        let inner = FrameBlock::nest(blocks, inner);
         self.lifted.effects.push(Stmt::Phaser {
             kind: PhaserKind::Begin,
-            body: vec![Stmt::Block(block)],
+            body: vec![Stmt::Block(inner)],
             condition: None,
             end_index: None,
         });
         true
-    }
-
-    /// How the lifted body reaches each free name it reads, or `None` when one
-    /// of them cannot be supplied in the prologue.
-    fn resolve_free_names(&self, body: &[Stmt]) -> Option<Vec<Access>> {
-        let mut accesses = Vec::new();
-        for sym in free_names(body) {
-            if crate::qualified::is_qualified(sym) {
-                continue;
-            }
-            let name = sym.resolve();
-            if CompiledCode::is_non_lexical_name(&name) {
-                continue;
-            }
-            match self.find_binding(&name) {
-                Some((frame, binding)) => match &self.frames[frame].bindings[binding].kind {
-                    BindingKind::Param => {
-                        accesses.push(Access::CopyIn(Box::new(unbound_decl(&name))))
-                    }
-                    BindingKind::Our(decl) => accesses.push(Access::CopyIn(decl.clone())),
-                    BindingKind::Local { .. } => accesses.push(Access::Cell { frame, binding }),
-                    BindingKind::Opaque => return None,
-                },
-                None => {
-                    if !self.unit_names.contains(&name) && crate::env::is_plain_user_lexical(&name)
-                    {
-                        return None;
-                    }
-                }
-            }
-        }
-        Some(accesses)
-    }
-
-    fn find_binding(&self, name: &str) -> Option<(usize, usize)> {
-        self.frames.iter().enumerate().rev().find_map(|(f, frame)| {
-            frame
-                .bindings
-                .iter()
-                .rposition(|b| b.name == name)
-                .map(|b| (f, b))
-        })
     }
 
     /// The copy-in declaration and copy-out assignment for an inner lexical,
@@ -626,12 +594,6 @@ impl Walker<'_> {
         };
         (copy_in, copy_out)
     }
-}
-
-/// The free names `body` reads or writes, as the compiler resolves them.
-fn free_names(body: &[Stmt]) -> Vec<crate::symbol::Symbol> {
-    let (code, _fns) = crate::compiler::Compiler::new().compile(body);
-    code.free_var_syms
 }
 
 fn sigil_of(name: &str) -> &str {
