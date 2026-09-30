@@ -6,7 +6,7 @@ use Test;
 # of an Array whose `.iterator` a class forwards to — rather than binding
 # decontainerized copies whose writes are lost.
 
-plan 13;
+plan 15;
 
 class Foo is Array {}
 
@@ -91,4 +91,19 @@ class P does Positional {
     @f[0] = 9;
     my $c = { @f };
     is-deeply @f.List, (9, 2), 'element store into a captured `is Array` variable';
+}
+
+# An expression-position assignment copies an element container that came off
+# a call, so re-assigning the variable never writes the source element — the
+# shape of a `while $it.pull-one -> \r` loop (Text::CSV's Iterator input).
+{
+    my @a = [1, 2], [3, 4];
+    my $it = @a.iterator;
+    my @seen;
+    while $it.pull-one -> \r { last if r =:= IterationEnd; @seen.push: r }
+    is-deeply @a, [[1, 2], [3, 4]], 'while pull-one -> \r leaves the source intact';
+    my @b = 1, 2;
+    my $v;
+    if ($v = @b.values[1]) { $v = 7 }
+    is-deeply @b.List, (1, 2), 'expression assignment of an element copies it';
 }

@@ -17,3 +17,9 @@ An element store into an `is Array` subclass (`@f[i] = v`, `@f[i]++`) now
 writes through an existing element container instead of replacing it, and
 reaches the instance when the variable is captured by a closure — before, the
 capture made `@f[0] = 9` truncate `@f` to `[9]` (#10356).
+
+An assignment used as an expression (`if ($v = @a.values[1]) { ... }`, and
+the parameter re-bind of `while $it.pull-one -> \r`) now copies an element
+container that came off a call, as the statement form already did; it used to
+keep the source element's container, so the next assignment wrote into the
+source array.
