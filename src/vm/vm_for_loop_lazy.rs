@@ -50,6 +50,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
+        let chunk_mode = !spec.multi_param_names.is_empty();
         let saved_topic_source = self.topic_source_var.take();
         let saved_topic_readonly = self.readonly_kind("_");
 
@@ -135,7 +136,7 @@ impl Interpreter {
             };
             self.topic_source_var = None;
             if param_name.is_none() {
-                self.set_loop_topic(topic_local, item.clone());
+                self.set_loop_topic(topic_local, chunk_mode, item.clone());
             }
             if topic_readonly_per_item {
                 if item.is_container_ref() {
@@ -194,7 +195,7 @@ impl Interpreter {
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
                         if param_name.is_none() {
-                            self.set_loop_topic(topic_local, item.clone());
+                            self.set_loop_topic(topic_local, chunk_mode, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -217,7 +218,7 @@ impl Interpreter {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v);
                             } else {
-                                self.set_loop_topic(topic_local, v.clone());
+                                self.set_loop_topic(topic_local, chunk_mode, v.clone());
                                 self.stack.push(v);
                             }
                         }
@@ -345,6 +346,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
+        let chunk_mode = !spec.multi_param_names.is_empty();
         let saved_topic_source = self.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         // ADR-0052 Slice 1: unconditional base, truncated after every iteration.
@@ -399,7 +401,7 @@ impl Interpreter {
             };
             // Set up parameters
             if param_name.is_none() {
-                self.set_loop_topic(topic_local, item.clone());
+                self.set_loop_topic(topic_local, chunk_mode, item.clone());
             }
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
@@ -454,7 +456,7 @@ impl Interpreter {
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
                         if param_name.is_none() {
-                            self.set_loop_topic(topic_local, item.clone());
+                            self.set_loop_topic(topic_local, chunk_mode, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());

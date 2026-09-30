@@ -324,8 +324,9 @@ impl Compiler {
                 .insert(crate::symbol::Symbol::intern(p));
         }
         // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
-        let topic_local = param
-            .is_none()
+        // A multi-parameter loop leaves `$_` alone (its batch travels through
+        // a hidden variable), so it has no topic slot to mirror.
+        let topic_local = (param.is_none() && params.is_empty())
             .then(|| self.local_map.get("_").copied())
             .flatten();
         let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);

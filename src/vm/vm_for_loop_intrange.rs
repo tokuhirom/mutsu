@@ -33,6 +33,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
+        let chunk_mode = !spec.multi_param_names.is_empty();
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
         // ADR-0052 Slice 1: this fast path only ever runs in sink position
@@ -214,7 +215,7 @@ impl Interpreter {
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
                         if param_name.is_none() {
-                            self.set_loop_topic(topic_local, item.clone());
+                            self.set_loop_topic(topic_local, chunk_mode, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -232,7 +233,7 @@ impl Interpreter {
                     {
                         self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
-                            self.set_loop_topic(topic_local, v.clone());
+                            self.set_loop_topic(topic_local, chunk_mode, v.clone());
                             self.stack.push(v);
                         }
                         break 'for_loop;

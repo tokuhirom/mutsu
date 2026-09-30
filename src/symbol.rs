@@ -461,6 +461,10 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The hidden variable a multi-parameter `for` loop hands each batch of
+        /// source elements to its parameter binds through, so `$_` stays the
+        /// enclosing topic (`for @a -> $x, $y { $_ }`).
+        for_chunk => "__mutsu_for_chunk";
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
