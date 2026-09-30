@@ -2,7 +2,9 @@ use Test;
 
 plan 3;
 
-my $begin-runs = 0;
+# No initializer: a run-time `= 0` would run after the BEGIN and overwrite
+# what it stored (ADR-0134).
+my $begin-runs;
 my $begin-value := BEGIN {
     $begin-runs = 1;
     42

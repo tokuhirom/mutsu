@@ -1,6 +1,6 @@
 # ADR-0134: BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals
 
-- Status: Accepted (2026-09-30; slice 1 implemented — see §7)
+- Status: Accepted (2026-09-30; slices 1 and 2 implemented — see §7)
 - Date: 2026-09-30
 - Deciders: tokuhirom, Claude
 - Addresses: [#9919](https://github.com/tokuhirom/mutsu/issues/9919)
@@ -254,7 +254,7 @@ status here.
 
 ## 7. Implementation status
 
-**Slice 1 — implemented** (`src/runtime/begin_prologue.rs`,
+**Slice 1 — implemented** (`src/runtime/begin_prologue/mod.rs`,
 `t/control/begin-prologue-static-state.t`).
 
 - The prologue is produced as an AST partition of the unit's top level,
@@ -282,9 +282,53 @@ status here.
 - When the mainline's undeclared-routine check fails, the prologue alone runs
   first (`run_begin_prologue_only`), so the BEGIN's output precedes the
   compile error, as on rakudo.
-- **Residue until slice 2:**
-  - A package body moves whole, so a bare run-time statement inside a class
-    or `module Foo { ... }` body that precedes a unit-level BEGIN runs with
-    the prologue instead of in its source position.
-  - Value-form BEGIN and nested BEGIN keep their pre-ADR handling
-    (`BeginOnceExpr`, the nested reorder rules).
+- **Residue:** a package body moves whole, so a bare run-time statement
+  inside a class or `module Foo { ... }` body that precedes a unit-level BEGIN
+  runs with the prologue instead of in its source position.
+
+**Slice 2 — implemented** (`src/runtime/begin_prologue/nested.rs`,
+`t/control/begin-prologue-nested.t`).
+
+- **What is lifted.** A statement-form or value-form BEGIN nested in a routine,
+  closure, loop, conditional or block is lifted into the prologue. It goes
+  just ahead of the top-level statement that contains it. A value-form BEGIN
+  at the unit's top level is lifted the same way. The prologue's bound
+  (slice 1) extends to the last statement with a lifted effect.
+- **Value.** A value-form BEGIN, or a statement-form one that ends its block,
+  stores into a unit-level slot (`__begin_value_N`), and the site reads that
+  slot. This uses a slot rather than §2.2's `site_id` / `once_store` pairing:
+  the slot is an ordinary unit lexical captured like any other, so it needs no
+  second mechanism.
+- **Static cells (§2.2).** An inner lexical the body reads gets a unit-level
+  cell (`__begin_cell_N`).
+  - The lifted body runs in a block that declares the name from the cell and
+    copies it back afterwards.
+  - The inner declaration moves to its scope's head and starts from the cell,
+    marked `__begin_static` so the reorder pass keeps it whole. Its
+    initializer stays in place as an assignment.
+  - A parameter the body reads is a fresh, unbound declaration. An `our`
+    variable is re-declared.
+  - The free names come from compiling the body on its own
+    (`CompiledCode::free_var_syms`).
+- **Nested `constant`.** A nested `constant` whose initializer reads a
+  cell-backed lexical is lifted the same way, so it sees the static value
+  (`roast/S04-declarations/constant.t` test 27).
+- **Deviation from §2.1.3.** An `@`/`%` lexical is copied from its cell on
+  each scope entry, where rakudo binds the same object into every frame
+  (`sub f { my @a; BEGIN @a.push(1); @a.push(2); say @a }; f(); f()` prints
+  `[1 2]` twice, where rakudo prints `[1 2]` then `[1 2 2]`). Every scalar
+  case matches rakudo.
+- **Not lifted.** These keep their pre-ADR handling (`BeginOnceExpr`, the
+  nested reorder rules):
+  - a BEGIN whose enclosing inner scopes declare ahead of it a routine, a
+    code variable (which can declare an operator), a type, a package or an
+    import;
+  - a BEGIN in a package body, including a method's;
+  - a BEGIN that reads a name the unit does not declare (an EVAL's caller
+    lexical, for example), or reads a `state`, `constant` or group-declared
+    inner lexical;
+  - `will begin`.
+
+  Once one BEGIN-time effect is not lifted, no later nested one is, because
+  lifting it would run it ahead of an effect that precedes it in the source
+  (`roast/S04-declarations/will.t`).
