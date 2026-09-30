@@ -54,6 +54,13 @@ my $PAIRS = 320;
 my $inner = '[' ~ (1..4).map({ "[$_,$_]" }).join(',') ~ ']';
 my $doc   = '{' ~ (1..$PAIRS).map({ "\"k$_\":$inner" }).join(',') ~ '}';
 
+# WARM COST (#9916): two untimed parses, then a timed one printed as
+# `bench-section-seconds:` -- see bench-regex-match.raku's header. ADR-0099
+# §2.2 found the one-shot figure inverted the steady-state comparison.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+JsonLike.parse($doc) for ^$warm;
+my $t0 = now;
 my $m = JsonLike.parse($doc);
+say "bench-section-seconds: {now - $t0}";
 die "parse failed" unless $m;
 say "grammar-parse-big: ok (doc {$doc.chars} chars, matched {$m.chars})";

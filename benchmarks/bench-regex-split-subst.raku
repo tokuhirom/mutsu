@@ -13,21 +13,39 @@
 # through `subst(:g)`. At the old per-match cost it would not finish inside the
 # bench timeout at all; linear, it is ~0.2 s. Read it alongside
 # `bench-regex-long-subject`, which measures the scan rather than the assembly.
+#
+# WARM COST (#9916, ADR-0099 §6). The workload runs as `workload()` twice untimed
+# and a third time timed, and that third run is printed as
+# `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series
+# whose raku column is rakudo's settled, post-warm-up time. The whole-script
+# series still exists but charges rakudo its warm-up (ADR-0099 §2.1 measured
+# that as most of a 4.2x headline); the section ratio is the one that steers
+# work against rakudo. Under scripts/bench-det.sh (BENCH_DET=1) the workload
+# runs once, so the deterministic series keeps its old meaning.
 
-my $unit = "alpha beta gamma delta epsilon zeta eta theta iota 12345\n";
+sub workload() {
+    my $unit = "alpha beta gamma delta epsilon zeta eta theta iota 12345\n";
 
-# 256 KB, ~46000 separators: the split walk and its gap assembly.
-my $split_subject = $unit x (262144 div $unit.chars);
-my $fields = $split_subject.split(/ \s+ /).elems;
+    # 256 KB, ~46000 separators: the split walk and its gap assembly.
+    my $split_subject = $unit x (262144 div $unit.chars);
+    my $fields = $split_subject.split(/ \s+ /).elems;
 
-# 512 KB, one occurrence per line: the substitution walk, with ~12x fewer
-# occurrences per character, so it is the replacement assembly being measured
-# rather than the separator count.
-my $subst_subject = $unit x (524288 div $unit.chars);
-my $chars = $subst_subject.subst(/ \d+ /, '#', :g).chars;
+    # 512 KB, one occurrence per line: the substitution walk, with ~12x fewer
+    # occurrences per character, so it is the replacement assembly being measured
+    # rather than the separator count.
+    my $subst_subject = $unit x (524288 div $unit.chars);
+    my $chars = $subst_subject.subst(/ \d+ /, '#', :g).chars;
 
-# The same 256 KB text split on a single-char literal regex, which has no
-# gap-assembly shortcut to fall back on either.
-my $lines = $split_subject.split(/ \n /).elems;
+    # The same 256 KB text split on a single-char literal regex, which has no
+    # gap-assembly shortcut to fall back on either.
+    my $lines = $split_subject.split(/ \n /).elems;
 
-say "regex-split-subst: fields=$fields chars=$chars lines=$lines";
+    "regex-split-subst: fields=$fields chars=$chars lines=$lines";
+}
+
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;
