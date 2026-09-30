@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use super::super::regex_match_delta::capture_group_delta;
+use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
 use super::super::regex_trail::CapStore;
 use super::{RxOp, RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
@@ -383,6 +383,22 @@ impl Interpreter {
                         &program.toks[tok as usize].atom,
                     );
                     store.fold_quantified(regs[pos_base as usize], stride, true);
+                    pc += 1;
+                    true
+                }
+                // Cost: O(p + n), p = the padding slots, n = the
+                // alternation's list-valued names; O(1) when it has neither.
+                RxOp::AltTail {
+                    alt,
+                    pos_base,
+                    suppress_padding,
+                } => {
+                    let taken = store.caps().positional.len() - regs[pos_base as usize];
+                    if let Some(delta) =
+                        alternation_tail_delta(&program.alts[alt as usize], taken, suppress_padding)
+                    {
+                        store.merge_delta(delta);
+                    }
                     pc += 1;
                     true
                 }

@@ -114,6 +114,10 @@ differential_case!(
     optional_captures,
     r#"say ("b" ~~ / (a)? b /).gist; say ("ab" ~~ / (a)? b /).gist; say ("b" ~~ / (a)? (b) /)[1].from; say ("b" ~~ / $<x>=[a]? b /).gist; say ("b" ~~ / $<x>=(a)? b /).gist; say ("ab" ~~ / $<x>=(a)?? ab /).gist; say ("b" ~~ / [ (a) (c) ]? b /).gist; say ("ab" ~~ / :r (a)? b /).gist"#
 );
+differential_case!(
+    sequential_alternation,
+    r#"say ("abcd" ~~ / a [ bc || b ] cd /).gist; say ("b1" ~~ / [ (a) || (b) ] (\d) /).gist; say ("b1" ~~ / [ (a) (x) || (b) ] (\d) /)[2].Str; say ("aab" ~~ / [ a || aa ]+ b /).gist; say ("aab" ~~ / :r [ a || aa ] b /).gist; say ("aab" ~~ / :r [ aa || a ] b /).gist; say ("q" ~~ / [ a || b ]? q /).gist; say ("ab" ~~ / $<x>=a [ $<x>=b || c ] /)<x>.elems; say ("cc" ~~ / [ <[ab]> || c ] ** 2 /).gist; say ("abc" ~~ / :r [ \w+ || \d ] 'c' /).gist; say ("x" ~~ / [ a || (b)+ || x ] /)[0].raku; say ("ab" ~~ / $<y>=[ a || b ] b /)<y>.Str; say ("adx" ~~ / [ a || b ]+ [ (c) || d ] (x) /).list.elems; say ("adx" ~~ / [ a || b ]+? [ (c) || d ] (x) /)[1].Str"#
+);
 
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every

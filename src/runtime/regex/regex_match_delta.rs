@@ -119,14 +119,54 @@ pub(super) fn alternation_branch_delta(
 fn pad_alternation_positional(caps: &mut RegexCaptures, flags: &AlternationListFlags) {
     while caps.positional.len() < flags.positional.len() {
         let idx = caps.positional.len();
-        let slot = if flags.positional[idx] {
-            PosSlot {
-                quantified: Some(Vec::new()),
-                ..Default::default()
-            }
-        } else {
-            PosSlot::alternation_padding()
-        };
-        caps.positional.push(slot);
+        caps.positional.push(alternation_padding_slot(flags, idx));
     }
+}
+
+fn alternation_padding_slot(flags: &AlternationListFlags, idx: usize) -> PosSlot {
+    if flags.positional[idx] {
+        PosSlot {
+            quantified: Some(Vec::new()),
+            ..Default::default()
+        }
+    } else {
+        PosSlot::alternation_padding()
+    }
+}
+
+/// What [`alternation_branch_delta`] adds to a branch that wrote its captures
+/// straight into the enclosing level (the compiled engine, ADR-0135): the
+/// padding slots after the `taken` positionals the branch produced, and every
+/// list-valued name marked quantified. `suppress_padding` is the compiled
+/// form of [`super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH`] for an
+/// alternation inside a quantified body; the thread-local is honored too.
+/// `None` when there is nothing to add.
+// Cost: O(p + n), p = the padding slots, n = the list-valued names.
+pub(super) fn alternation_tail_delta(
+    flags: &AlternationListFlags,
+    taken: usize,
+    suppress_padding: bool,
+) -> Option<RegexCaptures> {
+    let pad = !suppress_padding
+        && taken < flags.positional.len()
+        && !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get);
+    if !pad && flags.named.is_empty() {
+        return None;
+    }
+    let mut caps = RegexCaptures::default();
+    if pad {
+        for idx in taken..flags.positional.len() {
+            caps.positional.push(alternation_padding_slot(flags, idx));
+        }
+    }
+    for &name in &flags.named {
+        caps.named.insert(
+            name,
+            NamedSlot {
+                nodes: Vec::new(),
+                quantified: true,
+            },
+        );
+    }
+    Some(caps)
 }

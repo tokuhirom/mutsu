@@ -4,8 +4,8 @@
 //!
 //! Slice A (#10251) covers the regular core of the language: one-grapheme
 //! atoms, zero-width assertions, groups, capture groups whose body captures
-//! nothing, and greedy / frugal / ratcheted / counted quantifiers over bodies
-//! that capture nothing. A pattern holding anything else is declined as a
+//! nothing, sequential alternation (`||`), and greedy / frugal / ratcheted /
+//! counted quantifiers over bodies whose captures fold one level deep. A pattern holding anything else is declined as a
 //! whole and keeps the tree walk (ADR-0135 D5); the reason is reported under
 //! `MUTSU_VM_STATS`.
 //!
@@ -104,6 +104,14 @@ pub(super) enum RxOp {
         tok: u32,
         pos_base: u16,
     },
+    /// The end of one `||` branch: pad the alternation `alts[alt]`'s
+    /// positional slot space past what the branch took since `regs[pos_base]`
+    /// (unless `suppress_padding`), and mark its list-valued names quantified.
+    AltTail {
+        alt: u32,
+        pos_base: u16,
+        suppress_padding: bool,
+    },
     /// A complete match ending at `pos`.
     Match,
 }
@@ -114,6 +122,8 @@ pub(crate) struct RxProgram {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<RegexAtom>,
     pub(super) toks: Vec<RegexToken>,
+    /// One per `||`: its shared positional width and list-valued names.
+    pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).

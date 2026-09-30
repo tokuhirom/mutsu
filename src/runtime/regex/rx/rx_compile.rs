@@ -7,6 +7,9 @@
 //! one the exit first, and a ratchet cuts the choice points the walk would
 //! never have revisited.
 
+use super::super::regex_helpers::{
+    AlternationListFlags, alternation_list_flags, atom_contains_alternation,
+};
 use super::{RxOp, RxProgram};
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
 
@@ -18,7 +21,12 @@ struct Compiler {
     ops: Vec<RxOp>,
     atoms: Vec<crate::runtime::regex_types::RegexAtom>,
     toks: Vec<RegexToken>,
+    alts: Vec<AlternationListFlags>,
     nregs: usize,
+    /// How many enclosing quantified bodies contain an alternation: the walk
+    /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
+    /// turns off a `||` branch's positional padding.
+    quant_alt_depth: usize,
 }
 
 /// Compile `pattern`, or say why not.
@@ -28,7 +36,9 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         ops: Vec::new(),
         atoms: Vec::new(),
         toks: Vec::new(),
+        alts: Vec::new(),
         nregs: 0,
+        quant_alt_depth: 0,
     };
     c.pattern(pattern)?;
     c.ops.push(RxOp::Match);
@@ -39,6 +49,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         ops: c.ops,
         atoms: c.atoms,
         toks: c.toks,
+        alts: c.alts,
         nregs: c.nregs,
         ascii: std::sync::OnceLock::new(),
     })
@@ -81,9 +92,31 @@ fn pattern_captures(pattern: &RegexPattern) -> bool {
         t.named_capture.is_some()
             || t.hash_capture.is_some()
             || t.secondary_named_capture.is_some()
+            || atom_captures(&t.atom)
+    })
+}
+
+/// Does matching `atom` itself record a capture (its token's alias aside)?
+fn atom_captures(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::CaptureGroup(_) => true,
+        RegexAtom::Group(p) => pattern_captures(p),
+        RegexAtom::SequentialAlternation(alts) => alts.iter().any(pattern_captures),
+        _ => false,
+    }
+}
+
+/// Is any token under `pattern` a numbered alias (`$0=…`)? The walk matches a
+/// `||` branch in a capture scope of its own, so such an alias there numbers
+/// from the branch's start, not from the enclosing level's.
+fn has_numbered_alias(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().any(|t| {
+        t.named_capture
+            .as_ref()
+            .is_some_and(|n| n.parse::<usize>().is_ok())
             || match &t.atom {
-                RegexAtom::CaptureGroup(_) => true,
-                RegexAtom::Group(p) => pattern_captures(p),
+                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => has_numbered_alias(p),
+                RegexAtom::SequentialAlternation(alts) => alts.iter().any(has_numbered_alias),
                 _ => false,
             }
     })
@@ -96,11 +129,7 @@ fn min_len(pattern: &RegexPattern) -> usize {
         .tokens
         .iter()
         .map(|t| {
-            let atom = match &t.atom {
-                a if is_consuming(a) => 1,
-                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => min_len(p),
-                _ => 0,
-            };
+            let atom = atom_min_len(&t.atom);
             let reps = match t.quant {
                 RegexQuant::One | RegexQuant::OneOrMore => 1,
                 RegexQuant::ZeroOrOne | RegexQuant::ZeroOrMore => 0,
@@ -110,6 +139,16 @@ fn min_len(pattern: &RegexPattern) -> usize {
             atom.saturating_mul(reps)
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// The fewest characters one match of `atom` consumes.
+fn atom_min_len(atom: &RegexAtom) -> usize {
+    match atom {
+        a if is_consuming(a) => 1,
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => min_len(p),
+        RegexAtom::SequentialAlternation(alts) => alts.iter().map(min_len).min().unwrap_or(0),
+        _ => 0,
+    }
 }
 
 /// Can a quantified `atom`'s captures be folded one level deep, the way the
@@ -127,8 +166,7 @@ fn flat_captures(atom: &RegexAtom) -> bool {
                 RegexAtom::CaptureGroup(inner) => {
                     plain && matches!(t.quant, RegexQuant::One) && !pattern_captures(inner)
                 }
-                RegexAtom::Group(inner) => plain && !pattern_captures(inner),
-                _ => plain,
+                a => plain && !atom_captures(a),
             }
         }),
         _ => false,
@@ -184,12 +222,10 @@ impl Compiler {
         if named && !matches!(token.quant, RegexQuant::One) && !optional {
             return Err("quantified-alias");
         }
-        let body_captures = match &token.atom {
-            RegexAtom::CaptureGroup(_) => true,
-            RegexAtom::Group(p) => pattern_captures(p),
-            _ => false,
-        };
-        if body_captures && !matches!(token.quant, RegexQuant::One) && !flat_captures(&token.atom) {
+        if atom_captures(&token.atom)
+            && !matches!(token.quant, RegexQuant::One)
+            && !flat_captures(&token.atom)
+        {
             // A quantified body whose captures nest (`( (a) )+`, `[ $<x>=[..] ]*`)
             // needs the walk's nested fold; Slice A folds one level only.
             return Err("quantified-nested-capture");
@@ -269,7 +305,7 @@ impl Compiler {
             RegexAtom::CompositeClass { .. } => return Err("composite-class"),
             RegexAtom::Named(_) => return Err("subrule"),
             RegexAtom::Alternation(_) => return Err("alternation"),
-            RegexAtom::SequentialAlternation(_) => return Err("sequential-alternation"),
+            RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
             RegexAtom::Lookaround { .. } => return Err("lookaround"),
             RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => return Err("backref"),
             RegexAtom::CodeAssertion { .. }
@@ -279,6 +315,71 @@ impl Compiler {
                 return Err("capture-marker");
             }
             _ => return Err("other-atom"),
+        }
+        Ok(())
+    }
+
+    /// `a || b || c`, as `walk_seq_alternation` drives it: every way branch
+    /// *k* can match is tried against the rest of the pattern before branch
+    /// *k+1* is entered. Each branch ends with an `AltTail` that pads the
+    /// alternation's positional slot space and marks its list-valued names
+    /// (`alternation_branch_delta`). Under ratchet the alternation commits to
+    /// the first branch that matches and to that branch's first end; the walk
+    /// moves past a branch whose every end is zero-width, so a ratcheted
+    /// alternation with such a branch (other than the last) is declined.
+    fn seq_alternation(
+        &mut self,
+        token: &RegexToken,
+        alts: &[RegexPattern],
+    ) -> Result<(), Decline> {
+        if alts.iter().any(has_numbered_alias) {
+            return Err("seqalt-numbered-alias");
+        }
+        if token.ratchet
+            && alts
+                .iter()
+                .take(alts.len().saturating_sub(1))
+                .any(|a| min_len(a) == 0)
+        {
+            return Err("seqalt-nullable-ratchet");
+        }
+        let alt = self.alts.len() as u32;
+        self.alts.push(alternation_list_flags(alts));
+        let pos_base = self.reg();
+        self.ops.push(RxOp::PosBase(pos_base));
+        let height = token.ratchet.then(|| self.reg());
+        if let Some(h) = height {
+            self.ops.push(RxOp::Height(h));
+        }
+        let suppress_padding = self.quant_alt_depth > 0;
+        let mut joins = Vec::with_capacity(alts.len());
+        for (k, branch) in alts.iter().enumerate() {
+            let split = (k + 1 < alts.len()).then(|| {
+                self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
+                self.pc() - 1
+            });
+            self.pattern(branch)?;
+            self.ops.push(RxOp::AltTail {
+                alt,
+                pos_base,
+                suppress_padding,
+            });
+            if let Some(h) = height {
+                self.ops.push(RxOp::Cut(h));
+            }
+            if let Some(split) = split {
+                joins.push(self.pc());
+                self.ops.push(RxOp::Jmp(0)); // patched below
+                let next = self.pc();
+                self.ops[split as usize] = RxOp::Split {
+                    prefer: split + 1,
+                    alt: next,
+                };
+            }
+        }
+        let end = self.pc();
+        for j in joins {
+            self.ops[j as usize] = RxOp::Jmp(end);
         }
         Ok(())
     }
@@ -345,12 +446,7 @@ impl Compiler {
         min: usize,
         max: Option<usize>,
     ) -> Result<(), Decline> {
-        let body_min = match &token.atom {
-            a if is_consuming(a) => 1,
-            RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => min_len(p),
-            _ => 0,
-        };
-        if body_min == 0 {
+        if atom_min_len(&token.atom) == 0 {
             return Err("nullable-loop");
         }
         let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
@@ -396,7 +492,11 @@ impl Compiler {
         if let Some(h) = iter {
             self.ops.push(RxOp::Height(h));
         }
-        self.atom(token)?;
+        let alt_body = atom_contains_alternation(&token.atom);
+        self.quant_alt_depth += usize::from(alt_body);
+        let body_result = self.atom(token);
+        self.quant_alt_depth -= usize::from(alt_body);
+        body_result?;
         if let Some(h) = iter {
             self.ops.push(RxOp::Cut(h));
         }
