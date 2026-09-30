@@ -708,7 +708,7 @@ impl Interpreter {
                     }
                 }
                 if include_roles || include_concretizations {
-                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations)?;
                     Ok(Value::array(mro))
                 } else {
                     let mro = self.classhow_mro_names_without_does_roles(&args[0]);
@@ -825,7 +825,7 @@ impl Interpreter {
                     }
                 }
                 if include_roles || include_concretizations {
-                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations)?;
                     let filtered = self.filter_mro_unhidden(&args[0], mro);
                     Ok(Value::array(filtered))
                 } else {
