@@ -133,6 +133,47 @@ impl Compiler {
         Ok(())
     }
 
+    /// `a & b & c`, as `drive_conjunction_candidates` drives it: every end
+    /// of the first branch, in priority order, is a candidate once each
+    /// other branch matches exactly the same span. The first branch runs
+    /// inline in a capture level of its own; the others are checked by
+    /// `ConjTail` with a nested run of their own programs, so each must
+    /// compile (`conjunction-branch`). Under ratchet the conjunction commits
+    /// to the first end that every branch agrees on.
+    pub(super) fn conjunction(
+        &mut self,
+        token: &RegexToken,
+        branches: &[RegexPattern],
+    ) -> Result<(), Decline> {
+        let Some((first, rest)) = branches.split_first() else {
+            // An empty conjunction matches zero-width.
+            return Ok(());
+        };
+        if branches.iter().any(pattern_contains_backref) {
+            // A branch shares the enclosing capture scope, which the first
+            // branch's own level and the other branches' nested runs hide.
+            return Err("conjunction-backref");
+        }
+        if rest.iter().any(|b| super::rx_vm::program_for(b).is_none()) {
+            return Err("conjunction-branch");
+        }
+        let start = self.reg();
+        self.ops.push(RxOp::Mark(start));
+        let height = token.ratchet.then(|| self.reg());
+        if let Some(h) = height {
+            self.ops.push(RxOp::Height(h));
+        }
+        self.ops.push(RxOp::OpenCapture);
+        self.pattern(first)?;
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        self.ops.push(RxOp::ConjTail { tok, start });
+        if let Some(h) = height {
+            self.ops.push(RxOp::Cut(h));
+        }
+        Ok(())
+    }
+
     /// `atom ** min..max % sep` (and `%%`, which may end on a separator), as
     /// the walk's separated quantifier matches it. The first atom is not
     /// required to advance; every later separator-and-atom step is. Without

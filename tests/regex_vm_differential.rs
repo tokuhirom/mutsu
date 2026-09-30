@@ -180,6 +180,11 @@ differential_case!(
     r#"say ("café" ~~ / :m cafe /).gist; say ("cafe" ~~ / :m café /).gist; say ("ÀB" ~~ / :m :i ab /).gist; say ("naïve x" ~~ / :m (naive) \s (x) /).gist; say "résumé resume".match(/ :m resume /, :g).elems; say ("e\x[301]x" ~~ / :m ex /).gist; say ("xé" ~~ / x [:m e] /).gist; say "ÀÉÎ".subst(/ :m e /, "E")"#
 );
 
+differential_case!(
+    conjunction,
+    r#"say ("abc" ~~ / \w+ & ab /).gist; say ("abc" ~~ / <[a..c]>+ & .* c /).gist; say ("ab12" ~~ / (\w+) & (\w\w) /).gist; say ("foobar" ~~ / [ \w+ & foo ] bar /).gist; say ("aaa" ~~ / a+ & a ** 2 /).gist; say "ab cd".match(/ \w+ & <[a..c]>+ /, :g).join("|"); say ("abc" ~~ / $<x>=\w+ & $<y>=[ab] c /)<x y>.join(","); say ("aXb" ~~ / a [ . & <:Lu> ] b /).gist; say ("abc" ~~ / a && ab /).gist; say ("aa" ~~ / $<x>=(\w) [ $<x> & . ] /).gist; say ("ab" ~~ / ( <alpha> & . )+ /).gist; say ("abab" ~~ / [ \w+ & ab ]+ /).gist"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.
