@@ -762,6 +762,18 @@ fn reorder_at_level(
     let mut check: Vec<Vec<Stmt>> = Vec::new();
     let mut init: Vec<Vec<Stmt>> = Vec::new();
     let mut rest: Vec<Stmt> = Vec::new();
+    // Constants that textually precede a CHECK and have nothing but other such
+    // constants before them: compile-time values a CHECK must see.
+    let mut early_consts: Vec<Stmt> = Vec::new();
+    let last_check_idx = stmts.iter().rposition(|s| {
+        matches!(
+            s,
+            Stmt::Phaser {
+                kind: PhaserKind::Check,
+                ..
+            }
+        )
+    });
 
     // A statement-level BEGIN phaser in a *nested* block must also trigger
     // reordering so the BEGIN is hoisted ahead of the block's plain code — its
@@ -866,7 +878,15 @@ fn reorder_at_level(
         // strictly after its one real store, like a phaser-free `constant`.
         let is_constant_decl = matches!(&stmt, Stmt::VarDecl { custom_traits, .. } if custom_traits.iter().any(|(t, _)| t == "__constant"));
         if is_constant_decl {
-            rest.push(stmt);
+            // A constant is a compile-time value, so a later CHECK sees it. Keep
+            // source order by hoisting only while nothing that stays in `rest`
+            // and could feed the initializer (a class, an assignment, ...) precedes it.
+            let before_check = last_check_idx.is_some_and(|c| idx < c);
+            if before_check && rest.iter().all(stmt_is_hoist_safe) {
+                early_consts.push(stmt);
+            } else {
+                rest.push(stmt);
+            }
             continue;
         }
         if let Stmt::VarDecl {
@@ -958,6 +978,7 @@ fn reorder_at_level(
     stmts.extend(begin);
     // Extra BEGIN from lifted phasers (e.g. inside string interpolation blocks).
     stmts.extend(extra_begin);
+    stmts.extend(early_consts);
     for body in check.iter().rev() {
         stmts.push(Stmt::Phaser {
             kind: PhaserKind::Check,
