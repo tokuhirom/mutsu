@@ -913,7 +913,19 @@ pub(crate) fn native_method_1arg(
                     .join(&sep);
                 return Some(Ok(Value::str(joined)));
             }
-            if let Some(items) = target.as_list_items() {
+            // A hole joins as the container's `is default(...)` value, not the
+            // `Any` marker the slot holds: only an array that has both copies.
+            let default_resolved = match target.view() {
+                ValueView::Array(data, _) => match data.items_with_default() {
+                    std::borrow::Cow::Owned(resolved) => Some(resolved),
+                    std::borrow::Cow::Borrowed(_) => None,
+                },
+                _ => None,
+            };
+            if let Some(items) = default_resolved
+                .as_deref()
+                .or_else(|| target.as_list_items())
+            {
                 // If any item is an Instance, fall through to runtime
                 // so user-defined Str() methods can be called. A `ContainerRef`
                 // element (grep rw alias / `:=`-bound slot) is decontainerized
