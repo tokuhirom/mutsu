@@ -791,7 +791,7 @@ impl Interpreter {
                 ));
             }
 
-            if class_name == "IterationBuffer" {
+            if crate::runtime::nqp_ops_list::is_iteration_buffer(&target) {
                 let mut items = match attributes
                     .as_map()
                     .get("__mutsu_iterationbuffer_items")
@@ -871,6 +871,13 @@ impl Interpreter {
                     "List" if args.is_empty() => return Ok(Value::array(items)),
                     "Slip" if args.is_empty() => return Ok(Value::slip(items)),
                     "Seq" if args.is_empty() => return Ok(Value::seq(items)),
+                    "iterator" if args.is_empty() => {
+                        return self.call_method_with_values(
+                            Value::array(items),
+                            "iterator",
+                            vec![],
+                        );
+                    }
                     "append" if args.len() == 1 => {
                         items.extend(iterationbuffer_values(&args[0]));
                         return Ok(update_items(items));
