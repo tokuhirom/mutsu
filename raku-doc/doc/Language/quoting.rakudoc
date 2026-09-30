@@ -23,12 +23,12 @@ expression documentation|/language/regexes>.
 
 X<|Syntax,｢ ｣>
 
-=for code :skip-test<listing>
-Q[A literal string]
-｢More plainly.｣
-Q^Almost any non-word character can be a delimiter!^
-Q｢｢Delimiters can be repeated/nested if they are adjacent.｣｣
-Q｟Quoting with fancy unicode pairs｠
+=for code
+say Q[A literal string];
+say ｢More plainly.｣;
+say Q^Almost any non-word character can be a delimiter!^;
+say Q｢｢Delimiters can be repeated/nested if they are adjacent.｣｣;
+say Q｟Quoting with fancy unicode pairs｠;
 
 Delimiters can be nested, but in the plain C<Q> form, backslash escapes
 aren't allowed. In other words, basic C<Q> strings are as literal as
