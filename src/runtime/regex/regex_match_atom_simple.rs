@@ -188,18 +188,21 @@ impl Interpreter {
                 }
                 return None;
             }
-            RegexAtom::Conjunction(branches) => {
-                let mut longest_end = 0usize;
-                for branch in branches {
-                    if let Some(end) = self.regex_match_end_from_in_pkg(branch, chars, pos, pkg) {
-                        if end > longest_end {
-                            longest_end = end;
-                        }
-                    } else {
-                        return None;
-                    }
-                }
-                return Some(longest_end);
+            RegexAtom::Conjunction(_) => {
+                // Every branch must match the SAME span; the capture matcher
+                // decides that, so this position-only form asks it rather than
+                // keeping a second definition (it used to take the longest
+                // branch end, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`).
+                return self
+                    .regex_match_atom_with_capture_in_pkg(
+                        atom,
+                        chars,
+                        pos,
+                        &RegexCaptures::default(),
+                        pkg,
+                        ignore_case,
+                    )
+                    .map(|(end, _)| end);
             }
             RegexAtom::ZeroWidth => {
                 return Some(pos);

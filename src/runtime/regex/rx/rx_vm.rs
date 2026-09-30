@@ -107,7 +107,7 @@ impl Interpreter {
         }
         let program = Arc::clone(program_for(pattern)?);
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
-        let result = self.rx_run(&program, chars, start, pkg);
+        let result = self.rx_run(&program, chars, start, pkg, None);
         if rx_diff_enabled() {
             let walked = self.regex_walk_first_for_diff(pattern, chars, start, pkg);
             if let Err(why) = super::rx_diff::same_match(&result, &walked) {
@@ -149,16 +149,21 @@ impl Interpreter {
     /// Run `program` at `start`.
     // Cost: O(s) in the steps the backtracking search takes; each op below
     // states its own cost.
-    fn rx_run(
+    ///
+    /// With `end`, only a match ending exactly there counts: the first one in
+    /// priority order, as the walk's `regex_match_branch_ending_at` picks it
+    /// from the full end list.
+    pub(super) fn rx_run(
         &mut self,
         program: &RxProgram,
         chars: &[char],
         start: usize,
         pkg: Symbol,
+        end: Option<usize>,
     ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
         let mut scratch = SCRATCH.with(|s| s.borrow_mut().pop()).unwrap_or_default();
-        let result = self.rx_run_in(program, chars, start, pkg, &mut scratch);
+        let result = self.rx_run_in(program, chars, start, pkg, end, &mut scratch);
         SCRATCH.with(|s| s.borrow_mut().push(scratch));
         result
     }
@@ -169,6 +174,7 @@ impl Interpreter {
         chars: &[char],
         start: usize,
         pkg: Symbol,
+        end: Option<usize>,
         scratch: &mut Scratch,
     ) -> Option<(usize, RegexCaptures)> {
         let Scratch {
@@ -415,7 +421,8 @@ impl Interpreter {
                 | RxOp::Fold { .. }
                 | RxOp::AltTail { .. }
                 | RxOp::Collect { .. }
-                | RxOp::SepEmit { .. }) => {
+                | RxOp::SepEmit { .. }
+                | RxOp::ConjTail { .. }) => {
                     pc += 1;
                     match self.rx_capture_op(program, op, regs, levels, chars, pos, pkg) {
                         Some(next) => {
@@ -427,7 +434,12 @@ impl Interpreter {
                     }
                 }
                 // Cost: O(c), c = this level's captures (one snapshot).
-                RxOp::Match => break 'run Some((pos, levels.top().snapshot())),
+                RxOp::Match => {
+                    if end.is_none_or(|end| pos == end) {
+                        break 'run Some((pos, levels.top().snapshot()));
+                    }
+                    false
+                }
             };
             if !ok {
                 let Some(choice) = stack.pop() else {

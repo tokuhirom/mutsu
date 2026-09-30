@@ -152,6 +152,14 @@ pub(super) enum RxOp {
         tok: u32,
         base: u16,
     },
+    /// The end of a `&` conjunction `toks[tok]` whose first branch ran in
+    /// the capture level opened at `regs[start]`: every other branch must
+    /// match exactly `regs[start]..pos` (a nested run of its own program);
+    /// all branches' captures then merge into the enclosing level.
+    ConjTail {
+        tok: u32,
+        start: u16,
+    },
     /// A `|` alternation, `ltm_alts[i]`: rank its branches at `pos` by the
     /// walk's LTM key and enter them best first, each lower-ranked one only
     /// when everything above it has failed (ADR-0135 D4).

@@ -2,7 +2,7 @@
 //! capture transform (ADR-0135 D4) to the innermost capture level, through
 //! `Levels::edit` so a backtrack undoes it.
 
-use super::super::regex_helpers::count_capture_groups;
+use super::super::regex_helpers::{count_capture_groups, merge_regex_captures};
 use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
 use super::super::regex_match_sep::{separated_capture_delta, separator_stride};
 use super::rx_levels::Levels;
@@ -128,6 +128,22 @@ impl Interpreter {
                 {
                     levels.edit(|s| s.merge_delta(delta));
                 }
+            }
+            // Cost: O(c) for the first branch's captures, plus one nested
+            // run per other branch.
+            RxOp::ConjTail { tok, start } => {
+                let RegexAtom::Conjunction(branches) = &program.toks[tok as usize].atom else {
+                    unreachable!("a ConjTail names a conjunction token");
+                };
+                let from = regs[start as usize];
+                let mut merged = merge_regex_captures(RegexCaptures::default(), levels.close());
+                for branch in &branches[1..] {
+                    let branch_program = super::rx_vm::program_for(branch)
+                        .expect("a compiled conjunction's branches compile");
+                    let (_, caps) = self.rx_run(branch_program, chars, from, pkg, Some(pos))?;
+                    merged = merge_regex_captures(merged, caps);
+                }
+                levels.edit(|s| s.merge_delta(merged));
             }
             // Cost: O(1).
             RxOp::Collect { sep } => levels.collect(sep),

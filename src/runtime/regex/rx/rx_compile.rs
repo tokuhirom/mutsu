@@ -114,9 +114,9 @@ pub(super) fn atom_captures(atom: &RegexAtom) -> bool {
     match atom {
         RegexAtom::CaptureGroup(_) => true,
         RegexAtom::Group(p) => pattern_captures(p),
-        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
-            alts.iter().any(pattern_captures)
-        }
+        RegexAtom::Alternation(alts)
+        | RegexAtom::SequentialAlternation(alts)
+        | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_captures),
         _ => false,
     }
 }
@@ -184,6 +184,8 @@ fn atom_min_len(atom: &RegexAtom) -> usize {
         RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
             alts.iter().map(min_len).min().unwrap_or(0)
         }
+        // Every branch matches the same span, so the longest minimum binds.
+        RegexAtom::Conjunction(alts) => alts.iter().map(min_len).max().unwrap_or(0),
         _ => 0,
     }
 }
@@ -348,7 +350,7 @@ impl Compiler {
             RegexAtom::CaptureIsolatedGroup(_) | RegexAtom::CaptureIsolatedGroupScoped(..) => {
                 return Err("isolated-group");
             }
-            RegexAtom::Conjunction(_) => return Err("conjunction"),
+            RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
             RegexAtom::VarInterp(..)
             | RegexAtom::CodeInterp { .. }
             | RegexAtom::QqInterp { .. } => {
@@ -481,7 +483,13 @@ impl Compiler {
         if let Some(r) = iter_start {
             self.ops.push(RxOp::Mark(r));
         }
-        let iter = token.ratchet.then(|| self.reg());
+        // Ratchet commits each iteration to the body's first candidate. So
+        // does the walk's chain (`grow_one_iter` takes the single-candidate
+        // matcher) for a body the compiled form could otherwise re-enter: a
+        // conjunction, whose first branch can end elsewhere.
+        let chain_commit =
+            !loop_body_backtracks(&token.atom) && matches!(token.atom, RegexAtom::Conjunction(_));
+        let iter = (token.ratchet || chain_commit).then(|| self.reg());
         if let Some(h) = iter {
             self.ops.push(RxOp::Height(h));
         }

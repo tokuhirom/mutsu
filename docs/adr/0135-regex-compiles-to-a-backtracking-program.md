@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A landed, Slice B in progress (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -471,6 +471,21 @@ reuses its own warm scratch instead of allocating one per test.
   subject's stripped view. It is mapped back by `ignoremark_on_target`, the walk's own remapping,
   moved into `regex_ignoremark.rs` so both engines share it. A scoped `[:m …]` inside a larger
   pattern still declines (`ignoremark`), since it would need that remapping at a group boundary.
+
+**Slice B, fourth part: `&` landed; Slice B is complete.** The first branch of a conjunction
+runs inline, in a capture level of its own. A `ConjTail` op then asks every other branch to
+match exactly the same span with a nested run of its own program. `rx_run` takes an optional
+required end for this: the first match in priority order that ends there, which is how the
+walk's `regex_match_branch_ending_at` picks one from the full end list. All branches' captures
+merge with the walk's `merge_regex_captures`. A conjunction declines when a branch holds a
+backreference (`conjunction-backref`), because the branch levels would hide the enclosing
+captures, or when a later branch does not compile (`conjunction-branch`). As a loop body in
+the walk's first-candidate chain, the conjunction is cut after each iteration.
+
+The position-only matcher (`.comb`) took the longest branch end instead of requiring a common
+span, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`. It now asks the capture matcher. Found
+on the way: `:r` does not reach conjunction branches (#10353), and `.comb` with `:m` misses
+matches (#10352). Both are pre-existing, and both engines agree on them.
 
 ### Reproducing §2
 
