@@ -27,6 +27,19 @@ impl Compiler {
         });
     }
 
+    /// `state @a is default(D) = RHS`: store the initializer into the
+    /// container [`Compiler::emit_default_before_array_initializer`] already
+    /// gave its default, then hand that container (not the raw RHS list) to
+    /// `StateVarInit`. The store sees the default, so an explicit `Any`
+    /// element stays `Any` while a `Nil` one becomes the default. The whole
+    /// sequence sits behind the state guard, so it runs on the first entry
+    /// only.
+    pub(super) fn emit_state_array_store_into_defaulted(&mut self, slot: u32) {
+        self.code.emit(OpCode::MarkExplicitInitializerContext);
+        self.code.emit(OpCode::SetLocal(slot));
+        self.code.emit(OpCode::GetLocal(slot));
+    }
+
     /// Check if a default value expression statically mismatches a type constraint.
     /// Returns `Some(value_repr)` if a mismatch is detected, `None` otherwise.
     pub(super) fn check_default_type_mismatch(
