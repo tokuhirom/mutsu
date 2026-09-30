@@ -207,8 +207,12 @@ impl crate::Interpreter {
         if let Some(av) = args.first()
             && let ValueView::Array(existing, arr_kind) = av.view()
         {
+            // `Array.push` stores each value in a fresh element container, so
+            // an element container the iterator yields (an Array's own
+            // iterator hands those out) is decontainerized here rather than
+            // shared between the source and the target.
             let mut next = existing.to_vec();
-            next.extend(vals.iter().cloned());
+            next.extend(vals.iter().map(Value::deref_container));
             let updated_array = Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                 arr_kind,

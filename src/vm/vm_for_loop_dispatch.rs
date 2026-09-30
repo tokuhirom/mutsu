@@ -353,6 +353,8 @@ impl Interpreter {
             // reaches here as a bare instance: `normalize_for_iterable` wraps it
             // into a one-element list, which keeps `for $obj` a single item.
             items
+        } else if let Some(cells) = Self::array_subclass_element_cells(&iterable) {
+            cells
         } else {
             runtime::value_to_list(&iterable)
         };
@@ -710,6 +712,25 @@ impl Interpreter {
             return Ok(None);
         }
         self.drive_user_iterator_items(iterable).map(Some)
+    }
+
+    /// The element containers of an `is Array` subclass instance with no
+    /// `iterator` override of its own (#10350): its elements ARE the backing
+    /// `__mutsu_array_storage` array's slots, so `for` binds those slots —
+    /// `$_ = 5 for @f` writes `@f`, as the inherited `Array.iterator` does in
+    /// rakudo. The same promotion `@a.values` hands out; `None` for any other
+    /// value (and for an `is List` subclass, whose storage is not promotable).
+    // Cost: O(n), n = the storage's element count (one idempotent promotion
+    // per element).
+    fn array_subclass_element_cells(iterable: &Value) -> Option<Vec<Value>> {
+        let ValueView::Instance { attributes, .. } = iterable.view() else {
+            return None;
+        };
+        let storage = attributes
+            .as_map()
+            .get("__mutsu_array_storage")?
+            .deref_container();
+        Self::array_element_cells(&storage)
     }
 
     /// Drain a value's user-defined `iterator` method into its elements.
