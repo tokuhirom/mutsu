@@ -612,11 +612,48 @@ fn parse_destructuring_with_rhs(
     // Targets that read a VALUE out of the temp are unaffected -- a `$` target
     // in binding mode is a read-only COPY in raku too (`my ($a,$b) := ($x,$y);
     // $x = 7` leaves `$a` at its original value).
-    let mut stmts = if is_binding {
-        vec![Stmt::SyntheticBlock(vec![Stmt::MarkBind, tmp_decl])]
+    let mut stmts = Vec::new();
+    // In a signature declaration the new variables are already in scope on the
+    // RHS and hold their defaults (`my $x = 5; { my ($x, $y) = $x, 2 }` reads
+    // the new `$x`, i.e. `(Any)`), so declare the plain targets before the RHS
+    // runs. The real declarations below then assign into them.
+    if !is_binding && !is_state && !is_our {
+        for dvar in &vars {
+            if dvar.literal_value.is_some()
+                || dvar.sigilless
+                || dvar.per_var_type_constraint.is_some()
+                || type_constraint.is_some()
+                || dvar.where_constraint.is_some()
+                || dvar.is_slurpy
+            {
+                continue;
+            }
+            let expr = if dvar.name.starts_with('@') {
+                Expr::ArrayLiteral(Vec::new())
+            } else if dvar.name.starts_with('%') {
+                Expr::Hash(Vec::new())
+            } else {
+                Expr::Literal(Value::NIL)
+            };
+            stmts.push(Stmt::VarDecl {
+                name: dvar.name.clone(),
+                expr,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
+    }
+    if is_binding {
+        stmts.push(Stmt::SyntheticBlock(vec![Stmt::MarkBind, tmp_decl]));
     } else {
-        vec![tmp_decl]
-    };
+        stmts.push(tmp_decl);
+    }
     // A declarator list bound with `:=` is a signature: a positional count
     // outside its required..max range dies before anything is bound, exactly
     // as a routine call does (`my ($p, $q) := (1,)` is "Too few positionals
