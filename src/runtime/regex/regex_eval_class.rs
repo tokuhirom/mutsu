@@ -1,5 +1,5 @@
 use super::super::*;
-use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
+use super::regex_helpers::{CaseFoldIter, map_pos, matches_named_builtin, strip_marks_pattern};
 use super::regex_prefilter::regex_scan_positions;
 use crate::builtins::cclass;
 
@@ -258,7 +258,21 @@ impl Interpreter {
             None => return Vec::new(),
         };
         let pkg = self.current_package_sym();
-        let chars: Vec<char> = text.chars().collect();
+        // `:m` matches on the mark-stripped subject (and pattern literals);
+        // the scan walks stripped space and every span is mapped back.
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let orig_len = target.chars().len();
+        let stripped = parsed.ignore_mark.then(|| target.stripped());
+        let parsed = if parsed.ignore_mark {
+            strip_marks_pattern(&parsed)
+        } else {
+            parsed
+        };
+        let chars: Vec<char> = match &stripped {
+            Some(s) => s.chars().to_vec(),
+            None => text.chars().collect(),
+        };
         let mut results = Vec::new();
         let mut pos = 0;
         while pos <= chars.len() && results.len() < limit {
@@ -281,7 +295,13 @@ impl Interpreter {
             }
             match found {
                 Some((start, end)) => {
-                    results.push((start, end));
+                    match &stripped {
+                        Some(s) => results.push((
+                            map_pos(start, s.stripped_map(), orig_len),
+                            map_pos(end, s.stripped_map(), orig_len),
+                        )),
+                        None => results.push((start, end)),
+                    }
                     // Advance past the match (at least 1 to avoid infinite loop)
                     pos = if end > start { end } else { start + 1 };
                 }
