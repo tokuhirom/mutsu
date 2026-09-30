@@ -800,6 +800,11 @@ impl Registry {
         method_name: &str,
         candidate_idx: usize,
     ) -> Option<&Vec<(u64, Value)>> {
+        // Keyed by owned strings: skip building a key to miss in an empty map
+        // (the common case -- this runs on every method call).
+        if self.method_wrap_chains.is_empty() {
+            return None;
+        }
         self.method_wrap_chains
             .get(&(
                 class_name.to_string(),
