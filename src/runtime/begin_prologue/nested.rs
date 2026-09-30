@@ -210,12 +210,13 @@ impl Walker<'_> {
                 for member in inner.iter() {
                     match member {
                         Stmt::VarDecl { name, .. } => self.bind_opaque(name.clone()),
-                        // A `will begin` trait is a BEGIN-time effect this
-                        // slice does not lift.
+                        // A nested `will begin` trait is a BEGIN-time effect
+                        // this slice does not lift. A top-level one is split
+                        // by the unit partition itself.
                         Stmt::Phaser {
                             kind: PhaserKind::Begin,
                             ..
-                        } => self.lifted.halted = true,
+                        } if !self.frames.is_empty() => self.lifted.halted = true,
                         _ => {}
                     }
                 }
