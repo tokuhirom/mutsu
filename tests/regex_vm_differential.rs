@@ -106,6 +106,15 @@ differential_case!(
     r#"say ("ab" ~~ / a | ab /).gist; say ("ab" ~~ / a || ab /).gist; say ("aa" ~~ / (a) $0 /).gist; say ("a,b,c" ~~ / \w+ % ',' /).gist; say ("AB" ~~ / :i ab /).gist; say ("ab" ~~ / a <?before b> /).gist; say ("abab" ~~ / (ab)+ /)[0].elems"#
 );
 
+differential_case!(
+    quantified_captures,
+    r#"my $m = "abcab" ~~ / (\w)+ /; say $m[0].elems, " ", $m[0].map(*.Str).join(","); say ("a1b2c3" ~~ / [ (\w) (\d) ]+ /).list.map({ .elems }).join(","); say ("xyz" ~~ / (x)* y /)[0].elems; say ("abc" ~~ / (b) ** 1..2 /)[0].elems; say ("aaa" ~~ / :r (a)+ /)[0].elems; say ("ab" ~~ / (c)* ab /)[0].elems; say ("aab" ~~ / (a)+? b /)[0].elems"#
+);
+differential_case!(
+    optional_captures,
+    r#"say ("b" ~~ / (a)? b /).gist; say ("ab" ~~ / (a)? b /).gist; say ("b" ~~ / (a)? (b) /)[1].from; say ("b" ~~ / $<x>=[a]? b /).gist; say ("b" ~~ / $<x>=(a)? b /).gist; say ("ab" ~~ / $<x>=(a)?? ab /).gist; say ("b" ~~ / [ (a) (c) ]? b /).gist; say ("ab" ~~ / :r (a)? b /).gist"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

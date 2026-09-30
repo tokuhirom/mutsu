@@ -14,7 +14,7 @@ use super::super::regex_match_delta::capture_group_delta;
 use super::super::regex_trail::CapStore;
 use super::{RxOp, RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
-use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
+use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexPattern};
 use crate::symbol::Symbol;
 
 /// A point to resume from on failure. Both kinds record the capture-trail
@@ -339,6 +339,50 @@ impl Interpreter {
                         pos,
                         regs[pos_base as usize],
                     );
+                    pc += 1;
+                    true
+                }
+                // Cost: O(a + n), a = the atom's capture groups, n = the
+                // names under it (the walk's zero arm, same order).
+                RxOp::ZeroArm { tok, pos_base } => {
+                    let token = &program.toks[tok as usize];
+                    let flags =
+                        super::super::regex_helpers::capture_group_list_flags(&token.atom, false);
+                    store.reserve_nil(&flags);
+                    let named_zero_capture =
+                        !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
+                            && !token.subrule_call_capture;
+                    if named_zero_capture {
+                        Self::store_apply_named_capture(
+                            &mut store,
+                            token,
+                            pos,
+                            pos,
+                            regs[pos_base as usize],
+                        );
+                    }
+                    let mut list_names = std::collections::HashSet::new();
+                    Self::collect_nested_list_quantified_names(&token.atom, &mut list_names);
+                    for n in list_names {
+                        store.insert_named_quantified(n);
+                    }
+                    pc += 1;
+                    true
+                }
+                // Cost: O(n), n = the names under the token.
+                RxOp::QuantNames { tok } => {
+                    for n in Self::collect_quantified_names_for_token(&program.toks[tok as usize]) {
+                        store.insert_named_quantified(n);
+                    }
+                    pc += 1;
+                    true
+                }
+                // Cost: O(k), k = the slots folded.
+                RxOp::Fold { tok, pos_base } => {
+                    let stride = super::super::regex_helpers::count_capture_groups(
+                        &program.toks[tok as usize].atom,
+                    );
+                    store.fold_quantified(regs[pos_base as usize], stride, true);
                     pc += 1;
                     true
                 }

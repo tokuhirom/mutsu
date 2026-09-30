@@ -112,6 +112,29 @@ fn min_len(pattern: &RegexPattern) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
+/// Can a quantified `atom`'s captures be folded one level deep, the way the
+/// walk's `fold_quantified` does? True for `( … )` whose body captures
+/// nothing, and for `[ … ]` whose tokens are capture-free or exactly such a
+/// non-quantified, unaliased `( … )`.
+fn flat_captures(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::CaptureGroup(p) => !pattern_captures(p),
+        RegexAtom::Group(p) => p.tokens.iter().all(|t| {
+            let plain = t.named_capture.is_none()
+                && t.hash_capture.is_none()
+                && t.secondary_named_capture.is_none();
+            match &t.atom {
+                RegexAtom::CaptureGroup(inner) => {
+                    plain && matches!(t.quant, RegexQuant::One) && !pattern_captures(inner)
+                }
+                RegexAtom::Group(inner) => plain && !pattern_captures(inner),
+                _ => plain,
+            }
+        }),
+        _ => false,
+    }
+}
+
 impl Compiler {
     fn reg(&mut self) -> u16 {
         self.nregs += 1;
@@ -157,7 +180,8 @@ impl Compiler {
             return Err("frugal-ratchet");
         }
         let named = token.named_capture.is_some();
-        if named && !matches!(token.quant, RegexQuant::One) {
+        let optional = matches!(token.quant, RegexQuant::ZeroOrOne);
+        if named && !matches!(token.quant, RegexQuant::One) && !optional {
             return Err("quantified-alias");
         }
         let body_captures = match &token.atom {
@@ -165,8 +189,14 @@ impl Compiler {
             RegexAtom::Group(p) => pattern_captures(p),
             _ => false,
         };
-        if body_captures && !matches!(token.quant, RegexQuant::One) {
-            return Err("quantified-capture");
+        if body_captures && !matches!(token.quant, RegexQuant::One) && !flat_captures(&token.atom) {
+            // A quantified body whose captures nest (`( (a) )+`, `[ $<x>=[..] ]*`)
+            // needs the walk's nested fold; Slice A folds one level only.
+            return Err("quantified-nested-capture");
+        }
+        if optional {
+            // `?` applies its alias on the matched arm only; see `zero_or_one`.
+            return self.zero_or_one(token);
         }
         let alias = if named {
             let (pos_base, start) = (self.reg(), self.reg());
@@ -178,7 +208,7 @@ impl Compiler {
         };
         match token.quant {
             RegexQuant::One => self.atom(token)?,
-            RegexQuant::ZeroOrOne => self.zero_or_one(token)?,
+            RegexQuant::ZeroOrOne => unreachable!("handled above"),
             RegexQuant::ZeroOrMore => self.repeat(token, 0, None)?,
             RegexQuant::OneOrMore => self.repeat(token, 1, None)?,
             RegexQuant::Repeat(min, max) => {
@@ -255,8 +285,14 @@ impl Compiler {
 
     /// `x?`: the body first (greedy), the empty arm first (frugal), or the
     /// body committed to its first candidate with the empty arm only when it
-    /// failed outright (ratchet).
+    /// failed outright (ratchet). The matched arm applies the token's alias
+    /// over what it matched; the empty arm reserves the atom's capture slots
+    /// and applies the alias only where the walk does
+    /// (`walk_zero_or_one_zero_arm`).
     fn zero_or_one(&mut self, token: &RegexToken) -> Result<(), Decline> {
+        let (pos_base, start) = (self.reg(), self.reg());
+        self.ops.push(RxOp::PosBase(pos_base));
+        self.ops.push(RxOp::Mark(start));
         // Recorded before the split, so the ratchet's cut also drops the
         // empty arm once the body has matched.
         let height = token.ratchet.then(|| self.reg());
@@ -267,19 +303,33 @@ impl Compiler {
         self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
         let body = self.pc();
         self.atom(token)?;
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        if token.named_capture.is_some() {
+            self.ops.push(RxOp::Named {
+                tok,
+                start,
+                pos_base,
+            });
+        }
         if let Some(h) = height {
             self.ops.push(RxOp::Cut(h));
         }
+        let join = self.pc();
+        self.ops.push(RxOp::Jmp(0)); // patched below
+        let zero = self.pc();
+        self.ops.push(RxOp::ZeroArm { tok, pos_base });
         let end = self.pc();
+        self.ops[join as usize] = RxOp::Jmp(end);
         self.ops[split as usize] = if token.frugal {
             RxOp::Split {
-                prefer: end,
+                prefer: zero,
                 alt: body,
             }
         } else {
             RxOp::Split {
                 prefer: body,
-                alt: end,
+                alt: zero,
             }
         };
         Ok(())
@@ -320,6 +370,19 @@ impl Compiler {
             });
             return Ok(());
         }
+        // A body that captures folds its per-iteration slots into lists at
+        // the loop's exit, after the names under it were marked quantified
+        // up front — `walk_quant_chain` / `descend_folded`'s order.
+        let fold = if flat_captures(&token.atom) {
+            let pos_base = self.reg();
+            self.ops.push(RxOp::PosBase(pos_base));
+            let tok = self.toks.len() as u32;
+            self.toks.push(token.clone());
+            self.ops.push(RxOp::QuantNames { tok });
+            Some((pos_base, tok))
+        } else {
+            None
+        };
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
         let whole = token.ratchet.then(|| self.reg());
@@ -350,6 +413,9 @@ impl Compiler {
         };
         if let Some(h) = whole {
             self.ops.push(RxOp::Cut(h));
+        }
+        if let Some((pos_base, tok)) = fold {
+            self.ops.push(RxOp::Fold { tok, pos_base });
         }
         Ok(())
     }

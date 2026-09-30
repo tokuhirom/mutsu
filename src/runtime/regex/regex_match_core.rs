@@ -150,7 +150,10 @@ impl Interpreter {
     /// times, raku still renders those names as EMPTY LISTS (`'/' [ <seg-nz>
     /// [ '/' <seg> ]* ]?` matching "/" leaves `$<seg>` = []), while names
     /// under only `?`/unquantified positions stay absent (Nil).
-    fn collect_nested_list_quantified_names(atom: &RegexAtom, out: &mut HashSet<String>) {
+    pub(super) fn collect_nested_list_quantified_names(
+        atom: &RegexAtom,
+        out: &mut HashSet<String>,
+    ) {
         let visit_tok = |tok: &RegexToken, out: &mut HashSet<String>| {
             let is_list = matches!(
                 tok.quant,
