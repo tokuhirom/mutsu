@@ -29,4 +29,4 @@ share elements), and an object that already carries the slot is left alone.
 The rendering of such an object (`say @a` prints `VL.new`, rakudo
 `(0, 1, 2).IterationBuffer`) is a separate divergence, filed as #10375.
 
-Pinned by `t/vm/iterationbuffer-subclass-new-storage.t`.
+Pinned by `t/collections/lazy-seq/iterationbuffer-subclass-new-storage.t`.
