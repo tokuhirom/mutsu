@@ -395,23 +395,27 @@ impl Interpreter {
     /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
     /// treat the non-bind path unchanged.
     pub(crate) fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
-        if let ValueView::Pair(name, payload) = val.view()
-            && name == "__mutsu_bind_index_value"
-        {
-            if let ValueView::Array(items, ..) = payload.view() {
-                let value = items.first().cloned().unwrap_or(Value::NIL);
-                let source = match items.get(1).map(Value::view) {
-                    Some(ValueView::Array(srcs, ..)) => match srcs.first().map(Value::view) {
-                        Some(ValueView::Str(s)) if !s.is_empty() => Some((**s).clone()),
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                return (value, source);
+        let payload = match val.view() {
+            ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => payload,
+            ValueView::ValuePair(name, payload)
+                if name.as_str() == Some("__mutsu_bind_index_value") =>
+            {
+                payload
             }
-            return (payload.clone(), None);
+            _ => return (val, None),
+        };
+        if let ValueView::Array(items, ..) = payload.view() {
+            let value = items.first().cloned().unwrap_or(Value::NIL);
+            let source = match items.get(1).map(Value::view) {
+                Some(ValueView::Array(srcs, ..)) => match srcs.first().map(Value::view) {
+                    Some(ValueView::Str(s)) if !s.is_empty() => Some((**s).clone()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            return (value, source);
         }
-        (val, None)
+        (payload.clone(), None)
     }
 
     pub(crate) fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {

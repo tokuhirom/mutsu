@@ -72,6 +72,7 @@ impl Interpreter {
 
     /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
     /// Gets the current container (hash/array) via the accessor, modifies it, writes back.
+    // Cost: O(n), n = elements in the accessor's aggregate when writeback copies it.
     pub(super) fn builtin_index_assign_method_lvalue(
         &mut self,
         args: &[Value],
@@ -94,7 +95,15 @@ impl Interpreter {
             return self.index_assign_method_lvalue_slice(args, 2 + offset, keys);
         }
         let index = args[2 + offset].clone();
-        let value = args[3 + offset].clone();
+        let raw_value = args[3 + offset].clone();
+        let is_bind = matches!(
+            raw_value.view(),
+            ValueView::Pair(name, _) if name == "__mutsu_bind_index_value"
+        ) || matches!(
+            raw_value.view(),
+            ValueView::ValuePair(name, _) if name.as_str() == Some("__mutsu_bind_index_value")
+        );
+        let (value, bind_source) = Self::unwrap_bind_index_value(raw_value);
         let var_name = args[4 + offset].to_string_value();
 
         // ADR-0068 §4 step 3: an attribute-rooted element store on an INSTANCE
@@ -204,6 +213,16 @@ impl Interpreter {
             _ => None,
         };
         let current = Self::deref_lvalue_value(current);
+        let mut source_install = None;
+        let bound_cell = if is_bind && matches!(current.view(), ValueView::Hash(_)) {
+            Some(Value::container_ref(self.bind_key_source_cell(
+                bind_source.as_deref(),
+                &value,
+                &mut source_install,
+            )))
+        } else {
+            None
+        };
         let _struct_guard = invocant_guard.or_else(|| {
             crate::value::container_lock::ContainerStructGuard::acquire_for(
                 attr_cell_addr,
@@ -228,6 +247,14 @@ impl Interpreter {
             ValueView::Slip(items) if items.len() == 1 => items[0].to_string_value(),
             _ => index.to_string_value(),
         };
+        if !is_bind && let ValueView::Hash(hash) = current.view() {
+            let key = if hash.key_type.is_some() {
+                crate::runtime::utils::value_which_key(&index)
+            } else {
+                index_key.clone()
+            };
+            Self::check_assign_key_writable(&hash, &key)?;
+        }
         if let Some(err) = Self::pair_subscript_store_refusal(
             &current,
             index_is_positional,
@@ -261,7 +288,14 @@ impl Interpreter {
                 ValueView::Hash(hash) => {
                     let key = index.to_string_value();
                     let hash = unsafe { crate::value::gc_contents_mut(&hash) };
-                    Value::hash_insert_through(&mut hash.map, key, value.clone());
+                    if let Some(bound) = &bound_cell {
+                        hash.map.insert(key, bound.clone());
+                    } else {
+                        Value::hash_insert_through(&mut hash.map, key, value.clone());
+                    }
+                    if let Some((source, cell)) = source_install {
+                        self.set_env_with_main_alias(&source, cell);
+                    }
                     if let Some(root) = method_args.first() {
                         self.env
                             .insert(var_name.clone(), Self::detached_lvalue_value(root));
@@ -532,7 +566,14 @@ impl Interpreter {
             match current.view() {
                 ValueView::Hash(h) if h.key_type.is_none() => {
                     let key = index.to_string_value();
-                    if let Some(entry) = current.hash_autovivify(&key) {
+                    if let Some(bound) = &bound_cell {
+                        let hash = unsafe { crate::value::gc_contents_mut(&h) };
+                        hash.map.insert(key, bound.clone());
+                        if let Some((source, cell)) = source_install {
+                            self.set_env_with_main_alias(&source, cell);
+                        }
+                        return Ok(effective_value);
+                    } else if let Some(entry) = current.hash_autovivify(&key) {
                         entry.hash_entry_write(effective_value.clone());
                         return Ok(effective_value);
                     }
@@ -640,13 +681,25 @@ impl Interpreter {
                             .original_keys
                             .get_or_insert_with(ValueMap::default)
                             .insert(which.clone(), index.clone());
-                        Value::hash_insert_through(
-                            &mut new_hash.map,
-                            which,
-                            effective_value.clone(),
-                        );
+                        if let Some(bound) = &bound_cell {
+                            new_hash.map.insert(which, bound.clone());
+                        } else {
+                            Value::hash_insert_through(
+                                &mut new_hash.map,
+                                which,
+                                effective_value.clone(),
+                            );
+                        }
                     } else {
-                        Value::hash_insert_through(&mut new_hash.map, key, effective_value.clone());
+                        if let Some(bound) = &bound_cell {
+                            new_hash.map.insert(key, bound.clone());
+                        } else {
+                            Value::hash_insert_through(
+                                &mut new_hash.map,
+                                key,
+                                effective_value.clone(),
+                            );
+                        }
                     }
                     Value::hash(new_hash)
                 }
@@ -699,6 +752,9 @@ impl Interpreter {
             updated,
             true,
         )?;
+        if let Some((source, cell)) = source_install {
+            self.set_env_with_main_alias(&source, cell);
+        }
         Ok(effective_value)
     }
 
