@@ -270,7 +270,8 @@ impl Interpreter {
             buf_attrs(class_name_sym, bytes),
             orig_id,
         );
-        self.env.insert(target_var.to_string(), updated.clone());
+        self.env
+            .insert_through(target_var.to_string(), updated.clone());
         Ok(updated)
     }
 
@@ -379,7 +380,17 @@ impl Interpreter {
         // extend, re-encode) made filling a buffer quadratic — see #7680.
         extend_buf_elems(&attrs_cell, class_name_sym, &new_items, end);
         let updated = Value::instance_sharing_cell(&attrs_cell, class_name_sym, orig_id);
-        self.env.insert(target_var.to_string(), updated.clone());
+        // Every Buf mutator in this file re-seats the receiver binding THROUGH
+        // a shared cell (`insert_through`), never over it. A `Buf` held by a
+        // lexical that a closure captured lives in a `ContainerRef` cell that
+        // the closure, its creator and every nested sub share. A plain `insert`
+        // here replaced that cell with a bare value in the running closure's
+        // own overlay, so a nested `my sub` that later reassigned the variable
+        // wrote the cell while the overlay kept the pushed Buf -- and the
+        // closure's exit rejoin then stored that stale overlay value back over
+        // the nested sub's write (`$seq.push($b); reset()` in a bare block).
+        self.env
+            .insert_through(target_var.to_string(), updated.clone());
         Ok(updated)
     }
 
@@ -440,7 +451,7 @@ impl Interpreter {
                     buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
-                self.env.insert(target_var.to_string(), updated);
+                self.env.insert_through(target_var.to_string(), updated);
                 Ok(popped)
             }
             "shift" => {
@@ -467,7 +478,7 @@ impl Interpreter {
                     buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
-                self.env.insert(target_var.to_string(), updated);
+                self.env.insert_through(target_var.to_string(), updated);
                 Ok(shifted)
             }
             "splice" => {
@@ -532,7 +543,7 @@ impl Interpreter {
                     buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
-                self.env.insert(target_var.to_string(), updated);
+                self.env.insert_through(target_var.to_string(), updated);
                 Ok(make_buf(class_name_sym, removed))
             }
             _ => unreachable!(),
