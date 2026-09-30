@@ -881,8 +881,10 @@ impl Compiler {
                 // In `:=` bind context, produce a shared `ContainerRef` cell for
                 // the leaf so `my $s := @a[0;1]; $s = v` mutates the real array.
                 if self.scalar_bind_autovivify {
-                    self.code
-                        .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+                    self.code.emit(OpCode::MultiDimIndexBindRef {
+                        ndims: dimensions.len() as u32,
+                        is_positional: *is_positional,
+                    });
                 } else {
                     self.code.emit(OpCode::MultiDimIndex {
                         ndims: dimensions.len() as u32,
