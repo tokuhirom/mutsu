@@ -575,8 +575,47 @@ impl Interpreter {
         Ok(Some(named.to_string_value()))
     }
 
+    /// `Mu.set_why($pod)`: attach documentation to the invocant's type, the
+    /// same store `.^set_why` writes, so `.WHY` on any instance of that type
+    /// (or the type object) reads it back. Rakudo forwards `Mu.set_why` to
+    /// the metaclass, so an instance call is type-wide, not per-object.
+    // Cost: O(1) amortized -- one metadata map insert.
+    pub(super) fn dispatch_mu_set_why(
+        &mut self,
+        target: &Value,
+        why: Value,
+    ) -> Result<Value, RuntimeError> {
+        let name = self.mop_receiver_owner(target);
+        crate::runtime::cow_table_mut(&mut self.type_metadata)
+            .entry(name)
+            .or_default()
+            .insert("__set_why__".to_string(), why.clone());
+        Ok(why)
+    }
+
+    /// True when `target` is a Metamodel HOW object, whose own `set_why`
+    /// takes the meta-level route (`Documenting.set_why`).
+    // Cost: O(1) -- one class-name check.
+    pub(super) fn is_how_receiver(&self, target: &Value) -> bool {
+        matches!(target.view(), ValueView::Instance { class_name, .. }
+            if Self::is_metamodel_how(&class_name)
+                || self.is_metamodel_how_class(&class_name.resolve()))
+    }
+
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
     pub(super) fn dispatch_why(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        // A pod attached with `set_why` on the type (or an instance of it)
+        // wins over a declarator comment.
+        if !matches!(target.view(), ValueView::Package(_) | ValueView::Sub(_)) {
+            let owner = self.mop_receiver_owner(target);
+            if let Some(why) = self
+                .type_metadata
+                .get(&owner)
+                .and_then(|m| m.get("__set_why__"))
+            {
+                return Ok(why.clone());
+            }
+        }
         let object_id = match target.view() {
             ValueView::Sub(data) => Some(data.id),
             ValueView::WeakSub(data) => data.upgrade().map(|data| data.id),
