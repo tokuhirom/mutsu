@@ -15,5 +15,6 @@ one-element-per-top-up drain.
 
 Measured with callgrind on the profiling build, draining 5000 elements with
 `pull-one`, with the callback's own cost (`run_map_grep_chunk`, #10187)
-excluded, a stream pull went from 1.44x to RATIO_AFTER the Ir of an array-backed
-iterator pull (#10217).
+excluded, a stream pull went from about 45.3k to about 24.0k instructions: from
+1.44x to 0.76x the Ir of an array-backed iterator pull (31.4k), against the
+issue's 1.2x close condition (#10217).
