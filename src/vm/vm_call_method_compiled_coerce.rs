@@ -207,6 +207,11 @@ impl Interpreter {
     /// `push-*` family (it writes pulled elements into an external buffer arg,
     /// needing array-identity writeback handled by the interpreter); and
     /// `count-only`/`bool-only` (left to the interpreter's predictive handling).
+    ///
+    /// A `.map`/`.grep` stream iterator is served here too, by the one
+    /// `map_grep_stream_protocol_call` routine every dispatch path shares.
+    // Cost: O(1) for an array-backed iterator; for a stream, one callback call
+    // per source element the call consumes (see `map_grep_stream_call`).
     pub(super) fn try_native_iterator(
         &mut self,
         target: &Value,
@@ -227,16 +232,21 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name.resolve() != "Iterator"
-            || attributes.contains_key("squish_source")
-            || attributes.contains_key("is_lazy")
-            || attributes
-                .contains_key(crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR)
-        {
-            // squish iterators invoke user callbacks; lazy iterators (gather /
+        if class_name.resolve() != "Iterator" {
+            return None;
+        }
+        // A `.map`/`.grep` stream (#10217): the same protocol step every
+        // other dispatch path runs, called straight from here so a pull skips
+        // the compiled-method fallback chain. Its callback re-enters the VM
+        // exactly as it does from that chain, and the step commits through the
+        // instance's shared cell, so every alias sees the advance.
+        if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, args) {
+            return Some(result);
+        }
+        if attributes.contains_key("squish_source") || attributes.contains_key("is_lazy") {
+            // squish iterators invoke user callbacks, and lazy iterators (gather /
             // lazy Seq) pull through interpreter-owned coroutine state rather than
-            // a materialized `items` snapshot, and a `.map`/`.grep` stream
-            // runs its callback per pull — leave all three to the interpreter.
+            // a materialized `items` snapshot — leave both to the interpreter.
             return None;
         }
         // Only a concrete array-backed iterator (excludes predictive/coroutine
