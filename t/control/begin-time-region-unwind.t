@@ -26,7 +26,12 @@ plan 4;
     sub after-dead-constant() { "reachable" }
 }
 
+# A nested BEGIN is normally lifted into the unit's BEGIN prologue (ADR-0134),
+# where a throw fails the whole unit, as it does on rakudo. The routine declared
+# ahead of it in this scope keeps it on its pre-ADR, in-place path, which is the
+# path whose region unwinding this block tests.
 {
+    sub keeps-begin-in-place() { }
     my $caught = False;
     try {
         BEGIN { die "boom" }

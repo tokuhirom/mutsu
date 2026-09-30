@@ -1216,6 +1216,9 @@ fn recurse_into_expr(expr: &mut Expr) {
     }
 }
 
+/// Marks a declaration whose initializer reads its static cell (ADR-0134).
+pub(crate) const BEGIN_STATIC_TRAIT: &str = "__begin_static";
+
 /// Split a `VarDecl` into its *static* declaration and the run-time assignment
 /// of its initializer, if it has one. The static half is the container holding
 /// what an uninitialized declaration of its sigil holds; it is what a BEGIN-time
@@ -1240,6 +1243,11 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     };
     if custom_traits.iter().any(|(t, _)| t == "__constant") {
         return None;
+    }
+    // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
+    // already its static half: its initializer reads the static value.
+    if custom_traits.iter().any(|(t, _)| t == BEGIN_STATIC_TRAIT) {
+        return Some((stmt.clone(), None));
     }
     // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
     // sigil-based default literal (`Literal(Array([]))` / `Literal(Hash({}))`),

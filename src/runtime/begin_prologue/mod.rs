@@ -1,4 +1,4 @@
-//! The unit-level BEGIN prologue (ADR-0134, slice 1).
+//! The unit-level BEGIN prologue (ADR-0134, slices 1 and 2).
 //!
 //! Rakudo runs a `BEGIN` block as soon as the parser reaches its end, before
 //! any run-time code of the compilation unit. The block sees every lexical in
@@ -28,10 +28,15 @@
 //! moves whole, so a bare run-time statement *inside* such a body (`class A {
 //! say 2 }`) runs with the prologue rather than in its source position. Rakudo
 //! composes the class at BEGIN time but runs that statement at run time.
-//! Splitting a package body is slice 2's static-cell machinery.
+//!
+//! BEGINs nested inside a top-level statement, and value-form BEGINs, are
+//! lifted into the prologue by [`nested`] ahead of that statement.
+
+mod nested;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::value::ValueView;
+use std::collections::HashSet;
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
 /// run-time remainder, as described in the module docs. The prologue is
@@ -39,18 +44,52 @@ use crate::value::ValueView;
 /// top-level statement-form `BEGIN`, the prologue is empty and `stmts` is
 /// untouched.
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
-    let Some(last_begin) = stmts.iter().rposition(is_begin_phaser) else {
+    // Lift the BEGINs nested in each top-level statement first (slice 2):
+    // each lifted effect joins the prologue just ahead of its statement.
+    let unit_names = unit_lexical_names(stmts);
+    let mut lifted = nested::Lifted::default();
+    let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
+    for stmt in stmts.iter_mut() {
+        let before = lifted.effects.len();
+        nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
+        effects.push(lifted.effects.split_off(before));
+    }
+    let decls = lifted.decls;
+    let last_begin = stmts.iter().rposition(is_begin_phaser);
+    let last_lifted = effects.iter().rposition(|e| !e.is_empty());
+    let Some(last) = last_begin.max(last_lifted) else {
         return Vec::new();
     };
-    let tail = stmts.split_off(last_begin + 1);
-    let mut prologue = Vec::new();
+    let tail = stmts.split_off(last + 1);
+    let mut prologue = decls;
     let mut rest = Vec::new();
-    for stmt in std::mem::take(stmts) {
+    for (stmt, stmt_effects) in std::mem::take(stmts).into_iter().zip(effects) {
+        prologue.extend(stmt_effects);
         partition_stmt(stmt, &mut prologue, &mut rest);
     }
     rest.extend(tail);
     *stmts = rest;
     prologue
+}
+
+/// The lexical names a unit declares at its top level, in `VarDecl` naming
+/// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
+/// in the unit's frame.
+fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl { name, .. } => {
+                names.insert(name.clone());
+            }
+            Stmt::SyntheticBlock(inner) => names.extend(unit_lexical_names(inner)),
+            Stmt::SubDecl { name, .. } => {
+                names.insert(format!("&{}", name.resolve()));
+            }
+            _ => {}
+        }
+    }
+    names
 }
 
 /// Put a compilation unit's BEGIN prologue at its head. This is the whole of
