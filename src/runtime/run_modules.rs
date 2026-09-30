@@ -767,12 +767,47 @@ impl Interpreter {
             None => super::end_order::MODULE,
         };
         self.module_load_order.push(order);
-        let result = self.load_module_inner(module);
+        let result = self.load_module_inner(module, None);
+        self.module_load_order.pop();
+        result.map(|_precompiled| ())
+    }
+
+    /// Load `module` from an already-resolved `source_path` as its own
+    /// compilation unit, without importing its exports into the caller.
+    /// Returns whether the source came from the precompilation cache.
+    ///
+    /// This is what `CompUnit::Repository::*.need` does: the repository has
+    /// picked the file itself (a `FileSystem` repo looks under its own
+    /// prefix, an `Installation` repo under `sources/`), but the compunit
+    /// must still run through the same machinery as a `use`d module --
+    /// `?FILE`, `current_unit`, the module's own import scope. Running the
+    /// parsed statements directly in the caller's scope instead attributed
+    /// the module's routines to the caller's file and, when the caller was
+    /// a routine with its own `use`, lost the module's imported subs once
+    /// that routine returned (#10232).
+    pub(crate) fn load_module_from_path(
+        &mut self,
+        module: &str,
+        source_path: std::path::PathBuf,
+    ) -> Result<bool, RuntimeError> {
+        let order = self
+            .module_load_order
+            .last()
+            .copied()
+            .unwrap_or(super::end_order::RUNTIME);
+        self.module_load_order.push(order);
+        let saved_suppress = std::mem::replace(&mut self.suppress_exports, true);
+        let result = self.load_module_inner(module, Some((source_path, None)));
+        self.suppress_exports = saved_suppress;
         self.module_load_order.pop();
         result
     }
 
-    fn load_module_inner(&mut self, module: &str) -> Result<(), RuntimeError> {
+    fn load_module_inner(
+        &mut self,
+        module: &str,
+        resolved: Option<(std::path::PathBuf, Option<String>)>,
+    ) -> Result<bool, RuntimeError> {
         // Whoever's `use`/`need` triggered this load, so newly-declared
         // classes/roles can also be made resolvable bare from the
         // *importer's* own scope (see `new_types` below), not just from the
@@ -805,9 +840,12 @@ impl Interpreter {
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
         let export_args = self.pending_use_export_args.take();
-        let (source_path, inst_dist_json) = self
-            .resolve_module_path(module)
-            .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
+        let (source_path, inst_dist_json) = match resolved {
+            Some(found) => found,
+            None => self
+                .resolve_module_path(module)
+                .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
+        };
         crate::runtime::cow_table_mut(&mut self.module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
@@ -860,7 +898,7 @@ impl Interpreter {
         // Each module may set its own `use v6.*` which should not leak
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
-        let (mut stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        let (mut stmts, precompiled) = self.parse_module_source(module, &source_path)?;
         // The module's BEGIN-time effects run first, in source order (ADR-0134).
         crate::runtime::begin_prologue::order_unit(&mut stmts);
         // `$=pod` belongs to the compilation unit that declares it. The main
@@ -1638,7 +1676,7 @@ impl Interpreter {
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;
         self.current_distribution_frame_floor = saved_distribution_floor;
-        Ok(())
+        Ok(precompiled)
     }
 
     /// Whether `decl_name` (a `VarDecl.name`, sigil-less for a scalar -- see

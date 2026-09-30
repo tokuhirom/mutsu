@@ -960,6 +960,7 @@ mod registry_gen;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unit_private_routines;
+mod mixin_wrapped_methods;
 mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
