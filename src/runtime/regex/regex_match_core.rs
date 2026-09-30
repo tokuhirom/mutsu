@@ -1028,6 +1028,13 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 };
+                if !token.ratchet && atom_contains_alternation(&token.atom) {
+                    // As for `*`/`+`: a later constraint can force another
+                    // branch in an earlier iteration (`[ a || aa ] ** 2`).
+                    return self.walk_quant_group_candidates(
+                        ctx, idx, pos, min, max, false, store, matches,
+                    );
+                }
                 self.walk_quant_chain(ctx, idx, pos, min, max, false, store, matches)
             }
         }
@@ -1665,6 +1672,14 @@ impl Interpreter {
                 if hash_per_iter {
                     interp.maybe_run_reduce_time_dynvar_action(token, store.caps());
                 }
+                // The flag covers this iteration's atom only. The recursion
+                // below also runs the rest of the pattern after the loop, and
+                // an alternation there is not quantified: it pads its branches
+                // as usual (`[a || b]+ [ (c) || d ] (x)` numbers `(x)` as $1).
+                let in_atom = prior_quantified.map(|prior| {
+                    super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH
+                        .with(|flag| flag.replace(prior))
+                });
                 stop = interp.walk_quant_group_candidates_dfs(
                     ctx,
                     idx,
@@ -1679,6 +1694,10 @@ impl Interpreter {
                     store,
                     matches,
                 );
+                if let Some(in_atom) = in_atom {
+                    super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH
+                        .with(|flag| flag.set(in_atom));
+                }
                 store.rewind(mark);
                 stop
             };

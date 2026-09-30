@@ -353,9 +353,23 @@ A `MUTSU_VM_STATS` sweep over the first half of `t/` puts the patterns still dec
 Slice A shapes (`sequential-alternation` 11, `composite-class` 8, `nullable-loop` 7,
 `separator` 4).
 
-Still to come in Slice A: `||`, backreferences, `%` separators, nested quantified captures,
-nullable loop bodies, `<( )>` markers, `CompositeClass`, and moving the unanchored scan loop into
-the VM.
+**Slice A, third part: `||` landed.** Sequential alternation compiles in
+`walk_seq_alternation`'s order: every end of branch *k* is tried against the rest of the pattern
+before branch *k+1* is entered. Each branch ends with an `AltTail` op that merges what
+`alternation_branch_delta` adds: padding to the widest branch, and the list-valued names marked
+quantified. The padding is built by `alternation_tail_delta`, a helper the walk shares. Under
+ratchet the alternation commits to the first matching branch's first end. Two shapes still
+decline: a ratcheted alternation with a nullable branch before the last, and a numbered alias
+inside a branch.
+
+The comparison exposed two walk bugs, both now fixed against rakudo:
+
+- The quantified-alternation padding flag leaked into the continuation after a
+  `walk_quant_group_candidates` loop.
+- `**` over an alternation never backtracked into an earlier iteration's branch choice.
+
+Still to come in Slice A: backreferences, `%` separators, nested quantified captures, nullable
+loop bodies, `<( )>` markers, `CompositeClass`, and moving the unanchored scan loop into the VM.
 
 ### Reproducing §2
 
