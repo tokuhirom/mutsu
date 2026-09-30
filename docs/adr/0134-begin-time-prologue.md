@@ -296,7 +296,8 @@ status here.
   (slice 1) extends to the last statement with a lifted effect.
 - **Value.** A value-form BEGIN, or a statement-form one that ends its block,
   stores into a unit-level slot (`__begin_value_N`), and the site reads that
-  slot. This uses a slot rather than §2.2's `site_id` / `once_store` pairing:
+  slot, decontainerized (`$slot<>`) so a list value still flattens into an
+  array. This uses a slot rather than §2.2's `site_id` / `once_store` pairing:
   the slot is an ordinary unit lexical captured like any other, so it needs no
   second mechanism.
 - **Static cells (§2.2).** An inner lexical the body reads gets a unit-level
@@ -326,6 +327,7 @@ status here.
   - a BEGIN in a package body, including a method's;
   - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
     scope;
+  - a BEGIN whose body uses a placeholder, which is `X::Placeholder::Block`;
   - a BEGIN that reads a name the unit does not declare (an EVAL's caller
     lexical, for example), or reads a `state`, `constant` or group-declared
     inner lexical;

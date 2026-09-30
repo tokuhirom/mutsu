@@ -5,7 +5,7 @@ use Test;
 # runs. It sees the enclosing scopes' lexicals in their static state, and a
 # value-form BEGIN's value is a constant of its site.
 
-plan 16;
+plan 17;
 
 my @log;
 
@@ -75,3 +75,6 @@ my $count;
 my &counted = { BEGIN $count++; 1 };
 counted(); counted();
 is $count, 1, 'a BEGIN in a closure does not run per call';
+
+my str @hex = BEGIN (^3)>>.fmt("%02x");
+is-deeply @hex.List, ('00', '01', '02'), 'a list-valued BEGIN assigns its elements, not one item';

@@ -188,7 +188,7 @@ impl Walker<'_> {
                 let slot = is_tail.then(|| next_slot("__begin_value_"));
                 if self.lift(body, slot.as_deref()) {
                     let edit = match slot {
-                        Some(slot) => Edit::Replace(Box::new(Stmt::Expr(Expr::Var(slot)))),
+                        Some(slot) => Edit::Replace(Box::new(Stmt::Expr(slot_read(slot)))),
                         None => Edit::Remove,
                     };
                     self.current_frame().edits.push((index, edit));
@@ -316,7 +316,7 @@ impl Walker<'_> {
             } => {
                 let slot = next_slot("__begin_value_");
                 if self.lift(body, Some(&slot)) {
-                    *expr = Expr::Var(slot);
+                    *expr = slot_read(slot);
                 }
             }
             Expr::Block(stmts) | Expr::Gather(stmts) | Expr::DoBlock { body: stmts, .. } => {
@@ -474,7 +474,7 @@ impl Walker<'_> {
         }
         let slot = next_slot("__begin_value_");
         if self.lift(&body, Some(&slot)) {
-            *expr = Expr::Var(slot);
+            *expr = slot_read(slot);
         }
     }
 
@@ -489,7 +489,10 @@ impl Walker<'_> {
         // which the lifted body's block would hide. Its body is that one
         // declaration; `BEGIN { my $x ... }` keeps its `my` to itself.
         let declares = matches!(body, [Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_)]);
-        let accesses = if declares || self.frames.iter().any(|f| f.blocked) {
+        // A placeholder makes the body an error (`X::Placeholder::Block`), which
+        // the in-place path reports and the lifted body would not.
+        let has_placeholder = !crate::ast::collect_unattached_placeholders(body).is_empty();
+        let accesses = if declares || has_placeholder || self.frames.iter().any(|f| f.blocked) {
             None
         } else {
             self.resolve_free_names(body)
@@ -719,4 +722,17 @@ fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
         *custom_traits = traits;
     }
     decl
+}
+
+/// Reads a value slot the way the BEGIN's own value would be read: the slot is
+/// a scalar, so it is decontainerized (`$slot<>`). Otherwise
+/// `my str @hex = BEGIN (^256)>>.fmt("%02x")` would assign one itemized list.
+fn slot_read(slot: String) -> Expr {
+    Expr::MethodCall {
+        target: Box::new(Expr::Var(slot)),
+        name: crate::symbol::Symbol::intern("__mutsu_zen_angle"),
+        args: vec![],
+        modifier: None,
+        quoted: false,
+    }
 }
