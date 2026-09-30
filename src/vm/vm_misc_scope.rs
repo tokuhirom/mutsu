@@ -231,7 +231,11 @@ impl Interpreter {
             let coerced_initial = if name.starts_with('@') {
                 // `=` init copies (container identity §3) — see the non-shared
                 // branch below.
-                runtime::coerce_to_array(init_val).detach_shared_container()
+                let arr = runtime::coerce_to_array(init_val);
+                // A `Nil` item of the initializer list decays to the
+                // container's default, as for `my @a = ...` (ADR-0049).
+                self.decay_nil_elements_for_var_assign(name, arr)
+                    .detach_shared_container()
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
                     .detach_shared_container()
@@ -286,7 +290,10 @@ impl Interpreter {
             // `@foo[0]++` on the state var does not reach the source array
             // (`(state @foo) = @bar`, S04-declarations/state.t).
             let mut coerced = if name.starts_with('@') {
-                runtime::coerce_to_array(init_val).detach_shared_container()
+                let arr = runtime::coerce_to_array(init_val);
+                // Same Nil-item decay as `SetLocal`'s `@` store (ADR-0049).
+                self.decay_nil_elements_for_var_assign(name, arr)
+                    .detach_shared_container()
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
                     .detach_shared_container()
