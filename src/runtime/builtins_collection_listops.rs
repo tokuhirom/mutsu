@@ -460,6 +460,7 @@ impl Interpreter {
         } else {
             Value::array(positional)
         };
+        self.warm_which_identity(&target);
         self.call_method_with_values(target, "unique", method_args)
     }
 

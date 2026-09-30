@@ -592,6 +592,12 @@ impl Interpreter {
         // Callable offset is resolved to an Int here (issue #10118).
         let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
         let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
+        // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
+        // and cannot run a user `WHICH`, so deposit it first
+        // (see `runtime::which_identity`).
+        if args.is_empty() && matches!(method_name, "unique" | "repeated" | "squish") {
+            self.warm_which_identity(target);
+        }
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {
