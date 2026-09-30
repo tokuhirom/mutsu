@@ -104,6 +104,29 @@ impl Interpreter {
         )
     }
 
+    /// The barrier a subrule call arms before its body's walk. A subrule is a
+    /// different regex, so it inherits neither the enclosing regex's `:my`
+    /// lexicals nor its captures — including the ones an enclosing same-scope
+    /// sub-pattern published for ITS walks, because the continuation (this call)
+    /// runs inside that sub-pattern's dynamic extent. The streamed subrule driver
+    /// walks the body itself, so it arms this by hand.
+    #[inline]
+    pub(super) fn arm_subrule_barrier() -> (
+        super::regex_helpers::InlineVarsSeed,
+        super::regex_helpers::OuterCapsSeed,
+    ) {
+        use super::regex_helpers::{
+            InlineVarsSeed, OuterCapsSeed, any_regex_capture_reader_lowered,
+            outer_caps_seed_published,
+        };
+        let outer = if any_regex_capture_reader_lowered() && outer_caps_seed_published() {
+            OuterCapsSeed::arm(None)
+        } else {
+            OuterCapsSeed::inert()
+        };
+        (InlineVarsSeed::arm(None), outer)
+    }
+
     /// Does matching this atom start a regex of its own (a different capture
     /// scope from the pattern containing it)?
     fn atom_starts_own_regex(atom: &RegexAtom) -> bool {
