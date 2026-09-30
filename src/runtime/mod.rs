@@ -127,6 +127,14 @@ pub(crate) fn seed_native_subclass_payloads(
             .unwrap_or_default();
         attrs.insert("__mutsu_str_value", Value::str(payload));
     }
+    // An `is IterationBuffer` subclass keeps its elements in a reserved array
+    // attribute, which nqp code (`nqp::push(self, ...)`) writes into from the
+    // first statement of a method. `nqp::create` seeds it (`create_instance`),
+    // so `.new` / `.bless` have to as well.
+    let items = nqp_ops_list::iteration_buffer_items_key();
+    if class_mro.iter().any(|name| name == "IterationBuffer") && !attrs.contains_key(items) {
+        attrs.insert(items, Value::real_array(Vec::new()));
+    }
 }
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":
