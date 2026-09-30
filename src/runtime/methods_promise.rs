@@ -69,7 +69,9 @@ impl Interpreter {
     /// `should_run` decides whether to invoke the callback based on the
     /// resolved status; returns `None` to skip (propagate), `Some(true)` to
     /// run the callback.  `propagate` produces the value to forward when
-    /// skipping.
+    /// skipping. Invoke callbacks through the VM callable path so their
+    /// compiled lexical `&name` calls keep the same resolution as direct calls.
+    // Cost: O(1) excluding the callback, which runs user code.
     fn promise_chain_method(
         &mut self,
         shared: &SharedPromise,
@@ -91,7 +93,7 @@ impl Interpreter {
             let status = orig.status();
             if should_run(&status) {
                 let promise_val = Value::promise(orig);
-                let cb_result = self.call_sub_value(block, vec![promise_val], true);
+                let cb_result = self.vm_call_on_value(block, vec![promise_val], None);
                 self.resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {
                 new_promise.keep(result, output, stderr);
@@ -119,7 +121,7 @@ impl Interpreter {
             orig.on_resolve(Box::new(move |status, result, output, stderr| {
                 if should_run(&status) {
                     let promise_val = Value::promise(orig_for_waiter);
-                    let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
+                    let cb_result = thread_interp.vm_call_on_value(block, vec![promise_val], None);
                     let out = std::mem::take(&mut thread_interp.output_sink_mut().output);
                     let err = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
                     thread_interp.resolve_promise_callback(
