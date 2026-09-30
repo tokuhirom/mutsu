@@ -96,6 +96,17 @@ impl Interpreter {
         let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
 
+        let zero = (min == 0).then(|| {
+            let mut caps = RegexCaptures::default();
+            for name in &names {
+                caps.named
+                    .entry(Symbol::intern(name))
+                    .or_default()
+                    .quantified = true;
+            }
+            (start, caps)
+        });
+
         // Enumerate every valid `atom (sep atom)*` chain via DFS, backtracking
         // the separator. A purely greedy linear scan (match the first atom, then
         // repeatedly take the separator's single highest-priority match followed
@@ -115,6 +126,11 @@ impl Interpreter {
         // engine (iterating in reverse) tries the highest-priority candidate
         // first.
         let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
+        if token.frugal
+            && let Some(candidate) = &zero
+        {
+            out.push(candidate.clone());
+        }
         for (atom_caps, sep_caps, end) in &chains {
             let count = atom_caps.len();
             if count < min {
@@ -156,12 +172,10 @@ impl Interpreter {
         // The names still have to be marked quantified — `<pair>* %% ','` that
         // matched nothing captures an EMPTY list under `$/<pair>`, not a single
         // empty Match (`load-yaml("{}")` is an empty Hash, not `{"" => Any}`).
-        if min == 0 {
-            let mut caps = RegexCaptures::default();
-            for n in names.iter() {
-                caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-            }
-            out.push((start, caps));
+        if !token.frugal
+            && let Some(candidate) = zero
+        {
+            out.push(candidate);
         }
         out.reverse();
         out
@@ -385,6 +399,9 @@ impl Interpreter {
         if out.len() > 20_000 {
             return;
         }
+        if token.frugal {
+            out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        }
         let can_extend = max.is_none_or(|m| atom_caps.len() < m);
         if can_extend {
             for (sep_end, scaps) in self.regex_match_ends_from_caps_in_pkg(
@@ -429,7 +446,9 @@ impl Interpreter {
                 }
             }
         }
-        out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        if !token.frugal {
+            out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        }
     }
 
     /// Append captures from a separated quantifier into `caps`, folding each

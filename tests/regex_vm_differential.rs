@@ -66,6 +66,10 @@ differential_case!(
     r#"say ("<a><b>" ~~ / '<' .+? '>' /).gist; say ("xaaay" ~~ / a+? /).gist; say ("abc" ~~ / a .*? c /).gist; say ("ab" ~~ / a b?? /).gist"#
 );
 differential_case!(
+    frugal_separated_quantifiers,
+    r#"say ("a,a,a" ~~ / a+? % ',' /).gist; say ("a,a,a" ~~ / a*? % ',' /).gist; say ("a,a,a" ~~ / a**?2..3 % ',' /).gist; say ("a,a,a" ~~ / ^ a+? % ',' ',a' /).gist; say ("a,a,a" ~~ / ^ a**?2..3 % ',' $ /).gist"#
+);
+differential_case!(
     ratchet_quantifiers,
     r#"say so "aaa" ~~ / :r a+ a /; say so "aab" ~~ / :r a+ b /; say ("ab" ~~ / :r a? b /).gist; say so "a" ~~ / :r a? a /"#
 );

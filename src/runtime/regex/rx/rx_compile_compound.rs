@@ -81,22 +81,18 @@ impl Compiler {
     /// the walk's separated quantifier matches it. The first atom is not
     /// required to advance; every later separator-and-atom step is. Without
     /// ratchet (`for_each_separated_candidate`) every longer chain is tried
-    /// before a shorter one, a chain's `%%` trailing separator before its
-    /// plain end, and zero iterations last. Under ratchet
+    /// before a shorter one unless frugal, a chain's `%%` trailing separator
+    /// before its plain end, and zero iterations first when frugal. Under ratchet
     /// (`match_separated_quantifier_ratchet`) each atom and separator takes
     /// its first match, the chain grows while it can, and nothing is given
     /// back. Captures under a separated quantifier fold side by side
-    /// (`append_separated_captures`), which Slice A does not model yet, and
-    /// the walk ignores frugality here (#10306): both decline.
+    /// (`append_separated_captures`).
     pub(super) fn separated(
         &mut self,
         token: &RegexToken,
         sep: &RegexPattern,
         trailing: bool,
     ) -> Result<(), Decline> {
-        if token.frugal {
-            return Err("separator-frugal");
-        }
         if token.named_capture.is_some() {
             return Err("separator-alias");
         }
@@ -158,7 +154,7 @@ impl Compiler {
             max,
             body: ext,
             exit: emit,
-            greedy: true,
+            greedy: !token.frugal,
         };
         if let Some(h) = whole {
             self.ops.push(RxOp::Cut(h));
@@ -182,9 +178,16 @@ impl Compiler {
             to_end.push((self.pc(), false));
             self.ops.push(RxOp::Jmp(0)); // patched below
             let zero = self.pc();
-            self.ops[split as usize] = RxOp::Split {
-                prefer: split + 1,
-                alt: zero,
+            self.ops[split as usize] = if token.frugal {
+                RxOp::Split {
+                    prefer: zero,
+                    alt: split + 1,
+                }
+            } else {
+                RxOp::Split {
+                    prefer: split + 1,
+                    alt: zero,
+                }
             };
             if let Some(h) = whole {
                 self.ops.push(RxOp::Cut(h));
