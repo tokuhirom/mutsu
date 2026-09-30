@@ -302,6 +302,9 @@ impl Interpreter {
             "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),
             "WHO" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_who(&target)),
             "WHY" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_why(&target)),
+            "set_why" if args.len() == 1 && !quoted_pseudo && !self.is_how_receiver(&target) => {
+                Some(self.dispatch_mu_set_why(&target, args[0].clone()))
+            }
             "^name" if args.is_empty() => Some(self.dispatch_caret_name(&target)),
             "^enum_value_list" | "enum_value_list" => self.dispatch_enum_value_list(&target),
             "enums" => self.dispatch_enums(&target),

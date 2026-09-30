@@ -8,6 +8,62 @@ use crate::value::value_buf::{
     buf_elem_width, buf_raw_bytes_in, buf_raw_bytes_or_empty, set_buf_raw_bytes,
 };
 impl Interpreter {
+    /// `@a.grab` / `@a.grab($n)` / `@a.grab(*)`: remove random elements and
+    /// return them (a bare element for no argument, a `Seq` otherwise). `None`
+    /// declines an argument shape the generic path should report.
+    // Cost: O(n * k), n = elements, k = grabbed (one in-place `splice` each).
+    fn array_grab(
+        &mut self,
+        target_var: &str,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Array(items, _) = target.view() else {
+            return None;
+        };
+        let mut pool: Vec<usize> = (0..items.len()).collect();
+        let want = match args.first().map(Value::view) {
+            None => None,
+            Some(ValueView::Whatever) => Some(pool.len()),
+            Some(ValueView::Int(i)) => Some(i.max(0) as usize),
+            Some(ValueView::Num(f)) if f.is_infinite() && f > 0.0 => Some(pool.len()),
+            _ => return None,
+        };
+        if args.len() > 1 {
+            return None;
+        }
+        let take = want.unwrap_or(1).min(pool.len());
+        let mut picked = Vec::with_capacity(take);
+        for _ in 0..take {
+            let j =
+                (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize % pool.len();
+            picked.push(pool.swap_remove(j));
+        }
+        let mut out = Vec::with_capacity(take);
+        for &i in &picked {
+            out.push(items.get(i).cloned().unwrap_or(Value::NIL));
+        }
+        let mut removal = picked;
+        removal.sort_unstable_by(|a, b| b.cmp(a));
+        for i in removal {
+            let Some(current) = self.env_root_descended_mut(target_var).map(|v| v.clone()) else {
+                return None;
+            };
+            if let Err(e) = self.call_method_mut_with_values(
+                target_var,
+                current,
+                "splice",
+                vec![Value::int(i as i64), Value::int(1)],
+            ) {
+                return Some(Err(e));
+            }
+        }
+        Some(Ok(match want {
+            None => out.into_iter().next().unwrap_or(Value::NIL),
+            Some(_) => Value::seq(out),
+        }))
+    }
+
     pub(crate) fn call_method_mut_with_values(
         &mut self,
         target_var: &str,
@@ -785,6 +841,20 @@ impl Interpreter {
                     bytes,
                 ));
             }
+        }
+
+        // `Array.grab`: pick like `.pick` but REMOVE the chosen elements. Built
+        // on the in-place `splice` arm so every container-identity / type
+        // metadata rule the other array mutators obey holds here too.
+        if method == "grab"
+            && target_var.starts_with('@')
+            && matches!(
+                target.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Array)
+            )
+            && let Some(result) = self.array_grab(target_var, &target, &args)
+        {
+            return result;
         }
 
         // Buf/Blob mutating methods: append, push, prepend, unshift, reallocate, pop, shift, splice
