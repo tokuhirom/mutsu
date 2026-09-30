@@ -246,3 +246,10 @@ separate, much wider change to the speculative word-infix layer
 (`parse_custom_infix_word`), and would need its own measurement of what real
 code relies on the leniency. This ADR only settles what happens once the user
 has declared such an operator.
+
+*Resolved (#9918, 2026-09-30):* `parse_custom_infix_word` now takes a word only
+when an `infix:<word>` is declared in scope or `rakudo_declares_infix` lists
+it. A statement that stops before a separator on the same line is now a
+compile-time "Two terms in a row", as in rakudo. Code in the ecosystem cannot
+depend on the old leniency, because rakudo already rejects those spellings at
+compile time.

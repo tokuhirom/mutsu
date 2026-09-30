@@ -583,8 +583,8 @@ fn parse_list_infix_loop_impl<'a>(
             rest = r;
             continue;
         }
-        // User-defined infix words (typically via my &infix:<...> = ...),
-        // e.g. `42 same-in-Int "42"`.
+        // User-defined infix words (e.g. via my &infix:<...> = ...,
+        // `42 same-in-Int "42"`) and CORE infix words with no dedicated parser.
         //
         // Only operators explicitly pushed down to (or below) the list-infix
         // level with `is looser` are handled here. A trait-less custom infix

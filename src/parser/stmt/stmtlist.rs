@@ -497,6 +497,7 @@ pub(crate) fn stmt_list_with_mode(
         // Emit source line info for deprecation tracking and error reporting.
         let line = crate::parser::primary::current_line_number(r);
         let line_valid = crate::parser::primary::is_within_original_source(r);
+        let input_before_stmt = r;
         match statement(r) {
             Ok((r, stmt)) => {
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
@@ -515,6 +516,21 @@ pub(crate) fn stmt_list_with_mode(
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                             .to_string(),
+                    ));
+                }
+                // Any other statement that stopped short of a separator on the
+                // same line left a term behind it: `my $x = (1,2) cross (3,4)`,
+                // where `cross` is not an infix, would otherwise silently become
+                // two statements. rakudo: "Two terms in a row" (#9918).
+                let consumed = input_before_stmt[..input_before_stmt.len() - r.len()].trim_end();
+                if !consumed.ends_with(';')
+                    && !consumed.ends_with('}')
+                    && !has_statement_separator(r)
+                    && !r_ws.starts_with(')')
+                {
+                    return Err(PError::fatal_at(
+                        "Confused. Two terms in a row".to_string(),
+                        r_ws,
                     ));
                 }
                 if matches!(
