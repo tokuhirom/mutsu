@@ -1273,7 +1273,13 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     let static_default = match name.as_bytes().first() {
         Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
         Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
-        _ => Expr::Literal(Value::NIL),
+        // A native scalar (`my int $x`) holds its zero, never Nil.
+        _ => Expr::Literal(
+            type_constraint
+                .as_deref()
+                .and_then(crate::runtime::Interpreter::native_scalar_default)
+                .unwrap_or(Value::NIL),
+        ),
     };
     let static_decl = Stmt::VarDecl {
         name: name.clone(),
