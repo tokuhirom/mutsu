@@ -881,6 +881,7 @@ mod registration_class_parents;
 pub(crate) mod registration_class_validate;
 mod registration_role;
 mod registration_role_body;
+mod registration_role_body_lexical;
 mod registration_role_decl;
 mod registration_role_method;
 pub(crate) mod registration_sub;
