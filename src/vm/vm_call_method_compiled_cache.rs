@@ -452,6 +452,21 @@ impl Interpreter {
     /// string hash and a `memcmp`, and this ran twice per call.
     ///
     /// [`value_type_name`]: crate::runtime::utils::value_type_name
+    /// True while a deferral out of an augmentation of `target`'s type runs
+    /// the builtin `method_sym` on this very receiver (`native_base_bypass`,
+    /// #10198): every "did user code augment this?" gate must answer no.
+    pub(crate) fn native_base_bypass_hit(
+        &self,
+        target: &Value,
+        method_sym: crate::symbol::Symbol,
+    ) -> bool {
+        self.native_base_bypass.is_some_and(|(ty, sym, bits)| {
+            sym == method_sym
+                && bits == target.nanbox_bits()
+                && ty == crate::runtime::utils::value_type_name(target).as_ptr() as usize
+        })
+    }
+
     pub(crate) fn native_lever_a_user_override_sym(
         &mut self,
         target: &Value,
@@ -460,6 +475,9 @@ impl Interpreter {
         let type_name = crate::runtime::utils::value_type_name(target);
         self.refresh_method_caches_for_generation();
         let key = (type_name.as_ptr() as usize, method_sym);
+        if self.native_base_bypass_hit(target, method_sym) {
+            return false;
+        }
         if let Some(&hit) = self.native_lever_a_override_cache.get(&key) {
             return hit;
         }

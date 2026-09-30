@@ -1000,6 +1000,10 @@ impl Interpreter {
                         self.native_mixin_base_next_candidate(override_args.as_deref())
                     {
                         res?
+                    } else if let Some(res) =
+                        self.native_core_type_next_candidate(override_args.as_deref())
+                    {
+                        res?
                     } else {
                         match self.native_metamodel_next_candidate(override_args.as_deref()) {
                             Some(res) => res?,
@@ -1544,6 +1548,9 @@ impl Interpreter {
                     })
                     .or_else(|| {
                         self.native_array_storage_next_candidate(override_for_native.as_deref())
+                    })
+                    .or_else(|| {
+                        self.native_core_type_next_candidate(override_for_native.as_deref())
                     });
                 if let Some(result) = native_base {
                     let result = result?;
@@ -1729,6 +1736,16 @@ impl Interpreter {
         // pushes no `method_dispatch_stack` frame either — the native method
         // on the mixin's inner value is the correct base candidate.
         if let Some(res) = self.native_mixin_base_next_candidate(override_args.as_deref()) {
+            let result = res?;
+            if tail_call {
+                return Err(RuntimeError::return_signal(result));
+            }
+            return Ok(result);
+        }
+        // A method `augment`ed onto a core type (`augment class Array { method
+        // sort(|c) { callsame } }`) likewise pushes no frame of its own; the
+        // builtin method of the receiver's type is its base candidate.
+        if let Some(res) = self.native_core_type_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));

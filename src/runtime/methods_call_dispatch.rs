@@ -4772,7 +4772,9 @@ impl Interpreter {
             // Mixin ("Package"/"Any" -> the real name) collapses the old
             // `value_type_name`-based owner had.
             let type_name = self.dispatch_owner_name(&target);
-            if self.has_user_method(type_name, method) {
+            if self.has_user_method(type_name, method)
+                && !self.native_base_bypass_hit(&target, Symbol::intern(method))
+            {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }
         }
