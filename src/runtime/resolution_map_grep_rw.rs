@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
 use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::ValueView;
 
@@ -19,10 +20,17 @@ impl Interpreter {
     /// `initialized` bitmap, so a `:delete`d slot stopped reading as a hole and
     /// a later trailing-element `:delete` could no longer truncate the array
     /// (roast/S32-array/delete.t).
+    ///
+    /// `slot` keeps the callback's loop plan across calls: a deferred `.map`
+    /// pulled a chunk at a time reuses it on every pull
+    /// (`runtime/map_grep_plan.rs`).
+    // Cost: one callback call per element (per `arity` elements for a
+    // multi-parameter block).
     pub(crate) fn eval_map_over_items_rw(
         &mut self,
         func: Option<Value>,
         list_items: &mut [Value],
+        slot: &mut MapGrepPlanSlot,
     ) -> Result<(Value, bool), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -30,7 +38,7 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        let topic_key = "__mutsu_rw_map_topic__";
+        let topic_key = crate::symbol::wk::rw_map_topic();
         let wrote_back = std::cell::Cell::new(false);
         if let Some(func_ref) = func.as_ref()
             && let ValueView::Sub(data) = func_ref.view()
@@ -49,54 +57,49 @@ impl Interpreter {
                 return Ok((Value::array(Vec::new()), false));
             }
             let data = data.clone();
-            let requires_full_binding = data.param_defs.iter().any(|pd| {
-                pd.named
-                    || pd.slurpy
-                    || pd.sigilless
-                    || pd.optional_marker
-                    || pd.default.is_some()
-                    || pd.type_constraint.is_some()
-                    || pd.where_constraint.is_some()
-                    || pd.sub_signature.is_some()
-                    || pd.outer_sub_signature.is_some()
-                    || pd.code_signature.is_some()
-                    || pd.shape_constraints.is_some()
-            });
-            // A routine callback must run through the real call path so a
-            // `return` in its body ends THAT call with the returned value
-            // (routine semantics) — see the same gate in `eval_map_over_items`.
-            let is_routine_callback = (!data.is_bare_block
-                && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
-                && !matches!(
-                    data.env.get("__mutsu_callable_type").map(Value::view),
-                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-                )
-                // A placeholder block (`{ $^x.value }`) is a Block, not a
-                // Routine, even though its compile path currently flags
-                // is_routine (it compiles as a named-anon-sub body). It must
-                // stay on the fast path: the general call machinery binds a
-                // Pair element as a NAMED argument, leaving the placeholder
-                // positional unbound (t/map-native-pairs.t).
-                && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
-                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3) must
-                // take the real call path — see `eval_map_over_items`.
-                || (data.body.is_empty() && data.compiled_routine.is_some());
-            if requires_full_binding
-                || is_routine_callback
-                || super::resolution_map_grep::sub_is_call_carrier(&data)
-            {
+            // A plan in `slot` means an earlier chunk of this same Seq already
+            // classified the callback as inline-loop material: the checks
+            // below are a pure function of the callback.
+            let cached_plan = self.cached_inline_loop_plan(&data, InlineLoopKind::MapRw, slot);
+            let needs_call_path = cached_plan.is_none() && {
+                let requires_full_binding = data.param_defs.iter().any(|pd| {
+                    pd.named
+                        || pd.slurpy
+                        || pd.sigilless
+                        || pd.optional_marker
+                        || pd.default.is_some()
+                        || pd.type_constraint.is_some()
+                        || pd.where_constraint.is_some()
+                        || pd.sub_signature.is_some()
+                        || pd.outer_sub_signature.is_some()
+                        || pd.code_signature.is_some()
+                        || pd.shape_constraints.is_some()
+                });
+                // A routine callback must run through the real call path so a
+                // `return` in its body ends THAT call with the returned value
+                // (routine semantics) — see the same gate in `eval_map_over_items`.
+                let is_routine_callback = (!data.is_bare_block
+                    && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
+                    && !super::resolution_map_grep::sub_is_whatever_code(&data)
+                    // A placeholder block (`{ $^x.value }`) is a Block, not a
+                    // Routine, even though its compile path currently flags
+                    // is_routine (it compiles as a named-anon-sub body). It must
+                    // stay on the fast path: the general call machinery binds a
+                    // Pair element as a NAMED argument, leaving the placeholder
+                    // positional unbound (t/map-native-pairs.t).
+                    && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
+                    // A body-less routine Sub (plan-derived, ADR-0019 C6e-3) must
+                    // take the real call path — see `eval_map_over_items`.
+                    || (data.body.is_empty() && data.compiled_routine.is_some());
+                requires_full_binding
+                    || is_routine_callback
+                    || super::resolution_map_grep::sub_is_call_carrier(&data)
+            };
+            if needs_call_path {
                 // Fall through to call_sub_value path for complex cases
                 let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
                 let mut result = Vec::new();
-                let arity = if !data.params.is_empty() {
-                    let effective = data
-                        .params
-                        .len()
-                        .saturating_sub(data.assumed_positional.len());
-                    if effective == 0 { 1 } else { effective }
-                } else {
-                    1
-                };
+                let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
                 // An explicit `is rw`/`is raw` scalar block param (`-> Int $x
                 // is rw { $x++ }`) rw-aliases the source element's container,
                 // same as a `$_`-mutating block via `topic_key` below -- but a
@@ -138,12 +141,12 @@ impl Interpreter {
                         } else {
                             list_items[i..(i + arity).min(list_items.len())].to_vec()
                         };
-                        self.env.remove(topic_key);
+                        self.env.remove_sym(topic_key);
                         let v =
                             self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
                         if arity == 1
                             && !keeps_outer_topic
-                            && let Some(mutated) = self.env.get(topic_key).cloned()
+                            && let Some(mutated) = self.env.get_sym(topic_key).cloned()
                         {
                             list_items[i] = mutated;
                             wrote_back.set(true);
@@ -158,19 +161,11 @@ impl Interpreter {
                     }
                     i += arity;
                 }
-                self.env.remove(topic_key);
+                self.env.remove_sym(topic_key);
                 return Ok((Value::array(result), wrote_back.get()));
             }
 
-            let arity = if !data.params.is_empty() {
-                let effective = data
-                    .params
-                    .len()
-                    .saturating_sub(data.assumed_positional.len());
-                if effective == 0 { 1 } else { effective }
-            } else {
-                1
-            };
+            let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
             // See the rw_param comment on the call_sub_value branch above --
             // same shape check, for the untyped/unconstrained param that took
             // this env-insert fast path instead.
@@ -181,80 +176,30 @@ impl Interpreter {
             let mut result = Vec::new();
 
             // Compile once, reuse VM for every iteration (and reuse a cached
-            // compile across repeated calls to this same closure literal — see
-            // `compile_loop_block_cached`, which the List sibling
-            // `eval_map_over_items`, `eval_first_over_items` and the grep loop
-            // below all already go through). Without the cache every single
+            // compile across repeated calls to this same closure literal —
+            // see `compile_loop_block_cached`). Without the cache every single
             // `@a.map(...)` call re-ran the whole compiler on the block's AST:
             // `@!resources.map(*.flat)` inside a TWEAK cost ~19us per
             // construction on an EMPTY array, which was the largest single
-            // component of bench-ctor.
-            // Normalize a bare tail `Stmt::Call` carrying named/slip args (how an
-            // imported sub call like `f(k => v)` parses) into `Stmt::Expr(Expr::Call)`
-            // so its value is preserved as the block's result; otherwise it compiles
-            // as a value-discarding statement and the map result wrongly falls back
-            // to the topic `$_` (see `eval_map_over_items`).
-            let normalized_body =
-                super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
-            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
-
-            let underscore = "_".to_string();
-            let dollar_topic = "$_".to_string();
-
-            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
-            // ADR-0058 §9.4: same capture-priority rule as the plain loop
-            // (`eval_map_over_items`), and for the same reason — this loop is
-            // no longer run inside the frame that created the block. Once
-            // `@a.map` deferred, the pull happens wherever the Seq is
-            // consumed, so a same-named lexical live in THAT frame silently
-            // shadowed the block's own free variable (`sub p($f) { my $c =
-            // C.new($f); @data.map: { $c.use } }` read the unit's `$c` —
-            // caught by the bundled-library gate on `Text::CSV`'s
-            // `66_formula.t`). Every key the merge OVERWRITES must be saved
-            // here too, not just the ones it introduces.
-            let free_vars = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| cc.capture_free_var_set());
-            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
-                super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v)
+            // component of bench-ctor. The plan also holds the capture merge's
+            // classification, so a deferred map pulled one element at a time
+            // (a `for` loop, #9936) pays none of this per element
+            // (`runtime/map_grep_plan.rs`).
+            //
+            // ADR-0058 §9.4: same capture-priority rule as the plain loop, and
+            // for the same reason — this loop is no longer run inside the
+            // frame that created the block. Once `@a.map` deferred, the pull
+            // happens wherever the Seq is consumed, so a same-named lexical
+            // live in THAT frame silently shadowed the block's own free
+            // variable (`sub p($f) { my $c = C.new($f); @data.map: { $c.use }
+            // }` read the unit's `$c` — caught by the bundled-library gate on
+            // `Text::CSV`'s `66_formula.t`).
+            let plan = match cached_plan {
+                Some(plan) => plan,
+                None => self.inline_loop_plan(&data, InlineLoopKind::MapRw, slot),
             };
-            for (k, v) in &data.env {
-                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
-                    touched_keys.push(k.resolve());
-                }
-            }
-            for p in data.params.iter() {
-                if !touched_keys.contains(p) {
-                    touched_keys.push(p.clone());
-                }
-            }
-            if !touched_keys.iter().any(|k| k == "_") {
-                touched_keys.push(underscore.clone());
-            }
-            if !touched_keys.iter().any(|k| k == "$_") {
-                touched_keys.push(dollar_topic.clone());
-            }
-            super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
-            // `self` is lexical: the block's captured invocant wins over the
-            // caller's (see `call_compiled_closure`). It is normally already in
-            // the running env, so the loop above did not list it.
-            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
-                touched_keys.push("self".to_string());
-            }
-            let saved: Vec<(String, Option<Value>)> = touched_keys
-                .iter()
-                .map(|k| (k.clone(), self.env.get(k).cloned()))
-                .collect();
-
-            for (k, v) in &data.env {
-                if capture_wins(k, v)
-                    || k.with_str(|s| s == "self")
-                    || !self.env.contains_key_sym(*k)
-                {
-                    self.env.insert_sym(*k, v.clone());
-                }
-            }
+            let (code, compiled_fns) = (&plan.code, &plan.fns);
+            let saved = self.enter_inline_loop_env(&data, &plan);
 
             // A `$_`-referencing WhateverCode (`@a.map(* eq $_)`) binds the
             // element to its `*` placeholder, so `$_` must keep referring to the
@@ -265,14 +210,10 @@ impl Interpreter {
             // `@a.map(* eq $_)` compared each element against itself
             // (t/whatever-code-topic.t). When the topic is the caller's it is
             // NOT an alias for the element either, so it must not write back.
-            let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
-            let outer_topic = self.env.get("_").cloned();
+            let keeps_outer_topic = plan.keeps_outer_topic;
+            let outer_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
             // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
-            let immutable_topic = !keeps_outer_topic
-                && data
-                    .compiled_code
-                    .as_ref()
-                    .is_some_and(|cc| cc.immutable_topic);
+            let immutable_topic = plan.immutable_topic;
 
             // CP-3 collapse: run the rw map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -280,19 +221,10 @@ impl Interpreter {
             // outer registers and flags env_dirty. The `saved`/`topic_key` env
             // restore is hoisted to after the call (ran on every old exit).
             // Runtime transitive vouching: see `frame_authoritative_set`.
-            let block_authoritative = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| {
-                    super::resolution_map_grep::frame_authoritative_set(
-                        cc,
-                        &data.authoritative_captures,
-                    )
-                })
-                .unwrap_or_default();
+            let block_authoritative = &plan.block_authoritative;
             // ADR-0027: see the matching comment in `eval_map_over_items`
             // (`resolution_map_grep.rs`).
-            let block_owned = data.owned_captures.clone();
+            let block_owned = &data.owned_captures;
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance — the body was
                 // re-compiled fresh, so two distinct blocks share compile-time
@@ -313,31 +245,33 @@ impl Interpreter {
                     {
                         let assumed_count = data.assumed_positional.len();
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
-                            if let Some(p) = data.params.get(idx) {
-                                vm.env_mut().insert(p.clone(), val.clone());
+                            if let Some(&p) = plan.param_syms.get(idx) {
+                                vm.env_mut().insert_sym_noting(p, val.clone());
                             }
                         }
                         // Clear the topic tracker before each iteration
-                        vm.env_mut().remove(topic_key);
+                        vm.env_mut().remove_sym(topic_key);
                         if arity == 1 {
                             let item = list_items[i].clone();
-                            if let Some(p) = data.params.get(assumed_count) {
+                            if let Some(&p) = plan.param_syms.get(assumed_count) {
                                 if rw_param.is_some() {
                                     let cell = crate::gc::Gc::new(
                                         crate::value::ContainerCell::new(item.clone()),
                                     );
                                     vm.env_mut()
-                                        .insert(p.clone(), Value::container_ref(cell.clone()));
+                                        .insert_sym_noting(p, Value::container_ref(cell.clone()));
                                     rw_cell = Some(cell);
                                 } else {
-                                    vm.env_mut().insert(p.clone(), item.clone());
+                                    vm.env_mut().insert_sym_noting(p, item.clone());
                                 }
                             }
                             bind_loop_topic(vm.env_mut(), &item, keeps_outer_topic, &outer_topic);
                         } else {
-                            for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                            for (idx, &p) in plan.param_syms.iter().skip(assumed_count).enumerate()
+                            {
                                 if i + idx < list_items.len() {
-                                    vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
+                                    vm.env_mut()
+                                        .insert_sym_noting(p, list_items[i + idx].clone());
                                 }
                             }
                             bind_loop_topic(
@@ -358,7 +292,7 @@ impl Interpreter {
                             list_items[i] = cell.lock().unwrap().clone();
                             wrote_back.set(true);
                         } else if !keeps_outer_topic
-                            && let Some(mutated) = vm.env().get(topic_key).cloned()
+                            && let Some(mutated) = vm.env().get_sym(topic_key).cloned()
                         {
                             // Only a block that topicalizes `$_` to the element
                             // rw-aliases it; when `$_` is the caller's topic a
@@ -386,7 +320,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(&code, &compiled_fns) {
+                    match vm.run_reuse(code, compiled_fns) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
@@ -435,13 +369,8 @@ impl Interpreter {
                 Ok(Value::array(result))
             });
 
-            for (k, orig) in saved {
-                match orig {
-                    Some(v) => self.env.insert(k, v),
-                    None => self.env.remove(&k),
-                };
-            }
-            self.env.remove(topic_key);
+            self.leave_inline_loop_env(saved);
+            self.env.remove_sym(topic_key);
             return loop_result.map(|v| (v, wrote_back.get()));
         }
         // Non-Sub func: delegate to regular map (which never writes back)
@@ -468,7 +397,20 @@ impl Interpreter {
     pub(super) fn eval_grep_over_items_with_mutated(
         &mut self,
         func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<GrepOutcome, RuntimeError> {
+        self.eval_grep_over_items_planned(func, list_items, &mut MapGrepPlanSlot::default())
+    }
+
+    /// [`Self::eval_grep_over_items_with_mutated`] with the callback's loop
+    /// plan kept in `slot` across calls (see `runtime/map_grep_plan.rs`).
+    // Cost: one callback call per element (per `arity` elements for a
+    // multi-parameter block).
+    pub(crate) fn eval_grep_over_items_planned(
+        &mut self,
+        func: Option<Value>,
         mut list_items: Vec<Value>,
+        slot: &mut MapGrepPlanSlot,
     ) -> Result<GrepOutcome, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -495,16 +437,20 @@ impl Interpreter {
             // through the real binder. The fast path below inserts each parameter into the
             // env *by name*, which cannot take an element apart, so the inner names stayed
             // unbound. `map` already routes such signatures to `call_sub_value`.
-            let needs_full_binding = data
-                .param_defs
-                .iter()
-                .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some())
-                || !data.assumed_positional.is_empty()
+            // A plan in `slot` means an earlier chunk of this same Seq already
+            // classified the callback as inline-loop material (see the rw map).
+            let cached_plan = self.cached_inline_loop_plan(&data, InlineLoopKind::Grep, slot);
+            let needs_full_binding = cached_plan.is_none()
+                && (data
+                    .param_defs
+                    .iter()
+                    .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some())
+                    || !data.assumed_positional.is_empty()
                 || !data.assumed_named.is_empty()
                 // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
                 // carries only bytecode — the compile-the-AST fast path below
                 // would evaluate an empty predicate; run the real call path.
-                || (data.body.is_empty() && data.compiled_routine.is_some());
+                    || (data.body.is_empty() && data.compiled_routine.is_some()));
             if needs_full_binding {
                 let mut matched = Vec::new();
                 for (i, item) in list_items.iter().enumerate() {
@@ -522,18 +468,10 @@ impl Interpreter {
                 }
                 return Ok((Value::array(result), list_items, Some(matched)));
             }
-            let arity = if !data.params.is_empty() {
-                let effective = data
-                    .params
-                    .len()
-                    .saturating_sub(data.assumed_positional.len());
-                if effective == 0 { 1 } else { effective }
-            } else {
-                1
-            };
+            let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
             // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
             // dispatcher) — delegate to call_sub_value which resolves the markers.
-            if super::resolution_map_grep::sub_is_call_carrier(&data) {
+            if cached_plan.is_none() && super::resolution_map_grep::sub_is_call_carrier(&data) {
                 let mut i = 0usize;
                 let mut matched = Vec::new();
                 while i < list_items.len() {
@@ -568,91 +506,30 @@ impl Interpreter {
             // should propagate up to the lexically enclosing routine (if
             // any); `compile_loop_block_cached` marks the compiler as
             // lexically nested in a routine whenever one is currently on the
-            // dynamic call stack.
-            let normalized_body =
-                super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
-            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
-
-            let underscore = "_".to_string();
-            let dollar_topic = "$_".to_string();
-
-            // Same caller-priority merge `eval_map_over_items` makes, and for
-            // the same reasons (see the long comment there): a captured
-            // `ContainerRef` cell and a captured value for one of the block's
-            // own free variables are LEXICAL and win over a same-named lexical
-            // that happens to be live in the consuming frame; everything else
-            // keeps caller priority.
+            // dynamic call stack. The plan also holds the capture merge's
+            // classification (`runtime/map_grep_plan.rs`).
             //
-            // Grep used to overwrite EVERY captured name unconditionally while
-            // saving only the names the caller did not already have, so a name
-            // present in both was clobbered with the capture-time value and
-            // never put back. That was invisible while `.grep` ran its callback
-            // at the call site -- the captured env was the same frame's, an
-            // instant earlier -- and became visible the moment ADR-0058 step 3b
-            // deferred grep to its pull: `my $s = (1,2,3,4).grep({ $_ %% 2 });
-            // $s.elems` left `$s` as `Any`, because `s` was captured while the
-            // `my $s = ...` statement was still evaluating its own RHS. (Only
-            // with `reflective_name_access_possible()` latched, where the env
-            // mirror is authoritative -- so in practice any program that EVALs,
-            // which is every file that loads the real `Test`.)
-            let free_vars = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| cc.capture_free_var_set());
-            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
-                super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v)
+            // Same caller-priority merge `eval_map_over_items` makes, and for
+            // the same reasons (`enter_inline_loop_env`). Grep used to
+            // overwrite EVERY captured name unconditionally while saving only
+            // the names the caller did not already have, so a name present in
+            // both was clobbered with the capture-time value and never put
+            // back. That became visible the moment ADR-0058 step 3b deferred
+            // grep to its pull: `my $s = (1,2,3,4).grep({ $_ %% 2 }); $s.elems`
+            // left `$s` as `Any`, because `s` was captured while the
+            // `my $s = ...` statement was still evaluating its own RHS.
+            let plan = match cached_plan {
+                Some(plan) => plan,
+                None => self.inline_loop_plan(&data, InlineLoopKind::Grep, slot),
             };
-            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
-            for (k, v) in &data.env {
-                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
-                    touched_keys.push(k.resolve());
-                }
-            }
-            for p in data.params.iter() {
-                if !touched_keys.contains(p) {
-                    touched_keys.push(p.clone());
-                }
-            }
-            if !touched_keys.iter().any(|k| k == "_") {
-                touched_keys.push(underscore.clone());
-            }
-            if !touched_keys.iter().any(|k| k == "$_") {
-                touched_keys.push(dollar_topic.clone());
-            }
-            let topic_source_key = "__mutsu_grep_topic_source".to_string();
-            if !touched_keys.iter().any(|k| k == &topic_source_key) {
-                touched_keys.push(topic_source_key.clone());
-            }
-            super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
-            // The pre-insert below overwrites every captured name, `self`
-            // included (it is lexical — see `call_compiled_closure`); it is
-            // normally already in the running env, so list it for restoration.
-            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
-                touched_keys.push("self".to_string());
-            }
-            let saved: Vec<(String, Option<Value>)> = touched_keys
-                .iter()
-                .map(|k| (k.clone(), self.env.get(k).cloned()))
-                .collect();
+            let (code, compiled_fns) = (&plan.code, &plan.fns);
+            let topic_source_key = crate::symbol::wk::grep_topic_source();
+            let saved = self.enter_inline_loop_env(&data, &plan);
 
-            // Pre-insert closure env (caller-priority, see above).
-            for (k, v) in &data.env {
-                if capture_wins(k, v)
-                    || k.with_str(|s| s == "self")
-                    || !self.env.contains_key_sym(*k)
-                {
-                    self.env.insert_sym(*k, v.clone());
-                }
-            }
-
-            let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
-            let outer_topic = self.env.get("_").cloned();
+            let keeps_outer_topic = plan.keeps_outer_topic;
+            let outer_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
             // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
-            let immutable_topic = !keeps_outer_topic
-                && data
-                    .compiled_code
-                    .as_ref()
-                    .is_some_and(|cc| cc.immutable_topic);
+            let immutable_topic = plan.immutable_topic;
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -660,19 +537,10 @@ impl Interpreter {
             // the outer registers and flags env_dirty. The `saved` env restore is
             // hoisted to after the call (ran on every old exit path).
             // Runtime transitive vouching: see `frame_authoritative_set`.
-            let block_authoritative = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| {
-                    super::resolution_map_grep::frame_authoritative_set(
-                        cc,
-                        &data.authoritative_captures,
-                    )
-                })
-                .unwrap_or_default();
+            let block_authoritative = &plan.block_authoritative;
             // ADR-0027: see the matching comment in `eval_map_over_items`
             // (`resolution_map_grep.rs`).
-            let block_owned = data.owned_captures.clone();
+            let block_owned = &data.owned_captures;
             let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance (see
                 // `eval_map_over_items`).
@@ -694,13 +562,13 @@ impl Interpreter {
                         {
                             let assumed_count = data.assumed_positional.len();
                             for (idx, val) in data.assumed_positional.iter().enumerate() {
-                                if let Some(p) = data.params.get(idx) {
-                                    vm.env_mut().insert(p.clone(), val.clone());
+                                if let Some(&p) = plan.param_syms.get(idx) {
+                                    vm.env_mut().insert_sym_noting(p, val.clone());
                                 }
                             }
                             if arity == 1 {
-                                if let Some(p) = data.params.get(assumed_count) {
-                                    vm.env_mut().insert(p.clone(), chunk[0].clone());
+                                if let Some(&p) = plan.param_syms.get(assumed_count) {
+                                    vm.env_mut().insert_sym_noting(p, chunk[0].clone());
                                 }
                                 bind_loop_topic(
                                     vm.env_mut(),
@@ -709,13 +577,14 @@ impl Interpreter {
                                     &outer_topic,
                                 );
                                 if !keeps_outer_topic {
-                                    vm.env_mut()
-                                        .insert(topic_source_key.clone(), chunk[0].clone());
+                                    vm.env_mut().insert_sym(topic_source_key, chunk[0].clone());
                                 }
                             } else {
-                                for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                                for (idx, &p) in
+                                    plan.param_syms.iter().skip(assumed_count).enumerate()
+                                {
                                     if idx < chunk.len() {
-                                        vm.env_mut().insert(p.clone(), chunk[idx].clone());
+                                        vm.env_mut().insert_sym_noting(p, chunk[idx].clone());
                                     }
                                 }
                                 bind_loop_topic(
@@ -729,7 +598,8 @@ impl Interpreter {
                         // `$_` holding the caller's topic is not an alias for the
                         // element, so it must not write back to it.
                         vm.set_topic_source_var(
-                            (arity == 1 && !keeps_outer_topic).then_some(topic_source_key.clone()),
+                            (arity == 1 && !keeps_outer_topic)
+                                .then(|| topic_source_key.as_str().to_string()),
                         );
                         let saved_when_matched = vm.when_matched();
                         // Same per-iteration readonly scope the two map loops
@@ -742,7 +612,7 @@ impl Interpreter {
                             crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                         vm.mark_placeholder_params_readonly(&data.params);
                         super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
-                        match vm.run_reuse(&code, &compiled_fns) {
+                        match vm.run_reuse(code, compiled_fns) {
                             Ok(()) => {
                                 let pred = vm
                                     .last_stack_value()
@@ -751,7 +621,7 @@ impl Interpreter {
                                     .unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
                                     vm.env()
-                                        .get(&topic_source_key)
+                                        .get_sym(topic_source_key)
                                         .cloned()
                                         .unwrap_or_else(|| chunk[0].clone())
                                 } else {
@@ -786,7 +656,7 @@ impl Interpreter {
                                 let pred = e.return_value.unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
                                     vm.env()
-                                        .get(&topic_source_key)
+                                        .get_sym(topic_source_key)
                                         .cloned()
                                         .unwrap_or_else(|| chunk[0].clone())
                                 } else {
@@ -818,18 +688,9 @@ impl Interpreter {
                 Ok(())
             });
 
-            for (k, orig) in saved {
-                match orig {
-                    Some(v) => {
-                        self.env.insert(k, v);
-                    }
-                    None => {
-                        self.env.remove(&k);
-                    }
-                }
-            }
+            self.leave_inline_loop_env(saved);
             if loop_result.is_ok() {
-                self.record_eager_block_free_var_writeback(&code, &data.params);
+                self.record_eager_block_free_var_writeback(code, &data.params);
             }
             loop_result?;
             // A chunked grep has no one-to-one element/slot mapping.

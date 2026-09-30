@@ -90,6 +90,11 @@ pub(crate) enum SeqSource {
         /// exclusive by construction — a body cannot be both an rw map and a
         /// promoting grep.
         mode: MapGrepMode,
+        /// What the pulls computed about `func` once and reuse on every
+        /// later pull: the inline loop's compiled body and capture
+        /// classification (`runtime/map_grep_plan.rs`, #10187). Empty until
+        /// the first pull. Holds no `Value`s, so it has nothing to trace.
+        plan: crate::runtime::map_grep_plan::MapGrepPlanSlot,
     },
     /// `Str.comb` / `.lines` / `.words` (`crate::value::StrIterSpec`), and an
     /// Array's `.keys` / `.values` / `.kv` / `.pairs` / `.antipairs` or a

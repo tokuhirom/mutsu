@@ -1,5 +1,6 @@
 use super::*;
 use crate::env::Env;
+use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
 use crate::value::SubData;
 
 /// A matcher callback runs in a nested register scope, but a regex match is
@@ -64,13 +65,26 @@ pub(crate) fn block_keeps_outer_topic(data: &SubData) -> bool {
 /// fast path that compiles the body inline would silently evaluate to the
 /// topic; such Subs must always go through `call_sub_value`, which resolves
 /// the markers.
+// Cost: O(1), four env probes by pre-interned key.
 pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
-    data.env.contains_key("__mutsu_routine_name")
-        || data.env.contains_key("__mutsu_compose_left")
-        || data
-            .env
-            .contains_key(crate::runtime::utils::IDENTITY_CALLABLE_MARKER)
-        || data.env.contains_key("__mutsu_multi_dispatch_candidates")
+    use crate::symbol::wk;
+    debug_assert_eq!(
+        wk::identity_callable_marker().as_str(),
+        crate::runtime::utils::IDENTITY_CALLABLE_MARKER
+    );
+    data.env.contains_key_sym(wk::routine_name_marker())
+        || data.env.contains_key_sym(wk::compose_left_marker())
+        || data.env.contains_key_sym(wk::identity_callable_marker())
+        || data.env.contains_key_sym(wk::multi_dispatch_candidates())
+}
+
+/// Whether `data` is tagged as a WhateverCode (`__mutsu_callable_type`).
+// Cost: O(1).
+pub(crate) fn sub_is_whatever_code(data: &SubData) -> bool {
+    matches!(
+        data.env.get_sym(crate::symbol::wk::callable_type()).map(Value::view),
+        Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
+    )
 }
 
 /// Bind `$_`/`_` for one iteration of a batched map/grep/first loop.
@@ -85,22 +99,22 @@ pub(crate) fn bind_loop_topic(
     keeps_outer_topic: bool,
     outer_topic: &Option<Value>,
 ) {
-    const UNDERSCORE: &str = "_";
-    const DOLLAR_TOPIC: &str = "$_";
+    let underscore = crate::symbol::wk::topic();
+    let dollar_topic = crate::symbol::wk::topic_sigiled();
     if keeps_outer_topic {
         match outer_topic {
             Some(t) => {
-                env.insert(UNDERSCORE.to_string(), t.clone());
-                env.insert(DOLLAR_TOPIC.to_string(), t.clone());
+                env.insert_sym(underscore, t.clone());
+                env.insert_sym(dollar_topic, t.clone());
             }
             None => {
-                env.remove(UNDERSCORE);
-                env.remove(DOLLAR_TOPIC);
+                env.remove_sym(underscore);
+                env.remove_sym(dollar_topic);
             }
         }
     } else {
-        env.insert(UNDERSCORE.to_string(), item.clone());
-        env.insert(DOLLAR_TOPIC.to_string(), item.clone());
+        env.insert_sym(underscore, item.clone());
+        env.insert_sym(dollar_topic, item.clone());
     }
 }
 
@@ -208,14 +222,6 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
     }
 }
 
-/// The inline map/grep/first paths run the block's body directly in the
-/// enclosing frame's env, so the block's own `my` declarations write a
-/// bare-name entry there. When an enclosing lexical of the same name is
-/// visible through the flattened env, the block-local binding would leak into
-/// it on exit (zef's `provides-spec-matcher` clobbered the calling method's
-/// `$spec` param this way) — save/restore those names like the other
-/// temporaries. A declared name that is also a free var refers to the outer
-/// binding (used before its declaration) and is left alone.
 /// Whether a captured lexical must OVERWRITE the same-named binding the
 /// consuming frame happens to hold, rather than yielding to it.
 ///
@@ -240,35 +246,6 @@ pub(crate) fn capture_wins_over_caller(
             || free_vars.is_some_and(|free| free.contains(k)))
 }
 
-pub(crate) fn push_block_declared_keys(
-    touched_keys: &mut Vec<String>,
-    code: &crate::opcode::CompiledCode,
-) {
-    for k in &code.my_declared_sym {
-        if code.free_var_syms.contains(k) {
-            continue;
-        }
-        let name = k.resolve();
-        if !touched_keys.contains(&name) {
-            touched_keys.push(name);
-        }
-    }
-    // A `my $*x` REdeclaration inside the block is likewise block-private and
-    // must be reverted when the inline loop finishes — without this, the last
-    // iteration's `my $*CWD = $_` in a `.map` block leaked into the caller's
-    // `$*CWD` (roast S32-io/indir.t). No `free_var_syms` exemption here:
-    // dynamic reads compile to by-name `GetGlobal` (no local slot), so a
-    // declared-and-read dynamic always registers as a free var, and the
-    // exemption would defeat the restore. A plain `$*x = ...` write-through is
-    // not a declaration, never lands in this set, and still propagates.
-    for k in &code.dynamic_declared_sym {
-        let name = k.resolve();
-        if !touched_keys.contains(&name) {
-            touched_keys.push(name);
-        }
-    }
-}
-
 impl Interpreter {
     /// Compile a map/grep/`.first` callback's tail-normalized body for the
     /// inline-loop fast path, reusing a cached compile when this exact
@@ -277,10 +254,14 @@ impl Interpreter {
     /// `data.compiled_code` `Arc` pointer is a sound, free cache key. A block
     /// with no `compiled_code` (an `EVAL`-built block, or another dynamic
     /// construction) always compiles fresh — safe, just uncached.
+    ///
+    /// The body is tail-normalized (`normalize_tail_stmt_for_value`) only on a
+    /// miss: the normalization clones the whole body AST, which a cache hit
+    /// never looks at.
+    // Cost: O(1) on a hit; one body compile otherwise.
     pub(super) fn compile_loop_block_cached(
         &mut self,
         data: &SubData,
-        normalized_body: &[crate::ast::Stmt],
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
@@ -301,7 +282,8 @@ impl Interpreter {
         if let Some(origin) = data.compiled_code.as_deref() {
             compiler.seed_amp_shadowed_calls_from(origin);
         }
-        let (mut code, mut fns) = compiler.compile(normalized_body);
+        let normalized_body = normalize_tail_stmt_for_value(&data.body);
+        let (mut code, mut fns) = compiler.compile(&normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
                 &mut code, &mut fns, origin,
@@ -393,6 +375,20 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        self.eval_map_over_items_planned(func, list_items, &mut MapGrepPlanSlot::default())
+    }
+
+    /// [`Self::eval_map_over_items`] with the callback's loop plan kept in
+    /// `slot` across calls — a deferred `.map` pulled a chunk at a time reuses
+    /// it on every pull (see `runtime/map_grep_plan.rs`).
+    // Cost: one callback call per element (per `arity` elements for a
+    // multi-parameter block).
+    pub(crate) fn eval_map_over_items_planned(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+        slot: &mut MapGrepPlanSlot,
+    ) -> Result<Value, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -400,20 +396,25 @@ impl Interpreter {
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         if let Some(ValueView::Sub(data)) = func.as_ref().map(Value::view) {
-            let requires_full_binding = data.param_defs.iter().any(|pd| {
-                pd.named
-                    || pd.slurpy
-                    || pd.sigilless
-                    || pd.optional_marker
-                    || pd.default.is_some()
-                    || pd.type_constraint.is_some()
-                    || pd.where_constraint.is_some()
-                    || pd.sub_signature.is_some()
-                    || pd.outer_sub_signature.is_some()
-                    || pd.code_signature.is_some()
-                    || pd.shape_constraints.is_some()
-            }) || !data.assumed_positional.is_empty()
-                || !data.assumed_named.is_empty();
+            // A plan in `slot` means an earlier chunk of this same Seq already
+            // classified the callback as inline-loop material: the checks
+            // below are a pure function of the callback.
+            let cached_plan = self.cached_inline_loop_plan(&data, InlineLoopKind::Map, slot);
+            let requires_full_binding = cached_plan.is_none()
+                && (data.param_defs.iter().any(|pd| {
+                    pd.named
+                        || pd.slurpy
+                        || pd.sigilless
+                        || pd.optional_marker
+                        || pd.default.is_some()
+                        || pd.type_constraint.is_some()
+                        || pd.where_constraint.is_some()
+                        || pd.sub_signature.is_some()
+                        || pd.outer_sub_signature.is_some()
+                        || pd.code_signature.is_some()
+                        || pd.shape_constraints.is_some()
+                }) || !data.assumed_positional.is_empty()
+                    || !data.assumed_named.is_empty());
             // A routine callback (`map $f, @xs` / `@xs.map($f)` where `$f` is a
             // `sub`) must run through the real call path so a `return` in its
             // body ends THAT call with the returned value (routine semantics).
@@ -422,24 +423,22 @@ impl Interpreter {
             // X::ControlFlow::Return (99problems-21-to-30.t P23 `$compress`).
             // A WhateverCode is expression-shaped (it cannot contain `return`)
             // and needs the fast path's outer-topic handling for its `$_`.
-            let is_routine_callback = (!data.is_bare_block
-                && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
-                && !matches!(
-                    data.env.get("__mutsu_callable_type").map(Value::view),
-                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-                )
-                // A placeholder block (`{ $^x.value }`) is a Block, not a
-                // Routine, even though its compile path currently flags
-                // is_routine (it compiles as a named-anon-sub body). It must
-                // stay on the fast path: the general call machinery binds a
-                // Pair element as a NAMED argument, leaving the placeholder
-                // positional unbound (t/map-native-pairs.t).
-                && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
-                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
-                // carries only bytecode; the AST fast path would classify its
-                // empty body as a passthrough, so it must take the real call
-                // path, which dispatches `compiled_routine`.
-                || (data.body.is_empty() && data.compiled_routine.is_some());
+            let is_routine_callback = cached_plan.is_none()
+                && ((!data.is_bare_block
+                    && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
+                    && !sub_is_whatever_code(&data)
+                    // A placeholder block (`{ $^x.value }`) is a Block, not a
+                    // Routine, even though its compile path currently flags
+                    // is_routine (it compiles as a named-anon-sub body). It must
+                    // stay on the fast path: the general call machinery binds a
+                    // Pair element as a NAMED argument, leaving the placeholder
+                    // positional unbound (t/map-native-pairs.t).
+                    && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
+                    // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
+                    // carries only bytecode; the AST fast path would classify its
+                    // empty body as a passthrough, so it must take the real call
+                    // path, which dispatches `compiled_routine`.
+                    || (data.body.is_empty() && data.compiled_routine.is_some()));
             if requires_full_binding || is_routine_callback {
                 // `map` batches the source by the block's `.count` (the number of
                 // positional parameters it will bind): a multi-positional block
@@ -527,19 +526,11 @@ impl Interpreter {
                 }
                 return Ok(Value::array(result));
             }
-            let arity = if !data.params.is_empty() {
-                // Account for assumed positional args (from .assuming)
-                let effective = data
-                    .params
-                    .len()
-                    .saturating_sub(data.assumed_positional.len());
-                if effective == 0 { 1 } else { effective }
-            } else {
-                1
-            };
+            // Account for assumed positional args (from .assuming).
+            let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
             // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
             // dispatcher) — delegate to call_sub_value which resolves the markers.
-            if sub_is_call_carrier(&data) {
+            if cached_plan.is_none() && sub_is_call_carrier(&data) {
                 let mut result = Vec::new();
                 let mut i = 0usize;
                 while i < list_items.len() {
@@ -583,118 +574,26 @@ impl Interpreter {
             // should propagate up to the lexically enclosing routine (if
             // any); `compile_loop_block_cached` marks the compiler as
             // lexically nested in a routine whenever one is currently on the
-            // dynamic call stack.
-            // The map value is taken from the block's tail-expression result (or
-            // the topic `$_` if none was left on the stack). A bare tail
-            // `Stmt::Call` carrying named/slip args (how an imported sub call like
-            // `f(k => v)` parses) is compiled as a value-discarding statement, so
-            // the result would wrongly fall back to the topic. Normalize such a
-            // tail into `Stmt::Expr(Expr::Call)` so its value is preserved.
-            let normalized_body = normalize_tail_stmt_for_value(&data.body);
-            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
-
-            let underscore = "_".to_string();
-            let dollar_topic = "$_".to_string();
-
+            // dynamic call stack. The plan also holds the capture merge's
+            // classification, so a deferred map pulled one element at a time
+            // pays none of this per element (`runtime/map_grep_plan.rs`).
+            let plan = match cached_plan {
+                Some(plan) => plan,
+                None => self.inline_loop_plan(&data, InlineLoopKind::Map, slot),
+            };
+            let (code, compiled_fns) = (&plan.code, &plan.fns);
             // Save/restore only temporary bindings introduced by map itself.
             // Captured lexical vars (in data.env) must keep mutations done inside
             // the mapper block (e.g. `{ $a++ }`).
-            let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
-            // Every key the capture merge below OVERWRITES has to be saved here
-            // too, not only the ones it introduces: a nested map that overwrote
-            // a name the enclosing map had already installed would otherwise
-            // leave its own value behind for the enclosing map's NEXT iteration
-            // (`sub inner(@sizes) { map -> $e { map -> $g {...},
-            // inner(@sizes[1..*]) }, ['a','b'] }` read `@sizes` as the inner
-            // call's on iteration 2). `self` is handled explicitly below.
-            let free_vars = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| cc.capture_free_var_set());
-            let capture_wins =
-                |k: &crate::symbol::Symbol, v: &Value| capture_wins_over_caller(free_vars, k, v);
-            for (k, v) in &data.env {
-                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
-                    touched_keys.push(k.resolve());
-                }
-            }
-            for p in data.params.iter() {
-                if !touched_keys.contains(p) {
-                    touched_keys.push(p.clone());
-                }
-            }
-            if !touched_keys.iter().any(|k| k == "_") {
-                touched_keys.push(underscore.clone());
-            }
-            if !touched_keys.iter().any(|k| k == "$_") {
-                touched_keys.push(dollar_topic.clone());
-            }
-            push_block_declared_keys(&mut touched_keys, &code);
-            // `self` is lexical: the block's captured invocant must win over the
-            // one the caller happens to hold (see `call_compiled_closure`). It is
-            // normally already in the running env, so the loop above did not list
-            // it — add it here so the overwrite below is undone on exit.
-            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
-                touched_keys.push("self".to_string());
-            }
-            let saved: Vec<(String, Option<Value>)> = touched_keys
-                .iter()
-                .map(|k| (k.clone(), self.env.get(k).cloned()))
-                .collect();
+            let saved = self.enter_inline_loop_env(&data, &plan);
 
-            // Pre-insert closure env.
-            //
-            // Caller-priority by default, with the two exceptions every other
-            // closure-env merge in the codebase already makes (`call_sub_value`'s
-            // tree-walk merge and `call_compiled_closure_with_topic`):
-            //
-            //  - `self` is LEXICAL — the block's captured invocant wins.
-            //  - a captured `ContainerRef` is a shared container CELL
-            //    (box-on-capture, ADR-0025/ADR-0055). It is the single source of
-            //    truth for that lexical, so it must overwrite whatever the
-            //    calling frame happens to hold under the same name; the
-            //    don't-overwrite default silently resolved the closure's own free
-            //    variable to an unrelated same-named caller lexical (ADR-0055
-            //    §1.2(b) through the `.map($f)` invocation path). A DYNAMIC
-            //    variable (`$*x`) keeps caller priority — it is dynamic-scope by
-            //    design — exactly as in the compiled merge.
-            //  - a captured value for one of the block's own FREE VARIABLES
-            //    wins for the same reason the cell does: a free variable is
-            //    lexical by definition, so the binding it names is the one at
-            //    the block's creation site, never a same-named lexical that
-            //    happens to be live in the frame doing the consuming. The cell
-            //    exception alone covered only the lexicals that
-            //    `box_captured_lexicals` boxes — in practice `$`-scalars — so
-            //    an `@`/`%` container free variable still resolved to the
-            //    caller's. That is visible whenever the pull happens in a
-            //    DIFFERENT frame than the `.map` call, which ADR-0058 made the
-            //    normal case: `sub mk(@p) { [1].map({ @p.elems }) }` consumed
-            //    inside a routine with its own `@p` read the consumer's, and
-            //    in a RECURSIVE producer the callback read an outer
-            //    invocation's parameter, so the recursion never reached its
-            //    base case (`todo/deep/deferred-map-callback-...`, which
-            //    aborted `roast/integration/99problems-21-to-30.t` with a
-            //    stack overflow when ADR-0058 step 3 landed).
-            for (k, v) in &data.env {
-                if capture_wins(k, v)
-                    || k.with_str(|s| s == "self")
-                    || !self.env.contains_key_sym(*k)
-                {
-                    self.env.insert_sym(*k, v.clone());
-                }
-            }
-
-            let is_whatever_code = block_keeps_outer_topic(&data);
-            let outer_topic = self.env.get("_").cloned();
+            let is_whatever_code = plan.keeps_outer_topic;
+            let outer_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
             // The compiler saw this callback written directly against a source
             // that provably yields bare items (`(1, 2).map({ $_ = 5 })`), so
             // its implicit topic has no container to assign into -- see
             // `CompiledCode::immutable_topic` and `set_loop_topic_readonly`.
-            let immutable_topic = !is_whatever_code
-                && data
-                    .compiled_code
-                    .as_ref()
-                    .is_some_and(|cc| cc.immutable_topic);
+            let immutable_topic = plan.immutable_topic;
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
@@ -703,15 +602,11 @@ impl Interpreter {
             // and flags env_dirty. The temporary-binding env restore (`saved`) is
             // hoisted to after the call — it ran on every old exit path.
             // Runtime transitive vouching: see `frame_authoritative_set`.
-            let block_authoritative = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| frame_authoritative_set(cc, &data.authoritative_captures))
-                .unwrap_or_default();
+            let block_authoritative = &plan.block_authoritative;
             // ADR-0027: this block's own loop-frozen owned captures, seeded
             // per iteration alongside `block_authoritative` — see
             // `Interpreter::frame_owned`.
-            let block_owned = data.owned_captures.clone();
+            let block_owned = &data.owned_captures;
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope this block's `state` variables to the closure instance
                 // (`$n@<ip>#c{id}`): the body was re-compiled fresh above, so
@@ -732,8 +627,8 @@ impl Interpreter {
                         let assumed_count = data.assumed_positional.len();
                         // Bind assumed positional args first
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
-                            if let Some(p) = data.params.get(idx) {
-                                vm.env_mut().insert(p.clone(), val.clone());
+                            if let Some(&p) = plan.param_syms.get(idx) {
+                                vm.env_mut().insert_sym_noting(p, val.clone());
                             }
                         }
                         if arity == 1 {
@@ -751,7 +646,8 @@ impl Interpreter {
                                     None => item.clone(),
                                 };
                                 vm.note_param_bound_aggregate(p, &bound);
-                                vm.env_mut().insert(p.clone(), bound);
+                                vm.env_mut()
+                                    .insert_sym_noting(plan.param_syms[assumed_count], bound);
                             }
                             bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
                         } else {
@@ -766,7 +662,10 @@ impl Interpreter {
                                         None => item,
                                     };
                                     vm.note_param_bound_aggregate(p, &bound);
-                                    vm.env_mut().insert(p.clone(), bound);
+                                    vm.env_mut().insert_sym_noting(
+                                        plan.param_syms[assumed_count + idx],
+                                        bound,
+                                    );
                                 }
                             }
                             bind_loop_topic(
@@ -795,7 +694,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(&code, &compiled_fns) {
+                    match vm.run_reuse(code, compiled_fns) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
@@ -883,18 +782,9 @@ impl Interpreter {
             });
 
             // Restore original values (was done on every exit of the old loop).
-            for (k, orig) in saved {
-                match orig {
-                    Some(v) => {
-                        self.env.insert(k, v);
-                    }
-                    None => {
-                        self.env.remove(&k);
-                    }
-                }
-            }
+            self.leave_inline_loop_env(saved);
             if loop_result.is_ok() {
-                self.record_eager_block_free_var_writeback(&code, &data.params);
+                self.record_eager_block_free_var_writeback(code, &data.params);
             }
             return loop_result;
         }
@@ -1019,63 +909,21 @@ impl Interpreter {
             return None;
         }
 
-        // Compile once (mirrors grep: normalize the tail statement so the last
-        // expression lands on the stack as the predicate value), reusing a
-        // cached compile across repeated calls to this same closure literal.
-        let normalized_body = normalize_tail_stmt_for_value(&data.body);
-        let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
+        // Compile once (mirrors grep: the tail statement is normalized so the
+        // last expression lands on the stack as the predicate value), reusing
+        // a cached compile across repeated calls to this same closure literal,
+        // and merge the captured env with caller priority, exactly as the
+        // map/grep loops do (`enter_inline_loop_env`).
+        let plan = self.inline_loop_plan(
+            &data,
+            InlineLoopKind::First,
+            &mut MapGrepPlanSlot::default(),
+        );
+        let (code, compiled_fns) = (&plan.code, &plan.fns);
+        let saved = self.enter_inline_loop_env(&data, &plan);
 
-        let underscore = "_".to_string();
-        let dollar_topic = "$_".to_string();
-        // Caller-priority capture merge, identical to `eval_map_over_items` /
-        // `eval_grep_over_items_with_mutated`: overwriting every captured name
-        // while saving only the ones the caller lacked clobbered a name held by
-        // both with its capture-time value and never put it back.
-        let free_vars = data
-            .compiled_code
-            .as_ref()
-            .map(|cc| cc.capture_free_var_set());
-        let capture_wins =
-            |k: &crate::symbol::Symbol, v: &Value| capture_wins_over_caller(free_vars, k, v);
-        let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
-        for (k, v) in &data.env {
-            if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
-                touched_keys.push(k.resolve());
-            }
-        }
-        for p in data.params.iter() {
-            if !touched_keys.contains(p) {
-                touched_keys.push(p.clone());
-            }
-        }
-        if !touched_keys.iter().any(|k| k == "_") {
-            touched_keys.push(underscore.clone());
-        }
-        if !touched_keys.iter().any(|k| k == "$_") {
-            touched_keys.push(dollar_topic.clone());
-        }
-        push_block_declared_keys(&mut touched_keys, &code);
-        // The pre-insert below overwrites every captured name, `self` included
-        // (it is lexical — see `call_compiled_closure`). `self` is normally
-        // already in the running env, so the loop above did not list it; add it
-        // so the caller's invocant is put back on exit.
-        if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
-            touched_keys.push("self".to_string());
-        }
-        let saved: Vec<(String, Option<Value>)> = touched_keys
-            .iter()
-            .map(|k| (k.clone(), self.env.get(k).cloned()))
-            .collect();
-
-        // Pre-insert closure env (caller-priority, see above).
-        for (k, v) in &data.env {
-            if capture_wins(k, v) || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
-                self.env.insert_sym(*k, v.clone());
-            }
-        }
-
-        let keeps_outer_topic = block_keeps_outer_topic(&data);
-        let outer_topic = self.env.get("_").cloned();
+        let keeps_outer_topic = plan.keeps_outer_topic;
+        let outer_topic = self.env.get_sym(crate::symbol::wk::topic()).cloned();
         // Same compile-time verdict the map/grep loops use: the matcher was
         // written directly against a source that provably yields bare items
         // (`(1, 2).first({ $_ = 5 })`), so its implicit topic has no container
@@ -1083,11 +931,7 @@ impl Interpreter {
         // `set_loop_topic_readonly`. `@a.first({ $_ = 5 })` is unaffected: `@a`
         // is not a provably-bare receiver, and this scan already binds the
         // element CONTAINERS for it.
-        let immutable_topic = !keeps_outer_topic
-            && data
-                .compiled_code
-                .as_ref()
-                .is_some_and(|cc| cc.immutable_topic);
+        let immutable_topic = plan.immutable_topic;
 
         let mut found: Option<(usize, Value)> = None;
         // A matcher closure may execute a regex.  Keep the resulting Match
@@ -1117,7 +961,7 @@ impl Interpreter {
                             None => call_item.clone(),
                         };
                         vm.note_param_bound_aggregate(p, &bound);
-                        vm.env_mut().insert(p.clone(), bound);
+                        vm.env_mut().insert_sym_noting(plan.param_syms[0], bound);
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
                     let saved_when_matched = vm.when_matched();
@@ -1130,7 +974,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(&code, &compiled_fns) {
+                    match vm.run_reuse(code, compiled_fns) {
                         Ok(()) => {
                             let pred = vm
                                 .last_stack_value()
@@ -1229,16 +1073,7 @@ impl Interpreter {
             Ok(())
         });
 
-        for (k, orig) in saved {
-            match orig {
-                Some(v) => {
-                    self.env.insert(k, v);
-                }
-                None => {
-                    self.env.remove(&k);
-                }
-            }
-        }
+        self.leave_inline_loop_env(saved);
         if let Some(matched) = matched_regex {
             self.env_mut()
                 .insert_sym(crate::symbol::wk::match_var(), matched);
@@ -1251,7 +1086,7 @@ impl Interpreter {
         // Queue those free-var writes for the CallMethod op to drain, exactly
         // as `eval_grep_over_items_with_mutated` does.
         if loop_result.is_ok() {
-            self.record_eager_block_free_var_writeback(&code, &data.params);
+            self.record_eager_block_free_var_writeback(code, &data.params);
         }
         match loop_result {
             Ok(()) => Some(Ok(found)),

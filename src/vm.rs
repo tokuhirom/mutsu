@@ -202,6 +202,7 @@ mod vm_for_loop_alias;
 mod vm_for_loop_body;
 mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
+mod vm_for_loop_items;
 mod vm_for_loop_lazy;
 mod vm_for_loop_map_grep;
 mod vm_given_when_ops;

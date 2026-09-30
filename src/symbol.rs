@@ -533,6 +533,21 @@ pub(crate) mod wk {
         /// per creation cost a thread-local string-keyed hash lookup each time
         /// (0.25% of a closure-creation loop, #7557).
         in_eval => "__mutsu_in_eval";
+        /// The four markers that make a Sub a call carrier
+        /// (`resolution_map_grep::sub_is_call_carrier`), probed on every
+        /// map/grep loop -- including once per element of a streamed
+        /// `for @a.map(...)` (#10187).
+        routine_name_marker => "__mutsu_routine_name";
+        compose_left_marker => "__mutsu_compose_left";
+        identity_callable_marker => "__mutsu_identity_callable";
+        multi_dispatch_candidates => "__mutsu_multi_dispatch_candidates";
+        /// A callable's kind tag (`"WhateverCode"`, ...), probed by the map
+        /// loops' routine-callback gate.
+        callable_type => "__mutsu_callable_type";
+        /// The rw map loop's `$_`-write mirror (`eval_map_over_items_rw`).
+        rw_map_topic => "__mutsu_rw_map_topic__";
+        /// The grep loop's per-element topic source key.
+        grep_topic_source => "__mutsu_grep_topic_source";
         /// The `FatRat` type object, compared against a resolved
         /// `$*RAT-OVERFLOW` on every Rat-family arithmetic op
         /// (`Interpreter::rat_overflow_scope_for`).

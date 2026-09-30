@@ -329,6 +329,7 @@ impl Interpreter {
                         func: args.first().cloned(),
                         fatal: self.fatal_mode,
                         mode: crate::value::MapGrepMode::GrepArray(target.clone()),
+                        plan: Default::default(),
                     }));
                 }
                 self.grep_over_array_promoting(items.clone(), args.first().cloned(), &grep_adverb)
@@ -356,6 +357,7 @@ impl Interpreter {
                         func: args.first().cloned(),
                         fatal: self.fatal_mode,
                         mode: crate::value::MapGrepMode::Grep,
+                        plan: Default::default(),
                     }));
                 }
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
@@ -532,13 +534,21 @@ impl Interpreter {
         grep_adverb: &GrepAdverb,
     ) -> Result<Value, RuntimeError> {
         let len = items.len();
-        self.grep_over_array_promoting_range(items, func, grep_adverb, 0..len)
+        self.grep_over_array_promoting_range(
+            items,
+            func,
+            grep_adverb,
+            0..len,
+            &mut crate::runtime::map_grep_plan::MapGrepPlanSlot::default(),
+        )
     }
 
     /// [`Self::grep_over_array_promoting`] over the source slots `range`
     /// only: a deferred `.grep` pulled a prefix at a time (#9158,
     /// `pull_map_grep_prefix`) greps the source a chunk at a time. The
-    /// indices the `:k`/`:kv`/`:p` adverbs see are absolute.
+    /// indices the `:k`/`:kv`/`:p` adverbs see are absolute. `plan` carries
+    /// what earlier chunks computed about the callback
+    /// (`runtime/map_grep_plan.rs`).
     // Cost: one callback call per slot of `range`, plus O(m) promotions,
     // m = matched slots.
     pub(crate) fn grep_over_array_promoting_range(
@@ -547,11 +557,12 @@ impl Interpreter {
         func: Option<Value>,
         grep_adverb: &GrepAdverb,
         range: std::ops::Range<usize>,
+        plan: &mut crate::runtime::map_grep_plan::MapGrepPlanSlot,
     ) -> Result<Value, RuntimeError> {
         let start = range.start.min(items.len());
         let end = range.end.min(items.len()).max(start);
         let (filtered, mutated_items, matched_indices) =
-            self.eval_grep_over_items_with_mutated(func, items[start..end].to_vec())?;
+            self.eval_grep_over_items_planned(func, items[start..end].to_vec(), plan)?;
         // Which source positions matched, so those slots can be shared
         // with the result as first-class element containers. The grep
         // loop reports them; they used to be re-derived here by scanning

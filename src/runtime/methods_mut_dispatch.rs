@@ -2119,6 +2119,7 @@ impl Interpreter {
                 func: args.first().cloned(),
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(target.clone()),
+                plan: Default::default(),
             }));
         }
 
