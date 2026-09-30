@@ -1,6 +1,8 @@
 # ADR-0099: Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk
 
-- **Status**: Accepted (2026-09-13; drafted, reviewed and revised the same day — see §8)
+- **Status**: Accepted (2026-09-13; drafted, reviewed and revised the same day — see §8). §4 Stages 2
+  and 3 are re-decided by [ADR-0135](0135-regex-compiles-to-a-backtracking-program.md) (Proposed
+  2026-09-30); they are superseded when that ADR is accepted.
 - **Context**: the eight regex benchmarks added on 2026-09-12/13 (`bench-regex-{match,capture,global,assertion,long-subject,split-subst}.raku`,
   `bench-grammar-parse-big.raku`, `bench-yaml-parse-big.raku`) gave the suite its first view of the
   regex engine. The question this ADR answers: is micro-benchmark-driven tuning of the present
