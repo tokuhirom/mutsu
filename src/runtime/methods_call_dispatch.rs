@@ -4847,6 +4847,8 @@ impl Interpreter {
                     // `handles */FALLBACK` term above is unaffected.
                 }
                 ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
+                // `Foo.new but role {...}` keeps `Foo`'s own `$.elems` (#10232).
+                ValueView::Mixin(..) => self.mixin_wrapped_instance_has_method(&target, method),
                 _ => false,
             };
 
