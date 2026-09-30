@@ -161,6 +161,11 @@ differential_case!(
     r#"say ("ab12" ~~ / $<a>=<alpha>+ /)<a>.Str; say ("abc" ~~ / @<x>=(.(.)) /)<x>.elems; say ("abc" ~~ / @<x>=[ \w ] /)<x>.elems; say ("aab" ~~ / a <?same> a /).gist; say ("abc" ~~ / <at(1)> b /).Str; say ("abc" ~~ / \w <!same> \w /).Str"#
 );
 
+differential_case!(
+    ltm_alternation,
+    r#"say ("ab" ~~ / a | ab /).gist; say ("abc" ~~ / [ a | ab ] c /).gist; say ("aaab" ~~ / [ a+ | q ] ab /).gist; say ("foobar" ~~ / foo | foobar | fo /).gist; say ("ab" ~~ / (a) | (a)(b) /).gist; say ("xy" ~~ / $<k>=x | $<k>=xy /).gist; say ("abab" ~~ / [ a | ab ]+ $ /).gist; say ("ab" ~~ / :r [ a | ab ] b /).gist; say ("ab" ~~ / :r [ ab | a ] b /).gist; say "a bb ccc".comb(/ \w ** 2 | \w /).join("|"); say ("ab" ~~ / [ (a) | b ]+ /).gist; say ("abc" ~~ / a [ b | bc ]? /).gist; say ("xyz" ~~ / [ x | xy ] [ yz | z ] /).gist; say ("aab" ~~ / (a) [ $0 b | a ] /).gist; say ("abcd" ~~ / [ [ ab | a ] | abc ] [ cd | d ] /).gist; say ("x" ~~ / ^ [ [ a | b | x ] | y ] $ /).gist"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

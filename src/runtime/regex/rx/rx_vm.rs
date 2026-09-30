@@ -51,6 +51,7 @@ struct Scratch {
     stack: Vec<Choice>,
     ends: Vec<usize>,
     levels: Levels,
+    ltm_order: Vec<(usize, (usize, usize))>,
 }
 
 thread_local! {
@@ -145,6 +146,7 @@ impl Interpreter {
             stack,
             ends,
             levels,
+            ltm_order,
         } = scratch;
         regs.clear();
         regs.resize(program.nregs, 0);
@@ -248,6 +250,24 @@ impl Interpreter {
                         reg_mark: reg_trail.len(),
                     });
                     pc = prefer;
+                    true
+                }
+                // Cost: O(b·m + b log b), b = the branches, m = one LTM
+                // measurement (`rx_ltm_order`); O(b) choice points pushed.
+                RxOp::LtmAlt(t) => {
+                    let table = &program.ltm_alts[t as usize];
+                    self.rx_ltm_order(program, table, chars, pos, pkg, ltm_order);
+                    // Lower-ranked branches wait on the stack, the next-best
+                    // on top; the best one is entered now.
+                    for &(i, _) in ltm_order[1..].iter().rev() {
+                        stack.push(Choice::At {
+                            pc: table.pcs[i],
+                            pos,
+                            cap_mark: levels.mark(),
+                            reg_mark: reg_trail.len(),
+                        });
+                    }
+                    pc = table.pcs[ltm_order[0].0];
                     true
                 }
                 // Cost: O(1).

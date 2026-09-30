@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A landed (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A landed, Slice B in progress (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -438,6 +438,17 @@ first candidate the walk's chain keeps), `separator-frugal` 3 (#10306), `frugal-
 The unanchored scan loop still runs outside the VM, one `rx_run` per start position. Moving it
 in is a performance change, not a language one, and it is tracked as
 [#10315](https://github.com/tokuhirom/mutsu/issues/10315) (`todo:perf`).
+
+**Slice B, first part (#10252): `|` landed.** One `LtmAlt` op per alternation ranks the branches
+at the current position with the walk's own `ltm_branch_rank_key` (`rx_ltm.rs`). It pushes the
+lower-ranked branches as choice points, next-best on top, and enters the best one. A branch is
+therefore entered only after every branch ranked above it has failed against the rest of the
+pattern, which is what #9922 asked for. That issue is closed with
+`t/regex/regex-ltm-losing-branch-code.t`. Its patterns carry code blocks, so the walk still runs
+them until Slice C; the walk's `drive_alternation_candidates` already has the same order. Branch
+captures merge through the `||` path's `AltTail`. Under ratchet, a cut after each branch commits
+to the first branch that matches and to its first end. A numbered alias inside a branch still
+declines (`alt-numbered-alias`), as it does for `||`.
 
 ### Reproducing §2
 
