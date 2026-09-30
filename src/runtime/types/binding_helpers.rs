@@ -142,6 +142,7 @@ impl Interpreter {
                             after_sigil
                                 .strip_prefix('!')
                                 .or_else(|| after_sigil.strip_prefix('.'))
+                                .or_else(|| after_sigil.strip_prefix('*'))
                                 .unwrap_or(after_sigil)
                         };
                         bare == *key
