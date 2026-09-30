@@ -3447,8 +3447,15 @@ impl Compiler {
         }
         // `_.elems` on the per-iteration chunk array — the number of source
         // elements that actually flowed into this batch.
+        let chunk_var = || {
+            Expr::Var(if params.is_empty() {
+                "_".to_string()
+            } else {
+                "__mutsu_for_chunk".to_string()
+            })
+        };
         let chunk_elems = || Expr::MethodCall {
-            target: Box::new(Expr::Var("_".to_string())),
+            target: Box::new(chunk_var()),
             name: Symbol::intern("elems"),
             args: Vec::new(),
             modifier: None,
@@ -3545,7 +3552,7 @@ impl Compiler {
                     // unconsumed tail of the chunk (empty when nothing is left).
                     Expr::MethodCall {
                         target: Box::new(Expr::MethodCall {
-                            target: Box::new(Expr::Var("_".to_string())),
+                            target: Box::new(chunk_var()),
                             name: Symbol::intern("skip"),
                             args: vec![Expr::Literal(Value::int(positional_slot as i64))],
                             modifier: None,
@@ -3569,7 +3576,7 @@ impl Compiler {
             // Use an explicit `_.elems > slot` test (not `// default`) so a
             // present but undefined element is still bound, matching Raku.
             let element_expr = Expr::Index {
-                target: Box::new(Expr::Var("_".to_string())),
+                target: Box::new(chunk_var()),
                 index: Box::new(Expr::Literal(Value::int(slot as i64))),
                 is_positional: false,
             };

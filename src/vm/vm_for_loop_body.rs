@@ -71,7 +71,20 @@ impl Interpreter {
 
     /// Bind the loop's implicit topic: `env["_"]` plus the frame's topic slot
     /// when it has one (see [`Interpreter::save_loop_topic_local`]).
-    pub(super) fn set_loop_topic(&mut self, topic_local: Option<usize>, val: Value) {
+    ///
+    /// A multi-parameter loop (`chunk_mode`) leaves `$_` alone and hands the
+    /// batch to its parameter binds through the hidden `wk::for_chunk()` key.
+    pub(super) fn set_loop_topic(
+        &mut self,
+        topic_local: Option<usize>,
+        chunk_mode: bool,
+        val: Value,
+    ) {
+        if chunk_mode {
+            self.env_mut()
+                .insert_sym_noting(crate::symbol::wk::for_chunk(), val);
+            return;
+        }
         if let Some(slot) = topic_local {
             self.locals[slot] = val.clone();
         }
@@ -260,6 +273,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
+        let chunk_mode = !spec.multi_param_names.is_empty();
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
         // The tagged source name plus its compile-time-baked local slot (§1.5):
@@ -910,7 +924,7 @@ impl Interpreter {
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
-                self.set_loop_topic(topic_local, item.clone());
+                self.set_loop_topic(topic_local, chunk_mode, item.clone());
             }
             // A plain `$`-sigiled loop parameter is an item binding: the bound
             // element behaves as ONE value in list context (a row Array fed to
@@ -1211,7 +1225,7 @@ impl Interpreter {
                         // abandoned pass pushed is not part of the retry.
                         self.stack.truncate(stack_base);
                         if param_name.is_none() {
-                            self.set_loop_topic(topic_local, item.clone());
+                            self.set_loop_topic(topic_local, chunk_mode, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -1260,7 +1274,7 @@ impl Interpreter {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v);
                             } else {
-                                self.set_loop_topic(topic_local, v.clone());
+                                self.set_loop_topic(topic_local, chunk_mode, v.clone());
                                 // Push return value on stack so enclosing compiled
                                 // closures can see it as the block result.
                                 self.stack.push(v);
