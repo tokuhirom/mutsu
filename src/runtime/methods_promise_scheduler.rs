@@ -33,6 +33,19 @@ impl Interpreter {
             .then_some(sched)
     }
 
+    /// The `$*SCHEDULER` in effect when it is a `CurrentThreadScheduler`
+    /// instance. `start` cues its body through it (the native `.cue` runs
+    /// inline), so the promise is already resolved when `start` returns.
+    // Cost: O(1).
+    pub(in crate::runtime) fn current_thread_scheduler(&mut self) -> Option<Value> {
+        let sched = self.env().get("*SCHEDULER")?.clone();
+        matches!(
+            sched.view(),
+            ValueView::Instance { class_name, .. } if class_name == "CurrentThreadScheduler"
+        )
+        .then_some(sched)
+    }
+
     /// Whether `value` is one of the built-in schedulers (instance or type
     /// object), which mutsu drives natively instead of through `.cue`.
     fn is_builtin_scheduler(value: &Value) -> bool {
