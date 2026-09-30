@@ -368,8 +368,15 @@ The comparison exposed two walk bugs, both now fixed against rakudo:
   `walk_quant_group_candidates` loop.
 - `**` over an alternation never backtracked into an earlier iteration's branch choice.
 
-Still to come in Slice A: backreferences, `%` separators, nested quantified captures, nullable
-loop bodies, `<( )>` markers, `CompositeClass`, and moving the unanchored scan loop into the VM.
+**Slice A, fourth part: nullable loop bodies landed.** A quantifier whose body can match empty
+ends each iteration with a `ZeroIter` guard. The guard calls the walk's `zero_width_iter_counts`,
+and rejecting an iteration backtracks into the body's other candidates, as the walk's group DFS
+does. The walk's chain takes first candidates only, so a nullable body compiles when it is a
+DFS shape (a group, or anything containing an alternation), when it is ratcheted, or when it is a
+single-candidate assertion.
+
+Still to come in Slice A: backreferences, `%` separators, nested quantified captures, `<( )>`
+markers, `CompositeClass`, and moving the unanchored scan loop into the VM.
 
 ### Reproducing §2
 

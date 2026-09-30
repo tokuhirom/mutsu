@@ -141,6 +141,14 @@ fn min_len(pattern: &RegexPattern) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
+/// Does the walk explore every candidate of each iteration of a
+/// non-ratcheted quantifier over `atom` (`quantifier_atom_needs_candidate_backtracking`
+/// or an alternation inside), rather than growing a chain of first candidates?
+fn loop_body_backtracks(atom: &RegexAtom) -> bool {
+    matches!(atom, RegexAtom::Group(_) | RegexAtom::CaptureGroup(_))
+        || atom_contains_alternation(atom)
+}
+
 /// The fewest characters one match of `atom` consumes.
 fn atom_min_len(atom: &RegexAtom) -> usize {
     match atom {
@@ -436,24 +444,34 @@ impl Compiler {
         Ok(())
     }
 
-    /// `x*`, `x+`, `x ** min..max`. A body that can match empty would need
-    /// the walk's zero-width iteration rule (`zero_width_iter_counts`), so
-    /// Slice A declines it. Ratchet is possessive and each iteration commits
-    /// to the body's first candidate, as the walk's ratcheted chain does.
+    /// `x*`, `x+`, `x ** min..max`. Ratchet is possessive and each iteration
+    /// commits to the body's first candidate, as the walk's ratcheted chain
+    /// does. A body that can match empty ends each iteration with a
+    /// `ZeroIter` guard: an iteration that consumed nothing is accepted only
+    /// while `zero_width_iter_counts` says it counts. Rejecting it retries
+    /// the body's other candidates, which is the walk's group DFS
+    /// (`walk_quant_group_candidates`); for the walk's chain, whose iterations
+    /// take the first candidate only, the body is either ratcheted or has a
+    /// single candidate, so the rejection stops the loop there instead.
     fn repeat(
         &mut self,
         token: &RegexToken,
         min: usize,
         max: Option<usize>,
     ) -> Result<(), Decline> {
-        if atom_min_len(&token.atom) == 0 {
-            return Err("nullable-loop");
+        let nullable = atom_min_len(&token.atom) == 0;
+        if nullable && !token.ratchet && !loop_body_backtracks(&token.atom) {
+            // The walk's chain takes an iteration's first candidate only;
+            // mirroring that needs a body with a single candidate.
+            if !is_assertion(&token.atom) {
+                return Err("nullable-loop");
+            }
         }
         let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
         else {
             return Err("too-large");
         };
-        if is_consuming(&token.atom) && !token.frugal {
+        if !nullable && is_consuming(&token.atom) && !token.frugal {
             // A single one-grapheme atom needs no loop: the iterations are
             // scanned up front and given back from a position list.
             let atom = self.atoms.len() as u32;
@@ -488,6 +506,10 @@ impl Compiler {
         let head = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let body = self.pc();
+        let iter_start = nullable.then(|| self.reg());
+        if let Some(r) = iter_start {
+            self.ops.push(RxOp::Mark(r));
+        }
         let iter = token.ratchet.then(|| self.reg());
         if let Some(h) = iter {
             self.ops.push(RxOp::Height(h));
@@ -499,6 +521,14 @@ impl Compiler {
         body_result?;
         if let Some(h) = iter {
             self.ops.push(RxOp::Cut(h));
+        }
+        if let Some(start) = iter_start {
+            self.ops.push(RxOp::ZeroIter {
+                ctr,
+                start,
+                min,
+                max,
+            });
         }
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));
