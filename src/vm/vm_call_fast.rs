@@ -445,16 +445,13 @@ impl Interpreter {
         // sources up the stack collides with lazy-iteration topics.)
         for sym in &cf.code.free_var_writes {
             sym.with_str(|name| {
-                // mutsu#9111: a write through a routine-nested sub's alias
-                // cell is already where it belongs.
+                // A compunit or mainline lexical write already reached its own
+                // cell; it must not overwrite a caller's same-named local.
                 if name != "_"
                     && name != "@_"
                     && name != "%_"
-                    && !self.is_lexsub_alias_write(
-                        fn_name,
-                        (cf.package_sym(), cf.source_file_sym()),
-                        name,
-                    )
+                    && !self.is_unit_lexical_of(&cf.package, name)
+                    && !self.is_mainline_lexical_write(fn_name, cf, name)
                 {
                     self.pending_rw_writeback_sources.push(name.to_string());
                 }

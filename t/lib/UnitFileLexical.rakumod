@@ -7,6 +7,7 @@ my $secret = "module";
 
 sub peek() is export { $secret }
 sub poke($v) is export { $secret = $v }
+sub reset-secret() is export { $secret = "reset" }
 
 # A lazily-initialized lexical: the module writes it from a sub, long after the
 # loading frame declared its own same-named variable (this is Test.rakumod's
