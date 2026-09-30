@@ -166,6 +166,11 @@ differential_case!(
     r#"say ("ab" ~~ / a | ab /).gist; say ("abc" ~~ / [ a | ab ] c /).gist; say ("aaab" ~~ / [ a+ | q ] ab /).gist; say ("foobar" ~~ / foo | foobar | fo /).gist; say ("ab" ~~ / (a) | (a)(b) /).gist; say ("xy" ~~ / $<k>=x | $<k>=xy /).gist; say ("abab" ~~ / [ a | ab ]+ $ /).gist; say ("ab" ~~ / :r [ a | ab ] b /).gist; say ("ab" ~~ / :r [ ab | a ] b /).gist; say "a bb ccc".comb(/ \w ** 2 | \w /).join("|"); say ("ab" ~~ / [ (a) | b ]+ /).gist; say ("abc" ~~ / a [ b | bc ]? /).gist; say ("xyz" ~~ / [ x | xy ] [ yz | z ] /).gist; say ("aab" ~~ / (a) [ $0 b | a ] /).gist; say ("abcd" ~~ / [ [ ab | a ] | abc ] [ cd | d ] /).gist; say ("x" ~~ / ^ [ [ a | b | x ] | y ] $ /).gist"#
 );
 
+differential_case!(
+    lookaround,
+    r#"say ("ab" ~~ / a <?before b> /).gist; say ("ac" ~~ / a <!before b> /).gist; say ("ab" ~~ / <?after a> b /).gist; say ("xb" ~~ / <!after a> b /).gist; say "foo1 bar2 baz".comb(/ \w+ <?before \d> /).join("|"); say "a1b2c3".comb(/ <?after \d> \w /).join("|"); say ("aab" ~~ / a+ <?before b> /).gist; say ("abab" ~~ / <?after ab> ab /).gist; say ("ab" ~~ / a <?before [ b | c ]> /).gist; say ("x" ~~ / <?before x> <!before y> x /).gist; say ("ab" ~~ / :r a <?before b>? b /).gist; say ("aa" ~~ / $<x>=(\w) <?before $<x>> . /).gist"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

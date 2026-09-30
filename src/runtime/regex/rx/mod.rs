@@ -110,8 +110,9 @@ pub(super) enum RxOp {
         nested: bool,
     },
     /// Match `atoms[i]`, whose match reads or writes captures (a
-    /// backreference, a `<(` / `)>` marker), through the walk's own
-    /// single-candidate matcher, and merge the capture delta it returns.
+    /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
+    /// lookaround), through the walk's own single-candidate matcher, and
+    /// merge the capture delta it returns.
     CapAtom(u32),
     /// Apply `toks[tok]`'s `$<name>=` / `$N=` alias over `regs[start]..pos`,
     /// with the positional count at token start in `regs[pos_base]`.

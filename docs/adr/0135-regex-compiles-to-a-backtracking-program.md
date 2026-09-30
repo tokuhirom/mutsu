@@ -450,6 +450,14 @@ captures merge through the `||` path's `AltTail`. Under ratchet, a cut after eac
 to the first branch that matches and to its first end. A numbered alias inside a branch still
 declines (`alt-numbered-alias`), as it does for `||`.
 
+**Slice B, second part: lookahead and lookbehind landed.** A lookaround is a `CapAtom`. The op
+calls the walk's own lookaround test, which matches the body through
+`regex_match_end_from_caps_in_pkg`. That function answers from the body's own compiled program, so
+a lookaround compiles only when its body does. Otherwise the pattern declines with
+`lookaround-body`, and no body drops back to the walk in mid-program (D5). A lookaround body
+therefore runs as a nested `rx_run`. The per-run scratch is now a small pool, so a nested run
+reuses its own warm scratch instead of allocating one per test.
+
 ### Reproducing §2
 
 ```raku
