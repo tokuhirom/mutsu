@@ -1979,6 +1979,19 @@ impl Interpreter {
                         && constraint != "Nil"
                         && self.var_default(&name).is_none()
                     {
+                        if !self.vardecl_context().get() && self.is_definite_constraint(&constraint)
+                        {
+                            let nominal = loan_env!(
+                                self,
+                                nominal_type_object_name_for_constraint(&constraint)
+                            );
+                            let reset_value = Value::package(Symbol::intern(&nominal));
+                            return Err(runtime::utils::definite_type_check_assignment_error(
+                                &name,
+                                &constraint,
+                                &reset_value,
+                            ));
+                        }
                         val = if constraint_from_cell {
                             self.typed_scalar_nil_seed_value_with_base(
                                 &constraint,
