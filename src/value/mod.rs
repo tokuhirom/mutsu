@@ -1542,7 +1542,13 @@ impl SubData {
             }
             for pd in self.param_defs.iter() {
                 if !pd.name.is_empty() {
-                    call_local.insert(Symbol::intern(&pd.name));
+                    let name_sym = Symbol::intern(&pd.name);
+                    call_local.insert(name_sym);
+                    // The parameter's own type-constraint metadata is
+                    // call-local too: it must not be written back over a
+                    // same-named typed lexical in the caller (#9965).
+                    call_local.insert(crate::runtime::meta_ns::MetaNs::Type.key(name_sym));
+                    call_local.insert(crate::runtime::meta_ns::MetaNs::HashKeyType.key(name_sym));
                     if let Some(bare) = pd.name.strip_prefix('^') {
                         call_local.insert(Symbol::intern(bare));
                     } else if let Some(bare) = pd.name.strip_prefix("&^") {
