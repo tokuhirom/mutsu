@@ -730,48 +730,47 @@ impl Interpreter {
                 // `mut`: resolving a class item can dispatch a grammar token, which
                 // now takes `&mut self`, making this an `FnMut`.
                 let mut match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
-                    // The character half is shared with the ADR-0099 Stage 1
-                    // prefilter, which must not hold a second definition of it
-                    // (constraint 1). Only the grammar-token fallback below
-                    // stays here, because it needs the subject and the package.
-                    if composite_item_matches(item, chars_to_check) {
-                        return true;
-                    }
-                    match item {
-                        ClassItem::NamedBuiltin(n) => {
-                            // Fallback: try resolving as a grammar token in the current package.
-                            // This runs once per character checked against the class, so use the
-                            // cheap STATIC resolver (pattern extracted straight from the token def)
-                            // rather than the heavy `with_args` path. Match against the remaining
-                            // input, not a one-character scratch string: a token excluded from a
-                            // class may itself consume multiple characters.
-                            // A non-literal token body is not statically extractable, so fall back to
-                            // evaluating it (empty args) only when the static resolver finds nothing.
-                            if !pkg.is_empty() {
-                                let mut candidates =
-                                    self.resolve_token_patterns_static_in_pkg(n, pkg);
-                                if candidates.is_empty() {
-                                    candidates =
-                                        self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
-                                }
-                                for (sub_pat, sub_pkg, _sym_key) in &candidates {
-                                    if self
-                                        .parse_regex_uncached(sub_pat, RegexParseMode::Match)
-                                        .and_then(|pattern| {
-                                            self.regex_match_end_from_caps_in_pkg(
-                                                &pattern, chars, pos, *sub_pkg,
-                                            )
-                                        })
-                                        .is_some_and(|(end, _)| end > pos)
-                                    {
-                                        return true;
-                                    }
-                                }
-                            }
-                            false
+                    // A named item is a call to the rule of that name, so a
+                    // token the grammar defines replaces the built-in class
+                    // (`token alpha { 'Z' }` makes `<+alpha>` match only `Z`);
+                    // the built-in is what applies when nothing overrides it.
+                    // The character half of that built-in test is shared with
+                    // the ADR-0099 Stage 1 prefilter, which must not hold a
+                    // second definition of it (constraint 1).
+                    let ClassItem::NamedBuiltin(n) = item else {
+                        return composite_item_matches(item, chars_to_check);
+                    };
+                    // This runs once per character checked against the class, so use the
+                    // cheap STATIC resolver (pattern extracted straight from the token def)
+                    // rather than the heavy `with_args` path. Match against the remaining
+                    // input, not a one-character scratch string: a token excluded from a
+                    // class may itself consume multiple characters.
+                    // A non-literal token body is not statically extractable, so fall back to
+                    // evaluating it (empty args) only when the static resolver finds nothing.
+                    let mut candidates = Vec::new();
+                    if !pkg.is_empty() {
+                        candidates = self.resolve_token_patterns_static_in_pkg(n, pkg);
+                        if candidates.is_empty() {
+                            candidates = self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
                         }
-                        _ => false,
                     }
+                    if candidates.is_empty() {
+                        return composite_item_matches(item, chars_to_check);
+                    }
+                    for (sub_pat, sub_pkg, _sym_key) in &candidates {
+                        if self
+                            .parse_regex_uncached(sub_pat, RegexParseMode::Match)
+                            .and_then(|pattern| {
+                                self.regex_match_end_from_caps_in_pkg(
+                                    &pattern, chars, pos, *sub_pkg,
+                                )
+                            })
+                            .is_some_and(|(end, _)| end > pos)
+                        {
+                            return true;
+                        }
+                    }
+                    false
                 };
                 // An empty `positive` means "any character" (a purely-negated
                 // enumerated class like `<-restricted +subrule>` after the
