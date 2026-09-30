@@ -1192,7 +1192,12 @@ impl Compiler {
                 // `use variables :D/:U` adds its implicit smiley to the
                 // declared type before anything below reads it (#9990).
                 let pragma_type_constraint = self
-                    .variables_pragma_constraint(type_constraint.as_deref(), custom_traits)
+                    .variables_pragma_constraint(
+                        name,
+                        *is_our,
+                        type_constraint.as_deref(),
+                        custom_traits,
+                    )
                     .map(Some);
                 let smiley_from_pragma = pragma_type_constraint.is_some();
                 let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);

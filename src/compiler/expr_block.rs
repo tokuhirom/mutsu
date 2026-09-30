@@ -141,7 +141,12 @@ impl Compiler {
             } => {
                 // `use variables :D/:U`'s implicit smiley (#9990).
                 let pragma_type_constraint = self
-                    .variables_pragma_constraint(type_constraint.as_deref(), custom_traits)
+                    .variables_pragma_constraint(
+                        name,
+                        *is_our,
+                        type_constraint.as_deref(),
+                        custom_traits,
+                    )
                     .map(Some);
                 let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);
                 // Record this inline declaration (`(my $x = ...)`, `(state $a)`)

@@ -5,7 +5,7 @@ use Test;
 # declaration — and the pragma is lexical, so it never leaks out of its block
 # or into routines declared elsewhere (e.g. `Test.rakumod`'s own `throws-like`).
 
-plan 14;
+plan 21;
 
 {
     use variables :D;
@@ -60,3 +60,22 @@ sub declared-outside() { my Int $y = 1; $y = Nil; $y }
 
 throws-like 'use variables :D; my Int $a', X::Syntax::Variable::MissingInitializer,
     implicit => ':D by pragma', 'a missing initializer still reports the implicit smiley';
+
+throws-like 'use variables :D; my $x', X::Syntax::Variable::MissingInitializer,
+    implicit => ':D by pragma', 'an untyped scalar also requires an initializer under :D';
+throws-like 'use variables :D; my $x = 1; $x = Nil',
+    X::TypeCheck::Assignment, symbol => '$x',
+    'an untyped scalar retains the implicit :D on later assignment';
+throws-like 'use variables :U; my $x = 1',
+    X::TypeCheck::Assignment, symbol => '$x',
+    'an untyped scalar rejects a definite initializer under :U';
+throws-like 'use variables :D; my @a; @a[0] = Nil',
+    X::TypeCheck::Assignment,
+    'an untyped array constrains its elements under :D';
+throws-like 'use variables :D; my %h; %h<a> = Any',
+    X::TypeCheck::Assignment,
+    'an untyped hash constrains its values under :D';
+is { use variables :U; my $x; $x }(), Any,
+    'an uninitialized untyped scalar remains an Any type object under :U';
+is { use variables :D; my \x := 1; x }(), 1,
+    'the pragma does not add a scalar container constraint to a sigilless binding';
