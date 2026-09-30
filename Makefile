@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -52,9 +52,15 @@ PROVE_JOBS ?= 4
 # test that parses the vendored `Test` module cold (after a rebuild invalidated
 # the precompilation cache) overflowed locally while passing in CI
 # (`named_call_intern_budget`, found by the first `scripts/dev gate` run).
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-bench-det check-prims check-dev
+test: checks
 	@mkdir -p tmp
 	(cargo build --release && RUST_MIN_STACK=8388608 cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+
+# The static guards: no build, seconds in total. `make test` depends on them,
+# and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
+# and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
+# seconds instead of after `make lint` and the release build.
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-bench-det check-prims check-dev
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
