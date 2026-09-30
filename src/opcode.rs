@@ -6572,6 +6572,13 @@ pub(crate) struct CompiledCode {
     /// `logging.rakutest` reported the OUTER task's id for the inner task's
     /// end entry).
     pub(crate) writes_topic: bool,
+    /// This chunk is a routine declared INSIDE another routine's body (`my sub`
+    /// or `sub` within `sub mk { ... }`), so the free variables it writes are
+    /// that routine's own lexicals and their readonly state is whatever the
+    /// routine's frame says when a code object for it is made (see
+    /// `Interpreter::capture_readonly_state`). A top-level routine's free
+    /// variables belong to no running frame. Set by the sub-body compile.
+    pub(crate) declared_in_routine: bool,
     /// Whether this code READS the legacy argument array `@_`.
     ///
     /// This is the one thing that lets a routine accept more positional
@@ -7731,6 +7738,7 @@ impl CompiledCode {
             immutable_topic: false,
             declarator_doc: None,
             writes_topic: false,
+            declared_in_routine: false,
             reads_args_array: false,
             reads_args_hash: false,
             has_env_writes: false,
