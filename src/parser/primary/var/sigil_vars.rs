@@ -147,11 +147,12 @@ fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse an @array variable reference.
-/// `%::{''}`, `$::<x>`, `@::`: a sigil followed by a bare `::` names the
+/// `%::{''}`, `@::`: an array or hash sigil followed by a bare `::` names the
 /// variable with an empty name in the unnamed package, which is never declared
 /// (rakudo: "Variable '%' is not declared"). `input` is the text after the
-/// sigil. `$::x` / `%::("x")` (a leading-`::` qualified name or a symbolic
-/// lookup) are not this.
+/// sigil. `%::x` / `%::("x")` (a leading-`::` qualified name or a symbolic
+/// lookup) are not this, and neither is the scalar `$::<x>`, which mutsu reads
+/// as a root-stash lookup (roast `S02-names-vars/names.t`).
 pub(super) fn empty_package_var_error(sigil: char, input: &str) -> Option<PError> {
     let after = input.strip_prefix("::")?;
     let is_bare = match after.chars().next() {
