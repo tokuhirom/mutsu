@@ -76,10 +76,21 @@ impl Interpreter {
         let Some(plan) = code.sub_decl_plans.get(idx as usize) else {
             return;
         };
+        let sub = plan.name;
         if plan.lexsub_free_aliases.is_empty() {
+            // A same-named sub with no routine-nested free variables (a
+            // mainline block's `my sub reset`) now shadows any routine-nested
+            // one of that name, whose latest-activation cells must not answer
+            // for it: the owner key is only (package, file), so they would
+            // (mutsu#10391).
+            // Cost: O(1) unless a routine-nested sub of this name exists,
+            // then O(c), c = latest-cell entries.
+            if self.lexsub_free_aliases.contains_key(&sub) {
+                crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+                    .retain(|(name, _), _| *name != sub);
+            }
             return;
         }
-        let sub = plan.name;
         let owner = Self::lexsub_plan_owner(plan, compiled_fns);
         for a in &plan.lexsub_free_aliases {
             let Some(cell) = self.lexsub_alias_cell(code, a) else {
