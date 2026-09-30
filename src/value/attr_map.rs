@@ -108,10 +108,9 @@ pub(crate) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
         .unwrap_or(name);
     let (bare, is_private) = if let Some(b) = rest.strip_prefix('!') {
         (b, true)
-    } else if let Some(b) = rest.strip_prefix('.') {
-        (b, false)
     } else {
-        return None;
+        let b = rest.strip_prefix('.')?;
+        (b, false)
     };
     // Attribute names are ordinary identifiers (start alpha/underscore). This
     // filters out `!=`, the bare `!`/`.` special vars, and `__mutsu_` keys.

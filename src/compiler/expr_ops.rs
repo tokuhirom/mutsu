@@ -856,7 +856,7 @@ impl Compiler {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             name.hash(&mut hasher);
             format!("{:?}", left).hash(&mut hasher);
-            format!("{:?}", &right[0]).hash(&mut hasher);
+            format!("{:?}", right[0]).hash(&mut hasher);
             let ff_idx = self.code.emit(OpCode::FlipFlopExpr {
                 lhs_end: 0,
                 rhs_end: 0,

@@ -798,14 +798,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 // unlike the arms above, it must NOT collapse to `Value::NIL`
                 // here, or a genuinely-lazy source would silently sort empty
                 // instead of throwing `X::Cannot::Lazy`.
-                ValueView::LazyList(ll) => match ll.cache.lock().unwrap().clone() {
-                    Some(cached) => {
-                        let mut sorted = cached;
-                        sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                        Value::seq(sorted)
-                    }
-                    None => return None,
-                },
+                ValueView::LazyList(ll) => {
+                    let mut sorted = ll.cache.lock().unwrap().clone()?;
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::seq(sorted)
+                }
                 _ => Value::NIL,
             }))
         }

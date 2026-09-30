@@ -598,13 +598,8 @@ impl Interpreter {
                     }
                 })
                 .or_else(|| {
-                    self.get_env_with_main_alias(&name).and_then(|v| {
-                        if matches!(v.view(), ValueView::Proxy { .. }) {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
+                    self.get_env_with_main_alias(&name)
+                        .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                 });
             if let Some(ValueView::Proxy { storer, .. }) = current_proxy.as_ref().map(Value::view)
                 && !storer.is_nil()

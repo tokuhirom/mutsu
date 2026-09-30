@@ -241,7 +241,7 @@ impl Interpreter {
                 }
                 ValueView::Pair(key, _) => {
                     return Err(RuntimeError::unexpected_adverb(
-                        &[key.to_string()],
+                        std::slice::from_ref(key),
                         "grep",
                         crate::runtime::utils::value_type_name(&target),
                     ));
