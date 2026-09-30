@@ -212,6 +212,23 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        if let Some(found) = self.rx_try_match(pattern, chars, start, pkg) {
+            return found;
+        }
+        self.regex_walk_first_for_diff(pattern, chars, start, pkg)
+    }
+
+    /// The tree walk's first match at `start` — the answer the compiled
+    /// engine is held to under `MUTSU_RX_DIFF` (ADR-0135 D6), and the path
+    /// every pattern it declines takes.
+    pub(super) fn regex_walk_first_for_diff(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+    ) -> Option<(usize, RegexCaptures)> {
         // Only the first (highest-priority / greedy) complete match is needed
         // here, and the depth-first walk discovers it first, so stop as soon as
         // one is found instead of exploring the whole backtracking tree.
@@ -437,7 +454,7 @@ impl Interpreter {
 
     /// Apply a `$<name>=` / `$N=` capture alias for `token` to the store.
     /// `pos_base` is the store's positional length at token start.
-    fn store_apply_named_capture(
+    pub(super) fn store_apply_named_capture(
         store: &mut CapStore,
         token: &RegexToken,
         from: usize,

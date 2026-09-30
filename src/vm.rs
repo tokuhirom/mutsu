@@ -304,6 +304,7 @@ mod vm_smartmatch_ops;
 pub(crate) mod vm_smartmatch_sync;
 pub(crate) mod vm_stack_guard;
 pub(crate) mod vm_stats;
+pub(crate) mod vm_stats_regex_vm;
 pub(crate) mod vm_string_regex_ops;
 mod vm_subscript_invocant_ref;
 pub(crate) mod vm_subst_apply;
