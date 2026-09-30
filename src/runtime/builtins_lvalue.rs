@@ -737,9 +737,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if matches!(class_name.as_str(), "Method" | "Submethod")
-                && !call_args.is_empty() =>
-            {
+            } if matches!(class_name.as_str(), "Method" | "Submethod") && !call_args.is_empty() => {
                 let method = attributes
                     .as_map()
                     .get("name")
