@@ -4136,7 +4136,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     name: name.clone(),
                     default: None,
                     multi_invocant: true,
-                    required: false,
+                    required: is_named,
                     named: is_named,
                     named_alias: false,
                     slurpy: false,

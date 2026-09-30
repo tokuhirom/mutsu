@@ -533,6 +533,11 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     } else {
         p.name.clone()
     };
+    let name = if p.named {
+        name.strip_prefix(':').unwrap_or(&name).to_string()
+    } else {
+        name
+    };
 
     let is_anon_optional = p.name == "__ANON_OPTIONAL__";
     let optional_marker =

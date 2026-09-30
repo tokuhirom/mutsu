@@ -321,31 +321,42 @@ impl Interpreter {
                     if !data.params.is_empty() {
                         data.params
                             .iter()
-                            .map(|name| ParamDef {
-                                type_capture: None,
-                                name: name.clone(),
-                                default: None,
-                                multi_invocant: true,
-                                required: false,
-                                named: false,
-                                named_alias: false,
-                                slurpy: false,
-                                double_slurpy: false,
-                                onearg: false,
-                                sigilless: false,
-                                type_constraint: None,
-                                literal_value: None,
-                                sub_signature: None,
-                                where_constraint: None,
-                                traits: Vec::new(),
-                                optional_marker: false,
-                                outer_sub_signature: None,
-                                code_signature: None,
-                                is_invocant: false,
-                                shape_constraints: None,
-                                block_param: false,
-                                code: Default::default(),
-                                trait_args: Vec::new(),
+                            .map(|name| {
+                                let (sigil, bare) = if name.starts_with(['&', '@', '%']) {
+                                    (&name[..1], &name[1..])
+                                } else {
+                                    ("", name.as_str())
+                                };
+                                let named_name = bare.strip_prefix(':');
+                                let display_name = named_name
+                                    .map(|named| format!("{sigil}{named}"))
+                                    .unwrap_or_else(|| name.clone());
+                                ParamDef {
+                                    type_capture: None,
+                                    name: display_name,
+                                    default: None,
+                                    multi_invocant: true,
+                                    required: named_name.is_some(),
+                                    named: named_name.is_some(),
+                                    named_alias: false,
+                                    slurpy: false,
+                                    double_slurpy: false,
+                                    onearg: false,
+                                    sigilless: false,
+                                    type_constraint: None,
+                                    literal_value: None,
+                                    sub_signature: None,
+                                    where_constraint: None,
+                                    traits: Vec::new(),
+                                    optional_marker: false,
+                                    outer_sub_signature: None,
+                                    code_signature: None,
+                                    is_invocant: false,
+                                    shape_constraints: None,
+                                    block_param: false,
+                                    code: Default::default(),
+                                    trait_args: Vec::new(),
+                                }
                             })
                             .collect()
                     } else {
