@@ -339,7 +339,7 @@ status here.
 
 **Slice 2 follow-up — a routine declared ahead of a nested BEGIN, implemented**
 (`src/runtime/begin_prologue/nested/routines.rs`,
-`t/control/begin-prologue-routines.t`; closes #10329).
+`t/control/begin-prologue-inner-subs.t`; closes #10329).
 
 - **The gap.** An inner scope that had declared a `sub` ahead of a BEGIN
   blocked the lift, because the prologue runs before that scope is entered and

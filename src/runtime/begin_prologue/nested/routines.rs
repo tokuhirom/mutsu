@@ -151,14 +151,22 @@ impl Scan {
             );
             let pseudo_call = CompiledCode::op_callee_name_const_idx(op)
                 .and_then(const_str)
-                .and_then(|name| name.split_once("::").map(|(head, _)| head.to_string()))
-                .is_some_and(|head| crate::runtime::Interpreter::is_pseudo_package_name(&head));
+                .is_some_and(|name| is_pseudo_qualified(crate::symbol::Symbol::intern(&name)));
             self.reflective |= indirect || pseudo_call;
         }
         for nested in &code.closure_compiled_codes {
             self.absorb_ops(nested);
         }
     }
+}
+
+/// Whether a called name is qualified by a pseudo-package (`MY::helper`,
+/// `OUTER::helper`), which names a routine in a scope the bare-name scan does
+/// not look at.
+fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
+    crate::qualified::package_parent(name)
+        .and_then(|pkg| crate::qualified::package_ancestors(pkg).last())
+        .is_some_and(|head| crate::runtime::Interpreter::is_pseudo_package_name(head.as_str()))
 }
 
 /// The name a call spells for a routine a lifted BEGIN can declare again, or
