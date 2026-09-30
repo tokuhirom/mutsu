@@ -413,10 +413,13 @@ complete.
   declines (`separator-backref`), because the walk matches each iteration against the captures
   folded so far. An aliased one declines too (`separator-alias`).
 
-The comparison found one more walk bug, fixed against rakudo: a backreference inside `[ … ]`
-or a `||` branch numbered from the group's own captures. So `/ (a) [ (b) $0 ] /` compared `$0`
-against `b`. The walk now continues the enclosing level's numbering
-(`RegexCaptures::backref_positional`).
+The comparison found two more walk bugs, both fixed against rakudo:
+
+- A backreference inside `[ … ]` or a `||` branch numbered from the group's own captures. So
+  `/ (a) [ (b) $0 ] /` compared `$0` against `b`. The walk now continues the enclosing level's
+  numbering (`RegexCaptures::backref_positional`).
+- `alternation_branch_delta` dropped a `<(` / `)>` marker set inside a `|` or `||` branch, so
+  `/ x [ c || a <( b ] /` matched `xab` instead of `b`.
 
 The same part compiles `@<x>=` and secondary-name aliases, `<?same>` and `<at(N)>`, and
 reports `<~~>` as `recurse-self` instead of `other-atom`. `scripts/rx-decline-survey.sh` now sums

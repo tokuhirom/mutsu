@@ -15,9 +15,13 @@ closed, so the engine journals every change to its stack of levels. A choice poi
 record one journal length. A separated quantifier matches each atom and each separator in its own
 level. At the end it folds them side by side through the same helper the walk uses.
 
-The differential mode (`MUTSU_RX_DIFF=1`) found one more bug in the walk, now fixed to match
-rakudo. A backreference inside `[ … ]` numbered from the group's own captures, so
-`"aba" ~~ / (a) [ (b) $0 ] /` failed. Rakudo matches it, because `$0` is the `a`.
+The differential mode (`MUTSU_RX_DIFF=1`) found two more bugs in the walk, both now fixed to
+match rakudo:
+
+- A backreference inside `[ … ]` numbered from the group's own captures, so
+  `"aba" ~~ / (a) [ (b) $0 ] /` failed. Rakudo matches it, because `$0` is the `a`.
+- A `<(` or `)>` inside an alternation branch was dropped, so `"xab" ~~ / x [ c || a <( b ] /`
+  matched `xab` instead of `b`.
 
 `scripts/rx-decline-survey.sh` is new. It runs all of `t/` and the roast whitelist under
 `MUTSU_VM_STATS=1` and sums the reasons each pattern stayed on the walk. That sum is ADR-0135's

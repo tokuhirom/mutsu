@@ -109,6 +109,15 @@ pub(super) fn alternation_branch_delta(
     new_caps.positional.append(&mut inner_caps.positional);
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
     new_caps.extend_regex_vars(inner_caps.take_regex_vars());
+    // A branch shares the enclosing capture scope, so a `<(` / `)>` marker in
+    // it sets the whole match's boundaries, as in a `[ … ]` group
+    // (`/ x [ c || a <( b ] /` matches `b`).
+    if inner_caps.capture_start.is_some() {
+        new_caps.capture_start = inner_caps.capture_start;
+    }
+    if inner_caps.capture_end.is_some() {
+        new_caps.capture_end = inner_caps.capture_end;
+    }
     new_caps
 }
 

@@ -137,7 +137,7 @@ differential_case!(
 );
 differential_case!(
     capture_markers,
-    r#"say ("foobar" ~~ / foo <( bar )> /).gist; say ("foobar" ~~ / foo <( bar /).gist; say ("foobar" ~~ / foo )> bar /).gist; say "a1 b2".match(/ \w <( \d /, :g).join(","); say ("xab" ~~ / x [ a <( b ] /).gist; say "a-b".subst(/ a <( '-' )> b /, "+")"#
+    r#"say ("foobar" ~~ / foo <( bar )> /).gist; say ("foobar" ~~ / foo <( bar /).gist; say ("foobar" ~~ / foo )> bar /).gist; say "a1 b2".match(/ \w <( \d /, :g).join(","); say ("xab" ~~ / x [ a <( b ] /).gist; say "a-b".subst(/ a <( '-' )> b /, "+"); say ~("xab" ~~ / x [ c || a <( b ] /); say ~("xab" ~~ / [ c || x a )> ] b /)"#
 );
 differential_case!(
     nested_captures,
