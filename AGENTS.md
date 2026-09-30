@@ -150,7 +150,8 @@ work, so free space with the `reclaim-disk` skill and continue.
 ### Before publishing a PR — `scripts/dev gate`
 
 Run **`scripts/dev gate`** and **do not publish until its verdict is `pass`.** It is one job that runs
-`cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
+`make checks` (the build-free static guards: `t/` layout, ratchets, self-tests — first, so they fail in
+seconds), `cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
 writes a structured `report.json` ([ADR-0126](docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md)).
 CI is the net for what you could not foresee, not the way to find out whether your change works.
 While iterating, run only the tests your change touches.

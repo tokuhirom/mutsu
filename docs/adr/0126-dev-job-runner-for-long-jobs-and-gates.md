@@ -213,3 +213,12 @@ the vendored `Test` module cold overflowed only locally. `make test` now sets th
 gate's report named the failing test binary (§2.5), and the next run passed with the four
 container-only roast files classified `known_env` from the data file. A second `gate` on the same
 tree reported the stored result without running anything (§2.4).
+
+### Amendment (2026-09-30): a `checks` stage runs first
+
+The static guards `make test` depends on (`check-t-layout`, the ratchets, the self-tests; now
+collected in the `make checks` target) used to run only as prerequisites of the `test` stage, i.e.
+after `make lint` — minutes of clippy before a misplaced `t/` file was reported. They need no build
+and take well under a minute, so the gate now opens with a blocking `checks` stage (`make -k
+checks`, so one run names every failing guard), ahead of `fmt`. `make test` still depends on
+`checks`, so it stays meaningful on its own; the repeat inside the gate costs seconds.
