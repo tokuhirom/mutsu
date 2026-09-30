@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,53 +26,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.58,
+        "secs": 1.3,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "DateTime.new requires arguments",
         "nok": 0,
-        "ok": 10,
+        "ok": 31,
         "plan": 31,
-        "secs": 12.33,
+        "secs": 8.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-jdf.t",
       "raku": {
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 12.46,
+        "secs": 12.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "eight page template",
-        "nok": 5,
-        "ok": 2,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 33.83,
+        "secs": 40.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-multisig.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.76,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +82,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 32.97,
+        "secs": 43.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,30 +92,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.77,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "page name is \"Blank Page\"",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 6.84,
+        "secs": 9.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/04-blank.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.61,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,13 +126,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "host": "linux-x86_64",
+    "mutsu_commit": "4d569cd2",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -143,13 +140,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RI/PRINTING_JDF/55125bca0d5421192f952b18e4f84bbdc7ed87a7.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 44,
     "baseline_files": 5,
-    "mutsu_assertions": 17,
-    "parity_files": 2,
-    "regressed_files": 3
+    "mutsu_assertions": 44,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.1.3"
 }
