@@ -165,7 +165,12 @@ impl Interpreter {
             }
             ValueView::Mixin(inner, mixins) => {
                 if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
-                    return Ok(Value::package(Symbol::intern(&allo)));
+                    // A bare allomorph is its allomorph type; one with a role
+                    // mixed in (`<42> but R`) is the composed `IntStr+{R}`
+                    // like any other role mixin below.
+                    if !crate::value::types::has_role_composition(mixins) {
+                        return Ok(Value::package(Symbol::intern(&allo)));
+                    }
                 }
                 // A role-mixed value's `.WHAT` is a distinct anonymous type
                 // object per (base type, role set, role type-arguments)
