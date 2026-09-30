@@ -363,7 +363,7 @@ impl Interpreter {
     /// environment variables as an ordinary regex match. The `$/` Match is
     /// enough for interpolation and subscripting, but direct reads such as
     /// `~$0` use the numbered environment entry itself.
-    fn publish_subst_capture_env(&mut self, slash: &Value) {
+    pub(crate) fn publish_subst_capture_env(&mut self, slash: &Value) {
         let match_obj = if slash.is_match_instance() {
             Some(slash.clone())
         } else {

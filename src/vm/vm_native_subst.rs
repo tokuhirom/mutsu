@@ -202,11 +202,14 @@ impl Interpreter {
                 .iter()
                 .map(|(start, end, caps)| make_match(*start, *end, caps))
                 .collect();
-            self.env_mut().insert("/".to_string(), Value::array(list));
+            let slash = Value::array(list);
+            self.env_mut().insert("/".to_string(), slash.clone());
+            self.publish_subst_capture_env(&slash);
         } else {
             let (start, end, caps) = &matches[0];
-            self.env_mut()
-                .insert("/".to_string(), make_match(*start, *end, caps));
+            let slash = make_match(*start, *end, caps);
+            self.env_mut().insert("/".to_string(), slash.clone());
+            self.publish_subst_capture_env(&slash);
         }
 
         Ok(Value::str(result))
