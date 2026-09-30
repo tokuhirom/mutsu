@@ -476,6 +476,40 @@ fn try_consume_quantifier(
 /// `<?:!Letter>` is the positive assertion of the *negated* property, and
 /// `<!:!Letter>` negates that again ("there is a character here and it IS a
 /// letter"). Returns the bare property name and whether the inner `!` was present.
+/// One branch of a top-level `|` / `||` / `&` / `&&`, with the inline adverbs
+/// in effect for the whole regex (`:i`, `:s`, `:ratchet`) put back in front of
+/// it, ready to be parsed on its own.
+///
+/// Each branch is parsed as a pattern of its own, so an adverb the enclosing
+/// regex consumed before the split is gone unless it is re-applied here:
+/// `/ :s a b & a b /` would otherwise match its second branch without the
+/// whitespace matchers sigspace adds, and `/ :r \w+ & xy /` would let `\w+`
+/// backtrack to `xy` instead of taking `xyz` possessively. Alternation and
+/// conjunction share this so the two cannot drift.
+// Cost: O(b), b = length of the branch.
+fn branch_with_inline_adverbs(
+    branch: &str,
+    ignore_case: bool,
+    sigspace: bool,
+    ratchet: bool,
+) -> String {
+    let mut pattern = branch.to_string();
+    if ignore_case && !branch.starts_with(":i") {
+        pattern = format!(":i {}", pattern);
+    }
+    if sigspace {
+        pattern = format!(":s {}", pattern);
+    }
+    if ratchet {
+        // `:ratchet` is scoped to the whole regex, so it must reach every
+        // top-level branch -- `token TOP { 'z' | \d+ \d }` is as possessive as
+        // `token TOP { \d+ \d }`. Losing it here also let an ordered
+        // alternation inside such a branch backtrack into its later branches.
+        pattern = format!(":ratchet {}", pattern);
+    }
+    pattern
+}
+
 fn strip_inner_prop_negation(prop: &str) -> (&str, bool) {
     match prop.strip_prefix('!') {
         Some(rest) => (rest, true),
@@ -1247,21 +1281,7 @@ impl Interpreter {
                 // (ignore-case) and `:s` (sigspace) must propagate to the
                 // re-parsed sub-pattern, otherwise an alternative like `(a) (b)`
                 // loses its sigspace whitespace matchers and fails to match.
-                let mut alt_pat = alt_src.to_string();
-                if ignore_case && !alt_src.starts_with(":i") {
-                    alt_pat = format!(":i {}", alt_pat);
-                }
-                if sigspace {
-                    alt_pat = format!(":s {}", alt_pat);
-                }
-                if ratchet {
-                    // `:ratchet` is scoped to the whole regex, so it must reach a
-                    // top-level `|` / `||` alternative too — `token TOP { 'z' |
-                    // \d+ \d }` is as possessive as `token TOP { \d+ \d }`.
-                    // Losing it here also let an ordered alternation inside such
-                    // an alternative backtrack into its later branches.
-                    alt_pat = format!(":ratchet {}", alt_pat);
-                }
+                let alt_pat = branch_with_inline_adverbs(alt_src, ignore_case, sigspace, ratchet);
                 if let Some(p) = self.parse_regex_with_mode(&alt_pat, mode) {
                     alt_patterns.push(p);
                 }
@@ -1318,11 +1338,7 @@ impl Interpreter {
                 if regex_branch_is_blank(part_src) {
                     continue;
                 }
-                let part_pat = if ignore_case && !part_src.starts_with(":i") {
-                    format!(":i {}", part_src)
-                } else {
-                    part_src.to_string()
-                };
+                let part_pat = branch_with_inline_adverbs(part_src, ignore_case, sigspace, ratchet);
                 if let Some(p) = self.parse_regex_with_mode(&part_pat, mode) {
                     conj_patterns.push(p);
                 }
@@ -1336,7 +1352,9 @@ impl Interpreter {
                         hash_capture: None,
                         secondary_named_capture: None,
                         force_list_capture: false,
-                        ratchet: false,
+                        // As for a whole-pattern alternation, a conjunction in a
+                        // ratcheted regex is itself ratcheted.
+                        ratchet,
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
