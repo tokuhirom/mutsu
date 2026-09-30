@@ -22,7 +22,10 @@ then, transitively, whatever those routines read and call. A routine sees only t
 preceded its own declaration, and the block for each scope nests as the scopes do, so shadowing
 comes out as it does in place. A body that can reach a name dynamically (`EVAL`, `CALLER::`,
 symbolic lookup) in a scope that declares routines still keeps the old handling, since it cannot say
-which ones it needs.
+which ones it needs. So does a body that calls a routine which is neither one of the scope's nor a
+core one: an imported routine such as `throws-like 'lightning()', ...` evaluates its string where it
+was called from, so `lightning` is reached by a name the BEGIN never spells
+(`roast/S06-advanced/stub.t`).
 
 Still not lifted, because the prologue cannot reproduce them yet: a type, package, import or
 `my &code` declared ahead of the BEGIN (#10394), and a `multi`, `our sub`, operator or exported

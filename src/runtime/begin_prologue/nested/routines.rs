@@ -15,7 +15,9 @@
 //! The routines to copy are found by scanning the compiled body, then every
 //! routine that scan selects, for the names they call and the variables they
 //! read. A body that can reach a name dynamically cannot be scanned, so it is
-//! not lifted from a scope that declares routines.
+//! not lifted from a scope that declares routines. Nor is one that calls a
+//! routine it does not know, since that routine may evaluate a string where it
+//! was called from.
 
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
@@ -85,7 +87,7 @@ pub(super) struct Scope {
 pub(super) struct Scan {
     /// The free variables, read or written.
     free: Vec<crate::symbol::Symbol>,
-    /// The routines called by bare name, or read as `&name`.
+    /// The routines called, qualified or not, or read as `&name`.
     callees: HashSet<crate::symbol::Symbol>,
     /// The code can reach a name dynamically (`EVAL`, `CALLER::`, symbolic
     /// lookup), which neither of the sets above can bound.
@@ -121,12 +123,11 @@ impl Scan {
         }
     }
 
-    /// The routine names one chunk refers to: a bare call (`f(...)`) and a
+    /// The routine names one chunk refers to: a call (`f(...)`) and a
     /// code-variable read (`&f`, `&f(...)`, `&f.()`). The compiler lists the
     /// latter among the free variables only when an enclosing scope declares
     /// `&f` as a variable, which a routine is not.
     fn absorb_code(&mut self, code: &CompiledCode) {
-        self.callees.extend(code.bare_callee_names());
         self.reflective |= code.needs_reflective_capture;
         self.absorb_ops(code);
     }
@@ -137,27 +138,37 @@ impl Scan {
             _ => None,
         };
         for op in &code.ops {
-            if let Some(name) = CompiledCode::op_code_var_read_const_idx(op).and_then(const_str) {
-                self.callees.insert(crate::symbol::Symbol::intern(&name));
+            let read = CompiledCode::op_code_var_read_const_idx(op);
+            let called = CompiledCode::op_callee_name_const_idx(op);
+            for name in read.into_iter().chain(called).filter_map(const_str) {
+                let name = crate::symbol::Symbol::intern(&name);
+                // A call qualified by a pseudo-package (`MY::helper()`) names a
+                // routine in a scope the called-name scan does not look at.
+                self.reflective |= is_pseudo_qualified(name);
+                self.callees.insert(name);
             }
-            // `::($name)` finds a routine as readily as a type, and a call
-            // qualified by a pseudo-package (`MY::helper()`) names one in a
-            // scope the bare-name scan does not look at. Neither is a name the
-            // scan can list.
-            let indirect = matches!(
+            // `::($name)` finds a routine as readily as a type, which no scan
+            // of the names in the code can list.
+            self.reflective |= matches!(
                 op,
                 crate::opcode::OpCode::IndirectTypeLookup
                     | crate::opcode::OpCode::IndirectTypeLookupStore
             );
-            let pseudo_call = CompiledCode::op_callee_name_const_idx(op)
-                .and_then(const_str)
-                .is_some_and(|name| is_pseudo_qualified(crate::symbol::Symbol::intern(&name)));
-            self.reflective |= indirect || pseudo_call;
         }
         for nested in &code.closure_compiled_codes {
             self.absorb_ops(nested);
         }
     }
+}
+
+/// Whether a called routine is one of the core routines, which run no code the
+/// program wrote and so cannot look a name up in the scope that calls them.
+/// Any other routine might: an imported one (`throws-like 'helper()'`) or a
+/// unit's own (`sub run-it($code) { EVAL $code }`) evaluates its argument where
+/// it was called from.
+fn is_core_routine(name: crate::symbol::Symbol) -> bool {
+    !crate::qualified::is_qualified(name)
+        && crate::runtime::Interpreter::is_builtin_function(name.as_str())
 }
 
 /// Whether a called name is qualified by a pseudo-package (`MY::helper`,
@@ -228,7 +239,9 @@ impl Walker<'_> {
     pub(super) fn resolve_dependencies(&self, body: &[Stmt]) -> Option<Dependencies> {
         let mut deps = Dependencies::default();
         // A name reached by `EVAL` or a symbolic lookup could be any routine in
-        // scope, so a body that does that cannot say which ones it needs.
+        // scope, so a body that does that cannot say which ones it needs. Nor
+        // can one that calls a routine it does not know: that routine may
+        // evaluate a string it is given where it was called from.
         let routines_in_scope = self.frames.iter().any(|f| !f.routines.is_empty());
         // The body sees every scope; a routine sees the ones it was declared in,
         // up to its own position.
@@ -241,7 +254,11 @@ impl Walker<'_> {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
             }
             for callee in &scan.callees {
-                self.resolve_callee(&callee.resolve(), scope, &mut deps, &mut pending);
+                let selected =
+                    self.resolve_callee(&callee.resolve(), scope, &mut deps, &mut pending);
+                if !selected && routines_in_scope && !is_core_routine(*callee) {
+                    return None;
+                }
             }
         }
         Some(deps)

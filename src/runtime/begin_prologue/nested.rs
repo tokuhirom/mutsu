@@ -39,8 +39,10 @@
 //!   import, a code variable, or a routine that is not a plain `sub` (a
 //!   `multi`, an `our sub`, an operator, an exported one), which the prologue
 //!   cannot reproduce yet;
-//! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup) in a
-//!   scope that declares a routine, since it cannot say which one it needs;
+//! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup), or
+//!   calls a routine that is neither one of the scope's nor a core one (which
+//!   may evaluate a string where it was called from), in a scope that declares
+//!   a routine, since it cannot say which one it needs;
 //! - it sits in a package body;
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);

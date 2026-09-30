@@ -367,7 +367,15 @@ status here.
   qualified call (`MY::helper()`) and `::($name)` can name any routine in
   scope. A body that uses one in a scope that declares a routine keeps its
   pre-ADR handling, as before. Lifting it instead would fail at startup, where
-  the old handling was silent.
+  the old handling was silent. So does a body that calls a routine which is
+  neither one of the scope's (copied) nor a core one
+  (`Interpreter::is_builtin_function`): an imported or unit-level routine may
+  evaluate a string where it was called from, and `BEGIN throws-like
+  'lightning()', ...` names `lightning` only inside that string
+  (`roast/S06-advanced/stub.t`). The scan sees the callee names in the body and
+  in every copied routine, qualified ones included. It cannot see through a
+  callee, which is why the rule is about what may be called, and stays in force
+  only in a scope that declares a routine (a scope with none is unchanged).
 - **Still not lifted.** A type, package, import or `my &code` declared ahead,
   because the body's references to a type cannot be listed soundly from the
   compiled code: `::($name)` and a parameter's type constraint do not reach the

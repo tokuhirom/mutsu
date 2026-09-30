@@ -6,7 +6,7 @@ use Test;
 # routine, which at that time holds the static state of the variables it closes
 # over.
 
-plan 15;
+BEGIN plan 16;
 
 my @log;
 
@@ -71,3 +71,13 @@ my $run-time;
 sub run-time-call { sub helper { 'run' }; helper() }
 $run-time = run-time-call();
 is $run-time, 'run', 'the routine is still declared when its scope runs';
+
+# A routine that is not a core one may evaluate a string where it was called
+# from, so a BEGIN that hands it code (`throws-like 'stubbed()'`) can reach a
+# routine declared ahead of it by a name the BEGIN itself never spells. Such a
+# BEGIN is not lifted, and runs where the scope does.
+{
+    sub stubbed {...}
+    BEGIN throws-like 'stubbed()', X::StubCode,
+        'a BEGIN that hands code to another routine still sees the routine declared ahead';
+}
