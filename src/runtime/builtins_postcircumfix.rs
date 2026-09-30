@@ -1,5 +1,13 @@
 use super::*;
 
+/// Whether `name` is one of the subscript adverbs CORE's `postcircumfix`
+/// candidates take (`:k :v :kv :p :exists :delete`); any other name is an
+/// unexpected adverb, reported as `X::Adverb` or `X::Multi::NoMatch`.
+// Cost: O(1).
+fn is_builtin_subscript_adverb(name: &str) -> bool {
+    matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete")
+}
+
 impl Interpreter {
     /// The CORE `postcircumfix:<[ ]>` / `postcircumfix:<{ }>` routines.
     ///
@@ -83,11 +91,15 @@ impl Interpreter {
 
     /// The adverb-bearing call shapes of `postcircumfix:<[ ]>`/`<{ }>`
     /// (`postcircumfix:<[ ]>(@a, 1, :exists)`), mirroring what `@a[1]:exists`
-    /// lowers to at the opcode level. Only a single index and a single
-    /// recognized adverb are handled -- anything else (an unrecognized
-    /// adverb name such as `:nonesuch`, or more than one adverb at once) has
-    /// no matching CORE candidate, so it raises the same `X::Multi::NoMatch`
-    /// a genuine multi-dispatch miss would.
+    /// lowers to at the opcode level. A single index with a single built-in
+    /// adverb is answered here. A call carrying an adverb that is not a
+    /// built-in subscript adverb (`:nonesuch`) is classified exactly as the
+    /// syntax form `@a[0,1]:nonesuch` is, by
+    /// [`Interpreter::builtin_subscript_named_adverbs`]: a slice or an
+    /// associative subscript raises `X::Adverb`, a single positional element
+    /// `X::Multi::NoMatch`. Any other shape (several built-in adverbs, more
+    /// than one index) has no matching CORE candidate, so it raises the same
+    /// `X::Multi::NoMatch` a genuine multi-dispatch miss would.
     #[allow(clippy::too_many_arguments)]
     fn postcircumfix_subscript_adverb(
         &mut self,
@@ -98,6 +110,51 @@ impl Interpreter {
         raw_args: &[Value],
         is_positional: bool,
     ) -> Result<Value, RuntimeError> {
+        if adverbs
+            .iter()
+            .any(|(name, _)| !is_builtin_subscript_adverb(name))
+        {
+            // One positional is the zen slice (`postcircumfix:<[ ]>(@a, :foo)`),
+            // two are the ordinary subscript; more than one index has no
+            // candidate at all (`X::Multi::NoMatch`).
+            let (index, zen) = match positional {
+                [_] => (Value::NIL, true),
+                [_, index] => (index.clone(), false),
+                _ => return Err(self.multi_no_match_error(op, raw_args)),
+            };
+            let shape = match (is_positional, zen) {
+                (true, false) => "[ ]",
+                (true, true) => "[ ] zen",
+                (false, false) => "{ }",
+                (false, true) => "{ } zen",
+            };
+            // The variable the container was declared as (`@a` / `%h`), for the
+            // report's `.source`; an anonymous container is the bare sigil, as
+            // in `array_slot_ref` (ADR-0064).
+            let source = match target.view() {
+                ValueView::Array(data, _) => data
+                    .descriptor_name
+                    .as_deref()
+                    .filter(|n| n.starts_with('@'))
+                    .unwrap_or("@")
+                    .to_string(),
+                ValueView::Hash(data) => data
+                    .descriptor_name
+                    .as_deref()
+                    .filter(|n| n.starts_with('%'))
+                    .unwrap_or("%")
+                    .to_string(),
+                _ => String::new(),
+            };
+            let mut args = vec![target, index, Value::str(source), Value::str_from(shape)];
+            args.extend(
+                raw_args
+                    .iter()
+                    .filter(|a| matches!(a.view(), ValueView::Pair(..)))
+                    .cloned(),
+            );
+            return self.builtin_subscript_named_adverbs(&args);
+        }
         let ([_, index], [(key, val)]) = (positional, adverbs) else {
             return Err(self.multi_no_match_error(op, raw_args));
         };
@@ -133,6 +190,8 @@ impl Interpreter {
                 let value = self.core_subscript(target, index.clone(), is_positional)?;
                 Ok(Value::value_pair(index, value))
             }
+            // Only a built-in adverb reaches this match (an unknown one was
+            // classified above), so this arm is the lone-adverb-name guard.
             _ => Err(self.multi_no_match_error(op, raw_args)),
         }
     }
@@ -187,7 +246,7 @@ impl Interpreter {
             let ValueView::Pair(name, value) = adverb.view() else {
                 continue;
             };
-            if matches!(name.as_str(), "k" | "v" | "kv" | "p" | "exists" | "delete") {
+            if is_builtin_subscript_adverb(name) {
                 // A built-in adverb is reported the way it was passed: `:!k`
                 // (or `:k(0)`) is `!k`.
                 nogo.push(if value.truthy() {
