@@ -23,7 +23,11 @@ impl Interpreter {
             // yields that parent's subtree directly (`[X, [Any, [Mu]]]`); multiple
             // direct parents yield a List of subtrees
             // (`([P1, ...], [P2, ...])`). `:all` does not change the tree.
-            let parents = self.tree_effective_parents(&class_name);
+            let parents = if Self::is_role_mixed_type(&args[0]) {
+                vec![class_name.clone()]
+            } else {
+                self.tree_effective_parents(&class_name)
+            };
             let subtrees: Vec<Value> = parents.iter().map(|p| self.parent_node_tree(p)).collect();
             return Ok(match subtrees.len() {
                 1 => subtrees.into_iter().next().unwrap(),
@@ -46,7 +50,9 @@ impl Interpreter {
                 .into_iter()
                 .filter(|p| !self.parent_is_role(p))
                 .collect();
-            let locals = if registered.is_empty() {
+            let locals = if Self::is_role_mixed_type(&args[0]) {
+                vec![class_name.clone()]
+            } else if registered.is_empty() {
                 mro.iter()
                     .skip(1)
                     .find(|p| *p != &class_name && !self.parent_is_role(p))

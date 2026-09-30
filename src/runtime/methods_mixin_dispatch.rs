@@ -622,6 +622,15 @@ impl Interpreter {
                 super::methods_signature_errors::make_multi_no_match_error(method),
             ));
         }
+        if method == "Str"
+            && args.is_empty()
+            && matches!(inner.as_ref().view(), ValueView::Package(_))
+        {
+            return Some(
+                self.dispatch_caret_name(target)
+                    .map(|name| Value::str(format!("({})", name.to_string_value()))),
+            );
+        }
         // The native base implementation of `.gist` stringifies through the
         // invocant's virtual `.Str`. Keep that dispatch on the Mixin wrapper:
         // delegating `.gist` straight to `inner` would skip a `method Str`
