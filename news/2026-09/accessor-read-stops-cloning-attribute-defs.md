@@ -14,5 +14,6 @@ just to miss in maps that are almost always empty: the `is DEPRECATED`
 accessor table (two allocations per accessor read) and the method wrap-chain
 table (two per method call). Both now return early on an empty map.
 
-`bench-class` (callgrind, profiling build, warm cache): 649,081 → 491,xxx
-allocations.
+`bench-class` (callgrind, profiling build, warm cache, paired A/B): allocations
+649,081 → 469,081 (-27.7%), instructions 919.1M → 841.1M (-8.5%) — below the
+pre-regression 575k.
