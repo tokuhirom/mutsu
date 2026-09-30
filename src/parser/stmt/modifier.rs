@@ -333,11 +333,18 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
             expr_ends_with_block(value)
         }
+        // `$x //= do if COND { ... } else { ... }` / `$!a = do { ... }` in
+        // expression form (HTTP::UserAgent's `get-proxy`).
+        Expr::CompoundAssign { rhs, .. } => expr_ends_with_block(rhs),
+        Expr::AssignExpr { expr, .. } => expr_ends_with_block(expr),
         // A pair whose value is a block closes the line with that block's `}`:
         // `@a.push: $key => { ... }` followed by a newline and `if COND -> $x {`
         // is two statements, exactly like a direct block argument (Commands'
         // `extended-help-from-hash`).
         Expr::PositionalPair(inner) => expr_ends_with_block(inner),
+        // `COND ?? A !! do { ... }` ends the line with the else branch's `}`
+        // (zef's `Zef::Client` install phase).
+        Expr::Ternary { else_expr, .. } => expr_ends_with_block(else_expr),
         Expr::Binary {
             op: TokenKind::FatArrow,
             right,
@@ -386,6 +393,21 @@ pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
         // the condition's own regex referenced it (`<NAME>` then fell back to a
         // method call on Match). Pinned by `t/regex-decl-stmt-terminator.t`.
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => true,
+        // A statement-level call whose last argument ends in a block
+        // (`subtest 'x' => { ... }`, `say $k => { ... }`): the same boundary as
+        // the expression-call form above. Without it the next line's
+        // `if COND { ... }` became a modifier and its block a stray term.
+        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
+            args.last().is_some_and(expr_ends_with_block)
+        }
+        Stmt::Call { args, .. } => match args.last() {
+            Some(
+                crate::ast::CallArg::Positional(e)
+                | crate::ast::CallArg::Slip(e)
+                | crate::ast::CallArg::Named { value: Some(e), .. },
+            ) => expr_ends_with_block(e),
+            _ => false,
+        },
         _ => false,
     }
 }

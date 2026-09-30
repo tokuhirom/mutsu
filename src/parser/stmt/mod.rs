@@ -313,6 +313,7 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
             }
         }
     };
+    let result = result.and_then(|(rest, stmt)| routine_decl_modifier(rest, stmt));
     if let Ok((rest, stmt)) = &result {
         crate::parser::decl_doc::attach_stmt(input, rest, stmt);
     }
@@ -322,6 +323,24 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().insert(stmt_memo_key(input), minted));
     }
     result
+}
+
+/// `sub a() { } given 3`: a statement modifier on the same line as a routine
+/// declaration. The declaration itself is compile-time and happens anyway; the
+/// modifier only governs evaluating the statement's (sunk) value, so its
+/// condition or topic still runs. Left unparsed, the modifier keyword became a
+/// statement of its own (#10257).
+fn routine_decl_modifier(rest: &str, stmt: Stmt) -> PResult<'_, Stmt> {
+    if !matches!(stmt, Stmt::SubDecl { .. }) {
+        return Ok((rest, stmt));
+    }
+    let (r_ws, _) = ws(rest)?;
+    if rest[..rest.len() - r_ws.len()].contains('\n') || !is_stmt_modifier_keyword(r_ws) {
+        return Ok((rest, stmt));
+    }
+    let nil = Stmt::Expr(crate::ast::Expr::Literal(crate::value::Value::NIL));
+    let (r, modified) = parse_statement_modifier(rest, nil)?;
+    Ok((r, Stmt::SyntheticBlock(vec![stmt, modified])))
 }
 
 /// Parse a full program (sequence of statements).

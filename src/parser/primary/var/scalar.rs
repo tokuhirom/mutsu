@@ -172,6 +172,17 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             };
             return Ok((rest, Expr::Itemize(Box::new(inner))));
         }
+        // `$@` / `$%`: the item contextualizer over an anonymous array/hash
+        // (rakudo: `say $@` prints `[]`). Reading `$` alone left the `@` as a
+        // second term.
+        if twigil.is_empty() && !rest.starts_with(is_raku_identifier_start) {
+            let (rest, inner) = if sigil == "@" {
+                super::sigil_vars::array_var(input)?
+            } else {
+                super::sigil_vars::hash_var(input)?
+            };
+            return Ok((rest, Expr::Itemize(Box::new(inner))));
+        }
     }
     // Handle nested scalar dereference syntax ($$x / $&f) by parsing the
     // inner variable term. This keeps '$' from being misparsed as an

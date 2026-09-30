@@ -13,7 +13,7 @@ grammar G {
     token TOP { <element> { make $/.values[0].ast; } }
     token element { \d+ { make $/.Str.Int } }
 }
-is G.parse("42").ast, 42, '$/.values[0].ast carries the child rule''s made value';
+is G.parse("42").ast, 42, '$/.values[0].ast carries the child rule\'s made value';
 
 grammar H {
     token TOP { <element> { make $/<element>.ast; } }

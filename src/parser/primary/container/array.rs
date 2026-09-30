@@ -88,6 +88,20 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             rest = r;
         } else {
             let (r, _) = ws(r)?;
+            // Space-separated colonpairs form a list without commas, as in a
+            // parenthesized list: `[:a :b]`.
+            if matches!(
+                items.last(),
+                Some(Expr::Binary {
+                    op: TokenKind::FatArrow,
+                    ..
+                })
+            ) && let Some((r, pair)) = super::colonpair_run_item(r, ']')
+            {
+                items.push(pair);
+                rest = r;
+                continue;
+            }
             if let Ok((r, _)) = parse_char(r, ']') {
                 return Ok((
                     r,
@@ -122,6 +136,9 @@ fn empty_array_section() -> Vec<Expr> {
 /// inline modifier a parenthesized list already accepts; without it the trailing
 /// `for`/`if` reads as a second term ("Two terms in a row" / "couldn't find final ']'").
 fn parse_array_element(input: &str) -> PResult<'_, Expr> {
+    if let Some(item) = super::colonpair_run_item(input, ']') {
+        return Ok(item);
+    }
     let (rest, expr) = expression(input)?;
     let (after_ws, _) = ws(rest)?;
     if let Some(result) =

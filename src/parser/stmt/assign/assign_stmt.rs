@@ -405,6 +405,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // Mutating method call: $x.=method or $x .= method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
+        let name_for_seed = name.clone();
         let var_expr = if sigil == b'@' {
             Expr::ArrayVar(var)
         } else if sigil == b'%' {
@@ -456,6 +457,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     target_is_sigilless: false,
                 }
             };
+            let (r_final, stmt) =
+                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+                    r_final,
+                    stmt,
+                    crate::parser::stmt::word_logical_split::seed_read_expr(&name_for_seed),
+                )?;
             return parse_statement_modifier(r_final, stmt);
         }
         let (r, method_name) = take_while1(stripped, |c: char| {
@@ -540,6 +547,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 target_is_sigilless: false,
             }
         };
+        // `$x .= new: ... andthen ...` is `($x .= new(...)) andthen ...`.
+        let (r, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+            r,
+            stmt,
+            crate::parser::stmt::word_logical_split::seed_read_expr(&name_for_seed),
+        )?;
         return parse_statement_modifier(r, stmt);
     }
 
