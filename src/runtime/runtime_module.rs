@@ -104,8 +104,13 @@ impl Interpreter {
         };
         self.imported_env_aliases
             .insert(key_sym, Symbol::intern(&display));
+        // A block's import over a name an enclosing import already bound
+        // shadows that binding, and its scope exit puts it back (`use M :t;
+        // { use M } t`). Only an import visible when the scope opened counts:
+        // an alias a BEGIN-time preload left in `env` is not one.
         if let Some(top) = self.import_scope_stack.last_mut()
             && top.imported_env_keys.insert(key_sym)
+            && top.imported_env_aliases.contains_key(&key_sym)
             && let Some(previous) = self.env.get_sym(key_sym)
         {
             top.shadowed_env_values.insert(key_sym, previous.clone());
