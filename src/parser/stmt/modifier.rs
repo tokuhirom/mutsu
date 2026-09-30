@@ -338,6 +338,9 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         // is two statements, exactly like a direct block argument (Commands'
         // `extended-help-from-hash`).
         Expr::PositionalPair(inner) => expr_ends_with_block(inner),
+        // `COND ?? A !! do { ... }` ends the line with the else branch's `}`
+        // (zef's `Zef::Client` install phase).
+        Expr::Ternary { else_expr, .. } => expr_ends_with_block(else_expr),
         Expr::Binary {
             op: TokenKind::FatArrow,
             right,
