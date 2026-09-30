@@ -615,6 +615,19 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
             doc: Default::default(),
         };
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, block_expr)?;
+        // Anything but a statement end or modifier on the same line continues
+        // the expression (`{ 42 }() orelse ...`): the call result is an infix
+        // operand. Let `simple::expr_stmt` parse the whole expression rather
+        // than stopping here and leaving the operator as a stray statement
+        // (#10257).
+        let (after_ws, _) = ws(rest)?;
+        if !rest[..rest.len() - after_ws.len()].contains('\n')
+            && !after_ws.is_empty()
+            && !after_ws.starts_with([';', '}', ')', ','])
+            && !is_stmt_modifier_keyword(after_ws)
+        {
+            return Err(PError::expected("statement (block call is an infix operand)"));
+        }
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
     // An infix operator immediately follows, on the same line: `{ ... }` is

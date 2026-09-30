@@ -2,6 +2,13 @@ use super::*;
 
 /// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
 pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, left) = structural_comparison_expr_mode(input, mode)?;
+    comparison_tail(rest, left, mode)
+}
+
+/// The comparison operators (if any) that follow an already-parsed `left`
+/// operand.
+fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
     fn regex_rhs_needs_more_parsing(rest: &str) -> bool {
         let Ok((rest, _)) = ws(rest) else {
             return false;
@@ -15,7 +22,6 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             || parse_junction_infix_op(rest).is_some()
     }
 
-    let (rest, mut left) = structural_comparison_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
     // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
     if r.starts_with("=~") && !r.starts_with("=~=") && !r.starts_with("=:=") {
@@ -367,9 +373,12 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
         // When the smartmatch RHS is a regex literal, do not chain with
         // subsequent comparison operators.  The regex literal terminates the
-        // smartmatch and the following operator applies to the match result.
+        // smartmatch and the following operator applies to the match result:
+        // `X ~~ /pat/ eq Z` is `(X ~~ /pat/) eq Z`. Carry on with the match as
+        // the new left operand — stopping here left `eq Z` behind as a stray
+        // statement (#10257).
         if rhs_is_regex_lit {
-            return Ok((r, make_chain_cmp(left, op.token_kind(), right, false)));
+            return comparison_tail(r, make_chain_cmp(left, op.token_kind(), right, false), mode);
         }
         let mut operands = vec![left, right];
         let mut chain_ops: Vec<(TokenKind, bool)> = vec![(op.token_kind(), false)];
