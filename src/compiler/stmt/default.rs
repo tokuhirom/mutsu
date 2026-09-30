@@ -15,8 +15,11 @@ impl Compiler {
     ) {
         self.compile_expr(&Expr::ArrayLiteral(Vec::new()));
         self.code.emit(OpCode::MarkVarDeclContext);
+        // `SetLocal` consumes the value it stores, so nothing is left to pop:
+        // a `Pop` here discarded whatever an enclosing expression had already
+        // pushed (`10 + do { my @a is default(1) = 1; 5 }`, `@r[0] = my @a is
+        // default(1) = ...`).
         self.code.emit(OpCode::SetLocal(slot));
-        self.code.emit(OpCode::Pop);
         if let Some(arg) = default_trait_expr {
             let escaping = Self::is_closure_literal_arg(arg);
             self.with_escape(escaping, |s| s.compile_expr(arg));

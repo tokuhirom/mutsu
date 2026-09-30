@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 16;
 
 # A defaulted array declared in EXPRESSION position takes the same default-first
 # route as the statement form (#10318): the value of `(my @a is default(D) = ...)`
@@ -45,3 +45,14 @@ is $inits, 1, 'state: the initializer runs only on the first entry';
 sub plain-state { my $x = (state @p is default(7) = 5, 6); @p.push(1); @p.raku }
 plain-state();
 is plain-state(), '[5, 6, 1, 1]', 'state: a defaulted array keeps what earlier calls pushed';
+
+# The default-first store must leave the operand stack exactly as it found it:
+# the value below it belongs to the enclosing expression.
+is 10 + do { my @a is default(1) = 1, 2; 5 }, 15,
+    'a defaulted declaration statement inside an expression keeps the stack balanced';
+my @slot;
+@slot[3] = do { my @a is default(1) = 1, 2; 7 };
+is @slot.raku, '[Any, Any, Any, 7]', 'an element store around a defaulted declaration keeps its index';
+my @row;
+@row[0] = my @rd is default(9) = 1, 2;
+is @row[0].default, 9, 'a chained declaration assigned into an element keeps its default';

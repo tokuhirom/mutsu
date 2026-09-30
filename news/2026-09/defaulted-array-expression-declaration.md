@@ -14,4 +14,10 @@ statement form does, so the pre-created container and the initializer store do
 not overwrite the persisted value on later calls (every store to a `state`
 slot is published to the state store).
 
+Sharing the default-first helper between the two forms exposed a stray `Pop`
+after its `SetLocal`, which already consumes the value it stores. In statement
+position that `Pop` discarded whatever the enclosing expression had pushed, so
+`10 + do { my @a is default(1) = 1, 2; 5 }` panicked in the interpreter and
+`@r[0] = my @a is default(9) = 1, 2` lost its element index. The `Pop` is gone.
+
 Closes #10318.
