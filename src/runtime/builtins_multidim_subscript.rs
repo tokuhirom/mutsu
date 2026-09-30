@@ -729,7 +729,7 @@ impl Interpreter {
                     // `.value = X` / the kv list's `[1] = X` write through.
                     if exists
                         && target_is_real_hash
-                        && matches!(kind, "p" | "kv")
+                        && (matches!(kind, "p" | "kv") || (kind == "v" && is_multi))
                         && let Some(cell) = target.hash_slot_ref(&key_str, true)
                     {
                         value = cell;
@@ -895,7 +895,7 @@ impl Interpreter {
                 continue;
             }
             if exists
-                && matches!(kind, "p" | "kv")
+                && matches!(kind, "p" | "kv" | "v")
                 && let Some(t) = live_target
                 && let ValueView::Int(i) = key.view()
                 && i >= 0
