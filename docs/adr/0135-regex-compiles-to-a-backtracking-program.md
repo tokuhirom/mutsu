@@ -375,8 +375,23 @@ does. The walk's chain takes first candidates only, so a nullable body compiles 
 DFS shape (a group, or anything containing an alternation), when it is ratcheted, or when it is a
 single-candidate assertion.
 
-Still to come in Slice A: backreferences, `%` separators, nested quantified captures, `<( )>`
-markers, `CompositeClass`, and moving the unanchored scan loop into the VM.
+**Slice A, fifth part: `CompositeClass` landed.** It is a one-grapheme atom tested by
+`match_consuming_atom`. A class with a named item can fall back to a grammar token, which depends
+on the package and the real subject, so it skips the per-program ASCII probe table.
+
+A full `MUTSU_VM_STATS` sweep (all of `t/` plus the roast whitelist, after `||`) counted 4937
+compiled and 2281 declined patterns. Later slices account for most of the declines: `subrule`
+494, `code` 357, `alternation` 347, `ignorecase` 253 and `lookaround` 220. The old catch-all
+`other-atom` (216) is now split into `isolated-group`, `interpolation`, `ws-rule`, `goal-match`
+and `conjunction`, which also belong to later slices.
+
+The same part compiles `%` and `%%` over a capture-free atom and separator, in the order of
+`for_each_separated_candidate` (non-ratchet) and `match_separated_quantifier_ratchet`. Two new
+ops support it: `Advanced` for the per-step progress guard, and `AtLeast` for the minimum count.
+Frugal separated quantifiers decline, because the walk disagrees with rakudo on them (#10306).
+
+Still to come in Slice A: captures under `%`, backreferences, nested quantified captures,
+quantified aliases, `<( )>` markers, and moving the unanchored scan loop into the VM.
 
 ### Reproducing §2
 

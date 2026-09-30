@@ -122,6 +122,14 @@ differential_case!(
     nullable_loop_bodies,
     r#"say ("aab" ~~ / [ a? ]* b /).gist; say ("aab" ~~ / ( a? )+ b /)[0].elems; say ("xb" ~~ / [ a* ]+ b /).gist; say ("ab" ~~ / :r [ a? ]* b /).gist; say ("ab" ~~ / [ a? ]*? b /).gist; say ("abab" ~~ / ^ [ a b? ]* $ /).gist; say ("aaa" ~~ / ^ [ a? a? ] ** 2 $ /).gist; say ("aaa" ~~ / ^ ( a? a? ) ** 2..3 $ /)[0].elems; say ("abc" ~~ / [ \w* ]* c /).gist; say so "" ~~ / ^ [ x? ]+ $ /; say ("ab" ~~ / [ a || b? ]+ $ /).gist; say ("a b" ~~ / ^^ ** 2 a /).gist; say "a b c".comb(/ [ \s* \w ]+? /).join("|")"#
 );
+differential_case!(
+    composite_classes,
+    r#"say ("abc1x" ~~ / <+alpha -[b]>+ /).gist; say ("Hello World" ~~ / <+upper +digit>+ /).gist; say ("ab12cd" ~~ / <[a..z] - [c]>+ /).gist; say so "x\r\ny" ~~ / x <+[\n]> y /; say ("é1" ~~ / <+alpha>+ /).gist; say ("a^b" ~~ / <+graph -punct>+ /).gist; say "abc".comb(/ <+alnum -[b]> /).join("|"); grammar G { token alpha { 'Z' }; token TOP { <+alpha -[q]>+ } }; say G.parse("aZb").gist; grammar H { token vowel { <[aeiou]> }; token TOP { <-vowel>+ } }; say H.parse("xyz").gist; say H.parse("xay").gist"#
+);
+differential_case!(
+    separated_quantifiers,
+    "say \"a,b,c\" ~~ / \\w+ % ',' /; say \"a,b,c,\" ~~ / \\w+ %% ',' /; say \"a,b,c,x\" ~~ / \\w+ % ',' ',x' /; say \"a,b\" ~~ / ^ \\w* % ',' $ /; say \"\" ~~ / ^ \\w* % ',' $ /; say \";b\" ~~ / ^ <-[;]>* % ';' $ /; say \"a,b,c\" ~~ / \\w ** 2 % ',' /; say \"a,b,c\" ~~ / ^ \\w ** 1..2 % ',' /; say \"a, b ,c\" ~~ / \\w+ % [ \\s* ',' \\s* ] /; say \"a,b,c\" ~~ / :r \\w+ % ',' /; say \"a,b,c,\" ~~ / :r \\w+ %% ',' /; say \"a,b,c,x\" ~~ / :r \\w+ % ',' ',x' /; say \"a,b,c\" ~~ / :r \\w+ % ',' ',' /; say \"ab,cd\" ~~ / [ a || ab ]+ % ',' cd /; say \"aa,aa\" ~~ / ^ [ a+ ]+ % ',' $ /; say \"1-2--3\" ~~ / \\d+ % '-'+ /; say \"x\" ~~ / :r \\d* % ',' x /; say \"a,,b\" ~~ / ^ \\w* % ',' $ /;"
+);
 
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every

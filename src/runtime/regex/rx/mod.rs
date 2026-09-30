@@ -85,6 +85,15 @@ pub(super) enum RxOp {
         min: u32,
         max: u32,
     },
+    /// `pos` has moved past `regs[start]` (a separated quantifier's step).
+    Advanced {
+        start: u16,
+    },
+    /// `regs[ctr] >= min` (a separated quantifier's minimum count).
+    AtLeast {
+        ctr: u16,
+        min: u32,
+    },
     /// Close a `( … )` whose body captures nothing, opened at `regs[start]`.
     CloseCapture {
         start: u16,
@@ -137,7 +146,7 @@ pub(crate) struct RxProgram {
     pub(super) nregs: usize,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
-    pub(super) ascii: std::sync::OnceLock<Box<[u128]>>,
+    pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.
