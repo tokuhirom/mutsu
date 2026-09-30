@@ -170,6 +170,20 @@ pub(crate) fn export_type_stmt(type_name: &str, tags: &[String]) -> Stmt {
     })
 }
 
+/// The `__mutsu_export_type` marker a lexical `my class ... is export` carries
+/// in its `custom_traits`; the argument lists the export tags so a consumer
+/// that cannot see an export statement (a role body) can still publish it.
+pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
+    let tags = tags
+        .iter()
+        .map(|t| Expr::Literal(Value::str(t.clone())))
+        .collect();
+    (
+        "__mutsu_export_type".to_string(),
+        Some(Expr::ArrayLiteral(tags)),
+    )
+}
+
 pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_SET_META__"),
@@ -701,7 +715,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         // internal marker on the declaration instead so module loading can
         // distinguish an exported lexical type from a private one.
         if let Stmt::ClassDecl { custom_traits, .. } = &mut class_stmt {
-            custom_traits.push(("__mutsu_export_type".to_string(), None));
+            custom_traits.push(export_type_marker(&export_tags));
         }
     }
     let mut stmts = Vec::new();
