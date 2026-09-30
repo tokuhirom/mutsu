@@ -25,26 +25,44 @@
 #        the contrast is what makes a ratchet regression visible
 #   11.  a separated quantifier (`+ %`), whose ratcheted form used to backtrack
 #        exponentially
+#
+# WARM COST (#9916, ADR-0099 §6). The workload runs as `workload()` twice untimed
+# and a third time timed, and that third run is printed as
+# `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series
+# whose raku column is rakudo's settled, post-warm-up time. The whole-script
+# series still exists but charges rakudo its warm-up (ADR-0099 §2.1 measured
+# that as most of a 4.2x headline); the section ratio is the one that steers
+# work against rakudo. Under scripts/bench-det.sh (BENCH_DET=1) the workload
+# runs once, so the deterministic series keeps its old meaning.
 
-my @lines;
-for ^30 -> $i {
-    @lines.push("  indent{$i % 4}: alpha beta{$i} gamma_{$i * 3} 12{$i}kg price=4{$i}USD a,b,c,d tail");
-}
-
-my $acc = 0;
-for ^20 {
-    for @lines -> $l {
-        $acc++ if $l ~~ / \d+ <?before 'kg' > /;
-        $acc++ if $l ~~ / \d+ <!before 'kg' > /;
-        $acc++ if $l ~~ / <?after 'price=' > \d+ /;
-        $acc++ if $l ~~ / <!after 'price=' > 'USD' /;
-        $acc++ if $l ~~ / 'USD' <!after \d > /;
-        $acc++ if $l ~~ / << 'gamma_' /;
-        $acc++ if $l ~~ / 'beta' \d+ >> /;
-        $acc++ if $l ~~ / <[0..9a..z]>+ 'kg' /;
-        $acc++ if $l ~~ / \w+ 'QQQ' /;
-        $acc++ if $l ~~ / :r \w+ 'QQQ' /;
-        $acc++ if $l ~~ / \w+ % ',' /;
+sub workload() {
+    my @lines;
+    for ^30 -> $i {
+        @lines.push("  indent{$i % 4}: alpha beta{$i} gamma_{$i * 3} 12{$i}kg price=4{$i}USD a,b,c,d tail");
     }
+
+    my $acc = 0;
+    for ^20 {
+        for @lines -> $l {
+            $acc++ if $l ~~ / \d+ <?before 'kg' > /;
+            $acc++ if $l ~~ / \d+ <!before 'kg' > /;
+            $acc++ if $l ~~ / <?after 'price=' > \d+ /;
+            $acc++ if $l ~~ / <!after 'price=' > 'USD' /;
+            $acc++ if $l ~~ / 'USD' <!after \d > /;
+            $acc++ if $l ~~ / << 'gamma_' /;
+            $acc++ if $l ~~ / 'beta' \d+ >> /;
+            $acc++ if $l ~~ / <[0..9a..z]>+ 'kg' /;
+            $acc++ if $l ~~ / \w+ 'QQQ' /;
+            $acc++ if $l ~~ / :r \w+ 'QQQ' /;
+            $acc++ if $l ~~ / \w+ % ',' /;
+        }
+    }
+    "regex-assertion: acc=$acc";
 }
-say "regex-assertion: acc=$acc";
+
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

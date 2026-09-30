@@ -50,6 +50,21 @@ subjects mutsu measures 0.2-0.4x rakudo, and the same operations measure 1.0x an
 worse on multi-hundred-kilobyte ones. A ratio without its subject size says
 nothing.
 
+Since 2026-09-30 ([#9916](https://github.com/tokuhirom/mutsu/issues/9916)),
+every file above also reports a **warm** series: it runs its workload twice
+untimed and prints the third run as `bench-section-seconds:`. Read the
+`@section` rows when comparing against rakudo. A whole-script row charges rakudo
+its JIT warm-up, which ADR-0099 §2.1 measured as most of a 4.2x headline. The
+same change added three things:
+
+- `bench-regex-scan-walk`: scans no prefilter can help, so the tree walk's own
+  per-position cost stays visible. It is the kill criterion of ADR-0135
+  Slice A.
+- `bench-grammar-json-tiny`: a real module's grammar, JSON::Tiny's, run from
+  the vendored copy.
+- A rakudo baseline for `bench-yaml-parse-big`: YAMLish is now loaded from
+  `modules/`, so both interpreters run the same module source.
+
 ## Current Status (bench CI, main commit `c8955d2e`, 2026-07-13)
 
 > Source of truth: the **bench CI history** (`bench-history.tsv` on the

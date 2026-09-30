@@ -14,31 +14,49 @@
 #   4. nested captures, read through the inner capture of an outer one
 #   5. a capturing match that FAILS, so the spans recorded along the way are
 #      all discarded -- the cost of bookkeeping that buys nothing
+#
+# WARM COST (#9916, ADR-0099 §6). The workload runs as `workload()` twice untimed
+# and a third time timed, and that third run is printed as
+# `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series
+# whose raku column is rakudo's settled, post-warm-up time. The whole-script
+# series still exists but charges rakudo its warm-up (ADR-0099 §2.1 measured
+# that as most of a 4.2x headline); the section ratio is the one that steers
+# work against rakudo. Under scripts/bench-det.sh (BENCH_DET=1) the workload
+# runs once, so the deterministic series keeps its old meaning.
 
-my @lines;
-for ^40 -> $i {
-    @lines.push("key{$i % 11}=value-{$i}; n={$i * 13 % 400}; words=the quick brown fox {$i}");
-}
+sub workload() {
+    my @lines;
+    for ^40 -> $i {
+        @lines.push("key{$i % 11}=value-{$i}; n={$i * 13 % 400}; words=the quick brown fox {$i}");
+    }
 
-my $acc = 0;
-for ^30 {
-    for @lines -> $l {
-        if $l ~~ / $<key> = [ \w+ ] '=' $<val> = [ <[\w\-]>+ ] / {
-            $acc += $<key>.chars + $<val>.chars;
-            $acc += $/.from + $/.to;
-        }
-        if $l ~~ / (\w+) '=' (\d+) / {
-            $acc += $0.Str.chars + $1.Int;
-        }
-        if $l ~~ / 'words=' [ (\w+) \s* ]+ / {
-            $acc += $0.elems + $0[0].Str.chars;
-        }
-        if $l ~~ / ( 'key' (\d+) ) / {
-            $acc += $0[0].Str.chars;
-        }
-        if $l ~~ / ( \w+ ) '=' ( \w+ ) '=' ( \w+ ) '=' /  {
-            $acc += 1000000;
+    my $acc = 0;
+    for ^30 {
+        for @lines -> $l {
+            if $l ~~ / $<key> = [ \w+ ] '=' $<val> = [ <[\w\-]>+ ] / {
+                $acc += $<key>.chars + $<val>.chars;
+                $acc += $/.from + $/.to;
+            }
+            if $l ~~ / (\w+) '=' (\d+) / {
+                $acc += $0.Str.chars + $1.Int;
+            }
+            if $l ~~ / 'words=' [ (\w+) \s* ]+ / {
+                $acc += $0.elems + $0[0].Str.chars;
+            }
+            if $l ~~ / ( 'key' (\d+) ) / {
+                $acc += $0[0].Str.chars;
+            }
+            if $l ~~ / ( \w+ ) '=' ( \w+ ) '=' ( \w+ ) '=' /  {
+                $acc += 1000000;
+            }
         }
     }
+    "regex-capture: acc=$acc";
 }
-say "regex-capture: acc=$acc";
+
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

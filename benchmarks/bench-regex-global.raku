@@ -18,21 +18,39 @@
 # lives in bench-regex-split-subst.raku instead: it is superlinear in subject
 # length today, so at any interesting size it would dominate this file and mask
 # everything else in it.
+#
+# WARM COST (#9916, ADR-0099 §6). The workload runs as `workload()` twice untimed
+# and a third time timed, and that third run is printed as
+# `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series
+# whose raku column is rakudo's settled, post-warm-up time. The whole-script
+# series still exists but charges rakudo its warm-up (ADR-0099 §2.1 measured
+# that as most of a 4.2x headline); the section ratio is the one that steers
+# work against rakudo. Under scripts/bench-det.sh (BENCH_DET=1) the workload
+# runs once, so the deterministic series keeps its old meaning.
 
-my @lines;
-for ^40 -> $i {
-    @lines.push("user{$i % 13}=alpha-{$i} score={$i * 17 % 500} note=\"the quick brown fox {$i}\" flags=a,b,c");
-}
-my $text = @lines.join("\n");
+sub workload() {
+    my @lines;
+    for ^40 -> $i {
+        @lines.push("user{$i % 13}=alpha-{$i} score={$i * 17 % 500} note=\"the quick brown fox {$i}\" flags=a,b,c");
+    }
+    my $text = @lines.join("\n");
 
-my $n = 0;
-for ^45 {
-    $n += $text.match(/ \d+ /, :g).elems;
-    $n += $text.comb(/ <[a..z]>+ /).elems;
-    $n += $text.subst(/ 'score=' \d+ /, 'score=0', :g).chars;
-    $n += $text.subst(/ 'user' (\d+) /, { 'u' ~ $0 }, :g).chars;
-    my $copy = $text;
-    $copy ~~ s:g/ <[0..9]>+ /#/;
-    $n += $copy.chars;
+    my $n = 0;
+    for ^45 {
+        $n += $text.match(/ \d+ /, :g).elems;
+        $n += $text.comb(/ <[a..z]>+ /).elems;
+        $n += $text.subst(/ 'score=' \d+ /, 'score=0', :g).chars;
+        $n += $text.subst(/ 'user' (\d+) /, { 'u' ~ $0 }, :g).chars;
+        my $copy = $text;
+        $copy ~~ s:g/ <[0..9]>+ /#/;
+        $n += $copy.chars;
+    }
+    "regex-global: n=$n";
 }
-say "regex-global: n=$n";
+
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

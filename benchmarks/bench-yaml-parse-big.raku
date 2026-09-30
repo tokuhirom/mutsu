@@ -17,9 +17,15 @@
 # any CI config, any lockfile-shaped data -- so this is the series that says
 # whether mutsu can read one.
 #
-# No raku baseline: YAMLish is a bundled battery, not installed for the system
-# rakudo, so the ratio column records NA exactly as it does for
-# bench-yaml-parse. The absolute and deterministic series are the signal here.
+# Raku baseline (#9916): YAMLish and its one dependency, MIME::Base64, are
+# loaded from the vendored copies under modules/ through `use lib`, so rakudo
+# runs the identical module source and the ratio column is real. (It recorded
+# NA until 2026-09-30, when the system rakudo had no YAMLish to load.)
+#
+# WARM COST: two untimed loads, then a timed one printed as
+# `bench-section-seconds:` -- see bench-regex-match.raku's header.
+use lib $?FILE.IO.parent(2).add('modules/YAMLish/lib').Str;
+use lib $?FILE.IO.parent(2).add('modules/MIME-Base64/lib').Str;
 use YAMLish;
 
 my $ROWS = 60;
@@ -27,6 +33,10 @@ my $text = "---\n"
     ~ (1..$ROWS).map({ "key$_: 'value $_ padded   here'\n" }).join
     ~ "...\n";
 
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+load-yaml($text) for ^$warm;
+my $t0 = now;
 my $doc = load-yaml($text);
+say "bench-section-seconds: {now - $t0}";
 die "parse failed" unless $doc.elems == $ROWS;
 say "yaml-parse-big: {$doc.elems} keys, {$text.chars} chars";

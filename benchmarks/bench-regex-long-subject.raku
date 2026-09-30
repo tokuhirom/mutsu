@@ -24,6 +24,14 @@
 # ratio against raku is expected to be unflattering compared to the short-line
 # benchmarks, which is the point of keeping it.
 #
+# Update 2026-09-30 (#9916): the ADR-0099 Stage 1 prefilter turned this file
+# around. Its warm section measures mutsu 8 ms against rakudo 204 ms at 128 KB,
+# because rows 1-3 and 6-7 now reject positions without entering the engine.
+# So there is no longer a crossover to size past. The walk's own per-position
+# cost, which this file used to expose, is measured by
+# bench-regex-scan-walk.raku, whose patterns no prefilter can help. This file is
+# kept at its size so its history stays continuous.
+#
 #   1. failing literal scan        the cheapest possible per-position reject
 #   2. failing alternation scan    four literals ranked at every position
 #   3. failing :i literal scan     case folding on the reject path
@@ -33,18 +41,36 @@
 #   7. end anchor                  the engine must walk to the tail
 #   8. succeeding scan near the end  the win case, for contrast
 #   9. comb over the whole subject  the linear all-occurrences path
+#
+# WARM COST (#9916, ADR-0099 §6). The workload runs as `workload()` twice untimed
+# and a third time timed, and that third run is printed as
+# `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series
+# whose raku column is rakudo's settled, post-warm-up time. The whole-script
+# series still exists but charges rakudo its warm-up (ADR-0099 §2.1 measured
+# that as most of a 4.2x headline); the section ratio is the one that steers
+# work against rakudo. Under scripts/bench-det.sh (BENCH_DET=1) the workload
+# runs once, so the deterministic series keeps its old meaning.
 
-my $unit = "abc def ghi jkl mno pqr stu vwx yz01 2345 67-8 \n";
-my $big  = $unit x (131072 div $unit.chars);
+sub workload() {
+    my $unit = "abc def ghi jkl mno pqr stu vwx yz01 2345 67-8 \n";
+    my $big  = $unit x (131072 div $unit.chars);
 
-my $acc = 0;
-$acc++ if $big ~~ / 'zzzq-not-here' /;
-$acc++ if $big ~~ / [ 'zzq' | 'yyq' | 'xxq' | 'wwq' ] /;
-$acc++ if $big ~~ / :i 'ZZZQ' /;
-$acc++ if $big ~~ / \w+ 'QQQ' /;
-$acc++ if $big ~~ / :r \w+ 'QQQ' /;
-$acc++ if $big ~~ / 'QQ' <!after \d > /;
-$acc++ if $big ~~ / '67-8' \s $ /;
-$acc++ if $big ~~ / 'yz01 2345' /;
-$acc += $big.comb(/ \d+ /).elems;
-say "regex-long-subject: chars={$big.chars} acc=$acc";
+    my $acc = 0;
+    $acc++ if $big ~~ / 'zzzq-not-here' /;
+    $acc++ if $big ~~ / [ 'zzq' | 'yyq' | 'xxq' | 'wwq' ] /;
+    $acc++ if $big ~~ / :i 'ZZZQ' /;
+    $acc++ if $big ~~ / \w+ 'QQQ' /;
+    $acc++ if $big ~~ / :r \w+ 'QQQ' /;
+    $acc++ if $big ~~ / 'QQ' <!after \d > /;
+    $acc++ if $big ~~ / '67-8' \s $ /;
+    $acc++ if $big ~~ / 'yz01 2345' /;
+    $acc += $big.comb(/ \d+ /).elems;
+    "regex-long-subject: chars={$big.chars} acc=$acc";
+}
+
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;
