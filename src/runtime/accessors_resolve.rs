@@ -205,6 +205,7 @@ impl Interpreter {
         // Filtered like a closure capture, not the whole live env: sharing the
         // running frame's tier made its next write copy the tier (#9169).
         let mut captured_env = self.routine_code_object_env(def.compiled.as_ref());
+        captured_env.remove("__mutsu_callable_type");
         // The routine's return type is its own, never the running frame's: a
         // capture taken inside `sub f(--> Supply)` (whole-env when the callee
         // has no compiled code, or reflective) carries f's
@@ -278,9 +279,17 @@ impl Interpreter {
         name: &str,
         candidates: Vec<std::sync::Arc<crate::runtime::FunctionDef>>,
     ) -> Value {
+        let mut base_env = self.env.clone();
+        // The caller's callable kind belongs to its frame, not to the routine
+        // being resolved. Stamp each candidate from its own declarator below.
+        base_env.remove("__mutsu_callable_type");
         let candidate_subs: Vec<Value> = candidates
             .iter()
             .map(|cand| {
+                let mut env = base_env.clone();
+                if let Some(kind) = cand.declarator.callable_type() {
+                    env.insert("__mutsu_callable_type".to_string(), Value::str_from(kind));
+                }
                 Value::make_sub_for_routine(
                     cand.package,
                     cand.name,
@@ -288,12 +297,18 @@ impl Interpreter {
                     cand.param_defs.clone(),
                     cand.body.clone(),
                     cand.is_rw,
-                    self.env.clone(),
+                    env,
                     cand.compiled.clone(),
                 )
             })
             .collect();
-        let mut dispatcher_env = self.env.clone();
+        let mut dispatcher_env = base_env;
+        if let Some(kind) = candidates
+            .first()
+            .and_then(|cand| cand.declarator.callable_type())
+        {
+            dispatcher_env.insert("__mutsu_callable_type".to_string(), Value::str_from(kind));
+        }
         dispatcher_env.insert(
             "__mutsu_multi_dispatch_candidates".to_string(),
             Value::array_with_kind(
@@ -306,8 +321,11 @@ impl Interpreter {
             Value::str(name.to_string()),
         );
         let dispatcher = Value::make_sub(
-            Symbol::intern(&self.current_package()),
-            Symbol::intern(name),
+            candidates
+                .first()
+                .map(|cand| cand.package)
+                .unwrap_or_else(|| Symbol::intern(&self.current_package())),
+            crate::qualified::unqualified_part(Symbol::intern(name)),
             Vec::new(),
             Vec::new(),
             Vec::new(),

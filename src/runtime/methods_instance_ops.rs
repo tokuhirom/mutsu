@@ -2664,9 +2664,9 @@ impl Interpreter {
                     ) =>
             {
                 match target.view() {
-                    ValueView::Routine { name, .. } => {
-                        Ok(Value::str(format_operator_name(&name.resolve())))
-                    }
+                    ValueView::Routine { name, .. } => Ok(Value::str(format_operator_name(
+                        crate::qualified::unqualified_part(name).as_str(),
+                    ))),
                     // `.name` on a *type object* whose class declares its own public
                     // attribute `$.name` resolves to that accessor, and reading an
                     // instance attribute off a type object is an error (raku). Only
@@ -2680,9 +2680,9 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    ValueView::Sub(data) => {
-                        Ok(Value::str(format_operator_name(&data.name.resolve())))
-                    }
+                    ValueView::Sub(data) => Ok(Value::str(format_operator_name(
+                        crate::qualified::unqualified_part(data.name).as_str(),
+                    ))),
                     // `Nil` swallows every method call. `Array`/`Hash` answer
                     // with their container descriptor's name in rakudo
                     // (`[1].name` is "element", `(my %h).name` is "%h"),
