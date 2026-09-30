@@ -55,8 +55,8 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
         effects.push(lifted.effects.split_off(before));
     }
     let decls = lifted.decls;
-    // `use` and `constant` are BEGIN-time effects on their own (slice 3), so
-    // the prologue reaches the last of them too.
+    // A conditional `use` is a BEGIN-time effect on its own (slice 3), so the
+    // prologue reaches the last of them too.
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
     let Some(last) = last_effect.max(last_lifted) else {
@@ -229,13 +229,15 @@ fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
     }
 }
 
-/// A statement that is itself a BEGIN-time effect rather than a declaration a
-/// BEGIN may observe: a `BEGIN`, a module load, or a `constant`.
+/// A statement that extends the prologue's bound: a `BEGIN`, or a conditional
+/// `use` (`use Foo:if(EXPR)`), whose condition must be evaluated at BEGIN time.
+/// An unconditional `use` and a `constant` do not extend it yet (#10336):
+/// moving every load and constant ahead of the run-time statements that
+/// precede them surfaced partition gaps that need their own slice.
 fn is_begin_time_effect(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Phaser { kind, .. } => *kind == PhaserKind::Begin,
-        Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
-        Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => true,
+        Stmt::Use { condition, .. } => condition.is_some(),
         _ => false,
     }
 }

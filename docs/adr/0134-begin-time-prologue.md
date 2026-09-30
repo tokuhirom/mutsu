@@ -1,6 +1,6 @@
 # ADR-0134: BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals
 
-- Status: Accepted (2026-09-30; slices 1–3 implemented — see §7)
+- Status: Accepted (2026-09-30; slices 1–2 implemented, slice 3 partly — see §7)
 - Date: 2026-09-30
 - Deciders: tokuhirom, Claude
 - Addresses: [#9919](https://github.com/tokuhirom/mutsu/issues/9919)
@@ -337,27 +337,28 @@ status here.
   lifting it would run it ahead of an effect that precedes it in the source
   (`roast/S04-declarations/will.t`).
 
-**Slice 3 — implemented** (`src/runtime/begin_prologue/mod.rs`,
+**Slice 3 — conditional `use` implemented** (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`; closes #9919).
 
-- **Wider bound.** The prologue's bound reaches the last top-level `use`,
-  `no`, `need`, `import` or `constant` as well as the last BEGIN. So every
-  top-level module load and constant runs in source order with the unit's
-  other BEGIN-time effects, before any run-time statement. A constant then
-  sees lexicals in their static state: `my $x = 5; constant K = $x` gives
-  `Any`, as on rakudo.
-- **Conditional `use`.** A top-level `use Foo:if(EXPR)` evaluates `EXPR` in
-  the prologue, into a unit slot the `use` then reads. An undefined value
-  dies with `Did not provide compile-time-value for :if adverb in use
-  statement`, before the mainline runs. The run-time guard around
-  `UseModule` stays, but it now runs in the prologue.
+- **Bound.** The prologue's bound reaches the last top-level conditional
+  `use` as well as the last BEGIN.
+- **Conditional `use`.** `use Foo:if(EXPR)` evaluates `EXPR` in the prologue,
+  into a unit slot the `use` then reads. An undefined value dies with `Did not
+  provide compile-time-value for :if adverb in use statement`, before the
+  mainline runs. The run-time guard around `UseModule` stays, but it now runs
+  in the prologue.
+- **Native types.** A native variable split ahead of a prologue effect starts
+  its static half from the native zero. A native type with no known zero (a
+  NativeCall `ulong`) keeps its declaration whole.
+- **Not done: every unconditional `use` and every `constant` as a prologue
+  effect (#10336).** Widening the bound to all of them failed 13 `t/` files,
+  each a separate partition gap: positional pragmas, group declarations, and
+  imports reached ahead of the code depending on them. So a plain `use` or
+  `constant` still runs in source position unless a later BEGIN or
+  conditional `use` pulls it into the prologue.
 - **Residue:**
   - A `False` condition still leaves the names the parse-time scan registered
-    for the module in place. Calling one therefore fails at run time
-    (`Unknown function`), where rakudo reports `Undeclared routine` at compile
-    time. Removing them needs the parse to know the condition's value, which
-    is §2.4's parse feedback.
-  - A `use` nested in a block keeps its in-position import, with its load
-    hoisted by GH-8201's `PreloadModule`, which stays.
+    for the module in place (#10331). Calling one therefore fails at run time
+    rather than at compile time. Fixing it needs §2.4's parse feedback.
   - The undefined-condition error is a plain `die` raised in the prologue, not
     a `===SORRY!===` compile error.
