@@ -626,7 +626,9 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
             && !after_ws.starts_with([';', '}', ')', ','])
             && !is_stmt_modifier_keyword(after_ws)
         {
-            return Err(PError::expected("statement (block call is an infix operand)"));
+            return Err(PError::expected(
+                "statement (block call is an infix operand)",
+            ));
         }
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
