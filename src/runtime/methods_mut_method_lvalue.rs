@@ -1541,11 +1541,13 @@ impl Interpreter {
                 return Ok(assigned_value);
             }
             updated.insert(attr_name, assigned_value.clone());
+            // The instance's attribute cell is shared by every handle to it,
+            // so the store commits into it whether or not the invocant was a
+            // named variable: `f().z = 9` and `D.^lookup('z')($d) = 9` have no
+            // `target_var` and silently dropped the write before (#10220).
+            let written = Value::write_back_sharing(&attributes, class_name, updated, target_id);
             if let Some(var_name) = target_var {
-                self.env.insert_through(
-                    var_name.to_string(),
-                    Value::write_back_sharing(&attributes, class_name, updated, target_id),
-                );
+                self.env.insert_through(var_name.to_string(), written);
             }
             return Ok(assigned_value);
         }

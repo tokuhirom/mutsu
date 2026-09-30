@@ -279,29 +279,14 @@ impl Interpreter {
         // accessor's own `rw`-ness, matching real Raku (`.^lookup('counter')
         // .rw` is also `False`).
         if self.has_class_level_attr(&class_name_str, method_name) {
-            let mut env = crate::env::Env::new();
-            env.insert(
-                "__mutsu_callable_type".to_string(),
-                Value::str_from("Method"),
-            );
-            let callable = Value::make_sub(
-                class_name,
-                Symbol::intern(method_name),
-                vec!["self".to_string()],
-                vec![Self::make_invocant_param(&class_name_str)],
-                vec![],
-                false,
-                env,
-            );
-            let attrs = self.accessor_method_attrs(
+            return Some(self.accessor_method_object(
                 method_name,
                 &class_name_str,
                 false,
-                callable,
                 None,
                 None,
-            );
-            return Some(Value::make_instance(Symbol::intern("Method"), attrs));
+                false,
+            ));
         }
         // Check grammar token/rule/regex definitions -- walks the MRO like the
         // class-methods loop above, so a `token`/`rule` declared only on an
@@ -383,96 +368,67 @@ impl Interpreter {
         source_line: Option<i64>,
         source_file: Option<&str>,
     ) -> Value {
-        let mut env = crate::env::Env::new();
-        env.insert(
-            "__mutsu_callable_type".to_string(),
-            Value::str_from("Method"),
-        );
-        let callable = Value::make_sub(
-            Symbol::intern(owner),
-            Symbol::intern(name),
-            vec!["self".to_string()],
-            vec![Self::make_invocant_param(owner)],
-            vec![],
-            is_rw,
-            env,
-        );
-        let mut attrs =
-            self.accessor_method_attrs(name, owner, is_rw, callable, source_line, source_file);
-        // An instance attribute's accessor is candidate slot zero of the
-        // method-wrap registry, exactly like the accessor objects
-        // `.^method_table` hands out, so `.^find_method('x').wrap(...)` /
-        // `.^lookup('x').wrap(...)` installs a wrapper that later reads and
-        // assignments run (Object::Permission's `is authorised-by` wraps an
-        // attribute's accessor from its `compose`). A class-level `my $.x`
-        // accessor has no dispatch that consults that registry, so it gets no
-        // wrap identity and `.wrap` on it stays unsupported rather than
-        // silently ineffective.
-        attrs.insert(
-            "__mutsu_lookup_class".to_string(),
-            Value::str(owner.to_string()),
-        );
-        attrs.insert(
-            "__mutsu_lookup_method".to_string(),
-            Value::str(name.to_string()),
-        );
-        attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        self.accessor_method_object(name, owner, is_rw, source_line, source_file, true)
     }
 
-    /// The attributes of a minimal Method `Instance` for an auto-generated attribute
-    /// accessor (`has $.x`), wrapping the pre-built accessor `Sub` as
-    /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
-    /// accessor is synthesized, not declared), so this does not go through
-    /// `make_method_object_with_owner`.
+    /// A Method `Instance` for an auto-generated attribute accessor
+    /// (`has $.x`, `my $.x`). There is no `MethodDef` for these (the accessor
+    /// is synthesized, not declared), so this is the native-method shape
+    /// (`make_native_method_object_ex_loc`): its `__mutsu_method_callable` is
+    /// the `Routine` carrier that dispatches the accessor on the invocant when
+    /// the object is invoked (`D.^lookup('x')($d)`), exactly like the object
+    /// `.^methods` hands out. An empty-bodied `Sub` stood here before and
+    /// every direct invocation answered `Nil` (#10220).
     ///
     /// `source_line`/`source_file` are the attribute's own `has`-declaration
     /// site (`ClassAttributeDef::source_line`/`source_file`, threaded from
     /// `CompiledAttrDecl::decl_line` -- see `Compiler::compile_class_attr_decls`),
     /// mirroring how `make_method_object_with_owner_ex` reports `Code.line`/
     /// `.file` for a user-declared method. `None` (reported as `Nil`, never a
-    /// fabricated location) for a class-level `our`/`my` attribute or a
-    /// non-plan-backed construction site that does not track it yet.
-    fn accessor_method_attrs(
+    /// fabricated location) for a class-level `our`/`my` attribute.
+    ///
+    /// `wrap_identity`: an instance attribute's accessor is candidate slot
+    /// zero of the method-wrap registry, exactly like the accessor objects
+    /// `.^method_table` hands out, so `.^find_method('x').wrap(...)` installs
+    /// a wrapper that later reads and assignments run (Object::Permission's
+    /// `is authorised-by` wraps an attribute's accessor from its `compose`).
+    /// A class-level `my $.x` accessor has no dispatch that consults that
+    /// registry, so it gets no wrap identity and `.wrap` on it stays
+    /// unsupported rather than silently ineffective.
+    pub(super) fn accessor_method_object(
         &self,
         name: &str,
         owner: &str,
         is_rw: bool,
-        callable: Value,
         source_line: Option<i64>,
         source_file: Option<&str>,
-    ) -> std::collections::HashMap<String, Value> {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("name".to_string(), Value::str(name.to_string()));
-        attrs.insert("is_dispatcher".to_string(), Value::FALSE);
-        attrs.insert("multi".to_string(), Value::FALSE);
+        wrap_identity: bool,
+    ) -> Value {
+        let obj = self.make_native_method_object_ex_loc(
+            name,
+            owner,
+            false,
+            source_line,
+            source_file.map(str::to_string),
+            None,
+        );
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = obj.view()
+        else {
+            return obj;
+        };
+        let mut attrs = attributes.as_map().clone();
         attrs.insert("rw".to_string(), Value::truth(is_rw));
         attrs.insert("readonly".to_string(), Value::truth(!is_rw));
-        attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
-        attrs.insert(
-            "signature".to_string(),
-            crate::value::signature::make_signature_value(
-                crate::value::signature::synthesize_native_signature(owner),
-                None,
-            ),
-        );
-        attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
-        attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
-        attrs.insert(
-            "line".to_string(),
-            source_line.map_or(Value::NIL, Value::int),
-        );
-        attrs.insert(
-            "file".to_string(),
-            source_file
-                .map(|f| {
-                    let source_file_sym = Symbol::intern(f);
-                    Value::str(self.format_routine_file(f.to_string(), Some(source_file_sym)))
-                })
-                .unwrap_or(Value::NIL),
-        );
-        attrs.insert("__mutsu_method_callable".to_string(), callable);
-        attrs
+        if !wrap_identity {
+            attrs.remove("__mutsu_lookup_class");
+            attrs.remove("__mutsu_lookup_method");
+            attrs.remove("__mutsu_lookup_candidate_idx");
+        }
+        Value::make_instance(class_name, attrs)
     }
 
     /// Build the callable `Sub` value for a single (non-dispatcher) method
