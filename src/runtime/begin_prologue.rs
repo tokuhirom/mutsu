@@ -30,7 +30,8 @@
 //! composes the class at BEGIN time but runs that statement at run time.
 //! Splitting a package body is slice 2's static-cell machinery.
 
-use crate::ast::{PhaserKind, Stmt};
+use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::value::ValueView;
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
 /// run-time remainder, as described in the module docs. The prologue is
@@ -94,7 +95,80 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         }
         return;
     }
+    // A `require` of a statically named module installs a stub package under
+    // that name at BEGIN time, even though the load itself happens at run time.
+    // That stub is Rakudo's `package Foo {}`, so the prologue declares one.
+    // The real load then fills it in.
+    for name in static_require_targets(&stmt) {
+        prologue.push(Stmt::Package {
+            name: crate::symbol::Symbol::intern(&name),
+            body: Vec::new(),
+            kind: crate::ast::PackageKind::Package,
+            is_unit: false,
+            is_my: false,
+        });
+    }
     rest.push(stmt);
+}
+
+/// The statically named targets of the `require` expressions in a run-time
+/// statement, excluding file paths. Only the statement's own expression tree
+/// is searched: a `require` inside a nested block or closure belongs to that
+/// scope, which this slice does not reorder (ADR-0134 slice 2).
+fn static_require_targets(stmt: &Stmt) -> Vec<String> {
+    let mut out = Vec::new();
+    match stmt {
+        Stmt::Expr(e) | Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
+            collect_static_requires(e, &mut out)
+        }
+        _ => {}
+    }
+    out
+}
+
+fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
+    match expr {
+        Expr::Call { name, args } => {
+            if name.resolve() == "require"
+                && let Some(Expr::Literal(target)) = args.first()
+                && let ValueView::Package(module) = target.view()
+            {
+                out.push(module.resolve());
+            }
+            for arg in args {
+                collect_static_requires(arg, out);
+            }
+        }
+        Expr::Grouped(inner)
+        | Expr::Unary { expr: inner, .. }
+        | Expr::PostfixOp { expr: inner, .. }
+        | Expr::AssignExpr { expr: inner, .. } => collect_static_requires(inner, out),
+        Expr::Binary { left, right, .. } => {
+            collect_static_requires(left, out);
+            collect_static_requires(right, out);
+        }
+        Expr::MethodCall { target, args, .. } => {
+            collect_static_requires(target, out);
+            for arg in args {
+                collect_static_requires(arg, out);
+            }
+        }
+        Expr::ArrayLiteral(items) => {
+            for item in items {
+                collect_static_requires(item, out);
+            }
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_static_requires(cond, out);
+            collect_static_requires(then_expr, out);
+            collect_static_requires(else_expr, out);
+        }
+        _ => {}
+    }
 }
 
 fn is_begin_phaser(stmt: &Stmt) -> bool {

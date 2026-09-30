@@ -914,31 +914,42 @@ impl Compiler {
     /// We hoist only the core `Test` module (which is built in and needs no
     /// search path), not `Test::Util` or other `Test::*` submodules: those may
     /// depend on a preceding `use lib ...;` that we must not reorder past.
+    ///
+    /// A `use Test` never moves above a `BEGIN` that precedes it. Both are
+    /// BEGIN-time effects, which run in source order (ADR-0134), and a BEGIN
+    /// may set up what the module reads while it loads
+    /// (`BEGIN %*ENV<RAKU_TEST_DIE_ON_FAIL> = 1; use Test;`). So the hoist
+    /// target is just after the last such BEGIN.
     /// Returns a reordered statement list, or None if no move is needed.
     pub(super) fn hoist_test_use_decls(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
         let is_test_use = |s: &Stmt| matches!(s, Stmt::Use { module, .. } if module == "Test");
-        // Collect indices of top-level Test `use` statements.
-        let test_indices: Vec<usize> = stmts
+        let first_test = stmts.iter().position(is_test_use)?;
+        let start = stmts[..first_test]
+            .iter()
+            .rposition(|s| {
+                matches!(
+                    s,
+                    Stmt::Phaser {
+                        kind: crate::ast::PhaserKind::Begin,
+                        ..
+                    }
+                )
+            })
+            .map_or(0, |i| i + 1);
+        // No move needed if the Test uses are already a contiguous run
+        // starting at the hoist target.
+        let already_prefix = stmts[start..]
             .iter()
             .enumerate()
             .filter(|(_, s)| is_test_use(s))
-            .map(|(i, _)| i)
-            .collect();
-        if test_indices.is_empty() {
-            return None;
-        }
-        // No move needed if the Test uses are already a contiguous prefix
-        // (indices 0, 1, 2, ...).
-        let already_prefix = test_indices
-            .iter()
             .enumerate()
-            .all(|(pos, &idx)| pos == idx);
+            .all(|(pos, (idx, _))| pos == idx);
         if already_prefix {
             return None;
         }
-        let mut hoisted: Vec<Stmt> = Vec::with_capacity(stmts.len());
+        let mut hoisted: Vec<Stmt> = stmts[..start].to_vec();
         let mut rest: Vec<Stmt> = Vec::new();
-        for stmt in stmts {
+        for stmt in &stmts[start..] {
             if is_test_use(stmt) {
                 hoisted.push(stmt.clone());
             } else {
