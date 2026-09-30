@@ -64,6 +64,7 @@ pub(super) fn is_consuming(atom: &RegexAtom) -> bool {
             | RegexAtom::Any
             | RegexAtom::CharClass(_)
             | RegexAtom::UnicodeProp { .. }
+            | RegexAtom::CompositeClass { .. }
             | RegexAtom::Newline
             | RegexAtom::NotNewline
     )
@@ -310,7 +311,6 @@ impl Compiler {
                 }
                 self.ops.push(RxOp::CloseCapture { start });
             }
-            RegexAtom::CompositeClass { .. } => return Err("composite-class"),
             RegexAtom::Named(_) => return Err("subrule"),
             RegexAtom::Alternation(_) => return Err("alternation"),
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
@@ -322,6 +322,15 @@ impl Compiler {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Err("capture-marker");
             }
+            RegexAtom::WsRule => return Err("ws-rule"),
+            RegexAtom::CaptureIsolatedGroup(_) | RegexAtom::CaptureIsolatedGroupScoped(..) => {
+                return Err("isolated-group");
+            }
+            RegexAtom::Conjunction(_) => return Err("conjunction"),
+            RegexAtom::VarInterp(..) | RegexAtom::CodeInterp { .. } | RegexAtom::QqInterp { .. } => {
+                return Err("interpolation");
+            }
+            RegexAtom::TildeMarker | RegexAtom::GoalMatch { .. } => return Err("goal-match"),
             _ => return Err("other-atom"),
         }
         Ok(())

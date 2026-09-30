@@ -137,7 +137,7 @@ pub(crate) struct RxProgram {
     pub(super) nregs: usize,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
-    pub(super) ascii: std::sync::OnceLock<Box<[u128]>>,
+    pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.

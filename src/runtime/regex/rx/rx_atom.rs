@@ -19,15 +19,19 @@
 
 use super::RxProgram;
 use crate::runtime::Interpreter;
+use crate::runtime::regex_types::{ClassItem, RegexAtom};
 use crate::symbol::Symbol;
 
 /// Printable ASCII, the range the fast path covers.
 const PRINTABLE: std::ops::Range<u32> = 0x20..0x7f;
 
 impl RxProgram {
-    /// The per-atom ASCII acceptance sets, probed on first use.
+    /// The per-atom ASCII acceptance sets, probed on first use. `None` for
+    /// an atom the probe cannot stand in for: a composite class with a named
+    /// item (`<+alpha -[x]>`) may fall back to a grammar token of that name,
+    /// which depends on the package and reads the real subject past `pos`.
     // Cost: O(1) after the first call; O(a * 95) on it, a = atoms.
-    fn ascii_sets(&self, interp: &mut Interpreter, pkg: Symbol) -> &[u128] {
+    fn ascii_sets(&self, interp: &mut Interpreter, pkg: Symbol) -> &[Option<u128>] {
         self.ascii.get_or_init(|| {
             self.atoms
                 .iter()
@@ -36,17 +40,32 @@ impl RxProgram {
                     // The table is shared with the zero-width assertions,
                     // which never reach `rx_atom_at`.
                     if !super::rx_compile::is_consuming(atom) {
-                        return set;
+                        return Some(set);
+                    }
+                    if composite_has_named_item(atom) {
+                        return None;
                     }
                     for c in PRINTABLE.filter_map(char::from_u32) {
                         if interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, false) == Some(1) {
                             set |= 1u128 << (c as u32);
                         }
                     }
-                    set
+                    Some(set)
                 })
                 .collect()
         })
+    }
+}
+
+/// Does `atom` hold a named class item, which `match_consuming_atom` may
+/// resolve as a grammar token when the built-in class rejects the character?
+fn composite_has_named_item(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::CompositeClass { positive, negative } => positive
+            .iter()
+            .chain(negative)
+            .any(|item| matches!(item, ClassItem::NamedBuiltin(_))),
+        _ => false,
     }
 }
 
@@ -80,9 +99,10 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> Option<usize> {
-        if let Some(c) = single_ascii(chars, pos) {
-            let sets = program.ascii_sets(self, pkg);
-            return (sets[i] & (1u128 << c) != 0).then_some(pos + 1);
+        if let Some(c) = single_ascii(chars, pos)
+            && let Some(set) = program.ascii_sets(self, pkg)[i]
+        {
+            return (set & (1u128 << c) != 0).then_some(pos + 1);
         }
         self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, false)
     }
