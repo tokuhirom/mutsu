@@ -1,3 +1,4 @@
+use super::named_adverb::has_subscript_named_adverb;
 use crate::ast::{ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER};
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_ident_char, ws};
@@ -82,6 +83,26 @@ pub(crate) fn parse_dynamic_subscript_adverb(input: &str) -> Option<&str> {
 pub(crate) fn parse_subscript_adverb_with_expr(
     input: &str,
 ) -> Option<(&str, &'static str, Option<Expr>)> {
+    if has_subscript_named_adverb(input) {
+        return None;
+    }
+    // `:$k` / `:$v` / `:$kv` / `:$p`: the variable's value is the adverb's
+    // runtime flag, exactly as `:k($k)`.
+    if let Some(r) = input.strip_prefix(":$") {
+        let end = r
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(r.len());
+        let mode = match &r[..end] {
+            "k" => Some("k"),
+            "v" => Some("v"),
+            "kv" => Some("kv"),
+            "p" => Some("p"),
+            _ => None,
+        };
+        if let Some(mode) = mode {
+            return Some((&r[end..], mode, Some(Expr::Var(mode.to_string()))));
+        }
+    }
     if let Some((canonical, negated, rest)) =
         crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", input)
     {
@@ -209,35 +230,6 @@ pub(crate) fn try_parse_adverb_expr(input: &str) -> Option<(&str, Expr)> {
     Some((r, expr))
 }
 
-/// Try to parse an unknown `:identifier` adverb (not k/v/kv/p/exists/delete).
-pub(crate) fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
-    if !input.starts_with(':') {
-        return None;
-    }
-    let rest = &input[1..];
-    let rest = rest.strip_prefix('!').unwrap_or(rest);
-    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_alphabetic() {
-        return None;
-    }
-    let end = rest
-        .find(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
-        .unwrap_or(rest.len());
-    if end == 0 {
-        return None;
-    }
-    let name = &rest[..end];
-    if matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete") {
-        return None;
-    }
-    let after = &rest[end..];
-    let final_rest = if after.starts_with('(') {
-        after.find(')').map_or(after, |close| &after[close + 1..])
-    } else {
-        after
-    };
-    Some((final_rest, name.to_string()))
-}
-
 /// Determine "element access" vs "slice" from the target and index.
 /// Hash access is always "slice"; array single-element is "element access".
 pub(crate) fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
@@ -286,45 +278,6 @@ pub(crate) fn normalize_adverb_name(s: &str) -> String {
     s.strip_suffix('0').unwrap_or(s).to_string()
 }
 
-/// Route a subscript carrying only user-defined (non-built-in) adverbs to a
-/// user `postcircumfix:<[ ]>` / `postcircumfix:<{ }>` candidate, e.g. the
-/// `Adverb::Eject` module's `@a[1]:eject` -> `postcircumfix:<[ ]>(@a, 1,
-/// :eject)`. Returns `None` when no such user candidate is in scope, so the
-/// caller falls back to the X::Adverb error. `is_positional` selects the
-/// bracket flavour (`[...]` vs `{...}`/`<...>`). Each collected adverb becomes a
-/// `:name` (True) named argument; the runtime multi-dispatch then picks the
-/// matching candidate exactly as an explicit call would.
-pub(crate) fn build_user_postcircumfix_adverb_call(
-    target: &Expr,
-    index: &Expr,
-    is_positional: bool,
-    adverbs: &[String],
-) -> Option<Expr> {
-    if adverbs.is_empty() {
-        return None;
-    }
-    let op_name = if is_positional {
-        "postcircumfix:<[ ]>"
-    } else {
-        "postcircumfix:<{ }>"
-    };
-    if !crate::parser::stmt::simple::is_user_declared_sub(op_name) {
-        return None;
-    }
-    let mut args = vec![target.clone(), index.clone()];
-    for adv in adverbs {
-        args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(adv.clone()))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::TRUE)),
-        });
-    }
-    Some(Expr::Call {
-        name: Symbol::intern(op_name),
-        args,
-    })
-}
-
 /// Build a `__mutsu_subscript_adverb_error` call for X::Adverb.
 pub(crate) fn build_adverb_error_call(
     what: &str,
@@ -348,20 +301,15 @@ pub(crate) fn build_adverb_error_call(
     }
 }
 
-/// Consume all remaining adverbs (known and unknown) after a subscript.
-pub(crate) fn collect_remaining_adverbs<'a>(
-    start: &'a str,
-    known: &mut Vec<String>,
-    unknown: &mut Vec<String>,
-) -> &'a str {
+/// Consume all remaining built-in adverbs after a subscript. (A chain with a
+/// non-built-in adverb never gets here: it is lowered whole by
+/// `named_adverb::lower_subscript_named_adverbs`.)
+pub(crate) fn collect_remaining_adverbs<'a>(start: &'a str, known: &mut Vec<String>) -> &'a str {
     let mut r = start;
     loop {
         let r2 = ws(r).map_or(r, |(r2, _)| r2);
         if let Some((r3, next_adv, _)) = parse_subscript_adverb_with_expr(r2) {
             known.push(normalize_adverb_name(next_adv));
-            r = r3;
-        } else if let Some((r3, unk_name)) = try_parse_unknown_adverb(r2) {
-            unknown.push(unk_name);
             r = r3;
         } else {
             break;
@@ -479,6 +427,9 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
 }
 
 pub(crate) fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
+    if has_subscript_named_adverb(input) {
+        return None;
+    }
     if let Some((canonical, negated, rest)) =
         crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", input)
         && canonical == "delete"
@@ -615,6 +566,9 @@ pub(crate) fn subscript_adverb_expr_with_cond(
 /// Try to parse :exists or :!exists adverb on a subscript expression.
 /// Returns (remaining_input, exists_expr) or None if no adverb found.
 pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
+    if has_subscript_named_adverb(input) {
+        return None;
+    }
     let r = input;
     let (r, negated) = if let Some((canonical, negated, rest)) =
         crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", r)

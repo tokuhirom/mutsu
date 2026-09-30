@@ -1,10 +1,8 @@
 use super::adverb::{
-    DeleteAdverb, apply_delete_to_exists, build_adverb_error_call,
-    build_user_postcircumfix_adverb_call, collect_remaining_adverbs, determine_subscript_what,
-    multidim_delete_fn, multidim_target_var_name, normalize_adverb_name, parse_delete_adverb,
-    parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
+    DeleteAdverb, apply_delete_to_exists, build_adverb_error_call, collect_remaining_adverbs,
+    determine_subscript_what, multidim_delete_fn, multidim_target_var_name, normalize_adverb_name,
+    parse_delete_adverb, parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
     subscript_adverb_expr_with_cond, supports_postfix_call_adverbs, try_parse_exists_adverb,
-    try_parse_unknown_adverb,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
@@ -16,6 +14,9 @@ use super::dot_assign::{atomic_var_name, parse_dot_assign};
 use super::helpers::{
     colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
     extract_range_negative_end, is_angle_subscript_key_char, make_negative_subscript_error,
+};
+use super::named_adverb::{
+    has_subscript_named_adverb, lower_subscript_named_adverbs, scan_subscript_named_adverbs,
 };
 use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
@@ -1865,7 +1866,7 @@ fn postfix_expr_loop_from(
                 // dropped and the adverb mis-parsed as a colonpair argument.
                 if parse_subscript_adverb_with_expr(r_adv).is_some()
                     || parse_delete_adverb(r_adv).is_some()
-                    || try_parse_unknown_adverb(r_adv).is_some()
+                    || has_subscript_named_adverb(r_adv)
                 {
                     // A zen slice carrying an adverb behaves like the whatever
                     // slice for VALUES (all keys/values), so model the empty
@@ -2254,7 +2255,7 @@ fn postfix_expr_loop_from(
                     || r_adv.starts_with(":delete")
                     || r_adv.starts_with(":!delete")
                     || parse_subscript_adverb_with_expr(r_adv).is_some()
-                    || try_parse_unknown_adverb(r_adv).is_some();
+                    || has_subscript_named_adverb(r_adv);
                 if has_adverb {
                     // Keep as Index with Whatever so adverb processing works
                     expr = Expr::Index {
@@ -2371,6 +2372,17 @@ fn postfix_expr_loop_from(
         ) || matches!(&expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb" || name == "__mutsu_subscript_adverb_error" || name == "__mutsu_multidim_adverb" || name == "__mutsu_multidim_subscript_adverb" || name == "__mutsu_multidim_delete" || name == "__mutsu_multidim_dynamic_adverb")
         {
             let (r_adv2, _) = ws(rest)?;
+            // A chain carrying any non-built-in adverb (`@a[0]:foo`,
+            // `%h{"a";"b"}:$no`, `@a[0]:k:foo`) becomes named arguments of the
+            // subscript operator as a whole.
+            if matches!(&expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
+                && let Some((r_after, pairs)) = scan_subscript_named_adverbs(r_adv2)
+                && let Some(lowered) = lower_subscript_named_adverbs(&expr, pairs)
+            {
+                expr = lowered;
+                rest = r_after;
+                continue;
+            }
             if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2)
                 && let Some((r_after, exists_expr)) =
                     try_parse_exists_adverb(r_after_delete, expr.clone())
@@ -2416,87 +2428,14 @@ fn postfix_expr_loop_from(
                         normalize_adverb_name(&first_adv),
                         normalize_adverb_name(adv_name),
                     ];
-                    let mut unknown: Vec<String> = Vec::new();
-                    let r = collect_remaining_adverbs(r_after_adv, &mut known, &mut unknown);
-                    expr = build_adverb_error_call(&what, &var_name, &known, &unknown);
+                    let r = collect_remaining_adverbs(r_after_adv, &mut known);
+                    expr = build_adverb_error_call(&what, &var_name, &known, &[]);
                     rest = r;
                     continue;
                 }
                 expr = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
                 rest = r_after_adv;
                 continue;
-            }
-            // Unknown adverb on subscript (e.g. @a[1]:zorp)
-            if let Some((r_after_unk, unk_name)) = try_parse_unknown_adverb(r_adv2) {
-                if let Expr::Call { ref name, ref args } = expr
-                    && *name == Symbol::intern("__mutsu_subscript_adverb")
-                    && args.len() >= 3
-                {
-                    let first_adv = if let Expr::Literal(lit) = &args[2]
-                        && let ValueView::Str(s) = lit.view()
-                    {
-                        s.to_string()
-                    } else {
-                        String::new()
-                    };
-                    let var_name = args
-                        .get(3)
-                        .and_then(|a| {
-                            if let Expr::Literal(lit) = a
-                                && let ValueView::Str(s) = lit.view()
-                            {
-                                Some(s.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or_default();
-                    let what = determine_subscript_what(&args[0], &args[1]);
-                    let known_vec = vec![normalize_adverb_name(&first_adv)];
-                    let mut unknown_vec = vec![unk_name];
-                    let mut extra_known: Vec<String> = Vec::new();
-                    let r =
-                        collect_remaining_adverbs(r_after_unk, &mut extra_known, &mut unknown_vec);
-                    let all_known = [known_vec, extra_known].concat();
-                    expr = build_adverb_error_call(&what, &var_name, &all_known, &unknown_vec);
-                    rest = r;
-                    continue;
-                }
-                // Single unknown adverb on a plain Index
-                if let Expr::Index {
-                    ref target,
-                    ref index,
-                    is_positional,
-                } = expr
-                {
-                    let var_name = match target.as_ref() {
-                        Expr::ArrayVar(n) => format!("@{}", n),
-                        Expr::HashVar(n) => format!("%{}", n),
-                        _ => String::new(),
-                    };
-                    let what = determine_subscript_what(target, index);
-                    let mut known_vec: Vec<String> = Vec::new();
-                    let mut unknown_vec = vec![unk_name];
-                    let r =
-                        collect_remaining_adverbs(r_after_unk, &mut known_vec, &mut unknown_vec);
-                    // A custom adverb (`@a[1]:eject`) with no built-in adverb
-                    // routes to a user-defined `postcircumfix:<[ ]>`/`<{ }>` when
-                    // one is in scope; otherwise it is an X::Adverb error.
-                    if known_vec.is_empty()
-                        && let Some(call) = build_user_postcircumfix_adverb_call(
-                            target,
-                            index,
-                            is_positional,
-                            &unknown_vec,
-                        )
-                    {
-                        expr = call;
-                    } else {
-                        expr = build_adverb_error_call(&what, &var_name, &known_vec, &unknown_vec);
-                    }
-                    rest = r;
-                    continue;
-                }
             }
             if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv2, expr.clone()) {
                 expr = exists_expr;

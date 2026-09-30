@@ -654,14 +654,34 @@ impl RuntimeError {
         nogo: &[String],
         unexpected: &[String],
     ) -> Self {
-        let nogo_display = nogo
-            .iter()
-            .map(|s| format!("'{}'", s))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let msg = format!(
-            "Unsupported combination of adverbs ({}) passed to {}\non '{}'.",
-            nogo_display, what, source
+        // Rakudo's `X::Adverb.nogo` / `.unexpected` answer the names sorted,
+        // and its message is built from those accessors.
+        let mut nogo = nogo.to_vec();
+        nogo.sort();
+        let mut unexpected = unexpected.to_vec();
+        unexpected.sort();
+        let quoted = |names: &[String]| {
+            names
+                .iter()
+                .map(|s| format!("'{}'", s))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut text = match unexpected.len() {
+            0 => String::new(),
+            1 => format!("Unexpected adverb {}", quoted(&unexpected)),
+            n => format!("{n} unexpected adverbs ({})", quoted(&unexpected)),
+        };
+        if !nogo.is_empty() || text.is_empty() {
+            text.push_str(if text.is_empty() { "U" } else { " and u" });
+            text.push_str(&format!(
+                "nsupported combination of adverbs ({})",
+                quoted(&nogo)
+            ));
+        }
+        let msg = crate::builtins::exception_message::naive_word_wrap(
+            &format!("{text} passed to {what} on '{source}'."),
+            72,
         );
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));

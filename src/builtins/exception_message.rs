@@ -288,7 +288,7 @@ fn attr_str(attrs: &AttrMap, key: &str) -> String {
 
 /// Rakudo's `Str.naive-word-wrapper`: greedily fill lines of at most `max`
 /// columns, breaking only at spaces.
-fn naive_word_wrap(text: &str, max: usize) -> String {
+pub(crate) fn naive_word_wrap(text: &str, max: usize) -> String {
     let mut out = String::with_capacity(text.len());
     let mut line_len = 0;
     for word in text.split(' ').filter(|w| !w.is_empty()) {
