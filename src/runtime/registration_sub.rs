@@ -2027,7 +2027,19 @@ impl Interpreter {
             // not turn the `is json` attribute trait into a positional-type
             // dispatch (JSON::Marshal t/140-opt-in.t). A declared variable is
             // recognizable by its recorded type constraint.
-            if matches!(val.view(), ValueView::Package(_))
+            //
+            // The Package must also BE a type of that name: a scalar holding a
+            // type object (a parametric role's `Str :$xml-element` parameter
+            // binds `Str` under the bare key `xml-element`) names no type, and
+            // treating it as one made `is xml-element` dispatch positionally.
+            // A lexical class/role's storage name is `Name\0<id>`; its
+            // user-facing form compares equal to the bare name.
+            let names_this_type = |p: &Symbol| {
+                let resolved = p.resolve();
+                let facing = crate::value::user_facing_type_name(&resolved);
+                facing.as_ref() == name
+            };
+            if matches!(val.view(), ValueView::Package(p) if names_this_type(&p))
                 && (self.var_type_constraint(name).is_none() || self.has_type_direct(name))
             {
                 Some(val.clone())

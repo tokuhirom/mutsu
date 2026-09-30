@@ -738,7 +738,12 @@ impl Interpreter {
                     break;
                 }
                 let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
-                if self.has_type_direct(qualified) {
+                // A compound declared name (`class Test::Bool` at file scope)
+                // does not make `Test` a scope that owns a `Bool`: code
+                // running in `Test` must still see the core `Bool`.
+                if self.has_type_direct(qualified)
+                    && !self.compound_name_segment_is_not_a_scope(qualified)
+                {
                     return Some(qualified);
                 }
             }
@@ -1003,7 +1008,12 @@ impl Interpreter {
             // but never let that self-reference win.
             for pkg in crate::qualified::package_ancestors(owner_sym) {
                 let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
-                if qualified != owner && self.has_type_direct(qualified) {
+                // A compound declared name (`class Test::Bool` at file scope) is
+                // not a declaration inside `Test`, so `Test`'s own `Bool` stays core.
+                if qualified != owner
+                    && self.has_type_direct(qualified)
+                    && !self.compound_name_segment_is_not_a_scope(qualified)
+                {
                     return qualified.to_string();
                 }
             }

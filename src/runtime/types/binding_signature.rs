@@ -3049,48 +3049,55 @@ impl Interpreter {
                             unwrap_varref_value(raw_arg.clone()).view(),
                             ValueView::Array(..) | ValueView::Hash(..)
                         );
-                    let source_type_constraint = source_name.as_deref().and_then(|source_name| {
-                        // A container argument carries its element/key type
-                        // EMBEDDED in the value (tagged at its typed
-                        // declaration's assignment) — read it from there. The
-                        // name-keyed store used to be scope-blind: a module
-                        // method's own `my CSV::Field @f` left a global "@f"
-                        // entry behind, and consulting it here retyped an
-                        // UNTYPED caller array that merely shared the name
-                        // (Text::CSV 46_eol_si: script `@f` rendered as
-                        // `Array[CSV::Field].new(...)` after one getline call).
-                        // The global map is gone (ADR-0042 slice 3), but
-                        // reading the container is still the right source: it
-                        // is the only one an argument bound under a DIFFERENT
-                        // name has.
-                        if source_name.starts_with('@') || source_name.starts_with('%') {
-                            let val = unwrap_varref_value(raw_arg.clone());
-                            return self
-                                .container_type_metadata(&val)
-                                .filter(|info| !info.value_type.is_empty())
-                                .map(|info| match info.key_type {
-                                    Some(kt) => format!("{}{{{}}}", info.value_type, kt),
-                                    None => info.value_type,
-                                });
-                        }
-                        // No typed lexical has ever been declared: neither
-                        // spelling can have an entry, so skip the interning
-                        // entirely (the same gate `var_type_constraint` applies).
-                        if !Self::env_type_constraint_seen() {
-                            return None;
-                        }
-                        // The sigil-stripped retry is skipped when the source
-                        // name carries no sigil: the two spellings are then the
-                        // same string, so the second probe re-hashed the name to
-                        // reach the same (already-missed) key (#7736).
-                        let source_sym = Symbol::intern(source_name);
-                        self.var_type_constraint_sym(source_sym).or_else(|| {
-                            let bare = source_name.trim_start_matches(['$', '@', '%', '&']);
-                            (bare.len() != source_name.len())
-                                .then(|| self.var_type_constraint(bare))
-                                .flatten()
-                        })
-                    });
+                    // `is copy` detaches into the parameter's own container, so the
+                    // caller's container constraint never applies to it (a caller
+                    // variable that merely shares the parameter's name, as in a
+                    // recursive multi, must not retype the copy).
+                    let source_type_constraint = source_name
+                        .as_deref()
+                        .filter(|_| !is_copy)
+                        .and_then(|source_name| {
+                            // A container argument carries its element/key type
+                            // EMBEDDED in the value (tagged at its typed
+                            // declaration's assignment) — read it from there. The
+                            // name-keyed store used to be scope-blind: a module
+                            // method's own `my CSV::Field @f` left a global "@f"
+                            // entry behind, and consulting it here retyped an
+                            // UNTYPED caller array that merely shared the name
+                            // (Text::CSV 46_eol_si: script `@f` rendered as
+                            // `Array[CSV::Field].new(...)` after one getline call).
+                            // The global map is gone (ADR-0042 slice 3), but
+                            // reading the container is still the right source: it
+                            // is the only one an argument bound under a DIFFERENT
+                            // name has.
+                            if source_name.starts_with('@') || source_name.starts_with('%') {
+                                let val = unwrap_varref_value(raw_arg.clone());
+                                return self
+                                    .container_type_metadata(&val)
+                                    .filter(|info| !info.value_type.is_empty())
+                                    .map(|info| match info.key_type {
+                                        Some(kt) => format!("{}{{{}}}", info.value_type, kt),
+                                        None => info.value_type,
+                                    });
+                            }
+                            // No typed lexical has ever been declared: neither
+                            // spelling can have an entry, so skip the interning
+                            // entirely (the same gate `var_type_constraint` applies).
+                            if !Self::env_type_constraint_seen() {
+                                return None;
+                            }
+                            // The sigil-stripped retry is skipped when the source
+                            // name carries no sigil: the two spellings are then the
+                            // same string, so the second probe re-hashed the name to
+                            // reach the same (already-missed) key (#7736).
+                            let source_sym = Symbol::intern(source_name);
+                            self.var_type_constraint_sym(source_sym).or_else(|| {
+                                let bare = source_name.trim_start_matches(['$', '@', '%', '&']);
+                                (bare.len() != source_name.len())
+                                    .then(|| self.var_type_constraint(bare))
+                                    .flatten()
+                            })
+                        });
                     // The SOURCE variable's constraint wins, and for a sigilless
                     // parameter it is the only one that applies: `\c` is a raw
                     // alias, so a write through it lands in the caller's

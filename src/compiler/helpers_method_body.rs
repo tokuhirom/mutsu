@@ -396,7 +396,6 @@ impl Compiler {
         let qualified = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
         } else if base_package == "GLOBAL"
-            || resolved_name == base_package
             || resolved_name.starts_with(&format!("{base_package}::"))
         {
             resolved_name.to_string()
