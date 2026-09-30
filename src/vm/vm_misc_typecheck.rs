@@ -402,6 +402,14 @@ impl Interpreter {
         } else if !self.has_type(declared_constraint)
             && !is_core_raku_type(declared_constraint)
             && !loan_env!(self, has_type_capture_binding(declared_constraint))
+            // A role body statement runs under the composing class's package,
+            // but its short type names (`my Level $x` with `enum Level` in the
+            // class enclosing the role) resolve through the role's own chain.
+            && !self.nested_capture_owners.last().is_some_and(|owner| {
+                let resolved = self
+                    .resolve_type_name_for_owner(owner.as_str(), declared_constraint.to_string());
+                resolved != declared_constraint && self.has_type_direct(&resolved)
+            })
         {
             // Check if this is a suppressed nested class name that can be resolved
             if self.resolve_suppressed_type(declared_constraint).is_none() {
