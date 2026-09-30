@@ -1184,13 +1184,16 @@ impl Interpreter {
         // functions live under `MOD::name` (a plain `use` renamed the hidden
         // tagged ones there; DEFAULT ones stay `GLOBAL::name` and are already
         // imported, so the re-alias below is a harmless no-op for them).
-        if bare_file_module {
-            for (name, tags) in owned_subs.iter() {
-                merged_subs
-                    .entry(name.clone())
-                    .or_default()
-                    .extend(tags.iter().cloned());
-            }
+        // A module that ALSO binds a routine into its export stash
+        // (`BEGIN EXPORT::DEFAULT::{.key} := .value for Test::EXPORT::DEFAULT::`,
+        // Test::Coverage) fills `exported_subs` too, so `bare_file_module` is
+        // false -- its `is export` subs still have to be aliased, or `MY::<&f>`
+        // misses them after the import.
+        for (name, tags) in owned_subs.iter() {
+            merged_subs
+                .entry(name.clone())
+                .or_default()
+                .extend(tags.iter().cloned());
         }
 
         for (name, symbol_tags) in merged_subs {
