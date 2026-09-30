@@ -1104,15 +1104,13 @@ impl Interpreter {
         // (no cost); the topic is excluded as a per-call alias.
         for sym in &cf.code.free_var_writes {
             sym.with_str(|fname| {
-                // mutsu#9111: see the fast path.
+                // A compunit or mainline lexical write already reached its own
+                // cell; it must not overwrite a caller's same-named local.
                 if fname != "_"
                     && fname != "@_"
                     && fname != "%_"
-                    && !self.is_lexsub_alias_write(
-                        func_name,
-                        (cf.package_sym(), cf.source_file_sym()),
-                        fname,
-                    )
+                    && !self.is_unit_lexical_of(&cf.package, fname)
+                    && !self.is_mainline_lexical_write(func_name, cf, fname)
                 {
                     self.pending_rw_writeback_sources.push(fname.to_string());
                 }
