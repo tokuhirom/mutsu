@@ -281,7 +281,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     if is_export && is_lexical {
         // See `class_decl`: a lexical type keeps an internal marker instead of
         // the synthetic export statement, which would make it block-local.
-        custom_traits.push(("__mutsu_export_type".to_string(), None));
+        custom_traits.push(super::class_decl::export_type_marker(&export_tags));
     }
     let grammar_stmt = Stmt::ClassDecl {
         name: Symbol::intern(&name),

@@ -694,6 +694,12 @@ impl Interpreter {
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
             let eager = match &op.raw {
+                // An exported `my constant`/`my $x` is a compile-time
+                // declaration too (#9981). Its initializer may name a type
+                // parameter, so only a non-parameterized role runs it early.
+                Stmt::VarDecl {
+                    is_export: true, ..
+                } => !parameterized,
                 Stmt::EnumDecl { base_type, .. } => base_type
                     .as_ref()
                     .is_none_or(|base| !type_params.iter().any(|tp| tp == base)),
@@ -709,6 +715,39 @@ impl Interpreter {
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.set_current_package(saved_package);
                 return Err(error);
+            }
+            // A lexical `my class C is export` carries its tags on an internal
+            // marker (see `class_decl`); publish it the way an exported subset is.
+            if let Stmt::ClassDecl {
+                name,
+                custom_traits,
+                ..
+            } = &op.raw
+                && let Some((_, tags)) = custom_traits
+                    .iter()
+                    .find(|(t, _)| t == "__mutsu_export_type")
+                && !self.suppress_exports
+            {
+                let tags = match tags {
+                    Some(Expr::ArrayLiteral(items)) => items
+                        .iter()
+                        .filter_map(|e| match e {
+                            Expr::Literal(v) => Some(v.to_string_value()),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => vec!["DEFAULT".to_string()],
+                };
+                let (pkg, short) = match crate::qualified::package_parent(*name) {
+                    Some(parent) => (
+                        parent.resolve().to_string(),
+                        crate::qualified::unqualified_part(*name)
+                            .resolve()
+                            .to_string(),
+                    ),
+                    None => (role_name.to_string(), name.resolve().to_string()),
+                };
+                self.register_exported_var(pkg, short, tags);
             }
         }
         self.set_current_package(saved_package);
