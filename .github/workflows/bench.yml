@@ -8,6 +8,8 @@ name: Bench
 # shared runners are noisy, so a single red delta is not proof of a regression.
 # Both absolute medians and the mutsu/raku ratio are recorded — raku runs on
 # the same runner in the same job, so the ratio normalizes runner speed.
+# Raku++ (rakupp, https://github.com/ash/rakupp — an independent C++
+# implementation) is measured the same way as a second reference point.
 # A >1.5x slowdown vs the previous recorded run emits a warning annotation.
 
 on:
@@ -105,6 +107,33 @@ jobs:
             && echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
           exit 0
 
+      - name: Install rakupp (second reference implementation)
+        # Best-effort, like rakudo above: a failed download leaves `rakupp`
+        # off PATH, bench-ci.sh then records NA in the two rakupp columns, and
+        # every other number is unaffected. Pinned to a release (and its
+        # published SHA-256 checked) rather than /releases/latest/ so the
+        # comparison baseline only moves when this is bumped by hand — an
+        # unannounced engine upgrade would otherwise read as a mutsu change in
+        # the ratio series. See https://github.com/ash/rakupp/releases.
+        env:
+          RAKUPP_VERSION: "v5.0.1"
+          RAKUPP_ARCHIVE: "rakupp-linux-x86_64.tar.gz"
+        run: |
+          set +e
+          url="https://github.com/ash/rakupp/releases/download/${RAKUPP_VERSION}/${RAKUPP_ARCHIVE}"
+          dl=$(mktemp -d)
+          if curl -fsSL -o "$dl/$RAKUPP_ARCHIVE" "$url" \
+              && curl -fsSL -o "$dl/sum" "$url.sha256" \
+              && [ "$(grep -o '[0-9a-f]\{64\}' "$dl/sum" | head -1)" = "$(sha256sum "$dl/$RAKUPP_ARCHIVE" | cut -d' ' -f1)" ]; then
+            mkdir -p "$HOME/rakupp"
+            tar -xzf "$dl/$RAKUPP_ARCHIVE" -C "$HOME/rakupp" --strip-components 1 \
+              && "$HOME/rakupp/bin/rakupp" --version \
+              && echo "$HOME/rakupp/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning title=rakupp unavailable::could not download or verify $url; rakupp columns will be NA"
+          fi
+          exit 0
+
       - name: Build (release)
         run: cargo build --release
         env:
@@ -150,10 +179,10 @@ jobs:
           {
             echo "## Benchmark results ($(git rev-parse --short HEAD))"
             echo ""
-            echo "| benchmark | mutsu median (s) | mutsu min (s) | raku median (s) | ratio | prev mutsu (s) | change |"
-            echo "|---|---|---|---|---|---|---|"
+            echo "| benchmark | mutsu median (s) | mutsu min (s) | raku median (s) | ratio | rakupp median (s) | ratio vs rakupp | prev mutsu (s) | change |"
+            echo "|---|---|---|---|---|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          while IFS=$'\t' read -r name m_med m_min r_med ratio runs; do
+          while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio; do
             prev="NA"; change="—"
             if [ -f "$HIST" ]; then
               prev=$(awk -F'\t' -v b="$name" '$3==b {v=$4} END {print (v=="" ? "NA" : v)}' "$HIST")
@@ -167,7 +196,7 @@ jobs:
                 echo "::warning title=bench regression?::$name mutsu median ${prev}s -> ${m_med}s ($change) vs previous recorded run"
               fi
             fi
-            echo "| $name | $m_med | $m_min | $r_med | $ratio | $prev | $change |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| $name | $m_med | $m_min | $r_med | $ratio | ${p_med:-NA} | ${p_ratio:-NA} | $prev | $change |" >> "$GITHUB_STEP_SUMMARY"
           done < tmp/bench-results.tsv
 
           # The deterministic series (#8085). Its alarm is 2%, not 1.5x: the
@@ -231,6 +260,7 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           RUNNER_INFO="$(nproc)c-$(uname -m)-${ImageOS:-unknown}"
           RAKUDO_VER=$(raku --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
+          RAKUPP_VER=$(rakupp --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
           RUSTC_VER=$(rustc --version 2>/dev/null | tr '\t' ' ' || echo unknown)
           REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # Retry loop: re-clone fresh each attempt so a concurrent writer's
@@ -247,11 +277,18 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             if [ ! -f bench-history.tsv ]; then
-              printf 'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo\n' > bench-history.tsv
+              printf 'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp\n' > bench-history.tsv
+            elif ! head -1 bench-history.tsv | grep -q 'rakupp'; then
+              # One-time header migration. The rakupp columns are appended
+              # AFTER `rakudo` rather than next to the raku ones precisely so
+              # that no existing row has to be rewritten: every earlier row
+              # keeps its ten fields and simply has no eleventh.
+              sed -i '1s/$/\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp/' bench-history.tsv
             fi
-            while IFS=$'\t' read -r name m_med m_min r_med ratio runs; do
-              printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio; do
+              printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
                 "$DATE" "$SHA" "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$runs" "$RUNNER_INFO" "$RAKUDO_VER" \
+                "${p_med:-NA}" "${p_ratio:-NA}" "$RAKUPP_VER" \
                 >> bench-history.tsv
             done < "$GITHUB_WORKSPACE/tmp/bench-results.tsv"
             # The deterministic series lives in its own file (#8085): it has no

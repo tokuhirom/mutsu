@@ -42,6 +42,13 @@ COLUMNS = [
     "runs",
     "runner",
     "rakudo",
+    # Raku++ (https://github.com/ash/rakupp), the second reference
+    # implementation. Appended after `rakudo` for the same reason as
+    # `allocations` below: every row written before these columns existed
+    # still parses, and simply has no rakupp point.
+    "rakupp_median_s",
+    "ratio_mutsu_over_rakupp",
+    "rakupp",
 ]
 
 
@@ -78,6 +85,12 @@ def parse_rows(text):
             rec["ratio"] = float(rec["ratio_mutsu_over_raku"])
         except (ValueError, KeyError):
             continue
+        try:
+            rec["ratio_pp"] = float(rec["ratio_mutsu_over_rakupp"])
+        except (ValueError, KeyError):
+            # Absent before rakupp was measured, NA when its run failed: no
+            # point either way.
+            rec["ratio_pp"] = None
         rows.append(rec)
     return rows
 
@@ -136,9 +149,11 @@ def build_model(rows, det_rows=()):
         det[(r["benchmark"], r["commit"])] = (r["instructions"], r["allocations"])
 
     # benchmark basename -> {"base": [...pts], "jit": [...pts]}
-    # A point is [commitIdx, seconds, ratio, instructions|None, allocations|None]
-    # -- the last two slots are None wherever the deterministic series has no
-    # row, which is every commit before each of them started being recorded.
+    # A point is [commitIdx, seconds, ratio, instructions|None, allocations|None,
+    # ratio_vs_rakupp|None] -- the instruction/allocation slots are None
+    # wherever the deterministic series has no row, and the rakupp slot wherever
+    # rakupp was not measured, which is every commit before each of them
+    # started being recorded.
     benches = {}
     for r in rows:
         name = r["benchmark"]
@@ -152,6 +167,7 @@ def build_model(rows, det_rows=()):
             round(r["ratio"], 4),
             instr,
             allocs,
+            None if r["ratio_pp"] is None else round(r["ratio_pp"], 4),
         ]
 
     # Any deterministic row with no wall-clock twin (the wall-clock measurement
@@ -160,7 +176,7 @@ def build_model(rows, det_rows=()):
     for (name, commit), (instr, allocs) in det.items():
         base_name, lane = split_lane(name)
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
-        b[lane].setdefault(idx[commit], [idx[commit], None, None, instr, allocs])
+        b[lane].setdefault(idx[commit], [idx[commit], None, None, instr, allocs, None])
 
     out = []
     for name in sorted(benches):
@@ -182,6 +198,8 @@ def build_model(rows, det_rows=()):
         # Same, for "allocations" (#8959), which started being recorded later
         # than the instruction counts and so is absent from the older rows.
         "hasAllocs": any(r["allocations"] is not None for r in det_rows),
+        # Same, for "ratio vs rakupp", which started being recorded later still.
+        "hasRakupp": any(r["ratio_pp"] is not None for r in rows),
     }
 
 
@@ -290,6 +308,7 @@ __CHROME_NAV__
     <div class="seg" id="metric" role="group" aria-label="Metric">
       <button data-v="seconds" aria-pressed="true">mutsu seconds</button>
       <button data-v="ratio" aria-pressed="false">ratio vs raku</button>
+      <button data-v="ratiopp" aria-pressed="false" id="metricRakupp" hidden>ratio vs rakupp</button>
       <button data-v="instr" aria-pressed="false" id="metricInstr" hidden>instructions</button>
       <button data-v="allocs" aria-pressed="false" id="metricAllocs" hidden>allocations</button>
     </div>
@@ -330,10 +349,12 @@ const N = commits.length;
 let metric = 'seconds', windowN = 150, view = 'charts', yaxis = 'fit';
 let sortKey = 'name', sortDir = 1;
 
-// A point is [commitIdx, seconds, ratio, instructions, allocations]. The last
-// two are null for every commit before each series started being recorded, so
-// every consumer below has to tolerate a null y -- see `defined`.
-const YIDX = { seconds: 1, ratio: 2, instr: 3, allocs: 4 };
+// A point is [commitIdx, seconds, ratio, instructions, allocations,
+// ratio_vs_rakupp]. The last three are null for every commit before each series
+// started being recorded, so every consumer below has to tolerate a null y --
+// see `defined`.
+const YIDX = { seconds: 1, ratio: 2, instr: 3, allocs: 4, ratiopp: 5 };
+const isRatio = () => metric === 'ratio' || metric === 'ratiopp';
 const yval = (pt) => pt[YIDX[metric]];
 const defined = (pt) => yval(pt) != null;
 // Instruction counts run to 1e9-1e13 and allocation counts to 1e4-1e8, so both
@@ -350,7 +371,7 @@ const fmt = (v) => (metric === 'instr' || metric === 'allocs') ? fmtInstr(v)
   : metric === 'seconds'
     ? (v === 0 ? '0' : v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
     : v.toFixed(2);
-const unit = () => metric === 'seconds' ? 's' : metric === 'ratio' ? '×' : '';
+const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
@@ -374,7 +395,7 @@ function chart(b) {
   for (const [, pts] of lanes) for (const p of pts) {
     const v = yval(p); if (v < lo) lo = v; if (v > hi) hi = v;
   }
-  if (metric === 'ratio') { lo = Math.min(lo, 1); hi = Math.max(hi, 1); }
+  if (isRatio()) { lo = Math.min(lo, 1); hi = Math.max(hi, 1); }
   if (!isFinite(lo)) { lo = 0; hi = 1; }
   // `zero` anchors the axis at 0 so a chart shows a change's size relative to
   // the whole value; `fit` zooms onto the data's own range so small moves show.
@@ -388,10 +409,10 @@ function chart(b) {
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${b.name} trend">`;
   for (const t of [0.5]) { const y = PADT + t * (H - PADT - PADB);
     svg += `<line class="gridline" x1="${PADL}" x2="${W - PADR}" y1="${y}" y2="${y}"/>`; }
-  if (metric === 'ratio' && 1 >= lo && 1 <= hi) {
+  if (isRatio() && 1 >= lo && 1 <= hi) {
     const y = sy(1);
     svg += `<line class="refline" x1="${PADL}" x2="${W - PADR}" y1="${y}" y2="${y}"/>`;
-    svg += `<text class="axis" x="${W - PADR}" y="${y - 3}" text-anchor="end">raku</text>`;
+    svg += `<text class="axis" x="${W - PADR}" y="${y - 3}" text-anchor="end">${metric === 'ratiopp' ? 'rakupp' : 'raku'}</text>`;
   }
   svg += `<text class="axis" x="${PADL}" y="${PADT - 2}">${fmt(hi)}${unit()}</text>`;
   svg += `<text class="axis" x="${PADL}" y="${H - 4}">${fmt(lo)}${unit()}</text>`;
@@ -521,7 +542,8 @@ const VALID = {
   // is silent, and is the shape #8959's `allocs` was in when it met this
   // validator. The generator asserts the two agree (see `_assert_metrics_valid`).
   metric: (v) => v === 'seconds' || v === 'ratio'
-    || (v === 'instr' && DATA.hasDet) || (v === 'allocs' && DATA.hasAllocs),
+    || (v === 'instr' && DATA.hasDet) || (v === 'allocs' && DATA.hasAllocs)
+    || (v === 'ratiopp' && DATA.hasRakupp),
   window: (v) => v === '0' || v === '50' || v === '150',
   view: (v) => v === 'charts' || v === 'table',
   y: (v) => v === 'fit' || v === 'zero',
@@ -608,6 +630,7 @@ function seg(id, cb) {
 }
 if (DATA.hasDet) document.getElementById('metricInstr').hidden = false;
 if (DATA.hasAllocs) document.getElementById('metricAllocs').hidden = false;
+if (DATA.hasRakupp) document.getElementById('metricRakupp').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
 seg('view', v => view = v);
@@ -639,6 +662,10 @@ document.getElementById('foot').innerHTML =
   `Each chart has an independent y-axis (small multiples), fitted to the data by default; ` +
   `<b>Y axis: from 0</b> anchors every axis at zero instead. Values are the median of 7 runs; ` +
   `ratio is mutsu ÷ Rakudo on the same runner (below 1× = faster than raku). ` +
+  (DATA.hasRakupp
+    ? `<b>ratio vs rakupp</b> is mutsu ÷ <a href="https://github.com/ash/rakupp">Raku++</a>, ` +
+      `an independent C++ implementation, measured the same way on the same runner. `
+    : '') +
   `Δ latest = last commit vs the previous in the window. ` +
   (DATA.hasDet
     ? `<b>instructions</b> is the deterministic series: simulated instruction counts ` +

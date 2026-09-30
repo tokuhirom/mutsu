@@ -87,14 +87,18 @@ const highlights = parseCorpus(readFileSync('site/content/highlights.txt', 'utf8
 const BENCH_HTML = 'site/bench-trend.html';
 const BENCH_TSV = 'site/.bench-history.e2e.tsv';
 const benchRows = [
-  'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo',
+  'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo'
+    + '\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp',
 ];
 for (let i = 0; i < 6; i++) {
   const sha = `${i}`.repeat(40);
   for (const [name, base] of [['bench-fib', 0.2], ['bench-hash', 0.04]]) {
     const t = (base * (1 + i / 50)).toFixed(4);
-    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo`);
-    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo`);
+    // The first commits predate the rakupp columns, as on bench-data: their
+    // rows have ten fields, not thirteen.
+    const pp = i < 3 ? '' : '\t0.2000\t1.10\tRaku++';
+    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo${pp}`);
+    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo${pp}`);
   }
 }
 writeFileSync(BENCH_TSV, benchRows.join('\n') + '\n');
@@ -247,6 +251,14 @@ try {
          'with the table actually rendered');
   assert((await page.textContent('#tableWrap th[data-k="jit"]')).includes('↓'),
          'and the table sorted the way the link asked');
+
+  await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratiopp`,
+                  { waitUntil: 'networkidle' });
+  assert(await page.getAttribute('#metric button[data-v="ratiopp"]', 'aria-pressed') === 'true',
+         'the rakupp ratio is offered once the history has a rakupp column');
+  assert(await page.evaluate(() =>
+    [...document.querySelectorAll('.bench-card text.axis')].some(t => t.textContent === 'rakupp')),
+    'and its reference line is labelled rakupp');
 
   // A link to a metric this history cannot show (no deterministic series here)
   // must fall back rather than render an empty page -- and say so in the URL.
