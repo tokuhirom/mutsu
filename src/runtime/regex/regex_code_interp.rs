@@ -160,20 +160,21 @@ impl Interpreter {
     ) -> Option<String> {
         let target: String = chars.iter().collect();
         let env = self.regex_code_interp_env(code, caps, &target);
-        let stmts = self.parse_regex_code_cached(code)?;
-        let value =
-            match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts)) {
-                Ok(v) => v,
-                Err(e) => match e.return_value {
-                    Some(v) => v,
-                    None => {
-                        crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
-                            *slot.borrow_mut() = Some(e);
-                        });
-                        return None;
-                    }
-                },
-            };
+        let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
+        let value = match self.run_regex_sub_eval(env, None, |interp| {
+            interp.eval_block_value_cached(&stmts, id)
+        }) {
+            Ok(v) => v,
+            Err(e) => match e.return_value {
+                Some(v) => v,
+                None => {
+                    crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                        *slot.borrow_mut() = Some(e);
+                    });
+                    return None;
+                }
+            },
+        };
         let mut pattern = String::from(if ignore_case { ":i " } else { "" });
         if list {
             let alts = Self::regex_alternation_sources(&value);

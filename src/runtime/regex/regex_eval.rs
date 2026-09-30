@@ -74,13 +74,20 @@ impl Interpreter {
         target: &str,
     ) -> Option<String> {
         let env = self.regex_code_interp_env(code, caps, target);
-        let stmts = if let Some(body) = parsed_body {
-            std::sync::Arc::clone(body)
+        // Compiled once per body, not per match attempt (#10121): a
+        // parser-produced body is keyed by its parse site, a string body by
+        // its parse-cache id.
+        let val = if let Some(body) = parsed_body {
+            self.run_regex_sub_eval(env, None, |interp| {
+                interp.eval_block_value_cached_for_site(body)
+            })
         } else {
-            self.parse_regex_code_cached(code)?
+            let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
+            self.run_regex_sub_eval(env, None, |interp| {
+                interp.eval_block_value_cached(&stmts, id)
+            })
         };
-        let val = match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts))
-        {
+        let val = match val {
             Ok(v) => v,
             Err(e) => e.return_value?,
         };
