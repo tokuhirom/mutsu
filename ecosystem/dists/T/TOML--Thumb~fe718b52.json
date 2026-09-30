@@ -9,23 +9,23 @@
   "dist": "TOML::Thumb",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method '' for invocant of type 'IO::Path'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.16,
+        "first_failure": "array/tables-2",
+        "nok": 26,
+        "ok": 153,
+        "plan": 187,
+        "secs": 0.5,
         "skip": 0,
-        "todo": 0,
-        "verdict": "die"
+        "todo": 8,
+        "verdict": "fail"
       },
       "path": "t/invalid.t",
       "raku": {
         "nok": 0,
         "ok": 177,
         "plan": 187,
-        "secs": 4.01,
+        "secs": 2.08,
         "skip": 0,
         "todo": 10,
         "verdict": "pass"
@@ -34,13 +34,13 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method '' for invocant of type 'IO::Path'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Type check failed in binding $value: expected Bool, got Bool",
+        "nok": 70,
+        "ok": 2,
         "plan": null,
-        "secs": 0.16,
+        "secs": 0.72,
         "skip": 0,
-        "todo": 0,
+        "todo": 8,
         "verdict": "die"
       },
       "path": "t/valid.t",
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 176,
         "plan": 194,
-        "secs": 2.11,
+        "secs": 1.25,
         "skip": 0,
         "todo": 18,
         "verdict": "pass"
@@ -60,13 +60,13 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "host": "linux-x86_64",
+    "mutsu_commit": "ca0c0dbb",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -78,7 +78,7 @@
   "totals": {
     "baseline_assertions": 353,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
+    "mutsu_assertions": 155,
     "parity_files": 0,
     "regressed_files": 2
   },
