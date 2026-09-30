@@ -306,6 +306,15 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
     }
 }
 
+/// Is an enclosing same-scope sub-pattern publishing its level's captures right
+/// now (see [`INLINE_OUTER_CAPS_SEED`])? The continuation after that sub-pattern
+/// runs inside its dynamic extent, so an atom that starts a regex of its own
+/// must check before it builds a capture store.
+#[inline]
+pub(crate) fn outer_caps_seed_published() -> bool {
+    INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().is_some())
+}
+
 /// Does this atom's sub-pattern contain a code atom (`{ … }`, `<?{ … }>`,
 /// `:my …;`) anywhere inside it, at its own capture level? Only such an atom
 /// needs the enclosing level's captures published for the code to see (`$/`

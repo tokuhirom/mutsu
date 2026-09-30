@@ -104,6 +104,25 @@ impl Interpreter {
         )
     }
 
+    /// Does matching this atom start a regex of its own (a different capture
+    /// scope from the pattern containing it)?
+    fn atom_starts_own_regex(atom: &RegexAtom) -> bool {
+        matches!(
+            atom,
+            RegexAtom::Named(_)
+                | RegexAtom::CaptureGroup(_)
+                | RegexAtom::CaptureIsolatedGroup(_)
+                | RegexAtom::CaptureIsolatedGroupScoped(..)
+                | RegexAtom::Lookaround { .. }
+                | RegexAtom::CodeAssertion { .. }
+                | RegexAtom::VarDecl { .. }
+                | RegexAtom::ClosureInterpolation { .. }
+                | RegexAtom::CodeInterp { .. }
+                | RegexAtom::QqInterp { .. }
+                | RegexAtom::RecurseSelf(_)
+        )
+    }
+
     /// Backreference read-through for the nested walks this atom will run.
     ///
     /// A same-capture-scope sub-pattern that actually contains a backreference
@@ -119,10 +138,20 @@ impl Interpreter {
     ) -> super::regex_helpers::OuterCapsSeed {
         use super::regex_helpers::{
             OuterCapsSeed, any_regex_capture_reader_lowered, atom_contains_backref,
-            atom_contains_code, inline_capture_scope,
+            atom_contains_code, inline_capture_scope, outer_caps_seed_published,
         };
         let capture_scope = inline_capture_scope();
         let reader = any_regex_capture_reader_lowered();
+        // An atom that starts a regex of its own — a subrule call above all,
+        // but also a capture group, a lookaround, or code that runs a match —
+        // never reads the enclosing level's captures. An enclosing same-scope
+        // sub-pattern publishes them for ITS nested walks, and the rest of the
+        // pattern (this atom included) runs inside that sub-pattern's dynamic
+        // extent, so the barrier has to go up whenever one is published: a
+        // subrule's `$/` starts at the subrule.
+        if reader && Self::atom_starts_own_regex(atom) && outer_caps_seed_published() {
+            return OuterCapsSeed::arm(None);
+        }
         let needs_backref_scope = reader && atom_contains_backref(atom);
         // A code block inside a same-scope sub-pattern sees the enclosing
         // level's captures and match start, like a backreference does.
