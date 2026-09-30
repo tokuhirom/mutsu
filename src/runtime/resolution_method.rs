@@ -450,10 +450,16 @@ impl Interpreter {
                     .param_defs
                     .iter()
                     .filter(|p| {
-                        p.where_constraint.is_some()
-                            || p.type_constraint.as_deref().is_some_and(|tc| {
-                                self.constraint_is_subset(Self::constraint_base_for_distance(tc))
-                            })
+                        // Positional params only, like the sub dispatch's
+                        // `constrained_count`: a named param's constraint
+                        // decides applicability, not narrowness.
+                        !p.named
+                            && (p.where_constraint.is_some()
+                                || p.type_constraint.as_deref().is_some_and(|tc| {
+                                    self.constraint_is_subset(Self::constraint_base_for_distance(
+                                        tc,
+                                    ))
+                                }))
                     })
                     .count();
                 let sigil_typed = def
