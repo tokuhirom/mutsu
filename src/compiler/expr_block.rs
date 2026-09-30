@@ -1113,8 +1113,7 @@ impl Compiler {
             // are confined to the synthetic block and read as undeclared in the
             // `if`/`while` body.
             Stmt::SyntheticBlock(inner)
-                if matches!(inner.first(), Some(Stmt::VarDecl { name, .. })
-                    if name == "@__destructure_tmp__" || name == "%__destructure_tmp__") =>
+                if crate::parser::sink_warn::is_destructure_block(inner) =>
             {
                 self.compile_synthetic_block_inline(inner);
             }

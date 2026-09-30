@@ -19,7 +19,7 @@ mod outer_redecl;
 mod parse_result;
 mod primary;
 mod quote_shadow;
-mod sink_warn;
+pub(crate) mod sink_warn;
 mod stmt;
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws};
