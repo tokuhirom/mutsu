@@ -86,6 +86,24 @@ pub(super) enum RxOp {
         start: u16,
         pos_base: u16,
     },
+    /// The empty arm of `toks[tok]`'s `?`: reserve the atom's capture slots
+    /// (Nil, or an empty list under a nested list quantifier), apply the
+    /// alias where the walk does, and mark nested list-quantified names.
+    ZeroArm {
+        tok: u32,
+        pos_base: u16,
+    },
+    /// Mark every capture name under the quantified `toks[tok]` quantified,
+    /// before its first iteration.
+    QuantNames {
+        tok: u32,
+    },
+    /// Fold the quantified `toks[tok]`'s per-iteration capture slots, pushed
+    /// since the positional count `regs[pos_base]`, into one list per slot.
+    Fold {
+        tok: u32,
+        pos_base: u16,
+    },
     /// A complete match ending at `pos`.
     Match,
 }
