@@ -3130,6 +3130,12 @@ impl Interpreter {
                 self.exec_not_op();
                 *ip += 1;
             }
+            // Cost: O(k) for a Junction of k eigenstates (nested ones included),
+            // otherwise as `Not`.
+            OpCode::NotThreaded => {
+                self.exec_not_threaded_op();
+                *ip += 1;
+            }
             // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq pulls one
             // element, one callback per source element up to its first result
             // (see eval_truthy).

@@ -1482,6 +1482,12 @@ pub(crate) enum OpCode {
     /// `Failure` operand is marked handled (testing it defuses it). Also
     /// emitted to negate an `until` loop condition.
     Not,
+    /// The negation of a precomposed negated set glyph (`∉`, `⊄`, ...).
+    /// Stack: `[v] → [Bool]`, or `[Junction] → [Junction]`. Rakudo declares those
+    /// glyphs over `Any`, so a Junction operand autothreads and the negation
+    /// applies to each eigenstate of the positive operator's answer, keeping the
+    /// junction's kind. Anything else is [`Self::Not`].
+    NotThreaded,
     /// Prefix `?` / `so`. Stack: `[v] → [Bool]`: the operand's truthiness.
     ///
     /// A bare regex (a `Regex` value, or a regex routine) is matched against

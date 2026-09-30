@@ -150,6 +150,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::StrCoerce
             | OpCode::BoolCoerce
             | OpCode::Not
+            | OpCode::NotThreaded
             | OpCode::Gcd
             | OpCode::Lcm
             | OpCode::NumCoerce

@@ -2,7 +2,7 @@ use crate::ast::Expr;
 use crate::parser::expr::operators::enrich_expected_error;
 use crate::parser::helpers::{is_ident_char, ws};
 use crate::parser::parse_result::PResult;
-use crate::token_kind::TokenKind;
+use crate::token_kind::{NOT_THREADED, TokenKind};
 
 use super::hyper_concat::concat_expr;
 use super::meta_bracket::block_newline_terminates;
@@ -117,26 +117,31 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
 /// `@vars .= grep: * !\u{2208} @$positional` (Math::Symbolic), which the ASCII-only
 /// list used to reject. The non-Bool set operators (`\u{222a}`, `\u{2229}`, `\u{2216}`, ...) stay
 /// out, so `!\u{222a}` is still not an operator.
-fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize)> {
+///
+/// The third element is `true` for the precomposed glyphs. Rakudo declares those
+/// as routines of their own over `Any`, so a Junction operand autothreads and
+/// the negation applies per eigenstate; the `!` meta-prefix instead negates the
+/// collapsed Bool.
+fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize, bool)> {
     if let Some(rest) = input.strip_prefix('!') {
         let (tok, len) = parse_set_op(rest)?;
         if !is_iffy_set_op(&tok) {
             return None;
         }
-        return Some((tok, 1 + len));
+        return Some((tok, 1 + len, false));
     }
-    // Precomposed Unicode negated glyphs missing from `parse_set_op`.
-    if input.starts_with('\u{2209}') {
-        Some((TokenKind::SetElem, '\u{2209}'.len_utf8()))
-    } else if input.starts_with('\u{220C}') {
-        Some((TokenKind::SetCont, '\u{220C}'.len_utf8()))
-    } else if input.starts_with('\u{2288}') {
-        Some((TokenKind::SetSubset, '\u{2288}'.len_utf8()))
-    } else if input.starts_with('\u{2289}') {
-        Some((TokenKind::SetSuperset, '\u{2289}'.len_utf8()))
-    } else {
-        None
-    }
+    // Precomposed Unicode negated glyphs.
+    let glyph = input.chars().next()?;
+    let tok = match glyph {
+        '\u{2209}' => TokenKind::SetElem,
+        '\u{220C}' => TokenKind::SetCont,
+        '\u{2288}' => TokenKind::SetSubset,
+        '\u{2289}' => TokenKind::SetSuperset,
+        '\u{2284}' => TokenKind::SetStrictSubset,
+        '\u{2285}' => TokenKind::SetStrictSuperset,
+        _ => return None,
+    };
+    Some((tok, glyph.len_utf8(), true))
 }
 
 /// True for the set operators that return a Bool and can therefore carry the
@@ -228,7 +233,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
         // Negated set membership / relational operators: !(elem), !(cont),
         // !(<=), !(>=), !(>), !(==), and Unicode glyphs (in/cont/subset/superset).
         // Lower to `!(left <positive set op> right)` — a negated Bool.
-        if let Some((tok, len)) = parse_negated_set_op(r) {
+        if let Some((tok, len, threaded)) = parse_negated_set_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = concat_expr(r).map_err(|err| {
@@ -239,7 +244,11 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 )
             })?;
             left = Expr::Unary {
-                op: TokenKind::Bang,
+                op: if threaded {
+                    TokenKind::Ident(NOT_THREADED.to_string())
+                } else {
+                    TokenKind::Bang
+                },
                 expr: Box::new(Expr::Binary {
                     left: Box::new(left),
                     op: tok,

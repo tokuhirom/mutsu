@@ -360,3 +360,8 @@ pub(crate) fn lookup_unicode_name_string(name: &str) -> Option<String> {
     }
     lookup_emoji_sequence(name)
 }
+
+/// Unary operator name for the negation the precomposed negated set glyphs
+/// (`\u{2209}`, `\u{2284}`, ...) apply per Junction eigenstate; see
+/// [`OpCode::NotThreaded`](crate::opcode::OpCode::NotThreaded).
+pub(crate) const NOT_THREADED: &str = "not-threaded";

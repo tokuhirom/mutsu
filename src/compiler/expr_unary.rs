@@ -19,6 +19,10 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Not);
             }
+            TokenKind::Ident(name) if name == crate::token_kind::NOT_THREADED => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::NotThreaded);
+            }
             TokenKind::Question => {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::BoolCoerce);
