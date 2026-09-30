@@ -1700,12 +1700,10 @@ impl Interpreter {
                 return Ok(result);
             }
         }
-        // A single (non-multi, non-wrapped) compiled method pushes no
-        // `method_dispatch_stack` frame at all, so an `is Array` subclass's
+        // A method invoked through a direct path without a method dispatch
+        // frame can still reach this fallback. An `is Array` subclass's
         // Positional override (`method AT-POS($i) { nextwith $i.round }`)
-        // reaches here directly rather than the exhausted-MRO branch above.
-        // The native array behavior on the backing `__mutsu_array_storage` is
-        // still the correct base candidate.
+        // defers to the native behavior on its backing storage.
         if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
@@ -1713,7 +1711,7 @@ impl Interpreter {
             }
             return Ok(result);
         }
-        // Same no-frame shape as above, for an `is Hash`/`is Map` subclass's
+        // Same direct-call shape as above, for an `is Hash`/`is Map` subclass's
         // Associative override (`method AT-KEY($k) { nextwith $k.lc }`).
         if let Some(res) = self.native_hash_storage_next_candidate(override_args.as_deref()) {
             let result = res?;
@@ -1722,7 +1720,7 @@ impl Interpreter {
             }
             return Ok(result);
         }
-        // Same no-frame shape as above, for a `gist`/`Str`/`raku` override
+        // Same direct-call shape as above, for a `gist`/`Str`/`raku` override
         // (`method gist() { "custom+" ~ callsame }`) with no wrap/multi/role
         // complications.
         if let Some(res) = self.native_any_base_next_candidate(override_args.as_deref()) {

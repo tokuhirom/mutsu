@@ -172,11 +172,7 @@ impl Interpreter {
                 }
             }
         }
-        for (invocant, args) in self
-            .pending_method_dispatch
-            .iter()
-            .filter_map(|p| p.roots())
-        {
+        for (invocant, args) in self.pending_method_dispatch.iter().map(|p| p.roots()) {
             visitor.visit_value(invocant);
             visit_slice(visitor, args);
         }
