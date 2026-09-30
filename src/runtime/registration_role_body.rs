@@ -617,8 +617,8 @@ impl Interpreter {
     /// plain (or side-effecting) statement stays composition-only, since
     /// re-running it eagerly AND again at every composition would replay its
     /// side effects. Lexical TYPE declarations (`my class`, `my grammar`, …)
-    /// get the equivalent treatment for a non-parameterized role in
-    /// [`Self::register_role_body_lexical_types`], right below.
+    /// get the equivalent treatment in
+    /// [`Self::register_role_body_lexical_types`].
     ///
     /// Like an exported subset, an exported routine is a declaration that a
     /// consumer can import immediately.  Deferring it until composition loses
@@ -639,115 +639,6 @@ impl Interpreter {
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.set_current_package(saved_package);
                 return Err(error);
-            }
-        }
-        self.set_current_package(saved_package);
-        Ok(())
-    }
-
-    /// Register every lexical TYPE declaration (`my class`, `my grammar`, `my
-    /// role`, `my token`/`rule`/`regex`, `my enum`) declared directly in a
-    /// role body when the role is declared, rather than waiting for a later
-    /// composition — the type-declaration counterpart of
-    /// [`Self::register_role_body_exported_subs`], for the same reason.
-    ///
-    /// A `my class`/`my grammar` in a role body is, like a plain `sub`, a
-    /// lexical declaration of the role's own compilation unit: Rakudo makes
-    /// it resolvable the moment the role loads, with no class ever composing
-    /// it. `Date::Calendar::Strftime`'s private `_strftime` helper parses
-    /// with a `my grammar prt-format {...}` and builds results with a `my
-    /// class re-format {...}`, both declared alongside it in the role body —
-    /// without this, `prt-format`/`re-format` stayed undeclared (resolving
-    /// as a bare `Str`, `No such method 'parse'...`) for exactly the same
-    /// reason `_strftime` itself used to be unresolvable (#8950).
-    ///
-    /// Restricted to a role with **no type parameters**. A parameterized
-    /// role's body may reference the role's own type parameters (`role
-    /// R[::T] { my class C { has T $x } }`), which are not bound to a
-    /// concrete type until composition — re-evaluating the body with real
-    /// bindings is exactly what `run_composed_role_deferred_body` already
-    /// does at every composition site, and this eager pass must not
-    /// pre-empt that with an unbound `T`. A non-parameterized role has no
-    /// such binding to wait for, so declaring its types once, here, is
-    /// unconditionally safe and (like the exported-sub pass) idempotent
-    /// with a later composition re-running the same declaration.
-    ///
-    /// The one exception is `enum`: its variants are compile-time constants,
-    /// so an enum cannot depend on a type parameter except through an explicit
-    /// base type (`my T enum …`). Every other enum is declared here even in a
-    /// parameterized role. Otherwise `unit role Algorithm::Treap[::KeyT]; my
-    /// enum TOrder is export <DESC ASC>;` exported nothing importable until
-    /// the first composition. The importer then saw a bare `TOrder` string,
-    /// and the composition-time enum rejected the caller's `TOrder::ASC`.
-    ///
-    /// Only declarative statement kinds are eagerly run — never a plain
-    /// statement or expression, whose side effects must not replay both here
-    /// and at composition.
-    pub(crate) fn register_role_body_lexical_types(
-        &mut self,
-        role_name: &str,
-        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
-        type_params: &[String],
-    ) -> Result<(), RuntimeError> {
-        let parameterized = !type_params.is_empty();
-        let saved_package = self.current_package().to_string();
-        self.set_current_package(role_name.to_string());
-        for op in deferred_body_ops {
-            let eager = match &op.raw {
-                // An exported `my constant`/`my $x` is a compile-time
-                // declaration too (#9981). Its initializer may name a type
-                // parameter, so only a non-parameterized role runs it early.
-                Stmt::VarDecl {
-                    is_export: true, ..
-                } => !parameterized,
-                Stmt::EnumDecl { base_type, .. } => base_type
-                    .as_ref()
-                    .is_none_or(|base| !type_params.iter().any(|tp| tp == base)),
-                Stmt::ClassDecl { .. }
-                | Stmt::RoleDecl { .. }
-                | Stmt::TokenDecl { .. }
-                | Stmt::SubsetDecl { .. } => !parameterized,
-                _ => false,
-            };
-            if !eager {
-                continue;
-            }
-            if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
-                self.set_current_package(saved_package);
-                return Err(error);
-            }
-            // A lexical `my class C is export` carries its tags on an internal
-            // marker (see `class_decl`); publish it the way an exported subset is.
-            if let Stmt::ClassDecl {
-                name,
-                custom_traits,
-                ..
-            } = &op.raw
-                && let Some((_, tags)) = custom_traits
-                    .iter()
-                    .find(|(t, _)| t == "__mutsu_export_type")
-                && !self.suppress_exports
-            {
-                let tags = match tags {
-                    Some(Expr::ArrayLiteral(items)) => items
-                        .iter()
-                        .filter_map(|e| match e {
-                            Expr::Literal(v) => Some(v.to_string_value()),
-                            _ => None,
-                        })
-                        .collect(),
-                    _ => vec!["DEFAULT".to_string()],
-                };
-                let (pkg, short) = match crate::qualified::package_parent(*name) {
-                    Some(parent) => (
-                        parent.resolve().to_string(),
-                        crate::qualified::unqualified_part(*name)
-                            .resolve()
-                            .to_string(),
-                    ),
-                    None => (role_name.to_string(), name.resolve().to_string()),
-                };
-                self.register_exported_var(pkg, short, tags);
             }
         }
         self.set_current_package(saved_package);
