@@ -160,9 +160,10 @@ impl Interpreter {
     ) -> Option<String> {
         let target: String = chars.iter().collect();
         let env = self.regex_code_interp_env(code, caps, &target);
-        let stmts = self.parse_regex_code_cached(code)?;
-        let value =
-            match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts)) {
+        let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
+        let value = match self.run_regex_sub_eval(env, None, |interp| {
+            interp.eval_block_value_cached(&stmts, id)
+        }) {
                 Ok(v) => v,
                 Err(e) => match e.return_value {
                     Some(v) => v,

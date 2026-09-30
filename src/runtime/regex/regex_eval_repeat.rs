@@ -11,10 +11,11 @@ impl Interpreter {
         code: &str,
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
-        let stmts = self.parse_regex_code_cached(code)?;
+        let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
         let env = self.make_regex_eval_env(caps);
-        let val = match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts))
-        {
+        let val = match self.run_regex_sub_eval(env, None, |interp| {
+            interp.eval_block_value_cached(&stmts, id)
+        }) {
             Ok(v) => v,
             Err(_) => return None,
         };
@@ -451,8 +452,8 @@ impl Interpreter {
                 }
                 continue;
             }
-            if let Some(stmts) = self.parse_regex_code_cached(&format!("{decl};")) {
-                let _ = self.eval_block_value(&stmts);
+            if let Some((stmts, id)) = self.parse_regex_code_cached_with_id(&format!("{decl};")) {
+                let _ = self.eval_block_value_cached(&stmts, id);
             }
             keys.push(main_key);
         }

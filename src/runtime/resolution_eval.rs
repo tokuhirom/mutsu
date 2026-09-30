@@ -569,6 +569,7 @@ impl Interpreter {
         } else if let Some(id) = cache_id {
             self.compile_block_value_cached(body, is_eval_unit, id, &post)
         } else {
+            crate::vm::vm_stats::record_carrier_compile_uncached();
             let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
             post.apply(&mut code);
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))

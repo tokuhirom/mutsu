@@ -527,6 +527,11 @@ pub(crate) fn record_program_table_cow_clone() {
 /// cache is being bypassed and the body is re-compiled from AST per call.
 static CARRIER_COMPILE_HITS: AtomicU64 = AtomicU64::new(0);
 static CARRIER_COMPILE_MISSES: AtomicU64 = AtomicU64::new(0);
+/// Carrier-block compiles that had no cache key at all (`eval_block_value`,
+/// the plain path): every one is a fresh AST compile. Reported as the
+/// `uncached=` field of the same line; one that grows with how often a block
+/// runs is a per-execution compile (#10121).
+static CARRIER_COMPILE_UNCACHED: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn record_carrier_compile(hit: bool) {
     if enabled() {
@@ -535,6 +540,12 @@ pub(crate) fn record_carrier_compile(hit: bool) {
         } else {
             CARRIER_COMPILE_MISSES.fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+pub(crate) fn record_carrier_compile_uncached() {
+    if enabled() {
+        CARRIER_COMPILE_UNCACHED.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1484,7 +1495,10 @@ pub(crate) fn dump() {
     crate::trir::stats::report();
     let carrier_hits = CARRIER_COMPILE_HITS.load(Ordering::Relaxed);
     let carrier_misses = CARRIER_COMPILE_MISSES.load(Ordering::Relaxed);
-    eprintln!("[mutsu vm-stats] carrier-compile: hits={carrier_hits} misses={carrier_misses}");
+    let carrier_uncached = CARRIER_COMPILE_UNCACHED.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] carrier-compile: hits={carrier_hits} misses={carrier_misses} uncached={carrier_uncached}"
+    );
     let mainline_lexical_boxes = MAINLINE_LEXICAL_BOXES.load(Ordering::Relaxed);
     let mainline_lexical_hits = MAINLINE_LEXICAL_HITS.load(Ordering::Relaxed);
     eprintln!(

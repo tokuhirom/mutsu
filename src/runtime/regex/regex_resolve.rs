@@ -838,7 +838,7 @@ impl Interpreter {
                 .or(Some(Value::NIL));
         }
         let source = format!("({expr_src});");
-        let stmts = self.parse_regex_code_cached(&source)?;
+        let (stmts, id) = self.parse_regex_code_cached_with_id(&source)?;
         // A constant argument (`<element($indent, 0)>`'s `0`, an
         // `<.indent-panic: …, "map">` message) is its own value: nothing in it
         // can read the env, the captures or the package, so it needs neither an
@@ -855,7 +855,9 @@ impl Interpreter {
         // of its memo key.
         super::regex_arg_purity::note_opaque_read();
         let env = self.make_regex_eval_env(caps);
-        match self.run_regex_sub_eval(env, None, |interp| interp.eval_block_value(&stmts)) {
+        match self.run_regex_sub_eval(env, None, |interp| {
+            interp.eval_block_value_cached(&stmts, id)
+        }) {
             Ok(v) => Some(v),
             Err(e) => e.return_value,
         }

@@ -151,8 +151,10 @@ impl Interpreter {
                 .strip_prefix("temp ")
                 .map(|rest| format!("my {rest}"))
                 .unwrap_or_else(|| decl.clone());
-            if let Some(stmts) = self.parse_regex_code_cached(&format!("{eval_decl};")) {
-                let _ = self.eval_block_value(&stmts);
+            if let Some((stmts, id)) =
+                self.parse_regex_code_cached_with_id(&format!("{eval_decl};"))
+            {
+                let _ = self.eval_block_value_cached(&stmts, id);
             }
         }
         if keys.is_empty() {
