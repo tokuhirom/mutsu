@@ -52,17 +52,27 @@ impl MapGrepStream {
 }
 
 impl Interpreter {
-    /// The `n` elements from `start` on (fewer at the end of the source),
-    /// pulling only as many source elements as that needs.
-    // Cost: one callback call per source element up to the `start + n`-th
-    // element produced, plus O(n) to copy the chunk out.
-    pub(super) fn for_map_grep_stream_chunk(
+    /// The element at `index`, pulling only as many source elements as that
+    /// needs; `None` past the end of the source.
+    // Cost: one callback call per source element up to the `index + 1`-th
+    // element produced.
+    pub(super) fn for_map_grep_stream_item(
         &mut self,
         stream: &mut MapGrepStream,
-        start: usize,
-        n: usize,
-    ) -> Result<Vec<Value>, RuntimeError> {
-        let want = start.saturating_add(n);
+        index: usize,
+    ) -> Result<Option<Value>, RuntimeError> {
+        self.fill_map_grep_stream(stream, index.saturating_add(1))?;
+        Ok(stream.buf.get(index).cloned())
+    }
+
+    /// Pull until `stream` holds `want` elements or its source runs dry.
+    // Cost: one callback call per source element up to the `want`-th element
+    // produced.
+    fn fill_map_grep_stream(
+        &mut self,
+        stream: &mut MapGrepStream,
+        want: usize,
+    ) -> Result<(), RuntimeError> {
         while stream.buf.len() < want && !stream.exhausted() {
             let needed = want - stream.buf.len();
             match self.pull_map_grep_prefix(&mut stream.source, needed) {
@@ -80,8 +90,7 @@ impl Interpreter {
                 }
             }
         }
-        let end = want.min(stream.buf.len());
-        Ok(stream.buf.get(start..end).unwrap_or_default().to_vec())
+        Ok(())
     }
 
     /// Pull the rest of the source, for a loop that has to snapshot every

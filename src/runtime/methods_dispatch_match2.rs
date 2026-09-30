@@ -735,6 +735,7 @@ impl Interpreter {
             func: args.first().cloned(),
             fatal: self.fatal_mode,
             mode,
+            plan: Default::default(),
         }))
     }
     /// Dispatch "min" and "max" methods.

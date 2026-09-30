@@ -103,6 +103,7 @@ impl Interpreter {
                 func,
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(args[1].clone()),
+                plan: Default::default(),
             }))
         } else {
             // Same deferral as dispatch_map_method: a callback containing
@@ -121,6 +122,7 @@ impl Interpreter {
                 func,
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::Map,
+                plan: Default::default(),
             }))
         }
     }
@@ -310,6 +312,7 @@ impl Interpreter {
                 func,
                 fatal: self.fatal_mode,
                 mode,
+                plan: Default::default(),
             }))
         }
     }

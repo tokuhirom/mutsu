@@ -17,6 +17,7 @@
 //! need.
 
 use super::*;
+use crate::runtime::map_grep_plan::MapGrepPlanSlot;
 use crate::value::{MapGrepItems, MapGrepMode, SeqSource};
 
 impl Interpreter {
@@ -34,11 +35,15 @@ impl Interpreter {
             func,
             fatal,
             mode,
+            plan,
         } = source
         else {
             return Ok(Vec::new());
         };
-        self.run_map_grep_chunk(func, *fatal, mode, items, *pos, items.len())
+        // One loop run over the whole rest: the plan is built once either
+        // way, so a scratch copy of the slot costs nothing.
+        let mut plan = plan.clone();
+        self.run_map_grep_chunk(func, *fatal, mode, &mut plan, items, *pos, items.len())
     }
 
     /// [`Self::pull_map_grep_rest`] for a source that stays in use afterwards
@@ -81,12 +86,14 @@ impl Interpreter {
             func,
             fatal,
             mode,
+            plan,
         } = source
         else {
             return Ok((Vec::new(), true));
         };
-        if !map_grep_pullable_by_prefix(func.as_ref(), mode) {
-            let out = self.run_map_grep_chunk(func, *fatal, mode, items, *pos, items.len())?;
+        if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
+            let out =
+                self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, items.len())?;
             *pos = items.len();
             return Ok((out, true));
         }
@@ -95,7 +102,7 @@ impl Interpreter {
             let end = (*pos + (needed - out.len())).min(items.len());
             let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
             self.map_grep_last_depth = None;
-            let chunk = self.run_map_grep_chunk(func, *fatal, mode, items, *pos, end)?;
+            let chunk = self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, end)?;
             *pos = end;
             out.extend(chunk);
             // The loop the chunk ran in sat one handler level below us; a
@@ -110,13 +117,16 @@ impl Interpreter {
 
     /// Run a deferred `.map`/`.grep` callback over the source elements
     /// `start..end`, with the call site's `use fatal` and the callback's
-    /// declaring package in force.
+    /// declaring package in force. `plan` carries what earlier chunks of the
+    /// same Seq computed about the callback (`runtime/map_grep_plan.rs`).
     // Cost: one callback call per element of `start..end`.
+    #[allow(clippy::too_many_arguments)]
     fn run_map_grep_chunk(
         &mut self,
         func: &Option<Value>,
         fatal: bool,
         mode: &MapGrepMode,
+        plan: &mut MapGrepPlanSlot,
         items: &MapGrepItems,
         start: usize,
         end: usize,
@@ -140,16 +150,21 @@ impl Interpreter {
         // consumed from `GLOBAL` could no longer resolve `Inner`
         // (`t/closure-package-nested-class.t`). Eager `map` never hit
         // this because the loop ran inside the declaring routine.
-        let _pkg_guard = func.as_ref().and_then(|f| match f.view() {
-            ValueView::Sub(data)
+        // Which package that is depends on the callback alone, so a Seq
+        // pulled a chunk at a time works it out once (`plan`); only the
+        // comparison with the running package is per pull.
+        let callback_package = plan.callback_package(|| match func.as_ref().map(Value::view) {
+            Some(ValueView::Sub(data))
                 if !data.package.as_str().is_empty()
-                    && !crate::runtime::utils::has_routine_scope_marker(data.package.as_str())
-                    && data.package != self.current_package_sym() =>
+                    && !crate::runtime::utils::has_routine_scope_marker(data.package.as_str()) =>
             {
-                Some(self.enter_package_guarded_sym(data.package))
+                Some(data.package)
             }
             _ => None,
         });
+        let _pkg_guard = callback_package
+            .filter(|&pkg| pkg != self.current_package_sym())
+            .map(|pkg| self.enter_package_guarded_sym(pkg));
         let result = match mode {
             // ADR-0058 step 3b: `@a.grep({...})` promotes every matched
             // source slot to a shared element cell and builds its result
@@ -162,17 +177,28 @@ impl Interpreter {
                     func.clone(),
                     &crate::runtime::methods_collection_ops::GrepAdverb::V,
                     start..end,
+                    plan,
                 ),
-                _ => self.eval_grep_over_items(func.clone(), items.slice(start, end)),
+                _ => self
+                    .eval_grep_over_items_planned(func.clone(), items.slice(start, end), plan)
+                    .map(|(result, _, _)| result),
             },
-            MapGrepMode::Grep => self.eval_grep_over_items(func.clone(), items.slice(start, end)),
+            MapGrepMode::Grep => self
+                .eval_grep_over_items_planned(func.clone(), items.slice(start, end), plan)
+                .map(|(result, _, _)| result),
             // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
             // element, so the callback's writes have to reach `@a`.
             // See `MapGrepMode::MapRw`.
-            MapGrepMode::MapRw(source) => {
-                self.pull_rw_map(func.clone(), items.slice(start, end), source.clone(), start)
+            MapGrepMode::MapRw(source) => self.pull_rw_map(
+                func.clone(),
+                items.slice(start, end),
+                source.clone(),
+                start,
+                plan,
+            ),
+            MapGrepMode::Map => {
+                self.eval_map_over_items_planned(func.clone(), items.slice(start, end), plan)
             }
-            MapGrepMode::Map => self.eval_map_over_items(func.clone(), items.slice(start, end)),
         };
         self.fatal_mode = saved_fatal;
         self.reconcile_caller_after_lazy_force(caller_code);
@@ -208,13 +234,25 @@ impl Interpreter {
         mut items: Vec<Value>,
         source: Value,
         start: usize,
+        plan: &mut MapGrepPlanSlot,
     ) -> Result<Value, RuntimeError> {
         // The narrow native rw loop first: it is the only one that captures a
         // prefix `++$_`/`--$_` or a bare `tr///` (`rw_map_topic_capture`),
         // which the shared loop's `__mutsu_rw_map_topic__` assignment mirror
         // does not see. It declines everything else, including every
         // read-only block, for which it is 4-7.6x slower (see its module doc).
-        if !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
+        // Whether the callback's shape can take it at all is a property of
+        // the callback alone, so a Seq pulled a chunk at a time asks once:
+        // the answer used to cost an AST walk of the body per element.
+        let native_candidate = match func.as_ref().map(Value::view) {
+            Some(ValueView::Sub(data)) => plan
+                .native_rw_candidate(crate::runtime::map_grep_plan::sub_origin(&data), || {
+                    super::vm_native_map::native_rw_map_block_shape(&data).is_some()
+                }),
+            _ => false,
+        };
+        if native_candidate
+            && !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
             && let Some(args) = func.clone().map(|f| vec![f])
             && let Some(native) =
                 self.try_native_rw_map_over(&source, &args, start..start + items.len())
@@ -223,7 +261,7 @@ impl Interpreter {
             self.publish_rw_map_writeback(&source, source_after, start);
             return Ok(Value::seq(result_items));
         }
-        let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut items)?;
+        let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut items, plan)?;
         // A read-only block wrote nothing, so leave the source container
         // ALONE. It used to be rebuilt unconditionally, which silently
         // dropped the per-slot metadata `ArrayData` carries: a `:delete`d

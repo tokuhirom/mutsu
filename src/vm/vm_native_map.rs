@@ -32,6 +32,7 @@
 use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
+use crate::value::SubData;
 
 /// What the native rw map loop produces: the `.map` result elements, and the
 /// source elements after the block's rw write-backs (which the caller
@@ -94,115 +95,15 @@ impl Interpreter {
         let has_pairs = items
             .iter()
             .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
-        // The block must be a plain single-arity closure with no signature
-        // complexity and no `.assuming`/compose wrapping.
-        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-            return None;
-        }
-        if crate::runtime::resolution_map_grep::sub_is_call_carrier(&data) {
-            return None;
-        }
-        let requires_full_binding = data.param_defs.iter().any(|pd| {
-            pd.named
-                || pd.slurpy
-                || pd.sigilless
-                || pd.optional_marker
-                || pd.default.is_some()
-                || pd.type_constraint.is_some()
-                || pd.where_constraint.is_some()
-                || pd.sub_signature.is_some()
-                || pd.outer_sub_signature.is_some()
-                || pd.code_signature.is_some()
-                || pd.shape_constraints.is_some()
-        });
-        if requires_full_binding {
-            return None;
-        }
-        // Classify the body: `None` => escapes/unprovable (fall back);
-        // `Some(false)` => simple read-only; `Some(true)` => simple but mutates
-        // the topic `$_` (`$_++`, `$_ = …`, `$_ .= …`, bare `s///`/`tr///`).
-        let mutates_topic = classify_body(&data.body)?;
-
-        // Each call consumes `arity` consecutive items. A 0-param block uses the
-        // implicit `$_` (arity 1); a multi-arity block (`-> $a, $b { }`) chunks
-        // the source. When the source length isn't a multiple of the arity the
-        // last chunk is short, which the interpreter (and raku) treat as an
-        // error ("Not enough elements" / "Too few positionals"); defer those so
-        // the error path stays in one place.
-        let arity = data.params.len().max(1);
-        if arity > 1 && !items.len().is_multiple_of(arity) {
-            return None;
-        }
-        // A multi-arity block binds a chunk per call, where the single override
-        // topic of `call_compiled_closure_with_topic` is ambiguous: keep deferring
-        // pair-containing sources to the interpreter for arity > 1.
-        if has_pairs && arity > 1 {
-            return None;
-        }
-        // When the source has pair-shaped elements we set `$_`/the positional
-        // param explicitly via the topic override. That override only handles a
-        // pointy/bare block with no params (implicit `$_`) or a single *plain*
-        // positional param. Anything else — a placeholder param (`$^a`, which
-        // makes arg binding raise "Missing required placeholder"), an aggregate
-        // param, or a full signature (`param_defs` populated) — would mis-bind or
-        // error, so defer those to the interpreter.
-        if has_pairs
-            && !(data.param_defs.is_empty()
-                && match data.params.as_slice() {
-                    [] => true,
-                    [p] => super::vm_closure_dispatch::is_plain_positional_param(p),
-                    _ => false,
-                })
-        {
-            return None;
-        }
-
-        // An explicit `is rw`/`is raw` scalar block param (`-> $x is rw { $x++
-        // }`) also needs a writeback: Raku passes each array element's
-        // container to the block, so mutating the param mutates the source
-        // element, same as a `$_`-mutating block below. `requires_full_binding`
-        // above already proved this is the only param (not named/slurpy/
-        // sigilless/optional/defaulted/typed/…), so no further shape check is
-        // needed here.
-        let rw_param = (arity == 1)
-            .then(|| data.param_defs.first())
-            .flatten()
-            .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
-
-        // rw binding: a `$_`-mutating block, or an explicit rw/raw param,
-        // writes back to the source element (`@a.map({ $_++ })` /
-        // `@a.map(-> $x is rw { $x++ })` mutate `@a`). That needs a single
-        // element per call and non-pair elements (writing a mutated pair back
-        // is out of scope); the caller supplies the concrete `@`-array
-        // receiver the writeback is published into.
-        if mutates_topic || rw_param.is_some() {
-            if arity != 1 || has_pairs {
-                return None;
-            }
-        } else {
-            // No writeback needed, so this loop has nothing the shared
-            // compile-once/`run_reuse` loop (`eval_map_over_items_rw`) cannot
-            // do — and it is MUCH slower at it. This loop calls the general
-            // closure-call machinery once per element
-            // (`call_compiled_closure_with_topic`: a scoped env child, the full
-            // captured-env merge, per-instance state lookups and an exit
-            // writeback diff), all of which is loop-invariant; the shared loop
-            // compiles the body once and rebinds only the param/topic per
-            // iteration. Measured over a 131072-element array (release build,
-            // us/elem, this loop vs the shared one):
-            //
-            //     map({ $_ })        2.15  ->  0.28   (7.6x)
-            //     map({ $_ + 1 })    2.18  ->  0.31   (7.0x)
-            //     map({ $_.Int })    6.87  ->  1.23   (5.6x)
-            //     map({ $_.succ })   7.20  ->  1.22   (5.9x)
-            //     map({ abs($_) })   5.46  ->  1.36   (4.0x)
-            //
-            // Step 6 of docs/vm-decoupling.md introduced this loop as an
-            // explicitly "metric-only" decoupling (to zero the `map` method
-            // *fallback counter*) and took no timing at all; the shared loop is
-            // not a tree-walker either — it runs the same compiled bytecode
-            // through `run_reuse` — so routing read-only maps back to it costs
-            // nothing but that counter.
+        // Everything about the block itself — its signature, its body, whether
+        // it needs a writeback at all — is decided by `native_rw_map_block_shape`,
+        // which the deferred pull asks once per Seq rather than once per chunk.
+        let shape = native_rw_map_block_shape(&data)?;
+        let arity = shape.arity;
+        let rw_param = shape.rw_param;
+        // The writeback needs non-pair elements: writing a mutated pair back is
+        // out of scope.
+        if has_pairs {
             return None;
         }
 
@@ -214,7 +115,7 @@ impl Interpreter {
         let mut i = 0usize;
         while i < items.len() {
             let chunk: Vec<Value> = items[i..i + arity].to_vec();
-            let value = if rw_param.is_some() {
+            let value = if rw_param {
                 // Same transient-`ContainerRef`-cell pattern as
                 // `deepmap_leaf_call`: Raku passes the block a *container* for
                 // the element, so an `is rw`/`is raw` param can write through
@@ -270,6 +171,97 @@ impl Interpreter {
         // re-bind route had to re-register by hand.
         Some(Ok((result, source_after)))
     }
+}
+
+/// What [`Interpreter::try_native_rw_map_over`] needs to know about a block
+/// that can take the native rw loop.
+pub(crate) struct NativeRwMapShape {
+    /// Elements bound per call; always 1 (a writeback aliases one element).
+    arity: usize,
+    /// The block's single param is `is rw`/`is raw`.
+    rw_param: bool,
+}
+
+/// Whether `data` can take the native rw map loop at all, judged from the block
+/// alone: `None` for every block the loop declines whatever the source holds.
+///
+/// The block must be a plain closure with no signature complexity and no
+/// `.assuming`/compose wrapping, a body [`classify_body`] can prove simple, and
+/// a need for a writeback — a `$_`-mutating body or an explicit `is rw`/`is
+/// raw` param — with a single element per call.
+///
+/// A read-only block is declined: this loop has nothing the shared
+/// compile-once/`run_reuse` loop (`eval_map_over_items_rw`) cannot do — and it
+/// is MUCH slower at it. This loop calls the general closure-call machinery
+/// once per element (`call_compiled_closure_with_topic`: a scoped env child,
+/// the full captured-env merge, per-instance state lookups and an exit
+/// writeback diff), all of which is loop-invariant; the shared loop compiles
+/// the body once and rebinds only the param/topic per iteration. Measured over
+/// a 131072-element array (release build, us/elem, this loop vs the shared
+/// one):
+///
+/// ```text
+///     map({ $_ })        2.15  ->  0.28   (7.6x)
+///     map({ $_ + 1 })    2.18  ->  0.31   (7.0x)
+///     map({ $_.Int })    6.87  ->  1.23   (5.6x)
+///     map({ $_.succ })   7.20  ->  1.22   (5.9x)
+///     map({ abs($_) })   5.46  ->  1.36   (4.0x)
+/// ```
+///
+/// Step 6 of docs/vm-decoupling.md introduced this loop as an explicitly
+/// "metric-only" decoupling (to zero the `map` method *fallback counter*) and
+/// took no timing at all; the shared loop is not a tree-walker either — it
+/// runs the same compiled bytecode through `run_reuse` — so routing read-only
+/// maps back to it costs nothing but that counter.
+// Cost: O(n), n = AST nodes of the block's body.
+pub(crate) fn native_rw_map_block_shape(data: &SubData) -> Option<NativeRwMapShape> {
+    if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
+        return None;
+    }
+    if crate::runtime::resolution_map_grep::sub_is_call_carrier(data) {
+        return None;
+    }
+    let requires_full_binding = data.param_defs.iter().any(|pd| {
+        pd.named
+            || pd.slurpy
+            || pd.sigilless
+            || pd.optional_marker
+            || pd.default.is_some()
+            || pd.type_constraint.is_some()
+            || pd.where_constraint.is_some()
+            || pd.sub_signature.is_some()
+            || pd.outer_sub_signature.is_some()
+            || pd.code_signature.is_some()
+            || pd.shape_constraints.is_some()
+    });
+    if requires_full_binding {
+        return None;
+    }
+    // Classify the body: `None` => escapes/unprovable (fall back);
+    // `Some(false)` => simple read-only; `Some(true)` => simple but mutates
+    // the topic `$_` (`$_++`, `$_ = …`, `$_ .= …`, bare `s///`/`tr///`).
+    let mutates_topic = classify_body(&data.body)?;
+    // Each call consumes `arity` consecutive items. A 0-param block uses the
+    // implicit `$_` (arity 1); a multi-arity block (`-> $a, $b { }`) would
+    // chunk the source, which leaves no single element to write back to.
+    let arity = data.params.len().max(1);
+    if arity != 1 {
+        return None;
+    }
+    // An explicit `is rw`/`is raw` scalar block param (`-> $x is rw { $x++ }`)
+    // also needs a writeback: Raku passes each array element's container to
+    // the block, so mutating the param mutates the source element, same as a
+    // `$_`-mutating block. `requires_full_binding` above already proved this
+    // is the only param (not named/slurpy/sigilless/optional/defaulted/
+    // typed/…), so no further shape check is needed here.
+    let rw_param = data
+        .param_defs
+        .first()
+        .is_some_and(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
+    if !mutates_topic && !rw_param {
+        return None;
+    }
+    Some(NativeRwMapShape { arity, rw_param })
 }
 
 /// Classify a map block body for the native fast path.
