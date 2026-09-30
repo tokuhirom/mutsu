@@ -378,8 +378,9 @@ pub(crate) fn unicode_word_break(ch: char) -> &'static str {
     if gc == "Pc" {
         return "ExtendNumLet";
     }
-    // Extend: grapheme-extending marks and ZWNJ.
-    if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
+    // Extend: queried from the `regex` crate's own `Word_Break=Extend` table
+    // (covers emoji modifiers and spacing marks that `Grapheme_Extend` misses).
+    if super::binary_props::check_binary_property(ch, r"^\p{Word_Break=Extend}$") {
         return "Extend";
     }
     // Format controls (joiners and ZWSP already handled above).
