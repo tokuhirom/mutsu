@@ -650,7 +650,7 @@ impl Interpreter {
         // One target for the whole scan: rebuilding it per match is quadratic in
         // subject length (#8247).
         let target = MatchTarget::new(text);
-        while let Some((s, e, caps, _named)) =
+        while let Some((s, e, caps, _named, _spans)) =
             self.regex_find_first_from_with_all_captures_in(pattern, &target, pos)
         {
             out.push((s, e, caps));
