@@ -9,60 +9,15 @@
     "unresolved": []
   },
   "dist": "PublicSuffix",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 104,
-        "plan": 104,
-        "secs": 0.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/external.t",
-      "raku": {
-        "nok": 0,
-        "ok": 104,
-        "plan": 104,
-        "secs": 3.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/local.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "PublicSuffix": "ok"
+    "PublicSuffix": "Runtime error: Failed to parse module 'PublicSuffix': Unsupported use of bare \"lc\". In Raku please use: .lc if you meant to call it as a method on $_, or use an explicit invocant or argument, or use &"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-30",
     "harness": 2,
-    "host": "linux-x86_64",
+    "host": "gha-ubuntu24-4c",
     "mutsu_commit": "6748c2a6",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
@@ -74,12 +29,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/UB/PUBLICSUFFIX/4a5db9b92dce273710904dc9d761c10c13d9a83e.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 106,
-    "baseline_files": 2,
-    "mutsu_assertions": 106,
-    "parity_files": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.1.20250910"
