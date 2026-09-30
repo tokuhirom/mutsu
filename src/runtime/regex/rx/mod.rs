@@ -16,6 +16,7 @@
 //! (`capture_group_delta`, `store_apply_named_capture`), so a compiled match
 //! produces the captures the walk would have produced.
 
+mod rx_atom;
 mod rx_compile;
 mod rx_diff;
 mod rx_vm;
@@ -28,6 +29,17 @@ use crate::runtime::regex_types::{RegexAtom, RegexToken};
 pub(super) enum RxOp {
     /// Match the one-grapheme atom `atoms[i]` at `pos`, advancing past it.
     Atom(u32),
+    /// `atoms[atom]` repeated `min..=max` times (`max == u32::MAX`: no
+    /// bound): every iteration is matched up front, then the loop exits at
+    /// the longest count, giving back one iteration per backtrack down to
+    /// `min` — or, when `possessive` (ratchet), never giving back. The
+    /// frugal form stays a `Repeat` loop.
+    AtomRun {
+        atom: u32,
+        min: u32,
+        max: u32,
+        possessive: bool,
+    },
     /// Test the zero-width assertion `atoms[i]` at `pos`.
     Assert(u32),
     /// `pos` is the start of the subject (a nested pattern's leading `^`).
@@ -85,6 +97,9 @@ pub(crate) struct RxProgram {
     pub(super) atoms: Vec<RegexAtom>,
     pub(super) toks: Vec<RegexToken>,
     pub(super) nregs: usize,
+    /// Per-atom printable-ASCII acceptance sets, probed on first run (see
+    /// `rx_atom`).
+    pub(super) ascii: std::sync::OnceLock<Box<[u128]>>,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.

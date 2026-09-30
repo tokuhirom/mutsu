@@ -17,11 +17,42 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
 use crate::symbol::Symbol;
 
-struct Choice {
-    pc: u32,
-    pos: usize,
-    cap_mark: usize,
-    reg_mark: usize,
+/// A point to resume from on failure. Both kinds record the capture-trail
+/// and register-trail lengths to rewind to.
+enum Choice {
+    /// Resume at `pc` with the cursor at `pos`.
+    At {
+        pc: u32,
+        pos: usize,
+        cap_mark: usize,
+        reg_mark: usize,
+    },
+    /// An `AtomRun`'s give-back: resume at `pc` from `ends[hi - 1]`, one
+    /// iteration shorter each time, while `hi > lo`; `ends` is truncated back
+    /// to `base` once the run is exhausted.
+    Run {
+        pc: u32,
+        base: usize,
+        lo: usize,
+        hi: usize,
+        cap_mark: usize,
+        reg_mark: usize,
+    },
+}
+
+/// The VM's growable state, reused across engine entries instead of being
+/// reallocated per start position. Taken out of the thread-local for one run
+/// and put back after, so a nested run (none today) would just allocate.
+#[derive(Default)]
+struct Scratch {
+    regs: Vec<usize>,
+    reg_trail: Vec<(u16, usize)>,
+    stack: Vec<Choice>,
+    ends: Vec<usize>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::default());
 }
 
 /// The pattern's compiled program, compiled at most once per pattern.
@@ -80,9 +111,8 @@ impl Interpreter {
     }
 
     /// Run `program` at `start`.
-    // Cost: O(s) in the steps the backtracking search takes; each op below is
-    // O(1) except `Atom` (O(g), the grapheme's length) and the capture ops
-    // (O(1) amortized trail pushes).
+    // Cost: O(s) in the steps the backtracking search takes; each op below
+    // states its own cost.
     fn rx_run(
         &mut self,
         program: &RxProgram,
@@ -91,13 +121,35 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
+        let mut scratch = SCRATCH.with(|s| std::mem::take(&mut *s.borrow_mut()));
+        let result = self.rx_run_in(program, chars, start, pkg, &mut scratch);
+        SCRATCH.with(|s| *s.borrow_mut() = scratch);
+        result
+    }
+
+    fn rx_run_in(
+        &mut self,
+        program: &RxProgram,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        scratch: &mut Scratch,
+    ) -> Option<(usize, RegexCaptures)> {
+        let Scratch {
+            regs,
+            reg_trail,
+            stack,
+            ends,
+        } = scratch;
+        regs.clear();
+        regs.resize(program.nregs, 0);
+        reg_trail.clear();
+        stack.clear();
+        ends.clear();
         let mut store = CapStore::new(RegexCaptures {
             match_from: start,
             ..Default::default()
         });
-        let mut regs = vec![0usize; program.nregs];
-        let mut reg_trail: Vec<(u16, usize)> = Vec::new();
-        let mut stack: Vec<Choice> = Vec::new();
         let mut pc = 0u32;
         let mut pos = start;
         let mut farthest = start;
@@ -110,22 +162,51 @@ impl Interpreter {
         }
         let result = 'run: loop {
             let ok = match program.ops[pc as usize] {
-                // Cost: O(g), g = the grapheme's length at `pos`.
-                RxOp::Atom(i) => {
-                    match self.match_consuming_atom(
-                        &program.atoms[i as usize],
-                        chars,
-                        pos,
-                        pkg,
-                        false,
-                    ) {
-                        Some(next) => {
-                            pos = next;
-                            farthest = farthest.max(pos);
-                            pc += 1;
-                            true
+                // Cost: O(1) on the ASCII fast path, else O(g), g = the
+                // grapheme's length at `pos`.
+                RxOp::Atom(i) => match self.rx_atom_at(program, i as usize, chars, pos, pkg) {
+                    Some(next) => {
+                        pos = next;
+                        farthest = farthest.max(pos);
+                        pc += 1;
+                        true
+                    }
+                    None => false,
+                },
+                // Cost: O(k·g), k = the iterations matched (each given back at
+                // most once, O(1) per give-back).
+                RxOp::AtomRun {
+                    atom,
+                    min,
+                    max,
+                    possessive,
+                } => {
+                    // `ends[base + c]` is where the cursor stands after `c`
+                    // iterations, so count 0 is the run's own start.
+                    let base = ends.len();
+                    ends.push(pos);
+                    let n = self.rx_atom_run(program, atom as usize, chars, pos, max, pkg, ends);
+                    if n < min {
+                        ends.truncate(base);
+                        false
+                    } else {
+                        pos = ends[base + n as usize];
+                        farthest = farthest.max(pos);
+                        if possessive || n == min {
+                            ends.truncate(base);
+                        } else {
+                            // Give back counts n-1 down to min.
+                            stack.push(Choice::Run {
+                                pc: pc + 1,
+                                base,
+                                lo: base + min as usize,
+                                hi: base + n as usize,
+                                cap_mark: store.mark(),
+                                reg_mark: reg_trail.len(),
+                            });
                         }
-                        None => false,
+                        pc += 1;
+                        true
                     }
                 }
                 // Cost: O(1) for every assertion Slice A compiles.
@@ -148,7 +229,7 @@ impl Interpreter {
                 }
                 // Cost: O(1) amortized.
                 RxOp::Split { prefer, alt } => {
-                    stack.push(Choice {
+                    stack.push(Choice::At {
                         pc: alt,
                         pos,
                         cap_mark: store.mark(),
@@ -214,7 +295,7 @@ impl Interpreter {
                         pc = exit;
                     } else {
                         let (first, second) = if greedy { (body, exit) } else { (exit, body) };
-                        stack.push(Choice {
+                        stack.push(Choice::At {
                             pc: second,
                             pos,
                             cap_mark: store.mark(),
@@ -255,16 +336,50 @@ impl Interpreter {
                 RxOp::Match => break 'run Some((pos, store.snapshot())),
             };
             if !ok {
-                let Some(choice) = stack.pop() else {
-                    break 'run None;
-                };
-                store.rewind(choice.cap_mark);
-                while reg_trail.len() > choice.reg_mark {
-                    let (r, old) = reg_trail.pop().expect("register trail entry");
-                    regs[r as usize] = old;
+                loop {
+                    let Some(choice) = stack.pop() else {
+                        break 'run None;
+                    };
+                    let (to_pc, to_pos, cap_mark, reg_mark) = match choice {
+                        Choice::At {
+                            pc,
+                            pos,
+                            cap_mark,
+                            reg_mark,
+                        } => (pc, pos, cap_mark, reg_mark),
+                        Choice::Run {
+                            pc,
+                            base,
+                            lo,
+                            hi,
+                            cap_mark,
+                            reg_mark,
+                        } => {
+                            let at = ends[hi - 1];
+                            if hi - 1 > lo {
+                                stack.push(Choice::Run {
+                                    pc,
+                                    base,
+                                    lo,
+                                    hi: hi - 1,
+                                    cap_mark,
+                                    reg_mark,
+                                });
+                            } else {
+                                ends.truncate(base);
+                            }
+                            (pc, at, cap_mark, reg_mark)
+                        }
+                    };
+                    store.rewind(cap_mark);
+                    while reg_trail.len() > reg_mark {
+                        let (r, old) = reg_trail.pop().expect("register trail entry");
+                        regs[r as usize] = old;
+                    }
+                    pc = to_pc;
+                    pos = to_pos;
+                    break;
                 }
-                pc = choice.pc;
-                pos = choice.pos;
             }
         };
         super::super::regex_helpers::record_regex_farthest_position(farthest);

@@ -40,11 +40,12 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         atoms: c.atoms,
         toks: c.toks,
         nregs: c.nregs,
+        ascii: std::sync::OnceLock::new(),
     })
 }
 
 /// The one-grapheme atoms `match_consuming_atom` decides.
-fn is_consuming(atom: &RegexAtom) -> bool {
+pub(super) fn is_consuming(atom: &RegexAtom) -> bool {
     matches!(
         atom,
         RegexAtom::Literal(_)
@@ -306,6 +307,19 @@ impl Compiler {
         else {
             return Err("too-large");
         };
+        if is_consuming(&token.atom) && !token.frugal {
+            // A single one-grapheme atom needs no loop: the iterations are
+            // scanned up front and given back from a position list.
+            let atom = self.atoms.len() as u32;
+            self.atoms.push(token.atom.clone());
+            self.ops.push(RxOp::AtomRun {
+                atom,
+                min,
+                max,
+                possessive: token.ratchet,
+            });
+            return Ok(());
+        }
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
         let whole = token.ratchet.then(|| self.reg());
