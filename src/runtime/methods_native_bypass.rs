@@ -508,7 +508,10 @@ impl Interpreter {
             }
             _ => false,
         };
-        receiver_bypass || (!is_pseudo_method && self.mixin_role_has_method(target, method))
+        receiver_bypass
+            || (!is_pseudo_method
+                && (self.mixin_role_has_method(target, method)
+                    || self.mixin_wrapped_instance_has_method(target, method)))
     }
 
     /// ADR-0019 E4b shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
