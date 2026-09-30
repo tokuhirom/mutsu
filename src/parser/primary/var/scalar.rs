@@ -113,6 +113,9 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if let Some(err) = detect_perl5_scalar_var(input) {
         return Err(PError::fatal(err));
     }
+    if let Some(err) = super::sigil_vars::empty_package_var_error('$', input) {
+        return Err(err);
+    }
     // Handle $(stmt; expr) — statement block in scalar context
     // Try to parse as a statement list first (for cases like `$(let $a = 23; $a)`)
     if let Some(inner) = input.strip_prefix('(') {

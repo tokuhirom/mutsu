@@ -147,11 +147,37 @@ fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse an @array variable reference.
+/// `%::{''}`, `$::<x>`, `@::`: a sigil followed by a bare `::` names the
+/// variable with an empty name in the unnamed package, which is never declared
+/// (rakudo: "Variable '%' is not declared"). `input` is the text after the
+/// sigil. `$::x` / `%::("x")` (a leading-`::` qualified name or a symbolic
+/// lookup) are not this.
+pub(super) fn empty_package_var_error(sigil: char, input: &str) -> Option<PError> {
+    let after = input.strip_prefix("::")?;
+    let is_bare = match after.chars().next() {
+        None => true,
+        Some(c) => matches!(c, '{' | '<' | '[' | '«' | ';' | ')' | '}') || c.is_whitespace(),
+    };
+    if !is_bare {
+        return None;
+    }
+    Some(PError::fatal_at(
+        format!(
+            "X::Undeclared: Variable '{sigil}' is not declared. Perhaps you forgot a 'sub' if \
+             this was intended to be part of a signature?"
+        ),
+        input,
+    ))
+}
+
 pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
     // Detect Perl 5 special array variables (@-, @+) and throw X::Syntax::Perl5Var.
     if let Some(err) = detect_perl5_sigil_var('@', input) {
         return Err(PError::fatal(err));
+    }
+    if let Some(err) = empty_package_var_error('@', input) {
+        return Err(err);
     }
     // Symbolic variable dereference: @::("name")
     if let Some(after_colons) = input.strip_prefix("::(") {
@@ -350,6 +376,9 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
     // Detect Perl 5 special hash variables (%-, %+, %!) and throw X::Syntax::Perl5Var.
     if let Some(err) = detect_perl5_sigil_var('%', input) {
         return Err(PError::fatal(err));
+    }
+    if let Some(err) = empty_package_var_error('%', input) {
+        return Err(err);
     }
     // Symbolic variable dereference: %::("name")
     if let Some(after_colons) = input.strip_prefix("::(") {
