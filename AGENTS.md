@@ -360,6 +360,11 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   fixes a wrong answer is `ticket`/`deep`. `tier:*` labels come from triage, not the filer. The body
   — root cause, affected files, why it is large, a minimal repro with mutsu's and `raku`'s output —
   must let a cold session pick it up. Details: [docs/issue-workflow.md](docs/issue-workflow.md).
+- **Working a `todo:deep` or `todo:perf` issue, file every out-of-scope problem you hit** (user
+  decision, 2026-09-30): a separate bug, wrong answer, missing feature or slowness that the issue
+  does not cover becomes its own issue (per the bullet above) before your PR is opened — not a line
+  in the PR body or a chat report only. Link it from the PR body. This applies even to small
+  findings you could fix later yourself; a finding that lives only in a session transcript is lost.
 - **Claim an issue before working it** — agents run in parallel. Post a comment whose **first
   line** is `Claiming: <branch>`, re-read the comments, and yield if a live claim with a lower
   comment id exists; the **lowest comment id is the whole tiebreaker** ("I'm further along" or "the
