@@ -461,8 +461,8 @@ impl Walker<'_> {
             return;
         }
         let body = [Stmt::Expr(expr.clone())];
-        let reads_cell = free_names(&body).iter().any(|name| {
-            self.find_binding(name).is_some_and(|(f, b)| {
+        let reads_cell = free_names(&body).iter().any(|sym| {
+            self.find_binding(&sym.resolve()).is_some_and(|(f, b)| {
                 matches!(
                     self.frames[f].bindings[b].kind,
                     BindingKind::Local { cell: Some(_), .. }
@@ -485,7 +485,11 @@ impl Walker<'_> {
         if self.lifted.halted {
             return false;
         }
-        let accesses = if self.frames.iter().any(|f| f.blocked) {
+        // A blockless `BEGIN my %h = ...` declares into the enclosing scope,
+        // which the lifted body's block would hide. Its body is that one
+        // declaration; `BEGIN { my $x ... }` keeps its `my` to itself.
+        let declares = matches!(body, [Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_)]);
+        let accesses = if declares || self.frames.iter().any(|f| f.blocked) {
             None
         } else {
             self.resolve_free_names(body)
@@ -537,8 +541,12 @@ impl Walker<'_> {
     /// of them cannot be supplied in the prologue.
     fn resolve_free_names(&self, body: &[Stmt]) -> Option<Vec<Access>> {
         let mut accesses = Vec::new();
-        for name in free_names(body) {
-            if CompiledCode::is_non_lexical_name(&name) || name.contains("::") {
+        for sym in free_names(body) {
+            if crate::qualified::is_qualified(sym) {
+                continue;
+            }
+            let name = sym.resolve();
+            if CompiledCode::is_non_lexical_name(&name) {
                 continue;
             }
             match self.find_binding(&name) {
@@ -618,9 +626,9 @@ impl Walker<'_> {
 }
 
 /// The free names `body` reads or writes, as the compiler resolves them.
-fn free_names(body: &[Stmt]) -> Vec<String> {
+fn free_names(body: &[Stmt]) -> Vec<crate::symbol::Symbol> {
     let (code, _fns) = crate::compiler::Compiler::new().compile(body);
-    code.free_var_syms.iter().map(|s| s.resolve()).collect()
+    code.free_var_syms
 }
 
 fn sigil_of(name: &str) -> &str {

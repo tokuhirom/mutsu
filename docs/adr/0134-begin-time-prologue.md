@@ -324,6 +324,8 @@ status here.
     code variable (which can declare an operator), a type, a package or an
     import;
   - a BEGIN in a package body, including a method's;
+  - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
+    scope;
   - a BEGIN that reads a name the unit does not declare (an EVAL's caller
     lexical, for example), or reads a `state`, `constant` or group-declared
     inner lexical;
