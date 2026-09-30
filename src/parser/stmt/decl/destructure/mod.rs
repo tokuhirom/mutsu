@@ -625,6 +625,7 @@ fn parse_destructuring_with_rhs(
                 || type_constraint.is_some()
                 || dvar.where_constraint.is_some()
                 || dvar.is_slurpy
+                || dvar.name.starts_with('&')
             {
                 continue;
             }
