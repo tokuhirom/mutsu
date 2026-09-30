@@ -56,7 +56,7 @@ impl Interpreter {
             val.view(),
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self
-            .call_method_with_values(val.clone(), "raku", vec![])
+            .with_catch_marker(|this| this.call_method_with_values(val.clone(), "raku", vec![]))
             .is_err()
         {
             return format!(":{}", type_name);

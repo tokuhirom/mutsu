@@ -414,6 +414,29 @@ pub(crate) struct CatchHandlerEntry {
     /// path there would swap `self.locals` for an env reconstruction of the very
     /// same frame and drop the handler's writes to the live slots on restore.
     pub installing_code: usize,
+    /// `self.locals.base()` of the installing activation. Together with
+    /// `installing_code` it tells a throw in that very activation (whose
+    /// handler runs on the live slots) from one in a recursive call of the
+    /// same routine (which shares the code object but not the slots).
+    pub installing_base: usize,
+    /// `call_frames.len()` when the region was entered: the next call frame
+    /// pushed by the installing activation holds its saved upvalue array,
+    /// which the handler's upvalue reads address.
+    pub installing_call_depth: usize,
+    /// `routine_stack` and `method_class_stack` depths when the region was
+    /// entered. A cross-frame handler runs with the installing activation's
+    /// routine frame on top and no method frame above its own, so its
+    /// private-method trust check and `&?ROUTINE` are the installing ones.
+    pub installing_routine_depth: usize,
+    pub installing_method_depth: usize,
+    /// The routine a `return` in the handler targets: the one running when the
+    /// region was entered. An inline run raises that `return` at the throw
+    /// site, below routines that must not take it as their own.
+    pub return_target: Option<u64>,
+    /// The package the installing frame ran in. The handler resolves its
+    /// unqualified routine names there (a module-private helper the handler
+    /// calls), not in the package of the code that threw.
+    pub installing_package: crate::symbol::Symbol,
     /// Present only when this region's CATCH can resume: the bytecode + range +
     /// function table needed to run the handler INLINE at a deep throw site.
     pub handler: Option<CatchHandlerCode>,

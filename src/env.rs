@@ -2499,6 +2499,30 @@ impl Env {
     /// Key-only, so it costs no `Value` clones: [`Self::flatten`] answers the
     /// same question but deep-copies every value, which is far too expensive
     /// for a per-`EVAL` snapshot.
+    /// Every dynamic variable (`$*x`, `@*x`, ...) held by this env's own
+    /// tiers — overlays, capture fallbacks and the parent chain, but not the
+    /// shared base of built-in dynamics — with its visible value. ADR-0072: an
+    /// inline `CATCH` handler reads lexicals through the installing frame's env
+    /// but must still see the dynamics the throw site declared.
+    // Cost: O(e), e = entries in this env's tiers.
+    pub(crate) fn tier_dynamic_entries(&self) -> Vec<(Symbol, Value)> {
+        let mut keys: HashSet<Symbol> = HashSet::new();
+        let mut cur = self;
+        loop {
+            keys.extend(cur.inner.keys().filter(|k| k.is_dynamic_var_env_key()));
+            if let Some(fb) = &cur.fallback {
+                keys.extend(fb.keys().filter(|k| k.is_dynamic_var_env_key()));
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
+        }
+        keys.into_iter()
+            .filter_map(|k| self.get_sym(k).map(|v| (k, v.clone())))
+            .collect()
+    }
+
     pub fn visible_keys_where(&self, keep: impl Fn(&str) -> bool + Copy) -> HashSet<String> {
         let mut out: HashSet<String> = match &self.parent {
             Some(parent) => parent.visible_keys_where(keep),

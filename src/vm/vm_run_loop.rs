@@ -1039,8 +1039,13 @@ impl Interpreter {
             match &code.ops[ip] {
                 OpCode::LeaveGuard { next } => {
                     let guard_next = *next as usize;
-                    // Run this phaser's body (from ip+1 to guard_next)
+                    // Run this phaser's body (from ip+1 to guard_next). The
+                    // guard catches what it throws, so it blocks the inline
+                    // CATCH chain like a `try` does (ADR-0072): a `die` in a
+                    // LEAVE is collected here, never handled at its throw.
+                    self.push_catch_marker();
                     let result = self.run_range(code, ip + 1, guard_next, compiled_fns);
+                    self.catch_handlers.pop();
                     if let Err(e) = result {
                         collected_errors.push(e);
                     }

@@ -1234,8 +1234,6 @@ impl Compiler {
             control_handles_take,
             is_bare_block,
             traps,
-            // Patched below, once the CATCH op range exists (ADR-0072).
-            catch_resume_capable: false,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -1359,24 +1357,7 @@ impl Compiler {
             self.code.emit(OpCode::LoadNil);
         }
         // Patch control_start.
-        let catch_range_start = match self.code.ops[try_idx] {
-            OpCode::TryCatch { catch_start, .. } => catch_start as usize,
-            _ => unreachable!("try_idx points at the TryCatch placeholder"),
-        };
         self.code.patch_try_control_start(try_idx);
-        // ADR-0072: a CATCH block whose bytecode calls `.resume` can handle a
-        // `die` raised several frames below INLINE at the throw site, so the
-        // dying frame is never unwound and `.resume` reaches the die's own call
-        // site. Decided here because the runtime cannot see the AST; the scan is
-        // conservative (no `.resume` op => provably cannot resume => keep the
-        // ordinary unwinding path).
-        let catch_range_end = self.code.ops.len();
-        let resume_capable = catch_stmts.is_some()
-            && self
-                .code
-                .range_calls_resume(catch_range_start, catch_range_end);
-        self.code
-            .patch_try_catch_resume_capable(try_idx, resume_capable);
         // Compile control block.
         if let Some(ref control_body) = control_stmts {
             for stmt in control_body {

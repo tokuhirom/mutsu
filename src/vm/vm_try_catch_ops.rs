@@ -15,7 +15,6 @@ impl Interpreter {
         control_handles_take: bool,
         is_bare_block: bool,
         traps: bool,
-        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -75,7 +74,6 @@ impl Interpreter {
             resume_safe,
             control_handles_take,
             traps,
-            catch_resume_capable,
             ip,
             compiled_fns,
         );
@@ -113,7 +111,6 @@ impl Interpreter {
         resume_safe: bool,
         control_handles_take: bool,
         traps: bool,
-        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -166,18 +163,12 @@ impl Interpreter {
         let catch_token = if registers_catch {
             self.catch_handler_seq += 1;
             let token = self.catch_handler_seq;
-            let handler =
-                (has_catch && catch_resume_capable).then(|| crate::vm::CatchHandlerCode {
-                    code: code.shared_snapshot(),
-                    catch_begin,
-                    control_begin,
-                    compiled_fns: self.shared_fns_snapshot(compiled_fns),
-                });
-            self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+            self.push_catch_handler(
+                code,
                 token,
-                installing_code: self.current_code,
-                handler,
-            });
+                (has_catch && explicit_catch).then_some((catch_begin, control_begin)),
+                compiled_fns,
+            );
             Some(token)
         } else {
             None
@@ -543,18 +534,13 @@ impl Interpreter {
                             // protected body, so re-register the catch boundary
                             // for it exactly as the control handler is above.
                             if let Some(token) = catch_token {
-                                let handler = (catch_begin < control_begin && catch_resume_capable)
-                                    .then(|| crate::vm::CatchHandlerCode {
-                                        code: code.shared_snapshot(),
-                                        catch_begin,
-                                        control_begin,
-                                        compiled_fns: self.shared_fns_snapshot(compiled_fns),
-                                    });
-                                self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+                                self.push_catch_handler(
+                                    code,
                                     token,
-                                    installing_code: self.current_code,
-                                    handler,
-                                });
+                                    (catch_begin < control_begin && explicit_catch)
+                                        .then_some((catch_begin, control_begin)),
+                                    compiled_fns,
+                                );
                             }
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
@@ -674,5 +660,69 @@ impl Interpreter {
                 )
             }
         }
+    }
+
+    /// ADR-0072: register a region as an exception-absorbing boundary for its
+    /// protected body. `catch_range` is the region's `CATCH` op range, `None`
+    /// for a `try` with no `CATCH` (a blocking marker the throw site cannot
+    /// run inline).
+    // Cost: O(1), plus O(c + f) the first time a code object (c = ops +
+    // constants) or function-table version (f entries) installs a handler.
+    fn push_catch_handler(
+        &mut self,
+        code: &CompiledCode,
+        token: u64,
+        catch_range: Option<(usize, usize)>,
+        compiled_fns: &CompiledFns,
+    ) {
+        let handler = catch_range.map(|(catch_begin, control_begin)| crate::vm::CatchHandlerCode {
+            code: code.shared_snapshot(),
+            catch_begin,
+            control_begin,
+            compiled_fns: self.shared_fns_snapshot(compiled_fns),
+        });
+        self.push_catch_handler_entry(token, handler);
+    }
+
+    fn push_catch_handler_entry(
+        &mut self,
+        token: u64,
+        handler: Option<crate::vm::CatchHandlerCode>,
+    ) {
+        let return_target = handler
+            .as_ref()
+            .and_then(|_| crate::runtime::return_target::return_target_in_env(self.env()));
+        self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+            token,
+            installing_code: self.current_code,
+            installing_base: self.locals.base(),
+            installing_call_depth: self.call_frames.len(),
+            installing_routine_depth: self.routine_stack_len(),
+            installing_method_depth: self.method_class_depth(),
+            return_target,
+            installing_package: self.current_package_sym(),
+            handler,
+        });
+    }
+
+    /// ADR-0072: register a boundary that catches every exception raised
+    /// below it by other means than a `CATCH` block (a LEAVE queue guard), so
+    /// the inline handler chain stops there. The caller pops it.
+    // Cost: O(1).
+    pub(crate) fn push_catch_marker(&mut self) {
+        self.catch_handler_seq += 1;
+        let token = self.catch_handler_seq;
+        self.push_catch_handler_entry(token, None);
+    }
+
+    /// Run `f` behind a catch marker ([`Self::push_catch_marker`]): for Rust
+    /// code that calls user code and handles its failure itself, so no
+    /// `CATCH` outside runs for an exception that never reaches it.
+    // Cost: O(1) plus `f`.
+    pub(crate) fn with_catch_marker<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        self.push_catch_marker();
+        let r = f(self);
+        self.catch_handlers.pop();
+        r
     }
 }

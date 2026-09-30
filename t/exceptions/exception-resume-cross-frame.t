@@ -247,11 +247,9 @@ sub MyResumeEx-caller { MyResumeEx.new.throw; return "B" }
     is "$log|$r", 'H;bad-after;|B', "a resuming handler's writes to an outer lexical survive";
 }
 
-# --- Recorded residuals (ADR-0072 Slices 2 and 3) --------------------------
-
-# 13: an exception an inner, non-resume-capable CATCH rethrew cannot be
-# inline-resumed by an outer one -- the inner marker blocks the inline path so
-# the inner handler is not skipped. ADR-0072 Slice 2.
+# 13: an exception an inner, non-resuming CATCH rethrew is resumed by an outer
+# one at the original `die` -- the handler chain runs inline, innermost first
+# (ADR-0072 Slice 2).
 {
     my $log = '';
     sub rt-bad { die "rt"; $log ~= "bad-after;"; "B" }
@@ -266,6 +264,5 @@ sub MyResumeEx-caller { MyResumeEx.new.throw; return "B" }
         $r = rt-mid();
         CATCH { default { $log ~= "outer;"; .resume } }
     }
-    todo 'ADR-0072 Slice 2: resuming a rethrown exception needs the whole handler chain inline';
     is "$log|$r", 'inner;outer;bad-after;mid(B);|M', '.resume of a rethrown exception';
 }

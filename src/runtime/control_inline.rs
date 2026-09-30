@@ -158,7 +158,7 @@ impl Interpreter {
         // locals from `env`, and `leave_installing_frame` flushes the slots the
         // handler changed back, so the installing frame (and any intervening
         // by-name reader) observes the handler's writes.
-        let frame = self.enter_installing_frame(code);
+        let frame = self.enter_installing_frame(code, None);
         // The handler runs on the raise site's operand stack; isolate its
         // effects so the suspended computation's stack is left untouched.
         let saved_stack = self.stack.len();
