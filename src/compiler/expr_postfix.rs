@@ -398,7 +398,6 @@ impl Compiler {
             // 1. Read current value and store in tmp_val
             self.compile_expr(expr);
             self.code.emit(OpCode::SetGlobal(tmp_val_idx));
-            self.code.emit(OpCode::Pop);
 
             // 2. PostIncrement/PostDecrement on tmp_val:
             //    - pushes old value on stack
@@ -410,7 +409,6 @@ impl Compiler {
             }
             // Stack now has old value; tmp_val has new value
             self.code.emit(OpCode::SetGlobal(tmp_old_idx));
-            self.code.emit(OpCode::Pop);
 
             // 3. Write back the new value (tmp_val) via IndexAssign. Preserve the
             //    subscript's positional/associative kind so an autovivified
@@ -454,7 +452,6 @@ impl Compiler {
             // 1. Read current value and store in tmp_val
             self.compile_expr(expr);
             self.code.emit(OpCode::SetGlobal(tmp_val_idx));
-            self.code.emit(OpCode::Pop);
 
             // 2. PreIncrement/PreDecrement on tmp_val:
             //    - modifies tmp_val in place
@@ -469,7 +466,6 @@ impl Compiler {
             let tmp_new = format!("__mutsu_nested_preincdec_new_{}", self.code.constants.len());
             let tmp_new_idx = self.code.add_constant(Value::str(tmp_new));
             self.code.emit(OpCode::SetGlobal(tmp_new_idx));
-            self.code.emit(OpCode::Pop);
 
             // 3. Write back the new value via IndexAssign (preserve subscript kind
             //    so `%h<a><b>` autovivifies a Hash, `@a[0][1]` an Array).
