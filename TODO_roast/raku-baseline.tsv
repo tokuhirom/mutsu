@@ -467,17 +467,6 @@ roast/S05-metasyntax/sequential-alternation.t	14	14	0	0	0	0	PASS	1
 roast/S05-metasyntax/single-quotes.t	30	30	0	0	0	0	PASS	1
 roast/S05-metasyntax/unicode-property-pair.t	6	6	0	0	0	0	PASS	1
 roast/S05-metasyntax/unknown.t	13	12	1	0	0	1	FAIL	1
-roast/S05-modifier/Perl_0.t	24	20	4	0	0	4	FAIL	1
-roast/S05-modifier/Perl_1.t	100	100	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_10.t	1	1	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_2.t	100	100	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_3.t	100	100	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_4.t	100	100	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_5.t	102	88	4	0	0	124	TIMEOUT	1
-roast/S05-modifier/Perl_6.t	104	89	15	0	0	15	FAIL	1
-roast/S05-modifier/Perl_7.t	100	100	0	0	0	0	PASS	1
-roast/S05-modifier/Perl_8.t	0	0	0	0	1	1	SORRY	1
-roast/S05-modifier/Perl_9.t	84	75	9	0	0	9	FAIL	1
 roast/S05-modifier/continue.t	14	14	0	0	0	0	PASS	1
 roast/S05-modifier/counted-match.t	28	28	0	0	0	0	PASS	1
 roast/S05-modifier/counted.t	126	126	0	0	0	0	PASS	1
