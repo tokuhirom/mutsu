@@ -5,7 +5,7 @@ use Test;
 # statements: the operator became a bare-word statement and its right-hand
 # side ran on its own (#10257). Each of these is one statement.
 
-plan 12;
+plan 23;
 
 # --- `{ ... }()` is an infix operand ------------------------------------------
 
@@ -33,6 +33,53 @@ is $out, "t", 'the value temp saved is the initializer (as in rakudo)';
 
 sub t2 { temp my $x = 3; $x }
 is t2(), 3, 'temp my $x = ... works';
+
+# --- adjacent colonpairs ------------------------------------------------------
+
+{
+    my @a = :a:!b:42c;
+    is-deeply @a, [:a], 'later colonpairs on a colonpair term are adverbs (rakudo drops them)';
+    my $ran = False;
+    my $x = :a :b($ran = True);
+    ok $ran, 'the dropped adverb values are still evaluated';
+    is (:a:!b:42c).elems, 3, 'a parenthesized run is a list';
+    is [:a :b].elems, 2, 'an array composer run is a list';
+    sub named(*%h) { %h.elems }
+    is named(:a :b), 2, 'a parenthesized argument list keeps every pair';
+}
+
+# --- `$@`, `%::{...}` ---------------------------------------------------------
+
+lives-ok { EVAL '$@' }, '$@ alone is one term (roast S32-exceptions/misc2)';
+throws-like q[%::{''}], X::Undeclared, 'a sigil with a bare :: is an undeclared variable';
+
+# --- a routine declaration with a statement modifier ---------------------------
+
+{
+    my $topic;
+    sub declared-here() { 5 } given ($topic = 3);
+    is declared-here(), 5, 'sub ... given: the sub is declared';
+    is $topic, 3, 'the modifier still evaluates its topic';
+}
+
+# --- a call ending in a block ends at the newline ----------------------------
+
+{
+    my @seen;
+    sub take-block(*@) { @seen.push: 'call' }
+    take-block 'x' => { 1 }
+    if False {
+        @seen.push: 'then';
+    }
+    else {
+        @seen.push: 'else';
+    }
+    is-deeply @seen, ['call', 'else'], 'the next line if/else is its own statement';
+}
+
+# --- errors keep their own class -----------------------------------------------
+
+throws-like 'for 1, 2 { my $p = {};', X::Syntax::Missing, 'an unclosed for block is a missing block';
 
 # --- a leftover term on the same line is "Two terms in a row" ----------------
 

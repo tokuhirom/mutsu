@@ -524,18 +524,18 @@ pub(crate) fn stmt_list_with_mode(
                 // statements. rakudo: "Two terms in a row" (#9918, #10257).
                 // The statement parser may already have consumed its `;` and
                 // any trailing whitespace or comment (and with it the newline).
-                // A leftover that does not parse as a statement of its own is
-                // left for the next iteration to report: its error is the more
-                // precise one (`1, => 2` is an infix in term position, `multi
-                // sub foo;` a unit-scoped sub) and nothing is silently split.
+                // When the rest of the statement list does not parse, its own
+                // error is the precise one (`1, => 2` is an infix in term
+                // position, `multi sub foo;` a unit-scoped sub, `for 1, 2 {` a
+                // missing block); either way nothing is silently split.
                 let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
                 let consumed = consumed_raw.trim_end();
                 if !consumed.ends_with(';')
                     && !consumed.ends_with('}')
                     && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
                     && !has_statement_separator(r)
-                    && statement(r_ws).is_ok()
                 {
+                    stmt_list_with_mode(r_ws, false, false)?;
                     return Err(PError::fatal_at(
                         "Confused. Two terms in a row".to_string(),
                         r_ws,

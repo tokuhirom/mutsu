@@ -386,6 +386,21 @@ pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
         // the condition's own regex referenced it (`<NAME>` then fell back to a
         // method call on Match). Pinned by `t/regex-decl-stmt-terminator.t`.
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => true,
+        // A statement-level call whose last argument ends in a block
+        // (`subtest 'x' => { ... }`, `say $k => { ... }`): the same boundary as
+        // the expression-call form above. Without it the next line's
+        // `if COND { ... }` became a modifier and its block a stray term.
+        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
+            args.last().is_some_and(expr_ends_with_block)
+        }
+        Stmt::Call { args, .. } => match args.last() {
+            Some(
+                crate::ast::CallArg::Positional(e)
+                | crate::ast::CallArg::Slip(e)
+                | crate::ast::CallArg::Named { value: Some(e), .. },
+            ) => expr_ends_with_block(e),
+            _ => false,
+        },
         _ => false,
     }
 }

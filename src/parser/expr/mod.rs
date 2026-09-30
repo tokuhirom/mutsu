@@ -151,9 +151,56 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             };
         }
         Ok((rest, expr))
-    })();
+    })()
+    .and_then(|(rest, expr)| absorb_colonpair_adverbs(input, rest, expr));
     EXPR_MEMO.store(input, &result);
     result
+}
+
+/// A colonpair term followed by more colonpairs (`:a:!b:42c`, `:a :b`) takes
+/// the later ones as adverbs, which rakudo evaluates and then ignores:
+/// `my @a = :a:!b:42c` is `[:a]`. Lowered to `(:a, :!b, :42c)[0]` so every
+/// value still runs, in order. Stopping after the first pair left the rest as
+/// statements of their own (#10257). A parenthesized run (`(:a :b)`) and an
+/// argument list (`f :a :b`) have their own parsers and stay lists.
+// Cost: O(n), n = length of the colonpair run.
+fn absorb_colonpair_adverbs<'a>(input: &str, rest: &'a str, first: Expr) -> PResult<'a, Expr> {
+    use crate::parser::primary::container::looks_like_colonpair_start;
+    if !looks_like_colonpair_start(input)
+        || !matches!(
+            first,
+            Expr::Binary {
+                op: TokenKind::FatArrow,
+                ..
+            }
+        )
+    {
+        return Ok((rest, first));
+    }
+    let mut pairs = vec![first];
+    let mut r = rest;
+    loop {
+        let (r_ws, _) = ws(r)?;
+        if !looks_like_colonpair_start(r_ws) {
+            break;
+        }
+        let Ok((r_next, pair)) = crate::parser::primary::misc::colonpair_expr(r_ws) else {
+            break;
+        };
+        pairs.push(pair);
+        r = r_next;
+    }
+    if pairs.len() == 1 {
+        return Ok((rest, pairs.pop().expect("one pair")));
+    }
+    Ok((
+        r,
+        Expr::Index {
+            target: Box::new(Expr::ArrayLiteral(pairs)),
+            index: Box::new(Expr::Literal(Value::int(0))),
+            is_positional: true,
+        },
+    ))
 }
 
 /// Like [`expression`] but does NOT consume a trailing simple/compound
@@ -270,7 +317,7 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
             other => Expr::WhateverCurry(Box::new(other)),
         };
     }
-    Ok((rest, expr))
+    absorb_colonpair_adverbs(input, rest, expr)
 }
 
 pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {

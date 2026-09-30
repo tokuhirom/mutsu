@@ -397,7 +397,22 @@ fn is_colonpair_expr(expr: &Expr) -> bool {
 
 /// Check if the input starts with a colonpair pattern (`:name`, `:!name`, `:name(...)`, etc.)
 /// but not `::` (namespace separator) or `:=` (binding) or `:N<radix>` (radix literal).
-fn looks_like_colonpair_start(input: &str) -> bool {
+/// A colonpair list item that ends at an item boundary (`,`, `;`, `closer`)
+/// or in front of another colonpair: `f(:a :b)` and `[:a :b]` hold both.
+/// `expression` would take the second pair as an adverb on the first (rakudo's
+/// rule for a colonpair *term*, `my @a = :a :b` is `[:a]`), so a list parser
+/// reads such an item here first.
+pub(in crate::parser) fn colonpair_run_item(input: &str, closer: char) -> Option<(&str, Expr)> {
+    if !looks_like_colonpair_start(input) {
+        return None;
+    }
+    let (rest, pair) = crate::parser::primary::misc::colonpair_expr(input).ok()?;
+    let after = rest.trim_start();
+    (after.is_empty() || after.starts_with([',', ';', closer]) || looks_like_colonpair_start(after))
+        .then_some((rest, pair))
+}
+
+pub(in crate::parser) fn looks_like_colonpair_start(input: &str) -> bool {
     let Some(r) = input.strip_prefix(':') else {
         return false;
     };
@@ -413,6 +428,10 @@ fn looks_like_colonpair_start(input: &str) -> bool {
         .unwrap_or(0);
     if digit_end > 0 && r[digit_end..].starts_with('<') {
         return false;
+    }
+    // `:42c` — a numeric value in front of the key.
+    if digit_end > 0 {
+        return r[digit_end..].starts_with(|c: char| c.is_alphabetic() || c == '_');
     }
     // Must start with an identifier char, `!` (negated colonpair), or a sigil
     // (`:$var`/`:@var`/`:%var`/`:&var` shorthand colonpair).
