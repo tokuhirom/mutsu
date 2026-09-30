@@ -33,15 +33,13 @@ pub(crate) struct PendingMethodDispatch {
     /// Reserved at call time, so a frame built later sorts into
     /// `method_dispatch_stack` exactly where an eager push would have put it.
     dispatch_token: u64,
-    /// `None` once built and found to need no frame (nothing to defer to): the
-    /// entry stays only so the call's `pop_method_dispatch` pops it.
-    call: Option<PendingMethodCall>,
+    call: PendingMethodCall,
 }
 
 impl PendingMethodDispatch {
     /// The values this entry keeps alive, for the GC root walk.
-    pub(crate) fn roots(&self) -> Option<(&Value, &[Value])> {
-        self.call.as_ref().map(|c| (&c.invocant, c.args.as_slice()))
+    pub(crate) fn roots(&self) -> (&Value, &[Value]) {
+        (&self.call.invocant, self.call.args.as_slice())
     }
 }
 
@@ -117,20 +115,17 @@ impl Interpreter {
                 invocant,
                 dispatch_token,
             );
-            let Some(frame) = frame else {
-                return false;
-            };
             self.method_dispatch_stack.push(frame);
             return true;
         }
         self.pending_method_dispatch.push(PendingMethodDispatch {
             dispatch_token,
-            call: Some(PendingMethodCall {
+            call: PendingMethodCall {
                 receiver_class: Symbol::intern(receiver_class),
                 method_name: Symbol::intern(method_name),
                 invocant,
                 args: args.to_vec(),
-            }),
+            },
         });
         true
     }
@@ -164,8 +159,8 @@ impl Interpreter {
     /// Pop a method dispatch frame (must only be called if push returned true).
     ///
     /// The innermost live frame is the one being popped, and it is on top of
-    /// whichever of the two stacks holds the higher token: a pending (or
-    /// settled) entry, or a built frame.
+    /// whichever of the two stacks holds the higher token: a pending entry or
+    /// a built frame.
     // Cost: O(1).
     pub(crate) fn pop_method_dispatch(&mut self) {
         let pending = self
@@ -180,32 +175,21 @@ impl Interpreter {
         }
     }
 
-    /// Build every still-pending method frame into `method_dispatch_stack`
-    /// (in token order), settling the ones that need no frame. Called by each
-    /// deferral builtin before it looks for the innermost dispatch frame.
-    ///
-    /// Unbuilt entries always form the top of the pending stack: a build
-    /// settles all of them at once, and later calls push above.
+    /// Build every pending method frame into `method_dispatch_stack` (in token
+    /// order). Called by each deferral builtin before it looks for the
+    /// innermost dispatch frame.
     // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
     // pending frame, each frame built at most once.
     pub(super) fn materialize_pending_method_dispatch(&mut self) {
-        let start = self
-            .pending_method_dispatch
-            .iter()
-            .rposition(|p| p.call.is_none())
-            .map_or(0, |i| i + 1);
-        if start == self.pending_method_dispatch.len() {
+        if self.pending_method_dispatch.is_empty() {
             return;
         }
-        let unbuilt = self.pending_method_dispatch.split_off(start);
+        let unbuilt = std::mem::take(&mut self.pending_method_dispatch);
         // Resolving the winner resets this flag; the caller's view of the
         // last dispatch must not change because a frame was built late.
         let saved_ambiguous = self.dispatch_ambiguous;
-        let mut settled = Vec::new();
         for entry in unbuilt {
-            let Some(call) = entry.call else {
-                unreachable!("settled entries sit below every unbuilt one");
-            };
+            let call = entry.call;
             let frame = self.build_method_dispatch_frame(
                 &call.receiver_class.resolve(),
                 &call.method_name.resolve(),
@@ -213,29 +197,19 @@ impl Interpreter {
                 call.invocant,
                 entry.dispatch_token,
             );
-            match frame {
-                Some(frame) => {
-                    let at = self
-                        .method_dispatch_stack
-                        .partition_point(|f| f.dispatch_token < frame.dispatch_token);
-                    self.method_dispatch_stack.insert(at, frame);
-                }
-                None => settled.push(PendingMethodDispatch {
-                    dispatch_token: entry.dispatch_token,
-                    call: None,
-                }),
-            }
+            let at = self
+                .method_dispatch_stack
+                .partition_point(|f| f.dispatch_token < frame.dispatch_token);
+            self.method_dispatch_stack.insert(at, frame);
         }
         self.dispatch_ambiguous = saved_ambiguous;
         // A `where` clause run by the build may make method calls of its own;
-        // they push above `start` and have popped again by now.
-        debug_assert_eq!(self.pending_method_dispatch.len(), start);
-        self.pending_method_dispatch.extend(settled);
+        // they push and pop their own pending entries during the build.
+        debug_assert!(self.pending_method_dispatch.is_empty());
     }
 
-    /// The deferral frame a method call establishes, or `None` when the call
-    /// has nothing to defer to (a deferral builtin then falls through to an
-    /// enclosing frame or a native fallback).
+    /// The deferral frame a method call establishes. With no next candidate,
+    /// its empty `remaining` list still separates this call from its caller.
     // Cost: O(c) in the candidates the deferral expansion collects (each
     // matched against the args once); the single-candidate fast path is O(1)
     // amortized (the MRO probes are memoized per `(class, method)` for one
@@ -247,7 +221,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Value,
         dispatch_token: u64,
-    ) -> Option<super::MethodDispatchFrame> {
+    ) -> super::MethodDispatchFrame {
         // A user-overridden grammar `parse`/`subparse`/`parsefile` needs an MRO frame
         // even with a single user candidate, so a `nextsame`/`nextwith` inside it can
         // defer to the NATIVE grammar parse — the base candidate that is not a
@@ -316,15 +290,22 @@ impl Interpreter {
             || container_protocol_override
             || accessor_base_override;
         // Fast path: a name with at most one *structural* dispatch candidate across
-        // the MRO can never produce a deferral frame (arg-matching only reduces the
+        // the MRO has no user candidate to defer to (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`
-        // MRO walk + MethodDef clones. The structural shape depends only on
+        // MRO walk + MethodDef clones. It still needs an empty boundary so a
+        // deferral in this method cannot consume an enclosing call's frame.
+        // The structural shape depends only on
         // (class, method), so it is memoized in `dispatch_multi_candidate` and
         // invalidated with the other method caches on any registry change.
         if !native_base_override
             && !self.has_multiple_dispatch_candidates(receiver_class, method_name)
         {
-            return None;
+            return Self::empty_method_dispatch_frame(
+                receiver_class,
+                invocant,
+                args,
+                dispatch_token,
+            );
         }
         // ADR-0019 E9a: the flat deferral expansion (`resolution_deferral.rs`) replaces
         // `resolve_all_methods_with_owner` as the ordering source — see its module doc for why
@@ -334,16 +315,21 @@ impl Interpreter {
         // apply internally, with the actual invocant available to `where` clauses.
         let all_candidates =
             self.matched_deferral_candidates(receiver_class, method_name, &args, &invocant);
-        // Fast path: with zero or one candidate there is nothing to defer to, so no
-        // dispatch frame is ever pushed (the single candidate is the chosen one and
-        // gets skipped, leaving `remaining` empty). Returning early here avoids the
+        // Fast path: with zero or one candidate there is nothing to defer to (the
+        // single candidate is the chosen one and gets skipped). Returning early
+        // with an empty boundary avoids the
         // per-call `function_body_fingerprint` work below — which Debug-traverses the
         // whole method body AST to derive a candidate identity — for the overwhelmingly
         // common single-method case. Mirrors `push_multi_dispatch_frame`'s `<= 1` guard.
         // A grammar parse / Mu-base override still pushes a frame (empty
         // `remaining`) so its `nextsame`/`nextwith` reaches the native fallback.
         if !native_base_override && all_candidates.len() <= 1 {
-            return None;
+            return Self::empty_method_dispatch_frame(
+                receiver_class,
+                invocant,
+                args,
+                dispatch_token,
+            );
         }
         // Identify the chosen candidate and skip exactly that one
         let chosen =
@@ -375,7 +361,12 @@ impl Interpreter {
             &remaining,
         );
         if remaining.is_empty() && !native_base_override {
-            return None;
+            return Self::empty_method_dispatch_frame(
+                receiver_class,
+                invocant,
+                args,
+                dispatch_token,
+            );
         }
         {
             let rw_params = chosen
@@ -405,7 +396,7 @@ impl Interpreter {
                     want_container: false,
                 });
             }
-            Some(super::MethodDispatchFrame {
+            super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
                 args,
@@ -414,7 +405,26 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
-            })
+            }
+        }
+    }
+
+    // Cost: O(1), independent of the enclosing dispatcher depth.
+    fn empty_method_dispatch_frame(
+        receiver_class: &str,
+        invocant: Value,
+        args: Vec<Value>,
+        dispatch_token: u64,
+    ) -> super::MethodDispatchFrame {
+        super::MethodDispatchFrame {
+            receiver_class: receiver_class.to_string(),
+            invocant,
+            args,
+            remaining: Vec::new(),
+            rw_params: Vec::new(),
+            dispatch_token,
+            arg_sources: None,
+            in_wrapper: false,
         }
     }
 }

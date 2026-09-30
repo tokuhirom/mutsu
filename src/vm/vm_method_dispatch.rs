@@ -374,12 +374,10 @@ impl Interpreter {
         let owner_is_role = self.is_role(owner_class);
         let owner_sym = crate::symbol::Symbol::intern(owner_class);
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
-        // A plain (non-multi, non-wrapped) compiled method pushes no
-        // `method_dispatch_stack` frame, so callsame/nextsame's exhausted-MRO
-        // fallback (`native_any_base_next_candidate` et al.) has nothing to
-        // key off unless this body actually calls one — gated on
-        // `uses_dispatcher` so the overwhelming majority of method calls, which
-        // never defer, pay no per-call String/Vec clone.
+        // Keep the method name and invocant available to native deferral
+        // fallbacks when this body can invoke a dispatcher builtin. The outer
+        // call path owns the method dispatch frame, including an empty boundary
+        // when there is no next candidate.
         if cc.uses_dispatcher {
             self.push_method_samewith_context(
                 receiver_class_name,
