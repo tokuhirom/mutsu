@@ -9,6 +9,7 @@ mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;
 pub(crate) mod regex_helpers;
+mod regex_ignoremark;
 mod regex_interpolate;
 mod regex_left_call_graph;
 mod regex_lexical_ref;

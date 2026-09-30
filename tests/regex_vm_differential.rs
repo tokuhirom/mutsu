@@ -171,6 +171,15 @@ differential_case!(
     r#"say ("ab" ~~ / a <?before b> /).gist; say ("ac" ~~ / a <!before b> /).gist; say ("ab" ~~ / <?after a> b /).gist; say ("xb" ~~ / <!after a> b /).gist; say "foo1 bar2 baz".comb(/ \w+ <?before \d> /).join("|"); say "a1b2c3".comb(/ <?after \d> \w /).join("|"); say ("aab" ~~ / a+ <?before b> /).gist; say ("abab" ~~ / <?after ab> ab /).gist; say ("ab" ~~ / a <?before [ b | c ]> /).gist; say ("x" ~~ / <?before x> <!before y> x /).gist; say ("ab" ~~ / :r a <?before b>? b /).gist; say ("aa" ~~ / $<x>=(\w) <?before $<x>> . /).gist"#
 );
 
+differential_case!(
+    ignorecase,
+    r#"say ("ABC" ~~ / :i abc /).gist; say ("xABCy" ~~ / :i [a|b]+ c /).gist; say ("FOO bar" ~~ / :i foo \s BAR /).gist; say ("aBC" ~~ / a [:i bc] /).gist; say ("ABC" ~~ / a [:i bc] /).gist; say ("Straße" ~~ / :i strasse /).gist; say "Hello HELLO hello".comb(/ :i hello /).elems; say ("ÉCOLE" ~~ / :i école /).gist; say ("aA" ~~ / :i (a) $0 /).gist; say ("xY" ~~ / :i <[a..z]>+ /).gist; say ("ﬁ" ~~ / :i fi /).gist; say "A-b-C".comb(/ :i <[abc]> /).join; say ("xAy" ~~ / :i x <?before a> . y /).gist"#
+);
+differential_case!(
+    ignoremark,
+    r#"say ("café" ~~ / :m cafe /).gist; say ("cafe" ~~ / :m café /).gist; say ("ÀB" ~~ / :m :i ab /).gist; say ("naïve x" ~~ / :m (naive) \s (x) /).gist; say "résumé resume".match(/ :m resume /, :g).elems; say ("e\x[301]x" ~~ / :m ex /).gist; say ("xé" ~~ / x [:m e] /).gist; say "ÀÉÎ".subst(/ :m e /, "E")"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

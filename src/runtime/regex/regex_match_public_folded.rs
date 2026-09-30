@@ -5,7 +5,7 @@
 //! (`regex_ltm_fate`).
 
 use super::super::*;
-use super::regex_casefold::{casefold_pattern, casefold_text};
+use super::regex_casefold::{casefold_pattern_cached, casefold_text};
 use super::regex_helpers::{map_pos, strip_marks_pattern};
 use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open};
 use super::regex_prefilter::regex_scan_positions;
@@ -78,7 +78,7 @@ impl Interpreter {
     ) -> Option<RegexCaptures> {
         let orig_chars = target.chars();
         let (folded_chars, pos_map) = casefold_text(orig_chars);
-        let folded_parsed = casefold_pattern(parsed);
+        let folded_parsed = casefold_pattern_cached(parsed);
         let orig_len = orig_chars.len();
 
         // Helper: check if a position in folded space is at a fold boundary

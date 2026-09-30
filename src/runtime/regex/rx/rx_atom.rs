@@ -35,7 +35,8 @@ impl RxProgram {
         self.ascii.get_or_init(|| {
             self.atoms
                 .iter()
-                .map(|atom| {
+                .zip(&self.atom_ic)
+                .map(|(atom, &ic)| {
                     let mut set = 0u128;
                     // The table is shared with the zero-width assertions,
                     // which never reach `rx_atom_at`.
@@ -46,8 +47,13 @@ impl RxProgram {
                         return None;
                     }
                     for c in PRINTABLE.filter_map(char::from_u32) {
-                        if interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, false) == Some(1) {
-                            set |= 1u128 << (c as u32);
+                        match interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, ic) {
+                            Some(1) => set |= 1u128 << (c as u32),
+                            None => {}
+                            // An atom that can consume more than the one
+                            // character (a case fold that expands) is not a
+                            // yes/no set: leave it to the full test.
+                            Some(_) => return None,
                         }
                     }
                     Some(set)
@@ -104,6 +110,6 @@ impl Interpreter {
         {
             return (set & (1u128 << c) != 0).then_some(pos + 1);
         }
-        self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, false)
+        self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, program.atom_ic[i])
     }
 }

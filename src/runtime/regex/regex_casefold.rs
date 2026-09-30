@@ -103,6 +103,16 @@ fn atom_has_multichar_fold(atom: &RegexAtom) -> bool {
 /// Case-fold all literal atoms in a RegexPattern (recursively).
 /// Multi-char folds (e.g., 'ß' -> 'ss') are expanded into Group patterns
 /// containing multiple Literal tokens.
+/// [`casefold_pattern`], memoized on the pattern.
+pub(super) fn casefold_pattern_cached(pattern: &RegexPattern) -> Arc<RegexPattern> {
+    Arc::clone(
+        pattern
+            .derived
+            .folded
+            .get_or_init(|| Arc::new(casefold_pattern(pattern))),
+    )
+}
+
 pub(super) fn casefold_pattern(pattern: &RegexPattern) -> RegexPattern {
     RegexPattern {
         tokens: pattern.tokens.iter().flat_map(casefold_token).collect(),

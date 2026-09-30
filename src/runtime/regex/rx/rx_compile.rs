@@ -20,6 +20,10 @@ pub(in crate::runtime::regex) type Decline = &'static str;
 pub(super) struct Compiler {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<crate::runtime::regex_types::RegexAtom>,
+    /// Per atom: its pattern level's `:i`.
+    pub(super) atom_ic: Vec<bool>,
+    /// The `:i` of the pattern level being compiled.
+    ignore_case: bool,
     pub(super) toks: Vec<RegexToken>,
     pub(super) alts: Vec<AlternationListFlags>,
     pub(super) ltm_alts: Vec<super::LtmAltTable>,
@@ -36,6 +40,8 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
     let mut c = Compiler {
         ops: Vec::new(),
         atoms: Vec::new(),
+        atom_ic: Vec::new(),
+        ignore_case: false,
         toks: Vec::new(),
         alts: Vec::new(),
         ltm_alts: Vec::new(),
@@ -50,6 +56,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
     Ok(RxProgram {
         ops: c.ops,
         atoms: c.atoms,
+        atom_ic: c.atom_ic,
         toks: c.toks,
         alts: c.alts,
         ltm_alts: c.ltm_alts,
@@ -187,17 +194,30 @@ impl Compiler {
         (self.nregs - 1) as u16
     }
 
+    /// Add `atom` to the atom table, tested under the current level's `:i`.
+    fn push_atom(&mut self, atom: &RegexAtom) -> u32 {
+        self.atoms.push(atom.clone());
+        self.atom_ic.push(self.ignore_case);
+        (self.atoms.len() - 1) as u32
+    }
+
     pub(super) fn pc(&self) -> u32 {
         self.ops.len() as u32
     }
 
     pub(super) fn pattern(&mut self, pattern: &RegexPattern) -> Result<(), Decline> {
-        if pattern.ignore_case {
-            return Err("ignorecase");
-        }
         if pattern.ignore_mark {
             return Err("ignoremark");
         }
+        // The walk tests a level's atoms under that level's own `:i`
+        // (`ctx.pattern.ignore_case`), so a scoped `[:i …]` covers its body only.
+        let outer_ic = std::mem::replace(&mut self.ignore_case, pattern.ignore_case);
+        let result = self.pattern_tokens(pattern);
+        self.ignore_case = outer_ic;
+        result
+    }
+
+    fn pattern_tokens(&mut self, pattern: &RegexPattern) -> Result<(), Decline> {
         // The walk checks a pattern level's `^` when that level is entered
         // and its `$` when the level's tokens run out; so do these.
         if pattern.anchor_start {
@@ -269,13 +289,11 @@ impl Compiler {
     pub(super) fn atom(&mut self, token: &RegexToken) -> Result<(), Decline> {
         match &token.atom {
             a if is_consuming(a) => {
-                let i = self.atoms.len() as u32;
-                self.atoms.push(a.clone());
+                let i = self.push_atom(a);
                 self.ops.push(RxOp::Atom(i));
             }
             a if is_assertion(a) => {
-                let i = self.atoms.len() as u32;
-                self.atoms.push(a.clone());
+                let i = self.push_atom(a);
                 self.ops.push(RxOp::Assert(i));
             }
             RegexAtom::Group(p) => self.pattern(p)?,
@@ -313,16 +331,14 @@ impl Compiler {
                 if super::rx_vm::program_for(pattern).is_none() {
                     return Err("lookaround-body");
                 }
-                let i = self.atoms.len() as u32;
-                self.atoms.push(token.atom.clone());
+                let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::CapAtom(i));
             }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
             | RegexAtom::CaptureStartMarker
             | RegexAtom::CaptureEndMarker => {
-                let i = self.atoms.len() as u32;
-                self.atoms.push(token.atom.clone());
+                let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::CapAtom(i));
             }
             RegexAtom::CodeAssertion { .. }
@@ -428,8 +444,7 @@ impl Compiler {
         if !nullable && is_consuming(&token.atom) && !token.frugal && !named {
             // A single one-grapheme atom needs no loop: the iterations are
             // scanned up front and given back from a position list.
-            let atom = self.atoms.len() as u32;
-            self.atoms.push(token.atom.clone());
+            let atom = self.push_atom(&token.atom);
             self.ops.push(RxOp::AtomRun {
                 atom,
                 min,
