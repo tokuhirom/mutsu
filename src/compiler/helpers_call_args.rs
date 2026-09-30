@@ -640,15 +640,19 @@ impl Compiler {
         // parameter, so its argument must be a plain read.
         if !suppress_multidim_bind_ref
             && let Expr::MultiDimIndex {
-                target, dimensions, ..
+                target,
+                dimensions,
+                is_positional,
             } = arg
         {
             self.compile_expr(target);
             for dim in dimensions {
                 self.compile_expr(dim);
             }
-            self.code
-                .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            self.code.emit(OpCode::MultiDimIndexBindRef {
+                ndims: dimensions.len() as u32,
+                is_positional: *is_positional,
+            });
             return;
         }
         // Inside a `return-rw` operand a single-dimension subscript argument is

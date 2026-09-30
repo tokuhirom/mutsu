@@ -241,8 +241,10 @@ impl Compiler {
             for dimension in dimensions {
                 self.compile_expr(dimension);
             }
-            self.code
-                .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            self.code.emit(OpCode::MultiDimIndexBindRef {
+                ndims: dimensions.len() as u32,
+                is_positional: false,
+            });
         } else {
             self.compile_expr(&normalized_iterable);
             // `for $obj.attr <-> $v { $v = ... }` / `for $obj."$name"() { $_ = ... }`

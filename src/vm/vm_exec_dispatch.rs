@@ -4867,9 +4867,12 @@ impl Interpreter {
                 self.exec_multi_dim_index_assign_generic_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(d), d = indices.
-            OpCode::MultiDimIndexBindRef(ndims) => {
-                self.exec_multi_dim_index_bind_ref_op(*ndims)?;
+            // Cost: O(d + E), d = dimensions, E = selected leaves for a slice.
+            OpCode::MultiDimIndexBindRef {
+                ndims,
+                is_positional,
+            } => {
+                self.exec_multi_dim_index_bind_ref_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
             // Cost: O(E), E = nodes of the hash tree walked (the result has one entry per node).
