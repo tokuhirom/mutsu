@@ -634,15 +634,22 @@ impl Compiler {
             // rejects the combination outright, as rakudo does.
             if let Stmt::VarDecl {
                 name,
-                type_constraint: Some(tc),
+                type_constraint,
                 is_our: false,
                 custom_traits,
                 ..
             } = stmt
                 && !custom_traits.iter().any(|(n, _)| n == "default")
             {
-                let pragma_tc = self.variables_pragma_constraint(Some(tc), custom_traits);
-                let tc = pragma_tc.as_ref().unwrap_or(tc);
+                let pragma_tc = self.variables_pragma_constraint(
+                    name,
+                    false,
+                    type_constraint.as_deref(),
+                    custom_traits,
+                );
+                let Some(tc) = pragma_tc.as_ref().or(type_constraint.as_ref()) else {
+                    continue;
+                };
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                 self.emit_hoisted_set_var_type(name, name_idx, tc_idx, false);

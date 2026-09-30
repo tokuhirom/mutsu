@@ -175,9 +175,10 @@ impl Compiler {
 
     /// The constraint a typed variable declaration carries once an active
     /// `use variables :D/:U` adds its implicit smiley (`Int` -> `Int:D`), or
-    /// `None` when the pragma leaves the declaration as written: no pragma, no
-    /// type, an explicit smiley already (`Int:_` / `Int:U` win over the
-    /// pragma, as in rakudo), a `constant`, or an object-hash key shape.
+    /// `None` when the pragma leaves the declaration as written: no pragma,
+    /// an explicit smiley already (`Int:_` / `Int:U` win over the pragma),
+    /// an `our`/sigilless/`&` declaration, a `constant`, or an object-hash key
+    /// shape. Untyped lexical variables acquire `Any:D` or `Any:U`.
     ///
     /// Applied by every `Stmt::VarDecl` compile path before it emits anything,
     /// so the declaration's `TypeCheck`, its persisted `SetVarType` constraint
@@ -185,15 +186,25 @@ impl Compiler {
     /// is then checked against `Int:D` (#9990).
     pub(super) fn variables_pragma_constraint(
         &self,
+        name: &str,
+        is_our: bool,
         type_constraint: Option<&str>,
         custom_traits: &[(String, Option<Expr>)],
     ) -> Option<String> {
         let smiley = self.variables_pragma?;
-        let tc = type_constraint?;
+        if custom_traits.iter().any(|(t, _)| t == "__constant") {
+            return None;
+        }
+        let tc = match type_constraint {
+            Some(tc) => tc,
+            None if !is_our && !name.starts_with('&') && !self.sigilless_locals.contains(name) => {
+                "Any"
+            }
+            None => return None,
+        };
         if crate::runtime::types::strip_type_smiley(tc).1.is_some()
             || tc.starts_with("::")
             || tc.contains('{')
-            || custom_traits.iter().any(|(t, _)| t == "__constant")
         {
             return None;
         }
