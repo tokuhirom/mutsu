@@ -159,7 +159,7 @@ impl Compiler {
         if rest.iter().any(|b| super::rx_vm::program_for(b).is_none()) {
             return Err("conjunction-branch");
         }
-        if branches.iter().any(|b| pattern_contains_code(b)) {
+        if branches.iter().any(pattern_contains_code) {
             // Every branch shares the enclosing regex's scope, which a level of
             // its own (the first branch) and a nested run (the others) hide
             // from the code: it would see its own branch's captures only.
