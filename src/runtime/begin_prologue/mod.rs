@@ -153,15 +153,13 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         rest.extend(assign);
         return;
     }
-    if let Stmt::SyntheticBlock(inner) = &stmt
-        && is_will_begin_group(inner)
-    {
-        let Stmt::SyntheticBlock(inner) = stmt else {
-            unreachable!()
-        };
-        partition_will_begin(inner, prologue, rest);
-        return;
-    }
+    let stmt = match stmt {
+        Stmt::SyntheticBlock(inner) if is_will_begin_group(&inner) => {
+            partition_will_begin(inner, prologue, rest);
+            return;
+        }
+        other => other,
+    };
     // A group declaration `my ($a, @b);` arrives as a `SyntheticBlock` of plain
     // declarations. It splits member by member.
     if let Stmt::SyntheticBlock(inner) = &stmt
@@ -292,11 +290,17 @@ fn is_will_begin_group(inner: &[Stmt]) -> bool {
 /// container. The initializer and the other trait phasers stay at run time.
 fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
     let mut members = inner.into_iter();
-    let decl = members.next().expect("checked by is_will_begin_group");
-    let Stmt::VarDecl { name, .. } = &decl else {
-        unreachable!("checked by is_will_begin_group")
+    let Some(decl) = members.next() else {
+        return;
     };
-    let name = name.clone();
+    let name = match &decl {
+        Stmt::VarDecl { name, .. } => name.clone(),
+        _ => {
+            rest.push(decl);
+            rest.extend(members);
+            return;
+        }
+    };
     partition_stmt(decl, prologue, rest);
     let mut later = Vec::new();
     for member in members {
