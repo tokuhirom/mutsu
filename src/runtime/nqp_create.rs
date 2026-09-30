@@ -73,6 +73,9 @@ pub(crate) struct CreateShape {
     /// An `is Hash` / `is Map` subclass, which also needs a reserved backing
     /// store even when it is allocated without `new`.
     associative: bool,
+    /// An `is IterationBuffer` subclass: nqp code pushes onto `self`, so the
+    /// element storage is allocated up front.
+    iteration_buffer: bool,
 }
 
 /// Per-type `nqp::create` answers, valid for one registry write generation.
@@ -144,13 +147,24 @@ impl Interpreter {
     }
 
     /// [`CreateKind`] for the type named `name` (short name `short`).
-    // Cost: O(n), n = chars of the name (two hash probes of the short name).
+    // Cost: O(n), n = chars of the name (two hash probes of the short name); a VM storage
+    // class adds an O(m) scan, m = registered method entries, memoized per generation.
     fn create_kind(&self, name: &str, short: &str) -> CreateKind {
         let reg = self.registry();
+        // A VM storage class that declares methods is not a bare store: its
+        // instance must dispatch them (`nqp::create(self)!SET-SELF: ...`,
+        // ValueList/Tuple), so it is allocated as a real instance.
+        let owner = Symbol::intern(name);
+        let is_storage = reg.vmhash_classes.contains(short) || reg.vmarray_classes.contains(short);
+        let bare = !is_storage
+            || !reg
+                .method_entries
+                .iter()
+                .any(|(key, entry)| key.owner == owner && !entry.user_candidates.is_empty());
         CreateKind::of(
             name,
-            reg.vmhash_classes.contains(short),
-            reg.vmarray_classes.contains(short),
+            bare && reg.vmhash_classes.contains(short),
+            bare && reg.vmarray_classes.contains(short),
         )
     }
 
@@ -193,9 +207,14 @@ impl Interpreter {
                     .class_mro(class.as_str())
                     .iter()
                     .any(|name| Self::is_associative_base(name.as_str()));
+                let iteration_buffer = self
+                    .class_mro(class.as_str())
+                    .iter()
+                    .any(|name| name.as_str() == "IterationBuffer");
                 let shape = CreateShape {
                     template,
                     associative,
+                    iteration_buffer,
                 };
                 // Building the plan or the MRO may cache into the registry;
                 // an answer computed across that write is not recorded.
@@ -241,6 +260,12 @@ impl Interpreter {
             attributes.insert(
                 "__mutsu_hash_storage",
                 self.associative_base_storage(class.as_str(), Vec::new()),
+            );
+        }
+        if shape.iteration_buffer {
+            attributes.insert(
+                super::nqp_ops_list::iteration_buffer_items_key(),
+                Value::real_array(Vec::new()),
             );
         }
         Value::make_instance(class, attributes)

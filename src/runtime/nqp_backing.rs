@@ -25,11 +25,16 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "IterationBuffer" => {
+        } => {
             if let Some(items) = attributes.as_map().get(iteration_buffer_items_key())
                 && matches!(items.view(), ValueView::Array(..))
             {
                 return Some(items.clone());
+            }
+            // Only an IterationBuffer (or a subclass, which `create_instance`
+            // seeds with storage) has an items slot to vivify.
+            if class_name != "IterationBuffer" {
+                return None;
             }
             // One key into the shared cell, not a copy of the whole map
             // committed back (`InstanceAttrs::insert`, as `value_buf` writes).

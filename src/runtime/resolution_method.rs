@@ -464,6 +464,9 @@ impl Interpreter {
                             && !p.named
                             && !p.slurpy
                             && !p.double_slurpy
+                            // `+@a` is a (one-arg) slurpy: it never counts as
+                            // a Positional constraint, so `(@a)` beats it.
+                            && !p.onearg
                             && (p.name.starts_with('@')
                                 || p.name.starts_with('%')
                                 || p.name.starts_with('&'))

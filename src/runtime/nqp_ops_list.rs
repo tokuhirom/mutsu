@@ -30,6 +30,27 @@ pub(crate) fn iteration_buffer_items_key() -> crate::symbol::Symbol {
     *KEY
 }
 
+/// Whether `v` is an `IterationBuffer` or an instance of a subclass of one.
+/// A subclass instance is recognised by the element storage
+/// `Interpreter::create_instance` seeds into it.
+// Cost: O(1).
+pub(crate) fn is_iteration_buffer(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } => {
+            class_name == "IterationBuffer"
+                || attributes
+                    .as_map()
+                    .get(iteration_buffer_items_key())
+                    .is_some_and(|items| matches!(items.view(), ValueView::Array(..)))
+        }
+        _ => false,
+    }
+}
+
 pub(crate) use super::nqp_backing::{nqp_backing_array, with_nqp_backing_array};
 
 fn iarg(args: &[Value], i: usize) -> i64 {

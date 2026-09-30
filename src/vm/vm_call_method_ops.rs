@@ -1387,7 +1387,7 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
             && matches!(
                 method,
                 "elems"
@@ -1398,6 +1398,7 @@ impl Interpreter {
                     | "List"
                     | "Slip"
                     | "Seq"
+                    | "iterator"
                     | "append"
                     | "prepend"
                     | "clear"

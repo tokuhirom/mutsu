@@ -142,6 +142,17 @@ pub(crate) fn param_is_sigilless(name: &str) -> bool {
 /// where the one-hop one arrives as `("x", "y")`, and both have to land as
 /// `["x", "y"]`.
 pub(crate) fn shape_value_for_sigiled_target(target: &str, val: &Value) -> Value {
+    // An object under `@`/`%` is a `my @a is Foo` container (Tuple, ValueList):
+    // it already IS the variable's own shape, so the writeback of an unchanged
+    // `\c` parameter must not rebuild it into an Array/Hash.
+    // TODO: `\c = $obj` (a lone object stored through a sigilless alias) should
+    // wrap it as `[$obj]`; telling that apart needs the class's Positional/
+    // Associative role, which this registry-free helper cannot see.
+    if matches!(target.as_bytes().first(), Some(b'@' | b'%'))
+        && matches!(val.view(), ValueView::Instance { .. })
+    {
+        return val.clone();
+    }
     match target.as_bytes().first() {
         Some(b'@') => {
             if matches!(val.view(), ValueView::Array(_, k) if k.is_real_array()) {
