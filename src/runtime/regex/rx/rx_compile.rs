@@ -356,9 +356,11 @@ impl Compiler {
                 // which answers from the body's own compiled program. Compile
                 // the lookaround only when that program exists, so the body
                 // never drops back to the walk in mid-program (D5).
-                if super::rx_vm::program_for(pattern).is_none() {
+                let Some(body) = super::rx_vm::program_for(pattern) else {
                     return Err("lookaround-body");
-                }
+                };
+                // The body runs code of its own in a nested run.
+                self.has_code |= body.has_code;
                 let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::CapAtom(i));
             }

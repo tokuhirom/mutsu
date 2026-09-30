@@ -3,11 +3,13 @@
 //! keep `rx_compile.rs` within the file-size budget; the layout rules are the
 //! ones `rx_compile`'s module doc states.
 
-use super::super::regex_helpers::{alternation_list_flags, atom_contains_backref};
+use super::super::regex_helpers::{
+    alternation_list_flags, atom_contains_backref, atom_contains_code,
+};
 use super::RxOp;
 use super::rx_compile::{
     Compiler, Decline, atom_captures, has_numbered_alias, min_len, pattern_captures,
-    pattern_contains_backref,
+    pattern_contains_backref, pattern_contains_code,
 };
 use crate::runtime::regex_types::{RegexPattern, RegexQuant, RegexToken};
 
@@ -157,6 +159,12 @@ impl Compiler {
         if rest.iter().any(|b| super::rx_vm::program_for(b).is_none()) {
             return Err("conjunction-branch");
         }
+        if branches.iter().any(|b| pattern_contains_code(b)) {
+            // Every branch shares the enclosing regex's scope, which a level of
+            // its own (the first branch) and a nested run (the others) hide
+            // from the code: it would see its own branch's captures only.
+            return Err("conjunction-code");
+        }
         let start = self.reg();
         self.ops.push(RxOp::Mark(start));
         let height = token.ratchet.then(|| self.reg());
@@ -196,6 +204,13 @@ impl Compiler {
             // The walk matches each iteration against the captures folded so
             // far (`InlineCaptureScope`); a level of its own would hide them.
             return Err("separator-backref");
+        }
+        if atom_contains_code(&token.atom) || pattern_contains_code(sep) {
+            // Code is a reader of the captures too: inside a separated
+            // quantifier `$/[*-1][*-1]` addresses the iterations folded so far
+            // (Net::Whois's octet check, `InlineCaptureScope` in the walk), and
+            // a level of its own would show only the current iteration.
+            return Err("separator-code");
         }
         // Each atom and separator then matches in a capture level of its own,
         // collected for `SepEmit` to fold side by side.
