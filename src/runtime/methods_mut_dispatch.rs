@@ -46,9 +46,7 @@ impl Interpreter {
         let mut removal = picked;
         removal.sort_unstable_by(|a, b| b.cmp(a));
         for i in removal {
-            let Some(current) = self.env_root_descended_mut(target_var).map(|v| v.clone()) else {
-                return None;
-            };
+            let current = self.env_root_descended_mut(target_var).cloned()?;
             if let Err(e) = self.call_method_mut_with_values(
                 target_var,
                 current,
