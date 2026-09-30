@@ -35,7 +35,10 @@ impl Interpreter {
                 },
             );
         }
-        Some(self.build_io_path_instance(class_name, &cn_resolved, args))
+        Some(
+            self.fetch_proxy_ctor_args(args)
+                .and_then(|a| self.build_io_path_instance(class_name, &cn_resolved, &a)),
+        )
     }
 
     /// Pure path-string assembly for an `IO::Path` family `.new(...)`: a
@@ -390,9 +393,15 @@ impl Interpreter {
         } else if cn == "Pair" {
             Some(Self::build_native_pair_value(args))
         } else if cn == "Date" {
-            Some(Self::build_native_date(args))
+            Some(
+                self.fetch_proxy_ctor_args(args)
+                    .and_then(|a| Self::build_native_date(&a)),
+            )
         } else if cn == "DateTime" {
-            Some(Self::build_native_datetime(args))
+            Some(
+                self.fetch_proxy_ctor_args(args)
+                    .and_then(|a| Self::build_native_datetime(&a)),
+            )
         } else if cn == "Duration" {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {

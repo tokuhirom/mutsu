@@ -83,6 +83,27 @@ impl Interpreter {
         Ok(fetched)
     }
 
+    /// FETCH every `Proxy` among the arguments of a native value constructor
+    /// (`DateTime.new($elem<attr>)` where `AT-KEY` is `is rw` and answers a
+    /// `Proxy`): the self-free `build_native_*` builders read plain values and
+    /// cannot run a FETCH themselves. A no-op unless an argument (or a named
+    /// pair's value) really carries a Proxy.
+    // Cost: O(a), a = number of arguments (plus one FETCH per Proxy argument).
+    pub(crate) fn fetch_proxy_ctor_args(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut fetched = Vec::with_capacity(args.len());
+        for arg in args {
+            fetched.push(if Self::arg_carries_store_proxy(arg) {
+                self.fetch_proxy_in_store_arg(arg.clone())?
+            } else {
+                arg.clone()
+            });
+        }
+        Ok(fetched)
+    }
+
     /// The element-wise twin of [`Self::fetch_proxy_for_store`], for a whole
     /// container store or construction (`my @a = (1, $p, 3)`, `[1, $p]`).
     /// Discriminated by `ArrayKind` exactly like `itemize_real_array_elements`:
