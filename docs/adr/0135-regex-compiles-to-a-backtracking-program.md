@@ -518,6 +518,14 @@ backtracking reaches it. The body's compile is the cached one of ADR-0133 and #1
   the parser's `note_regex_code_lowered` keeps the cost at zero for a process with no code in a
   regex). A capture group and a lookaround still get a scope of their own, as in rakudo.
   `t/regex/match/regex-code-atom-capture-scope.t` pins the rakudo values.
+- **A second walk bug, in the published scope's lifetime.** A sub-pattern publishes its level's
+  captures for ITS nested walks, but the rest of the enclosing pattern runs inside its dynamic
+  extent (candidates are streamed), so a subrule called after a `[ … { … } ]` group inherited the
+  group's match start: `$/` in its code spanned `abc12` where rakudo gives `12`. Backreferences had the
+  same latent leak. A subrule call, a capture group, a lookaround and code that may run a match now
+  arm a barrier whenever a scope is published (`arm_subrule_barrier`, `atom_starts_own_regex`;
+  `t/grammar/grammar-subrule-match-start-after-code-group.t`). `t/grammar/ipv6-mapped-dotted-decimal.t`
+  and `t/modules/batteries/xml-battery.t` caught it.
 - **Two shapes still decline**, for the reason `separator-backref` does: code reads the enclosing
   captures, and these shapes hide them. Code inside a `%` / `%%` quantifier (`separator-code`) sees
   the iterations folded so far in the walk (Net::Whois's `$/[*-1][*-1] < 256` octet check, pinned by

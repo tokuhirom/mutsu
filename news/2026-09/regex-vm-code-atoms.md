@@ -19,6 +19,12 @@ rakudo prints `ab`, and `/ (a) [ b { say $0 } ] c /` could not see `$0` at all. 
 shares the regex's scope and holds code now sees the enclosing regex's captures and match start,
 as one that holds a backreference already did (`t/regex/match/regex-code-atom-capture-scope.t`).
 
+A second walk bug turned up in the gate: a scope published for a group's nested walks outlived the
+group, because the rest of the pattern runs inside it, so a subrule called after a group holding code
+saw the caller's match start (`$/` was `abc12` where rakudo says `12`). Subrules, capture groups and
+lookarounds now arm a barrier whenever a scope is published
+(`t/grammar/grammar-subrule-match-start-after-code-group.t`).
+
 Two shapes keep the walk because the compiled form would hide the enclosing captures from the code:
 code inside a `%` quantifier (`separator-code`) and inside a `&` branch (`conjunction-code`).
 
