@@ -385,8 +385,13 @@ compiled and 2281 declined patterns. Later slices account for most of the declin
 `other-atom` (216) is now split into `isolated-group`, `interpolation`, `ws-rule`, `goal-match`
 and `conjunction`, which also belong to later slices.
 
-Still to come in Slice A: backreferences, `%` separators, nested quantified captures, quantified
-aliases, `<( )>` markers, and moving the unanchored scan loop into the VM.
+The same part compiles `%` and `%%` over a capture-free atom and separator, in the order of
+`for_each_separated_candidate` (non-ratchet) and `match_separated_quantifier_ratchet`. Two new
+ops support it: `Advanced` for the per-step progress guard, and `AtLeast` for the minimum count.
+Frugal separated quantifiers decline, because the walk disagrees with rakudo on them (#10306).
+
+Still to come in Slice A: captures under `%`, backreferences, nested quantified captures,
+quantified aliases, `<( )>` markers, and moving the unanchored scan loop into the VM.
 
 ### Reproducing §2
 
