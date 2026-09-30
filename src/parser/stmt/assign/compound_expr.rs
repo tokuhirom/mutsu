@@ -1,5 +1,14 @@
 use super::*;
 
+/// Whether the compound-assignment read of the current element is a true
+/// positional subscript. Only a subscript applied directly to an `@`-variable
+/// qualifies: a Hash/Array intermediate (`@a[0][1] += 1`) must keep the lenient
+/// associative read, but `@f[1] += 5` on an `is Array` subclass instance would
+/// otherwise dispatch to `AT-KEY` and read the element as `Any`.
+fn compound_read_is_positional(target: &Expr, is_positional: bool) -> bool {
+    is_positional && matches!(target, Expr::ArrayVar(_))
+}
+
 fn compound_index_assign_expr<F>(
     target: Expr,
     index: Expr,
@@ -22,7 +31,7 @@ where
     let lhs_expr = Expr::Index {
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
-        is_positional: false,
+        is_positional: compound_read_is_positional(&target, is_positional),
     };
     let mut body = vec![Stmt::VarDecl {
         name: tmp_idx,
@@ -85,7 +94,7 @@ fn compound_index_assign_op_expr(
     let lhs_expr = Expr::Index {
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
-        is_positional: false,
+        is_positional: compound_read_is_positional(&target, is_positional),
     };
     let store = move |value: Expr| Expr::IndexAssign {
         target: Box::new(target),
