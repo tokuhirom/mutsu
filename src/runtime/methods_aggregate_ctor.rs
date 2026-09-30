@@ -321,7 +321,7 @@ impl Interpreter {
     fn extend_flatten_plain_lists(out: &mut Vec<Value>, items: Vec<Value>) {
         for item in items {
             match item.view() {
-                ValueView::Array(inner, kind) if matches!(kind, crate::value::ArrayKind::List) => {
+                ValueView::Array(inner, crate::value::ArrayKind::List) => {
                     Self::extend_flatten_plain_lists(out, inner.to_vec());
                 }
                 _ => out.push(item),
