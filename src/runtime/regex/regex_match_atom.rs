@@ -208,6 +208,21 @@ impl Interpreter {
                 Self::attach_grammar_dynvars_to_named_caps(caps, atom, &values);
             }
         }
+        // The rule's own dynamic parameters (`token usage($*USAGE)`) end with
+        // the rule's match, but its action runs later, in the reduce walk, and
+        // must still see them (CSS::Specification's `usage` action reads
+        // `$*USAGE`). Record them on the capture node like a `:my $*x`.
+        if let Some(saved) = &dyn_saved {
+            let values: Vec<(String, Value)> = saved
+                .iter()
+                .filter_map(|(key, _)| self.env.get(key).cloned().map(|v| (key.clone(), v)))
+                .collect();
+            if !values.is_empty() {
+                for (_, caps) in out.iter_mut() {
+                    Self::attach_grammar_dynvars_to_named_caps(caps, atom, &values);
+                }
+            }
+        }
         if let Some(saved) = dyn_saved {
             self.restore_subrule_dynamic_params(saved);
         }
