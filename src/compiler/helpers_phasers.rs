@@ -589,20 +589,8 @@ impl Compiler {
             return None;
         }
         let mut hoisted = Vec::new();
-        let mut rest = Vec::new();
-        let mut extracted = Vec::new();
-        let mut counter = 0;
-        for stmt in stmts {
-            if embedded(stmt) {
-                rest.push(Self::rewrite_enter_phaser_stmt(
-                    stmt,
-                    &mut extracted,
-                    &mut counter,
-                ));
-            } else {
-                rest.push(stmt.clone());
-            }
-        }
+        let mut rest = stmts.to_vec();
+        let extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rest, embedded);
         // A block-bodied `ENTER { ...; value }` keeps its in-place evaluation:
         // only single-expression phasers have a value we can store at entry.
         if extracted
@@ -640,152 +628,18 @@ impl Compiler {
     }
 
     pub(super) fn stmts_have_enter_phaser_expr(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(Self::stmt_has_enter_phaser_expr)
+        super::enter_phaser_exprs::stmts_have_enter_expr(stmts)
     }
 
     fn stmt_has_enter_phaser_expr(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::Expr(e) => Self::expr_has_enter_phaser(e),
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::expr_has_enter_phaser(cond)
-                    || Self::stmts_have_enter_phaser_expr(then_branch)
-                    || Self::stmts_have_enter_phaser_expr(else_branch)
-            }
-            Stmt::Assign { expr, .. } => Self::expr_has_enter_phaser(expr),
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                Self::stmts_have_enter_phaser_expr(body)
-            }
-            _ => false,
-        }
-    }
-
-    fn expr_has_enter_phaser(expr: &Expr) -> bool {
-        match expr {
-            Expr::PhaserExpr {
-                kind: PhaserKind::Enter,
-                ..
-            } => true,
-            Expr::Binary { left, right, .. } => {
-                Self::expr_has_enter_phaser(left) || Self::expr_has_enter_phaser(right)
-            }
-            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
-                Self::expr_has_enter_phaser(expr)
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                Self::expr_has_enter_phaser(target) || args.iter().any(Self::expr_has_enter_phaser)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                args.iter().any(Self::expr_has_enter_phaser)
-            }
-            Expr::ArrayLiteral(items) => items.iter().any(Self::expr_has_enter_phaser),
-            Expr::Grouped(inner) => Self::expr_has_enter_phaser(inner),
-            _ => false,
-        }
-    }
-
-    fn rewrite_enter_phaser_expr(
-        expr: &Expr,
-        extracted: &mut Vec<(String, Vec<Stmt>)>,
-        counter: &mut usize,
-    ) -> Expr {
-        match expr {
-            Expr::PhaserExpr {
-                kind: PhaserKind::Enter,
-                body,
-            } => {
-                let tmp = format!("__mutsu_enter_expr_{}", *counter);
-                *counter += 1;
-                extracted.push((tmp.clone(), body.clone()));
-                Expr::Var(tmp)
-            }
-            Expr::Binary { left, op, right } => Expr::Binary {
-                left: Box::new(Self::rewrite_enter_phaser_expr(left, extracted, counter)),
-                op: op.clone(),
-                right: Box::new(Self::rewrite_enter_phaser_expr(right, extracted, counter)),
-            },
-            Expr::Unary { op, expr } => Expr::Unary {
-                op: op.clone(),
-                expr: Box::new(Self::rewrite_enter_phaser_expr(expr, extracted, counter)),
-            },
-            Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
-                items
-                    .iter()
-                    .map(|e| Self::rewrite_enter_phaser_expr(e, extracted, counter))
-                    .collect(),
-            ),
-            Expr::Grouped(inner) => Expr::Grouped(Box::new(Self::rewrite_enter_phaser_expr(
-                inner, extracted, counter,
-            ))),
-            Expr::PostfixOp { expr, op } => Expr::PostfixOp {
-                expr: Box::new(Self::rewrite_enter_phaser_expr(expr, extracted, counter)),
-                op: op.clone(),
-            },
-            other => other.clone(),
-        }
-    }
-
-    fn rewrite_enter_phaser_stmt(
-        stmt: &Stmt,
-        extracted: &mut Vec<(String, Vec<Stmt>)>,
-        counter: &mut usize,
-    ) -> Stmt {
-        match stmt {
-            Stmt::Expr(e) => Stmt::Expr(Self::rewrite_enter_phaser_expr(e, extracted, counter)),
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                binding_var,
-                is_statement_modifier,
-                is_unless,
-                with_kind,
-            } => Stmt::If {
-                is_statement_modifier: *is_statement_modifier,
-                is_unless: *is_unless,
-                with_kind: *with_kind,
-                cond: Self::rewrite_enter_phaser_expr(cond, extracted, counter),
-                then_branch: Self::rewrite_enter_phaser_stmts(then_branch, extracted, counter),
-                else_branch: Self::rewrite_enter_phaser_stmts(else_branch, extracted, counter),
-                binding_var: binding_var.clone(),
-            },
-            Stmt::Assign { name, expr, op, .. } => Stmt::Assign {
-                name: name.clone(),
-                expr: Self::rewrite_enter_phaser_expr(expr, extracted, counter),
-                op: *op,
-                target_is_sigilless: false,
-            },
-            Stmt::Block(body) => {
-                Stmt::Block(Self::rewrite_enter_phaser_stmts(body, extracted, counter))
-            }
-            Stmt::SyntheticBlock(body) => {
-                Stmt::SyntheticBlock(Self::rewrite_enter_phaser_stmts(body, extracted, counter))
-            }
-            other => other.clone(),
-        }
-    }
-
-    fn rewrite_enter_phaser_stmts(
-        stmts: &[Stmt],
-        extracted: &mut Vec<(String, Vec<Stmt>)>,
-        counter: &mut usize,
-    ) -> Vec<Stmt> {
-        stmts
-            .iter()
-            .map(|s| Self::rewrite_enter_phaser_stmt(s, extracted, counter))
-            .collect()
+        super::enter_phaser_exprs::stmts_have_enter_expr(std::slice::from_ref(stmt))
     }
 
     pub(super) fn extract_enter_phaser_exprs_from_stmts(
         stmts: &[Stmt],
     ) -> (Vec<Stmt>, Vec<(String, Vec<Stmt>)>) {
-        let mut extracted = Vec::new();
-        let mut counter = 0;
-        let rewritten = Self::rewrite_enter_phaser_stmts(stmts, &mut extracted, &mut counter);
+        let mut rewritten = stmts.to_vec();
+        let extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rewritten, |_| true);
         (rewritten, extracted)
     }
 }

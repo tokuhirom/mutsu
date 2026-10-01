@@ -20,7 +20,6 @@ src/compiler/helpers_ast_utils.rs                     5  # lvalue-to-assignment 
 src/compiler/helpers_call_args.rs                     5  # 2 codegen (compile_*) + 3 value-path spines (needs_decont, bind_target_returns_aggregate*: statement tail)
 src/compiler/helpers_control_flow.rs                  1  # control_block_is_resume_safe: shape classifier over a CONTROL block's arms (single-default delegation)
 src/compiler/helpers_do_expr.rs                       1  # do_if_branch_supported: shape gate over if-branch nesting only
-src/compiler/helpers_phasers.rs                       2
 src/compiler/helpers_sub_body.rs                      1  # recursion over ParamDef sub-signatures; the Vec<Stmt> is its output, not an AST walk
 src/compiler/mod.rs                                   8  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and 2 name spines
 src/compiler/package_runtime_body.rs                  1  # top-level lexical names of a package body: descends only into SyntheticBlock groups, not nested scopes

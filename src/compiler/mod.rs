@@ -1149,6 +1149,7 @@ mod helpers_sub_body;
 mod hoist_nested_types;
 pub(crate) mod lex_scope;
 mod lexsub_aliases;
+mod enter_phaser_exprs;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
 mod package_runtime_body;
