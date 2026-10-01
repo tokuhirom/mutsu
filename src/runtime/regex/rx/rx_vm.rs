@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::super::regex_match_delta::group_merge_delta;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_call::CallTarget;
 use super::rx_entry::{Goal, Scratch, program_for};
@@ -359,6 +360,24 @@ impl Interpreter {
                             pkg,
                             program.atom_ic[i as usize],
                         );
+                        pc += 1;
+                        enter_cands!(cands)
+                    }
+                    // Cost: one all-ends run of the body over the stripped subject
+                    // (`regex_match_ends_from_caps_in_pkg`), O(e) to map its e ends
+                    // back, then O(c) per candidate entered, c = the captures it adds.
+                    RxOp::GroupEnds(i) => {
+                        let RegexAtom::Group(body) = &program.atoms[i as usize] else {
+                            debug_assert!(false, "a GroupEnds op names a Group atom");
+                            break 'run None;
+                        };
+                        let mut cands: Vec<(usize, RegexCaptures)> = self
+                            .regex_match_ends_from_caps_in_pkg(body, chars, pos, pkg)
+                            .into_iter()
+                            .map(|(end, inner)| (end, group_merge_delta(inner)))
+                            .collect();
+                        // The producer's order: lowest priority first.
+                        cands.reverse();
                         pc += 1;
                         enter_cands!(cands)
                     }

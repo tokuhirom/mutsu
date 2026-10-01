@@ -873,6 +873,16 @@ matched: the regex parser pushed `$0` / `$<name>` and moved on, so the quantifie
 read (`"aab" ~~ /(a) $0+ b/` was `Nil`; rakudo `｢aab｣`). A backreference now goes through the common
 atom path, which reads its quantifier.
 
+### Slice E, fifth part: `:m` on the compiled engine
+
+A scoped `[:m …]` group compiles to `GroupEnds`: the walk matches such a group by asking for every
+end of the body over the mark-stripped subject and mapping them back (`ignoremark_on_target`), so
+the op asks the same all-ends entry and enters the ends highest priority first, cut under ratchet,
+as `InterpEnds` does. That entry, and a whole-pattern `:m` asked for every end (`:ex`), now run the
+stripped pattern's program there (`rx_try_ignoremark_ends`) instead of walking. A group whose body
+runs code or holds a backreference still declines (`ignoremark-code`): those read the enclosing
+level through the walk's inline seeds, which the nested run does not arm.
+
 ### Reproducing §2
 
 ```raku
