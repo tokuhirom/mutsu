@@ -12,9 +12,13 @@
 //! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
 //! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`), then the
 //! interpolation atoms: a capture-isolated group (`<$rx>`), `$x` of an in-regex
-//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). A pattern holding
-//! anything else is declined as a whole and keeps the tree walk (ADR-0135
-//! D5); the reason is reported under `MUTSU_VM_STATS`.
+//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). Slice D (#10254) adds
+//! the `<subrule>` call (`Call`): a plain rule or a proto runs as a frame in the
+//! run's own loop (`rx_frame`, `rx_call`), any other callee goes through the
+//! walk's producer, and a ratcheted `*` / `+` over a call keeps the walk's
+//! possessive scan (`NamedRun`); `~` goal matches compile too. A pattern
+//! holding anything else is declined as a whole and keeps the tree walk
+//! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -24,10 +28,13 @@
 //! produces the captures the walk would have produced.
 
 mod rx_atom;
+mod rx_call;
 mod rx_capture_ops;
 mod rx_compile;
 mod rx_compile_compound;
 mod rx_diff;
+mod rx_entry;
+mod rx_frame;
 mod rx_levels;
 mod rx_ltm;
 mod rx_vm;
@@ -192,6 +199,13 @@ pub(super) enum RxOp {
     /// walk's LTM key and enter them best first, each lower-ranked one only
     /// when everything above it has failed (ADR-0135 D4).
     LtmAlt(u32),
+    /// An iteration of the `*` / `+` over the `<subrule>` `toks[tok]` committed:
+    /// run its action now when an action-driven parse reads a `$*` variable that
+    /// action may write (`maybe_run_reduce_time_dynvar_action`, the walk's own;
+    /// a no-op for every other grammar).
+    ReduceAction {
+        tok: u32,
+    },
     /// The end of one `||` branch: pad the alternation `alts[alt]`'s
     /// positional slot space past what the branch took since `regs[pos_base]`
     /// (unless `suppress_padding`), and mark its list-valued names quantified.
@@ -214,12 +228,54 @@ pub(super) enum RxOp {
     /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
     /// on the backtrack stack as one choice point.
     InterpEnds(u32),
-    /// A complete match ending at `pos`.
+    /// A `<subrule>` call, `atoms[atom]` (ADR-0135 D3). The callee is resolved
+    /// when the call is reached: a plain rule whose program exists runs as an
+    /// [`rx_frame::Frame`] in this same loop, and its ends are entered one at a
+    /// time as it returns; any other callee (a proto, one with arguments, a
+    /// left-recursive one, a rule of the walk) is asked for its ends by the
+    /// walk's own producer (`regex_match_atom_all_with_capture_opts`) and they
+    /// are entered highest priority first. `commit` (the call's token is
+    /// ratcheted) drops every other end the moment the first one is entered.
+    Call {
+        atom: u32,
+        commit: bool,
+    },
+    /// The ratcheted `*` (`min == 0`) / `+` (`min == 1`) of the `<subrule>`
+    /// `atoms[atom]` as one possessive scan, when the walk's fast path applies
+    /// to the call (`regex_named_ratchet_run`, the walk's own): the scan's
+    /// captures are merged and the pc jumps to `skip`, past the general loop
+    /// that follows. When it does not apply, the general loop runs. Fails when
+    /// the scan matched fewer than `min` iterations.
+    NamedRun {
+        atom: u32,
+        min: u32,
+        skip: u32,
+    },
+    /// The end of a `~` goal match's goal, which ran in a capture level of its
+    /// own after the inner pattern's (`Collect`ed since `regs[base]`): close it
+    /// and merge both levels' captures into the enclosing one, the goal's first
+    /// (the order the walk's `GoalMatch` arm merges them).
+    GoalEnd {
+        base: u16,
+    },
+    /// The goal matched: the failure handler the inner pattern's end pushed at
+    /// `regs[height]` is not needed (the choice points above it, the goal's own
+    /// other ends, stay).
+    GoalOk {
+        height: u16,
+    },
+    /// The goal found no match after an end of the inner pattern: record the
+    /// failure (`record_goal_failure`) for the "expected goal" report, and fail.
+    GoalFail {
+        tok: u32,
+    },
+    /// A complete match ending at `pos`; in a callee frame, the return.
     Match,
 }
 
-/// A compiled pattern. A pure function of the pattern (Slice A compiles no
-/// subrule call), memoized in its `PatternDerived`.
+/// A compiled pattern. A pure function of the pattern (a `<subrule>` compiles to
+/// a call carrying its atom, resolved when the call is reached, so no program is
+/// keyed by package), memoized in its `PatternDerived`.
 pub(crate) struct RxProgram {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<RegexAtom>,
@@ -234,6 +290,8 @@ pub(crate) struct RxProgram {
     /// position-only matcher treats code atoms as inert and has no lexicals to
     /// read, so it must not run a program that has any.
     pub(super) has_code: bool,
+    /// Whether the program holds a `Call` op, so a run of it may switch frames.
+    pub(super) has_call: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see

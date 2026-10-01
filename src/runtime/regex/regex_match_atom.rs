@@ -1193,148 +1193,162 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         sym_key: Option<&String>,
     ) -> Vec<(usize, RegexCaptures)> {
-        let mut out = Vec::new();
-        for (end, inner_caps) in inner_matches {
-            let mut new_caps = RegexCaptures::default();
-            // The name this subrule's match is filed under, with its interned
-            // twin. Both come from the (memoized) spec, so filing a capture
-            // costs no intern -- see `NamedRegexLookupSpec::capture_sym`.
-            let capture = match (spec.capture_name.as_deref(), spec.capture_sym) {
-                (Some(name), Some(sym)) => Some((name, sym)),
-                _ if !spec.silent => Some((spec.lookup_name.as_str(), spec.lookup_sym)),
-                _ => None,
-            };
-            if let Some((capture_name, capture_sym)) = capture {
-                // Apply the subrule's own capture markers (`<(` / `)>`): a token
-                // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
-                // submatch to `67890`. They are already absolute, and `None` when
-                // the subrule used no markers, so this is a no-op otherwise.
-                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
-                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let mut subcap = inner_caps;
-                subcap.from = cs;
-                subcap.to = ce;
-                // sym is already set on subcap from raw_out collection loop.
-                // Fall back to sym_key parameter for the is_active (seed) path.
-                if subcap.sym().is_none() && sym_key.is_some() {
-                    subcap.set_sym(sym_key.cloned());
-                }
-                // The subrule's own inline `{ … }` code blocks stay ON the subcap
-                // (a queryable Match node) rather than bubbling into the parent, so
-                // the reduce-time walk (`reduce_regex_captures_made`) can run them
-                // once at this node — with `$/` bound to this subrule's Match — and
-                // commit the produced `make` value to `subcap.ast`. Bubbling them up
-                // (the old behaviour) ran them at the top level with the wrong `$/`
-                // and dropped the per-node `.made`.
-                // A non-suppressing alias `<name=subrule>` (NOT `<name=.subrule>` /
-                // `<name=&subrule>`) installs the capture under BOTH the alias name
-                // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
-                // `$<x>` and `$<num>`; repeated `<num>`/`<offset=count>` aggregate
-                // into a list under the rule name). Both slots share ONE node
-                // (see the `shared_under_original` push below).
-                let also_under_original = spec.capture_name.is_some()
-                    && !spec.alias_replaces_original
-                    && capture_name != spec.lookup_name;
-                // For an aliased capture (`<x=rule>`), record the original rule
-                // name for grammar action dispatch BEFORE the node is wrapped in
-                // an Arc and shared (`record_reduced_subrule` clones the handle):
-                // writing it afterwards through `Arc::make_mut` deep-copied the
-                // whole descendant subtree for every aliased subrule capture.
-                let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
-                let mut subcap = subcap;
-                if is_alias {
-                    subcap.set_action_name(Some(spec.lookup_name.clone()));
-                }
-                let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                // This subrule has just REDUCED. Log it so a parse that fails
-                // overall can still run its action, the way Rakudo (which
-                // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
-                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                // Both slots reference the SAME node, the way Rakudo stores the
-                // same cursor under both names (`$<x> === $<num>` is `True`).
-                // Cloning the node here instead — as this did until the
-                // exponential-action fix — deep-copied the whole matched
-                // subtree per aliased capture AND made the grammar action walk
-                // dispatch that subtree twice, once per slot; nested aliases
-                // then multiplied, firing a leaf's action 2^depth times (256x
-                // on `benchmarks/bench-yaml-parse.raku`).
-                let shared_under_original =
-                    also_under_original.then(|| std::sync::Arc::clone(&subcap));
-                new_caps
-                    .named
-                    .entry(capture_sym)
-                    .or_default()
-                    .nodes
-                    .push(subcap);
-                if is_alias {
-                    new_caps
-                        .capture_alias_map_mut()
-                        .insert(capture_sym, spec.lookup_sym);
-                }
-                if let Some(orig_subcap) = shared_under_original {
-                    new_caps
-                        .named
-                        .entry(spec.lookup_sym)
-                        .or_default()
-                        .nodes
-                        .push(orig_subcap);
-                }
-            } else if !inner_caps.named.is_empty()
-                || self.silent_subrule_has_action(
-                    spec,
-                    inner_caps
-                        .sym()
-                        .map(String::as_str)
-                        .or(sym_key.map(String::as_str)),
-                )
-            {
-                // Silent subrule (`<.foo>`) that contains nested captures, or
-                // whose OWN action method exists. The subrule is hidden from
-                // `.hash`, but its action method must still fire (Rakudo
-                // dispatches actions at reduce time regardless of capture), and
-                // its nested rules' actions must fire too — with their `.made`
-                // set on the SAME nodes the parent action reads
-                // (`method header-field { ...$/<field-name>.made... }`). Store the
-                // whole subrule match under a HIDDEN MARKER key in `named_subcaps`
-                // (the prefix can never be a real capture name). The Match builder
-                // routes marker entries into a `silent_caps` attribute instead of
-                // `.hash`; the grammar action walk recurses into them. This replaces
-                // the older "flatten direct children into the parent" hack, which
-                // lost the rule's own action and over-exposed children in `.hash`.
-                // A childless one needs the node only for its action: a zero-width
-                // `<.end-block>` whose action reports a recovery warning.
-                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
-                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let mut subcap = inner_caps;
-                subcap.from = cs;
-                subcap.to = ce;
-                if subcap.sym().is_none() && sym_key.is_some() {
-                    subcap.set_sym(sym_key.cloned());
-                }
-                subcap.set_action_name(Some(spec.lookup_name.clone()));
-                // Keep the silent subrule's inline blocks on its own (marker) node
-                // for the reduce-time walk to run once — see the non-silent branch.
-                let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                new_caps
-                    .named
-                    .entry(spec.silent_marker_sym)
-                    .or_default()
-                    .nodes
-                    .push(subcap);
-            } else {
-                // Childless silent subrule with no action to run (`<.ws>`,
-                // `<.CRLF>`, ...): keep the cheap path — just carry its code
-                // blocks up. A marker node here would be built, logged for the
-                // reduce replay and copied through every backtracking path for
-                // nothing; doing it for every `<.ws>` made a 60-row YAMLish parse
-                // cost 2.7x the instructions
-                // ([#9286](https://github.com/tokuhirom/mutsu/issues/9286)).
-                let mut inner_caps = inner_caps;
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+        inner_matches
+            .into_iter()
+            .map(|(end, inner_caps)| {
+                self.build_named_candidate_from_inner(end, inner_caps, pos, spec, sym_key)
+            })
+            .collect()
+    }
+
+    /// One inner match wrapped as the named call's capture delta
+    /// ([`Self::build_named_candidates_from_inner`] for a single end, without
+    /// the vectors).
+    pub(super) fn build_named_candidate_from_inner(
+        &mut self,
+        end: usize,
+        inner_caps: RegexCaptures,
+        pos: usize,
+        spec: &NamedRegexLookupSpec,
+        sym_key: Option<&String>,
+    ) -> (usize, RegexCaptures) {
+        let mut new_caps = RegexCaptures::default();
+        // The name this subrule's match is filed under, with its interned
+        // twin. Both come from the (memoized) spec, so filing a capture
+        // costs no intern -- see `NamedRegexLookupSpec::capture_sym`.
+        let capture = match (spec.capture_name.as_deref(), spec.capture_sym) {
+            (Some(name), Some(sym)) => Some((name, sym)),
+            _ if !spec.silent => Some((spec.lookup_name.as_str(), spec.lookup_sym)),
+            _ => None,
+        };
+        if let Some((capture_name, capture_sym)) = capture {
+            // Apply the subrule's own capture markers (`<(` / `)>`): a token
+            // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
+            // submatch to `67890`. They are already absolute, and `None` when
+            // the subrule used no markers, so this is a no-op otherwise.
+            let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
+            let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
+            let mut subcap = inner_caps;
+            subcap.from = cs;
+            subcap.to = ce;
+            // sym is already set on subcap from raw_out collection loop.
+            // Fall back to sym_key parameter for the is_active (seed) path.
+            if subcap.sym().is_none() && sym_key.is_some() {
+                subcap.set_sym(sym_key.cloned());
             }
-            out.push((end, new_caps));
+            // The subrule's own inline `{ … }` code blocks stay ON the subcap
+            // (a queryable Match node) rather than bubbling into the parent, so
+            // the reduce-time walk (`reduce_regex_captures_made`) can run them
+            // once at this node — with `$/` bound to this subrule's Match — and
+            // commit the produced `make` value to `subcap.ast`. Bubbling them up
+            // (the old behaviour) ran them at the top level with the wrong `$/`
+            // and dropped the per-node `.made`.
+            // A non-suppressing alias `<name=subrule>` (NOT `<name=.subrule>` /
+            // `<name=&subrule>`) installs the capture under BOTH the alias name
+            // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
+            // `$<x>` and `$<num>`; repeated `<num>`/`<offset=count>` aggregate
+            // into a list under the rule name). Both slots share ONE node
+            // (see the `shared_under_original` push below).
+            let also_under_original = spec.capture_name.is_some()
+                && !spec.alias_replaces_original
+                && capture_name != spec.lookup_name;
+            // For an aliased capture (`<x=rule>`), record the original rule
+            // name for grammar action dispatch BEFORE the node is wrapped in
+            // an Arc and shared (`record_reduced_subrule` clones the handle):
+            // writing it afterwards through `Arc::make_mut` deep-copied the
+            // whole descendant subtree for every aliased subrule capture.
+            let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
+            let mut subcap = subcap;
+            if is_alias {
+                subcap.set_action_name(Some(spec.lookup_name.clone()));
+            }
+            let subcap = std::sync::Arc::new(subcap.into_cap_node());
+            // This subrule has just REDUCED. Log it so a parse that fails
+            // overall can still run its action, the way Rakudo (which
+            // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
+            super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+            // Both slots reference the SAME node, the way Rakudo stores the
+            // same cursor under both names (`$<x> === $<num>` is `True`).
+            // Cloning the node here instead — as this did until the
+            // exponential-action fix — deep-copied the whole matched
+            // subtree per aliased capture AND made the grammar action walk
+            // dispatch that subtree twice, once per slot; nested aliases
+            // then multiplied, firing a leaf's action 2^depth times (256x
+            // on `benchmarks/bench-yaml-parse.raku`).
+            let shared_under_original = also_under_original.then(|| std::sync::Arc::clone(&subcap));
+            new_caps
+                .named
+                .entry(capture_sym)
+                .or_default()
+                .nodes
+                .push(subcap);
+            if is_alias {
+                new_caps
+                    .capture_alias_map_mut()
+                    .insert(capture_sym, spec.lookup_sym);
+            }
+            if let Some(orig_subcap) = shared_under_original {
+                new_caps
+                    .named
+                    .entry(spec.lookup_sym)
+                    .or_default()
+                    .nodes
+                    .push(orig_subcap);
+            }
+        } else if !inner_caps.named.is_empty()
+            || self.silent_subrule_has_action(
+                spec,
+                inner_caps
+                    .sym()
+                    .map(String::as_str)
+                    .or(sym_key.map(String::as_str)),
+            )
+        {
+            // Silent subrule (`<.foo>`) that contains nested captures, or
+            // whose OWN action method exists. The subrule is hidden from
+            // `.hash`, but its action method must still fire (Rakudo
+            // dispatches actions at reduce time regardless of capture), and
+            // its nested rules' actions must fire too — with their `.made`
+            // set on the SAME nodes the parent action reads
+            // (`method header-field { ...$/<field-name>.made... }`). Store the
+            // whole subrule match under a HIDDEN MARKER key in `named_subcaps`
+            // (the prefix can never be a real capture name). The Match builder
+            // routes marker entries into a `silent_caps` attribute instead of
+            // `.hash`; the grammar action walk recurses into them. This replaces
+            // the older "flatten direct children into the parent" hack, which
+            // lost the rule's own action and over-exposed children in `.hash`.
+            // A childless one needs the node only for its action: a zero-width
+            // `<.end-block>` whose action reports a recovery warning.
+            let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
+            let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
+            let mut subcap = inner_caps;
+            subcap.from = cs;
+            subcap.to = ce;
+            if subcap.sym().is_none() && sym_key.is_some() {
+                subcap.set_sym(sym_key.cloned());
+            }
+            subcap.set_action_name(Some(spec.lookup_name.clone()));
+            // Keep the silent subrule's inline blocks on its own (marker) node
+            // for the reduce-time walk to run once — see the non-silent branch.
+            let subcap = std::sync::Arc::new(subcap.into_cap_node());
+            super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+            new_caps
+                .named
+                .entry(spec.silent_marker_sym)
+                .or_default()
+                .nodes
+                .push(subcap);
+        } else {
+            // Childless silent subrule with no action to run (`<.ws>`,
+            // `<.CRLF>`, ...): keep the cheap path — just carry its code
+            // blocks up. A marker node here would be built, logged for the
+            // reduce replay and copied through every backtracking path for
+            // nothing; doing it for every `<.ws>` made a 60-row YAMLish parse
+            // cost 2.7x the instructions
+            // ([#9286](https://github.com/tokuhirom/mutsu/issues/9286)).
+            let mut inner_caps = inner_caps;
+            super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
         }
-        out
+        (end, new_caps)
     }
 }

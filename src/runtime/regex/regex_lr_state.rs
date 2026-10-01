@@ -177,6 +177,19 @@ pub(super) fn lr_read_live_seed(name: Symbol, remaining: usize) -> Option<Vec<us
     })
 }
 
+/// Is any call of the rule NAME `name` under evaluation right now? The compiled
+/// engine's frames keep no activation of their own, so a call made while the
+/// walk's growing-seed loop is evaluating the same name goes to the walk.
+// Cost: O(1) (an array index).
+pub(super) fn lr_name_active(name: Symbol) -> bool {
+    LR_STATE.with(|s| {
+        s.borrow()
+            .active
+            .get(name.id() as usize)
+            .is_some_and(|&n| n > 0)
+    })
+}
+
 /// `true` when this key is already being evaluated further up the stack, i.e.
 /// entering it again would be a left-recursive re-entry.
 pub(super) fn lr_key_is_active(key: &LrKey) -> bool {

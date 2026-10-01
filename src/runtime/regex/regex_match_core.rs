@@ -11,7 +11,7 @@
 use super::super::*;
 use super::regex_helpers::{
     alternation_list_flags, atom_contains_alternation, capture_group_list_flags,
-    count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
+    count_capture_groups, is_simple_atom,
 };
 use super::regex_trail::CapStore;
 use super::regex_zero_width_iter::zero_width_iter_counts;
@@ -258,6 +258,22 @@ impl Interpreter {
     /// branches (running their `{ ... }` blocks) after the parse had already
     /// succeeded through an earlier one.
     pub(in crate::runtime) fn regex_match_ends_stop_at_full(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+    ) -> Vec<(usize, RegexCaptures)> {
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        if let Some(found) = self.rx_try_ends_until_full(pattern, chars, start, pkg) {
+            return found;
+        }
+        self.regex_walk_ends_until_full_for_diff(pattern, chars, start, pkg)
+    }
+
+    /// The tree walk's ends up to the first full match — the answer the
+    /// compiled engine is held to under `MUTSU_RX_DIFF` (ADR-0135 D6).
+    pub(super) fn regex_walk_ends_until_full_for_diff(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
@@ -1228,92 +1244,18 @@ impl Interpreter {
             }
             return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
         }
-        let named_atom_wrapped = matches!(&token.atom, RegexAtom::Named(name)
-            if self.token_method_has_wrap_chain(ctx.pkg.as_str(), &name.spec().lookup_name));
-        if is_silent_named_atom(&token.atom)
-            && !named_atom_wrapped
-            && let Some((resolved, resolved_pkg)) =
-                self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
-        {
-            // Ratcheted silent Named token (e.g. <.ws>): resolve the pattern
-            // once and match directly; silent atoms produce no captures.
-            let mut current = pos;
-            let mut count = 0usize;
-            while current < ctx.chars.len() {
-                if let Some(end) =
-                    self.regex_match_end_from_in_pkg(&resolved, ctx.chars, current, resolved_pkg)
-                {
-                    if end == current && !zero_width_iter_counts(count, min, None) {
-                        break;
-                    }
-                    current = end;
-                    count += 1;
-                } else {
-                    break;
-                }
-            }
-            if count < min {
-                return Some(false);
-            }
-            return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
-        }
-        if is_named_atom_no_args(&token.atom)
-            && !named_atom_wrapped
-            && let Some((resolved, resolved_pkg)) =
-                self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
-        {
-            // Ratcheted non-silent Named token (e.g. <huge>*): resolve the
-            // pattern once and loop directly, accumulating named captures on
-            // the store without re-parsing per iteration.
-            let capture_name = if let RegexAtom::Named(name) = &token.atom {
-                name.trim().to_string()
-            } else {
-                String::new()
-            };
-            let m = store.mark();
-            if !capture_name.is_empty() {
-                store.insert_named_quantified(capture_name.clone());
-            }
-            let mut current = pos;
-            let mut count = 0usize;
-            while current <= ctx.chars.len() {
-                let Some((end, inner_caps)) = self.regex_match_end_from_caps_in_pkg(
-                    &resolved,
-                    ctx.chars,
-                    current,
-                    resolved_pkg,
-                ) else {
-                    break;
-                };
-                if end == current && !zero_width_iter_counts(count, min, None) {
-                    break;
-                }
-                if !capture_name.is_empty() {
-                    let mut subcap = inner_caps;
-                    subcap.from = current;
-                    subcap.to = end;
-                    let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                    // This subrule iteration has REDUCED — log it for the
-                    // failed-parse action replay, exactly as the general
-                    // `build_named_candidates_from_inner` path does.
-                    super::regex_helpers::record_reduced_subrule(&capture_name, &subcap);
-                    store.push_named_node(&capture_name, subcap);
-                }
-                current = end;
-                count += 1;
-                if current >= ctx.chars.len() {
-                    break;
-                }
-            }
-            if count < min {
+        // The two Named scans (silent / non-silent) are one leaf shared with
+        // the compiled engine (`regex_named_run`).
+        match self.regex_named_ratchet_run(&token.atom, ctx.chars, pos, min, ctx.pkg)? {
+            None => Some(false),
+            Some((current, delta)) => {
+                let m = store.mark();
+                store.merge_delta(delta);
+                let stop = self.walk_tokens(ctx, idx + 1, current, store, matches);
                 store.rewind(m);
-                return Some(false);
+                Some(stop)
             }
-            let stop = self.walk_tokens(ctx, idx + 1, current, store, matches);
-            store.rewind(m);
-            return Some(stop);
         }
-        None
     }
 
     /// General chain quantifier (`*`, `+`, `**min..max`) over a single-match

@@ -252,14 +252,39 @@ impl Interpreter {
     }
 }
 
+/// A capture node, children included: a subrule's Match is a whole tree, and
+/// the two engines must build the same one.
 fn node_span(node: &CapNode) -> String {
-    let kids = node
-        .children
-        .as_ref()
-        .map_or(0, |c| c.named.len() + c.positional.len());
+    let kids = node.kids();
+    let mut named: Vec<String> = kids
+        .named
+        .iter()
+        .map(|(k, v)| {
+            format!(
+                "{}{}=[{}]",
+                k.resolve(),
+                if v.quantified { "(q)" } else { "" },
+                v.nodes
+                    .iter()
+                    .map(|n| node_span(n))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+        .collect();
+    named.sort();
     format!(
-        "{}..{} kids={kids} action={:?}",
-        node.from, node.to, node.action_name
+        "{}..{} sym={:?} action={:?} positional=[{}] named={{{}}}",
+        node.from,
+        node.to,
+        node.sym,
+        node.action_name,
+        kids.positional
+            .iter()
+            .map(slot_desc)
+            .collect::<Vec<_>>()
+            .join("; "),
+        named.join(" ")
     )
 }
 
@@ -323,4 +348,29 @@ pub(super) fn same_match(
     } else {
         Err(format!("compiled: {c}\n  walked: {w}"))
     }
+}
+
+/// `Ok` when the two engines reported the same ends, in the same order.
+pub(super) fn same_ends(
+    compiled: &[(usize, RegexCaptures)],
+    walked: &[(usize, RegexCaptures)],
+) -> Result<(), String> {
+    let render = |m: &[(usize, RegexCaptures)]| {
+        m.iter()
+            .map(|(end, caps)| format!("end {end}, {}", caps_desc(caps)))
+            .collect::<Vec<_>>()
+            .join("\n    ")
+    };
+    let (c, w) = (render(compiled), render(walked));
+    if c == w {
+        Ok(())
+    } else {
+        Err(format!("compiled:\n    {c}\n  walked:\n    {w}"))
+    }
+}
+
+/// Abort: under `MUTSU_RX_DIFF=1` the compiled engine and the walk disagree.
+/// The one place that does, so the panic surface stays one site.
+pub(super) fn disagreement(what: String) -> ! {
+    panic!("MUTSU_RX_DIFF: compiled engine and walk disagree {what}")
 }

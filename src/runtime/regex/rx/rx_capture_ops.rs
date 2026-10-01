@@ -167,15 +167,50 @@ impl Interpreter {
                 let from = regs[start as usize];
                 let mut merged = merge_regex_captures(RegexCaptures::default(), levels.close());
                 for branch in &branches[1..] {
-                    let branch_program = super::rx_vm::program_for(branch)
+                    let branch_program = super::rx_entry::program_for(branch)
                         .expect("a compiled conjunction's branches compile");
                     let (_, caps) = self.rx_run(branch_program, chars, from, pkg, Some(pos))?;
                     merged = merge_regex_captures(merged, caps);
                 }
                 levels.edit(|s| s.merge_delta(merged));
             }
+            // Cost: O(1) unless an action-driven parse reads a `$*` variable;
+            // then one run of the iteration's action.
+            RxOp::ReduceAction { tok } => {
+                self.maybe_run_reduce_time_dynvar_action(
+                    &program.toks[tok as usize],
+                    levels.top().caps(),
+                );
+            }
             // Cost: O(1).
             RxOp::Collect { sep } => levels.collect(sep),
+            // Cost: O(c), c = the captures of the inner pattern and the goal
+            // (one close, one merge).
+            RxOp::GoalEnd { base } => {
+                let goal_caps = levels.close();
+                let inner_caps = levels
+                    .drain_collected(regs[base as usize])
+                    .pop()
+                    .map(|(_, caps)| caps)
+                    .unwrap_or_default();
+                // As the walk's `GoalMatch` arm merges them: the goal's
+                // captures first, as it is written first.
+                let merged = merge_regex_captures(
+                    RegexCaptures::default(),
+                    merge_regex_captures(goal_caps, inner_caps),
+                );
+                levels.edit(|s| s.merge_delta(merged));
+            }
+            // Cost: O(1).
+            RxOp::GoalFail { tok } => {
+                let RegexAtom::GoalMatch { goal_text, .. } = &program.toks[tok as usize].atom
+                else {
+                    debug_assert!(false, "a GoalFail names a goal-match token");
+                    return None;
+                };
+                Self::record_goal_failure(goal_text, pos);
+                return None;
+            }
             // Cost: O(n + c), n = the names under the token, c = the
             // captures across the collected iterations.
             RxOp::SepEmit { tok, base } => {

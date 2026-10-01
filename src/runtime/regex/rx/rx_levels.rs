@@ -118,6 +118,23 @@ impl Levels {
         caps
     }
 
+    /// [`Self::close`] for a level nothing can resume in: the journal back to
+    /// `from` (where it stood when the level opened) is forgotten along with the
+    /// level's own store, so the caller's `Edit` is the only entry it leaves.
+    // Cost: O(1) for the captures (moved out), plus the entries dropped (each
+    // once).
+    pub(super) fn close_forget(&mut self, from: usize) -> RegexCaptures {
+        let caps = self.stack.pop().map(CapStore::into_caps);
+        self.journal.truncate(from);
+        caps.unwrap_or_default()
+    }
+
+    /// Forget the whole journal: with no choice point left, nothing can rewind.
+    // Cost: O(j), j = the entries dropped (each once).
+    pub(super) fn clear_journal(&mut self) {
+        self.journal.clear();
+    }
+
     /// Close the innermost level and drop its captures (a capture-isolated
     /// group's: `<$rx>` is a match of its own that the caller never sees).
     // Cost: O(1) (the store itself is kept for a backtrack into the group).
