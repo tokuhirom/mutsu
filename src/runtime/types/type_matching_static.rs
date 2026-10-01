@@ -382,10 +382,9 @@ impl Interpreter {
     fn sized_buf_constraint(constraint: &str) -> Option<(bool, u16)> {
         let (mutable, rest) = if let Some(r) = constraint.strip_prefix("buf") {
             (true, r)
-        } else if let Some(r) = constraint.strip_prefix("blob") {
-            (false, r)
         } else {
-            return None;
+            let r = constraint.strip_prefix("blob")?;
+            (false, r)
         };
         match rest {
             "8" => Some((mutable, 8)),

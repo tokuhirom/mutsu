@@ -361,10 +361,8 @@ pub(crate) fn rfind_graphemes(
             return Some(b);
         }
         // Any earlier hit ends before this one does.
-        match (b + needle.len()).checked_sub(1) {
-            Some(l) => limit = text.floor_char_boundary(l),
-            None => return None,
-        }
+        let l = (b + needle.len()).checked_sub(1)?;
+        limit = text.floor_char_boundary(l);
     }
 }
 

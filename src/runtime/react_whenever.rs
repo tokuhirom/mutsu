@@ -437,11 +437,7 @@ impl Interpreter {
             })
             .filter(|gid| crate::runtime::native_methods::whenever_done_group_increment(*gid))
             .map(Self::make_whenever_done_group_marker);
-        if let ValueView::Instance {
-            class_name,
-            attributes: _,
-            ..
-        } = supply_val.view()
+        if let ValueView::Instance { class_name, .. } = supply_val.view()
             && class_name == "Supply"
         {
             let mut tap_args = vec![callback];

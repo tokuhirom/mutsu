@@ -185,10 +185,9 @@ fn null_operator_detect(name: &str) -> Option<bool> {
     let after = after.strip_prefix("sym").unwrap_or(after);
     let (inner, used_angle) = if let Some(s) = after.strip_prefix('<') {
         (s.strip_suffix('>')?, true)
-    } else if let Some(s) = after.strip_prefix('\u{ab}') {
-        (s.strip_suffix('\u{bb}')?, false)
     } else {
-        return None;
+        let s = after.strip_prefix('\u{ab}')?;
+        (s.strip_suffix('\u{bb}')?, false)
     };
     if !inner.trim().is_empty() {
         return None;
