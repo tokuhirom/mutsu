@@ -1567,6 +1567,10 @@ fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> V
             )
             || token.separator.is_some();
         out.extend(capture_group_list_flags(&token.atom, token_is_list));
+        // A separator's slots follow the atom's (see `count_pattern_capture_groups`).
+        if let Some(sep) = token.separator.as_ref() {
+            out.extend(pattern_capture_group_list_flags(&sep.pattern, true));
+        }
     }
     out
 }
@@ -1799,11 +1803,18 @@ fn pattern_contains_alternation(pat: &RegexPattern) -> bool {
 }
 
 /// Count positional capture groups in a pattern (non-recursive into nested groups).
-fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
+///
+/// A separated token (`atom +% sep`) takes the atom's slots and then the
+/// separator's (`append_separated_captures`), so a separator's capture groups
+/// count here too: `[ [ (\d) ] +% (',') ]` takes two slots, not one.
+pub(super) fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
     *pat.derived.capture_group_count.get_or_init(|| {
         let mut count = 0;
         for token in &pat.tokens {
             count += count_capture_groups(&token.atom);
+            if let Some(sep) = token.separator.as_ref() {
+                count += count_pattern_capture_groups(&sep.pattern);
+            }
         }
         count
     })
@@ -1854,24 +1865,17 @@ pub(super) fn fold_quantified_captures(
     }
 
     // Collect entries per group; the last iteration's span/subcap become the
-    // folded slot's "representative" values for backref purposes.
+    // folded slot's "representative" values for backref purposes. An
+    // iteration's slot that an inner quantifier already folded contributes all
+    // its entries (`PosSlot::push_entries_to`).
     let mut folded: Vec<PosSlot> = Vec::with_capacity(stride);
     for group in 0..stride {
         let mut list: Vec<QuantifiedCaptureEntry> = Vec::with_capacity(iterations);
         for iter in 0..iterations {
             let idx = base_len + iter * stride + group;
-            let slot = &caps.positional[idx];
-            list.push((slot.from, slot.to, slot.subcap.clone()));
+            caps.positional[idx].push_entries_to(&mut list);
         }
-        let last = list.last().unwrap();
-        folded.push(PosSlot {
-            from: last.0,
-            to: last.1,
-            subcap: last.2.clone(),
-            quantified: Some(list),
-            nil: false,
-            alternation_padding: false,
-        });
+        folded.push(PosSlot::folded(list));
     }
 
     // Replace entries from base_len onward

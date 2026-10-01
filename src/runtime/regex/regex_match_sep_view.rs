@@ -32,10 +32,13 @@ pub(super) fn sep_chain_view(enclosing: &RegexCaptures, folded: RegexCaptures) -
 /// Where an iteration's own captures fold: the first of the quantifier's atom
 /// slots (`offset` 0) or separator slots (`offset` = the atom stride), counted
 /// in the whole list `inline_capture_view` shows, so a capture taken before a
-/// `[ … ]` that holds the quantifier keeps its own slot.
+/// `[ … ]` that holds the quantifier keeps its own slot. The quantifier's slots
+/// are `enclosing`'s own captures from here on, so when `enclosing` is itself an
+/// iteration of an outer separated quantifier they land in the outer
+/// iteration's slots (`inline_view_slot`), not after them.
 // Cost: O(d), d = the nesting depth of inline levels.
 pub(super) fn sep_iteration_slot(enclosing: &RegexCaptures, offset: usize) -> usize {
-    enclosing.inline_visible_positional_len() + offset
+    enclosing.inline_view_slot(enclosing.positional.len() + offset)
 }
 
 impl Interpreter {
