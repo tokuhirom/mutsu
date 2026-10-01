@@ -244,6 +244,7 @@ mod vm_jit_tier_b_flow;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_metaop;
 mod vm_let_save_elem;
+mod vm_local_cell_adoption;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_exit_guard;
 mod vm_loop_writeback;

@@ -98,17 +98,6 @@ pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
 #[inline]
 pub(crate) fn note_container_cell() {
     CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    note_local_read_spoiler();
-}
-
-/// Record one `Proxy` packing: like a `ContainerRef` cell, a `Proxy` reachable
-/// from an env overlay is something the `GetLocal` cell-adoption probe will
-/// adopt, so its existence spoils the inline local read (see
-/// [`LOCAL_READ_SPOILERS`]). Bumped at the single NaN-box encode chokepoint for
-/// `Kind::Proxy`; never decremented.
-#[inline]
-pub(crate) fn note_proxy_value() {
-    note_local_read_spoiler();
 }
 
 /// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
