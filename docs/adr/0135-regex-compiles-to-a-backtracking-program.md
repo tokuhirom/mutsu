@@ -859,6 +859,20 @@ shortest preferred). A separated one whose atom or separator runs code still dec
 (`separator-frugal-ratchet-code`): the walk grows that chain eagerly, so the code would run a
 different number of times.
 
+### Slice E, fourth part: nullable loop bodies, and quantified backreferences
+
+`nullable-loop` compiles. A non-ratcheted loop whose body can match empty and has more than one
+candidate in principle, but which the walk's chain grows one first candidate per iteration
+(`grow_one_iter`: a backreference, an interpolation), is committed per iteration like the
+conjunction body before it, so a `ZeroIter` rejection stops the loop instead of retrying the body.
+Rakudo has nothing to compare with on the purely empty cases (`"aab" ~~ /[a?]* b/` loops forever
+there), so the walk's chain is the reference, as D6 checks.
+
+The shapes that reach this are almost all quantified backreferences, and none of them had ever
+matched: the regex parser pushed `$0` / `$<name>` and moved on, so the quantifier after it was never
+read (`"aab" ~~ /(a) $0+ b/` was `Nil`; rakudo `｢aab｣`). A backreference now goes through the common
+atom path, which reads its quantifier.
+
 ### Reproducing §2
 
 ```raku

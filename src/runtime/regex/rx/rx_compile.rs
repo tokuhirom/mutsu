@@ -689,14 +689,17 @@ impl Compiler {
 
     fn repeat_bounded(&mut self, token: &RegexToken, bounds: Bounds) -> Result<(), Decline> {
         let nullable = atom_min_len(&token.atom) == 0;
-        if nullable && !token.ratchet && !loop_body_backtracks(&token.atom) {
-            // The walk's chain takes an iteration's first candidate only;
-            // mirroring that needs a body with a single candidate: an
-            // assertion, or a `<subrule>` (a `CapAtom`, one end per iteration).
-            if !is_assertion(&token.atom) && !matches!(token.atom, RegexAtom::Named(_)) {
-                return Err("nullable-loop");
-            }
-        }
+        // The walk's chain takes an iteration's first candidate only. A body
+        // with a single candidate (an assertion, a `<subrule>`) needs nothing
+        // more; any other nullable body the chain grows is committed per
+        // iteration below, so a `ZeroIter` rejection stops the loop there
+        // instead of retrying the body's other candidates. (Rakudo has no
+        // answer to compare with here: it loops forever on `[a?]* b`.)
+        let nullable_chain = nullable
+            && !token.ratchet
+            && !loop_body_backtracks(&token.atom)
+            && !is_assertion(&token.atom)
+            && !matches!(token.atom, RegexAtom::Named(_));
         let named = token.named_capture.is_some();
         if let (Bounds::Fixed(min, max), true) = (
             bounds,
@@ -749,8 +752,9 @@ impl Compiler {
         // does the walk's chain (`grow_one_iter` takes the single-candidate
         // matcher) for a body the compiled form could otherwise re-enter: a
         // conjunction, whose first branch can end elsewhere.
-        let chain_commit =
-            !loop_body_backtracks(&token.atom) && matches!(token.atom, RegexAtom::Conjunction(_));
+        let chain_commit = nullable_chain
+            || (!loop_body_backtracks(&token.atom)
+                && matches!(token.atom, RegexAtom::Conjunction(_)));
         let iter = (token.ratchet || chain_commit).then(|| self.reg());
         if let Some(h) = iter {
             self.ops.push(RxOp::Height(h));
