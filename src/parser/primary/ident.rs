@@ -4,7 +4,6 @@ mod identifier_call;
 mod listop;
 pub(crate) mod predicates;
 mod supply;
-mod supply_emit_expr;
 mod term_literals;
 
 pub(super) use circumfix::declared_circumfix_op;
