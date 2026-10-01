@@ -5,4 +5,4 @@ shared the Seq's consumption state with the callee, so the first consuming metho
 (`.sort`, `.grep`) stole it and the second died with `X::Seq::Consumed`. Rakudo binds `@`
 parameters through `.cache`; mutsu now marks the Seq cache-requested at bind time.
 Found via App::Moneymoor (`t/15-invariants-property.rakutest`); pinned by
-`t/collections/seq-bound-to-array-param-rereadable.t`.
+`t/routines/signature/seq-bound-to-array-param-rereadable.t`.
