@@ -19,7 +19,7 @@ its run produced.
 
 Across all of `t/` and the roast whitelist (`scripts/rx-decline-survey.sh`), `isolated-group` fell
 from 90 to 0, `interpolation` from 55 to 31 (`code-interp` and `qq-interp`) and `code` from 83 to 42
-(`** {n}`), and compiled patterns went from 6,319 to 6,492. What is left of Slice C is `** {n}`,
+(`** {n}`), and compiled patterns went from 6,319 to 6,497. What is left of Slice C is `** {n}`,
 `$( … )` / `@( … )` and `"…$x.meth()…"`.
 
 Two walk bugs both engines share were filed on the way: `<{ … }>` merges the interpolated

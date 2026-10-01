@@ -567,7 +567,7 @@ loop ops), then `<$var>` / `<@var>` / `$( … )` interpolation.
   keeps how many events the run produced, so a replay answers the invocation from the record and skips those.
 
 Survey: `isolated-group` 90 → 0 (17 scoped values decline under their own reason), `interpolation`
-55 → `code-interp` 22 + `qq-interp` 9, `code` 83 → `repeat-code` 42; compiled patterns 6,319 → 6,492.
+55 → `code-interp` 22 + `qq-interp` 9, `code` 83 → `repeat-code` 42; compiled patterns 6,319 → 6,497.
 What is left of Slice C is `** {n}` (run-time loop bounds), `$( … )` / `@( … )`
 (`CodeInterp`, which yields several candidate ends) and `"…$x.meth()…"` (`QqInterp`), and the
 declines named above.
