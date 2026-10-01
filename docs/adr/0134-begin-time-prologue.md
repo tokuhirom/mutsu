@@ -553,3 +553,47 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   runs user code, so the place is not observable; it is kept because
   extending the bound over every unit with a nested type exposes partition
   bugs ([#10524](https://github.com/tokuhirom/mutsu/issues/10524)).
+
+**INIT and CHECK in a type, package or routine body — implemented** (#10552,
+`src/runtime/begin_prologue/package_phasers.rs`,
+`t/modules/init-check-in-package-body.t`).
+
+- **The gap.** The per-level phaser reordering (`runtime/phasers.rs`) stops at
+  a class, role or package body, so an `INIT`/`CHECK` there ran when the body
+  ran: after the mainline statements ahead of the declaration, and once per
+  composition in a role. A routine the prologue takes got only the per-level
+  recursion, so an `INIT` in it ran on each call, and never if the routine was
+  not called.
+- **The mechanism.** Before the partition, each top-level type, package and
+  `sub` declaration gives up its statement-form INIT/CHECK phasers (and, in a
+  routine, a value-form one that is a declaration's or assignment's whole
+  initializer). Each becomes a top-level phaser placed just ahead of the
+  declaration, where the unit's reordering puts it among the unit's own INITs
+  (source order) and CHECKs (reverse order). This is the issue's
+  "unit-level queue": the unit's own INIT/CHECK sequence, reached from any
+  depth of a declaration.
+- **Lexicals.** A phaser of a class or brace-scoped package body, or of a
+  method or `sub` of one, runs inside a `Stmt::PackageRuntimeBody` of each
+  package it is nested in. That re-enters the package and binds the body's `my`
+  lexicals from the package's static store, the same store slice 1's split
+  and the body's methods use, so it needs no cell of its own. The
+  declaration becomes a BEGIN-time effect (the prologue's bound extends to
+  it), so the package is composed before any INIT runs and the lexicals hold
+  their static value, as on rakudo (`class C { my $x = 3; INIT say $x }` says
+  `(Any)`). `$?CLASS` and `$?PACKAGE` are the package's.
+- A value-form phaser stores into a unit-level slot (`__init_value_N`) that
+  heads the prologue; the site reads the slot.
+- **Not moved.** These keep the per-level handling:
+  - a phaser of a routine that reads one of the routine's own names (a
+    parameter, `self`, a lexical or routine it declares), an attribute, or
+    anything through `EVAL` or a symbolic lookup; or, in a package body, one
+    of the body's `our`, `state`, dynamic or code variables, which the store
+    does not hold;
+  - a role-body phaser that reads a name the role body declares, a role
+    parameter or a `$?` variable (a role body has no store to re-enter);
+  - a phaser nested in a block, loop or closure inside such a body, and a
+    declaration that is not at the unit's top level.
+- **Prologue routines.** The phasers the per-level lift finds in a statement
+  the prologue took (a nested or value-form one the move above leaves) are now
+  lifted to the remainder's level as well, their slots declared at the head
+  of the prologue.

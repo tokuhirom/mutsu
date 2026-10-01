@@ -125,10 +125,25 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
 
     // Flatten SyntheticBlocks so VarDecls get hoisted properly.
     flatten_synthetic_blocks(stmts);
+    // The phasers of a routine the prologue took are the unit's as much as
+    // those of one left in the remainder (#10552), so they are lifted to the
+    // remainder's level too. The slots they leave behind are read by the
+    // routine, so they are declared ahead of it, at the head of the prologue.
+    let mut lifted = Lifted::default();
+    lift_phasers(
+        &mut prologue,
+        &mut lifted.begin,
+        &mut lifted.check,
+        &mut lifted.init,
+    );
+    let slots = lifted.take_slot_decls();
+    if !slots.is_empty() {
+        prologue.splice(0..0, slots);
+    }
     for stmt in prologue.iter_mut() {
         recurse_into_stmt(stmt);
     }
-    reorder_level_and_children(stmts, is_top);
+    reorder_level_and_children(stmts, is_top, lifted);
     let prologue_len = prologue.len();
     if prologue_len > 0 {
         prologue.append(stmts);
@@ -137,20 +152,41 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
     prologue_len
 }
 
-fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool) {
+/// The phasers lifted to one level, each as its slot's declaration followed by
+/// the assignment of its body's value.
+#[derive(Default)]
+struct Lifted {
+    begin: Vec<Stmt>,
+    check: Vec<Stmt>,
+    init: Vec<Stmt>,
+}
+
+impl Lifted {
+    /// Take the slot declarations out, leaving only the assignments.
+    fn take_slot_decls(&mut self) -> Vec<Stmt> {
+        let mut decls = Vec::new();
+        for list in [&mut self.begin, &mut self.check, &mut self.init] {
+            let (slot_decls, assigns): (Vec<Stmt>, Vec<Stmt>) = std::mem::take(list)
+                .into_iter()
+                .partition(|s| matches!(s, Stmt::VarDecl { .. }));
+            decls.extend(slot_decls);
+            *list = assigns;
+        }
+        decls
+    }
+}
+
+fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool, mut lifted: Lifted) {
     // Lift BEGIN/INIT/CHECK from transparent child blocks/closures to this level.
-    let mut lifted_begin: Vec<Stmt> = Vec::new();
-    let mut lifted_check: Vec<Stmt> = Vec::new();
-    let mut lifted_init: Vec<Stmt> = Vec::new();
     lift_phasers(
         stmts,
-        &mut lifted_begin,
-        &mut lifted_check,
-        &mut lifted_init,
+        &mut lifted.begin,
+        &mut lifted.check,
+        &mut lifted.init,
     );
 
     // Per-block reordering at this level.
-    reorder_at_level(stmts, lifted_begin, lifted_check, lifted_init, is_top);
+    reorder_at_level(stmts, lifted.begin, lifted.check, lifted.init, is_top);
 
     // Recurse into child statements.
     for stmt in stmts.iter_mut() {

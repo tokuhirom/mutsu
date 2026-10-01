@@ -66,6 +66,7 @@ src/runtime/begin_prologue/mod.rs                     4  # partition_stmt/partit
 src/runtime/begin_prologue/nested.rs                  2
 src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
+src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
 src/runtime/dispatch_proto_rewrite.rs                 2
 src/runtime/eval_type_scans.rs                        1  # 1 spine (decodes a `use lib` argument list: a path or a nested list of them): stays hand-rolled
 src/runtime/phasers.rs                                6
