@@ -185,6 +185,10 @@ pub(in crate::parser) struct LexicalScope {
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).
     worries_suppressed: bool,
+    /// `use attributes :D/:U/:_` smiley for unsmileyed attribute types; empty
+    /// when no pragma is active. Lexical: a nested scope inherits it and its
+    /// own `use attributes` ends with the block.
+    attributes_pragma: String,
     /// Whether this scope is the body of a NAMED routine declaration
     /// (`sub`/`method`/`submethod`, incl. `multi`/`proto`, and the anonymous
     /// `sub (...) {...}` / `method {...}` forms — which clone like routines).
@@ -298,9 +302,6 @@ thread_local! {
     /// EVAL 'sprintf("%#x", -256)'` yields `-0x100`), and a `use vX` inside the
     /// EVAL'd string still overrides it.
     static EVAL_LANGUAGE_VERSION_PRESEED: RefCell<Option<String>> = const { RefCell::new(None) };
-    /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
-    /// Empty string means no pragma active.
-    static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };
     /// Inline module exports: module name → list of exported sub names.
     /// Populated when parsing `module Foo { sub bar() is export { ... } }` blocks.
     /// Used by `import` to register exported operators at parse time.
