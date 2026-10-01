@@ -1815,6 +1815,25 @@ pub(crate) enum Stmt {
     Block(Vec<Stmt>),
     /// Non-lexical statement sequence used by parser desugarings.
     SyntheticBlock(Vec<Stmt>),
+    /// Opens the region of a loop iteration whose early exit runs the loop's
+    /// exit phasers; closed by the matching [`Stmt::LoopExitGuardEnd`] later in
+    /// the same statement list. Emitted only by `expand_loop_phasers`.
+    ///
+    /// The guarded statements stay flat siblings between the two markers (not
+    /// nested in this variant) so every analysis that walks the loop body sees
+    /// them exactly as before. When a `next`/`last`/`redo`/`return` signal
+    /// unwinds out of the region -- raised directly in the body, inside a
+    /// `try`, or by a closure the body called -- the VM runs `next_ph` (only for
+    /// a `next` that targets this loop, per `label`) and then `exit_ph`, and
+    /// re-raises the signal. Both lists are copies of phaser bodies that also
+    /// stay in the tree on the loop's normal-completion path.
+    LoopExitGuard {
+        label: Option<String>,
+        next_ph: Vec<Stmt>,
+        exit_ph: Vec<Stmt>,
+    },
+    /// Closes the innermost open [`Stmt::LoopExitGuard`] region.
+    LoopExitGuardEnd,
     If {
         cond: Expr,
         then_branch: Vec<Stmt>,

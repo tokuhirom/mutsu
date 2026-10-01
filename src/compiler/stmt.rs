@@ -955,6 +955,39 @@ impl Compiler {
                     crate::compiler::control_block::BlockPosition::Statement,
                 );
             }
+            Stmt::LoopExitGuard {
+                label,
+                next_ph,
+                exit_ph,
+            } => {
+                let idx = self.code.emit(OpCode::LoopExitGuard {
+                    body_end: 0,
+                    exit_start: 0,
+                    end: 0,
+                    label: label.clone(),
+                });
+                self.loop_exit_guards
+                    .push((idx, next_ph.clone(), exit_ph.clone()));
+            }
+            Stmt::LoopExitGuardEnd => {
+                use crate::opcode::LoopExitGuardField;
+                let (idx, next_ph, exit_ph) = self
+                    .loop_exit_guards
+                    .pop()
+                    .expect("LoopExitGuardEnd without an open LoopExitGuard");
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::BodyEnd);
+                for s in &next_ph {
+                    self.compile_stmt(s);
+                }
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::ExitStart);
+                for s in &exit_ph {
+                    self.compile_stmt(s);
+                }
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::End);
+            }
             Stmt::SyntheticBlock(stmts) => {
                 // Detect `:=` bind context for `@` variables: the parser wraps
                 // `my @a := expr` in a SyntheticBlock containing VarDecl followed
