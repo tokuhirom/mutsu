@@ -2373,6 +2373,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         );
     }
     // Kernel type object methods
+    // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
+    // Cost: O(1), reads the process-cached uname(2) result.
+    if let ValueView::Package(name) = target.view()
+        && name == "Kernel"
+        && method == "hostname"
+    {
+        return Some(Ok(Value::str(
+            crate::runtime::io_sysinfo_host::host_info()
+                .hostname
+                .clone(),
+        )));
+    }
     if let ValueView::Package(name) = target.view()
         && name == "Kernel"
         && method == "endian"
