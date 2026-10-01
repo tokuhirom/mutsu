@@ -71,7 +71,7 @@ pub(super) struct RoleCompositionCx<'a> {
     pub(super) class_def: &'a mut ClassDef,
     pub(super) out: RoleCompositionOutcome,
     /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
-    pub(super) is_hoisted_shell: bool,
+    pub(super) is_hoisted_shell: super::registration_class::HoistedShell,
 }
 
 impl Interpreter {
@@ -595,7 +595,13 @@ impl Interpreter {
         // runtime statement is; see `hoist_type_decl_shells`'s doc comment)
         // — `t/role-body-composition-timing.t`'s class-header cases live in
         // their own file for exactly this reason.
-        if cx.is_hoisted_shell {
+        if cx.is_hoisted_shell == super::registration_class::HoistedShell::Nested {
+            // A nested-declaration shell runs no role body: it registers at
+            // the head of the unit, whose frame is not the role body's
+            // declaring scope, so a method a body block declares would close
+            // over the wrong lexicals. The in-place registration runs it, once,
+            // through the memo below (`HoistedShell::Nested`).
+        } else if cx.is_hoisted_shell == super::registration_class::HoistedShell::Forward {
             self.run_composed_role_deferred_body(
                 cx,
                 base_role_name,

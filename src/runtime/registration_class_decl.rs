@@ -450,7 +450,7 @@ impl Interpreter {
             &final_parents,
             class_def,
             &snapshot,
-            is_hoisted_shell,
+            is_hoisted_shell.is_shell(),
         )?;
         // Construction-time attribute defaults and BUILD parameter defaults
         // execute after this declaration, often from another compunit. Keep

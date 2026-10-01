@@ -141,7 +141,7 @@ impl Interpreter {
                 class_lang_rev: "c",
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
-                is_hoisted_shell: false,
+                is_hoisted_shell: crate::runtime::HoistedShell::No,
             };
             self.compose_role_into_class(&mut cx, &role_name, base_role_name, false, resolved)?;
             cx.out

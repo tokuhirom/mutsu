@@ -988,7 +988,7 @@ pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
 pub(crate) use self::regex_types::*;
-pub(crate) use self::registration_class::ClassDeclModifiers;
+pub(crate) use self::registration_class::{ClassDeclModifiers, HoistedShell};
 pub(crate) use self::registry::Registry;
 pub(crate) use self::scope_stack::ScopeStack;
 pub(crate) use self::tap_state::TapState;

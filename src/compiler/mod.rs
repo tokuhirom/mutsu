@@ -1145,6 +1145,7 @@ mod helpers_phasers;
 mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
+mod hoist_nested_types;
 pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
@@ -4400,6 +4401,11 @@ impl Compiler {
         // already construct the type (Raku type declarations are compile-time;
         // see `hoist_type_decl_shells`).
         self.hoist_type_decl_shells(stmts);
+        // Install `our` classes/roles declared inside routines and blocks at
+        // compile time, before the code that declares them runs (#10470).
+        if self.is_mainline && !self.is_routine {
+            self.hoist_nested_type_decl_shells(stmts);
+        }
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).
