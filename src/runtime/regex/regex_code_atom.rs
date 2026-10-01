@@ -325,4 +325,51 @@ impl Interpreter {
         }
         Some((pos, RegexCaptures::default()))
     }
+
+    /// Run one `<{ code }>` closure interpolation at `pos`: evaluate `code` to a
+    /// pattern, then match that pattern here. Only the pattern's first match
+    /// counts (the caller cannot backtrack into it), and its positional and
+    /// named captures join the caller's.
+    // Cost: O(n) for the subject text handed to the code, plus one run of the
+    // code and the match of the pattern it returns, n = the subject's chars.
+    pub(super) fn regex_closure_interp_atom(
+        &mut self,
+        code: &str,
+        body: Option<&std::sync::Arc<Vec<crate::ast::Stmt>>>,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+    ) -> Option<(usize, RegexCaptures)> {
+        self.rx_code_call(code, pos, current_caps, |interp| {
+            let target: String = chars.iter().collect();
+            let pattern_str =
+                interp.eval_regex_closure_interpolation(code, body, current_caps, &target);
+            if let Some(ref pat_str) = pattern_str
+                && Interpreter::contains_dangerous_regex_code(pat_str)
+            {
+                super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+                    *e.borrow_mut() = Some(Interpreter::make_security_policy_error());
+                });
+                return None;
+            }
+            if let Some(pat_str) = pattern_str
+                && let Some(parsed) = interp.parse_regex(&pat_str)
+            {
+                let pkg = interp.current_package_sym();
+                if let Some((end, inner_caps)) =
+                    interp.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
+                {
+                    let mut new_caps = RegexCaptures::default();
+                    new_caps
+                        .positional
+                        .extend(inner_caps.positional.iter().cloned());
+                    for (k, v) in &inner_caps.named {
+                        new_caps.named.entry(*k).or_default().merge(v.clone());
+                    }
+                    return Some((end, new_caps));
+                }
+            }
+            None
+        })
+    }
 }

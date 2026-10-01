@@ -24,6 +24,11 @@ struct CodeEvent {
     /// of the `:my` lexicals in scope.
     view: String,
     result: Option<(usize, RegexCaptures)>,
+    /// How many later events this invocation's own run produced: a code block
+    /// that matches a regex of its own (itself holding code) runs those atoms
+    /// inside it. A replay answers the invocation from `result` without running
+    /// them, so it skips that many events.
+    nested: usize,
 }
 
 /// The walk's replay of one compiled run's invocations.
@@ -130,7 +135,7 @@ impl Interpreter {
             };
             if event.code == code && event.pos == pos && event.view == view {
                 let result = event.result.clone();
-                replay.next += 1;
+                replay.next += 1 + event.nested;
                 return Some(result);
             }
             replay.mismatch.get_or_insert_with(|| {
@@ -145,18 +150,31 @@ impl Interpreter {
         if let Some(result) = replayed {
             return result;
         }
-        let result = run(self);
-        LOG.with(|l| {
+        // The event is reserved before the run, so the record keeps call order
+        // when the run invokes code atoms of its own.
+        let slot = LOG.with(|l| {
             let mut l = l.borrow_mut();
-            if l.recording > 0 {
+            (l.recording > 0).then(|| {
                 l.events.push(CodeEvent {
                     code: code.to_string(),
                     pos,
                     view,
-                    result: result.clone(),
+                    result: None,
+                    nested: 0,
                 });
-            }
+                l.events.len() - 1
+            })
         });
+        let result = run(self);
+        if let Some(slot) = slot {
+            LOG.with(|l| {
+                let mut l = l.borrow_mut();
+                let nested = l.events.len() - slot - 1;
+                let event = &mut l.events[slot];
+                event.result = result.clone();
+                event.nested = nested;
+            });
+        }
         result
     }
 }

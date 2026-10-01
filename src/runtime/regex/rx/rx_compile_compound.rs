@@ -9,7 +9,7 @@ use super::super::regex_helpers::{
 use super::RxOp;
 use super::rx_compile::{
     Compiler, Decline, atom_captures, has_numbered_alias, min_len, pattern_captures,
-    pattern_contains_backref, pattern_contains_code,
+    pattern_contains_backref, pattern_contains_code, pattern_reads_enclosing_state,
 };
 use crate::runtime::regex_types::{RegexPattern, RegexQuant, RegexToken};
 
@@ -159,10 +159,11 @@ impl Compiler {
         if rest.iter().any(|b| super::rx_vm::program_for(b).is_none()) {
             return Err("conjunction-branch");
         }
-        if branches.iter().any(pattern_contains_code) {
+        if branches.iter().any(pattern_reads_enclosing_state) {
             // Every branch shares the enclosing regex's scope, which a level of
             // its own (the first branch) and a nested run (the others) hide
-            // from the code: it would see its own branch's captures only.
+            // from code and from a `$x` lexical: they would see their own
+            // branch's state only.
             return Err("conjunction-code");
         }
         let start = self.reg();
@@ -219,7 +220,7 @@ impl Compiler {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
             RegexQuant::Repeat(min, max) => (min, max),
-            RegexQuant::RepeatCode(_) => return Err("code"),
+            RegexQuant::RepeatCode(_) => return Err("repeat-code"),
             RegexQuant::One | RegexQuant::ZeroOrOne => return Err("separator-quant"),
         };
         if max.is_some_and(|max| max == 0 || min > max) {
