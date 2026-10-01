@@ -1178,14 +1178,24 @@ impl Interpreter {
                     ..
                 } = method_value.view()
                 {
-                    let (params, param_defs) = self.callable_signature(&method_value);
+                    // Only the arity is taken: the forwarder dispatches by name
+                    // across the whole family, so keeping one user candidate's
+                    // typed `param_defs` (`multi infix:<==>(Foo:D, Foo:D)`
+                    // declared elsewhere) would reject the builtin's operands.
+                    let (declared, _) = self.callable_signature(&method_value);
+                    let params: Vec<String> =
+                        (0..declared.len()).map(|i| format!("arg{i}")).collect();
+                    let param_defs = Vec::new();
                     let call_name = if crate::qualified::is_global_package(package) {
                         name
                     } else {
                         crate::qualified::qualified(package, name)
                     };
-                    let body = vec![Stmt::Expr(Expr::Call {
-                        name: call_name,
+                    // Call through the code value (`&infix:<==>(..)`), which
+                    // dispatches the whole family -- builtin operands included --
+                    // exactly like calling the `&[==]` value itself.
+                    let body = vec![Stmt::Expr(Expr::CallOn {
+                        target: Box::new(Expr::CodeVar(call_name.resolve())),
                         args: params.iter().cloned().map(Expr::Var).collect(),
                     })];
                     Value::make_sub(package, name, params, param_defs, body, false, Env::new())

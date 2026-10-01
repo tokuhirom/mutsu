@@ -371,13 +371,18 @@ fn is_begin_time_stmt(stmt: &Stmt) -> bool {
         | Stmt::AugmentClass { .. } => true,
         // An exported type declaration (`class C is export { }`) arrives as the
         // declaration followed by its `__MUTSU_EXPORT_TYPE__` marker; the pair is
-        // one declaration.
+        // one declaration. A versioned/authored one (`class C:ver<1>`) is
+        // preceded by its `__MUTSU_SET_META__` call, so a BEGIN block sees the
+        // class just as it does an unversioned one.
         Stmt::SyntheticBlock(inner) => {
             !inner.is_empty()
                 && inner.iter().all(|s| {
                     is_begin_time_stmt(s)
                         || matches!(s, Stmt::Expr(Expr::Call { name, .. })
-                            if name.resolve() == "__MUTSU_EXPORT_TYPE__")
+                        if matches!(
+                            name.resolve().as_str(),
+                            "__MUTSU_EXPORT_TYPE__" | "__MUTSU_SET_META__"
+                        ))
                 })
                 && inner.iter().any(is_begin_time_stmt)
         }

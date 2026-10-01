@@ -1417,7 +1417,10 @@ impl Value {
 
         for ch in raw.chars() {
             match ch {
-                '.' | '-' | '+' | '/' => {
+                // Rakudo splits a version string into `*`, digit runs and
+                // alphabetic runs; any other character (`.`, `-`, `!`, ...) is
+                // a separator, so `Version.new("!2.0")` is `v2.0`.
+                c if c != '_' && c != '*' && !c.is_ascii_digit() && !c.is_alphabetic() => {
                     if !current.is_empty() {
                         flush(&mut parts, &mut spellings, &mut current, is_digit_run);
                     }
