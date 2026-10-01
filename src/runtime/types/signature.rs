@@ -727,10 +727,12 @@ pub(in crate::runtime) fn collect_nested_named_alias_keys(sub_params: &[ParamDef
 /// contents still require ordinary destructuring.
 pub(in crate::runtime) fn is_named_rename_sub_signature(pd: &ParamDef) -> bool {
     pd.named_alias
-        && pd
-            .sub_signature
-            .as_ref()
-            .is_some_and(|sub| sub.iter().all(|p| p.sub_signature.is_none()))
+        && pd.sub_signature.as_ref().is_some_and(|sub| {
+            // A chained alias (`:m(:matrix(:$c))`) nests one more rename
+            // under the alias; only a positional destructure disqualifies.
+            sub.iter()
+                .all(|p| p.sub_signature.is_none() || (p.named && is_named_rename_sub_signature(p)))
+        })
 }
 
 pub(in crate::runtime) fn bind_named_rename_sub_signature(
