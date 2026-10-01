@@ -42,7 +42,7 @@ and `{ 42; LEAVE { } }()` are `Nil` in rakudo, and a block ending in `KEEP { }; 
 treat a trailing `LEAVE`/`KEEP`/`UNDO`/`PRE`/`POST` as making the value `Nil`. A trailing
 `ENTER` still gives the block its value.
 
-The AST-walker baseline fell by 10 walkers (137 to 127). Four rows left the list entirely
+The AST-walker baseline fell by 10 walkers (130 to 120). Four rows left the list entirely
 (`expr_data.rs`, `dot_assign.rs`, `let_temp.rs`, `with_desugar.rs`), and `expr_binary.rs`,
 `helpers_ast_utils.rs`, `mod.rs`, `stmt.rs` and `run.rs` each lost one or two. Pinned by
 `t/collections/constant-sigilless-element-lvalue.t` and `t/control/trailing-phaser-block-value.t`.
