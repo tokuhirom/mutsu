@@ -191,6 +191,16 @@ pub(crate) fn native_function_variadic(
                 );
                 return Some(result);
             }
+            // Anything beyond Int/Num (Rat, FatRat, BigInt, Complex, Str, ...) must
+            // promote through `+` like the method form; the i64/f64 fast path below
+            // would truncate it (`sum(1, 0.5)` is 1.5, not 1).
+            if let Some(items) = sum_generic_items(args) {
+                return Some(
+                    items
+                        .into_iter()
+                        .try_fold(Value::int(0), crate::builtins::arith_add),
+                );
+            }
             let mut total: i64 = 0;
             let mut has_num = false;
             let mut total_f: f64 = 0.0;
@@ -397,4 +407,65 @@ pub(crate) fn native_function_variadic(
         }
         _ => None,
     }
+}
+
+/// Flattened operands of `sum(...)` when any of them needs `+` promotion
+/// (anything but Int/Num); `None` keeps the Int/Num fast path.
+// Cost: O(e), e = total elements across the arguments.
+fn sum_generic_items(args: &[Value]) -> Option<Vec<Value>> {
+    let plain = |v: &Value| matches!(v.view(), ValueView::Int(_) | ValueView::Num(_));
+    let mut exotic = false;
+    for arg in args {
+        match arg.view() {
+            ValueView::Array(items, ..) => exotic |= items.iter().any(|v| !plain(v)),
+            ValueView::Seq(items) => exotic |= items.iter().any(|v| !plain(v)),
+            ValueView::LazyList(ll)
+                if !ll.is_genuinely_lazy() && ll.cache.lock().is_ok_and(|c| c.is_some()) =>
+            {
+                exotic |= ll
+                    .cache
+                    .lock()
+                    .ok()
+                    .into_iter()
+                    .flat_map(|c| c.clone().unwrap_or_default())
+                    .any(|v| !plain(&v));
+            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {}
+            _ => exotic |= !plain(arg),
+        }
+    }
+    if !exotic {
+        return None;
+    }
+    let mut out = Vec::new();
+    for arg in args {
+        match arg.view() {
+            ValueView::Array(items, ..) => out.extend(items.iter().cloned()),
+            ValueView::Seq(items) => out.extend(items.iter().cloned()),
+            ValueView::LazyList(ll)
+                if !ll.is_genuinely_lazy() && ll.cache.lock().is_ok_and(|c| c.is_some()) =>
+            {
+                out.extend(
+                    ll.cache
+                        .lock()
+                        .ok()
+                        .into_iter()
+                        .flat_map(|c| c.clone().unwrap_or_default()),
+                );
+            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
+                out.extend(crate::runtime::utils::value_to_list(arg));
+            }
+            _ => out.push(arg.clone()),
+        }
+    }
+    Some(out)
 }
