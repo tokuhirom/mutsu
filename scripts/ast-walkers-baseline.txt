@@ -28,6 +28,7 @@ src/compiler/helpers_phasers.rs                         3
 src/compiler/helpers_stmt_analysis.rs                   4
 src/compiler/helpers_sub_body.rs                        1
 src/compiler/mod.rs                                     9
+src/compiler/package_runtime_body.rs                    1  # top-level lexical names of a package body: descends only into SyntheticBlock groups, not nested scopes
 src/compiler/stmt.rs                                    6
 src/method_signature_shared.rs                          2
 src/opcode.rs                                           5
@@ -74,6 +75,8 @@ src/rakuast/convert.rs                                  8
 src/regex_tree.rs                                       3
 src/runtime/begin_prologue/mod.rs                       5
 src/runtime/begin_prologue/nested.rs                    2
+src/runtime/begin_prologue/nested/decls.rs              2  # classifies a type body's members (is_pure_member): must not descend into method bodies
+src/runtime/begin_prologue/package_body.rs              3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/dispatch_proto_rewrite.rs                   2
 src/runtime/end_phasers.rs                              2
 src/runtime/eval_check.rs                               8

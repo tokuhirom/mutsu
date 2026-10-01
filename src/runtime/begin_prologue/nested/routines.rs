@@ -48,7 +48,7 @@ pub(super) enum Access {
 #[derive(Default)]
 pub(super) struct Dependencies {
     pub(super) bindings: BTreeMap<(usize, usize), Access>,
-    routines: BTreeSet<(usize, usize)>,
+    pub(super) routines: BTreeSet<(usize, usize)>,
 }
 
 /// What the block for one frame holds, in the order it holds it.
@@ -267,6 +267,7 @@ impl Walker<'_> {
         // The body sees every scope; a routine sees the ones it was declared in,
         // up to its own position.
         let mut pending = vec![(Scan::of(body), None)];
+        self.add_operator_code_vars(&mut deps)?;
         while let Some((scan, scope)) = pending.pop() {
             if scan.reflective && routines_in_scope {
                 return None;
@@ -316,19 +317,45 @@ impl Walker<'_> {
         }
         match self.find_binding(&name, scope) {
             Some((frame, binding)) => {
-                let access = match &self.frames[frame].bindings[binding].kind {
-                    BindingKind::Param => {
-                        Access::CopyIn(Box::new(super::cell_ast::unbound_decl(&name)))
-                    }
-                    BindingKind::Our(decl) => Access::CopyIn(decl.clone()),
-                    BindingKind::Local { .. } => Access::Cell,
-                    BindingKind::Opaque => return None,
-                };
+                let access = self.access_of(frame, binding)?;
                 deps.bindings.entry((frame, binding)).or_insert(access);
             }
             None => {
                 if !self.unit_names.contains(&name) && crate::env::is_plain_user_lexical(&name) {
                     return None;
+                }
+            }
+        }
+        Some(())
+    }
+
+    /// How the lifted body reaches an inner binding, or `None` when it cannot.
+    fn access_of(&self, frame: usize, binding: usize) -> Option<Access> {
+        let binding = &self.frames[frame].bindings[binding];
+        Some(match &binding.kind {
+            BindingKind::Param => {
+                Access::CopyIn(Box::new(super::cell_ast::unbound_decl(&binding.name)))
+            }
+            BindingKind::Our(decl) => Access::CopyIn(decl.clone()),
+            BindingKind::Local { .. } => Access::Cell,
+            BindingKind::Opaque => return None,
+        })
+    }
+
+    /// Supply every operator code variable (`my &infix:<x>`) of the scopes
+    /// around the body. The code that uses one does so through its operator's
+    /// syntax (`1 x 2`), which the parser registered for the rest of the scope,
+    /// or by symbolic lookup (`&::("infix:<x>")`), and neither has to name the
+    /// variable where a scan of the compiled code would see it. Each one is
+    /// supplied in its own scope's block, so a copied routine finds the one it
+    /// closes over.
+    // Cost: O(b), b = the bindings of the enclosing inner scopes.
+    fn add_operator_code_vars(&self, deps: &mut Dependencies) -> Option<()> {
+        for (f, frame) in self.frames.iter().enumerate() {
+            for (b, binding) in frame.bindings.iter().enumerate() {
+                if binding.name.starts_with('&') && binding.name.contains(':') {
+                    let access = self.access_of(f, b)?;
+                    deps.bindings.entry((f, b)).or_insert(access);
                 }
             }
         }

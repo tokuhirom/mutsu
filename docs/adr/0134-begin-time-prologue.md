@@ -444,12 +444,47 @@ of a nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/decls.rs`,
   - A BEGIN that reads an inner variable whose type constraint names an inner
     type (`my K $v`): the variable's static cell is declared at the unit's
     level, where the type does not exist.
-  - An operator code variable or a pragma declared ahead (see above), and
-    `class ::($name)`, which has no static name.
+  - An operator code variable or a pragma declared ahead (lifted since: see
+    the next follow-up), and `class ::($name)`, which has no static name.
 
   The first non-liftable BEGIN still halts lifting for the rest of the unit
   (`Lifted::halted`), so one of these also keeps the BEGINs after it on the old
   path.
+
+**Slice 2 follow-up — an operator code variable or a pragma declared ahead of a
+nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
+`t/control/begin-prologue-inner-pragmas.t`; closes #10472).
+
+- **Operator code variables.** Code uses `my &infix:<x>` through the
+  operator's syntax (`1 x 2`), which the parser registered for the rest of the
+  scope, or by symbolic lookup (`&::("infix:<x>")`). Neither has to name the
+  variable where a scan of the compiled code would see it. So every operator
+  code variable of the scopes around a lifted BEGIN gets a static cell and is
+  declared in its scope's block, whether or not the body seems to use it (the
+  first alternative of the issue). The BEGIN sees the variable's static value,
+  and what it stores there is what each entry of the scope starts from, as for
+  any other lexical. A `state` one is opaque and still blocks the lift.
+- **Pragmas.** The lifted body's block repeats a lexical pragma of its scope,
+  as it repeats an import. Whether that is sound depends on how mutsu applies
+  the pragma:
+  - `strict`, `newline` and `no strict` / `no fatal` set interpreter modes
+    that the block's `ImportScope` region saves and restores. `soft`, `nqp`,
+    `isms`, `v6`, `oo`, `class`, `experimental`, `customtrait`, `warnings`, and
+    `no` of `isms`, `worries`, `precompilation` or `soft`, are no-ops in mutsu.
+    They are repeated.
+  - `use fatal` also marks a routine compiled after it, and `use variables` /
+    `use dynamic-scope` change a variable declaration compiled after it. The
+    block puts its pragmas ahead of its copied declarations, so each of these
+    is repeated only when the BEGIN copies nothing of its scope that precedes
+    it there; otherwise the BEGIN is not lifted.
+  - Any other pragma still blocks the scope. `use lib` and `use if` act beyond
+    the block (mutsu does not yet apply a nested `use lib` at BEGIN time
+    either), `use attributes` is not restored on block exit, and a pragma mutsu
+    does not implement (`use worries`, `use trace`) fails at run time, which
+    repeating it would move to startup.
+- **Still not lifted.** A BEGIN that relies on `no strict` to auto-declare a
+  variable, since the undeclared name resolves to nothing the unit declares,
+  and the pragmas listed above.
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,

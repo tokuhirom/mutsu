@@ -35,6 +35,7 @@
 //! lifted from a scope that declares a type, as for a scope that declares a
 //! routine ([`super::routines`]).
 
+use super::pragmas::{Guard, Repeat};
 use super::routines::{Access, Dependencies, FrameBlock};
 use super::{BindingKind, Walker};
 use crate::ast::{Expr, PhaserKind, Stmt};
@@ -247,8 +248,8 @@ fn is_pure_member(stmt: &Stmt) -> bool {
 }
 
 /// An import an inner scope's lifted body repeats. A lowercase pragma is not
-/// one: mutsu applies most of them as run-time state at their position, and
-/// `use lib` / `use if` change how later loads resolve.
+/// one: whether it can be repeated depends on the pragma
+/// ([`super::pragmas`]).
 fn is_copyable_import(stmt: &Stmt) -> bool {
     let module = match stmt {
         Stmt::Use {
@@ -264,13 +265,32 @@ fn is_copyable_import(stmt: &Stmt) -> bool {
 }
 
 impl Walker<'_> {
-    /// Note a type, package or import declared in the current scope. One the
-    /// prologue cannot supply (a pragma, `class ::($name)`) blocks the scope.
+    /// Note a type, package, import or pragma declared in the current scope.
+    /// One the prologue cannot supply (most pragmas, `class ::($name)`) blocks
+    /// the scope ([`super::pragmas`]).
     pub(super) fn declare_type_or_import(&mut self, decl: &Stmt) {
         let Some(frame) = self.frames.last_mut() else {
             return;
         };
         if is_copyable_import(decl) {
+            frame.imports.push(decl.clone());
+            return;
+        }
+        if super::pragmas::is_pragma(decl) {
+            let guard = |variables: bool| Guard {
+                bindings: variables.then_some(frame.bindings.len()),
+                routines: frame.routines.len(),
+                types: frame.types.len(),
+            };
+            match super::pragmas::repeat_of(decl) {
+                Some(Repeat::Anywhere) => {}
+                Some(Repeat::BeforeRoutines) => frame.pragma_guards.push(guard(false)),
+                Some(Repeat::BeforeDeclarations) => frame.pragma_guards.push(guard(true)),
+                None => {
+                    frame.blocked = true;
+                    return;
+                }
+            }
             frame.imports.push(decl.clone());
             return;
         }
@@ -329,7 +349,7 @@ impl Walker<'_> {
             }
         }
         if self.frames.iter().all(|f| f.types.is_empty()) {
-            return Some(());
+            return self.check_pragma_guards(deps, &BTreeSet::new());
         }
         let mut stmts: Vec<&Stmt> = body.iter().collect();
         stmts.extend(self.routine_decls(deps));
@@ -346,16 +366,43 @@ impl Walker<'_> {
                 (Access::Cell, _) => {}
             }
         }
-        self.add_types(Mentions::of(stmts), blocks)
+        let types = self.add_types(Mentions::of(stmts), blocks)?;
+        self.check_pragma_guards(deps, &types)
+    }
+
+    /// Whether the block of each scope can repeat its pragmas: none of them
+    /// precedes a declaration the block copies (`deps` and the selected
+    /// `types`) that it would affect ([`Guard`]).
+    fn check_pragma_guards(
+        &self,
+        deps: &Dependencies,
+        types: &BTreeSet<(usize, usize)>,
+    ) -> Option<()> {
+        let precedes = |frame: usize, guard: &Guard| {
+            deps.bindings
+                .keys()
+                .any(|&(f, b)| f == frame && guard.bindings.is_some_and(|n| b < n))
+                || deps
+                    .routines
+                    .iter()
+                    .any(|&(f, r)| f == frame && r < guard.routines)
+                || types.iter().any(|&(f, t)| f == frame && t < guard.types)
+        };
+        let violated = self
+            .frames
+            .iter()
+            .enumerate()
+            .any(|(frame, f)| f.pragma_guards.iter().any(|guard| precedes(frame, guard)));
+        (!violated).then_some(())
     }
 
     /// Add the types `mentions` names to their frame blocks, with the ones
-    /// those name in turn.
+    /// those name in turn. Returns them, by frame and position.
     fn add_types(
         &self,
         mut mentions: Mentions,
         blocks: &mut BTreeMap<usize, FrameBlock>,
-    ) -> Option<()> {
+    ) -> Option<BTreeSet<(usize, usize)>> {
         // A repeated type may itself name an earlier one (`is Base`), so the
         // selection runs until nothing new is named.
         let mut selected = BTreeSet::new();
@@ -385,13 +432,13 @@ impl Walker<'_> {
         if !selected.is_empty() && mentions.changes_type {
             return None;
         }
-        for (f, t) in selected {
+        for &(f, t) in &selected {
             let decl = self.frames[f].types[t]
                 .copy
                 .clone()
                 .expect("selected above");
             blocks.entry(f).or_default().types.push(decl);
         }
-        Some(())
+        Some(selected)
     }
 }
