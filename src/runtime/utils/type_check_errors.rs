@@ -10,29 +10,43 @@
 use super::*;
 
 /// Format a short representation of a value for type-check error messages,
-/// matching Raku's format: e.g. `("hello")`, `(42)`.
+/// matching Raku's format: e.g. `("hello")`, `(42)`, `([1, 2])`.
 ///
-/// An `Instance` has no pure repr: its `.raku` is a method call (a class may
-/// override it), so it answers `""` here and the interpreter-aware
+/// The text is the value's `.raku`, rendered by the one pure renderer
+/// (`raku_value`) so every value kind -- numbers, `Rat`s, enums, `Pair`s,
+/// `Range`s, `List`s, `Array`s, `Hash`es, `Set`s, ... -- reads exactly as the
+/// method does.
+///
+/// A value whose `.raku` is only reachable through method dispatch (an
+/// `Instance`, a `Sub`, or a container holding one) has no pure repr: a class
+/// may override `raku`, so it answers `""` here and the interpreter-aware
 /// `Interpreter::type_check_got_repr` supplies it where one is at hand.
+// Cost: O(t), t = length of the value's `.raku` text (the whole structure is
+// rendered, then cut to a constant length), as rakudo does.
 pub(crate) fn value_short_repr(val: &Value) -> String {
-    let raku = match val.view() {
-        ValueView::Str(s) => format!("\"{}\"", *s),
-        ValueView::Int(n) => n.to_string(),
-        ValueView::BigInt(n) => n.to_string(),
-        ValueView::Num(n) => n.to_string(),
-        ValueView::Bool(b) => (if b { "True" } else { "False" }).to_string(),
-        ValueView::Rat(n, d) => format!("{}/{}", n, d),
-        ValueView::BigRat(n, d) if val.is_bigfatrat() => format!("FatRat.new({}, {})", n, d),
-        ValueView::BigRat(n, d) => format!("{}/{}", n, d),
-        ValueView::FatRat(n, d) => format!("FatRat.new({}, {})", n, d),
-        ValueView::Nil => "Nil".to_string(),
-        // A type object reprs as its own name: rakudo says
-        // `expected Int:D but got Int (Int)`.
-        ValueView::Package(sym) => sym.resolve().to_string(),
-        _ => return String::new(),
-    };
-    short_repr_of_raku(&raku)
+    let val = &decont_for_repr(val);
+    if crate::builtins::methods_0arg::raku_repr::needs_raku_dispatch(val)
+        || crate::runtime::container_needs_raku_dispatch(val)
+    {
+        return String::new();
+    }
+    short_repr_of_raku(&crate::builtins::methods_0arg::raku_repr::raku_value(val))
+}
+
+/// `val` out of its `$` container, the way the type check saw it. A `for`
+/// variable or a `my $x = (1, 2, 3)` holds its value itemized, which `.raku`
+/// shows as `$(1, 2, 3)`; rakudo's message names the value itself
+/// (`got List ((1, 2, 3))`), so the itemization is dropped before rendering.
+// Cost: O(1).
+pub(crate) fn decont_for_repr(val: &Value) -> Value {
+    let val = val.clone().deitemize_for_sigil_bind();
+    match val.view() {
+        // A `Seq` is itemized on its handle, not by a `Scalar` wrapper.
+        ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemSeq => {
+            Value::seq_body(body.as_bare_seq_view())
+        }
+        _ => val,
+    }
 }
 
 /// Longest `.raku` text a type-check message shows in full; a longer one is cut
