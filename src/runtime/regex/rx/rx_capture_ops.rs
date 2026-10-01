@@ -28,6 +28,31 @@ impl Interpreter {
         match op {
             // Cost: O(1).
             RxOp::OpenCapture => levels.open(pos, true),
+            // Cost: O(c), c = the captures the enclosing level sees (one
+            // flattened copy).
+            RxOp::OpenInline => levels.open_inline(None, None),
+            // Cost: O(n + c), n = the names under the token, c = the captures
+            // the enclosing level sees plus those of the iterations collected
+            // so far (one fold, one flattened copy), as the walk pays per atom.
+            RxOp::OpenSepIter {
+                tok,
+                base,
+                sep,
+                names,
+            } => {
+                let token = &program.toks[tok as usize];
+                let entries = levels.collected_since(regs[base as usize]).to_vec();
+                let folded =
+                    Self::rx_sep_fold(token, &program.name_sets[names as usize], entries, false);
+                let atom_stride = count_capture_groups(&token.atom);
+                let fold = if sep {
+                    let sep = &token.separator.as_ref().expect("a separated token").pattern;
+                    (atom_stride, separator_stride(sep))
+                } else {
+                    (0, atom_stride)
+                };
+                levels.open_inline(Some(folded), Some(fold));
+            }
             // Cost: O(1).
             RxOp::OpenIsolated => levels.open(pos, false),
             // Cost: O(1).
@@ -177,8 +202,9 @@ impl Interpreter {
                 }
             }
             // Cost: O(c) for the first branch's captures, plus one nested
-            // run per other branch.
-            RxOp::ConjTail { tok, start } => {
+            // run per other branch; when `seeded`, also O(v) per other branch,
+            // v = the captures visible to it (its seed).
+            RxOp::ConjTail { tok, start, seeded } => {
                 let RegexAtom::Conjunction(branches) = &program.toks[tok as usize].atom else {
                     unreachable!("a ConjTail names a conjunction token");
                 };
@@ -187,7 +213,19 @@ impl Interpreter {
                 for branch in &branches[1..] {
                     let branch_program = super::rx_entry::program_for(branch)
                         .expect("a compiled conjunction's branches compile");
-                    let (_, caps) = self.rx_run(branch_program, chars, from, pkg, Some(pos))?;
+                    // Every other branch is part of the same regex too: its
+                    // nested run starts from the enclosing level's view and the
+                    // earlier branches' captures, as rakudo's one cursor has them.
+                    let seed = seeded.then(|| {
+                        super::rx_levels::inline_level_caps(
+                            levels.top().caps(),
+                            Some(merged.clone()),
+                            None,
+                        )
+                    });
+                    let (_, mut caps) =
+                        self.rx_run_seeded(branch_program, chars, from, pkg, Some(pos), seed)?;
+                    caps.set_outer_backref(None);
                     merged = merge_regex_captures(merged, caps);
                 }
                 levels.edit(|s| s.merge_delta(merged));
@@ -233,35 +271,49 @@ impl Interpreter {
             // captures across the collected iterations.
             RxOp::SepEmit { tok, base, names } => {
                 let token = &program.toks[tok as usize];
-                let names = program.name_sets[names as usize].iter().copied();
-                let mut entries = levels.drain_collected(regs[base as usize]);
-                // A `%%` chain that ends on a separator took a trailing one.
-                let trailing = entries
-                    .last()
-                    .is_some_and(|(sep, _)| *sep)
-                    .then(|| entries.pop().map(|(_, caps)| caps))
-                    .flatten();
-                let (seps, atoms): (Vec<_>, Vec<_>) = entries.into_iter().partition(|(s, _)| *s);
-                let atoms: Vec<RegexCaptures> = atoms.into_iter().map(|(_, c)| c).collect();
-                let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
-                let delta = if atoms.is_empty() {
-                    // Zero iterations mark the names only.
-                    separated_capture_delta_syms(names, &[], &[], None, 0, 0)
-                } else {
-                    let sep = &token.separator.as_ref().expect("a separated token").pattern;
-                    separated_capture_delta_syms(
-                        names,
-                        &atoms,
-                        &seps,
-                        trailing.as_ref(),
-                        count_capture_groups(&token.atom),
-                        separator_stride(sep),
-                    )
-                };
+                let entries = levels.drain_collected(regs[base as usize]);
+                let delta =
+                    Self::rx_sep_fold(token, &program.name_sets[names as usize], entries, true);
                 levels.edit(|s| s.merge_delta(delta));
             }
             _ => unreachable!("not a capture op: {op:?}"),
         }
         Some(pos)
+    }
+}
+
+impl Interpreter {
+    /// The capture delta of the separated quantifier `token`'s collected
+    /// iterations, `(is_separator, captures)` in match order, folded side by
+    /// side as the walk's chain does (`separated_capture_delta`). With
+    /// `trailing`, a last separator is a `%%` chain's trailing one.
+    // Cost: O(n + c), n = the names under the token (`names`, interned when
+    // the pattern compiled), c = the iterations' captures.
+    fn rx_sep_fold(
+        token: &crate::runtime::regex_types::RegexToken,
+        names: &[Symbol],
+        mut entries: Vec<(bool, RegexCaptures)>,
+        at_end: bool,
+    ) -> RegexCaptures {
+        let names = names.iter().copied();
+        let trailing = (at_end && entries.last().is_some_and(|(sep, _)| *sep))
+            .then(|| entries.pop().map(|(_, caps)| caps))
+            .flatten();
+        let (seps, atoms): (Vec<_>, Vec<_>) = entries.into_iter().partition(|(s, _)| *s);
+        let atoms: Vec<RegexCaptures> = atoms.into_iter().map(|(_, c)| c).collect();
+        let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
+        if at_end && atoms.is_empty() {
+            // Zero iterations mark the names only.
+            return separated_capture_delta_syms(names, &[], &[], None, 0, 0);
+        }
+        let sep = &token.separator.as_ref().expect("a separated token").pattern;
+        separated_capture_delta_syms(
+            names,
+            &atoms,
+            &seps,
+            trailing.as_ref(),
+            count_capture_groups(&token.atom),
+            separator_stride(sep),
+        )
     }
 }

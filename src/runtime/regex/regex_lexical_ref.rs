@@ -32,7 +32,7 @@ impl Interpreter {
     /// pure string test, so the overwhelmingly common `<rule>` reference pays
     /// nothing.
     pub(super) fn may_name_lexical_regex(spec: &NamedRegexLookupSpec) -> bool {
-        spec.token_lookup || spec.lookup_name.starts_with('$')
+        spec.token_lookup || spec.lookup_name.starts_with(['$', '{'])
     }
 
     /// The Regex value this reference resolves to, or `None` when it does not
@@ -43,6 +43,9 @@ impl Interpreter {
     fn resolve_lexical_regex(&mut self, spec: &NamedRegexLookupSpec, pkg: Symbol) -> Option<Value> {
         if !Self::may_name_lexical_regex(spec) {
             return None;
+        }
+        if spec.lookup_name.starts_with('{') {
+            return self.eval_alias_code_regex(&spec.lookup_name);
         }
         let value = self.lookup_lexical_regex(&spec.lookup_name)?;
         self.resolve_token_patterns_static_in_pkg(spec.lookup_name.trim_start_matches('$'), pkg)
@@ -55,6 +58,8 @@ impl Interpreter {
     /// [`crate::value::RegexClosure`] for the keying convention).
     fn lookup_lexical_regex(&self, lookup_name: &str) -> Option<Value> {
         let bare = lookup_name.trim_start_matches(['&', '$']);
+        // `$*dyn` is filed under its twigil-ful name (`*dyn`), which the
+        // sigil-less scalar key below already spells.
         if bare.is_empty() {
             return None;
         }
@@ -78,6 +83,35 @@ impl Interpreter {
                 captured_regex: Some(regex),
                 ..
             } => Some((**regex).clone()),
+            _ => None,
+        }
+    }
+
+    /// The Regex a `<name={ code }>` alias matches: `code` run at match time,
+    /// in the caller's env (where a rule's `$*` parameters are bound for its
+    /// match window). A Str result is a pattern, as for `<{ code }>`.
+    // Cost: one run of `code` (its parse is cached by text).
+    fn eval_alias_code_regex(&mut self, block: &str) -> Option<Value> {
+        // The code's result depends on the live env, which no memo key carries.
+        super::regex_arg_purity::note_opaque_read();
+        let code = block.strip_prefix('{')?.strip_suffix('}')?;
+        let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
+        let env = self.env.clone();
+        let value = match self.run_regex_sub_eval(env, None, |interp| {
+            interp.eval_block_value_cached(&stmts, id)
+        }) {
+            Ok(v) => v,
+            Err(e) => e.return_value?,
+        }
+        .into_deref();
+        match value.view() {
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => Some(value),
+            ValueView::Routine {
+                is_regex: true,
+                captured_regex: Some(regex),
+                ..
+            } => Some((**regex).clone()),
+            ValueView::Str(s) => Some(Value::regex(s.to_string())),
             _ => None,
         }
     }

@@ -1517,6 +1517,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Last,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("last", slip, flow)));
+            }
             let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
@@ -1530,6 +1537,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Next,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("next", slip, flow)));
+            }
             let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
@@ -1542,6 +1556,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "redo" => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
+            }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Redo,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("redo", slip, flow)));
             }
             let (rest, label) = control_flow_label(rest);
             return Ok((
@@ -2560,6 +2581,60 @@ fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKin
 /// label rule the statement forms (`next_stmt` and friends) apply. Without it
 /// the label was left behind as a stray bareword and the enclosing labeled
 /// loop failed to parse.
+/// `last |c` / `next |c` / `redo |c`: the loop-control term applied to a slipped
+/// argument list (Rakudo resolves it as `last(|c)`). Returns the slipped term.
+pub(in crate::parser) fn control_flow_slip_args(input: &str) -> PResult<'_, Option<Expr>> {
+    let (after_ws, _) = ws(input)?;
+    if !after_ws.starts_with('|') {
+        return Ok((input, None));
+    }
+    let (rest, slip) = term_expr(after_ws)?;
+    Ok((rest, Some(slip)))
+}
+
+/// Build `last(|args)`: with an empty argument list this is the plain loop
+/// control. A non-empty list would carry a `Label` value, which mutsu does not
+/// model (labels are static names in `OpCode::Last`), so it is rejected rather
+/// than silently dropped.
+// TODO: compile dynamic `Label` arguments once labels are first-class values.
+pub(in crate::parser) fn slipped_control_flow(name: &str, slip: Expr, flow: Expr) -> Expr {
+    Expr::Ternary {
+        cond: Box::new(slip_arg_count(slip)),
+        then_expr: Box::new(Expr::DoStmt(Box::new(reject_slipped_label(name)))),
+        else_expr: Box::new(flow),
+    }
+}
+
+/// Statement form of [`slipped_control_flow`], for `proceed |c` / `succeed |c`
+/// whose control transfer must stay a statement of the enclosing block.
+pub(in crate::parser) fn slipped_control_stmt(name: &str, slip: Expr, flow: Stmt) -> Stmt {
+    Stmt::If {
+        cond: slip_arg_count(slip),
+        then_branch: vec![reject_slipped_label(name)],
+        else_branch: vec![flow],
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless: false,
+        with_kind: None,
+    }
+}
+
+fn slip_arg_count(slip: Expr) -> Expr {
+    Expr::MethodCall {
+        target: Box::new(Expr::ArrayLiteral(vec![slip])),
+        name: Symbol::intern("elems"),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    }
+}
+
+fn reject_slipped_label(name: &str) -> Stmt {
+    Stmt::Die(Expr::Literal(Value::str(format!(
+        "Cannot resolve caller {name}: a Label argument is not supported"
+    ))))
+}
+
 fn control_flow_label(input: &str) -> (&str, Option<String>) {
     let Ok((after_ws, _)) = ws(input) else {
         return (input, None);

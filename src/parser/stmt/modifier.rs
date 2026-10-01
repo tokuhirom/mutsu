@@ -10,6 +10,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::super::helpers::is_raku_identifier_start;
+use super::modifier_decl_split::{split_decl_for_topic_modifier, try_split_decl_modifier};
 use super::{keyword, parse_comma_or_expr};
 
 thread_local! {
@@ -105,92 +106,6 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
         ));
     }
     Ok(())
-}
-
-/// A `my`/`our` declaration carrying a conditional statement modifier
-/// (`my $x = 5 if COND`, `my $x unless COND`) keeps its *declaration* lexically
-/// unconditional — in Raku declarations take effect at compile time regardless
-/// of the runtime modifier; only the *initializer* is gated. So split such a
-/// declaration into an always-run declaration plus a conditional assignment:
-///
-///   `my $x = INIT if COND`  ->  `my $x; ($x = INIT) if COND`
-///   `my $x if COND`         ->  `my $x`            (no init to gate)
-///
-/// `effective_cond` is the condition the surrounding modifier would test (already
-/// negated for `unless`). Returns `None` for anything that is not a hoistable
-/// scalar/array/hash `my`/`our` declaration (e.g. `state`, routines), leaving the
-/// generic modifier wrapping in place.
-fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
-    let Stmt::VarDecl {
-        name,
-        expr,
-        type_constraint,
-        is_state,
-        is_our,
-        is_dynamic,
-        is_export,
-        export_tags,
-        custom_traits,
-        where_constraint,
-    } = stmt
-    else {
-        return None;
-    };
-    // `state` has once-only initialization semantics that this split would
-    // break, so leave it to the generic modifier wrapping.
-    if *is_state {
-        return None;
-    }
-    // A `constant` binding is resolved at compile time and does not respect a
-    // runtime statement modifier at all -- `raku` evaluates `constant $w = 11
-    // if False;` unconditionally (confirmed against real raku: `$w` reads back
-    // `11` even under a `False` condition, with no warning). So drop the
-    // modifier entirely rather than gating the initializer like a normal `my`
-    // variable would: keep the original declaration (with its real
-    // initializer) as-is.
-    if custom_traits.iter().any(|(n, _)| n == "__constant") {
-        return Some(stmt.clone());
-    }
-    // Only sigil'd variables are hoistable here; a sigilless `\x` or other form
-    // is left untouched.
-    let is_array = name.starts_with('@');
-    let is_hash = name.starts_with('%');
-    let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
-    let decl = Stmt::VarDecl {
-        name: name.clone(),
-        expr: super::decl::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
-        type_constraint: type_constraint.clone(),
-        is_state: false,
-        is_our: *is_our,
-        is_dynamic: *is_dynamic,
-        is_export: *is_export,
-        export_tags: export_tags.clone(),
-        custom_traits: custom_traits
-            .iter()
-            .filter(|(n, _)| n != "__has_initializer")
-            .cloned()
-            .collect(),
-        where_constraint: where_constraint.clone(),
-    };
-    if !has_init {
-        // No initializer to gate: the declaration is simply unconditional.
-        return Some(decl);
-    }
-    let init = Stmt::If {
-        cond: effective_cond.clone(),
-        then_branch: vec![Stmt::Assign {
-            name: name.clone(),
-            expr: expr.clone(),
-            op: crate::ast::AssignOp::Assign,
-            target_is_sigilless: false,
-        }],
-        else_branch: Vec::new(),
-        binding_var: None,
-        is_statement_modifier: true,
-        is_unless: false,
-        with_kind: None,
-    };
-    Some(Stmt::SyntheticBlock(vec![decl, init]))
 }
 
 /// A compound-assignment declaration is represented as a scopeless synthetic
@@ -1071,6 +986,12 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 Stmt::Expr(Expr::DoStmt(Box::new(given_stmt))),
             )));
         }
+        // A declaration stays unconditional; only its initializer is gated.
+        let (hoisted_decl, stmt_for_branch) = match split_decl_for_topic_modifier(&stmt_for_branch)
+        {
+            Some((decl, assign)) => (Some(decl), assign),
+            None => (None, Some(stmt_for_branch)),
+        };
         let given_stmt = Stmt::Given {
             topic: cond,
             body: vec![Stmt::If {
@@ -1081,7 +1002,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     modifier: None,
                     quoted: false,
                 },
-                then_branch: vec![stmt_for_branch],
+                then_branch: stmt_for_branch.into_iter().collect(),
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
@@ -1091,6 +1012,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             is_statement_modifier: true,
             with_kind: Some(GivenWithKind::With),
         };
+        if let Some(decl) = hoisted_decl {
+            return Ok(Some((r_tail, Stmt::SyntheticBlock(vec![decl, given_stmt]))));
+        }
         return Ok(Some((r_tail, given_stmt)));
     }
     if let Some(r) = keyword("without", rest) {
@@ -1156,11 +1080,15 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 Stmt::Expr(Expr::DoStmt(Box::new(given_stmt))),
             )));
         }
+        let (hoisted_decl, modified_stmt) = match split_decl_for_topic_modifier(&modified_stmt) {
+            Some((decl, assign)) => (Some(decl), assign),
+            None => (None, Some(modified_stmt)),
+        };
         let given_stmt = Stmt::Given {
             topic: cond,
             body: vec![Stmt::If {
                 cond: not_defined,
-                then_branch: vec![modified_stmt],
+                then_branch: modified_stmt.into_iter().collect(),
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
@@ -1170,6 +1098,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             is_statement_modifier: true,
             with_kind: Some(GivenWithKind::Without),
         };
+        if let Some(decl) = hoisted_decl {
+            return Ok(Some((r_tail, Stmt::SyntheticBlock(vec![decl, given_stmt]))));
+        }
         return Ok(Some((r_tail, given_stmt)));
     }
 

@@ -315,23 +315,26 @@ pub(crate) fn outer_caps_seed_published() -> bool {
     INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().is_some())
 }
 
+/// [`atom_contains_code`] for a whole pattern (memoized on the pattern).
+pub(crate) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
+    *pattern.derived.contains_code.get_or_init(|| {
+        pattern.tokens.iter().any(|tok| {
+            atom_contains_code(&tok.atom)
+                || matches!(tok.quant, RegexQuant::RepeatCode(_))
+                || tok
+                    .separator
+                    .as_ref()
+                    .is_some_and(|sep| pattern_contains_code(&sep.pattern))
+        })
+    })
+}
+
 /// Does this atom's sub-pattern contain a code atom (`{ … }`, `<?{ … }>`,
 /// `:my …;`) anywhere inside it, at its own capture level? Only such an atom
 /// needs the enclosing level's captures published for the code to see (`$/`
 /// and `$0` inside a `[ … ]` block are the enclosing regex's, as in raku).
 pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
-    fn pattern_has(pattern: &RegexPattern) -> bool {
-        *pattern.derived.contains_code.get_or_init(|| {
-            pattern.tokens.iter().any(|tok| {
-                atom_contains_code(&tok.atom)
-                    || matches!(tok.quant, RegexQuant::RepeatCode(_))
-                    || tok
-                        .separator
-                        .as_ref()
-                        .is_some_and(|sep| pattern_has(&sep.pattern))
-            })
-        })
-    }
+    let pattern_has = pattern_contains_code;
     match atom {
         RegexAtom::CodeAssertion { .. }
         | RegexAtom::VarDecl { .. }

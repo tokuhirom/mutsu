@@ -150,6 +150,15 @@ impl Interpreter {
         }
     }
 
+    /// Follow the `__mutsu_sigilless_alias::` chain from `source_name` to the
+    /// variable that owns the binding.
+    ///
+    /// The walk stops BEFORE a `__mutsu_bind_index_ref_N` hop: that per-site
+    /// temporary (`my $q := @a[2]`) denotes nothing of its own — the bound
+    /// name already holds the element's cell — so the last real variable on
+    /// the chain is the source. Resolving through it made `my $n := $q` see a
+    /// source that is no local of this frame, skip the shared-cell promotion
+    /// and detach both names from the array slot (#10530).
     pub(crate) fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
         let mut resolved = source_name.to_string();
         let mut seen = std::collections::HashSet::new();
@@ -158,6 +167,9 @@ impl Interpreter {
             let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
                 break;
             };
+            if next.starts_with("__mutsu_bind_index_ref_") {
+                break;
+            }
             resolved = next.to_string();
         }
         resolved

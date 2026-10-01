@@ -132,6 +132,22 @@ pub(super) enum RxOp {
     },
     /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
     OpenCapture,
+    /// Open an inline level: part of the enclosing level's regex (a `&`
+    /// conjunction's first branch), so code inside it sees the enclosing
+    /// level's captures and match start as well as its own.
+    OpenInline,
+    /// Open the level of one iteration of the separated quantifier `toks[tok]`
+    /// whose earlier iterations were collected since `regs[base]` — an atom's,
+    /// or a separator's when `sep`: an inline level whose code sees the
+    /// iterations folded so far, with this one's own captures folded in place
+    /// (the walk's `InlineCaptureScope`). `name_sets[names]` are the names under
+    /// the token.
+    OpenSepIter {
+        tok: u32,
+        base: u16,
+        sep: bool,
+        names: u32,
+    },
     /// Open a capture level for a capture-isolated group (`<$rx>`): a regex of
     /// its own, so it inherits none of the enclosing level's `:my` lexicals.
     OpenIsolated,
@@ -205,10 +221,13 @@ pub(super) enum RxOp {
     /// The end of a `&` conjunction `toks[tok]` whose first branch ran in
     /// the capture level opened at `regs[start]`: every other branch must
     /// match exactly `regs[start]..pos` (a nested run of its own program);
-    /// all branches' captures then merge into the enclosing level.
+    /// all branches' captures then merge into the enclosing level. When
+    /// `seeded` (an other branch runs code or reads a `$x` lexical), each
+    /// nested run starts from the enclosing level's view.
     ConjTail {
         tok: u32,
         start: u16,
+        seeded: bool,
     },
     /// A `|` alternation, `ltm_alts[i]`: rank its branches at `pos` by the
     /// walk's LTM key and enter them best first, each lower-ranked one only

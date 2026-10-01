@@ -2,6 +2,10 @@
 //! sub-pattern (`[ … ]`, a `||` branch) that the walk matches as a level of
 //! its own, reading the enclosing level's captures through
 //! [`OuterBackrefCaps`].
+//!
+//! Also what the walk publishes to a `&` conjunction's later branches, which
+//! read the enclosing level and the earlier branches' captures through the
+//! same link.
 
 use crate::runtime::regex_types::{OuterBackrefCaps, PosSlot, RegexCaptures};
 
@@ -38,6 +42,22 @@ impl OuterBackrefCaps {
 }
 
 impl RegexCaptures {
+    /// How many positional slots `inline_capture_view` shows before any fold:
+    /// every enclosing level's (`append_captures` order), then this level's
+    /// own. A separated quantifier's `merge_positional` start is absolute in
+    /// that list, so `$0` taken before a `[ … ]` that holds the quantifier
+    /// keeps its own slot.
+    // Cost: O(d), d = the nesting depth of inline levels.
+    pub(crate) fn inline_visible_positional_len(&self) -> usize {
+        let mut len = self.positional.len();
+        let mut cur = self.outer_backref();
+        while let Some(outer) = cur {
+            len += outer.positional.len();
+            cur = outer.parent.as_ref();
+        }
+        len
+    }
+
     /// The slot a backreference `$idx` names. An inline `[ … ]` / `||` level
     /// continues the enclosing level's numbering (`/ (a) [ (b) $0 ] /`: `$0`
     /// is the `a`, as in raku), so its own slots come after the enclosing
@@ -56,4 +76,32 @@ impl RegexCaptures {
                 .or_else(|| outer.lookup_positional(idx)),
         }
     }
+}
+
+/// The outer-captures seed published right now (see `INLINE_OUTER_CAPS_SEED`).
+pub(crate) fn current_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
+    super::regex_helpers::INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
+}
+
+/// Arm the seed a later branch of a `&` conjunction reads through: `outer`, the
+/// one the conjunction atom published, then `merged`, the earlier branches'
+/// captures. Rakudo matches every branch on one cursor, so code in `b` of
+/// `/ (a) [ (\w) & b { … } ] /` sees `$0` and the first branch's capture, and
+/// `$/` spans from the enclosing match's start. A conjunction that published
+/// nothing (no code or backreference in it) leaves the seed alone.
+// Cost: O(c), c = `merged`'s captures (one copy), when `outer` is published.
+pub(crate) fn arm_conjunction_branch_seed(
+    outer: Option<&std::sync::Arc<OuterBackrefCaps>>,
+    merged: &RegexCaptures,
+) -> super::regex_helpers::OuterCapsSeed {
+    let Some(outer) = outer else {
+        return super::regex_helpers::OuterCapsSeed::inert();
+    };
+    super::regex_helpers::OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
+        named: merged.named.clone(),
+        positional: merged.positional.clone(),
+        parent: Some(outer.clone()),
+        merge_positional: None,
+        match_from: outer.match_from,
+    })))
 }

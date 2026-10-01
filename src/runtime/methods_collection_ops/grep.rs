@@ -1,5 +1,6 @@
 use super::*;
-use crate::ast::{CallArg, ControlFlowKind};
+use crate::ast::ControlFlowKind;
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -33,192 +34,6 @@ impl Interpreter {
             }
             _ => args,
         };
-        fn stmt_contains_last(stmt: &Stmt) -> bool {
-            match stmt {
-                Stmt::Last(_) => true,
-                Stmt::Expr(expr)
-                | Stmt::Return(expr)
-                | Stmt::Die(expr)
-                | Stmt::Fail(expr)
-                | Stmt::Take(expr, _) => expr_contains_last(expr),
-                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_contains_last(expr),
-                Stmt::If {
-                    cond,
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    expr_contains_last(cond)
-                        || then_branch.iter().any(stmt_contains_last)
-                        || else_branch.iter().any(stmt_contains_last)
-                }
-                Stmt::While { cond, body, .. } => {
-                    expr_contains_last(cond) || body.iter().any(stmt_contains_last)
-                }
-                Stmt::For { iterable, body, .. } => {
-                    expr_contains_last(iterable) || body.iter().any(stmt_contains_last)
-                }
-                Stmt::Loop {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    ..
-                } => {
-                    init.as_ref().is_some_and(|s| stmt_contains_last(s))
-                        || cond.as_ref().is_some_and(expr_contains_last)
-                        || step.as_ref().is_some_and(expr_contains_last)
-                        || body.iter().any(stmt_contains_last)
-                }
-                Stmt::Block(body)
-                | Stmt::SyntheticBlock(body)
-                | Stmt::React { body }
-                | Stmt::Catch(body)
-                | Stmt::Control(body)
-                | Stmt::Default(body) => body.iter().any(stmt_contains_last),
-                Stmt::Whenever { supply, body, .. } => {
-                    expr_contains_last(supply) || body.iter().any(stmt_contains_last)
-                }
-                Stmt::Given { topic, body, .. } => {
-                    expr_contains_last(topic) || body.iter().any(stmt_contains_last)
-                }
-                Stmt::When { cond, body, .. } => {
-                    expr_contains_last(cond) || body.iter().any(stmt_contains_last)
-                }
-                Stmt::ClassDecl { body, .. }
-                | Stmt::RoleDecl { body, .. }
-                | Stmt::Package { body, .. }
-                | Stmt::SubDecl { body, .. }
-                | Stmt::MethodDecl { body, .. } => body.iter().any(stmt_contains_last),
-                Stmt::HasDecl { default, .. } => default.as_ref().is_some_and(expr_contains_last),
-                Stmt::Call { args, .. } => args.iter().any(|arg| match arg {
-                    CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
-                        expr_contains_last(e)
-                    }
-                    CallArg::Named { value, .. } => value.as_ref().is_some_and(expr_contains_last),
-                }),
-                Stmt::Label { stmt, .. } => stmt_contains_last(stmt),
-                Stmt::EnumDecl { variants, .. } => variants
-                    .iter()
-                    .any(|(_, v)| v.as_ref().is_some_and(expr_contains_last)),
-                Stmt::Goto(expr) => expr_contains_last(expr),
-                _ => false,
-            }
-        }
-
-        fn expr_contains_last(expr: &Expr) -> bool {
-            match expr {
-                Expr::ControlFlow {
-                    kind: ControlFlowKind::Last,
-                    ..
-                } => true,
-                Expr::Unary { expr, .. }
-                | Expr::PostfixOp { expr, .. }
-                | Expr::Reduction { expr, .. }
-                | Expr::PositionalPair(expr)
-                | Expr::ZenSlice(expr)
-                | Expr::IndirectTypeLookup(expr) => expr_contains_last(expr),
-                Expr::DoStmt(stmt) => stmt_contains_last(stmt),
-                Expr::Binary { left, right, .. }
-                | Expr::HyperOp { left, right, .. }
-                | Expr::MetaOp { left, right, .. } => {
-                    expr_contains_last(left) || expr_contains_last(right)
-                }
-                // `todo/tickets/chained-compare-ast-node.md`: an operand can
-                // be a `do { last }`-shaped block, same as `Binary` above.
-                Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_contains_last),
-                Expr::InfixFunc { left, right, .. } => {
-                    expr_contains_last(left) || right.iter().any(expr_contains_last)
-                }
-                Expr::Ternary {
-                    cond,
-                    then_expr,
-                    else_expr,
-                } => {
-                    expr_contains_last(cond)
-                        || expr_contains_last(then_expr)
-                        || expr_contains_last(else_expr)
-                }
-                Expr::Index { target, index, .. } => {
-                    expr_contains_last(target) || expr_contains_last(index)
-                }
-                Expr::Exists { target, arg, .. } => {
-                    expr_contains_last(target)
-                        || arg
-                            .as_ref()
-                            .is_some_and(|index_expr| expr_contains_last(index_expr))
-                }
-                Expr::MethodCall { target, args, .. }
-                | Expr::DynamicMethodCall { target, args, .. }
-                | Expr::HyperMethodCall { target, args, .. }
-                | Expr::HyperMethodCallDynamic { target, args, .. } => {
-                    expr_contains_last(target) || args.iter().any(expr_contains_last)
-                }
-                Expr::CallOn { target, args } => {
-                    expr_contains_last(target) || args.iter().any(expr_contains_last)
-                }
-                Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                    args.iter().any(expr_contains_last)
-                }
-                Expr::StringInterpolation(items)
-                | Expr::ArrayLiteral(items)
-                | Expr::BracketArray(items, _)
-                | Expr::CaptureLiteral(items) => items.iter().any(expr_contains_last),
-                Expr::Hash(items) => items
-                    .iter()
-                    .any(|(_, val)| val.as_ref().is_some_and(expr_contains_last)),
-                Expr::Block(body)
-                | Expr::AnonSub { body, .. }
-                | Expr::AnonSubParams { body, .. }
-                | Expr::Gather(body)
-                | Expr::DoBlock { body, .. } => body.iter().any(stmt_contains_last),
-                Expr::Try { body, catch } => {
-                    body.iter().any(stmt_contains_last)
-                        || catch
-                            .as_ref()
-                            .is_some_and(|stmts| stmts.iter().any(stmt_contains_last))
-                }
-                Expr::IndexAssign {
-                    target,
-                    index,
-                    value,
-                    ..
-                } => {
-                    expr_contains_last(target)
-                        || expr_contains_last(index)
-                        || expr_contains_last(value)
-                }
-                Expr::AssignExpr { expr, .. } => expr_contains_last(expr),
-                Expr::Lambda { body, .. } => body.iter().any(stmt_contains_last),
-                // A `last` cannot syntactically appear inside a Whatever-curry
-                // body (it is a pure expression, not a statement list), but
-                // descend for consistency with the other closure arms above.
-                Expr::WhateverCurry(inner) => expr_contains_last(inner),
-                Expr::Subst { .. }
-                | Expr::NonDestructiveSubst { .. }
-                | Expr::Transliterate { .. }
-                | Expr::MatchRegex(_)
-                | Expr::MatchRegexTree { .. }
-                | Expr::Literal(_)
-                | Expr::Whatever
-                | Expr::HyperWhatever
-                | Expr::BareWord(_)
-                | Expr::Var(_)
-                | Expr::CaptureVar(_)
-                | Expr::ArrayVar(_)
-                | Expr::HashVar(_)
-                | Expr::CodeVar(_)
-                | Expr::EnvIndex(_)
-                | Expr::RoutineMagic
-                | Expr::BlockMagic
-                | Expr::PseudoStash(_) => false,
-                Expr::IndirectCodeLookup { package, .. } => expr_contains_last(package),
-                Expr::SymbolicDeref { expr, .. } => expr_contains_last(expr),
-                Expr::HyperSlice { target, .. } => expr_contains_last(target),
-                _ => false,
-            }
-        }
-
         // Parse named adverbs (:k, :v, :kv, :p) from args
         let mut has_k = false;
         let mut has_kv = false;
@@ -375,7 +190,7 @@ impl Interpreter {
                         && end_num.is_sign_positive()
                         && let Some(func) = args.first().cloned()
                         && let ValueView::Sub(data) = func.view()
-                        && data.body.iter().any(stmt_contains_last)
+                        && body_contains_last(&data.body)
                     {
                         let mut current = start.to_f64() as i64;
                         if excl_start {
@@ -664,5 +479,68 @@ impl Interpreter {
             filtered
         };
         grep_adverb.transform_result(filtered, &indices)
+    }
+}
+
+/// Whether a `last` appears anywhere in a grep matcher's body — in a nested
+/// block or closure too, which the infinite-range path above treats as the
+/// matcher's way of ending the search (ADR-0137 visitor).
+// Cost: O(n), n = size of the AST of `body`; stops at the first `last`.
+fn body_contains_last(body: &[Stmt]) -> bool {
+    let mut scan = ContainsLast(false);
+    walk_stmts(&mut scan, body);
+    scan.0
+}
+
+struct ContainsLast(bool);
+
+impl Visit for ContainsLast {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.0 {
+            return;
+        }
+        if matches!(stmt, Stmt::Last(_)) {
+            self.0 = true;
+        } else {
+            walk_stmt(self, stmt);
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.0 {
+            return;
+        }
+        if matches!(
+            expr,
+            Expr::ControlFlow {
+                kind: ControlFlowKind::Last,
+                ..
+            }
+        ) {
+            self.0 = true;
+        } else {
+            walk_expr(self, expr);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn contains_last(src: &str) -> bool {
+        let stmts = crate::parse_dispatch::parse_source(src)
+            .map(|(stmts, _)| stmts)
+            .unwrap();
+        body_contains_last(&stmts)
+    }
+
+    #[test]
+    fn a_last_in_any_position_is_found() {
+        assert!(contains_last("last if $_ > 3; True"));
+        assert!(contains_last("my $s = \"{ last if $_ > 3 }\"; True"));
+        assert!(contains_last("foo(:x($_ > 3 && last)); True"));
+        assert!(!contains_last("next if $_ > 3; True"));
+        assert!(!contains_last("say 'last'; True"));
     }
 }

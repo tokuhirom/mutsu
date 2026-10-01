@@ -4,7 +4,10 @@
 
 use super::replace::{replace_whatever_numbered, replace_whatever_single};
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
+use crate::compiler::scope_scan::is_code_object;
 use crate::parser::{contains_whatever, is_whatever, should_wrap_whatevercode};
+use crate::regex_tree::RegexNode;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
@@ -308,33 +311,42 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
     }
 }
 
-/// Check if an expression contains a reference to $_ (the topic variable).
-/// Used to determine whether a WhateverCode lambda should avoid using $_ as its param.
+/// Check if an expression contains a reference to `$_` (the topic variable).
+/// Used to determine whether a WhateverCode lambda should avoid using `$_` as
+/// its param: a `Lambda` with param `_` would shadow the outer topic the
+/// expression means (`* + foo($_)`, `* ~ "$_"`).
+// Cost: O(n), n = size of `expr`'s subtree outside nested code objects.
 pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
-    match expr {
-        Expr::Grouped(inner) => expr_contains_topic(inner),
-        Expr::AssignExpr { expr, .. } => expr_contains_topic(expr),
-        Expr::CompoundAssign { rhs, .. } => expr_contains_topic(rhs),
-        Expr::Var(name) if name == "_" => true,
-        Expr::Whatever | Expr::WhateverArg => false,
-        Expr::WhateverCurry(inner) => expr_contains_topic(inner),
-        Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_contains_topic),
-        Expr::Binary { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_topic(expr),
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
+    let mut v = MentionsTopic { found: false };
+    v.visit_expr(expr);
+    v.found
+}
+
+struct MentionsTopic {
+    found: bool,
+}
+
+impl Visit for MentionsTopic {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if !self.found {
+            walk_stmt(self, stmt);
         }
-        Expr::CallOn { target, args } => {
-            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        // A code object (block, pointy block, sub, an already-built
+        // WhateverCode) binds a `$_` of its own.
+        if !self.found && !is_code_object(expr) {
+            walk_expr(self, expr);
         }
-        Expr::Index { target, index, .. } => {
-            expr_contains_topic(target) || expr_contains_topic(index)
+    }
+
+    // A regex binds its own topic.
+    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+
+    fn visit_name(&mut self, name: &str, kind: NameKind) {
+        if kind == NameKind::Var && name == "_" {
+            self.found = true;
         }
-        Expr::ZenSlice(target) => expr_contains_topic(target),
-        Expr::InfixFunc { left, right, .. } => {
-            expr_contains_topic(left) || right.iter().any(expr_contains_topic)
-        }
-        Expr::MetaOp { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
-        _ => false,
     }
 }

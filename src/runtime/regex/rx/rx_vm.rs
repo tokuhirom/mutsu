@@ -47,6 +47,7 @@ impl Cur<'_> {
 }
 
 impl Interpreter {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_run_in<const FRAMES: bool>(
         &mut self,
         root: &RxProgram,
@@ -54,6 +55,7 @@ impl Interpreter {
         start: usize,
         root_pkg: Symbol,
         mut goal: Goal<'_>,
+        seed: Option<RegexCaptures>,
         scratch: &mut Scratch,
     ) -> Option<(usize, RegexCaptures)> {
         let Scratch {
@@ -75,6 +77,9 @@ impl Interpreter {
         frames.clear();
         ends.clear();
         levels.reset(start);
+        if let Some(seed) = seed {
+            levels.seed(seed);
+        }
         let mut cur = Cur::Root(root);
         let mut frame: Option<FrameId> = None;
         // The grammar instance the run's own pattern owns, as `Frame::cursor` is
@@ -673,6 +678,8 @@ impl Interpreter {
                     }
                     // Cost: see `rx_capture_op`.
                     op @ (RxOp::OpenCapture
+                    | RxOp::OpenInline
+                    | RxOp::OpenSepIter { .. }
                     | RxOp::OpenIsolated
                     | RxOp::DropCapture
                     | RxOp::CloseCapture { .. }

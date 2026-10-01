@@ -265,10 +265,22 @@ impl Interpreter {
                     .collect()
             })
             .unwrap_or_default();
+        // A value parameter that shadows a binding the composing scope already
+        // holds (`role U[\units]` composed from a routine with its own
+        // `$units`) is put back once the body has run: composition can happen
+        // inside a routine's frame, whose return merge would otherwise write
+        // the role's argument over the caller's same-named variable. The
+        // composed methods do not need the live binding — they read the
+        // parameter through `class_role_param_bindings` and the persisted
+        // body statics below.
+        let mut shadowed_params: Vec<(String, Value)> = Vec::new();
         for (param_name, param_value) in role_param_values {
             if type_capture_names.contains(param_name) {
                 self.bind_type_capture(param_name, param_value);
             } else {
+                if let Some(prior) = self.env.get(param_name) {
+                    shadowed_params.push((param_name.clone(), prior.clone()));
+                }
                 self.env.insert(param_name.clone(), param_value.clone());
             }
         }
@@ -519,6 +531,9 @@ impl Interpreter {
         for param_name in role_param_values.keys() {
             self.env.remove(&Self::type_capture_marker_key(param_name));
             // Don't remove the param name itself - methods may need it
+        }
+        for (param_name, prior) in shadowed_params {
+            self.env.insert(param_name, prior);
         }
         Ok(())
     }

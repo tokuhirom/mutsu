@@ -87,6 +87,7 @@ impl Interpreter {
             package,
             stmt,
             nested,
+            outer_packages,
         } in declarations
         {
             let Stmt::SubDecl {
@@ -183,7 +184,22 @@ impl Interpreter {
                     Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
                 ) {
                     if is_export && !self.suppress_exports {
-                        self.register_exported_sub(package.clone(), name.resolve(), export_tags);
+                        // Rakudo's `is export` installs the symbol into the
+                        // EXPORT package of every package lexically enclosing
+                        // the declaration, not just the innermost one.
+                        self.register_exported_sub(
+                            package.clone(),
+                            name.resolve(),
+                            export_tags.clone(),
+                        );
+                        for outer in &outer_packages {
+                            self.export_nested_sub_into(
+                                outer,
+                                &package,
+                                &name.resolve(),
+                                &export_tags,
+                            );
+                        }
                     }
                     if multi && !self.suppress_exports {
                         self.refresh_exported_multi_family(&name.resolve());
@@ -251,6 +267,67 @@ impl Interpreter {
     }
 }
 
+impl Interpreter {
+    /// Export the routine `name`, registered in package `source`, from the
+    /// lexically enclosing package `outer` too, under `tags` (and `ALL`).
+    ///
+    /// Rakudo's `is export` installs the symbol into the EXPORT package of
+    /// every package enclosing the declaration, so `module M { module N {
+    /// sub g is export { } } }; import M` imports `g` (#10543). `import`
+    /// finds the routine through `outer`'s `EXPORT::ALL` alias, since no
+    /// `outer::name` routine exists.
+    ///
+    /// Cost: O(f), f = registered routines (the scan for `name`'s multi
+    /// candidates).
+    fn export_nested_sub_into(&mut self, outer: &str, source: &str, name: &str, tags: &[String]) {
+        let mut tags = tags.to_vec();
+        if tags.is_empty() {
+            tags.push("DEFAULT".to_string());
+        }
+        let name_sym = Symbol::intern(name);
+        let single = crate::qualified::qualified(Symbol::intern(source), name_sym);
+        let prefix = format!("{}/", single.as_str());
+        let entries: Vec<(Option<String>, Arc<FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter_map(|(key, def)| {
+                if *key == single {
+                    return Some((None, def.clone()));
+                }
+                key.as_str()
+                    .strip_prefix(&prefix)
+                    .map(|suffix| (Some(suffix.to_string()), def.clone()))
+            })
+            .collect();
+        let export_pkg =
+            crate::qualified::qualified(Symbol::intern(outer), Symbol::intern("EXPORT"));
+        for tag in tags
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once("ALL"))
+        {
+            let tag_pkg = crate::qualified::qualified(export_pkg, Symbol::intern(tag));
+            for (suffix, def) in &entries {
+                let member = match suffix {
+                    Some(suffix) => Symbol::intern(&format!("{name}/{suffix}")),
+                    None => name_sym,
+                };
+                self.registry_mut()
+                    .functions_mut()
+                    .entry(crate::qualified::qualified(tag_pkg, member))
+                    .or_insert_with(|| def.clone());
+            }
+        }
+        let entry = crate::runtime::cow_table_mut(&mut self.exported_subs)
+            .entry(outer.to_string())
+            .or_default()
+            .entry(name.to_string())
+            .or_default();
+        entry.extend(tags);
+    }
+}
+
 /// One routine declaration the prepass registers.
 struct InlinePackageDecl {
     /// The fully-qualified package the routine is installed in.
@@ -261,6 +338,9 @@ struct InlinePackageDecl {
     /// block, a branch, a loop or a routine body -- rather than directly in it
     /// (through `SyntheticBlock`s and nested packages only).
     nested: bool,
+    /// The packages lexically enclosing `package`, outermost first. An
+    /// exported routine is exported from each of them too.
+    outer_packages: Vec<String>,
 }
 
 /// Finds the routines [`Interpreter::preregister_inline_package_subs`]
@@ -269,27 +349,34 @@ struct InlinePackageDecl {
 /// Directly in a brace-scoped package body, every `sub` / `proto` is collected
 /// (a plain `sub` there is callable from the whole body, before its textual
 /// position). Below that -- in a nested block, a branch, a loop, a routine
-/// body, or a package that itself sits in one -- only an `our` routine is: a
-/// lexical one is visible to its own block alone, and that block runs it in
-/// sequence. A `class`/`role`/`enum` body is a different package that this
-/// pass does not track, so it is not entered.
+/// body, or a package that itself sits in one -- only an `our` or an exported
+/// routine is: a lexical one is visible to its own block alone, and that block
+/// runs it in sequence, but `is export` puts the routine into the package's
+/// EXPORT stash at compile time, wherever it sits (#10543).
+///
+/// An `enum` body is never entered. A `class` body inside a package is
+/// entered for its exported routines only: Rakudo exports them from the class
+/// and from every package enclosing it.
 #[derive(Default)]
 struct InlinePackageSubCollector {
-    /// The enclosing brace-scoped package, `None` outside every package.
-    package: Option<String>,
+    /// The enclosing brace-scoped packages, outermost first; empty outside
+    /// every package.
+    packages: Vec<String>,
     /// Below the statement list of the unit or of the enclosing package.
     nested: bool,
+    /// Inside a class body: only exported routines are collected.
+    exports_only: bool,
     out: Vec<InlinePackageDecl>,
 }
 
 impl InlinePackageSubCollector {
     // Cost: O(n), n = size of `body`'s subtree.
-    fn in_package(&mut self, name: Symbol, body: &[Stmt]) {
+    fn in_package(&mut self, name: Symbol, body: &[Stmt], exports_only: bool) {
         let name = name.resolve();
         let package = if let Some(absolute) = name.strip_prefix("GLOBAL::") {
             absolute.to_string()
         } else {
-            match &self.package {
+            match self.packages.last() {
                 Some(parent) => {
                     crate::qualified::qualified(Symbol::intern(parent), Symbol::intern(&name))
                         .resolve()
@@ -297,22 +384,29 @@ impl InlinePackageSubCollector {
                 None => name,
             }
         };
-        let saved = self.package.replace(package);
+        self.packages.push(package);
+        let saved = std::mem::replace(&mut self.exports_only, exports_only);
         walk_stmts(self, body);
-        self.package = saved;
+        self.exports_only = saved;
+        self.packages.pop();
     }
 
-    fn collect(&mut self, stmt: &Stmt, is_our: bool) {
-        let Some(package) = &self.package else {
+    fn collect(&mut self, stmt: &Stmt, is_our: bool, is_export: bool) {
+        let Some((package, outer)) = self.packages.split_last() else {
             return;
         };
-        if self.nested && !is_our {
+        if self.exports_only && !is_export {
+            return;
+        }
+        if self.nested && !is_our && !is_export {
             return;
         }
         self.out.push(InlinePackageDecl {
             package: package.clone(),
             stmt: stmt.clone(),
-            nested: self.nested,
+            // A class body's routine is registered by the class itself.
+            nested: self.nested || self.exports_only,
+            outer_packages: outer.to_vec(),
         });
     }
 
@@ -334,7 +428,7 @@ impl Visit for InlinePackageSubCollector {
                 is_unit: false,
                 is_my: false,
                 ..
-            } => self.in_package(*name, body),
+            } => self.in_package(*name, body, false),
             // The run-time half of a package body the BEGIN prologue split
             // off (ADR-0134 §7): its bare statements, at the package body's
             // own level. The declaration half is visited where the prologue
@@ -344,9 +438,23 @@ impl Visit for InlinePackageSubCollector {
                 body,
                 decl: crate::ast::PackageRuntimeDecl::Package,
                 ..
-            } => self.in_package(*name, body),
-            // A `my package`, a `unit package` and a class-like body are
-            // packages this pass does not install into.
+            } => self.in_package(*name, body, false),
+            // A named, package-scoped class inside a package: only its
+            // exported routines, which the enclosing packages export too.
+            Stmt::ClassDecl {
+                name,
+                body,
+                name_expr: None,
+                is_lexical: false,
+                is_unit: false,
+                ..
+            } if !self.packages.is_empty() => {
+                let saved = std::mem::replace(&mut self.nested, false);
+                self.in_package(*name, body, true);
+                self.nested = saved;
+            }
+            // A `my package`, a `unit package` and any other class-like body
+            // are packages this pass does not install into.
             Stmt::Package { .. }
             | Stmt::PackageRuntimeBody { .. }
             | Stmt::ClassDecl { .. }
@@ -354,13 +462,23 @@ impl Visit for InlinePackageSubCollector {
             | Stmt::EnumDecl { .. }
             | Stmt::AugmentClass { .. } => {}
             Stmt::SyntheticBlock(inner) => walk_stmts(self, inner),
-            Stmt::SubDecl { custom_traits, .. } => {
+            Stmt::SubDecl {
+                custom_traits,
+                is_export,
+                ..
+            } => {
                 let is_our = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
-                self.collect(stmt, is_our);
+                self.collect(stmt, is_our, *is_export);
                 self.walk_nested(stmt);
             }
-            Stmt::ProtoDecl { is_our, .. } => {
-                self.collect(stmt, *is_our);
+            Stmt::ProtoDecl {
+                is_our, is_export, ..
+            } => {
+                // A class body's proto is left to the class registration:
+                // the prepass's proto marker would make it skip its own.
+                if !self.exports_only {
+                    self.collect(stmt, *is_our, *is_export);
+                }
                 self.walk_nested(stmt);
             }
             _ => self.walk_nested(stmt),

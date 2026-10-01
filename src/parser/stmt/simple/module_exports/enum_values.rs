@@ -15,11 +15,9 @@
 //! Every other enum value (untagged exports, unexported enums, enums a module
 //! merely re-exports) keeps the superset behaviour.
 
-use crate::ast::Stmt;
-
 /// Whether an enum declared with these export tags is imported by a `use`
 /// that names no tag, i.e. whether its values belong in the unconditional set.
-fn exported_by_default(export_tags: &[String]) -> bool {
+pub(super) fn exported_by_default(export_tags: &[String]) -> bool {
     export_tags.is_empty()
         || export_tags
             .iter()
@@ -32,56 +30,6 @@ pub(super) fn import_admits(export_tags: &[String], import_tags: &[String]) -> b
     import_tags
         .iter()
         .any(|t| t == "ALL" || export_tags.contains(t))
-}
-
-/// The value names of every `enum` a module declares, at any nesting depth,
-/// split by how they travel to an importer: `out` receives the values every
-/// `use` makes visible to the parse, `tagged` those of an enum exported only
-/// under explicit non-default tags, paired with those tags.
-///
-/// Unlike a type name an enum value is never package-composed here: the
-/// importer spells it bare, which is the only spelling the `?? then !!` guard
-/// ever sees.
-pub(super) fn collect_module_enum_values(
-    stmts: &[Stmt],
-    out: &mut Vec<String>,
-    tagged: &mut Vec<(String, Vec<String>)>,
-) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::EnumDecl {
-                variants,
-                is_export,
-                export_tags,
-                ..
-            } => {
-                let mut names: Vec<String> = variants
-                    .iter()
-                    .map(|(name, _)| name.clone())
-                    .filter(|name| name != "__DYNAMIC__" && !name.is_empty())
-                    .collect();
-                if variants.len() == 1
-                    && variants[0].0 == "__DYNAMIC__"
-                    && let Some(body) = variants[0].1.as_ref()
-                {
-                    super::super::super::decl::collect_dynamic_enum_value_names(body, &mut names);
-                }
-                if *is_export && !exported_by_default(export_tags) {
-                    tagged.extend(names.into_iter().map(|n| (n, export_tags.clone())));
-                } else {
-                    out.extend(names);
-                }
-            }
-            Stmt::ClassDecl { body, .. }
-            | Stmt::RoleDecl { body, .. }
-            | Stmt::Package { body, .. }
-            // A traited declarator (`enum E is export < a b >`) is wrapped in a
-            // bare block by the parser; walk into it like any other body.
-            | Stmt::Block(body)
-            | Stmt::SyntheticBlock(body) => collect_module_enum_values(body, out, tagged),
-            _ => {}
-        }
-    }
 }
 
 #[cfg(test)]

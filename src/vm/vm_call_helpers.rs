@@ -23,9 +23,13 @@ impl Interpreter {
     /// `|$pair` and each `|%h` entry.
     pub(super) fn namify_pair_item(item: Value) -> Value {
         match item.view() {
+            // A slipped Pair is a named argument whatever its key: Rakudo's
+            // `Pair.Capture` names it by the key's string form, so
+            // `|(1 => 2)` passes `:1(2)` and a Str-valued enum key
+            // (`|(CSSObject::StyleSheet => …)`) passes `:stylesheet(…)`.
             ValueView::ValuePair(key, val) => match key.view() {
                 ValueView::Str(name) => Value::pair(name.to_string(), val.clone()),
-                _ => item,
+                _ => Value::pair(key.to_string_value(), val.clone()),
             },
             _ => item,
         }

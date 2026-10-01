@@ -97,6 +97,10 @@ pub(crate) fn regex_param_value_is_opaque(value: &Value) -> bool {
         | ValueView::Proxy { .. }
         | ValueView::Promise(_)
         | ValueView::Channel(_) => true,
+        // A Regex closes over its defining scope, which its `.raku` text does
+        // not carry; and a rule that matches it (`<$x>`, `<name=$x>`) resolves
+        // the variable while it runs, so the binding has to be in the env.
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => true,
         // Look through a container to what it holds: a variable a closure
         // captures (`sub f { ($o, 1) }`) is read as its shared cell, and the
         // cell's `.raku` is not the object's.

@@ -67,6 +67,21 @@ a separate decision when the first rewriting pass wants one.
   reset, succeed barrier, topic rebind, block-local `my`, heredoc scope, `return-rw`, non-Nil
   `return`, OTF gates, native-map classifier, implicit `@_`/`%_`, LSP outline) ported, 71 → 39 in
   the cluster; the shared "own scope" boundary is `compiler/scope_scan.rs`.
+- **Runtime registration and run** (#10468): the private-method and undeclared-attribute checks,
+  the END pre-installation, the `$=pod` declarant collection, the grep `last` probe, the module
+  export/`state`-sub scans, the slang declarator facts and the static-`require` scan ported
+  (15 walkers; 10 more annotated as spines, transforms or one-scope declaration scans);
+  `$!x` is now rejected in every position rakudo rejects it, `@!x`/`%!x` too.
+- **Parser-side analyses** (#10468): the `use`d-module declaration scans become one walk
+  (`module_exports/decl_scan.rs`), plus the inline-package export scans, the `X::Syntax::NoSelf`
+  checks and the `use lib` replay (16 walkers ported); every other parser-side row carries a note
+  (lowering, spine, renderer, one-scope scan). `is export` is found at any depth, as rakudo
+  exports it; off the package spine a lexical or non-exported declaration stays private.
+- **Placeholders and declared names** (#10468): the placeholder collectors, the bare-vs-`$^name`
+  ordering checks, the virtual-call check, routine-local name collection and the WhateverCode
+  "mentions `$_`" check ported (25 → 5 in the cluster) onto one shared placeholder-scope walk in
+  `ast/placeholders.rs`, driven by the ADR-0048 oracle; the remaining 5 are WhateverCode
+  priming-scope operand walks and closure construction.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter
@@ -74,3 +89,10 @@ a separate decision when the first rewriting pass wants one.
 - **Stays hand-rolled by design**: a walk that visits only some positions *because that is the
   semantics* (the sink-context propagation in `parser/sink_warn.rs`), and code generation
   (`compile_*`, TRIR, RakuAST conversion). Mutating walkers wait for a `VisitMut` decision.
+- **EVAL-path slice**: the `EVAL` compile-time checks (`runtime/system_eval_names.rs`,
+  `system_eval_vars.rs`, `eval_check.rs`, `system.rs`; 25 → 1 walker, the one left a `use lib`
+  argument spine). The `EVAL` undeclared-routine check is now the mainline analysis in an
+  `EVAL` mode; the undeclared-variable check keeps lexical scopes on a stack; the type checks
+  keep the type captures (`::T`, role type parameters) in scope. The name, routine and type
+  checks now judge nested bodies too, as rakudo does; the variable check still judges uses only
+  in its old positions until it can see caller lexicals declared later (#10511).

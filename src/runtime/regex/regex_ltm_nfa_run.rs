@@ -339,7 +339,25 @@ fn dyn_call(
         out.fate = Some(pos);
         return out;
     }
+    // ADR-0127 §2.2: a call's arguments are ignored here, so a body that
+    // reads its own parameters at parse time (`token v($x) { <$x> }`) cannot
+    // be resolved — the unbound parameter is an artifact of the measurement,
+    // not an error of the program. Such a call is a fate, as Rakudo's `<$x>`
+    // is; the real match binds the arguments and reports any genuine error.
+    let ignores_args = !spec.arg_exprs.is_empty();
+    let prior_error = ignores_args
+        .then(|| crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take()))
+        .flatten();
     let (candidates, raw_empty) = interp.parsed_subrule_candidates(spec, pkg, &[]);
+    if ignores_args {
+        let failed = crate::runtime::regex_parse::PENDING_REGEX_ERROR
+            .with(|e| std::mem::replace(&mut *e.borrow_mut(), prior_error))
+            .is_some();
+        if failed {
+            out.fate = Some(pos);
+            return out;
+        }
+    }
     if candidates.is_empty() {
         if raw_empty
             && interp

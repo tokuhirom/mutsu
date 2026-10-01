@@ -2540,12 +2540,12 @@ impl Interpreter {
                         if let Some(regex_idx) = attr_var.find(":regex:") {
                             let real_attr = &attr_var[..regex_idx];
                             let pattern = &attr_var[regex_idx + ":regex:".len()..];
-                            // Check if method name matches the regex pattern first
+                            // Check if method name matches the Raku regex pattern first
                             // (cheap, no re-entrant call) before resolving the
                             // delegate.
-                            let matches = fancy_regex::Regex::new(pattern)
-                                .map(|re| re.is_match(method).unwrap_or(false))
-                                .unwrap_or(false);
+                            // `parse_regex` caches the compiled pattern, so this
+                            // compiles once per distinct pattern.
+                            let matches = self.regex_find_first(pattern, method).is_some();
                             if !matches {
                                 continue;
                             }
