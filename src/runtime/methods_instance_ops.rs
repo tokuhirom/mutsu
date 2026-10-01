@@ -3188,8 +3188,13 @@ impl Interpreter {
                         Some(ValueView::Bool(true))
                     );
                     if (is_method_table_entry
-                        || (am.contains_key("__mutsu_lookup_class")
-                            && matches!(class_name.resolve().as_str(), "Method" | "Submethod")))
+                        || (matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                            && matches!(
+                                am.get("__mutsu_lookup_class").map(Value::view),
+                                Some(ValueView::Str(owner))
+                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. })
+                                        && self.type_matches_value(owner.as_str(), inv))
+                            )))
                         && !is_multi_candidate
                         && let Some(ValueView::Str(method_name)) =
                             am.get("__mutsu_lookup_method").map(Value::view)
