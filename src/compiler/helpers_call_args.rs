@@ -1059,6 +1059,40 @@ impl Compiler {
             .collect()
     }
 
+    /// `@a.AT-POS(EXPR)`: a plain one-argument call on an `@` variable (not a
+    /// scalar, which may hold a class with its own `AT-POS`), the positional
+    /// subscript `@a[EXPR]` spelled as a
+    /// method.
+    pub(super) fn is_array_at_pos_call(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                quoted: false,
+            } if args.len() == 1
+                && matches!(**target, Expr::ArrayVar(_))
+                && name.with_str(|n| n == "AT-POS")
+        )
+    }
+
+    /// The `Expr::Index` spelling of an [`Self::is_array_at_pos_call`] argument;
+    /// any other expression is returned unchanged.
+    pub(super) fn at_pos_call_as_index(arg: &Expr) -> Expr {
+        match arg {
+            Expr::MethodCall { target, args, .. } if Self::is_array_at_pos_call(arg) => {
+                Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(args[0].clone()),
+                    is_positional: true,
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
     /// Whether an argument expression *could* be a public attribute accessor
     /// read (`$c.v`) or a direct private/public attribute read (`$!v`/`$.v`
     /// compiled as a bare `Expr::Var`) — the two shapes whose compiled

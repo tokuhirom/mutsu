@@ -143,6 +143,7 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         | Stmt::Control(body)
         | Stmt::Phaser { body, .. }
         | Stmt::Package { body, .. }
+        | Stmt::PackageRuntimeBody { body, .. }
         | Stmt::TokenDecl { body, .. }
         | Stmt::RuleDecl { body, .. }
         | Stmt::RoleDecl { body, .. }

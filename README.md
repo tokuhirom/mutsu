@@ -291,7 +291,7 @@ make roast               # Run official Raku spec tests
 ## Requirements
 
 - Rust 1.94.0+ (edition 2024)
-- A C compiler (for pcre2-sys)
+- A C compiler (for the vendored libffi that NativeCall links)
 
 ## Architecture
 

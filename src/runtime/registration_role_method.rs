@@ -333,6 +333,18 @@ impl Interpreter {
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
         };
+        // A role method's custom `is` traits dispatch to a user
+        // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --
+        // exactly when rakudo runs them.
+        self.apply_method_is_traits(
+            name,
+            &resolved_method_name,
+            &def.params,
+            &def.param_defs,
+            &decl.body,
+            decl.is_rw,
+            &decl.custom_traits,
+        )?;
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though
         // is_my is true.

@@ -139,9 +139,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             names(v, export_tags, NameKind::Module);
             super::walk_stmts(v, body);
         }
-        Stmt::ProtoToken { name } | Stmt::TrustsDecl { name } => {
-            v.visit_name(name.as_str(), NameKind::Decl)
-        }
+        Stmt::ProtoToken { name } => v.visit_name(name.as_str(), NameKind::Decl),
+        Stmt::TrustsDecl { name } => v.visit_name(name.as_str(), NameKind::Type),
         Stmt::Package {
             name,
             body,
@@ -152,6 +151,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             v.visit_name(name.as_str(), NameKind::Decl);
             super::walk_stmts(v, body);
         }
+        // The declaration itself is visited where the prologue keeps it.
+        Stmt::PackageRuntimeBody { body, .. } => super::walk_stmts(v, body),
         Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
@@ -381,6 +382,7 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             is_export: _,
             export_tags,
             custom_traits,
+            trait_args,
             is_method: _,
             is_our: _,
         } => {
@@ -390,6 +392,11 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             names(v, return_type.iter(), NameKind::Type);
             names(v, export_tags, NameKind::Module);
             names(v, custom_traits, NameKind::Trait);
+            // The names above are the same traits; only their argument
+            // expressions are new to the visitor.
+            for e in trait_args.iter().filter_map(|(_, a)| a.as_ref()) {
+                v.visit_expr(e);
+            }
             super::walk_stmts(v, body);
         }
         Stmt::Let {

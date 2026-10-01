@@ -1149,6 +1149,8 @@ pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod package_runtime_body;
+pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
 mod stmt;
@@ -1304,6 +1306,15 @@ pub(crate) struct Compiler {
     /// must still target the class package's static store, while an
     /// undeclared routine assignment remains readonly.
     pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// The `my` lexicals a class or package body declares at its top level,
+    /// in `VarDecl` naming (`x`, `@a`). A class-body statement compiles in a
+    /// chunk of its own, and the run-time part of a body the BEGIN prologue
+    /// split off (ADR-0134, #10332) compiles apart from its declarations, so
+    /// neither sees the declaration's slot. Such a name is still the body's
+    /// lexical, not a package variable: [`Self::qualify_variable_name`] keeps
+    /// it bare, so it resolves through the package's static store
+    /// (`package_lexicals`) as it does from the body's methods.
+    pub(crate) package_body_lexicals: HashSet<String>,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -1658,6 +1669,9 @@ pub(crate) struct Compiler {
     /// compiler, so the fold also reaches a sibling named sub that calls it,
     /// which makes the capture transitive.
     lexical_sub_free_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
+    /// The subset of [`Compiler::lexical_sub_free_vars`] each sub (transitively)
+    /// writes; folded at call sites into `nested_routine_free_writes`.
+    lexical_sub_written_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
     /// Placeholder params (`^p` caret-form) an interpret-path caller has
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
@@ -1860,6 +1874,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
+            package_body_lexicals: HashSet::new(),
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
@@ -1914,6 +1929,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             lexical_sub_free_vars: Default::default(),
+            lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             with_element_source_capture: None,
             last_source_line: None,
@@ -2079,6 +2095,7 @@ impl Compiler {
             || name.contains("::")
             || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
+            || self.package_body_lexicals.contains(name)
         {
             return name.to_string();
         }
@@ -2410,6 +2427,7 @@ impl Compiler {
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
+        sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
     }
 
@@ -2418,10 +2436,17 @@ impl Compiler {
     /// routine body is recorded: a mainline or bare-block sub already resolves
     /// its free variables lexically (ADR-0024), and a routine-nested one is
     /// the case ADR-0024 leaves on dynamic resolution.
-    pub(crate) fn record_lexical_sub_free_vars(&mut self, name: &str, free: Vec<Symbol>) {
+    pub(crate) fn record_lexical_sub_free_vars(
+        &mut self,
+        name: &str,
+        free: Vec<Symbol>,
+        written: Vec<Symbol>,
+    ) {
         if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
             return;
         }
+        std::rc::Rc::make_mut(&mut self.lexical_sub_written_vars)
+            .insert(Symbol::intern(name), written);
         std::rc::Rc::make_mut(&mut self.lexical_sub_free_vars).insert(Symbol::intern(name), free);
     }
 
@@ -2434,6 +2459,11 @@ impl Compiler {
             && !free.is_empty()
         {
             self.code.nested_routine_free_reads.push(free.clone());
+        }
+        if let Some(written) = self.lexical_sub_written_vars.get(name)
+            && !written.is_empty()
+        {
+            self.code.nested_routine_free_writes.push(written.clone());
         }
     }
 

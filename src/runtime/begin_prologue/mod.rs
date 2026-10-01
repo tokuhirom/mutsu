@@ -25,15 +25,16 @@
 //! are. No effect observes them, so moving them would only change run-time
 //! order without gaining anything.
 //!
-//! Known residue of this slice: a class or module body is a declaration and
-//! moves whole, so a bare run-time statement *inside* such a body (`class A {
-//! say 2 }`) runs with the prologue rather than in its source position. Rakudo
-//! composes the class at BEGIN time but runs that statement at run time.
+//! A class or package declaration moves without its body's run-time
+//! statements: those stay at the declaration's position ([`package_body`]).
+//! Rakudo composes the class at BEGIN time but runs `class A { say 2 }`'s
+//! `say` at run time.
 //!
 //! BEGINs nested inside a top-level statement, and value-form BEGINs, are
 //! lifted into the prologue by [`nested`] ahead of that statement.
 
 mod nested;
+mod package_body;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::value::ValueView;
@@ -132,7 +133,10 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         if let Some(line @ Stmt::SetLine(_)) = rest.last() {
             prologue.push(line.clone());
         }
+        // A class or package body keeps its run-time statements in place.
+        let (stmt, runtime) = package_body::split_package_decl(stmt);
         prologue.push(stmt);
+        rest.extend(runtime);
         return;
     }
     // A `require` of a statically named module installs a stub package under

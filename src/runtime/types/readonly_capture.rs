@@ -51,6 +51,7 @@ fn written_free_vars(code: &CompiledCode) -> impl Iterator<Item = Symbol> + '_ {
     code.free_var_writes
         .iter()
         .chain(code.free_var_container_writes.iter())
+        .chain(code.nested_sub_written_free.iter())
         .copied()
         .filter(|sym| is_reconcilable(*sym))
 }
@@ -61,7 +62,10 @@ impl Interpreter {
     /// the code writes no free variable, so there is nothing to reconcile later.
     // Cost: O(w), w = scalar free variables `code` writes; O(1) when nothing is readonly.
     pub(crate) fn capture_readonly_state(&self, code: &CompiledCode) -> Option<CapturedReadonly> {
-        if code.free_var_writes.is_empty() && code.free_var_container_writes.is_empty() {
+        if code.free_var_writes.is_empty()
+            && code.free_var_container_writes.is_empty()
+            && code.nested_sub_written_free.is_empty()
+        {
             return None;
         }
         if self.no_readonly_vars() {

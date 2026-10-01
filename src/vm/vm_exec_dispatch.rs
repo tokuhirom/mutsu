@@ -5757,7 +5757,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5773,7 +5772,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5790,7 +5788,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5806,7 +5803,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5862,12 +5858,24 @@ impl Interpreter {
             }
 
             // -- Package scope --
-            // Cost: O(L + v) plus the body, L = locals (copied by `locals.to_vec()`), v = env
-            // entries (walked at exit to record package lexicals). One-shot per `package` block.
+            // Cost: O(L + v + k) plus the body, L = locals (copied by `locals.to_vec()`), v = env
+            // entries (walked at exit to record package lexicals), k = body lexicals re-bound for
+            // a split-off run-time body (`lexicals_idx`). One-shot per `package` block.
             // Rakudo: O(1) plus the body -- see #9171.
-            OpCode::PackageScope { name_idx, body_end } => {
+            OpCode::PackageScope {
+                name_idx,
+                body_end,
+                lexicals_idx,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
+                self.exec_package_scope_op(
+                    code,
+                    *name_idx,
+                    *body_end,
+                    *lexicals_idx,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
             // and one probe of the chunk's name index. One-shot per declaration.

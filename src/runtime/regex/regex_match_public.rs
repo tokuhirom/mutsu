@@ -39,16 +39,7 @@ impl Interpreter {
             let name = &after_colon[..name_len];
             if !matches!(
                 name,
-                "ratchet"
-                    | "ignorecase"
-                    | "ignoremark"
-                    | "sigspace"
-                    | "i"
-                    | "m"
-                    | "s"
-                    | "r"
-                    | "x"
-                    | "p5"
+                "ratchet" | "ignorecase" | "ignoremark" | "sigspace" | "i" | "m" | "s" | "r" | "x"
             ) {
                 break;
             }

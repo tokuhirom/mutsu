@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 8;
+plan 10;
 
 # A `whenever` block outside the lexical scope of a `supply`/`react` block is a
 # compile-time error: X::Comp::WheneverOutOfScope.
@@ -34,3 +34,10 @@ eval-lives-ok ｢react { for 1..2 { whenever Promise.in(1) { done } } }｣,
 
 eval-lives-ok ｢react { whenever Promise.in(1) { whenever Promise.in(2) { done } } }｣,
     'nested whenever inside react is fine';
+
+# The check walks every child (typed AST visitor, ADR-0137), so a whenever
+# hidden in an array literal or an operator operand is found too.
+throws-like ｢my @a = [do { whenever Promise.in(1) { say 1 } }]｣,
+    X::Comp::WheneverOutOfScope, 'whenever in an array literal is out of scope';
+throws-like ｢my $x = 1 + do { whenever Promise.in(1) { say 1 } }｣,
+    X::Comp::WheneverOutOfScope, 'whenever in an operator operand is out of scope';

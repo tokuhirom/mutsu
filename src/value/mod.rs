@@ -2781,7 +2781,6 @@ pub struct RegexAdverbs {
     pub overlap: bool,
     pub repeat: Option<usize>,
     pub nth: Option<Arc<String>>,
-    pub perl5: bool,
     pub pos: bool,
     /// Literal position argument of `:pos(N)` (anchor the match to start
     /// exactly at character offset N). `None` means `:pos` without an explicit
