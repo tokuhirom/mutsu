@@ -160,6 +160,21 @@ impl Interpreter {
             self.env_mut().insert(name, boxed.clone());
             return Some(boxed);
         }
+        // A loop parameter bound by name in this frame's env: that binding is
+        // the original, so box it in place like a slot. The next iteration
+        // binds a fresh value, leaving this one's cell with the sub.
+        if a.env_param && self.lexsub_alias_sym(&name).is_none() {
+            let cur = self.env().get_sym(a.var)?.clone();
+            if cur.is_container_ref() {
+                return Some(cur);
+            }
+            if cur.is_nil() || self.type_constrained_unboxable(&name) {
+                return None;
+            }
+            let boxed = cur.into_container_ref();
+            self.env_mut().insert_sym(a.var, boxed.clone());
+            return Some(boxed);
+        }
         // A variable of an enclosing frame reaches this one as a captured
         // binding; only a shared cell tracks the original.
         let found = self
