@@ -573,6 +573,12 @@ impl Interpreter {
             {
                 return result;
             }
+            if method == "cando"
+                && args.len() == 1
+                && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+            {
+                return Ok(self.method_object_cando(&target, &args[0]));
+            }
             // A multi Method dispatcher has no single callable payload. Its
             // candidates do, however, so preserve `.assuming`'s bound
             // invocant by reusing the existing captured multi-dispatch call
@@ -3181,7 +3187,14 @@ impl Interpreter {
                         am.get("__mutsu_method_table_entry").map(Value::view),
                         Some(ValueView::Bool(true))
                     );
-                    if is_method_table_entry
+                    if (is_method_table_entry
+                        || (matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                            && matches!(
+                                am.get("__mutsu_lookup_class").map(Value::view),
+                                Some(ValueView::Str(owner))
+                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. })
+                                        && self.type_matches_value(owner.as_str(), inv))
+                            )))
                         && !is_multi_candidate
                         && let Some(ValueView::Str(method_name)) =
                             am.get("__mutsu_lookup_method").map(Value::view)

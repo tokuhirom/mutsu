@@ -107,6 +107,37 @@ impl Interpreter {
         }
     }
 
+    /// `Method.cando(\(invocant, args))` on a `.^find_method` / `.^lookup` object:
+    /// the candidates (a multi dispatcher's, else the method itself) that accept
+    /// the capture. The invocant (first capture element) is not part of a
+    /// method's declared signature, so the rest of the capture is matched.
+    // Cost: O(c * p), c = candidates, p = parameters per candidate.
+    pub(super) fn method_object_cando(&mut self, method_obj: &Value, capture: &Value) -> Value {
+        let all_args = Self::capture_to_call_args(capture);
+        let call_args = all_args.get(1..).unwrap_or(&[]);
+        let candidates: Vec<Value> = match method_obj.view() {
+            ValueView::Instance { attributes, .. } => {
+                let map = attributes.as_map();
+                match map.get("candidates").cloned().and_then(Value::into_array) {
+                    Some((items, _)) if !items.is_empty() => items.to_vec(),
+                    _ => vec![method_obj.clone()],
+                }
+            }
+            _ => vec![method_obj.clone()],
+        };
+        let matching = candidates
+            .into_iter()
+            .filter(|candidate| {
+                let ValueView::Instance { attributes, .. } = candidate.view() else {
+                    return false;
+                };
+                let callable = attributes.as_map().get("__mutsu_method_callable").cloned();
+                callable.is_some_and(|c| self.candidate_matches_call_args(&c, call_args))
+            })
+            .collect();
+        Value::array(matching)
+    }
+
     pub(super) fn candidate_matches_call_args(
         &mut self,
         candidate: &Value,
