@@ -1890,7 +1890,7 @@ impl Interpreter {
                 // shared cell (the single-key cell write `bind_param_value`
                 // performs) BEFORE the locals-init loop below reads attribute
                 // slots off the cell.
-                if let Some((attr_name, _)) = crate::value::attr_twigil_base(&pd.name)
+                if let Some((attr_name, is_private)) = crate::value::attr_twigil_base(&pd.name)
                     && let Some(cell) = &attrs_cell
                 {
                     // Inside a BUILD phase this bind counts as "BUILD set it",
@@ -1902,7 +1902,19 @@ impl Interpreter {
                     // fast path records it here. No-op outside BUILD.
                     // One intern for both uses: the symbol-keyed insert also
                     // saves the `String` allocation the name-keyed one paid.
-                    let attr_sym = crate::symbol::Symbol::intern(attr_name);
+                    let bare_sym = crate::symbol::Symbol::intern(attr_name);
+                    // A scalar and a container attribute may share a bare name
+                    // (`has %!c; has $!c`); resolve the storage key by sigil so
+                    // `:$!c` does not overwrite the `%!c` slot.
+                    let sigil = crate::value::attr_twigil_sigil(&pd.name).unwrap_or('$');
+                    let attr_sym = Self::attr_key_in_map(
+                        Some(crate::symbol::Symbol::intern(owner_class)),
+                        bare_sym,
+                        is_private,
+                        sigil,
+                        &cell.as_map(),
+                    )
+                    .unwrap_or(bare_sym);
                     self.record_build_attr_write(cell, attr_sym);
                     cell.insert(attr_sym, val.clone());
                 }
