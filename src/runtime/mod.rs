@@ -702,7 +702,7 @@ mod io_pod_heredoc;
 mod io_pod_table;
 mod io_spec_rel2abs;
 mod io_sysinfo;
-mod io_sysinfo_host;
+pub(crate) mod io_sysinfo_host;
 mod io_sysinfo_kernel;
 mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
@@ -888,6 +888,7 @@ mod registration_class_decl;
 mod registration_class_deferred_parents;
 mod registration_class_parents;
 pub(crate) mod registration_class_validate;
+mod registration_method_traits;
 mod registration_role;
 mod registration_role_body;
 mod registration_role_body_lexical;
@@ -5689,6 +5690,7 @@ mod tests {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
+            captured_readonly: None,
         });
 
         let mut interp = Interpreter::new();

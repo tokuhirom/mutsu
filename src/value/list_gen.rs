@@ -16,7 +16,7 @@
 //! or a subscript on an unread one stops after the prefix.
 
 use crate::value::list_gen_rotor::RotorState;
-use crate::value::{MapGrepItems, Value, ValueView};
+use crate::value::{ArrayKind, MapGrepItems, Value, ValueView};
 use std::sync::Arc;
 
 /// Which positional view of an Array a [`ListGen::Positional`] produces.
@@ -255,6 +255,17 @@ impl ListGen {
                 Some(match mode {
                     PositionalMode::Keys => unreachable!("handled above"),
                     PositionalMode::Values if *cells => element,
+                    // An immutable List hands out the slot as stored (a List
+                    // built from variables keeps their containers, so a loop
+                    // over `.values` aliases them); nothing is promoted.
+                    PositionalMode::Values
+                        if matches!(
+                            array.view(),
+                            ValueView::Array(_, ArrayKind::List | ArrayKind::ItemList)
+                        ) =>
+                    {
+                        element
+                    }
                     PositionalMode::Values => element.deref_container(),
                     PositionalMode::Kv => {
                         *pending = Some(element);

@@ -19,8 +19,8 @@ impl Interpreter {
     /// same slot `our &bar := ...` inside `package Foo` writes -- and, when
     /// the package is the loading module's `EXPORT::<tag>` stash, records it
     /// as one of that module's exports. Every other key keeps the generic
-    /// index-assign it always had (`Foo::<$x> = 42` writes through the stash
-    /// entry's container).
+    /// index-assign it always had. (A literal `$` key, `Foo::<$x> = 42`, never
+    /// reaches here: the compiler routes it through the `$Foo::x` assignment.)
     // Cost: O(m + k·p + c·log c), m = key bytes, k = registry keys sharing the name's base name,
     // p = enclosing packages, c = the multi's candidates (sorted); amortized over the base-name
     // key index's shared refill pass (`runtime::fn_keys_index`).

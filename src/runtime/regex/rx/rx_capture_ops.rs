@@ -27,7 +27,11 @@ impl Interpreter {
     ) -> Option<usize> {
         match op {
             // Cost: O(1).
-            RxOp::OpenCapture => levels.open(pos),
+            RxOp::OpenCapture => levels.open(pos, true),
+            // Cost: O(1).
+            RxOp::OpenIsolated => levels.open(pos, false),
+            // Cost: O(1).
+            RxOp::DropCapture => levels.discard(),
             // Cost: O(c) amortized, c = the closed level's captures (one
             // snapshot); O(1) for a group whose body captures nothing.
             RxOp::CloseCapture { start, nested } => {
@@ -55,6 +59,31 @@ impl Interpreter {
                     pkg,
                     program.atom_ic[i as usize],
                 )?;
+                levels.edit(|s| s.merge_delta(delta));
+                return Some(next);
+            }
+            // Cost: O(1) amortized to merge the delta, plus `regex_code_atom`'s
+            // own cost (one run of the user's code).
+            RxOp::Code(i) => {
+                let (next, delta) = self.regex_code_atom(
+                    &program.atoms[i as usize],
+                    chars,
+                    pos,
+                    levels.top().caps(),
+                )?;
+                levels.edit(|s| s.merge_delta(delta));
+                return Some(next);
+            }
+            // Cost: O(v) amortized to merge the delta, v = the lexicals the
+            // declaration introduces, plus `regex_var_decl_atom`'s own cost
+            // (one run of each initializer).
+            RxOp::VarDecl(i) => {
+                let RegexAtom::VarDecl { code } = &program.atoms[i as usize] else {
+                    debug_assert!(false, "a VarDecl op names a declaration atom");
+                    return None;
+                };
+                let (next, delta) =
+                    self.regex_var_decl_atom(code, chars, pos, levels.top().caps())?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }

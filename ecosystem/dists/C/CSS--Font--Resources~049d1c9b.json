@@ -38,11 +38,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*USAGE not found",
+        "first_failure": "No matching candidates for method: append",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 1.68,
+        "secs": 2.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 116.34,
+        "secs": 15.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,11 +61,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*USAGE not found",
+        "first_failure": "No matching candidates for method: append",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.89,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.71,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.65,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.2,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,11 +119,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
+    "mutsu_commit": "6748c2a6",
+    "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

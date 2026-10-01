@@ -191,10 +191,9 @@ fn normalize_unicode_decimal_digits(s: &str) -> Option<String> {
     for ch in s.chars() {
         if ch.is_ascii() {
             result.push(ch);
-        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-            result.push(char::from_digit(d, 10).unwrap());
         } else {
-            return None;
+            let d = crate::builtins::unicode::unicode_decimal_digit_value(ch)?;
+            result.push(char::from_digit(d, 10).unwrap());
         }
     }
     Some(result)
@@ -449,11 +448,10 @@ fn try_parse_generic_radix(body: &str) -> Option<Value> {
     // Support both <> and «» (French/guillemet) delimiters
     let (rest, close_char) = if let Some(r) = after_base.strip_prefix('<') {
         (r, '>')
-    } else if let Some(r) = after_base.strip_prefix('\u{ab}') {
+    } else {
+        let r = after_base.strip_prefix('\u{ab}')?;
         // «
         (r, '\u{bb}') // »
-    } else {
-        return None;
     };
     let close_pos = rest.find(close_char)?;
     if !rest[close_pos + close_char.len_utf8()..].trim().is_empty() {

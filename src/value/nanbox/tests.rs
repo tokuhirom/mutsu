@@ -267,6 +267,7 @@ fn sample_sub() -> Gc<SubData> {
         param_name_syms_cache: std::sync::OnceLock::new(),
         source_file_sym_cache: std::sync::OnceLock::new(),
         state_scope_guard: None,
+        captured_readonly: None,
     })
 }
 
@@ -475,7 +476,6 @@ fn every_variant_roundtrips_losslessly() {
             overlap: false,
             repeat: Some(2),
             nth: None,
-            perl5: false,
             pos: false,
             pos_value: None,
             continue_: false,

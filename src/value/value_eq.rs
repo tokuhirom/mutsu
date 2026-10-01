@@ -153,7 +153,6 @@ impl PartialEq for Value {
                     && a.overlap == b.overlap
                     && a.repeat == b.repeat
                     && a.nth == b.nth
-                    && a.perl5 == b.perl5
                     && a.pos == b.pos
                     && a.continue_ == b.continue_
                     && a.ignore_case == b.ignore_case

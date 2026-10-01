@@ -397,6 +397,11 @@ impl Interpreter {
         // Backreference read-through to the enclosing pattern level (see
         // `OuterBackrefCaps`). Never published outward — cleared below.
         base.set_outer_backref(super::regex_helpers::take_inline_outer_caps_seed());
+        // A same-scope sub-pattern belongs to the regex that contains it, so the
+        // `$/` a code block inside it sees starts where that regex's match did.
+        if let Some(outer) = base.outer_backref() {
+            base.match_from = outer.match_from;
+        }
         let mut store = CapStore::new(base);
         let ctx = WalkCtx {
             pattern,
@@ -765,9 +770,10 @@ impl Interpreter {
                                store: &mut CapStore,
                                next: usize,
                                delta: RegexCaptures| {
+                // The token's own capture name was applied per item
+                // (`with_iteration_capture`); a whole-span alias is a group.
                 let m = store.mark();
                 store.merge_delta(delta);
-                Self::store_apply_named_capture(store, token, pos, next, pos_base);
                 let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 stop
@@ -981,7 +987,7 @@ impl Interpreter {
                         (*min, *max)
                     }
                     RegexQuant::RepeatCode(code) => {
-                        match self.eval_regex_repeat_code(code, store.caps()) {
+                        match self.regex_repeat_count(code, pos, store.caps()) {
                             Some((min, max)) => (min, max),
                             None => return false, // code eval failed, no match
                         }

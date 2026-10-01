@@ -25,7 +25,7 @@ MSRV is currently accurate.
 
 ```
 error: rustc 1.94.1 is not supported by the following package:
-  mutsu@0.23.0 requires rustc 1.96.0
+  mutsu@0.23.0 requires rustc 1.98.1
 ```
 
 That is unambiguous: go to step 2. Note that cargo checks *every* package in
@@ -76,7 +76,7 @@ grep -n "rust-toolchain@" .github/workflows/ci.yml
 The pinned action SHA carries a version comment:
 
 ```
-- uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+- uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 ```
 
 That comment is the version CI builds with, so it is by definition a version the
@@ -88,7 +88,7 @@ against the running toolchain; it does not track which features the source has
 since started using. It read `1.94.0` for a while after the code already needed
 `1.96.0`, which is exactly how an installed 1.94.1 came to satisfy cargo's gate
 and *then* fail to compile. Both manifests (root and `crates/mutsu-lsp/`) now
-say `1.96.0`, so the two agree — but if they ever disagree again, the CI pin
+say `1.98.1`, so the two agree — but if they ever disagree again, the CI pin
 wins, and the drift is worth reporting rather than papering over.
 
 Note also that the repo has no `rust-toolchain.toml`, which is why the container
@@ -97,8 +97,8 @@ toolchain is whatever it is rather than being pinned per-checkout.
 ## 3. Install it and switch
 
 ```bash
-rustup toolchain install 1.96.0 --profile minimal -c clippy -c rustfmt
-rustup default 1.96.0
+rustup toolchain install 1.98.1 --profile minimal -c clippy -c rustfmt
+rustup default 1.98.1
 rustc --version   # confirm
 ```
 

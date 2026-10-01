@@ -598,13 +598,8 @@ impl Interpreter {
                     }
                 })
                 .or_else(|| {
-                    self.get_env_with_main_alias(&name).and_then(|v| {
-                        if matches!(v.view(), ValueView::Proxy { .. }) {
-                            Some(v)
-                        } else {
-                            None
-                        }
-                    })
+                    self.get_env_with_main_alias(&name)
+                        .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
                 });
             if let Some(ValueView::Proxy { storer, .. }) = current_proxy.as_ref().map(Value::view)
                 && !storer.is_nil()
@@ -868,7 +863,14 @@ impl Interpreter {
         // cannot be found in the callee's `code.locals`, but its creator slot and
         // this env entry share the same ContainerRef.
         let sym = code.const_sym(name_idx);
-        if code.container_ref_capture_syms.contains(&sym)
+        // A free variable that a package / compunit / escaped-`our` store
+        // owns: its container is that store's cell, not this call's env copy
+        // (see `outer_store_lexical_cell`, #10372).
+        if slot == u32::MAX
+            && let Some(cell) = self.outer_store_lexical_cell(code, sym)
+        {
+            value = cell;
+        } else if code.container_ref_capture_syms.contains(&sym)
             && let Some(captured) = self.env().get_sym(sym)
             && captured.is_container_ref()
         {

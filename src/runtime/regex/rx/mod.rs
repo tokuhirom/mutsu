@@ -7,10 +7,14 @@
 //! capture levels of their own, `rx_levels`), aliases, backreferences, the
 //! `<(` / `)>` markers, sequential alternation (`||`), and greedy / frugal /
 //! ratcheted / counted / separated quantifiers over any of these. Slice B
-//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`). A
-//! pattern
-//! holding anything else is declined as a whole and keeps the tree walk
-//! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
+//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`),
+//! lookaround, `:i` / `:m` and `&`. Slice C (#10253) adds the call-out atoms
+//! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
+//! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`), then the
+//! interpolation atoms: a capture-isolated group (`<$rx>`), `$x` of an in-regex
+//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). A pattern holding
+//! anything else is declined as a whole and keeps the tree walk (ADR-0135
+//! D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -82,6 +86,24 @@ pub(super) enum RxOp {
         exit: u32,
         greedy: bool,
     },
+    /// Evaluate the count code of the `** { … }` quantifier `toks[tok]` where the
+    /// walk does, when the quantifier is reached (`regex_repeat_count`, the
+    /// walk's own), and store its bounds in `regs[min]` and `regs[max]`
+    /// (`usize::MAX`: no bound). Fails when the code does.
+    RepeatCount {
+        tok: u32,
+        min: u16,
+        max: u16,
+    },
+    /// [`RxOp::Repeat`] with its bounds read from registers.
+    RepeatDyn {
+        ctr: u16,
+        min: u16,
+        max: u16,
+        body: u32,
+        exit: u32,
+        greedy: bool,
+    },
     /// The end of one iteration of a nullable loop body that began at
     /// `regs[start]`: fail when it consumed nothing and, after `regs[ctr]`
     /// iterations, such an iteration no longer counts toward `min..=max`
@@ -103,12 +125,18 @@ pub(super) enum RxOp {
     },
     /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
     OpenCapture,
+    /// Open a capture level for a capture-isolated group (`<$rx>`): a regex of
+    /// its own, so it inherits none of the enclosing level's `:my` lexicals.
+    OpenIsolated,
     /// Close a `( … )` opened at `regs[start]`: its captures are the level
     /// `OpenCapture` opened when `nested`, else none.
     CloseCapture {
         start: u16,
         nested: bool,
     },
+    /// Close the capture level `OpenCapture` opened for a capture-isolated
+    /// group (`<$rx>`) and drop its captures.
+    DropCapture,
     /// Match `atoms[i]`, whose match reads or writes captures (a
     /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
     /// lookaround), through the walk's own single-candidate matcher, and
@@ -172,6 +200,20 @@ pub(super) enum RxOp {
         pos_base: u16,
         suppress_padding: bool,
     },
+    /// A call-out: run the `{ … }` block, `<?{ … }>` or `<!{ … }>` assertion
+    /// `atoms[i]` on the caller's interpreter and merge the capture delta it
+    /// returns (`regex_code_atom`, the walk's own). Fails when an assertion
+    /// fails or the block dies.
+    Code(u32),
+    /// A call-out: run the `:my` / `:our` / `:temp` / `:let` declaration
+    /// `atoms[i]` and merge the lexicals it declared (`regex_var_decl_atom`).
+    VarDecl(u32),
+    /// A call-out: run the `$( … )` / `@( … )` atom `atoms[i]`, whose code
+    /// yields a pattern (or a list of them), and enter the ends it matches at
+    /// `pos` highest priority first, each with its capture delta
+    /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
+    /// on the backtrack stack as one choice point.
+    InterpEnds(u32),
     /// A complete match ending at `pos`.
     Match,
 }
@@ -187,6 +229,11 @@ pub(crate) struct RxProgram {
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
+    /// Whether the program runs Raku code or reads an in-regex lexical (a
+    /// `Code`, `VarDecl` or `<{ … }>` op, or a `$x` interpolation). The
+    /// position-only matcher treats code atoms as inert and has no lexicals to
+    /// read, so it must not run a program that has any.
+    pub(super) has_code: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see

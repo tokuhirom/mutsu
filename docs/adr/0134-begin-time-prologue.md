@@ -282,9 +282,25 @@ status here.
 - When the mainline's undeclared-routine check fails, the prologue alone runs
   first (`run_begin_prologue_only`), so the BEGIN's output precedes the
   compile error, as on rakudo.
-- **Residue:** a package body moves whole, so a bare run-time statement
-  inside a class or `module Foo { ... }` body that precedes a unit-level BEGIN
-  runs with the prologue instead of in its source position.
+- **Package bodies** (#10332, closing the slice's original residue). A
+  class, grammar or brace-scoped `module`/`package` declaration the prologue
+  takes is split (`src/runtime/begin_prologue/package_body.rs`,
+  `t/modules/begin-prologue-package-body.t`):
+  - the prologue keeps the declaration with its BEGIN-time part: attributes,
+    methods, subs, nested types (themselves split the same way), `use`,
+    phasers, and the static half of each `my`/`our` variable;
+  - the bare statements and the initializers (as assignments) stay at the
+    declaration's position as a `Stmt::PackageRuntimeBody`. It compiles to
+    the same `PackageScope` a `package Foo { ... }` body runs in, which
+    re-enters the package. The body's `my` lexicals are bound from the
+    package's static store (`package_lexicals`, where its methods already
+    read them) for the duration, written back on exit, and a same-named
+    outer lexical is restored. `$?CLASS` is bound to the class.
+
+  A `state`, dynamic, exported or `&` variable keeps its declaration whole,
+  and so does a group declaration with an initializer (`my ($a, $b) = ...`),
+  so those initializers still run with the prologue. A role body is not
+  split: it runs at composition.
 
 **Slice 2 — implemented** (`src/runtime/begin_prologue/nested.rs`,
 `t/control/begin-prologue-nested.t`).
@@ -323,7 +339,8 @@ status here.
   nested reorder rules):
   - a BEGIN whose enclosing inner scopes declare ahead of it a routine, a
     code variable (which can declare an operator), a type, a package or an
-    import;
+    import (a plain routine no longer does, and nor do most types, packages,
+    imports and code variables: see the two follow-ups below);
   - a BEGIN in a package body, including a method's;
   - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
     scope;
@@ -336,6 +353,103 @@ status here.
   Once one BEGIN-time effect is not lifted, no later nested one is, because
   lifting it would run it ahead of an effect that precedes it in the source
   (`roast/S04-declarations/will.t`).
+
+**Slice 2 follow-up — a routine declared ahead of a nested BEGIN, implemented**
+(`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-inner-subs.t`; closes #10329).
+
+- **The gap.** An inner scope that had declared a `sub` ahead of a BEGIN
+  blocked the lift, because the prologue runs before that scope is entered and
+  the routine does not exist there. `sub f { sub helper { 1 }; BEGIN say "b" }`
+  never ran its BEGIN when `f` was not called.
+- **The mechanism.** The lifted body gets a copy of each routine it calls. It
+  runs in one block per scope it reads from, nested as those scopes are. A
+  scope's block declares the copies of the variables the body (or a copied
+  routine) reads from that scope, taken from the same static cells as before,
+  then the routines declared in that scope, then the body. So a routine closes
+  over the same declarations it does in place, and a name shadows as it does
+  there. The routine's own declaration stays in place, so each frame of the
+  scope still gets its own. This is the first alternative of the issue
+  (re-declare the routine in the lifted body's block). Giving routines static
+  cells was not needed.
+- **Which routines.** The compiled body is scanned for the routines it calls by
+  bare name and reads as `&name`. Each routine it selects is scanned the same
+  way, so the closure is transitive, and its free variables resolve against the
+  bindings that preceded its own declaration. A plain `sub` is copyable. A
+  `multi`, an `our sub`, an exported routine, an operator or other category
+  routine (its syntax is already registered by the parser, which a scan of the
+  called names cannot see), and a redeclaring one still block the scope
+  ([#10395](https://github.com/tokuhirom/mutsu/issues/10395)).
+- **Dynamic access.** `EVAL`, `CALLER::`/`OUTER::`/`MY::`, a pseudo-package
+  qualified call (`MY::helper()`) and `::($name)` can name any routine in
+  scope. A body that uses one in a scope that declares a routine keeps its
+  pre-ADR handling, as before. Lifting it instead would fail at startup, where
+  the old handling was silent. So does a body that calls a routine which is
+  neither one of the scope's (copied) nor a core one
+  (`Interpreter::is_builtin_function`): an imported or unit-level routine may
+  evaluate a string where it was called from, and `BEGIN throws-like
+  'lightning()', ...` names `lightning` only inside that string
+  (`roast/S06-advanced/stub.t`). The scan sees the callee names in the body and
+  in every copied routine, qualified ones included. It cannot see through a
+  callee, which is why the rule is about what may be called, and stays in force
+  only in a scope that declares a routine (a scope with none is unchanged).
+- **Still not lifted** at the time: a type, package, import or `my &code`
+  declared ahead. See the next follow-up.
+
+**Slice 2 follow-up — a type, package, import or code variable declared ahead
+of a nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/decls.rs`,
+`t/control/begin-prologue-inner-decls.t`; closes #10394).
+
+- **Imports.** An import (`use Foo`, `need Foo`, `import Foo`) can bring in any
+  name, operators included, so the lifted body's block for its scope repeats
+  it. The module is loaded once either way and the import binds the same
+  exported objects; rakudo performs it at BEGIN time too. A lowercase pragma
+  (`use strict`, `use lib`, `no ...`) still blocks the scope: mutsu applies most
+  of them as run-time state at their position.
+- **Code variables.** A `my &g` is an ordinary lexical: a BEGIN that reads or
+  assigns it gets a static cell like any other, and a bare call `g()` reads it
+  when it is the innermost `&g`. A code variable with an operator name
+  (`my &infix:<x>`) still blocks the scope, since the parser has already
+  registered its syntax, which no scan sees.
+- **Types and packages.** The references are resolved on the AST rather than
+  in the compiled code (the second alternative of the issue). The typed
+  visitor of [ADR-0137](0137-typed-ast-visitor-for-analyses.md) reports every name the body,
+  its copied routines and its copied variable declarations mention, in every
+  position: a type constraint, a parameter's type, a qualified name, source
+  text compiled later. It never reports a string literal's content. A
+  symbolic lookup or a pseudo-package counts as naming every type.
+  - A BEGIN that names none of the scope's types is lifted without them.
+  - A BEGIN that names one gets the declaration repeated in its block (the
+    first alternative), and so does every type that one names in turn
+    (`is Base`). This is done only when the repeat is unobservable: the body
+    holds declarations only (attributes, methods, routines, `does`, nested
+    pure types), no user trait runs code, no BEGIN of its own sits in it, and it
+    names nothing of the inner scopes. A `my` type is stored under its
+    declaration site (ADR-0047), so the repeat registers the same type the
+    scope declares in place, as each entry of the scope already does: `sub f {
+    my class K { }; my $t = BEGIN K; $t === K }` is `True`, as on rakudo.
+  - As for routines, a body that reaches a name dynamically (`EVAL`,
+    `::($name)`) or calls a routine it does not know is not lifted from a scope
+    that declares a type. A call that is a coercion to an inner type (`K(...)`)
+    or qualified by an inner package (`P::x()`) is known.
+- **Still not lifted.**
+  - A BEGIN that names a type whose body runs code (`my class K { say 1 }`),
+    has a user trait, or reads a lexical of the scope. Repeating it would run
+    that code at BEGIN time.
+  - A BEGIN that names an inner type and may change a type through its
+    metaobject (a metamethod other than a read-only one, `.HOW`, `augment`).
+    The scope's in-place declaration registers the type afresh, so a change
+    made to the repeat would be lost
+    (`t/vm/scope/lexical-class-refines-builtin.t`).
+  - A BEGIN that reads an inner variable whose type constraint names an inner
+    type (`my K $v`): the variable's static cell is declared at the unit's
+    level, where the type does not exist.
+  - An operator code variable or a pragma declared ahead (see above), and
+    `class ::($name)`, which has no static name.
+
+  The first non-liftable BEGIN still halts lifting for the rest of the unit
+  (`Lifted::halted`), so one of these also keeps the BEGINs after it on the old
+  path.
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,

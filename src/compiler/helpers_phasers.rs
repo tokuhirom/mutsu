@@ -786,6 +786,71 @@ impl Compiler {
         (pre, loop_body, post)
     }
 
+    /// A routine/closure body whose statements embed an `ENTER` expression
+    /// (`now - ENTER now`) evaluates it at block entry, before the rest of the
+    /// statement. Returns the body with each such expression hoisted into a
+    /// leading `ENTER` phaser that stores a temp, or `None` when there is none.
+    /// A statement that is just `ENTER ...` is left alone (it supplies the
+    /// block value through the trailing-ENTER path).
+    // Cost: O(n), n = AST nodes of the body.
+    pub(super) fn hoist_enter_phaser_exprs(stmts: &[Stmt]) -> Option<Vec<Stmt>> {
+        let embedded = |s: &Stmt| {
+            !matches!(s, Stmt::Expr(Expr::PhaserExpr { .. })) && Self::stmt_has_enter_phaser_expr(s)
+        };
+        if !stmts.iter().any(embedded) {
+            return None;
+        }
+        let mut hoisted = Vec::new();
+        let mut rest = Vec::new();
+        let mut extracted = Vec::new();
+        let mut counter = 0;
+        for stmt in stmts {
+            if embedded(stmt) {
+                rest.push(Self::rewrite_enter_phaser_stmt(
+                    stmt,
+                    &mut extracted,
+                    &mut counter,
+                ));
+            } else {
+                rest.push(stmt.clone());
+            }
+        }
+        // A block-bodied `ENTER { ...; value }` keeps its in-place evaluation:
+        // only single-expression phasers have a value we can store at entry.
+        if extracted
+            .iter()
+            .any(|(_, b)| !matches!(b.as_slice(), [Stmt::Expr(_)]))
+        {
+            return None;
+        }
+        for (var_name, phaser_body) in extracted {
+            let [Stmt::Expr(init)] = phaser_body.as_slice() else {
+                continue;
+            };
+            let init = init.clone();
+            let body = vec![Stmt::VarDecl {
+                name: var_name,
+                expr: init,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            }];
+            hoisted.push(Stmt::Phaser {
+                kind: PhaserKind::Enter,
+                body,
+                condition: None,
+                end_index: None,
+            });
+        }
+        hoisted.extend(rest);
+        Some(hoisted)
+    }
+
     pub(super) fn stmts_have_enter_phaser_expr(stmts: &[Stmt]) -> bool {
         stmts.iter().any(Self::stmt_has_enter_phaser_expr)
     }
@@ -829,6 +894,8 @@ impl Compiler {
             Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                 args.iter().any(Self::expr_has_enter_phaser)
             }
+            Expr::ArrayLiteral(items) => items.iter().any(Self::expr_has_enter_phaser),
+            Expr::Grouped(inner) => Self::expr_has_enter_phaser(inner),
             _ => false,
         }
     }
@@ -857,6 +924,15 @@ impl Compiler {
                 op: op.clone(),
                 expr: Box::new(Self::rewrite_enter_phaser_expr(expr, extracted, counter)),
             },
+            Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
+                items
+                    .iter()
+                    .map(|e| Self::rewrite_enter_phaser_expr(e, extracted, counter))
+                    .collect(),
+            ),
+            Expr::Grouped(inner) => Expr::Grouped(Box::new(Self::rewrite_enter_phaser_expr(
+                inner, extracted, counter,
+            ))),
             Expr::PostfixOp { expr, op } => Expr::PostfixOp {
                 expr: Box::new(Self::rewrite_enter_phaser_expr(expr, extracted, counter)),
                 op: op.clone(),

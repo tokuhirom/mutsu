@@ -312,6 +312,16 @@ pub(crate) struct ForLoopSpec {
     /// `multi_param_names`. This lets the VM reify a copied `@` parameter's
     /// List value into a mutable Array before the bind-prefix assignments run.
     pub(crate) multi_param_is_copy: Vec<bool>,
+    /// Whether each multi-param binding DECLARES a writable container
+    /// (`is rw`, or any non-sigilless parameter of a `<->` block), parallel to
+    /// `multi_param_names`. Such a parameter cannot bind an item that has no
+    /// container behind it, and raku fails the bind with `X::Parameter::RW`
+    /// whether or not the body assigns. A sigilless `\v` is excluded (it binds
+    /// the bare item and only dies on assignment), and so is a slurpy.
+    ///
+    /// Distinct from [`Self::rw_param_names`], which also names the `.kv` key
+    /// and every sigilless slot because it drives the writeback, not the bind.
+    pub(crate) multi_param_declared_rw: Vec<bool>,
     /// Compiler-baked local slot for each `multi_param_names` entry, when the
     /// name already has one in the enclosing scope. A multi-param loop
     /// declares its parameters (`build_for_bind_stmts`), so a name an enclosing
@@ -840,6 +850,10 @@ pub(crate) enum DoBlockIsolation {
 }
 
 /// Bytecode operations for the VM.
+/// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
+/// re-bind.
+pub(crate) const NO_PACKAGE_LEXICALS: u32 = u32::MAX;
+
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
     // -- Typed IR (TRIR) calls --
@@ -3650,8 +3664,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -3698,8 +3710,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -3764,7 +3774,18 @@ pub(crate) enum OpCode {
     /// block's new plain lexicals are recorded in `package_lexicals` so the
     /// package's subs can still read them. The declaration ops
     /// (`RegisterPackage`, `SetPackageKind`, ...) are emitted before this op.
-    PackageScope { name_idx: u32, body_end: u32 },
+    ///
+    /// `lexicals_idx` is [`NO_PACKAGE_LEXICALS`] for a declaration's own body.
+    /// For the run-time part of a body the BEGIN prologue split off (ADR-0134,
+    /// `Stmt::PackageRuntimeBody`) it is the constant-pool index of the
+    /// body's `my` lexicals, newline-joined: they are bound from the
+    /// package's static store for the body, written back to it on exit, and
+    /// a same-named outer binding is restored.
+    PackageScope {
+        name_idx: u32,
+        body_end: u32,
+        lexicals_idx: u32,
+    },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
     /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare
@@ -6572,6 +6593,13 @@ pub(crate) struct CompiledCode {
     /// `logging.rakutest` reported the OUTER task's id for the inner task's
     /// end entry).
     pub(crate) writes_topic: bool,
+    /// This chunk is a routine declared INSIDE another routine's body (`my sub`
+    /// or `sub` within `sub mk { ... }`), so the free variables it writes are
+    /// that routine's own lexicals and their readonly state is whatever the
+    /// routine's frame says when a code object for it is made (see
+    /// `Interpreter::capture_readonly_state`). A top-level routine's free
+    /// variables belong to no running frame. Set by the sub-body compile.
+    pub(crate) declared_in_routine: bool,
     /// Whether this code READS the legacy argument array `@_`.
     ///
     /// This is the one thing that lets a routine accept more positional
@@ -6818,6 +6846,16 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/nested-named-sub-free-var-capture.md` and
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
+    /// The variables each lexically visible nested sub called (or fetched as
+    /// `&name`) from this code WRITES, one entry per call site. Kept apart from
+    /// `nested_routine_free_reads` (reads and writes together) and from
+    /// `free_var_writes` (capture boxing); only the readonly-registry
+    /// reconcile reads it, via `nested_sub_written_free`.
+    pub(crate) nested_routine_free_writes: Vec<Vec<Symbol>>,
+    /// `nested_routine_free_writes` minus this code's own locals: the free
+    /// variables a by-name nested-sub call may write. See
+    /// `Interpreter::capture_readonly_state` (#10400).
+    pub(crate) nested_sub_written_free: Vec<Symbol>,
     /// Own locals that a directly-nested named sub WRITES (computed from
     /// `named_sub_captures`). The VM boxes these into a shared `ContainerRef` cell
     /// at their declaration site (`box_decl_local_cell`). Distinct from
@@ -7731,6 +7769,7 @@ impl CompiledCode {
             immutable_topic: false,
             declarator_doc: None,
             writes_topic: false,
+            declared_in_routine: false,
             reads_args_array: false,
             reads_args_hash: false,
             has_env_writes: false,
@@ -7762,6 +7801,8 @@ impl CompiledCode {
             amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
+            nested_routine_free_writes: Vec::new(),
+            nested_sub_written_free: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),
             container_ref_capture_syms: Vec::new(),
@@ -10327,6 +10368,17 @@ impl CompiledCode {
                     .retain(|sym| !self.for_loop_param_syms.contains(sym));
             }
         }
+        let mut nested_written: Vec<Symbol> = Vec::new();
+        for sym in self.nested_routine_free_writes.iter().flatten().chain(
+            self.closure_compiled_codes
+                .iter()
+                .flat_map(|n| n.nested_sub_written_free.iter()),
+        ) {
+            if !sym.with_str(|s| own.contains(s)) && !nested_written.contains(sym) {
+                nested_written.push(*sym);
+            }
+        }
+        self.nested_sub_written_free = nested_written;
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
@@ -10745,6 +10797,12 @@ impl CompiledCode {
                     | OpCode::Print(_)
                     | OpCode::Note(_)
             );
+        }
+        // `s///` / `tr///` write the topic without naming it, so a block
+        // `{ s/a/b/ }` called on a variable must alias `$_` to it just as
+        // `{ $_ = ... }` does (List::MoreUtils `apply`).
+        if !self.writes_topic && matches!(op, OpCode::Subst { .. } | OpCode::Transliterate { .. }) {
+            self.writes_topic = true;
         }
         if !self.writes_topic
             && let Some(idx) = self.op_name_write_const_idx(&op)
@@ -11402,6 +11460,7 @@ impl CompiledCode {
             is_export,
             export_tags,
             custom_traits,
+            trait_args: _,
             is_method,
             is_our,
         } = stmt

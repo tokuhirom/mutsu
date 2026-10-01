@@ -15,7 +15,7 @@ impl Interpreter {
             if let ValueView::Str(s) = val.view()
                 && let Some(ValueView::Str(prev)) = merged.last().map(Value::view)
             {
-                let combined = format!("{}{}", &**prev, &**s);
+                let combined = format!("{}{}", **prev, **s);
                 let len = merged.len();
                 merged[len - 1] = Value::str(combined);
                 continue;

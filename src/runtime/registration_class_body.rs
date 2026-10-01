@@ -544,6 +544,7 @@ impl Interpreter {
             param_defs,
             return_type,
             body: proto_body,
+            trait_args,
             is_method: true,
             ..
         } = stmt
@@ -581,9 +582,19 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
+        let proto_params = fdef.params.clone();
+        let proto_param_defs = fdef.param_defs.clone();
         self.registry_mut()
             .set_proto_method(cx.name, &method_name, fdef);
-        Ok(())
+        self.apply_method_is_traits(
+            cx.name,
+            &method_name,
+            &proto_params,
+            &proto_param_defs,
+            proto_body,
+            false,
+            trait_args,
+        )
     }
 
     /// Any other class-body statement: validate anonymous-method attribute

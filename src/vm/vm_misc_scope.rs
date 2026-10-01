@@ -157,6 +157,10 @@ impl Interpreter {
             }
             None => val.into_container_ref(),
         };
+        // The declared type (`our Int $x`, registered just before this op) is
+        // carried by the cell itself, so a write through the package-qualified
+        // name (`$Pkg::x = "a"`) is checked like one through `$x` (ADR-0042).
+        self.register_container_cell_constraint_for_name(&cell, &local_name);
         self.locals[idx] = cell.clone();
         self.env_mut().insert(local_name.clone(), cell.clone());
         self.env_mut().insert(qualified.clone(), cell.clone());

@@ -105,7 +105,7 @@ impl Interpreter {
             match arg {
                 TrArg::Value(TrKind::Int | TrKind::Num) => n_nat += 1,
                 TrArg::Value(TrKind::Obj) => n_obj += 1,
-                TrArg::Native(_) | TrArg::Obj(_) | TrArg::Ref(_) => {}
+                TrArg::Native(_) | TrArg::Obj(_) | TrArg::Ref(_) | TrArg::Outer(_) => {}
             }
         }
         let ns_base = self.trir.ns.len().saturating_sub(n_nat);
@@ -140,6 +140,12 @@ impl Interpreter {
                 }
                 (TrArg::Obj(s), _) => {
                     self.trir.ol[cob + slot] = self.trir.ol[obase + *s as usize].clone();
+                }
+                // Only a generic site passes a free variable by variable
+                // (`compile_call_arg`); a resolved one evaluates it to a value.
+                (TrArg::Outer(o), _) => {
+                    self.trir.ol[cob + slot] =
+                        self.trir.outers[frame.outer_base as usize + *o as usize].clone();
                 }
                 (TrArg::Value(TrKind::Int | TrKind::Num), _) => {
                     self.trir.nl[cnb + slot] = self.trir.ns.get(next_nat).copied().unwrap_or(0);
@@ -256,6 +262,19 @@ impl Interpreter {
                         v
                     }
                 }
+                // A free variable: the callee's `is rw` parameter binds the
+                // cell its store owns, so the write lands where every read of
+                // the name looks; the reseed after this call picks it up.
+                TrArg::Outer(o) => {
+                    let outer = &chunk.outers[*o as usize];
+                    if wants_container
+                        && let Some(cell) = self.trir_outer_rw_cell(chunk, outer.name)
+                    {
+                        cell
+                    } else {
+                        self.trir.outers[frame.outer_base as usize + *o as usize].clone()
+                    }
+                }
             };
         }
         let name = call.name.resolve();
@@ -292,7 +311,7 @@ impl Interpreter {
                     }
                 }
                 TrArg::Obj(s) => self.trir.ol[obase + *s as usize] = inner,
-                TrArg::Value(_) => {}
+                TrArg::Value(_) | TrArg::Outer(_) => {}
             }
         }
         self.push_trir_result(result, call.result);

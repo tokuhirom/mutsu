@@ -613,10 +613,9 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
         (rest, true)
     } else if let Some(rest) = op.strip_prefix(">>") {
         (rest, false)
-    } else if let Some(rest) = op.strip_prefix('\u{00BB}') {
-        (rest, false)
     } else {
-        return None;
+        let rest = op.strip_prefix('\u{00BB}')?;
+        (rest, false)
     };
     let (inner, dwim_right) = if let Some(rest) = after_left.strip_suffix(">>") {
         (rest, true)
@@ -624,10 +623,9 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
         (rest, true)
     } else if let Some(rest) = after_left.strip_suffix("<<") {
         (rest, false)
-    } else if let Some(rest) = after_left.strip_suffix('\u{00AB}') {
-        (rest, false)
     } else {
-        return None;
+        let rest = after_left.strip_suffix('\u{00AB}')?;
+        (rest, false)
     };
     if inner.is_empty() {
         return None;

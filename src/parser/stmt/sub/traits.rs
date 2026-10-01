@@ -259,7 +259,19 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     // in the same custom-trait slot as parenthesized
                     // arguments so traits such as `is symbol<localtime>` can
                     // reach NativeCall registration.
-                    custom_traits[pos].1 = Some(crate::ast::Expr::Literal(Value::str(arg)));
+                    // A multi-word `<a b>` is a word list, exactly as the
+                    // expression `<a b>` is (`is also<a b>`).
+                    let words: Vec<&str> = arg.split_whitespace().collect();
+                    custom_traits[pos].1 = Some(if words.len() > 1 {
+                        crate::ast::Expr::ArrayLiteral(
+                            words
+                                .into_iter()
+                                .map(|w| crate::ast::Expr::Literal(Value::str(w.to_string())))
+                                .collect(),
+                        )
+                    } else {
+                        crate::ast::Expr::Literal(Value::str(arg))
+                    });
                 }
                 r = r2;
             }
@@ -491,7 +503,7 @@ pub(crate) fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PErro
     for p in params {
         // $! is the error variable, not an attribute; only reject $!name (attribute twigil)
         if (p.name.starts_with('!') && p.name != "!") || p.name.starts_with('.') {
-            let variable = format!("${}", &p.name);
+            let variable = format!("${}", p.name);
             let msg = format!(
                 "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
                 variable

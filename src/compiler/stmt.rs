@@ -1153,42 +1153,6 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
-                // `our TYPE $x` does not compile in rakudo: a package variable
-                // is reachable by its qualified name from anywhere, so there is
-                // nowhere to enforce a lexical constraint. Rejected HERE rather
-                // than in the parser because rakudo still *parses* it — `Q[our
-                // Int $x].AST` builds a `RakuAST::VarDeclaration::Simple` with
-                // both `scope => "our"` and its `type` (pinned by
-                // `t/rakuast-vardecl-scoped.t`) — and only refuses to compile
-                // it. `our TYPE sub f() {…}` is legal and never reaches this
-                // arm (the parser takes the typed-routine path, where the
-                // constraint is the return type); `our TYPE constant K = …` is
-                // legal too and DOES reach it, so it is excluded below.
-                //
-                // Two `our TYPE` spellings are still accepted, both because the
-                // AST does not carry the `our` down to where the constraint is:
-                // a destructuring list (`our Int ($a, $b)` lowers to VarDecls
-                // with `is_our: false`) and a class attribute (`our Int $.x` is
-                // a `HasDecl`, compiled through the class-body planner rather
-                // than here). See
-                // `todo/tickets/our-typed-destructuring-and-attribute-declarations-are-accepted.md`.
-                if *is_our
-                    && type_constraint.is_some()
-                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
-                {
-                    const MSG: &str = "Cannot put a type constraint on an 'our'-scoped variable";
-                    let err = Value::make_exception(
-                        "X::Comp::AdHoc",
-                        &[
-                            ("message", Value::str(MSG.to_string())),
-                            ("payload", Value::str(MSG.to_string())),
-                        ],
-                    );
-                    let idx = self.code.add_constant(err);
-                    self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
-                    return;
-                }
                 // `use variables :D/:U` adds its implicit smiley to the
                 // declared type before anything below reads it (#9990).
                 let pragma_type_constraint = self
@@ -1896,23 +1860,28 @@ impl Compiler {
                     }
                 } else {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
-                    // A plain untyped scalar `our $x = <expr>` (no `:=` bind, no
-                    // type constraint, no container sigil, no `constant`, no
-                    // trait besides the internal "has an initializer" marker):
-                    // install ONE shared `ContainerRef` cell under the lexical
-                    // local slot AND the package-qualified name instead of the
+                    // A plain scalar `our $x = <expr>` (no `:=` bind, no native
+                    // type, no container sigil, no `constant`, no trait besides
+                    // the internal "has an initializer" marker): install ONE
+                    // shared `ContainerRef` cell under the lexical local slot
+                    // AND the package-qualified name instead of the
                     // two-independent-stores sequence below. `our $x` and
                     // `$Pkg::x` (`$GLOBAL::x` at file scope) then name the SAME
                     // container — see `OpCode::DeclareOurScalar` and
                     // `docs/adr/README.md`-style rationale in
-                    // news/2026-08/our-var-shared-cell.md. Every other `our`
-                    // shape keeps the old two-store sequence below unchanged.
+                    // news/2026-08/our-var-shared-cell.md. A declared type
+                    // constraint rides on that cell, so it is enforced whichever
+                    // name the variable is reached through (`$Pkg::x = "a"`).
+                    // A native type (`our int $x`) keeps the old sequence: its
+                    // store is a slot-typed one, not a Scalar-cell check. Every
+                    // other `our` shape keeps the old two-store sequence below
+                    // unchanged.
                     let use_our_cell = *is_our
                         && !shadows_outer_constant
                         && !is_constant
                         && !is_scalar_colon_bind
                         && !bind_vardecl
-                        && type_constraint.is_none()
+                        && !is_native_type
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && !name.starts_with('&')
@@ -1920,6 +1889,14 @@ impl Compiler {
                         && !has_default_trait
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                    // A typed `our @a` / `our %h` publishes the typed container
+                    // `SetLocal` just built, not a second copy of the raw
+                    // initializer: the global store would coerce that copy to a
+                    // plain `Array`/`Hash`, and the package-qualified name
+                    // (`@Pkg::a`, `%Pkg::h`) would lose its `Array[Int]`/`Hash[Int]`
+                    // identity and with it the element constraint.
+                    let our_typed_aggregate =
+                        *is_our && type_constraint.is_some() && name.starts_with(['@', '%']);
                     if use_our_cell {
                         let qualified = self.qualify_our_storage_name(spelled, name);
                         self.code
@@ -1942,7 +1919,11 @@ impl Compiler {
                         // instead (below): the global must hold the container the
                         // default-aware store filled, not a second copy of the raw
                         // initializer list.
-                        if *is_our && !is_constant && !preapply_container_default {
+                        if *is_our
+                            && !is_constant
+                            && !preapply_container_default
+                            && !our_typed_aggregate
+                        {
                             self.code.emit(OpCode::Dup);
                         }
                         // A sigilless bind (`my \x := EXPR`) settles its
@@ -2044,7 +2025,7 @@ impl Compiler {
                             // Constants should not have their values coerced by the
                             // @/% container rules: `constant @x` stores a List,
                             // `constant %x` stores a Map (not Array/Hash).
-                            if is_constant || preapply_container_default {
+                            if is_constant || preapply_container_default || our_typed_aggregate {
                                 // Re-read the value `SetLocal` already coerced (and
                                 // cached in the slot) so `SetGlobalRaw` does not run
                                 // the coercion — and its side effects — a second time.
@@ -3731,6 +3712,7 @@ impl Compiler {
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
                         name_idx,
                         body_end: 0,
+                        lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
@@ -3764,6 +3746,15 @@ impl Compiler {
                     self.current_package_kind = saved_package_kind;
                     self.code.patch_body_end(pkg_idx);
                 }
+            }
+
+            Stmt::PackageRuntimeBody {
+                name,
+                body,
+                lexicals,
+                decl,
+            } => {
+                self.compile_package_runtime_body(*name, body, lexicals, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku

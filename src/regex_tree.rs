@@ -735,36 +735,45 @@ impl RegexTree {
                     code,
                     negated,
                     body,
-                } => Some(vec![token(
-                    crate::runtime::RegexAtom::CodeAssertion {
-                        code: code.clone(),
-                        negated: *negated,
-                        is_assertion: true,
-                        body: Some(std::sync::Arc::new(body.clone())),
-                        code_cache_id: crate::value::next_instance_id(),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
-                RegexNode::CodeBlock { code, body } => Some(vec![token(
-                    crate::runtime::RegexAtom::CodeAssertion {
-                        code: code.clone(),
-                        negated: false,
-                        is_assertion: false,
-                        body: Some(std::sync::Arc::new(body.clone())),
-                        code_cache_id: crate::value::next_instance_id(),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
-                RegexNode::InterpolatedBlock { code, body, .. } => Some(vec![token(
-                    crate::runtime::RegexAtom::ClosureInterpolation {
-                        code: code.clone(),
-                        body: Some(std::sync::Arc::new(body.clone())),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
+                } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::CodeAssertion {
+                            code: code.clone(),
+                            negated: *negated,
+                            is_assertion: true,
+                            body: Some(std::sync::Arc::new(body.clone())),
+                            code_cache_id: crate::value::next_instance_id(),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::CodeBlock { code, body } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::CodeAssertion {
+                            code: code.clone(),
+                            negated: false,
+                            is_assertion: false,
+                            body: Some(std::sync::Arc::new(body.clone())),
+                            code_cache_id: crate::value::next_instance_id(),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::InterpolatedBlock { code, body, .. } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::ClosureInterpolation {
+                            code: code.clone(),
+                            body: Some(std::sync::Arc::new(body.clone())),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,

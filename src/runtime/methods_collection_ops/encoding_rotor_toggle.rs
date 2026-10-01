@@ -388,9 +388,11 @@ impl Interpreter {
         for item in &items {
             if cond_idx < conditions.len() {
                 let tester = &conditions[cond_idx];
-                let test_result = self
-                    .call_sub_value(tester.clone(), vec![item.clone()], true)?
-                    .truthy();
+                let test_value = self.call_sub_value(tester.clone(), vec![item.clone()], true)?;
+                // A block ending in a regex literal (`{ /foo/ }`) boolifies by
+                // matching the regex against its lexical topic, not by the
+                // regex object being truthy.
+                let test_result = self.eval_predicate_truthy(&test_value);
 
                 let old_on = switch_on;
                 switch_on = test_result;

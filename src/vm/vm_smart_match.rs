@@ -400,14 +400,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             for (k, lv) in lmap.iter() {
                 match rmap.get(k) {
                     Some(rv) => {
-                        // For nested hashes, recurse
-                        if let Some(result) = pure_smart_match(lv, rv) {
-                            if !result {
-                                return Some(false);
-                            }
-                        } else {
-                            // Cannot resolve without interpreter
-                            return None;
+                        // For nested hashes, recurse; `?` answers `None` for a
+                        // pair that cannot be resolved without the interpreter.
+                        if !pure_smart_match(lv, rv)? {
+                            return Some(false);
                         }
                     }
                     None => return Some(false),

@@ -114,10 +114,12 @@ impl Compiler {
         package: &str,
         class_body_static_code_vars: &std::collections::HashSet<String>,
         class_body_type_aliases: &std::collections::HashMap<String, String>,
+        package_body_lexicals: &std::collections::HashSet<String>,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
         chunk_compiler.set_current_package(package.to_string());
         chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
+        chunk_compiler.package_body_lexicals = package_body_lexicals.clone();
         chunk_compiler
             .type_aliases
             .extend(class_body_type_aliases.clone());
@@ -334,6 +336,7 @@ impl Compiler {
                 _ => None,
             })
             .collect();
+        let body_lexicals = Self::package_body_lexical_names(body);
         let class_body_type_aliases = body
             .iter()
             .filter_map(|stmt| match stmt {
@@ -390,6 +393,7 @@ impl Compiler {
                     package_name,
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
+                    &body_lexicals,
                 ));
                 continue;
             }
@@ -405,6 +409,7 @@ impl Compiler {
                     package_name,
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
+                    &body_lexicals,
                 ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
                 *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
@@ -412,6 +417,7 @@ impl Compiler {
                     package_name,
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
+                    &body_lexicals,
                 ));
                 continue;
             }
@@ -426,6 +432,7 @@ impl Compiler {
                 package_name,
                 &class_body_static_code_vars,
                 &class_body_type_aliases,
+                &body_lexicals,
             ));
         }
         ops
@@ -872,6 +879,7 @@ impl Compiler {
                     package_name,
                     &std::collections::HashSet::new(),
                     &std::collections::HashMap::new(),
+                    &std::collections::HashSet::new(),
                 ))
             } else {
                 None

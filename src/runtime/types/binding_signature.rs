@@ -543,6 +543,10 @@ impl Interpreter {
                 true
             } else if let ValueView::Seq(body) = value.view() {
                 let body = std::sync::Arc::clone(&body);
+                // Rakudo binds an `@` parameter through `.cache`: the Seq is
+                // reified once and kept, so the callee may read it any number
+                // of times instead of the first consuming method stealing it.
+                body.mark_cache_requested();
                 value = Value::seq_list_view(&body);
                 true
             } else {

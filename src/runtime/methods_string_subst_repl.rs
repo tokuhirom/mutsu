@@ -267,11 +267,7 @@ impl Interpreter {
             captures.target_or_new(orig_text.unwrap_or_default()),
         );
         let mut context = vec![("/".to_string(), match_obj.clone())];
-        let positional_len = captures
-            .positional_slots()
-            .len()
-            .max(captures.positional.len());
-        for i in 0..positional_len {
+        for i in 0..captures.positional.len() {
             // A quantified capture group (`( ... )+`) exposes the LIST of
             // per-iteration matches as `$N`; the flat slot only holds the
             // last iteration's text (t/uri-unescape shape:
@@ -288,9 +284,6 @@ impl Interpreter {
                         .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
                         .collect(),
                 )
-            } else if let Some(Some((a, b))) = captures.positional_slots().get(i) {
-                let t = captures.target_or_new(orig_text.unwrap_or_default());
-                Value::str(t.span_str(*a, *b))
             } else if let Some(slot) = captures.positional.get(i) {
                 Value::str(captures.slot_text(slot))
             } else {
@@ -298,7 +291,7 @@ impl Interpreter {
             };
             context.push((i.to_string(), value));
         }
-        if positional_len == 0 {
+        if captures.positional.is_empty() {
             context.push(("0".to_string(), Value::NIL));
         }
         let named_v = match_obj.match_named();

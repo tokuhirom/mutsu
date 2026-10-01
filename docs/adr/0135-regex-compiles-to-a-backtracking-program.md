@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slice C in part (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -291,7 +291,7 @@ Applied to the tickets open on 2026-09-30:
 | [#7548](https://github.com/tokuhirom/mutsu/issues/7548) the streamed-subrule barrier | **closed by Slices D–E** | D3 makes every call demand-driven; widening the walk's eligibility analysis now is discarded work |
 | [#9929](https://github.com/tokuhirom/mutsu/issues/9929) `.comb(Regex)` finds every match up front | **after Slice A** | a resumable scan is a saved `RxVm` state (start position plus registers), not a new mechanism in the walk |
 | [#7576](https://github.com/tokuhirom/mutsu/issues/7576) YAMLish deeper documents ~2x | **re-measure after Slice D** | its remaining cost is grammar walk cost |
-| [#10225](https://github.com/tokuhirom/mutsu/issues/10225) fate of `:P5` | independent | `:P5` runs on pcre2, not on the walk. It is outside D7's "one engine", and either decision leaves this ADR unchanged |
+| [#10225](https://github.com/tokuhirom/mutsu/issues/10225) fate of `:P5` | independent | `:P5` runs on pcre2, not on the walk. It is outside D7's "one engine", and either decision leaves this ADR unchanged. Resolved by [ADR-0138](0138-perl5-regex-adverb-removed.md): `:P5` and the pcre2 engine are removed |
 | [#10215](https://github.com/tokuhirom/mutsu/issues/10215), [#10216](https://github.com/tokuhirom/mutsu/issues/10216) `$/` / `$0` after `.subst` | independent | `Match` publication in the `.subst` layer, which survives |
 | [#8033](https://github.com/tokuhirom/mutsu/issues/8033) RakuAST regex node tree | independent | front end: it produces the pattern this ADR compiles |
 | [#10021](https://github.com/tokuhirom/mutsu/issues/10021) `Word_Break` emoji modifiers | independent | Unicode property data, consumed unchanged through D4 |
@@ -486,6 +486,132 @@ The position-only matcher (`.comb`) took the longest branch end instead of requi
 span, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`. It now asks the capture matcher. Found
 on the way: `:r` does not reach conjunction branches (#10353), and `.comb` with `:m` misses
 matches (#10352). Both are pre-existing, and both engines agree on them.
+
+**Slice C, first part (#10253): `{ }`, `<?{ }>`, `<!{ }>` and `:my` landed.** A code atom is a
+call-out. The walk's `CodeAssertion` and `VarDecl` arms moved into one leaf, `regex_code_atom.rs`
+(`regex_code_atom`, `regex_var_decl_atom`). The walk's single-candidate matcher now calls them, and
+so do the compiled engine's `Code` and `VarDecl` ops, which pass the innermost capture level as the
+code's view and merge the delta that comes back (the `:my` lexicals written, the `make` value).
+Nothing is precomputed, so a code atom runs only where the cursor reaches it, in the order
+backtracking reaches it. The body's compile is the cached one of ADR-0133 and #10121
+(`eval_regex_inline_code`), so there is no per-attempt AST compile and no new `Interpreter`.
+
+- **The position-only matcher** (`.comb` without captures, the walk's group probes) treats a code
+  atom as an inert zero-width pass. A program that runs code (`RxProgram::has_code`, which includes
+  a lookaround body's) therefore declines there and keeps that matcher.
+- **A capture group whose body holds code** opens a capture level of its own, as one whose body
+  captures or back-references does. `$/` inside `( … { … } )` is the group's own match so far, and
+  `$0` its first capture.
+- **Differential mode compares the code.** Running the walk a second time over a pattern with code
+  would run the user's code twice. So the compiled run *records* each invocation (code text,
+  position, the captures visible to it, the result it gave) and the walk *replays* them
+  (`rx_diff.rs`): the walk's n-th invocation must be the recorded n-th one, and it is answered from
+  the record instead of being run. Nested runs (a lookaround body) share the record, and only the
+  outermost run compares. This is the order comparison D6 asks for, and it keeps
+  `MUTSU_RX_DIFF=1` free of doubled side effects.
+- **A bug in the walk, found by that comparison.** A non-capturing group, a `|` / `||` branch or a
+  quantified group gave the walk a capture scope of its own, so `{ say $/.Str }` inside
+  `/ a [ b { … } ] c /` printed `b` where rakudo prints `ab`, and `$0` of the enclosing regex was
+  invisible to the block (`/ (a) [ b { say $0 } ] c /` printed `Nil`). A same-scope sub-pattern that
+  holds code now publishes the enclosing level's captures and match start for the nested walk, the
+  way one that holds a backreference already did (`atom_contains_code`, `OuterBackrefCaps::match_from`;
+  the parser's `note_regex_code_lowered` keeps the cost at zero for a process with no code in a
+  regex). A capture group and a lookaround still get a scope of their own, as in rakudo.
+  `t/regex/match/regex-code-atom-capture-scope.t` pins the rakudo values.
+- **A second walk bug, in the published scope's lifetime.** A sub-pattern publishes its level's
+  captures for ITS nested walks, but the rest of the enclosing pattern runs inside its dynamic
+  extent (candidates are streamed), so a subrule called after a `[ … { … } ]` group inherited the
+  group's match start: `$/` in its code spanned `abc12` where rakudo gives `12`. Backreferences had the
+  same latent leak. A subrule call, a capture group, a lookaround and code that may run a match now
+  arm a barrier whenever a scope is published (`arm_subrule_barrier`, `atom_starts_own_regex`;
+  `t/grammar/grammar-subrule-match-start-after-code-group.t`). `t/grammar/ipv6-mapped-dotted-decimal.t`
+  and `t/modules/batteries/xml-battery.t` caught it.
+- **Two shapes still decline**, for the reason `separator-backref` does: code reads the enclosing
+  captures, and these shapes hide them. Code inside a `%` / `%%` quantifier (`separator-code`) sees
+  the iterations folded so far in the walk (Net::Whois's `$/[*-1][*-1] < 256` octet check, pinned by
+  `t/regex/match/regex-separated-quantifier-code-assertion-captures.t`), where the compiled form
+  matches each iteration in a level of its own. Code inside a `&` branch (`conjunction-code`) runs in
+  a level or a nested run of its own.
+
+`scripts/rx-decline-survey.sh` (all of `t/` and the roast whitelist) puts `code` at 83 (from 406),
+`separator-code` at 7 and `conjunction-code` at 2; compiled patterns went from 5,981 to 6,319.
+D6 agreed with the walk on all of `t/` and the roast whitelist (6,933 files), once the two declines above were in. The
+remaining `code` declines are the parts of Slice C not yet landed: `<{ … }>` closure interpolation and
+`** {n}` (the count is evaluated when the quantifier is reached, so it needs run-time bounds on the
+loop ops), then `<$var>` / `<@var>` / `$( … )` interpolation.
+
+**Slice C, second part (#10253): the interpolation atoms landed.**
+
+- **`<$rx>` / `$rx`** (a Regex value spliced in, `CaptureIsolatedGroup`) compiles to
+  `OpenIsolated … DropCapture`: the body runs in a capture level of its own and the level's
+  captures are dropped when it closes, which is `GroupShape::Isolated`. The level inherits no
+  `:my` lexicals, as the walk's barrier for a regex of its own arms none. Under ratchet the group
+  commits to its first end, as a capturing group does. A value that closed over its own scope
+  (`CaptureIsolatedGroupScoped`) still declines (`isolated-group-scoped`): installing that scope
+  around a body the program can backtrack into needs an enter/exit pair of ops.
+- **`$x` of an in-regex `:my` lexical** (`VarInterp`) and **`<{ … }>`** (`ClosureInterpolation`)
+  compile to `CapAtom`, which calls the walk's own single-candidate arm. The closure arm moved into
+  the shared leaf (`regex_closure_interp_atom`) and goes through `rx_code_call`, so D6 records and
+  replays it. Both mark the program as one the position-only matcher must not run (`has_code`):
+  `<{ … }>` runs code, and `$x` reads lexicals that matcher does not have.
+- **Nested levels read the enclosing `:my` lexicals.** The walk publishes them to an inline
+  sub-pattern through the vars seed. A compiled capture group, separated-quantifier iteration or
+  conjunction branch opens a level that starts with the enclosing level's lexicals (shared, not
+  copied). The first part's sweeps missed it, because no `$x` was compiled yet; the 15 test files
+  that landed on `main` since then found it
+  (`t/regex/regex-lookaround-bound-param.t`: `$ni` read inside a `%` quantifier's atom). A
+  conjunction branch that reads a lexical declines with `conjunction-code`, as one that runs code does.
+- **D6's record is order-exact.** A code block can match a regex of its own, which holds code of
+  its own. The record used to push an invocation after its run, so the inner events preceded the outer
+  one and the replay saw them out of call order. An event is now reserved before the run and
+  keeps how many events the run produced, so a replay answers the invocation from the record and skips those.
+
+Survey: `isolated-group` 90 → 0 (17 scoped values decline under their own reason), `interpolation`
+55 → `code-interp` 22 + `qq-interp` 9, `code` 83 → `repeat-code` 42; compiled patterns 6,319 → 6,497.
+What is left of Slice C is `** {n}` (run-time loop bounds), `$( … )` / `@( … )`
+(`CodeInterp`, which yields several candidate ends) and `"…$x.meth()…"` (`QqInterp`), and the
+declines named above.
+
+Two walk bugs found on the way, which both engines share and D6 therefore cannot see, are filed:
+`<{ … }>` merges the interpolated pattern's captures into the caller where rakudo discards them
+(#10417), and `$/` in a `<{ … }>` body is empty where rakudo gives the match so far (#10418).
+
+**Slice C, third part (#10253): `$( … )` / `@( … )`, `** { … }` and `"…"` thunks landed.**
+
+- **`$( … )` / `@( … )`** (`CodeInterp`) compiles to `InterpEnds`. The walk asks for every end of
+  the pattern the code yields up front (`regex_code_interp_ends`, with each end's capture delta), so the
+  op does the same through the same function and enters the ends highest priority first. The rest wait
+  on the backtrack stack as one choice point, `Choice::Cands`, which holds the list and how many are
+  left and merges the next candidate's delta after the rewind. Under ratchet the atom commits to the
+  first. The position-only matcher keeps its unrecorded copy of the call, since the compiled engine
+  never stands in for it.
+- **`** { … }`** takes its count from code evaluated where the quantifier is reached, before the
+  names under it are marked. `RepeatCount` evaluates it through `regex_repeat_count`, the walk's own
+  call, and stores the bounds in two registers. `RepeatDyn` is the `Repeat` loop op reading its bounds
+  from them. A body that can match empty would need a `ZeroIter` guard built from static bounds, so it
+  would decline (`repeat-code-nullable`); no pattern in `t/` or the roast whitelist hits it.
+  A `**` with a separator (`% ','`) still declines (`repeat-code`, 4 patterns).
+- **`QqInterp`** (a `"…"` atom whose interpolations a thunk resolved at rule entry) compiles to
+  `CapAtom`: the result is read from the environment, so there is no code to run at match time.
+- **D6's record is generic over the answer.** An invocation answers with a match, a list of candidate
+  ends or a pair of bounds; `rx_code_call` takes any of them (`CodeValue`), so one record serves
+  `{ }`, `$( )` and `** { }` alike.
+- **Every code-bearing atom counts as code for scope seeding.** `$( … )`, `<{ … }>` and a `** { … }`
+  token publish the enclosing level's captures and match start to the group they sit in, as `{ … }` does.
+  The first run of the D6 sweep showed `$/` starting at the group inside `[ @(<a ab>) ]+`.
+
+Survey: `code-interp` 22 → 0, `qq-interp` 9 → 0, `repeat-code` 42 → 4; compiled patterns 6,497 → 6,592.
+D6 agreed with the walk on all 6,955 files.
+
+**What is left of Slice C** are the declines that keep the walk: `isolated-group-scoped` (17: a spliced
+Regex value that closed over its own scope), `separator-code` (7) and `conjunction-code` (2): the
+compiled form hides the enclosing captures from code in a `%` quantifier or a `&` branch, and the
+walk's `InlineCaptureScope` fold, which Net::Whois's octet check reads, has no compiled counterpart yet.
+
+Three more walk bugs, which both engines share and D6 therefore cannot see, are filed: an aliased
+atom under `** { … }` records one capture per iteration where rakudo records the whole span (#10444),
+and the scalar `$( $re )` of a Regex value matches the literal text of its source (#10445), besides
+#10417 and #10418 from the second part.
 
 ### Reproducing §2
 
