@@ -552,21 +552,9 @@ impl Compiler {
         scan.pure
     }
 
-    pub(super) fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
-        if let Expr::Binary { left, op, right } = expr
-            && *op == TokenKind::XorXor
-        {
-            Self::flatten_xor_terms(left, out);
-            Self::flatten_xor_terms(right, out);
-            return;
-        }
-        out.push(expr);
-    }
-
     pub(super) fn compile_xor_chain(&mut self, left: &Expr, right: &Expr) {
-        let mut terms = Vec::new();
-        Self::flatten_xor_terms(left, &mut terms);
-        Self::flatten_xor_terms(right, &mut terms);
+        let mut terms = left.flatten_binary_chain(&TokenKind::XorXor);
+        terms.extend(right.flatten_binary_chain(&TokenKind::XorXor));
         if terms.len() == 2 {
             self.compile_expr(terms[0]);
             self.compile_expr(terms[1]);

@@ -190,21 +190,11 @@ pub(super) struct UseLibDirs<'a> {
 }
 
 impl UseLibDirs<'_> {
-    /// Decodes one `use lib` argument: a path, or a (parenthesised) list of
-    /// them. A spine over the argument's list shape, not an analysis.
+    /// Folds each path of one `use lib` argument.
     fn push_paths(&mut self, expr: &Expr) {
-        match expr {
-            Expr::ArrayLiteral(items) => {
-                for item in items {
-                    self.push_paths(item);
-                }
-            }
-            Expr::Grouped(inner) => self.push_paths(inner),
-            other => {
-                if let Some(path) = crate::parser::fold_use_lib_path(other, self.file, self.program)
-                {
-                    self.out.push(path);
-                }
+        for arg in crate::parser::use_lib_args(expr) {
+            if let Some(path) = crate::parser::fold_use_lib_path(arg, self.file, self.program) {
+                self.out.push(path);
             }
         }
     }

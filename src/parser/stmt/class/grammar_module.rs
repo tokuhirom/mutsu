@@ -91,6 +91,9 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
     let (rest, mut pattern) = parse_raw_braced_regex_body(rest)?;
+    // Rakudo's `regex_def` ends its body with `<?ENDSTMT>`: a declaration's
+    // `}` at end of line ends the statement (`parser::stmt_ending_brace`).
+    crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
     // An empty `token`/`regex`/`rule` body is a null regex.
     if pattern.trim().is_empty() {
         return Err(null_regex_error());

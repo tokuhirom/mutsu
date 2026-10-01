@@ -2312,6 +2312,7 @@ pub(crate) enum AssignOp {
 }
 
 mod body_local_names;
+mod chains;
 mod placeholder_kind;
 pub(crate) mod placeholders;
 mod virtual_call;

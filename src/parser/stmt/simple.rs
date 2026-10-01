@@ -43,7 +43,7 @@ pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
     set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file};
+pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -358,20 +358,8 @@ pub(in crate::parser) const PREC_MULTIPLICATIVE: i32 = 50;
 pub(in crate::parser) const PREC_POWER: i32 = 60;
 pub(in crate::parser) const PREC_PREFIX: i32 = 70;
 
-fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
-    if let Expr::Binary { left, op, right } = expr
-        && *op == TokenKind::XorXor
-    {
-        flatten_xor_chain_terms(left, out);
-        flatten_xor_chain_terms(right, out);
-        return;
-    }
-    out.push(expr);
-}
-
 pub(super) fn add_xor_sink_warnings(expr: &Expr, line: i64) {
-    let mut terms = Vec::new();
-    flatten_xor_chain_terms(expr, &mut terms);
+    let terms = expr.flatten_binary_chain(&TokenKind::XorXor);
     if terms.len() < 2 {
         return;
     }

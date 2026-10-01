@@ -51,6 +51,7 @@ pub(crate) fn capture_literal(input: &str) -> PResult<'_, Expr> {
 /// that is never called, the deferred form would never fire.
 pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = arrow_lambda_inner(input)?;
+    crate::parser::stmt_ending_brace::mark_block_term(rest);
     let (body, param_defs): (&[crate::ast::Stmt], Vec<crate::ast::ParamDef>) = match &expr {
         Expr::AnonSubParams {
             body, param_defs, ..
@@ -384,14 +385,21 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     let r = &input[1..];
     let (r, _) = ws_inner(r);
 
-    // Empty hash: {}
+    // Empty hash: {}. A hash composer is a blockoid in rakudo, so its `}` at
+    // end of line ends the statement just like a block's
+    // (`parser::stmt_ending_brace`).
     if let Some(rest) = r.strip_prefix('}') {
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
+        crate::parser::stmt_ending_brace::mark_block_term(rest);
         return Ok((rest, Expr::Hash(Vec::new())));
     }
 
     // Try to detect if this is a hash literal: { key => val, ... }
     if body_is_hash_composer(r) {
-        return super::hash::parse_hash_literal_body(r);
+        let (rest, hash) = super::hash::parse_hash_literal_body(r)?;
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
+        crate::parser::stmt_ending_brace::mark_block_term(rest);
+        return Ok((rest, hash));
     }
 
     // Otherwise parse as a block (anonymous sub)
@@ -410,6 +418,7 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
         // infix word on the next line (`g { 1 }` NL `before { 2 }`) starts a
         // new statement instead of taking this block as its left operand.
         crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
+        crate::parser::stmt_ending_brace::mark_block_term(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, make_anon_sub(stmts)))
     })();
