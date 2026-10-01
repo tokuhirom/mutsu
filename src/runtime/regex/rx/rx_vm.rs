@@ -534,6 +534,12 @@ impl Interpreter {
                         true
                     }
                     // Cost: O(1) amortized.
+                    RxOp::CapMark(r) => {
+                        set_reg!(r, levels.top().mark());
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
                     RxOp::SepBase(r) => {
                         set_reg!(r, levels.collected_len());
                         pc += 1;
@@ -680,6 +686,7 @@ impl Interpreter {
                     | RxOp::AltTail { .. }
                     | RxOp::Collect { .. }
                     | RxOp::SepEmit { .. }
+                    | RxOp::SepNames { .. }
                     | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }

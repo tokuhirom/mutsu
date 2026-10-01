@@ -11,7 +11,41 @@ use super::rx_compile::{
     Compiler, Decline, atom_captures, has_numbered_alias, min_len, pattern_captures,
     pattern_contains_backref, pattern_contains_code, pattern_reads_enclosing_state,
 };
-use crate::runtime::regex_types::{RegexPattern, RegexQuant, RegexToken};
+use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
+
+/// Do the captures matching `atom` takes at its own level consist of named
+/// captures only? Then a separated quantifier's iterations need no capture
+/// level of their own: nothing positional is numbered per iteration, and no
+/// `<(` / `)>` marker or nested-run merge reaches the level.
+fn atom_files_names_only(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::CaptureGroup(_)
+        | RegexAtom::CaptureStartMarker
+        | RegexAtom::CaptureEndMarker
+        | RegexAtom::Lookaround { .. }
+        | RegexAtom::Conjunction(_)
+        | RegexAtom::GoalMatch { .. } => false,
+        RegexAtom::Group(p) => pattern_files_names_only(p),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.iter().all(pattern_files_names_only)
+        }
+        _ => true,
+    }
+}
+
+fn pattern_files_names_only(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().all(|t| {
+        !t.subrule_call_capture
+            && !t
+                .named_capture
+                .as_ref()
+                .is_some_and(|n| n.parse::<usize>().is_ok())
+            && atom_files_names_only(&t.atom)
+            && t.separator
+                .as_ref()
+                .is_none_or(|sep| pattern_files_names_only(&sep.pattern))
+    })
+}
 
 impl Compiler {
     /// `a || b || c`, as `walk_seq_alternation` drives it: every way branch
@@ -276,8 +310,14 @@ impl Compiler {
             return Err("separator-code");
         }
         // Each atom and separator then matches in a capture level of its own,
-        // collected for `SepEmit` to fold side by side.
-        let collect = atom_captures(&token.atom) || pattern_captures(sep);
+        // collected for `SepEmit` to fold side by side. When the only captures
+        // are names an atom files (`<pair>+ % ','`, the grammar case), there
+        // is nothing to fold side by side: the iterations file straight into
+        // this level and `SepNames` marks what they filed quantified, as the
+        // fold would have (ADR-10488 D3).
+        let captures = atom_captures(&token.atom) || pattern_captures(sep);
+        let direct = captures && !pattern_captures(sep) && atom_files_names_only(&token.atom);
+        let collect = captures && !direct;
         let (min, max) = match token.quant {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
@@ -296,6 +336,10 @@ impl Compiler {
         let base = collect.then(|| self.reg());
         if let Some(b) = base {
             self.ops.push(RxOp::SepBase(b));
+        }
+        let filed_from = direct.then(|| self.reg());
+        if let Some(b) = filed_from {
+            self.ops.push(RxOp::CapMark(b));
         }
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
@@ -382,7 +426,12 @@ impl Compiler {
         if let Some(base) = base {
             let tok = self.toks.len() as u32;
             self.toks.push(token.clone());
-            self.ops.push(RxOp::SepEmit { tok, base });
+            let names = self.quantified_names(token);
+            self.ops.push(RxOp::SepEmit { tok, base, names });
+        }
+        if let Some(base) = filed_from {
+            let names = self.quantified_names(token);
+            self.ops.push(RxOp::SepNames { base, names });
         }
         Ok(())
     }

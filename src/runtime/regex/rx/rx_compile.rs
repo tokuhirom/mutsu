@@ -36,6 +36,8 @@ pub(super) struct Compiler {
     ignore_case: bool,
     pub(super) toks: Vec<RegexToken>,
     pub(super) alts: Vec<AlternationListFlags>,
+    pub(super) name_sets: Vec<Box<[crate::symbol::Symbol]>>,
+    pub(super) zero_arms: Vec<super::ZeroArmPlan>,
     pub(super) ltm_alts: Vec<super::LtmAltTable>,
     pub(super) nregs: usize,
     /// Set when a `Code` or `VarDecl` op is emitted.
@@ -60,6 +62,8 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         ignore_case: false,
         toks: Vec::new(),
         alts: Vec::new(),
+        name_sets: Vec::new(),
+        zero_arms: Vec::new(),
         ltm_alts: Vec::new(),
         nregs: 0,
         has_code: false,
@@ -78,12 +82,25 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         atom_ic: c.atom_ic,
         toks: c.toks,
         alts: c.alts,
+        name_sets: c.name_sets,
+        zero_arms: c.zero_arms,
         ltm_alts: c.ltm_alts,
         nregs: c.nregs,
         has_code: c.has_code,
         has_call: c.has_call,
         ascii: std::sync::OnceLock::new(),
     })
+}
+
+/// A set of capture names interned, in name order, so the order they are
+/// marked in does not depend on a hash seed.
+fn sorted_symbols(names: std::collections::HashSet<String>) -> Box<[crate::symbol::Symbol]> {
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort_unstable();
+    names
+        .iter()
+        .map(|n| crate::symbol::Symbol::intern(n))
+        .collect()
 }
 
 /// The one-grapheme atoms `match_consuming_atom` decides.
@@ -270,6 +287,17 @@ impl Compiler {
     pub(super) fn reg(&mut self) -> u16 {
         self.nregs += 1;
         (self.nregs - 1) as u16
+    }
+
+    /// Intern a set of capture names into `name_sets` ([`sorted_symbols`]).
+    pub(super) fn name_set(&mut self, names: std::collections::HashSet<String>) -> u32 {
+        self.name_sets.push(sorted_symbols(names));
+        (self.name_sets.len() - 1) as u32
+    }
+
+    /// The names under the quantified `token`, interned (`name_set`).
+    pub(super) fn quantified_names(&mut self, token: &RegexToken) -> u32 {
+        self.name_set(crate::runtime::Interpreter::collect_quantified_names_for_token(token))
     }
 
     /// Add `atom` to the atom table, tested under the current level's `:i`.
@@ -567,7 +595,26 @@ impl Compiler {
         let join = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let zero = self.pc();
-        self.ops.push(RxOp::ZeroArm { tok, pos_base });
+        let mut list_names = std::collections::HashSet::new();
+        crate::runtime::Interpreter::collect_nested_list_quantified_names(
+            &token.atom,
+            &mut list_names,
+        );
+        let plan = self.zero_arms.len() as u32;
+        self.zero_arms.push(super::ZeroArmPlan {
+            flags: super::super::regex_helpers::capture_group_list_flags(&token.atom, false)
+                .into_boxed_slice(),
+            list_names: sorted_symbols(list_names),
+            named_zero_capture: !matches!(
+                token.atom,
+                RegexAtom::CaptureGroup(_) | RegexAtom::Named(_)
+            ) && !token.subrule_call_capture,
+        });
+        self.ops.push(RxOp::ZeroArm {
+            tok,
+            pos_base,
+            plan,
+        });
         let end = self.pc();
         self.ops[join as usize] = RxOp::Jmp(end);
         self.ops[split as usize] = if token.frugal {
@@ -676,7 +723,8 @@ impl Compiler {
             self.ops.push(RxOp::PosBase(pos_base));
             let tok = self.toks.len() as u32;
             self.toks.push(token.clone());
-            self.ops.push(RxOp::QuantNames { tok });
+            let names = self.quantified_names(token);
+            self.ops.push(RxOp::QuantNames { names });
             Some((pos_base, tok))
         } else {
             None

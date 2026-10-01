@@ -4,7 +4,7 @@
 
 use super::super::regex_helpers::{count_capture_groups, merge_regex_captures};
 use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
-use super::super::regex_match_sep::{separated_capture_delta, separator_stride};
+use super::super::regex_match_sep::{separated_capture_delta_syms, separator_stride};
 use super::rx_levels::Levels;
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
@@ -101,20 +101,19 @@ impl Interpreter {
                     regs[pos_base as usize],
                 )
             }),
-            // Cost: O(a + n), a = the atom's capture groups, n = the names
-            // under it (the walk's zero arm, same order).
-            RxOp::ZeroArm { tok, pos_base } => {
+            // Cost: O(a + n·m), a = the atom's capture groups, n = the names
+            // under it (the walk's zero arm, same order), m = the names the
+            // level has filed.
+            RxOp::ZeroArm {
+                tok,
+                pos_base,
+                plan,
+            } => {
                 let token = &program.toks[tok as usize];
-                let flags =
-                    super::super::regex_helpers::capture_group_list_flags(&token.atom, false);
-                let named_zero_capture =
-                    !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
-                        && !token.subrule_call_capture;
-                let mut list_names = std::collections::HashSet::new();
-                Self::collect_nested_list_quantified_names(&token.atom, &mut list_names);
+                let plan = &program.zero_arms[plan as usize];
                 levels.edit(|s| {
-                    s.reserve_nil(&flags);
-                    if named_zero_capture {
+                    s.reserve_nil(&plan.flags);
+                    if plan.named_zero_capture {
                         Self::store_apply_named_capture(
                             s,
                             token,
@@ -123,19 +122,26 @@ impl Interpreter {
                             regs[pos_base as usize],
                         );
                     }
-                    for n in list_names {
-                        s.insert_named_quantified(n);
+                    for &n in plan.list_names.iter() {
+                        s.insert_named_quantified_sym(n);
                     }
                 });
             }
-            // Cost: O(n), n = the names under the token.
-            RxOp::QuantNames { tok } => {
-                let names = Self::collect_quantified_names_for_token(&program.toks[tok as usize]);
+            // Cost: O(n·m), n = the names under the token, m = the names the
+            // level has filed.
+            RxOp::QuantNames { names } => {
                 levels.edit(|s| {
-                    for n in names {
-                        s.insert_named_quantified(n);
+                    for &n in program.name_sets[names as usize].iter() {
+                        s.insert_named_quantified_sym(n);
                     }
                 });
+            }
+            // Cost: O(t + (k + n)·m), t = the capture-trail entries since the
+            // quantifier began, k = those that filed a name, n = the names
+            // under the token, m = the names the level has filed.
+            RxOp::SepNames { base, names } => {
+                let since = regs[base as usize];
+                levels.edit(|s| s.mark_filed_quantified(since, &program.name_sets[names as usize]));
             }
             // Cost: O(k), k = the slots folded.
             RxOp::Fold { tok, pos_base } => {
@@ -213,9 +219,9 @@ impl Interpreter {
             }
             // Cost: O(n + c), n = the names under the token, c = the
             // captures across the collected iterations.
-            RxOp::SepEmit { tok, base } => {
+            RxOp::SepEmit { tok, base, names } => {
                 let token = &program.toks[tok as usize];
-                let names = Self::collect_quantified_names_for_token(token);
+                let names = program.name_sets[names as usize].iter().copied();
                 let mut entries = levels.drain_collected(regs[base as usize]);
                 // A `%%` chain that ends on a separator took a trailing one.
                 let trailing = entries
@@ -228,11 +234,11 @@ impl Interpreter {
                 let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
                 let delta = if atoms.is_empty() {
                     // Zero iterations mark the names only.
-                    separated_capture_delta(&names, &[], &[], None, 0, 0)
+                    separated_capture_delta_syms(names, &[], &[], None, 0, 0)
                 } else {
                     let sep = &token.separator.as_ref().expect("a separated token").pattern;
-                    separated_capture_delta(
-                        &names,
+                    separated_capture_delta_syms(
+                        names,
                         &atoms,
                         &seps,
                         trailing.as_ref(),

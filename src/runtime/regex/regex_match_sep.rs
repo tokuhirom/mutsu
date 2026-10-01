@@ -32,9 +32,30 @@ pub(super) fn separated_capture_delta(
     atom_stride: usize,
     sep_stride: usize,
 ) -> RegexCaptures {
+    separated_capture_delta_syms(
+        names.iter().map(|n| Symbol::intern(n)),
+        atom_caps,
+        sep_caps,
+        trailing,
+        atom_stride,
+        sep_stride,
+    )
+}
+
+/// [`separated_capture_delta`] for names already interned (the compiled
+/// engine's, interned when the pattern compiled).
+// Cost: O(n + c), n = the names, c = the captures across the chain.
+pub(super) fn separated_capture_delta_syms(
+    names: impl IntoIterator<Item = Symbol>,
+    atom_caps: &[RegexCaptures],
+    sep_caps: &[RegexCaptures],
+    trailing: Option<&RegexCaptures>,
+    atom_stride: usize,
+    sep_stride: usize,
+) -> RegexCaptures {
     let mut caps = RegexCaptures::default();
     for n in names {
-        caps.named.slot_mut(Symbol::intern(n)).quantified = true;
+        caps.named.slot_mut(n).quantified = true;
     }
     Interpreter::append_separated_captures(
         &mut caps,
