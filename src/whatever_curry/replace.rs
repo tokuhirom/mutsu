@@ -62,12 +62,6 @@ impl Replacer<'_> {
     fn is_placeholder(&self, e: &Expr) -> bool {
         is_whatever(e) || (self.counter.is_none() && matches!(e, Expr::HyperWhatever))
     }
-
-    /// Replace `e` by its own operand `inner`, then rewrite that.
-    fn unwrap_into(&mut self, e: &mut Expr, inner: impl FnOnce(&mut Expr) -> Expr) {
-        *e = inner(e);
-        self.visit_expr_mut(e);
-    }
 }
 
 impl VisitMut for Replacer<'_> {
@@ -83,14 +77,13 @@ impl VisitMut for Replacer<'_> {
             return;
         }
         match e {
-            Expr::Grouped(_) => self.unwrap_into(e, |e| match e {
-                Expr::Grouped(inner) => std::mem::replace(inner.as_mut(), Expr::Whatever),
-                _ => unreachable!(),
-            }),
-            Expr::WhateverCurry(_) => self.unwrap_into(e, |e| match e {
-                Expr::WhateverCurry(inner) => std::mem::replace(inner.as_mut(), Expr::Whatever),
-                _ => unreachable!(),
-            }),
+            // The grouping and an inner priming marker dissolve into this
+            // closure's body: replace the node by its operand, rewritten.
+            Expr::Grouped(inner) | Expr::WhateverCurry(inner) => {
+                let operand = std::mem::replace(inner.as_mut(), Expr::Whatever);
+                *e = operand;
+                self.visit_expr_mut(e);
+            }
             // A curried CompoundAssign retains its source marker for RakuAST,
             // but its executable closure body must be the established
             // expansion rebuilt with the substituted RHS. This also covers
