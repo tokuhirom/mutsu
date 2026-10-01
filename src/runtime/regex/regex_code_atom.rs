@@ -356,17 +356,12 @@ impl Interpreter {
                 && let Some(parsed) = interp.parse_regex(&pat_str)
             {
                 let pkg = interp.current_package_sym();
-                if let Some((end, inner_caps)) =
+                // Rakudo gives the interpolated pattern a match of its own:
+                // its captures are discarded, not merged into the caller's.
+                if let Some((end, _inner_caps)) =
                     interp.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
                 {
-                    let mut new_caps = RegexCaptures::default();
-                    new_caps
-                        .positional
-                        .extend(inner_caps.positional.iter().cloned());
-                    for (k, v) in &inner_caps.named {
-                        new_caps.named.entry(*k).or_default().merge(v.clone());
-                    }
-                    return Some((end, new_caps));
+                    return Some((end, RegexCaptures::default()));
                 }
             }
             None
