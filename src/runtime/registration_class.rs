@@ -312,11 +312,15 @@ pub(crate) enum HoistedShell {
     /// that counts.
     Forward,
     /// A shell of a declaration nested in code (`hoist_nested_type_decl_shells`,
-    /// #10470). This is the compile-time installation itself: Rakudo composes
-    /// the class, running its role bodies, once at compile time, and the
-    /// in-place registration, which repeats on every entry of the enclosing
-    /// code, must not run them again. So its role-body runs go through the
-    /// composition memo like a real declaration's.
+    /// #10470). It composes the role's methods but runs no role body: the
+    /// shell registers at the head of the unit, whose frame is not the
+    /// body's declaring scope, so a method a body block declares would close
+    /// over the wrong lexicals. The in-place registration runs the body, and
+    /// only its first run counts (the composition memo), since the
+    /// declaration repeats on every entry of the enclosing code.
+    // TODO: Rakudo runs the role body once at compile time, so it has run
+    // even if the enclosing code never does; that needs a role-body run in
+    // the declaring scope's compile-time frame (#10494).
     Nested,
 }
 

@@ -11,9 +11,10 @@ in a sub of `module Mod`). The in-place registration still runs on every
 entry of the enclosing code, so the class body's statements keep running at
 run time and the type object stays the same (#10470).
 
-Two fixes came with it. A shell of a nested declaration counts as the
-compile-time composition, so a composed role's body runs once rather than on
-every entry of the routine (`HoistedShell::Nested` goes through the
-composition memo, unlike a unit-level forward shell). And re-registering a
-parameterized role's first candidate now also replaces `roles[name]`, so its
-methods close over the latest declaring frame instead of the shell's.
+A nested shell composes its roles' methods but runs no role body (it
+registers in the unit's head frame, where a method a role body block
+declares would close over the wrong lexicals); the in-place registration
+runs the body once. Rakudo runs it at compile time even if the routine never
+runs; that remains open as #10494. Re-registering a parameterized role's
+first candidate now also replaces `roles[name]`, so its methods close over
+the latest declaring frame instead of the shell's.

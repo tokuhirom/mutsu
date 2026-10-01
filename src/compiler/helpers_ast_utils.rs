@@ -842,8 +842,8 @@ impl Compiler {
     /// declaration subset of its body; a role keeps its whole body, whose
     /// statements only run when the role is composed. A `nested` shell (one
     /// of a declaration nested in code, `hoist_nested_type_decl_shells`) is
-    /// also marked `__hoisted_nested`: its composition is the compile-time
-    /// one, see `HoistedShell::Nested`.
+    /// also marked `__hoisted_nested`: it runs no role body, see
+    /// `HoistedShell::Nested`.
     pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt, nested: bool) {
         let keep_trait =
             |t: &str| t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED");
