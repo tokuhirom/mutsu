@@ -748,7 +748,10 @@ impl Compiler {
             .push(cf.code.free_var_syms.clone());
         let mut lexical_free = cf.code.free_var_syms.clone();
         lexical_free.extend(cf.code.free_var_writes.iter().copied());
-        self.record_lexical_sub_free_vars(name, lexical_free);
+        let mut written_free: Vec<Symbol> = cf.code.free_var_writes.clone();
+        written_free.extend(cf.code.free_var_container_writes.iter().copied());
+        written_free.extend(cf.code.nested_sub_written_free.iter().copied());
+        self.record_lexical_sub_free_vars(name, lexical_free, written_free);
         // An `our sub` is installed into the package registry and outlives its
         // declaring block, but a registry routine has no per-sub closure env. So
         // every lexical it READS or WRITES must be boxed into a shared cell at its
