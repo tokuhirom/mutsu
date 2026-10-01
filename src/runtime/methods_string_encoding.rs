@@ -269,12 +269,14 @@ impl Interpreter {
                     ));
                 }
                 let units: Vec<u16> = data
-                    .chunks_exact(2)
-                    .map(|c| {
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&c| {
                         if be {
-                            u16::from_be_bytes([c[0], c[1]])
+                            u16::from_be_bytes(c)
                         } else {
-                            u16::from_le_bytes([c[0], c[1]])
+                            u16::from_le_bytes(c)
                         }
                     })
                     .collect();
@@ -287,8 +289,10 @@ impl Interpreter {
                     ));
                 }
                 let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&c| u16::from_le_bytes(c))
                     .collect();
                 Self::decode_utf16_units(&units, replacement)
             }
@@ -299,8 +303,10 @@ impl Interpreter {
                     ));
                 }
                 let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&c| u16::from_be_bytes(c))
                     .collect();
                 Self::decode_utf16_units(&units, replacement)
             }

@@ -458,9 +458,9 @@ fn constant_mapping_pairs(body: &[crate::ast::Stmt]) -> Option<Vec<(String, Stri
             return None;
         }
         let mut pairs = Vec::with_capacity(items.len() / 2);
-        for pair in items.chunks_exact(2) {
+        for [first, second] in items.as_chunks::<2>().0 {
             let (Some(localized), Some(canonical)) =
-                (string_literal(&pair[0]), string_literal(&pair[1]))
+                (string_literal(first), string_literal(second))
             else {
                 return None;
             };
