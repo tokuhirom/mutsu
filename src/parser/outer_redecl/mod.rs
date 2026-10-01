@@ -25,11 +25,13 @@
 //! lexical scope, the set of names referenced-as-outer so far, and checks each
 //! `my`/`state` declaration against it.
 //!
-//! The walker is deliberately conservative: any construct it does not descend
-//! into simply drops references (a false *negative*). A false *positive* is only
+//! The walk is a [`VisitMut`] (ADR-10499), so it reaches every child; what it
+//! decides is where scopes open (`visit.rs`). A false *positive* is only
 //! possible if an in-scope declaration is missed, so every declaration form
-//! (`my`/`state`, params, `for`/pointy loop variables, and inline `do my $x`) is
-//! registered before the following statements are examined.
+//! (`my`/`state`, params, `for`/pointy/`whenever` loop variables, and inline
+//! `do my $x`) is registered before the following statements are examined.
+//! References held as source text (a `s///` quote-form replacement) are not
+//! seen.
 //!
 //! The same walk also finds a variable used in its own declaration's
 //! initializer (`my $x = $x + 1`), which rakudo rejects at compile time with
@@ -41,12 +43,12 @@
 //! (`my $*X = $*X`) are exempt: rakudo lets that read the fresh `Any`.
 
 mod errors;
-mod expr;
+mod visit;
 
 pub(crate) use errors::scope_diagnostic_error;
 
 use crate::ast::{ParamDef, Stmt};
-use expr::{walk_call_arg, walk_expr};
+use crate::ast_visit::VisitMut;
 use std::collections::HashSet;
 
 /// The internal trait marking a declaration initialized by `.=` on its own
@@ -204,6 +206,7 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
 /// Also marks each declaration whose initializer reads the new binding (see
 /// [`Initializing::sees_self`]) with the internal `__init_sees_self` trait, so
 /// the compiler resolves those reads to it.
+// Cost: O(n * d), n = size of the program's tree, d = lexical scope depth.
 pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
     let mut ctx = Ctx {
         scopes: vec![Scope::new()],
@@ -211,42 +214,19 @@ pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnosti
         initializing: Vec::new(),
         found: None,
     };
-    walk_stmts(stmts, &mut ctx);
+    walk_list(stmts, &mut ctx);
     ctx.found
 }
 
-fn seed_params(params: &[String], param_defs: &[ParamDef], ctx: &mut Ctx) {
-    for p in params {
-        if let Some(k) = decl_key(p) {
-            ctx.seed(k);
-        }
-    }
-    for d in param_defs {
-        if let Some(k) = decl_key(&d.name) {
-            ctx.seed(k);
-        }
-    }
+/// The keys a routine's or block's parameters declare in its scope.
+fn param_keys(params: &[String], param_defs: &[ParamDef]) -> Vec<String> {
+    let names = params.iter().chain(param_defs.iter().map(|d| &d.name));
+    names.filter_map(|n| decl_key(n)).collect()
 }
 
-fn walk_scoped_body(body: &mut [Stmt], ctx: &mut Ctx) {
-    ctx.scopes.push(Scope::new());
-    walk_stmts(body, ctx);
-    ctx.scopes.pop();
-}
-
-fn walk_scoped_body_with_params(
-    body: &mut [Stmt],
-    params: &[String],
-    param_defs: &[ParamDef],
-    ctx: &mut Ctx,
-) {
-    ctx.scopes.push(Scope::new());
-    seed_params(params, param_defs, ctx);
-    walk_stmts(body, ctx);
-    ctx.scopes.pop();
-}
-
-fn walk_stmts(stmts: &mut [Stmt], ctx: &mut Ctx) {
+/// Walks a statement list in order, so each declaration is registered before
+/// the statements after it are examined.
+fn walk_list(stmts: &mut [Stmt], ctx: &mut Ctx) {
     for i in 0..stmts.len() {
         // `my \x = ...` lowers to a `VarDecl` of `x` followed by a sigilless
         // marker. The sigilless `x` is a different symbol from `$x`, so the
@@ -261,7 +241,7 @@ fn walk_stmts(stmts: &mut [Stmt], ctx: &mut Ctx) {
         if sigilless {
             walk_var_decl(&mut stmts[i], false, ctx);
         } else {
-            walk_stmt(&mut stmts[i], ctx);
+            ctx.visit_stmt_mut(&mut stmts[i]);
         }
     }
 }
@@ -284,13 +264,24 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     let Stmt::VarDecl {
         name,
         expr,
+        type_constraint: _,
+        is_state: _,
         is_our,
+        is_dynamic: _,
+        is_export: _,
+        export_tags: _,
         custom_traits,
-        ..
+        where_constraint,
     } = stmt
     else {
         return;
     };
+    // A `where` clause is parsed before the variable is introduced (rakudo
+    // reports `my $x where $x` as an undeclared `$x`), so it reads the
+    // enclosing bindings.
+    if let Some(e) = where_constraint {
+        ctx.visit_expr_mut(e);
+    }
     let key = decl_key(name);
     if let Some(key) = &key {
         if *is_our {
@@ -322,157 +313,15 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
             sees_self: false,
         });
     }
-    walk_expr(expr, ctx);
+    ctx.visit_expr_mut(expr);
     // `is default(...)` and other trait arguments are part of the declaration.
     for arg in custom_traits.iter_mut().filter_map(|(_, arg)| arg.as_mut()) {
-        walk_expr(arg, ctx);
+        ctx.visit_expr_mut(arg);
     }
     if armed
         && let Some(init) = ctx.initializing.pop()
         && init.sees_self
     {
         custom_traits.push(("__init_sees_self".to_string(), None));
-    }
-}
-
-fn walk_stmt(stmt: &mut Stmt, ctx: &mut Ctx) {
-    match stmt {
-        Stmt::SetLine(n) => ctx.line = *n,
-
-        Stmt::VarDecl { .. } => walk_var_decl(stmt, true, ctx),
-
-        Stmt::Assign { name, expr, .. } => {
-            if let Some(key) = decl_key(name) {
-                ctx.reference(key);
-            }
-            walk_expr(expr, ctx);
-        }
-
-        Stmt::Return(e) | Stmt::Take(e, _) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Goto(e) => {
-            walk_expr(e, ctx)
-        }
-        Stmt::Expr(e) => walk_expr(e, ctx),
-
-        // I/O statements carry their operands as a plain expression list.
-        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-            for e in es {
-                walk_expr(e, ctx);
-            }
-        }
-        Stmt::Call { args, .. } => {
-            for a in args {
-                walk_call_arg(a, ctx);
-            }
-        }
-        Stmt::Phaser { body, .. } => walk_scoped_body(body, ctx),
-
-        // Routine boundaries: a fresh scope seeded with the parameters. Closures
-        // can still see outer lexicals, so this is a normal nested scope.
-        Stmt::SubDecl {
-            body,
-            params,
-            param_defs,
-            ..
-        } => walk_scoped_body_with_params(body, params, param_defs, ctx),
-        Stmt::MethodDecl {
-            body,
-            params,
-            param_defs,
-            ..
-        } => walk_scoped_body_with_params(body, params, param_defs, ctx),
-        Stmt::TokenDecl { body, .. } | Stmt::RuleDecl { body, .. } => walk_scoped_body(body, ctx),
-
-        Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } | Stmt::Package { body, .. } => {
-            walk_scoped_body(body, ctx)
-        }
-
-        // A `SyntheticBlock` is a compiler-internal grouping (e.g. the lowering of
-        // `my ($a, $b) = ...` destructuring). Its declarations belong to the
-        // enclosing lexical scope, so it does not open a new scope.
-        Stmt::SyntheticBlock(body) => walk_stmts(body, ctx),
-
-        // Inline blocks open a new lexical scope but preserve outer visibility.
-        Stmt::Block(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::React { body } => walk_scoped_body(body, ctx),
-
-        Stmt::Given { body, topic, .. } => {
-            walk_expr(topic, ctx);
-            walk_scoped_body(body, ctx);
-        }
-        Stmt::When { cond, body, .. } => {
-            walk_expr(cond, ctx);
-            walk_scoped_body(body, ctx);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            walk_expr(supply, ctx);
-            walk_scoped_body(body, ctx);
-        }
-        Stmt::While { cond, body, .. } => {
-            walk_expr(cond, ctx);
-            walk_scoped_body(body, ctx);
-        }
-        Stmt::For {
-            iterable,
-            params,
-            params_def,
-            param,
-            param_def,
-            body,
-            ..
-        } => {
-            walk_expr(iterable, ctx);
-            ctx.scopes.push(Scope::new());
-            if let Some(p) = param
-                && let Some(k) = decl_key(p)
-            {
-                ctx.seed(k);
-            }
-            if let Some(d) = param_def.as_ref().as_ref()
-                && let Some(k) = decl_key(&d.name)
-            {
-                ctx.seed(k);
-            }
-            seed_params(params, params_def, ctx);
-            walk_stmts(body, ctx);
-            ctx.scopes.pop();
-        }
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            // A C-style loop's `init` declarations share the loop's scope.
-            ctx.scopes.push(Scope::new());
-            if let Some(init) = init {
-                walk_stmt(init, ctx);
-            }
-            if let Some(c) = cond {
-                walk_expr(c, ctx);
-            }
-            if let Some(s) = step {
-                walk_expr(s, ctx);
-            }
-            walk_stmts(body, ctx);
-            ctx.scopes.pop();
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            walk_expr(cond, ctx);
-            walk_scoped_body(then_branch, ctx);
-            // `elsif` chains are represented as a nested `If` inside `else_branch`.
-            walk_scoped_body(else_branch, ctx);
-        }
-        Stmt::Label { stmt, .. } => walk_stmt(stmt, ctx),
-
-        _ => {}
     }
 }
