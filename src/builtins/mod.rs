@@ -54,7 +54,12 @@ mod unicode_gc_data;
 #[cfg(test)]
 #[path = "unicode_gc_gen.rs"]
 mod unicode_gc_gen;
+pub(crate) mod unicode_name;
 pub(crate) mod unicode_name_alias_table;
+mod unicode_name_data;
+#[cfg(test)]
+#[path = "unicode_name_gen.rs"]
+mod unicode_name_gen;
 pub(crate) mod unicode_named_sequence_table;
 pub(crate) mod unicode_numval_table;
 pub(crate) mod unicode_script;

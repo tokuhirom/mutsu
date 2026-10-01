@@ -262,21 +262,21 @@ impl Hash for TokenKind {
 }
 
 pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
-    if let Some(c) = unicode_names2::character(name) {
+    if let Some(c) = crate::builtins::unicode_name::char_by_name(name) {
         return Some(c);
     }
     let upper = name.to_uppercase();
     // The UCD `NameAliases.txt` list: corrected spellings (`LATIN CAPITAL
     // LETTER GHA`), control names and abbreviations, the `BYTE ORDER MARK`
-    // alternate and the `VS1`..`VS256` variation selectors. `unicode_names2`
-    // only indexes the immutable `Name` property, so none of these resolve
+    // alternate and the `VS1`..`VS256` variation selectors. The `unicode_name`
+    // table only indexes the immutable `Name` property, so none of these resolve
     // through it.
     if let Some(c) = crate::builtins::unicode_name_alias_table::lookup_name_alias(&upper) {
         return Some(c);
     }
     // Algorithmically-derived names (`TANGUT IDEOGRAPH-17000`), the inverse of
-    // `unicode::derived_char_name`. `unicode_names2::character` resolves the
-    // subset of these its name table enumerates, so without this the two
+    // `unicode::derived_char_name`. The `unicode_name` table resolves the
+    // subset of these it enumerates, so without this the two
     // directions disagreed: `uniparse('CJK UNIFIED IDEOGRAPH-4E00')` worked
     // while `uniparse('TANGUT IDEOGRAPH-17000')` — a name `.uniname` itself
     // produces — raised "Unrecognized character name".

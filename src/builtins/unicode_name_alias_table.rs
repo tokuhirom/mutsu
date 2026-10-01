@@ -5,7 +5,7 @@
 //! spelling (`LATIN CAPITAL LETTER GHA` for U+01A2, whose `Name` is
 //! still `LATIN CAPITAL LETTER OI`), a control abbreviation (`LF`,
 //! `NBSP`, `ZWJ`) and the `BYTE ORDER MARK` alternate all resolve.
-//! The `unicode_names2` crate only indexes `Name`, hence this table.
+//! The `Name` table (`super::unicode_name`) only indexes `Name`, hence this table.
 //!
 //! 217 entries (all alias kinds: correction, control,
 //! abbreviation, figment, alternate). The `VS1`..`VS256` variation

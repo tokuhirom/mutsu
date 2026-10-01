@@ -72,9 +72,6 @@ jit = [
 # Range tables (or `regex-syntax` alone) replace it. The dev-only `*_gen.rs`
 # consistency tests may keep it as a dev-dependency.
 regex = "1.12.3"
-# REMOVE (#10438): char <-> Unicode name at 3 call sites, but its build
-# script pulls in phf_codegen + rand (15 crates). Generate a committed table.
-unicode_names2 = "3"
 # KEEP (a): Int/Rat/FatRat big-integer arithmetic.
 num-bigint = { version = "0.5", features = ["serde"] }
 # KEEP: the numeric traits num-bigint is built on. Already a transitive dep.
@@ -129,6 +126,11 @@ cranelift-module = { version = "0.136", optional = true }
 cranelift-native = { version = "0.136", optional = true }
 
 [dev-dependencies]
+# Used only by `builtins::unicode_name_gen` to (re)generate and verify the
+# committed Unicode name tables `builtins::unicode_name_data` (#10438). Its
+# build script pulls in phf_codegen + rand, which is why it is not a runtime
+# dependency.
+unicode_names2 = "3"
 # Used only by `builtins::unicode_gc_gen` to re-derive the committed
 # General_Category tables from the very Unicode data `regex` matches against,
 # so a `regex-syntax` bump carrying a new Unicode version fails the suite

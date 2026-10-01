@@ -253,10 +253,7 @@ fn check_name_property(args: &str, c: char) -> bool {
 
 /// Get the Unicode name of a character.
 fn unicode_char_name(c: char) -> String {
-    // Use the unicode_names2 crate if available, otherwise fall back to manual lookup
-    unicode_names2::name(c)
-        .map(|n| n.to_string())
-        .unwrap_or_default()
+    crate::builtins::unicode_name::char_name(c).unwrap_or_default()
 }
 
 /// Check BiDi class of a character (regex crate doesn't support Bidi_Class).
