@@ -181,4 +181,29 @@ impl Interpreter {
         // not celled.
         self.env().get(name).cloned().map(celled)
     }
+
+    /// The cell an `is rw` parameter binds when a TRIR body passes its free
+    /// variable `name` by variable (`TrArg::Outer`) — the TRIR twin of
+    /// `WrapVarRef`'s `outer_store_lexical_cell`. A shared cell is the
+    /// binding itself; a package-block lexical recorded as a plain value is
+    /// promoted to one in place (`package_lexicals` replacements bump
+    /// `unit_lexical_gen`, so no frame keeps the stale value). Anything else
+    /// has no container to share and goes over as its value. (#10372)
+    // Cost: O(d), d = package nesting depth walked by `trir_outer_binding`.
+    pub(crate) fn trir_outer_rw_cell(
+        &mut self,
+        chunk: &TrChunk,
+        name: crate::symbol::Symbol,
+    ) -> Option<Value> {
+        let name = name.as_str();
+        let (binding, _) = self.trir_outer_binding(chunk, name)?;
+        if binding.is_container_ref() {
+            return Some(binding);
+        }
+        if crate::qualified::is_global_package(self.current_package_sym()) {
+            return None;
+        }
+        let stored = self.package_scope_lexical(name)?;
+        self.promote_package_lexical_to_cell(name, stored)
+    }
 }
