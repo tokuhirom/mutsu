@@ -554,7 +554,7 @@ impl Interpreter {
         // for `<x>`). An empty rule name marks that — the same name the walk
         // already gives a positional `( )` group — while the walk still
         // descends into the node's own captures.
-        let no_rule = || Some(String::new());
+        let no_rule = || Some(Symbol::intern(""));
         let mut sub = if let Some(mut gs) = group_subcap.take() {
             // Keep the group's nested captures, but pin the span to the
             // aliased group's extent.
@@ -601,7 +601,7 @@ impl Interpreter {
         if let RegexAtom::Named(atom_name) = &token.atom {
             let spec = atom_name.spec();
             if spec.silent && !spec.lookup_name.is_empty() && sub.action_name.is_none() {
-                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_name.clone());
+                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_sym);
             }
         }
         // A sigil-prefixed alias (`$<alias> = <rule>`) shares the subrule's
@@ -626,7 +626,7 @@ impl Interpreter {
                 && std::sync::Arc::ptr_eq(original, &sub)
             {
                 let node = std::sync::Arc::make_mut(original);
-                node.action_name = Some(spec.lookup_name.clone());
+                node.action_name = Some(spec.lookup_sym);
                 sub = std::sync::Arc::clone(original);
             }
         }

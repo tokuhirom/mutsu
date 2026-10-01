@@ -726,7 +726,7 @@ impl Interpreter {
                 // action channel behave identically on both paths.
                 if let Some((inner_end, mut inner_caps)) = best {
                     if best_sym.is_some() {
-                        inner_caps.set_sym(best_sym);
+                        inner_caps.set_sym(best_sym.as_deref().map(Symbol::intern));
                     }
                     return self
                         .build_named_candidates_from_inner(

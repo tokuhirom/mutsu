@@ -393,13 +393,8 @@ impl Interpreter {
                 ..RegexCaptures::default()
             },
         };
-        let sym = inner_caps.sym().cloned();
-        Some(self.build_named_candidates_from_inner(
-            vec![(to_abs, inner_caps)],
-            pos,
-            spec,
-            sym.as_ref(),
-        ))
+        let sym = inner_caps.sym();
+        Some(self.build_named_candidates_from_inner(vec![(to_abs, inner_caps)], pos, spec, sym))
     }
 
     /// Run a wrapped whitespace rule from the compact `WsRule` regex atom.
@@ -558,12 +553,7 @@ impl Interpreter {
                 ..RegexCaptures::default()
             },
         };
-        let sym = inner_caps.sym().cloned();
-        Some(self.build_named_candidates_from_inner(
-            vec![(to_abs, inner_caps)],
-            pos,
-            spec,
-            sym.as_ref(),
-        ))
+        let sym = inner_caps.sym();
+        Some(self.build_named_candidates_from_inner(vec![(to_abs, inner_caps)], pos, spec, sym))
     }
 }

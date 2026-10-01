@@ -798,7 +798,7 @@ impl Interpreter {
                             };
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.set_sym(sym_key.clone());
+                                    caps.set_sym(sym_key.as_deref().map(Symbol::intern));
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -827,7 +827,7 @@ impl Interpreter {
                             // can set subcap.sym correctly for action method dispatch.
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.set_sym(sym_key.clone());
+                                    caps.set_sym(sym_key.as_deref().map(Symbol::intern));
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -1189,7 +1189,7 @@ impl Interpreter {
         inner_matches: Vec<(usize, RegexCaptures)>,
         pos: usize,
         spec: &NamedRegexLookupSpec,
-        sym_key: Option<&String>,
+        sym_key: Option<Symbol>,
     ) -> Vec<(usize, RegexCaptures)> {
         inner_matches
             .into_iter()
@@ -1208,7 +1208,7 @@ impl Interpreter {
         inner_caps: RegexCaptures,
         pos: usize,
         spec: &NamedRegexLookupSpec,
-        sym_key: Option<&String>,
+        sym_key: Option<Symbol>,
     ) -> (usize, RegexCaptures) {
         let mut new_caps = RegexCaptures::default();
         // The name this subrule's match is filed under, with its interned
@@ -1232,7 +1232,7 @@ impl Interpreter {
             // sym is already set on subcap from raw_out collection loop.
             // Fall back to sym_key parameter for the is_active (seed) path.
             if subcap.sym().is_none() && sym_key.is_some() {
-                subcap.set_sym(sym_key.cloned());
+                subcap.set_sym(sym_key);
             }
             // The subrule's own inline `{ … }` code blocks stay ON the subcap
             // (a queryable Match node) rather than bubbling into the parent, so
@@ -1258,7 +1258,7 @@ impl Interpreter {
             let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
             let mut subcap = subcap;
             if is_alias {
-                subcap.set_action_name(Some(spec.lookup_name.clone()));
+                subcap.set_action_name(Some(spec.lookup_sym));
             }
             let subcap = std::sync::Arc::new(subcap.into_cap_node());
             // This subrule has just REDUCED. Log it so a parse that fails
@@ -1288,13 +1288,8 @@ impl Interpreter {
                     .push(orig_subcap);
             }
         } else if !inner_caps.named.is_empty()
-            || self.silent_subrule_has_action(
-                spec,
-                inner_caps
-                    .sym()
-                    .map(String::as_str)
-                    .or(sym_key.map(String::as_str)),
-            )
+            || self
+                .silent_subrule_has_action(spec, inner_caps.sym().or(sym_key).map(|s| s.as_str()))
         {
             // Silent subrule (`<.foo>`) that contains nested captures, or
             // whose OWN action method exists. The subrule is hidden from
@@ -1317,9 +1312,9 @@ impl Interpreter {
             subcap.from = cs;
             subcap.to = ce;
             if subcap.sym().is_none() && sym_key.is_some() {
-                subcap.set_sym(sym_key.cloned());
+                subcap.set_sym(sym_key);
             }
-            subcap.set_action_name(Some(spec.lookup_name.clone()));
+            subcap.set_action_name(Some(spec.lookup_sym));
             // Keep the silent subrule's inline blocks on its own (marker) node
             // for the reduce-time walk to run once — see the non-silent branch.
             let subcap = std::sync::Arc::new(subcap.into_cap_node());

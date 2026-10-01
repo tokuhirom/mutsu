@@ -735,7 +735,7 @@ impl Interpreter {
                                 };
                                 // A proto candidate's Match carries its `:sym<…>`.
                                 if let Some((cands, idx)) = &f.proto {
-                                    inner.set_sym(cands[*idx].2.clone());
+                                    inner.set_sym(cands[*idx].2.as_deref().map(Symbol::intern));
                                 }
                                 // The grammar instance this invocation owned is
                                 // its Match's (#9803).

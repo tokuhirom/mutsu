@@ -61,7 +61,7 @@ pub(super) enum Undo {
     },
     CaptureStart(Option<usize>),
     CaptureEnd(Option<usize>),
-    Sym(Option<String>),
+    Sym(Option<crate::symbol::Symbol>),
     /// Restore the node's `make` value (None = it had none). An inline
     /// `{ make … }` runs on paths the engine later abandons, so the write is
     /// trailed like any other capture-store mutation.
@@ -97,6 +97,7 @@ impl CapStore {
             capture_end,
             match_from,
             ast,
+            names,
             rare,
         } = &mut self.caps;
         named.clear();
@@ -107,6 +108,7 @@ impl CapStore {
         *capture_end = None;
         *match_from = from;
         *ast = None;
+        *names = Default::default();
         *rare = None;
         self.trail.clear();
     }
@@ -453,7 +455,7 @@ mod tests {
         y.merge(NamedSlot::leaf(3, 4));
         y.quantified = true;
         delta.capture_start = Some(3);
-        delta.set_sym(Some("s".to_string()));
+        delta.set_sym(Some(Symbol::intern("s")));
         store.merge_delta(delta);
         assert_eq!(store.caps().positional.len(), 2);
         let x = Symbol::intern("x");
@@ -462,7 +464,7 @@ mod tests {
         assert_eq!(store.caps().named[&y].nodes.len(), 1);
         assert!(store.caps().named[&y].quantified);
         assert_eq!(store.caps().capture_start, Some(3));
-        assert_eq!(store.caps().sym().map(String::as_str), Some("s"));
+        assert_eq!(store.caps().sym(), Some(Symbol::intern("s")));
         store.rewind(m);
         assert_base(&store);
         assert!(!store.caps().named.get(&y).is_some());

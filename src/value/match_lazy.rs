@@ -117,8 +117,8 @@ impl MatchNode {
             "to" => Some(Value::Int(self.cap.to as i64)),
             "orig" => Some(Value::str_arc(Arc::clone(self.target.text()))),
             "ast" => self.cap.ast.clone(),
-            "sym_variant" => self.cap.sym.clone().map(Value::str),
-            "action_name" => self.cap.action_name.clone().map(Value::str),
+            "sym_variant" => self.cap.sym.map(|s| Value::str(s.resolve())),
+            "action_name" => self.cap.action_name.map(|s| Value::str(s.resolve())),
             // Post-hoc attributes exist only on REBUILT eager Matches (the
             // rebuild helpers produce plain Instances); a live lazy node
             // never carries them. Answering `None` here rather than falling
@@ -195,10 +195,10 @@ impl MatchNode {
         }
         attrs.insert("orig", Value::str_arc(Arc::clone(self.target.text())));
         if let Some(sym) = &cap.sym {
-            attrs.insert("sym_variant", Value::str(sym.clone()));
+            attrs.insert("sym_variant", Value::str(sym.resolve()));
         }
         if let Some(action_name) = &cap.action_name {
-            attrs.insert("action_name", Value::str(action_name.clone()));
+            attrs.insert("action_name", Value::str(action_name.resolve()));
         }
         // Inline `{ make … }` value produced by this subrule at reduce time.
         if let Some(ast) = &cap.ast {
@@ -454,7 +454,10 @@ impl Value {
             .named
             .iter()
             .any(|(k, slot)| k.starts_with(SILENT_ACTION_MARKER_PREFIX) && !slot.nodes.is_empty());
-        Some((!has_named && !has_list && !has_silent, node.cap.sym.clone()))
+        Some((
+            !has_named && !has_list && !has_silent,
+            node.cap.sym.map(|s| s.resolve()),
+        ))
     }
 }
 

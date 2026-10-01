@@ -384,7 +384,9 @@ impl Interpreter {
             for sc in slot.nodes.iter_mut() {
                 crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
                 let sc = Arc::make_mut(sc);
-                let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
+                let child_rule = sc
+                    .action_name
+                    .map_or_else(|| child_rule.clone(), |name| name.resolve());
                 self.reduce_cap_node_for_rule(sc, target, Some(&child_rule));
             }
         }
