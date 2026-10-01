@@ -2216,6 +2216,12 @@ pub(crate) enum Stmt {
         /// multi family whose proto was `is export(:some-tag, :ALL)`.
         export_tags: Vec<String>,
         custom_traits: Vec<String>,
+        /// The same traits as `custom_traits` with their argument
+        /// expressions (`is also<a b>`), index-aligned. A `proto method`'s
+        /// traits dispatch to a user `trait_mod:<is>` exactly as a `method`'s
+        /// do, and that needs the argument.
+        #[serde(default)]
+        trait_args: Vec<(String, Option<Expr>)>,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

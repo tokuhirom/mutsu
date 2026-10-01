@@ -11445,6 +11445,7 @@ impl CompiledCode {
             is_export,
             export_tags,
             custom_traits,
+            trait_args: _,
             is_method,
             is_our,
         } = stmt
