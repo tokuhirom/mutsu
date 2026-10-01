@@ -18,9 +18,13 @@ pub(super) enum Goal<'a> {
     /// The first match that ends exactly at this position, as the walk's
     /// `regex_match_branch_ending_at` picks one from the full end list.
     End(usize),
-    /// Every match in priority order up to and including the first that covers
-    /// the whole subject (`Grammar.parse`).
-    UntilFull(&'a mut Vec<(usize, RegexCaptures)>),
+    /// Every match in priority order: all of them, or (`stop_at_full`, for
+    /// `Grammar.parse`) up to and including the first that covers the whole
+    /// subject.
+    Ends {
+        out: &'a mut Vec<(usize, RegexCaptures)>,
+        stop_at_full: bool,
+    },
 }
 
 /// The VM's growable state, reused across engine entries instead of being
@@ -323,11 +327,39 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
+        self.rx_try_ends(pattern, chars, start, pkg, true)
+    }
+
+    /// Every end of `pattern` at `start`, highest priority first
+    /// (`regex_match_ends_from_caps_in_pkg`: `:ov`/`:ex`, an alternation
+    /// branch, LTM lookahead fates, a cursor token method) — or `None` when
+    /// the match must take the walk.
+    // Cost: O(s) in the steps of the whole backtracking search, as `rx_run`
+    // run to exhaustion; plus O(c) per end collected, c = its captures.
+    pub(in crate::runtime::regex) fn rx_try_all_ends(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
+        self.rx_try_ends(pattern, chars, start, pkg, false)
+    }
+
+    fn rx_try_ends(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        stop_at_full: bool,
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
         if let Err(why) = self.rx_context_allows() {
             return walked(why);
         }
         if pattern.ignore_mark {
-            return walked("ignoremark-parse");
+            // The walk remaps the whole end list across the stripped subject.
+            return walked("ignoremark-ends");
         }
         let program = match rx_program_for_run(pattern, true) {
             Ok(program) => program,
@@ -337,11 +369,15 @@ impl Interpreter {
         let diffing = rx_diff_enabled();
         let mark = diffing.then(super::rx_diff::begin_record);
         let mut ends = Vec::new();
-        self.rx_run_goal(&program, chars, start, pkg, Goal::UntilFull(&mut ends));
+        let goal = Goal::Ends {
+            out: &mut ends,
+            stop_at_full,
+        };
+        self.rx_run_goal(&program, chars, start, pkg, goal);
         if let Some(mark) = mark {
             super::rx_diff::begin_replay(mark);
             let walked = super::super::regex_helpers::isolate_reduced_log(|| {
-                self.regex_walk_ends_until_full_for_diff(pattern, chars, start, pkg)
+                self.regex_walk_ends_for_diff(pattern, chars, start, pkg, stop_at_full)
             });
             let replay = super::rx_diff::end_replay();
             let same = super::rx_diff::same_ends(&ends, &walked);

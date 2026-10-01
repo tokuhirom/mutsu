@@ -20,10 +20,10 @@ sub walk-line(Str $code, *%extra-env) {
 }
 
 {
-    my ($out, $line) = walk-line('say ("abab" ~~ m:ov/ab/).elems');
-    is $out, "2\n", ':ov still answers';
-    like $line, /'walked=' \d+ ' (' <-[)]>* 'all-ends:match-all=' \d+/,
-        'every end at a position has no compiled goal: walked, all-ends:match-all';
+    my ($out, $line) = walk-line('say ("abab" ~~ m:ov/ab/).elems, " ", ("abc" ~~ m:ex/\w+/).elems');
+    is $out, "2 6\n", ':ov and :ex answer';
+    like $line, /'walked=0 ()'/,
+        'every end at a position runs on the compiled engine (Goal::Ends)';
 }
 
 {
