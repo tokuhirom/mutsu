@@ -879,7 +879,12 @@ impl Interpreter {
             ));
         }
         let target = args[0].clone();
-        let method = args[1].to_string_value();
+        // `$d.$m() = v` with a native/accessor Method object assigns through
+        // the object's own candidate, not the invocant's override (#10344).
+        let method = match self.bound_method_object_name(&args[1], &target) {
+            Some(qualified) => qualified.as_str().to_string(),
+            None => args[1].to_string_value(),
+        };
         // NOTE: these keep their containers. The method's own arguments reach us
         // inside an `ArrayLiteral` carrier and ADR-0040 makes an `Array` element
         // a `Scalar` container at the store, so a *variable* argument arrives as

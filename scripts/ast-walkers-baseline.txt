@@ -38,8 +38,6 @@ src/parser/expr/precedence_meta_ops/arith.rs          1  # autoincrement_expr: r
 src/parser/expr/precedence_meta_ops/hyper_concat.rs   2  # 2 lowerings of a hyper-assignment target list (shape and per-element assignment)
 src/parser/expr/whatever.rs                             2  # contains_whatever/contains_xx_with_bare_whatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/parser/expr/whatever_wrap.rs                      2  # 2 parser rewrites: `o` composition operands and method-call chains wrapped as WhateverCode
-src/parser/outer_redecl/expr.rs                       1
-src/parser/outer_redecl/mod.rs                        2
 src/parser/primary/container/meta_ops.rs              4  # X/Z meta-op operand-chain spines and the chained-zip normalization rewrite
 src/parser/primary/ident/supply.rs                    1
 src/parser/primary/misc/colonpair.rs                  1  # render_signature_item: renders a signature item back to source text
@@ -63,12 +61,12 @@ src/parser/stmt/sub_param/where_constraint.rs         2  # 2 left-spine recursio
 src/rakuast/convert.rs                                8
 src/regex_tree.rs                                     3  # 3 renderers of an expression back to regex source text
 src/runtime/begin_prologue/mod.rs                     4  # partition_stmt/partition_will_begin are transforms (they move statements into the prologue); unit_lexical_names and is_begin_time_stmt look at one scope's statement list only, descending just the transparent SyntheticBlock grouping
-src/runtime/begin_prologue/nested.rs                  2
 src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
+src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
 src/runtime/dispatch_proto_rewrite.rs                 2
 src/runtime/eval_type_scans.rs                        1  # 1 spine (decodes a `use lib` argument list: a path or a nested list of them): stays hand-rolled
-src/runtime/phasers.rs                                6
+src/runtime/phasers.rs                                1  # stmt_declares_var looks at one scope's statement list only, through the transparent SyntheticBlock grouping
 src/runtime/run.rs                                    3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
 src/runtime/run_prelude.rs                            2  # mark_prelude_subs mutates; declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
 src/runtime/types/mod.rs                              1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled

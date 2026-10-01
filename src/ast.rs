@@ -2707,6 +2707,13 @@ impl AnonSubTraits {
         self.0.as_deref().map_or(&[], |extras| &extras.traits)
     }
 
+    /// The traits, for a rewriting pass ([`crate::ast_visit::VisitMut`]).
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [AnonSubTrait] {
+        self.0
+            .as_deref_mut()
+            .map_or(&mut [], |extras| &mut extras.traits)
+    }
+
     /// The declarator documentation the parser attached to this sub.
     pub(crate) fn doc(&self) -> Option<&crate::decl_doc::DeclDoc> {
         self.0.as_deref().and_then(|extras| extras.doc.get())

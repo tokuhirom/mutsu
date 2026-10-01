@@ -64,6 +64,12 @@ pub(crate) fn parse_bracket_meta_assign_op(input: &str) -> Option<(&str, String,
             None => false, // empty `[]` keeps the prior (degenerate-reduce) path
             Some(c) if c.is_ascii_digit() => true,
             Some(b'$' | b'@' | b'%' | b'&' | b'"' | b'\'') => true,
+            // A `^N` upto-range subscript (`@a[^2]=…`, `@a[^$n]=…`); `^^`, `^ff`
+            // and `^fff` stay reduction operators.
+            Some(b'^') => t[1..]
+                .bytes()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit() || matches!(c, b'$' | b'@' | b'(')),
             Some(b'-') => t[1..]
                 .trim_start()
                 .bytes()

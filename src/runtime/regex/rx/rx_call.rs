@@ -19,7 +19,11 @@ use crate::runtime::regex_types::NamedAtom;
 use crate::symbol::Symbol;
 
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
-type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, Option<CallTarget>)>;
+type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallVerdict)>;
+
+/// A call's frame, or why it takes the bridge (`MUTSU_VM_STATS`'s
+/// `regex-walk:` line, `bridged=`).
+pub(super) type CallVerdict = Result<CallTarget, &'static str>;
 
 thread_local! {
     /// The verdict for a call, per (rule, caller package, caller `:i`),
@@ -46,8 +50,8 @@ pub(super) enum CallTarget {
 }
 
 impl Interpreter {
-    /// The frame `<name>` called from `pkg` runs as, or `None` when the call
-    /// must take the bridge. `ic` is the caller's `:i`, which the walk scopes
+    /// The frame `<name>` called from `pkg` runs as, or `Err(why)` when the
+    /// call must take the bridge. `ic` is the caller's `:i`, which the walk scopes
     /// over the callee's body.
     // Cost: O(1) expected: one memoized candidate probe, plus the memoized
     // call-graph verdicts for the rule, per call; O(c) more for a proto of c
@@ -57,31 +61,37 @@ impl Interpreter {
         name: &NamedAtom,
         pkg: Symbol,
         ic: bool,
-    ) -> Option<CallTarget> {
+    ) -> CallVerdict {
         let spec = name.spec();
         // Shapes that resolve per call, never to a fixed body.
-        if !spec.arg_exprs.is_empty()
-            || spec.lookup_name == "::"
-            || Self::may_name_lexical_regex(spec)
-        {
-            return None;
+        if !spec.arg_exprs.is_empty() {
+            return Err("args");
+        }
+        if spec.lookup_name == "::" || Self::may_name_lexical_regex(spec) {
+            return Err("lexical-regex");
         }
         // Dispatch the compiled engine does not model: a `$*` rule parameter
         // that has to be installed around the call, a wrapped token, a custom
         // HOW.
         if crate::runtime::regex::regex_dynparams::ANY_DYNAMIC_TOKEN_PARAM
             .load(std::sync::atomic::Ordering::Relaxed)
-            || self.has_any_wrap_chains()
-            || !self.registry().grammar_custom_how.is_empty()
-            || !self.grammar_rule_dynvar_decls.is_empty()
         {
-            return None;
+            return Err("dynamic-param");
+        }
+        if self.has_any_wrap_chains() {
+            return Err("wrapped");
+        }
+        if !self.registry().grammar_custom_how.is_empty() {
+            return Err("custom-how");
+        }
+        if !self.grammar_rule_dynvar_decls.is_empty() {
+            return Err("rule-dynvar-decls");
         }
         // An enclosing call of this name is being evaluated by the walk's
         // growing-seed loop: this call may be its re-entry, which only the
         // walk's bookkeeping answers.
         if lr_name_active(spec.lookup_sym) {
-            return None;
+            return Err("left-recursion-active");
         }
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
@@ -112,69 +122,64 @@ impl Interpreter {
         name: &NamedAtom,
         pkg: Symbol,
         ic: bool,
-    ) -> Option<CallTarget> {
+    ) -> CallVerdict {
         let target = self.rx_call_target(name, pkg, ic)?;
         if matches!(target, CallTarget::Single)
             && self
                 .registry()
                 .method_overloads_present_sym(pkg, name.spec().lookup_sym)
         {
-            return None;
+            return Err("grammar-method");
         }
-        Some(target)
+        Ok(target)
     }
 
     /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
     /// decide the shape of the call.
-    fn resolve_call_target(
-        &mut self,
-        name: &NamedAtom,
-        pkg: Symbol,
-        ic: bool,
-    ) -> Option<CallTarget> {
+    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
         let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
         if raw_empty {
-            return Some(CallTarget::Single);
+            return Ok(CallTarget::Single);
         }
         if candidates.is_empty() {
-            return None;
+            return Err("no-candidates");
         }
         // `:m` remaps positions across the whole result set.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
-            return None;
+            return Err("ignoremark");
         }
         // Several candidates without a proto dedup their ends across each
         // other; a mix of both is not a shape the walk's proto dispatch names.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
-            return None;
+            return Err("multi-candidate");
         }
         // The walk's eager arm scopes the caller's `:i` over a proto candidate's
         // body (`subrule_candidate_ends`), which needs the body compiled under it:
         // that call bridges. A plain call is the walk's streamed shape, which
         // does not inherit `:i` — and neither does rakudo.
         if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
-            return None;
+            return Err("proto-inherited-i");
         }
         if self.subrule_has_qq_thunks(&spec.lookup_name, pkg) {
-            return None;
+            return Err("qq-thunks");
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
-            return None;
+            return Err("left-reenter");
         }
         if candidates
             .iter()
             .any(|(parsed, _, _)| program_for(parsed).is_none())
         {
-            return None;
+            return Err("callee-declined");
         }
         if proto {
-            return Some(CallTarget::Proto(candidates));
+            return Ok(CallTarget::Proto(candidates));
         }
         let (parsed, sub_pkg, _) = &candidates[0];
-        Some(CallTarget::Plain(
-            Arc::clone(program_for(parsed)?),
+        Ok(CallTarget::Plain(
+            Arc::clone(program_for(parsed).ok_or("callee-declined")?),
             *sub_pkg,
         ))
     }

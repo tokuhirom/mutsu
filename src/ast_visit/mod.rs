@@ -19,11 +19,20 @@
 //!   `tr///` tables, version strings, messages) is not a name and is never
 //!   reported, so a string literal `"return"` cannot look like a `return`.
 
+mod visit_mut;
 mod walk_decl;
 mod walk_expr;
+mod walk_mut_decl;
+mod walk_mut_expr;
+mod walk_mut_stmt;
 mod walk_stmt;
 
+pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
+use visit_mut::{exprs_mut, params_mut, traits_mut};
+use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};
 pub(crate) use walk_expr::walk_expr;
+pub(crate) use walk_mut_expr::walk_expr_mut;
+pub(crate) use walk_mut_stmt::{walk_stmt_mut, walk_stmts_mut};
 pub(crate) use walk_stmt::{walk_stmt, walk_stmts};
 
 use crate::ast::{CallArg, Expr, HandleSpec, ParamDef, Stmt};

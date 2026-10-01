@@ -1,6 +1,9 @@
+mod lift;
+
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 use crate::value::ValueMap;
+use lift::{lift_phasers, recurse_into_stmt};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static PHASER_TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -78,33 +81,23 @@ pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
     }
 }
 
-/// Lift BEGIN phasers from closures that are directly in EVAL'd code.
+/// Lift BEGIN phasers from a closure that is a top-level statement's whole
+/// value in EVAL'd code. Only that one expression is looked at, through any
+/// un-expanded WhateverCurry wrappers (ADR-0033): a spine, not a tree walk.
 fn lift_begin_from_eval_stmt(stmt: &mut Stmt, begin: &mut Vec<Stmt>) {
-    match stmt {
-        Stmt::Assign { expr, .. } | Stmt::VarDecl { expr, .. } => {
-            lift_begin_from_eval_expr(expr, begin);
-        }
-        Stmt::Expr(expr) => {
-            lift_begin_from_eval_expr(expr, begin);
-        }
-        _ => {}
+    let (Stmt::Assign { expr, .. } | Stmt::VarDecl { expr, .. } | Stmt::Expr(expr)) = stmt else {
+        return;
+    };
+    let mut expr = expr;
+    while let Expr::WhateverCurry(inner) = expr {
+        expr = inner;
     }
-}
-
-fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
-    match expr {
-        Expr::Block(stmts)
-        | Expr::AnonSub { body: stmts, .. }
-        | Expr::AnonSubParams { body: stmts, .. } => {
-            extract_begin_from_stmts(stmts, begin);
-        }
-        Expr::Lambda { body, .. } => {
-            extract_begin_from_stmts(body, begin);
-        }
-        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
-        // same as the closure kinds above.
-        Expr::WhateverCurry(inner) => lift_begin_from_eval_expr(inner, begin),
-        _ => {}
+    if let Expr::Block(body)
+    | Expr::AnonSub { body, .. }
+    | Expr::AnonSubParams { body, .. }
+    | Expr::Lambda { body, .. } = expr
+    {
+        lift::extract_begin_from_stmts(body, begin);
     }
 }
 
@@ -125,10 +118,25 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
 
     // Flatten SyntheticBlocks so VarDecls get hoisted properly.
     flatten_synthetic_blocks(stmts);
+    // The phasers of a routine the prologue took are the unit's as much as
+    // those of one left in the remainder (#10552), so they are lifted to the
+    // remainder's level too. The slots they leave behind are read by the
+    // routine, so they are declared ahead of it, at the head of the prologue.
+    let mut lifted = Lifted::default();
+    lift_phasers(
+        &mut prologue,
+        &mut lifted.begin,
+        &mut lifted.check,
+        &mut lifted.init,
+    );
+    let slots = lifted.take_slot_decls();
+    if !slots.is_empty() {
+        prologue.splice(0..0, slots);
+    }
     for stmt in prologue.iter_mut() {
         recurse_into_stmt(stmt);
     }
-    reorder_level_and_children(stmts, is_top);
+    reorder_level_and_children(stmts, is_top, lifted);
     let prologue_len = prologue.len();
     if prologue_len > 0 {
         prologue.append(stmts);
@@ -137,20 +145,41 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
     prologue_len
 }
 
-fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool) {
+/// The phasers lifted to one level, each as its slot's declaration followed by
+/// the assignment of its body's value.
+#[derive(Default)]
+struct Lifted {
+    begin: Vec<Stmt>,
+    check: Vec<Stmt>,
+    init: Vec<Stmt>,
+}
+
+impl Lifted {
+    /// Take the slot declarations out, leaving only the assignments.
+    fn take_slot_decls(&mut self) -> Vec<Stmt> {
+        let mut decls = Vec::new();
+        for list in [&mut self.begin, &mut self.check, &mut self.init] {
+            let (slot_decls, assigns): (Vec<Stmt>, Vec<Stmt>) = std::mem::take(list)
+                .into_iter()
+                .partition(|s| matches!(s, Stmt::VarDecl { .. }));
+            decls.extend(slot_decls);
+            *list = assigns;
+        }
+        decls
+    }
+}
+
+fn reorder_level_and_children(stmts: &mut Vec<Stmt>, is_top: bool, mut lifted: Lifted) {
     // Lift BEGIN/INIT/CHECK from transparent child blocks/closures to this level.
-    let mut lifted_begin: Vec<Stmt> = Vec::new();
-    let mut lifted_check: Vec<Stmt> = Vec::new();
-    let mut lifted_init: Vec<Stmt> = Vec::new();
     lift_phasers(
         stmts,
-        &mut lifted_begin,
-        &mut lifted_check,
-        &mut lifted_init,
+        &mut lifted.begin,
+        &mut lifted.check,
+        &mut lifted.init,
     );
 
     // Per-block reordering at this level.
-    reorder_at_level(stmts, lifted_begin, lifted_check, lifted_init, is_top);
+    reorder_at_level(stmts, lifted.begin, lifted.check, lifted.init, is_top);
 
     // Recurse into child statements.
     for stmt in stmts.iter_mut() {
@@ -185,594 +214,6 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
         } else {
             stmts.push(stmt);
         }
-    }
-}
-
-/// Lift BEGIN/INIT/CHECK phasers from child blocks/closures to the current level.
-/// "Transparent" blocks are bare blocks (Stmt::Block) without VarDecls.
-/// BEGIN/INIT/CHECK phasers are extracted from:
-/// 1. Transparent blocks (statement-level phasers)
-/// 2. Closures/lambdas in expressions (PhaserExpr rvalues)
-fn lift_phasers(
-    stmts: &mut [Stmt],
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    for stmt in stmts.iter_mut() {
-        lift_phasers_from_stmt(stmt, begin, check, init);
-    }
-}
-
-fn lift_phasers_from_stmt(
-    stmt: &mut Stmt,
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    match stmt {
-        // Transparent blocks: extract BEGIN/INIT/CHECK phasers
-        Stmt::Block(body) => {
-            // A block counts as "transparent" only when it declares no
-            // variables. `will <phaser>` traits wrap their declaration in a
-            // `SyntheticBlock([VarDecl, Phaser])` (see wrap_with_will_leave),
-            // so a direct-child scan for `VarDecl` would miss them and wrongly
-            // treat the block as transparent — which lifts the block's CHECK
-            // phasers out (running them forward and before the block's BEGINs)
-            // while leaving the `will`-trait phasers nested. Detect VarDecls
-            // nested in SyntheticBlocks too so such blocks are reordered in
-            // place (BEGIN forward, CHECK reverse) instead of being lifted.
-            let has_var_decls = body.iter().any(stmt_declares_var);
-            if !has_var_decls {
-                // Extract BEGIN/INIT/CHECK from this block
-                extract_phasers_from_stmts(body, begin, check, init);
-                // Also recurse deeper into transparent sub-blocks
-                lift_phasers(body, begin, check, init);
-            }
-        }
-        // Expression statements: extract PhaserExpr from closures
-        Stmt::Expr(expr)
-        | Stmt::Return(expr)
-        | Stmt::Die(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Take(expr, _) => {
-            lift_phasers_from_current_expr(expr, begin, check, init);
-        }
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-            lift_phasers_from_current_expr(expr, begin, check, init);
-        }
-        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-            for e in exprs.iter_mut() {
-                lift_phasers_from_current_expr(e, begin, check, init);
-            }
-        }
-        Stmt::Call { args, .. } => {
-            for arg in args.iter_mut() {
-                match arg {
-                    crate::ast::CallArg::Positional(e)
-                    | crate::ast::CallArg::Slip(e)
-                    | crate::ast::CallArg::Invocant(e) => {
-                        lift_phasers_from_current_expr(e, begin, check, init);
-                    }
-                    crate::ast::CallArg::Named { value, .. } => {
-                        if let Some(e) = value {
-                            lift_phasers_from_current_expr(e, begin, check, init);
-                        }
-                    }
-                }
-            }
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            lift_phasers_from_current_expr(cond, begin, check, init);
-            // Lift from if/else branches - BEGIN/INIT/CHECK are global
-            lift_phasers_from_closure_stmts(then_branch, begin, check, init);
-            lift_phasers_from_closure_stmts(else_branch, begin, check, init);
-        }
-        Stmt::For { iterable, body, .. } => {
-            lift_phasers_from_current_expr(iterable, begin, check, init);
-            // Lift BEGIN/INIT/CHECK from loop body - they should run once
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::While { cond, body, .. } => {
-            lift_phasers_from_current_expr(cond, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::When { cond, body, .. } => {
-            lift_phasers_from_current_expr(cond, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Loop { body, .. } | Stmt::React { body } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Given { topic, body, .. } => {
-            lift_phasers_from_current_expr(topic, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            lift_phasers_from_current_expr(supply, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Label { stmt: inner, .. } => {
-            lift_phasers_from_stmt(inner, begin, check, init);
-        }
-        // INIT/CHECK inside a named sub body run at program init/check time,
-        // not at first call (advent2012-day15.t: `my $fh = INIT Open(...)`
-        // must call Open before the mainline runs). The lifted DoBlock is
-        // assigned to a shared temp read by the sub body at call time.
-        Stmt::SubDecl { body, .. } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        _ => {}
-    }
-}
-
-/// Extract INIT/CHECK statement-level phasers from a stmt list.
-/// Replaces extracted phasers with a temp variable expression so the phaser's
-/// return value is available in expression context (e.g. string interpolation).
-///
-/// BEGIN is NOT extracted here because transparent blocks may contain local
-/// sub declarations that the BEGIN body references (see begin.t test case
-/// with `sub my-uc`). BEGIN is only extracted from closure bodies via
-/// `extract_phasers_from_closure_stmts`.
-fn extract_phasers_from_stmts(
-    stmts: &mut [Stmt],
-    _begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    for stmt in stmts.iter_mut() {
-        if matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Check | PhaserKind::Init,
-                ..
-            }
-        ) {
-            let temp_name = next_temp_name();
-            let old = std::mem::replace(stmt, Stmt::Expr(Expr::Var(temp_name.clone())));
-            if let Stmt::Phaser { kind, body, .. } = old {
-                let var_decl = Stmt::VarDecl {
-                    name: temp_name.clone(),
-                    expr: Expr::Literal(crate::value::Value::NIL),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: vec![],
-                    custom_traits: vec![],
-                    where_constraint: None,
-                };
-                // For CHECK phasers, tag the DoBlock with a sentinel label so
-                // the compiler emits CheckPhaserStart/CheckPhaserEnd opcodes,
-                // ensuring errors are wrapped in X::Comp::BeginTime.
-                let label = match kind {
-                    PhaserKind::Check => Some("__mutsu_check_phaser__".to_string()),
-                    _ => None,
-                };
-                let assign = Stmt::Assign {
-                    name: temp_name,
-                    // The phaser body's braces are real, but this node is
-                    // only the vehicle of the `my $tmp; $tmp = do{BODY}` hoist
-                    // -- the save resolution measured against Rakudo already
-                    // matches without claiming block identity here (GH-7635).
-                    expr: Expr::DoBlock {
-                        body,
-                        label,
-                        origin: crate::ast::DoBlockOrigin::Desugar,
-                    },
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                match kind {
-                    PhaserKind::Check => {
-                        check.push(var_decl);
-                        check.push(assign);
-                    }
-                    PhaserKind::Init => {
-                        init.push(var_decl);
-                        init.push(assign);
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-    }
-}
-
-/// Extract BEGIN statement-level phasers from a stmt list inside DoStmt blocks.
-/// This is separate from extract_phasers_from_stmts because BEGIN should only
-/// be extracted from DoStmt contexts (e.g. string interpolation), not from
-/// general blocks which may contain local sub declarations needed by the BEGIN body.
-fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
-    for stmt in stmts.iter_mut() {
-        if matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        ) {
-            let temp_name = next_temp_name();
-            let old = std::mem::replace(stmt, Stmt::Expr(Expr::Var(temp_name.clone())));
-            if let Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                body,
-                ..
-            } = old
-            {
-                let var_decl = Stmt::VarDecl {
-                    name: temp_name.clone(),
-                    expr: Expr::Literal(crate::value::Value::NIL),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: vec![],
-                    custom_traits: vec![],
-                    where_constraint: None,
-                };
-                let assign = Stmt::Assign {
-                    name: temp_name,
-                    expr: Expr::desugar_block(body),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                begin.push(var_decl);
-                begin.push(assign);
-            }
-        }
-    }
-}
-
-/// Extract PhaserExpr { Check | Init } from expressions (including closures).
-fn lift_phasers_from_current_expr(
-    expr: &mut Expr,
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    // A BEGIN in the current statement list must stay in source order so the
-    // compiler has already recorded preceding constants. Child closure bodies
-    // use `lift_phasers_from_expr` below and retain compile-time lifting.
-    lift_phasers_from_expr_inner(expr, begin, check, init, false);
-}
-
-fn lift_phasers_from_expr(
-    expr: &mut Expr,
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    lift_phasers_from_expr_inner(expr, begin, check, init, true);
-}
-
-fn lift_phasers_from_expr_inner(
-    expr: &mut Expr,
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-    lift_begin: bool,
-) {
-    // Handle PhaserExpr at this node
-    if matches!(
-        expr,
-        Expr::PhaserExpr {
-            kind: PhaserKind::Check | PhaserKind::Init,
-            ..
-        }
-    ) || lift_begin
-        && matches!(
-            expr,
-            Expr::PhaserExpr {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        )
-    {
-        let temp_name = next_temp_name();
-        let old = std::mem::replace(expr, Expr::Var(temp_name.clone()));
-        if let Expr::PhaserExpr { kind, body } = old {
-            let var_decl = Stmt::VarDecl {
-                name: temp_name.clone(),
-                expr: Expr::Literal(crate::value::Value::NIL),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: vec![],
-                custom_traits: vec![],
-                where_constraint: None,
-            };
-            // Tag CHECK DoBlocks with a sentinel label for compiler wrapping
-            let label = match kind {
-                PhaserKind::Check => Some("__mutsu_check_phaser__".to_string()),
-                _ => None,
-            };
-            let assign = Stmt::Assign {
-                name: temp_name,
-                expr: Expr::DoBlock {
-                    body,
-                    label,
-                    origin: crate::ast::DoBlockOrigin::Desugar,
-                },
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            };
-            match kind {
-                PhaserKind::Begin => {
-                    begin.push(var_decl);
-                    begin.push(assign);
-                }
-                PhaserKind::Check => {
-                    check.push(var_decl);
-                    check.push(assign);
-                }
-                PhaserKind::Init => {
-                    init.push(var_decl);
-                    init.push(assign);
-                }
-                _ => unreachable!(),
-            }
-        }
-        return;
-    }
-
-    // Recurse into sub-expressions
-    match expr {
-        // Parentheses group, so a phaser written *inside* a parenthesized
-        // expression lifts just as it would unparenthesized — that is what makes
-        // `(gather for ... { INIT take ... })` run its `INIT` at initialisation
-        // time rather than per-iteration. A phaser that IS the parenthesized
-        // expression is left alone: `is (BEGIN A + 1), 4` evaluates in place, so
-        // it still sees the `constant A` declared above it.
-        Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::PhaserExpr { .. }) => {
-            lift_phasers_from_expr(inner, begin, check, init)
-        }
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            lift_phasers_from_expr(left, begin, check, init);
-            lift_phasers_from_expr(right, begin, check, init);
-        }
-        // `todo/tickets/chained-compare-ast-node.md`: an operand can hold a
-        // `CHECK`/`INIT`/`BEGIN` phaser expression, same as `Binary` above.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands.iter_mut() {
-                lift_phasers_from_expr(o, begin, check, init);
-            }
-        }
-        Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
-            lift_phasers_from_expr(inner, begin, check, init);
-        }
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            lift_phasers_from_expr(target, begin, check, init);
-            for a in args.iter_mut() {
-                lift_phasers_from_expr(a, begin, check, init);
-            }
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            ..
-        }
-        | Expr::HyperMethodCallDynamic {
-            target,
-            name_expr,
-            args,
-            ..
-        } => {
-            lift_phasers_from_expr(target, begin, check, init);
-            lift_phasers_from_expr(name_expr, begin, check, init);
-            for a in args.iter_mut() {
-                lift_phasers_from_expr(a, begin, check, init);
-            }
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args.iter_mut() {
-                lift_phasers_from_expr(a, begin, check, init);
-            }
-        }
-        Expr::CallOn { target, args } => {
-            lift_phasers_from_expr(target, begin, check, init);
-            for a in args.iter_mut() {
-                lift_phasers_from_expr(a, begin, check, init);
-            }
-        }
-        Expr::Index { target, index, .. } => {
-            lift_phasers_from_expr(target, begin, check, init);
-            lift_phasers_from_expr(index, begin, check, init);
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            lift_phasers_from_expr(cond, begin, check, init);
-            lift_phasers_from_expr(then_expr, begin, check, init);
-            lift_phasers_from_expr(else_expr, begin, check, init);
-        }
-        Expr::AssignExpr { expr: inner, .. }
-        | Expr::PositionalPair(inner)
-        | Expr::ZenSlice(inner)
-        | Expr::Eager(inner)
-        | Expr::Itemize(inner)
-        | Expr::Reduction { expr: inner, .. }
-        | Expr::IndirectCodeLookup { package: inner, .. }
-        | Expr::SymbolicDeref { expr: inner, .. } => {
-            lift_phasers_from_expr(inner, begin, check, init);
-        }
-        Expr::Exists { target, arg, .. } => {
-            lift_phasers_from_expr(target, begin, check, init);
-            if let Some(a) = arg {
-                lift_phasers_from_expr(a, begin, check, init);
-            }
-        }
-        Expr::ArrayLiteral(es)
-        | Expr::BracketArray(es, _)
-        | Expr::StringInterpolation(es)
-        | Expr::CaptureLiteral(es) => {
-            for e in es.iter_mut() {
-                lift_phasers_from_expr(e, begin, check, init);
-            }
-        }
-        // Recurse into closures — extract PhaserExpr from them
-        Expr::Block(stmts)
-        | Expr::AnonSub { body: stmts, .. }
-        | Expr::AnonSubParams { body: stmts, .. }
-        | Expr::Gather(stmts)
-        | Expr::DoBlock { body: stmts, .. } => {
-            lift_phasers_from_closure_stmts(stmts, begin, check, init);
-        }
-        Expr::Lambda { body, .. } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
-        // same as the closure kinds above.
-        Expr::WhateverCurry(inner) => lift_phasers_from_expr(inner, begin, check, init),
-        Expr::Try { body, catch } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-            if let Some(c) = catch {
-                lift_phasers_from_closure_stmts(c, begin, check, init);
-            }
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            lift_phasers_from_expr(left, begin, check, init);
-            for e in right.iter_mut() {
-                lift_phasers_from_expr(e, begin, check, init);
-            }
-        }
-        Expr::Hash(pairs) => {
-            for (_, v) in pairs.iter_mut() {
-                if let Some(e) = v {
-                    lift_phasers_from_expr(e, begin, check, init);
-                }
-            }
-        }
-        Expr::PhaserExpr { body, .. } => {
-            // Non-BEGIN/CHECK/INIT PhaserExpr (e.g. END) — don't extract, just recurse
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Expr::DoStmt(inner_stmt) => {
-            // For DoStmt (e.g. string interpolation blocks), also extract
-            // BEGIN phasers from the inner block. This is safe because DoStmt
-            // blocks are simple expression wrappers, unlike general blocks that
-            // may contain local sub declarations needed by BEGIN.
-            if let Stmt::Block(body) = inner_stmt.as_mut() {
-                extract_begin_from_stmts(body, begin);
-            }
-            lift_phasers_from_stmt(inner_stmt, begin, check, init);
-        }
-        _ => {}
-    }
-}
-
-/// Extract BEGIN/INIT/CHECK phasers from inside closure bodies.
-/// Both statement-level phasers and PhaserExpr are extracted.
-fn lift_phasers_from_closure_stmts(
-    stmts: &mut [Stmt],
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    // Extract statement-level BEGIN/INIT/CHECK
-    extract_phasers_from_stmts(stmts, begin, check, init);
-    // Recurse into each statement for PhaserExpr
-    for stmt in stmts.iter_mut() {
-        lift_phasers_from_closure_stmt(stmt, begin, check, init);
-    }
-}
-
-fn lift_phasers_from_closure_stmt(
-    stmt: &mut Stmt,
-    begin: &mut Vec<Stmt>,
-    check: &mut Vec<Stmt>,
-    init: &mut Vec<Stmt>,
-) {
-    match stmt {
-        Stmt::Expr(expr)
-        | Stmt::Return(expr)
-        | Stmt::Die(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Take(expr, _) => {
-            lift_phasers_from_expr(expr, begin, check, init);
-        }
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-            lift_phasers_from_expr(expr, begin, check, init);
-        }
-        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-            for e in exprs.iter_mut() {
-                lift_phasers_from_expr(e, begin, check, init);
-            }
-        }
-        Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::Loop { body, .. }
-        | Stmt::React { body } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            lift_phasers_from_expr(cond, begin, check, init);
-            lift_phasers_from_closure_stmts(then_branch, begin, check, init);
-            lift_phasers_from_closure_stmts(else_branch, begin, check, init);
-        }
-        Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
-            lift_phasers_from_expr(cond, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::For { iterable, body, .. } => {
-            lift_phasers_from_expr(iterable, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Given { topic, body, .. } => {
-            lift_phasers_from_expr(topic, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            lift_phasers_from_expr(supply, begin, check, init);
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Label { stmt: inner, .. } => {
-            lift_phasers_from_closure_stmt(inner, begin, check, init);
-        }
-        // See the SubDecl arm of lift_phasers_from_stmt: sub-body INIT/CHECK
-        // are program-init-time, wherever the sub is declared.
-        Stmt::SubDecl { body, .. } => {
-            lift_phasers_from_closure_stmts(body, begin, check, init);
-        }
-        Stmt::Call { args, .. } => {
-            for arg in args.iter_mut() {
-                match arg {
-                    crate::ast::CallArg::Positional(e)
-                    | crate::ast::CallArg::Slip(e)
-                    | crate::ast::CallArg::Invocant(e) => {
-                        lift_phasers_from_expr(e, begin, check, init);
-                    }
-                    crate::ast::CallArg::Named { value, .. } => {
-                        if let Some(e) = value {
-                            lift_phasers_from_expr(e, begin, check, init);
-                        }
-                    }
-                }
-            }
-        }
-        _ => {}
     }
 }
 
@@ -1078,146 +519,6 @@ fn stmt_has_phaser_expr(stmt: &Stmt) -> bool {
 
 fn expr_has_phaser_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::PhaserExpr { .. })
-}
-
-// ── Recursion into child blocks ────────────────────────────────────
-
-fn recurse_into_stmt(stmt: &mut Stmt) {
-    match stmt {
-        Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::ClassDecl { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::Package { body, .. } => {
-            reorder_recursive(body, false);
-        }
-        Stmt::Phaser { kind, body, .. } => {
-            // A statement-form loop phaser is marked as `[SyntheticBlock([stmt])]`
-            // (see phaser_stmt): it shares the enclosing block's lexical scope,
-            // and `expand_loop_phasers` reads the marker to splice it scope-less.
-            // Flattening the marker here would silently downgrade it to the
-            // scoped block form, so recurse into the inner statements instead.
-            if matches!(
-                kind,
-                PhaserKind::First | PhaserKind::Next | PhaserKind::Last
-            ) && let [Stmt::SyntheticBlock(inner)] = body.as_mut_slice()
-            {
-                reorder_recursive(inner, false);
-            } else {
-                reorder_recursive(body, false);
-            }
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            recurse_into_expr(cond);
-            reorder_recursive(then_branch, false);
-            reorder_recursive(else_branch, false);
-        }
-        Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
-            recurse_into_expr(cond);
-            reorder_recursive(body, false);
-        }
-        Stmt::For { iterable, body, .. } => {
-            recurse_into_expr(iterable);
-            reorder_recursive(body, false);
-        }
-        Stmt::Loop { body, .. } | Stmt::React { body } => {
-            reorder_recursive(body, false);
-        }
-        Stmt::Given { topic, body, .. } => {
-            recurse_into_expr(topic);
-            reorder_recursive(body, false);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            recurse_into_expr(supply);
-            reorder_recursive(body, false);
-        }
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
-            recurse_into_expr(e);
-        }
-        Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
-            recurse_into_expr(e);
-        }
-        Stmt::SubDecl { body, .. }
-        | Stmt::MethodDecl { body, .. }
-        | Stmt::ProtoDecl { body, .. } => {
-            reorder_recursive(body, false);
-        }
-        Stmt::Label { stmt: inner, .. } => {
-            recurse_into_stmt(inner);
-        }
-        _ => {}
-    }
-}
-
-fn recurse_into_expr(expr: &mut Expr) {
-    match expr {
-        Expr::Block(stmts)
-        | Expr::AnonSub { body: stmts, .. }
-        | Expr::AnonSubParams { body: stmts, .. }
-        | Expr::Gather(stmts)
-        | Expr::DoBlock { body: stmts, .. } => {
-            reorder_recursive(stmts, false);
-        }
-        Expr::Lambda { body, .. } => {
-            reorder_recursive(body, false);
-        }
-        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
-        // same as the closure kinds above.
-        Expr::WhateverCurry(inner) => recurse_into_expr(inner),
-        Expr::Try { body, catch } => {
-            reorder_recursive(body, false);
-            if let Some(c) = catch {
-                reorder_recursive(c, false);
-            }
-        }
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            recurse_into_expr(left);
-            recurse_into_expr(right);
-        }
-        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands.iter_mut() {
-                recurse_into_expr(o);
-            }
-        }
-        Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
-            recurse_into_expr(inner);
-        }
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            recurse_into_expr(target);
-            for a in args.iter_mut() {
-                recurse_into_expr(a);
-            }
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args.iter_mut() {
-                recurse_into_expr(a);
-            }
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            recurse_into_expr(cond);
-            recurse_into_expr(then_expr);
-            recurse_into_expr(else_expr);
-        }
-        Expr::PhaserExpr { body, .. } => {
-            reorder_recursive(body, false);
-        }
-        _ => {}
-    }
 }
 
 /// Marks a declaration whose initializer reads its static cell (ADR-0134).

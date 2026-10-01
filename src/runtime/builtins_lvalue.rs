@@ -730,21 +730,25 @@ impl Interpreter {
             // chain (`try_wrapped_accessor_lvalue`). Invoking the carried
             // callable here instead would hand back an already
             // decontainerized value with nothing left to write through.
-            // TODO: compile to bytecode -- like `$d.$m() = 5`, this resolves
-            // the method by name on the invocant rather than binding the
-            // object's own candidate (#10344).
+            // A native/accessor object assigns through its own candidate
+            // (`D::y`), not the invocant's override (#10344).
+            // TODO: compile to bytecode -- like `$d.$m() = 5`, this is
+            // reached through the `__mutsu_assign_callable_lvalue` builtin.
             ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } if matches!(class_name.as_str(), "Method" | "Submethod") && !call_args.is_empty() => {
-                let method = attributes
-                    .as_map()
-                    .get("name")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default();
                 let mut call_args = call_args;
                 let invocant = call_args.remove(0);
+                let method = match self.bound_method_object_name(&callable, &invocant) {
+                    Some(qualified) => qualified.as_str().to_string(),
+                    None => attributes
+                        .as_map()
+                        .get("name")
+                        .map(Value::to_string_value)
+                        .unwrap_or_default(),
+                };
                 self.assign_method_lvalue_with_values(
                     None, invocant, &method, call_args, value, false,
                 )

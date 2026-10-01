@@ -300,7 +300,13 @@ impl Interpreter {
             self.executing_source_file_sym(),
             None,
         );
-        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, target.chars(), pos, pkg);
+        let matches = self.regex_match_all_ends_walked(
+            &parsed,
+            target.chars(),
+            pos,
+            pkg,
+            "all-ends:token-method",
+        );
         // Matches come HIGHEST FIRST: the first entry is the token's best
         // (ratcheted) match, which is what a cursor method call returns.
         let Some((end, mut caps)) = matches.into_iter().next() else {

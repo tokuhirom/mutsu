@@ -250,6 +250,26 @@ impl Interpreter {
         self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
     }
 
+    /// [`Self::regex_match_ends_from_caps_in_pkg`] for an entry point outside
+    /// the walk: every end at `start` has no compiled form yet, so the walk
+    /// answers, counted under `site` on `MUTSU_VM_STATS`'s `regex-walk:` line
+    /// (ADR-0135 §4 E).
+    // Cost: as `regex_match_ends_from_caps_in_pkg`.
+    pub(in crate::runtime) fn regex_match_all_ends_walked(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        site: &'static str,
+    ) -> Vec<(usize, RegexCaptures)> {
+        crate::vm::vm_stats_regex_vm::record_regex_walk(
+            crate::vm::vm_stats_regex_vm::WalkUse::Walked,
+            site,
+        );
+        self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg)
+    }
+
     /// Like `regex_match_ends_from_caps_in_pkg`, but stops as soon as a match
     /// covers the whole subject. `Grammar.parse` wants exactly one such match
     /// and the depth-first walk finds the highest-priority one first, so there
