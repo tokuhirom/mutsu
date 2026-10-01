@@ -792,6 +792,7 @@ impl Compiler {
         matches!(
             stmt,
             Stmt::SetLine(_)
+                | Stmt::Trace { .. }
                 | Stmt::Use { .. }
                 | Stmt::No { .. }
                 | Stmt::Need { .. }

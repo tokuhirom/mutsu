@@ -565,7 +565,7 @@ impl Compiler {
         // the assignment is NOT at the start. The Block wrapping created when
         // this returns true causes BlockScope to save/restore `$_`, isolating
         // the `with` topic from the outer scope.
-        let first_real = stmts.iter().find(|s| !matches!(s, Stmt::SetLine(_)));
+        let first_real = stmts.iter().find(|s| !s.is_marker());
         matches!(first_real, Some(Stmt::Assign { name, .. }) if name == "_")
     }
 

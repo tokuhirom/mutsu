@@ -62,6 +62,10 @@ recognise a stub body `{...}` or a proto dispatcher now look past it through
 - A role body's statements (and so their traces) are run once more at class
   declaration time than Rakudo runs them; that predates this pragma
   ([#10667](https://github.com/tokuhirom/mutsu/issues/10667)).
+- A bare statement in a parametric role's body, which a trace hook is, takes the
+  role-composition route that re-binds type parameters, so the class in
+  `t/oo/role/qualified-role-multi-concretization.t` resolves to another
+  concretization under `use trace` ([#10679](https://github.com/tokuhirom/mutsu/issues/10679)).
 - Constant conditions made of constant *expressions* (`if 1 + 1`, `if ?1`)
   are folded by Rakudo but not recognised by the trace rule.
 
