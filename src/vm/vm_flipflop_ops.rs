@@ -37,17 +37,6 @@ impl Interpreter {
                     .contains(&Symbol::intern(&infix_name))
                 && let Some(callable) = self.lexical_infix_override(code, &infix_name)
             {
-                // Only user code can declare an `is rw` parameter that needs the
-                // `WrapVarRef` tag of a variable operand; a builtin operator bound
-                // to the parameter (`f(&[<], ...)`) takes plain values.
-                let call_args = if matches!(callable.view(), ValueView::Routine { .. }) {
-                    call_args
-                        .into_iter()
-                        .map(Self::unwrap_var_ref_value)
-                        .collect()
-                } else {
-                    call_args
-                };
                 let result = self.call_sub_value(callable, call_args, false)?;
                 self.apply_pending_rw_writeback(code);
                 self.stack.push(result);

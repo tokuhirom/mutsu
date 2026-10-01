@@ -7,7 +7,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // `our sub` is package-scoped: a duplicate across sibling blocks is
         // X::Redeclaration even though each block is its own lexical scope.
-        if let Some(e) = super::eval_decl_scans::find_our_routine_redeclaration(stmts) {
+        if let Some(e) = Self::find_our_routine_redeclaration(stmts, &mut HashSet::new()) {
             return Err(e);
         }
         // Type-like declarations (class/role/subset/enum) share one symbol

@@ -130,28 +130,6 @@ pub(crate) fn sub_decl_with_semicolon_mode(
     sub_decl_body(rest, multi, supersede, allow_main_semicolon_decl)
 }
 
-/// Record the traits of a routine declaration that change how LATER source
-/// parses: associativity and precedence of an operator, `is test-assertion`.
-/// Shared by `sub` and `proto sub` declarations.
-pub(crate) fn register_parse_affecting_traits(name: &str, traits: &SubTraits) {
-    if let Some(assoc) = traits.associativity.as_ref() {
-        super::super::simple::register_user_infix_assoc(name, assoc);
-    }
-    if traits.is_test_assertion {
-        super::super::simple::register_user_test_assertion_sub(name);
-    }
-    if let Some((trait_name, ref_op)) = &traits.precedence_trait
-        && let Some(ref_level) = super::super::simple::resolve_op_precedence(ref_op)
-    {
-        let level = match trait_name.as_str() {
-            "tighter" => ref_level + 5,
-            "looser" => ref_level - 5,
-            _ => ref_level,
-        };
-        super::super::simple::register_op_precedence(name, level);
-    }
-}
-
 pub(crate) fn sub_decl_body(
     input: &str,
     multi: bool,
@@ -208,7 +186,23 @@ pub(crate) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
-    register_parse_affecting_traits(&name, &traits);
+    if let Some(assoc) = traits.associativity.as_ref() {
+        super::super::simple::register_user_infix_assoc(&name, assoc);
+    }
+    if traits.is_test_assertion {
+        super::super::simple::register_user_test_assertion_sub(&name);
+    }
+    // Register precedence trait if present
+    if let Some((trait_name, ref_op)) = &traits.precedence_trait
+        && let Some(ref_level) = super::super::simple::resolve_op_precedence(ref_op)
+    {
+        let level = match trait_name.as_str() {
+            "tighter" => ref_level + 5,
+            "looser" => ref_level - 5,
+            _ => ref_level,
+        };
+        super::super::simple::register_op_precedence(&name, level);
+    }
     let (rest, _) = ws(rest)?;
     let mut signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)> = Vec::new();
     let rest = if multi {

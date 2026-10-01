@@ -272,51 +272,16 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
 /// A lexical pragma that mutsu applies as run-time state at the statement's
 /// own position (`use strict`, `no strict`, `use fatal`, `use soft`, ...). It
 /// stays where it is: moving it into the prologue would switch the mode on for
-/// the run-time statements that precede it. Only the pragmas of
-/// [`is_known_pragma_name`] count, so `use lib` (which extends the search path
-/// the prologue's loads resolve against) and `use if` (which enables the `:if`
-/// adverb of a later conditional `use`) stay BEGIN-time effects, as does a
-/// lowercase-named real module such as `vars`.
+/// the run-time statements that precede it. Every lowercase pragma counts,
+/// except the ones a later BEGIN-time effect depends on: `use lib` extends the
+/// search path the prologue's loads resolve against, and `use if` enables the
+/// `:if` adverb of a later conditional `use`.
 fn is_positional_pragma(stmt: &Stmt) -> bool {
     let module = match stmt {
         Stmt::Use { module, .. } | Stmt::No { module, .. } | Stmt::Need { module } => module,
         _ => return false,
     };
-    is_known_pragma_name(module)
-}
-
-/// The lowercase names mutsu applies as positional run-time state, plus a
-/// language version (`v6.d`, `v6.*`). Any other lowercase name is an ordinary
-/// module that happens to be spelled like a pragma (`use vars <$x @y>`, whose
-/// `sub EXPORT` a later BEGIN observes), so it is a BEGIN-time load.
-// Cost: O(1), a fixed set of names compared against one string.
-fn is_known_pragma_name(module: &str) -> bool {
-    if let Some(rest) = module.strip_prefix('v')
-        && rest.starts_with(|c: char| c.is_ascii_digit())
-    {
-        return true;
-    }
-    matches!(
-        module,
-        "strict"
-            | "fatal"
-            | "soft"
-            | "nqp"
-            | "isms"
-            | "oo"
-            | "class"
-            | "experimental"
-            | "customtrait"
-            | "warnings"
-            | "worries"
-            | "precompilation"
-            | "trace"
-            | "internals"
-            | "variables"
-            | "attributes"
-            | "dynamic-scope"
-            | "newline"
-    )
+    module.starts_with(|c: char| c.is_ascii_lowercase()) && !matches!(module.as_str(), "lib" | "if")
 }
 
 /// `my $x will begin { ... }` parses to a `SyntheticBlock` of the declaration

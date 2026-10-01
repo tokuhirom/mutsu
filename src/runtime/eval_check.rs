@@ -1,9 +1,17 @@
-use super::eval_type_scans::{
-    CaptureInheritance, Captures, DeclaredTypes, SubParamTypes, Trusts, TypeArgs, TypeDecls,
-    UseLibDirs, scan,
-};
 use super::*;
 use crate::ast::{PhaserKind, Stmt};
+
+/// Collect the names of all types (class/role/enum/subset) declared anywhere in
+/// `stmts`, descending into block-like bodies. Used so a sub parameter type that
+/// names a type declared in the same compilation unit is not falsely rejected.
+fn collect_declared_type_names(
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+    packages: &mut std::collections::HashSet<String>,
+    classes: &mut std::collections::HashSet<String>,
+) {
+    collect_declared_type_names_with(None, &[], stmts, out, packages, classes)
+}
 
 /// Type names a `use`d module declares, harvested straight from its source text.
 ///
@@ -19,7 +27,7 @@ fn collect_use_declared_type_names(
     interp: &Interpreter,
     module: &str,
     extra_dirs: &[String],
-    out: &mut HashSet<String>,
+    out: &mut std::collections::HashSet<String>,
 ) {
     let path = module_source_in_dirs(module, extra_dirs)
         .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
@@ -76,7 +84,7 @@ fn collect_use_declared_type_names(
 /// This cannot ride the declarator loop above: the name may be spelled
 /// sigillessly (`\GType`) with traits (`is export`) in between, and only a
 /// `constant NAME ... =` declaration (not a stray `constant` word) counts.
-fn collect_source_constant_names(bytes: &[char], out: &mut HashSet<String>) {
+fn collect_source_constant_names(bytes: &[char], out: &mut std::collections::HashSet<String>) {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
@@ -139,78 +147,368 @@ fn module_source_in_dirs(module: &str, dirs: &[String]) -> Option<std::path::Pat
     None
 }
 
+/// The paths a `use lib ...` in this unit adds to the search path: literals,
+/// and the `$?FILE`/`$*PROGRAM` path chains the parser folds too
+/// (`crate::parser::fold_use_lib_path`).
+fn collect_use_lib_dirs(
+    stmts: &[Stmt],
+    file: Option<&str>,
+    program: Option<&str>,
+    out: &mut Vec<String>,
+) {
+    fn push_paths(
+        expr: &crate::ast::Expr,
+        file: Option<&str>,
+        program: Option<&str>,
+        out: &mut Vec<String>,
+    ) {
+        use crate::ast::Expr;
+        match expr {
+            Expr::ArrayLiteral(items) => {
+                for item in items {
+                    push_paths(item, file, program, out);
+                }
+            }
+            Expr::Grouped(inner) => push_paths(inner, file, program, out),
+            other => {
+                if let Some(path) = crate::parser::fold_use_lib_path(other, file, program) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::Use {
+                module,
+                arg: Some(arg),
+                ..
+            } if module == "lib" => push_paths(arg, file, program, out),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                collect_use_lib_dirs(body, file, program, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Record a declared type/package name under every spelling it is reachable by.
+///
+/// `class GLOBAL::Foo` declares `Foo` in the global namespace (class/role
+/// registration strips the prefix), so a later `sub f(Foo $x)` must not be
+/// rejected as an invalid typename. The prefixed spelling is kept too — a
+/// parameter may legitimately be written `GLOBAL::Foo`.
+fn insert_declared_name(out: &mut std::collections::HashSet<String>, name: &str) {
+    if let Some(stripped) = name.strip_prefix("GLOBAL::") {
+        out.insert(stripped.to_string());
+    }
+    out.insert(name.to_string());
+}
+
+fn collect_declared_type_names_with(
+    interp: Option<&Interpreter>,
+    extra_dirs: &[String],
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+    packages: &mut std::collections::HashSet<String>,
+    classes: &mut std::collections::HashSet<String>,
+) {
+    for stmt in stmts {
+        if let Some(interp) = interp {
+            match stmt {
+                Stmt::Use { module, .. } | Stmt::Need { module } => {
+                    collect_use_declared_type_names(interp, module, extra_dirs, out);
+                }
+                _ => {}
+            }
+        }
+        match stmt {
+            Stmt::ClassDecl { name, body, .. } => {
+                // A plain `class` is type-like but NOT parametric (parameterizing
+                // it with `[T]`/`of T` is X::NotParametric); roles ARE parametric.
+                insert_declared_name(out, &name.resolve());
+                insert_declared_name(classes, &name.resolve());
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
+            }
+            Stmt::RoleDecl { name, body, .. } => {
+                insert_declared_name(out, &name.resolve());
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
+            }
+            Stmt::EnumDecl { name, variants, .. } => {
+                insert_declared_name(out, &name.resolve());
+                // Enum values are valid value-params (`sub f(SomeEnumValue)`),
+                // and serve as suggestions for a mistyped one.
+                for (vname, _) in variants {
+                    out.insert(vname.clone());
+                }
+            }
+            Stmt::SubsetDecl { name, .. } => {
+                insert_declared_name(out, &name.resolve());
+            }
+            Stmt::Package {
+                name, kind, body, ..
+            } => {
+                // `module`/`package` are not type-like (a parameter typed by one
+                // is X::Parameter::BadType); `grammar` is a real type.
+                if matches!(
+                    kind,
+                    crate::ast::PackageKind::Module | crate::ast::PackageKind::Package
+                ) {
+                    insert_declared_name(packages, &name.resolve());
+                } else {
+                    insert_declared_name(out, &name.resolve());
+                }
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
+            }
+            // `constant HANDLE = uint32;` aliases a type, and the alias is usable
+            // wherever a type name is (`sub GetProcessHeap(--> HANDLE)`, which is
+            // how C bindings spell their platform types). A constant bound to a
+            // *value* is just as valid there: rakudo turns `sub f(TAU)` /
+            // `sub f(TAU $x)` into a value constraint (the value's type plus a
+            // smartmatch against it), which the binder resolves from the
+            // constant at dispatch time -- `secp256k1`'s
+            // `multi infix:<*>(Int $n, G)` special-cases its generator point
+            // that way. So every sigilless `constant` name is recorded; whether
+            // it names a type or a value is decided when it is bound.
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                && name.starts_with(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase())
+                && !name.starts_with(['$', '@', '%', '&']) =>
+            {
+                insert_declared_name(out, name);
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Validate parameter type constraints for plain subs in `stmts` (descending
+/// into bare blocks/packages, but not class/role bodies whose methods may
+/// legitimately forward-reference the enclosing type).
+fn walk_validate_sub_param_types(
+    interp: &Interpreter,
+    stmts: &[Stmt],
+    declared: &std::collections::HashSet<String>,
+    packages: &std::collections::HashSet<String>,
+    classes: &std::collections::HashSet<String>,
+    inherited_captures: &std::collections::HashSet<String>,
+) -> Result<(), RuntimeError> {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                param_defs,
+                body,
+                return_type,
+                custom_traits,
+                ..
+            } => {
+                interp.validate_param_type_constraints(
+                    param_defs,
+                    declared,
+                    packages,
+                    classes,
+                    inherited_captures,
+                )?;
+                let via_trait = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == "__return_via_trait" || t == "__return_via_of");
+                interp.validate_return_type_constraint(
+                    return_type.as_deref(),
+                    param_defs,
+                    declared,
+                    via_trait,
+                    inherited_captures,
+                )?;
+                let mut body_captures = inherited_captures.clone();
+                body_captures.extend(
+                    param_defs
+                        .iter()
+                        .filter_map(|pd| pd.captured_type_name().map(str::to_string)),
+                );
+                walk_validate_sub_param_types(
+                    interp,
+                    body,
+                    declared,
+                    packages,
+                    classes,
+                    &body_captures,
+                )?;
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                walk_validate_sub_param_types(
+                    interp,
+                    body,
+                    declared,
+                    packages,
+                    classes,
+                    inherited_captures,
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Type-capture parameter names (`::T`) declared by `param_defs`, newly added
+/// to `captures` (already-present names are not re-added so scoped removal
+/// stays balanced).
+fn collect_type_captures(
+    param_defs: &[crate::ast::ParamDef],
+    captures: &mut std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut added = Vec::new();
+    for pd in param_defs {
+        if let Some(name) = pd.captured_type_name()
+            && !name.is_empty()
+            && !name.contains("::")
+            && captures.insert(name.to_string())
+        {
+            added.push(name.to_string());
+        }
+    }
+    added
+}
+
+/// Reject `class C is T {}` where `T` is a type-capture parameter (`::T`) of
+/// an enclosing routine/block: rakudo raises X::Inheritance::Unsupported at
+/// compile time ("T does not support inheritance, so C cannot inherit from
+/// it") without ever running the block. Best-effort walk over the common
+/// body-carrying constructs, in the same spirit as
+/// `walk_validate_sub_param_types`.
+fn walk_type_capture_inheritance(
+    stmts: &[Stmt],
+    captures: &mut std::collections::HashSet<String>,
+) -> Result<(), RuntimeError> {
+    fn check_expr(
+        expr: &crate::ast::Expr,
+        captures: &mut std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        use crate::ast::Expr;
+        match expr {
+            Expr::AnonSubParams {
+                param_defs, body, ..
+            } => {
+                let added = collect_type_captures(param_defs, captures);
+                let result = walk_type_capture_inheritance(body, captures);
+                for name in added {
+                    captures.remove(&name);
+                }
+                result
+            }
+            Expr::DoStmt(stmt) => {
+                walk_type_capture_inheritance(std::slice::from_ref(stmt), captures)
+            }
+            Expr::Grouped(e) => check_expr(e, captures),
+            _ => Ok(()),
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::ClassDecl {
+                name,
+                parents,
+                body,
+                ..
+            } => {
+                for parent in parents {
+                    let base = parent.strip_prefix("::").unwrap_or(parent);
+                    if captures.contains(base) {
+                        let child = name.resolve();
+                        let child_display = if child.starts_with("__ANON_CLASS_") {
+                            "<anon>".to_string()
+                        } else {
+                            child
+                        };
+                        let msg = format!(
+                            "{base} does not support inheritance, so {child_display} cannot inherit from it"
+                        );
+                        let mut attrs = ValueMap::default();
+                        attrs.insert("child-typename".to_string(), Value::str(child_display));
+                        attrs.insert(
+                            "parent".to_string(),
+                            Value::package(crate::symbol::Symbol::intern(base)),
+                        );
+                        attrs.insert("message".to_string(), Value::str(msg));
+                        return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
+                    }
+                }
+                walk_type_capture_inheritance(body, captures)?;
+            }
+            Stmt::SubDecl {
+                param_defs, body, ..
+            } => {
+                let added = collect_type_captures(param_defs, captures);
+                let result = walk_type_capture_inheritance(body, captures);
+                for name in added {
+                    captures.remove(&name);
+                }
+                result?;
+            }
+            Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Package { body, .. }
+            | Stmt::RoleDecl { body, .. } => {
+                walk_type_capture_inheritance(body, captures)?;
+            }
+            Stmt::Expr(expr) | Stmt::Return(expr) => check_expr(expr, captures)?,
+            Stmt::VarDecl { expr, .. } => check_expr(expr, captures)?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl Interpreter {
-    /// Reject inheriting from a type capture in scope
+    /// Reject inheriting from an enclosing routine's type-capture parameter
     /// (`-> ::T { class C is T {} }`) at compile time, like rakudo.
-    // Cost: O(n * k), n = size of the unit's AST, k = type captures in scope.
     pub(crate) fn check_type_capture_inheritance(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        match scan(CaptureInheritance::default(), stmts).error {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
-    }
-
-    /// Every type name this unit declares, plus those its `use`d modules
-    /// declare (found through the unit's own `use lib` paths too).
-    // Cost: O(n + m), n = size of the unit's AST, m = size of the used
-    // modules' sources.
-    pub(super) fn eval_declared_types(&self, stmts: &[Stmt]) -> DeclaredTypes {
-        let file = self.env.get("?FILE").map(|v| v.to_string_value());
-        let lib_dirs = scan(
-            UseLibDirs {
-                file: file.as_deref(),
-                program: self.program_path.as_deref(),
-                out: Vec::new(),
-            },
-            stmts,
-        )
-        .out;
-        let harvest = |module: &str, out: &mut HashSet<String>| {
-            collect_use_declared_type_names(self, module, &lib_dirs, out)
-        };
-        scan(
-            TypeDecls {
-                harvest: Some(&harvest),
-                out: DeclaredTypes::default(),
-            },
-            stmts,
-        )
-        .out
+        let mut captures = std::collections::HashSet::new();
+        walk_type_capture_inheritance(stmts, &mut captures)
     }
 
     /// Reject sub parameter types that name a type unknown to this compilation
     /// unit (e.g. `sub yoink(Junctoin $barf)`) -> X::Parameter::InvalidType.
-    // Cost: O(n + m), as `eval_declared_types`, plus one validation per sub.
     pub(crate) fn check_eval_param_type_constraints(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let declared = self.eval_declared_types(stmts);
-        let checker = SubParamTypes {
-            interp: self,
-            declared: &declared,
-            captures: Captures::default(),
-            error: None,
-        };
-        match scan(checker, stmts).error {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
-    }
-
-    /// The type names this unit declares, without harvesting `use`d modules.
-    fn unit_declared_types(stmts: &[Stmt]) -> DeclaredTypes {
-        scan(
-            TypeDecls {
-                harvest: None,
-                out: DeclaredTypes::default(),
-            },
+        let mut declared = std::collections::HashSet::new();
+        let mut packages = std::collections::HashSet::new();
+        let mut classes = std::collections::HashSet::new();
+        let mut lib_dirs = Vec::new();
+        let file = self.env.get("?FILE").map(|v| v.to_string_value());
+        collect_use_lib_dirs(
             stmts,
+            file.as_deref(),
+            self.program_path.as_deref(),
+            &mut lib_dirs,
+        );
+        collect_declared_type_names_with(
+            Some(self),
+            &lib_dirs,
+            stmts,
+            &mut declared,
+            &mut packages,
+            &mut classes,
+        );
+        walk_validate_sub_param_types(
+            self,
+            stmts,
+            &declared,
+            &packages,
+            &classes,
+            &std::collections::HashSet::new(),
         )
-        .out
     }
 
     /// Reject a type-parameter argument that names an undeclared type, e.g.
@@ -218,32 +516,25 @@ impl Interpreter {
     /// Only the inner `[...]` arguments are checked here (the base type's
     /// parametric-ness is X::NotParametric, handled elsewhere). All declared type
     /// names are collected first so forward references are honored.
-    // Cost: O(n * k), n = size of the unit's AST, k = type captures in scope.
     pub(crate) fn check_eval_undeclared_type_args(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let declared = Self::unit_declared_types(stmts).types;
-        if let Some(name) = scan(TypeArgs::new(self, &declared), stmts).found {
-            let suggestions = self.suggest_type_names(&name);
-            return Err(RuntimeError::undeclared_type_symbols(
-                &name,
-                format!("Undeclared name:\n    {} used at line 1", name),
-                suggestions,
-            ));
-        }
-        Ok(())
+        let mut declared = std::collections::HashSet::new();
+        let mut packages = std::collections::HashSet::new();
+        let mut classes = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        self.walk_validate_type_args(stmts, &declared)
     }
 
     /// If `tc` is `Base[arg, ...]`, return the first inner argument that names an
     /// undeclared type (an uppercase bareword that is neither declared nor a known
     /// built-in / resolvable type). `::T` capture args and lowercase/native args
     /// are ignored.
-    pub(super) fn first_undeclared_type_arg(
+    fn first_undeclared_type_arg(
         &self,
         tc: &str,
-        declared: &HashSet<String>,
-        captures: &Captures,
+        declared: &std::collections::HashSet<String>,
     ) -> Option<String> {
         let open = tc.find('[')?;
         let close = tc.rfind(']')?;
@@ -262,7 +553,7 @@ impl Interpreter {
                 }
             }
             let arg = arg.trim();
-            if arg.is_empty() || arg.starts_with("::") || captures.contains(arg) {
+            if arg.is_empty() || arg.starts_with("::") {
                 continue;
             }
             // Only consider a bare uppercase type identifier.
@@ -281,27 +572,99 @@ impl Interpreter {
         None
     }
 
+    fn walk_validate_type_args(
+        &self,
+        stmts: &[Stmt],
+        declared: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        let check = |tc: Option<&str>| -> Option<String> {
+            tc.and_then(|t| self.first_undeclared_type_arg(t, declared))
+        };
+        for stmt in stmts {
+            let bad = match stmt {
+                Stmt::VarDecl {
+                    type_constraint, ..
+                } => check(type_constraint.as_deref()),
+                Stmt::SubDecl {
+                    param_defs,
+                    return_type,
+                    ..
+                } => param_defs
+                    .iter()
+                    .find_map(|pd| check(pd.type_constraint.as_deref()))
+                    .or_else(|| check(return_type.as_deref())),
+                _ => None,
+            };
+            if let Some(name) = bad {
+                let suggestions = self.suggest_type_names(&name);
+                return Err(RuntimeError::undeclared_type_symbols(
+                    &name,
+                    format!("Undeclared name:\n    {} used at line 1", name),
+                    suggestions,
+                ));
+            }
+            // Recurse into nested bodies.
+            match stmt {
+                Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Package { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::SubDecl { body, .. } => {
+                    self.walk_validate_type_args(body, declared)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Reject a `trusts T` declaration whose target type `T` is not declared
     /// anywhere in this compilation unit (nor a known built-in type)
     /// -> X::Undeclared (symbol => T, what => "Type"). Forward references are
     /// honored because all declared type names are collected first.
-    // Cost: O(n), n = size of the unit's AST.
     pub(crate) fn check_eval_undeclared_trusts(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        let declared = Self::unit_declared_types(stmts).types;
-        let checker = Trusts {
-            interp: self,
-            declared: &declared,
-            found: None,
-        };
-        if let Some(target) = scan(checker, stmts).found {
-            let mut attrs = ValueMap::default();
-            attrs.insert("symbol".to_string(), Value::str(target.clone()));
-            attrs.insert("what".to_string(), Value::str("Type".to_string()));
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!("Type '{}' is not declared", target)),
-            );
-            return Err(RuntimeError::typed("X::Undeclared", attrs));
+        let mut declared = std::collections::HashSet::new();
+        let mut packages = std::collections::HashSet::new();
+        let mut classes = std::collections::HashSet::new();
+        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        self.walk_validate_trusts(stmts, &declared)
+    }
+
+    fn walk_validate_trusts(
+        &self,
+        stmts: &[Stmt],
+        declared: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            match stmt {
+                Stmt::TrustsDecl { name } => {
+                    let target = name.resolve();
+                    // A bare identifier (e.g. `Bar`) that names no declared type and
+                    // is not a known built-in/resolvable type is undeclared.
+                    let known = declared.contains(target.as_str())
+                        || self.has_type(&target)
+                        || self.is_resolvable_type(&target);
+                    if !known {
+                        let mut attrs = ValueMap::default();
+                        attrs.insert("symbol".to_string(), Value::str(target.to_string()));
+                        attrs.insert("what".to_string(), Value::str("Type".to_string()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Type '{}' is not declared", target)),
+                        );
+                        return Err(RuntimeError::typed("X::Undeclared", attrs));
+                    }
+                }
+                Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Package { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body) => {
+                    self.walk_validate_trusts(body, declared)?;
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
