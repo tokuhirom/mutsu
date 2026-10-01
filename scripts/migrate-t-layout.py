@@ -106,6 +106,9 @@ OVERRIDES: dict[str, str] = {
     "nested-class-return-type": "oo/class",
     # `class B { class B { } }` declares B::B: a class-declaration question.
     "nested-class-named-like-enclosing": "oo/class",
+    # An `our` class declared inside a routine is installed at compile time:
+    # a class-declaration question.
+    "nested-our-class-installed-at-compile-time": "oo/class",
     # Type-matching against a core type name that a lexical shadows: the
     # question is which type the matcher resolves, not the shadowing itself.
     "core-type-not-shadowed-in-typematch": "types",
