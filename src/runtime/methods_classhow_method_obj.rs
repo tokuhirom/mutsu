@@ -184,6 +184,28 @@ impl Interpreter {
                 self.make_native_method_object(native_name, class_name),
             );
         }
+        // A grammar's `token`/`rule`/`regex` declarations (and `proto token`
+        // dispatchers) are methods too; a composed role's are re-registered
+        // under the composing class (`registration_class_compose_body`).
+        // Cost: O(t), t = all registered token/rule keys (scans the tables).
+        let prefix = format!("{class_name}::");
+        for key in registry
+            .token_defs
+            .keys()
+            .map(|k| k.resolve())
+            .chain(registry.proto_tokens.iter().map(|k| k.as_str().into()))
+        {
+            let Some(rest) = key.strip_prefix(prefix.as_str()) else {
+                continue;
+            };
+            if rest.contains("::") || table.contains_key(rest) {
+                continue;
+            }
+            table.insert(
+                rest.to_string(),
+                self.make_native_method_object_ex(rest, class_name, true),
+            );
+        }
         table
     }
 
@@ -390,7 +412,45 @@ impl Interpreter {
         // G.^lookup("X").^name'` -> `Regex`) -- verified for all three
         // declarators, which are otherwise indistinguishable at this point.
         let class_name = if is_regex { "Regex" } else { "Method" };
+        if is_regex && let Some(src) = self.token_declaration_source(owner, name) {
+            attrs.insert("__mutsu_regex_source".to_string(), Value::str(src));
+        }
         Value::make_instance(Symbol::intern(class_name), attrs)
+    }
+
+    // Cost: O(n), n = size of the declaration's source tree.
+    /// The `.gist` of a grammar `token`/`rule`/`regex` method object: the
+    /// declarator, its name and the braced body, e.g. `token love { '<3' | love }`
+    /// (Rakudo prints the declaration source). The body is re-rendered from the
+    /// source-level regex tree, so its spacing is normalized rather than verbatim.
+    fn token_declaration_source(&self, owner: &str, name: &str) -> Option<String> {
+        let registry = self.registry();
+        let key = format!("{owner}::{name}");
+        let Some(first) = registry
+            .token_defs
+            .get(&Symbol::intern(&key))
+            .and_then(|defs| defs.first())
+        else {
+            // A `proto token name {*}` has no body of its own.
+            return registry
+                .proto_tokens
+                .contains(&key)
+                .then(|| format!("token {name} {{*}}"));
+        };
+        let Some(crate::ast::Stmt::Expr(crate::ast::Expr::Literal(lit))) = first.body.first()
+        else {
+            return None;
+        };
+        if let Some(src) = lit.regex_declared_source() {
+            return Some(src.to_string());
+        }
+        let tree = lit.regex_source_tree()?;
+        let kind = match tree.declaration_kind? {
+            crate::regex_tree::RegexDeclKind::Token => "token",
+            crate::regex_tree::RegexDeclKind::Rule => "rule",
+            crate::regex_tree::RegexDeclKind::Regex => "regex",
+        };
+        Some(format!("{kind} {name} {{ {} }}", tree.to_source().trim()))
     }
 
     /// Records the owning class/role so a `.wrap` on the returned Method

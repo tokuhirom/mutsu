@@ -64,6 +64,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("regex", input))
         .ok_or_else(|| PError::expected("token/regex/rule declaration"))?;
     let (rest, _) = ws1(rest)?;
+    let name_start = rest;
     let (rest, name) = parse_token_like_name(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -119,11 +120,24 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     if is_ratchet {
         pattern = format!(":ratchet {pattern}");
     }
+    let kind_word = if is_rule {
+        "rule"
+    } else if is_regex {
+        "regex"
+    } else {
+        "token"
+    };
+    let declared_source = format!(
+        "{kind_word} {}",
+        &name_start[..name_start.len() - rest.len()]
+    );
     let regex_value = Value::regex(pattern);
-    let body = vec![Stmt::Expr(Expr::Literal(match &source_regex {
+    let regex_value = match &source_regex {
         Some(tree) => regex_value.with_regex_source_tree(tree.clone()),
         None => regex_value,
-    }))];
+    }
+    .with_regex_declared_source(&declared_source);
+    let body = vec![Stmt::Expr(Expr::Literal(regex_value))];
 
     if is_rule {
         Ok((

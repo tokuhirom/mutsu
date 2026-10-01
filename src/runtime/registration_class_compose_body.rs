@@ -351,6 +351,9 @@ impl Interpreter {
             // `<item>`, so two roles declaring the same token name
             // silently alias (`grammar GA does A` seeing B's `item`).
             let is_regex_decl = op.kind == crate::opcode::DeferredBodyOpKind::TokenRule;
+            // A `proto token name {*}` is likewise keyed under the composing
+            // grammar (its `:sym<>` candidates were registered there).
+            let is_proto_token_decl = matches!(op.raw, Stmt::ProtoToken { .. });
             // A `use`/`need` statement imports into "the current package"
             // (`import_module`'s `target_pkg`), which must be the ROLE's
             // own package -- not whoever is composing it -- or the import
@@ -382,7 +385,7 @@ impl Interpreter {
                 if is_use_decl {
                     self.import_target_package = Some(base_role_name.to_string());
                 }
-            } else if is_regex_decl {
+            } else if is_regex_decl || is_proto_token_decl {
                 self.set_current_package(cx.name.to_string());
             } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
                 self.set_current_package(package.to_string());
@@ -417,7 +420,12 @@ impl Interpreter {
                 run_one(self)
             };
             self.nested_capture_owners.pop();
-            if is_type_decl || is_regex_decl || is_use_decl || is_lexical_sub_decl {
+            if is_type_decl
+                || is_regex_decl
+                || is_proto_token_decl
+                || is_use_decl
+                || is_lexical_sub_decl
+            {
                 self.set_current_package(saved_body_pkg.clone());
             }
             if is_use_decl {

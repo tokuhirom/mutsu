@@ -553,6 +553,15 @@ pub(crate) fn gist_value(value: &Value) -> String {
         ValueView::Instance { attributes, .. } if value.is_match_instance() => {
             match_gist(&(attributes).as_map(), 0)
         }
+        // A grammar `token`/`rule`/`regex` method object gists as its
+        // declaration source (`token love { ... }`).
+        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_regex_source") => {
+            attributes
+                .as_map()
+                .get("__mutsu_regex_source")
+                .map(crate::value::Value::to_string_value)
+                .unwrap_or_default()
+        }
         // An `is Str` subclass instance gists as its string payload
         // (`Foo.new(:value("hi")).gist` → `hi`), not the generic `Class.new` —
         // `Str.gist` is the string itself.
