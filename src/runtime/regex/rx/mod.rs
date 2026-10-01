@@ -283,6 +283,8 @@ pub(crate) struct RxProgram {
     /// position-only matcher treats code atoms as inert and has no lexicals to
     /// read, so it must not run a program that has any.
     pub(super) has_code: bool,
+    /// Whether the program holds a `Call` op, so a run of it may switch frames.
+    pub(super) has_call: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see

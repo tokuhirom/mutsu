@@ -45,7 +45,7 @@ impl Cur<'_> {
 }
 
 impl Interpreter {
-    pub(super) fn rx_run_in(
+    pub(super) fn rx_run_in<const FRAMES: bool>(
         &mut self,
         root: &RxProgram,
         chars: &[char],
@@ -104,7 +104,7 @@ impl Interpreter {
         macro_rules! push_choice {
             ($choice:expr) => {{
                 let choice = $choice;
-                if frame.is_some() || regs.len() != root.nregs {
+                if FRAMES && (frame.is_some() || regs.len() != root.nregs) {
                     fmarks.push(FMark {
                         at: stack.len(),
                         regs_len: regs.len(),
@@ -119,8 +119,10 @@ impl Interpreter {
             ($n:expr) => {{
                 let n: usize = $n;
                 stack.truncate(n);
-                while fmarks.last().is_some_and(|m| m.at >= n) {
-                    fmarks.pop();
+                if FRAMES {
+                    while fmarks.last().is_some_and(|m| m.at >= n) {
+                        fmarks.pop();
+                    }
                 }
             }};
         }
@@ -333,6 +335,10 @@ impl Interpreter {
                     // and costs O(c) per candidate entered, c = the captures it adds.
                     // The callee's own ops state their costs.
                     RxOp::Call { atom, commit } => {
+                        if !FRAMES {
+                            debug_assert!(false, "a program without frames has no Call op");
+                            break 'run None;
+                        }
                         let RegexAtom::Named(name) = &program.atoms[atom as usize] else {
                             debug_assert!(false, "a Call op names a `<subrule>` atom");
                             break 'run None;
@@ -658,7 +664,7 @@ impl Interpreter {
                     // callee frame also the one `build_named_candidates_from_inner`
                     // call that files them as the subrule's Match, O(1) plus the
                     // callee's own captures moved, not copied.
-                    RxOp::Match => match frame.clone() {
+                    RxOp::Match => match if FRAMES { frame.clone() } else { None } {
                         None => match &mut goal {
                             Goal::First => break 'run Some((pos, levels.top().snapshot())),
                             Goal::End(end) => {
@@ -756,7 +762,7 @@ impl Interpreter {
                         let Some(choice) = stack.pop() else {
                             break 'run None;
                         };
-                        let fm = if fmarks.last().is_some_and(|m| m.at == stack.len()) {
+                        let fm = if FRAMES && fmarks.last().is_some_and(|m| m.at == stack.len()) {
                             fmarks.pop()
                         } else {
                             None
@@ -862,8 +868,14 @@ impl Interpreter {
                         regs[i] = old;
                     }
                     // Windows opened after this choice point are dead.
-                    regs.truncate(fm.as_ref().map_or(root.nregs, |m| m.regs_len));
-                    let target_frame = fm.and_then(|m| m.frame);
+                    if FRAMES {
+                        regs.truncate(fm.as_ref().map_or(root.nregs, |m| m.regs_len));
+                    }
+                    let target_frame = if FRAMES {
+                        fm.and_then(|m| m.frame)
+                    } else {
+                        None
+                    };
                     let same_frame = match (&frame, &target_frame) {
                         (None, None) => true,
                         (Some(a), Some(b)) => Rc::ptr_eq(a, b),

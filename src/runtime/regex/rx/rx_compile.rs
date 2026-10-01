@@ -40,6 +40,8 @@ pub(super) struct Compiler {
     pub(super) nregs: usize,
     /// Set when a `Code` or `VarDecl` op is emitted.
     has_code: bool,
+    /// Set when a `Call` op is emitted.
+    has_call: bool,
     /// How many enclosing quantified bodies contain an alternation: the walk
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
@@ -61,6 +63,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         ltm_alts: Vec::new(),
         nregs: 0,
         has_code: false,
+        has_call: false,
         quant_alt_depth: 0,
         chain_atom: false,
     };
@@ -78,6 +81,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         ltm_alts: c.ltm_alts,
         nregs: c.nregs,
         has_code: c.has_code,
+        has_call: c.has_call,
         ascii: std::sync::OnceLock::new(),
     })
 }
@@ -411,6 +415,7 @@ impl Compiler {
                         atom: i,
                         commit: token.ratchet,
                     });
+                    self.has_call = true;
                 }
                 // The callee may run code, read lexicals or capture: the
                 // position-only matcher must not run this program.

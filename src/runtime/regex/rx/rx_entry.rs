@@ -222,7 +222,13 @@ impl Interpreter {
     ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
         let mut scratch = SCRATCH.with(|s| s.borrow_mut().pop()).unwrap_or_default();
-        let result = self.rx_run_in(program, chars, start, pkg, goal, &mut scratch);
+        // A program with no call never builds a frame: its loop is compiled
+        // without the frame machinery.
+        let result = if program.has_call {
+            self.rx_run_in::<true>(program, chars, start, pkg, goal, &mut scratch)
+        } else {
+            self.rx_run_in::<false>(program, chars, start, pkg, goal, &mut scratch)
+        };
         SCRATCH.with(|s| s.borrow_mut().push(scratch));
         result
     }
