@@ -2447,7 +2447,7 @@ impl Compiler {
         free: Vec<Symbol>,
         written: Vec<Symbol>,
     ) {
-        if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
+        if !self.binds_lexsub_free_vars() || name.contains("::") {
             return;
         }
         std::rc::Rc::make_mut(&mut self.lexical_sub_written_vars)
