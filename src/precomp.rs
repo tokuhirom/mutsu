@@ -114,7 +114,9 @@ pub(crate) fn interpreter_version() -> String {
     // pointing at a side table the cache cannot reach.
     // 14: `Expr::AnonSub` gained `doc` and `ParseEffects` gained `decl_docs`
     // (declarator docs attached by the parser, ADR-0136).
-    const CACHE_FORMAT_VERSION: u32 = 14;
+    // 15: `Expr::Subst`/`NonDestructiveSubst` and `SerValue::RegexWithAdverbs`
+    // lost `perl5` (the `:P5` regex adverb is gone, ADR-0138).
+    const CACHE_FORMAT_VERSION: u32 = 15;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

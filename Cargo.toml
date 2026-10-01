@@ -23,7 +23,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["native", "jit"]
-native = ["rustyline", "libc", "pcre2", "libloading", "libffi"]
+native = ["rustyline", "libc", "libloading", "libffi"]
 wasm = ["wasm-bindgen", "console_error_panic_hook"]
 # NativeCall (C FFI) support — gated under `native`; wasm builds cannot do FFI.
 libloading = ["dep:libloading"]
@@ -75,10 +75,6 @@ regex = "1.12.3"
 # REMOVE (#10436): one call site, matching `handles /re/` delegation with
 # PCRE syntax instead of Raku regex semantics.
 fancy-regex = "0.19"
-# UNDER REVIEW (#10225): `:P5` regex execution. It builds a C library
-# (pcre2-sys via `cc`), so it is the heaviest dependency for portability. Its
-# fate follows the `:P5` support decision.
-pcre2 = { version = "0.2", optional = true }
 # REMOVE (#10438): char <-> Unicode name at 3 call sites, but its build
 # script pulls in phf_codegen + rand (15 crates). Generate a committed table.
 unicode_names2 = "3"

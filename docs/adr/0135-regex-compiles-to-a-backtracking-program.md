@@ -291,7 +291,7 @@ Applied to the tickets open on 2026-09-30:
 | [#7548](https://github.com/tokuhirom/mutsu/issues/7548) the streamed-subrule barrier | **closed by Slices D–E** | D3 makes every call demand-driven; widening the walk's eligibility analysis now is discarded work |
 | [#9929](https://github.com/tokuhirom/mutsu/issues/9929) `.comb(Regex)` finds every match up front | **after Slice A** | a resumable scan is a saved `RxVm` state (start position plus registers), not a new mechanism in the walk |
 | [#7576](https://github.com/tokuhirom/mutsu/issues/7576) YAMLish deeper documents ~2x | **re-measure after Slice D** | its remaining cost is grammar walk cost |
-| [#10225](https://github.com/tokuhirom/mutsu/issues/10225) fate of `:P5` | independent | `:P5` runs on pcre2, not on the walk. It is outside D7's "one engine", and either decision leaves this ADR unchanged |
+| [#10225](https://github.com/tokuhirom/mutsu/issues/10225) fate of `:P5` | independent | `:P5` runs on pcre2, not on the walk. It is outside D7's "one engine", and either decision leaves this ADR unchanged. Resolved by [ADR-0138](0138-perl5-regex-adverb-removed.md): `:P5` and the pcre2 engine are removed |
 | [#10215](https://github.com/tokuhirom/mutsu/issues/10215), [#10216](https://github.com/tokuhirom/mutsu/issues/10216) `$/` / `$0` after `.subst` | independent | `Match` publication in the `.subst` layer, which survives |
 | [#8033](https://github.com/tokuhirom/mutsu/issues/8033) RakuAST regex node tree | independent | front end: it produces the pattern this ADR compiles |
 | [#10021](https://github.com/tokuhirom/mutsu/issues/10021) `Word_Break` emoji modifiers | independent | Unicode property data, consumed unchanged through D4 |

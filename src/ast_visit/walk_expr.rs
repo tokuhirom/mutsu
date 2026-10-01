@@ -74,7 +74,6 @@ pub(crate) fn walk_expr<V: Visit + ?Sized>(v: &mut V, e: &Expr) {
             global: _,
             nth: _,
             x: _,
-            perl5: _,
             replacement_thunk,
         }
         | Expr::NonDestructiveSubst {
@@ -87,7 +86,6 @@ pub(crate) fn walk_expr<V: Visit + ?Sized>(v: &mut V, e: &Expr) {
             global: _,
             nth: _,
             x: _,
-            perl5: _,
             replacement_thunk,
         } => {
             v.visit_name(pattern, NameKind::Source);

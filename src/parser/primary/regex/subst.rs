@@ -8,10 +8,7 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::adverbs::{
-    MatchAdverbs, apply_inline_match_adverbs, build_regex_with_adverbs,
-    validate_regex_pattern_or_perror,
-};
+use super::adverbs::MatchAdverbs;
 
 pub(super) fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
     let (input, _) = ws(input)?;
@@ -142,116 +139,5 @@ pub(super) fn build_topic_subst_compound_expr(
             quoted: false,
         }),
         is_bind: false,
-    })
-}
-
-/// Build a destructive `s[pattern] = expr` substitution lowered to
-/// `$_ = $_.subst(pattern, { expr })`. Used for Perl5 substitutions, whose
-/// closure replacement must bind Perl5 captures via the `.subst` method.
-pub(super) fn build_topic_subst_expr(
-    pattern: String,
-    replacement: Expr,
-    adverbs: &MatchAdverbs,
-) -> Result<Expr, PError> {
-    let pattern = if adverbs.perl5 {
-        pattern
-    } else {
-        let p = apply_inline_match_adverbs(pattern, adverbs);
-        validate_regex_pattern_or_perror(&p)?;
-        p
-    };
-
-    let regex_value = if adverbs.perl5 {
-        build_regex_with_adverbs(pattern, adverbs)
-    } else {
-        Value::regex(pattern)
-    };
-
-    let mut args = vec![
-        Expr::Literal(regex_value),
-        Expr::AnonSub {
-            body: vec![Stmt::Expr(replacement)],
-            is_rw: false,
-            is_raw: false,
-            is_block: true,
-            doc: Default::default(),
-        },
-    ];
-    if adverbs.global {
-        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
-    }
-
-    Ok(Expr::AssignExpr {
-        name: "_".to_string(),
-        expr: Box::new(Expr::MethodCall {
-            target: Box::new(Expr::Var("_".to_string())),
-            name: Symbol::intern("subst"),
-            args,
-            modifier: None,
-            quoted: false,
-        }),
-        is_bind: false,
-    })
-}
-
-/// Build a non-destructive substitution expression from `S[pattern] = expr`.
-/// This is equivalent to `$_.subst(pattern, { expr })` without modifying `$_`.
-pub(super) fn build_non_destructive_subst_expr(
-    pattern: String,
-    replacement: Expr,
-    adverbs: &MatchAdverbs,
-) -> Result<Expr, PError> {
-    let pattern = if adverbs.perl5 {
-        pattern
-    } else {
-        let p = apply_inline_match_adverbs(pattern, adverbs);
-        validate_regex_pattern_or_perror(&p)?;
-        p
-    };
-
-    let regex_value = if adverbs.perl5 {
-        build_regex_with_adverbs(pattern, adverbs)
-    } else {
-        Value::regex(pattern)
-    };
-
-    let mut args = vec![
-        Expr::Literal(regex_value),
-        Expr::AnonSub {
-            body: vec![Stmt::Expr(replacement)],
-            is_rw: false,
-            is_raw: false,
-            is_block: true,
-            doc: Default::default(),
-        },
-    ];
-    if adverbs.global {
-        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
-    }
-    if adverbs.samecase {
-        args.push(Expr::Literal(Value::pair(
-            "samecase".to_string(),
-            Value::TRUE,
-        )));
-    }
-    if adverbs.samemark {
-        args.push(Expr::Literal(Value::pair(
-            "samemark".to_string(),
-            Value::TRUE,
-        )));
-    }
-    if adverbs.samespace {
-        args.push(Expr::Literal(Value::pair(
-            "samespace".to_string(),
-            Value::TRUE,
-        )));
-    }
-
-    Ok(Expr::MethodCall {
-        target: Box::new(Expr::Var("_".to_string())),
-        name: Symbol::intern("subst"),
-        args,
-        modifier: None,
-        quoted: false,
     })
 }

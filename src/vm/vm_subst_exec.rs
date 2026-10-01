@@ -14,7 +14,6 @@ pub(super) struct SubstOp {
     pub(super) samemark: bool,
     pub(super) samespace: bool,
     pub(super) global: bool,
-    pub(super) perl5: bool,
 }
 
 /// The result of running a substitution over the topic.
@@ -43,7 +42,6 @@ impl Interpreter {
         global: bool,
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
-        perl5: bool,
         replacement_thunk: bool,
     ) -> SubstOp {
         let pattern = Self::const_str(code, pattern_idx).to_string();
@@ -65,7 +63,6 @@ impl Interpreter {
             samemark,
             samespace,
             global,
-            perl5,
         }
     }
 
@@ -77,31 +74,9 @@ impl Interpreter {
     fn subst_collect_matches(
         &mut self,
         op: &SubstOp,
-        text: &str,
         target: &crate::runtime::MatchTarget,
     ) -> Vec<(usize, usize, SubstMatchCaps)> {
         let first_only = op.nth_spec.is_none() && op.x_spec.is_none() && !op.global;
-        if op.perl5 {
-            let mut all: Vec<(usize, usize, Vec<String>)> =
-                loan_env!(self, regex_find_all_p5_with_captures(&op.pattern, text));
-            if first_only {
-                all.truncate(1);
-            }
-            return all
-                .into_iter()
-                .map(|(s, e, positional)| {
-                    (
-                        s,
-                        e,
-                        SubstMatchCaps {
-                            positional,
-                            named: std::collections::HashMap::new(),
-                            spans: None,
-                        },
-                    )
-                })
-                .collect();
-        }
         let mut out = Vec::new();
         let mut pos = 0usize;
         // One target for the whole scan — see the note in `native_subst_regex`:
@@ -139,7 +114,7 @@ impl Interpreter {
         self.reset_capture_env_vars();
 
         let target = crate::runtime::MatchTarget::new(&text);
-        let all = self.subst_collect_matches(op, &text, &target);
+        let all = self.subst_collect_matches(op, &target);
         let take_all = op.global && op.nth_spec.is_none() && op.x_spec.is_none();
         let (selected, caps): (Vec<(usize, usize)>, Vec<SubstMatchCaps>) = if take_all {
             all.into_iter().map(|(s, e, c)| ((s, e), c)).unzip()
@@ -291,7 +266,6 @@ impl Interpreter {
         global: bool,
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
-        perl5: bool,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -306,7 +280,6 @@ impl Interpreter {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
@@ -341,7 +314,6 @@ impl Interpreter {
         global: bool,
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
-        perl5: bool,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -356,7 +328,6 @@ impl Interpreter {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
         );
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;

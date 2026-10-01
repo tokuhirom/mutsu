@@ -795,7 +795,7 @@ impl Compiler {
         if name.starts_with('*') && !self.local_map.contains_key(name) {
             self.accessed_dynamic_vars.insert(name.to_string());
         }
-        // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
+        // Slang variables ($~MAIN, $~Quote, $~Regex)
         if let Some(slang_name) = name.strip_prefix('~') {
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));
             self.code.emit(OpCode::LoadConst(idx));
