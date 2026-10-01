@@ -151,7 +151,7 @@ fn unicode_bidi_mirroring_glyph(ch: char) -> String {
     }
 }
 
-/// Emoji property (from emojis crate or regex).
+/// Emoji property.
 fn is_emoji(ch: char) -> bool {
     // Use regex for Emoji property
     static EMOJI_RE: OnceLock<regex::Regex> = OnceLock::new();
