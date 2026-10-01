@@ -162,3 +162,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0135](0135-regex-compiles-to-a-backtracking-program.md) | A regex compiles to a flat backtracking program; the tree walk is retired | Accepted (Slice A in progress; slices #10251-#10255) |
 | [0136](0136-declarator-docs-attached-by-the-parser.md) | Declarator docs (`#\|` / `#=`) are attached by the parser, not by a source line scanner | Accepted (implemented) |
 | [0137](0137-typed-ast-visitor-for-analyses.md) | AST analyses walk the AST through one typed visitor, never its serialized form | Accepted (visitor implemented; hand-rolled walkers ported under the `check-ast-walkers` ratchet) |
+| [0138](0138-perl5-regex-adverb-removed.md) | The Perl 5 regex adverb (`:P5` / `:Perl5`) is removed, following Rakudo | Accepted (implemented) |

@@ -239,7 +239,7 @@ impl CapStore {
     /// baseline) to the store, recording undo. Merges exactly the fields the
     /// old by-value merge paths handled: named/named_subcaps/named_quantified,
     /// capture_alias_map, the positional slots, hash_captures,
-    /// regex_vars, capture markers, and sym. `positional_slots` and the
+    /// regex_vars, capture markers, and sym. The
     /// per-level metadata (from/to/match_from) are intentionally NOT merged.
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {

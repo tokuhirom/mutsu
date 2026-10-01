@@ -55,7 +55,6 @@ pub(super) struct MatchAdverbs {
     pub(super) sigspace: bool,
     pub(super) samespace: bool,
     pub(super) ratchet: bool,
-    pub(super) perl5: bool,
     pub(super) pos: bool,
     /// Literal argument of `:pos(N)` (anchor position), if given.
     pub(super) pos_value: Option<usize>,
@@ -215,7 +214,13 @@ fn parse_dynamic_adverb_arg(src: &str) -> Option<Box<crate::ast::Expr>> {
     }
 }
 
-pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
+/// Parse the adverbs of a quoting construct. `construct` is the name Rakudo
+/// reports an adverb the construct does not take against: `m`, `rx`, `s` or
+/// `S` (`ms`/`ss` report as `m`/`s`).
+pub(super) fn parse_match_adverbs<'a>(
+    input: &'a str,
+    construct: &str,
+) -> PResult<'a, MatchAdverbs> {
     let mut spec = input;
     let mut adverbs = MatchAdverbs::default();
     loop {
@@ -376,8 +381,6 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
                     adverbs.continue_expr = parse_dynamic_adverb_arg(trimmed);
                 }
             }
-        } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("perl5") {
-            adverbs.perl5 = true;
         } else if matches!(name.as_str(), "nth" | "st" | "nd" | "rd" | "th") {
             // `:st`, `:nd`, `:rd` and `:th` are exact aliases of `:nth` (S05 /
             // `Language/regexes.rakudoc`: "There's actually no difference
@@ -405,10 +408,13 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         } else if !leading_digits.is_empty() && name == "x" {
             adverbs.repeat = Some(leading_digits.clone());
         } else {
+            // Any other adverb — including the Perl 5 regex adverb `:P5` /
+            // `:Perl5`, which Rakudo and roast dropped (ADR-0138) — is one this
+            // construct does not take.
             return Err(regex_adverb_error(
                 &name,
-                None,
-                format!("Unsupported regex adverb :{}", name),
+                Some(construct),
+                format!("Adverb {name} not allowed on {construct}"),
             ));
         }
 
@@ -463,7 +469,6 @@ pub(super) fn adverbs_need_value(adverbs: &MatchAdverbs) -> bool {
         || adverbs.overlap
         || adverbs.repeat.is_some()
         || adverbs.nth.is_some()
-        || adverbs.perl5
         || adverbs.pos
         || adverbs.continue_
         || adverbs.ignore_case
@@ -486,7 +491,6 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
             .as_ref()
             .and_then(|s| s.parse::<usize>().ok()),
         nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
-        perl5: adverbs.perl5,
         pos: adverbs.pos,
         pos_value: adverbs.pos_value,
         continue_: adverbs.continue_,

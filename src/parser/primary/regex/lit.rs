@@ -31,12 +31,9 @@ use super::adverbs::{
 use super::call_args::{
     has_unescaped_statement_boundary, parse_call_arg_list, parse_colon_method_arg,
 };
-use super::scan::{
-    scan_to_delim, scan_to_delim_p5, scan_to_delim_replacement, scan_to_delim_subst_pattern,
-};
+use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_pattern};
 use super::subst::{
-    build_non_destructive_subst_expr, build_topic_subst_compound_expr, build_topic_subst_expr,
-    parse_subst_replacement_expr, try_strip_subst_compound_assign,
+    build_topic_subst_compound_expr, parse_subst_replacement_expr, try_strip_subst_compound_assign,
 };
 use super::trans::{parse_trans_adverbs, process_trans_escapes};
 
@@ -206,7 +203,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         if rest.starts_with('(') {
             return Err(PError::expected("regex delimiter"));
         }
-        let (spec, adverbs) = parse_match_adverbs(rest)?;
+        let (spec, adverbs) = parse_match_adverbs(rest, "rx")?;
         let pre_ws_len = spec.len();
         if adverbs.global
             || adverbs.exhaustive
@@ -256,15 +253,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             other => (other, false),
         };
         let r = &spec[open_ch.len_utf8()..];
-        let scan_result = if adverbs.perl5 {
-            scan_to_delim_p5(r, open_ch, close_ch, is_paired)
-        } else {
-            scan_to_delim(r, open_ch, close_ch, is_paired)
-        };
+        let scan_result = scan_to_delim(r, open_ch, close_ch, is_paired);
         if let Some((pattern, rest)) = scan_result {
-            if !adverbs.perl5 {
-                validate_regex_pattern_or_perror(pattern)?;
-            }
+            validate_regex_pattern_or_perror(pattern)?;
             if adverbs_need_value(&adverbs) {
                 let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                 return Ok((
@@ -358,7 +349,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     {
         let has_adverbs = starts_with_adverb(after_ss);
         let (spec, mut adverbs) = if has_adverbs {
-            parse_match_adverbs(after_ss)?
+            parse_match_adverbs(after_ss, "s")?
         } else {
             (after_ss, MatchAdverbs::default())
         };
@@ -404,11 +395,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 // never `$/`, since the delimiter always separates pattern from
                 // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
                 // the separator is not swallowed.
-                let scan_fn = if adverbs.perl5 {
-                    scan_to_delim_p5
-                } else {
-                    scan_to_delim_subst_pattern
-                };
+                let scan_fn = scan_to_delim_subst_pattern;
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     let r2 = if is_paired {
                         let (r2, _) = ws(after_pat)?;
@@ -418,21 +405,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
-                    } else if adverbs.perl5 {
-                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
-                        // only `\` escapes and the close delimiter are significant.
-                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
                         scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
                     if let Some((replacement, rest)) = replacement_scan {
-                        let pattern = if adverbs.perl5 {
-                            pattern.to_string()
-                        } else {
-                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                            validate_regex_pattern_or_perror(&p)?;
-                            p
-                        };
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
                             rest,
                             Expr::Subst {
@@ -445,7 +423,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
-                                perl5: adverbs.perl5,
                                 replacement_thunk: None,
                             },
                         ));
@@ -456,13 +433,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         if let Some(after_eq) = after_pat_ws.strip_prefix('=')
                             && let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq)
                         {
-                            let pattern = if adverbs.perl5 {
-                                pattern.to_string()
-                            } else {
-                                let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                                validate_regex_pattern_or_perror(&p)?;
-                                p
-                            };
+                            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                            validate_regex_pattern_or_perror(&pattern)?;
                             return Ok((
                                 rest,
                                 Expr::Subst {
@@ -475,7 +447,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     global: adverbs.global,
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
-                                    perl5: adverbs.perl5,
                                     replacement_thunk: None,
                                 },
                             ));
@@ -496,7 +467,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         // Parse optional adverbs between s and delimiter
         let has_adverbs = starts_with_adverb(after_s);
         let (spec, adverbs) = if has_adverbs {
-            parse_match_adverbs(after_s)?
+            parse_match_adverbs(after_s, "s")?
         } else {
             (after_s, MatchAdverbs::default())
         };
@@ -534,11 +505,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 // never `$/`, since the delimiter always separates pattern from
                 // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
                 // the separator is not swallowed.
-                let scan_fn = if adverbs.perl5 {
-                    scan_to_delim_p5
-                } else {
-                    scan_to_delim_subst_pattern
-                };
+                let scan_fn = scan_to_delim_subst_pattern;
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     // For paired delimiters, skip optional whitespace and opening delimiter
                     let r2 = if is_paired {
@@ -549,10 +516,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
-                    } else if adverbs.perl5 {
-                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
-                        // only `\` escapes and the close delimiter are significant.
-                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
                         scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
@@ -567,13 +530,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // Reject obsolete Perl 5 trailing flags on substitution
                         // (`s/a/b/i` -> use `s:i/a/b/`), mirroring `m//`.
                         reject_trailing_p5_modifiers(rest)?;
-                        let pattern = if adverbs.perl5 {
-                            pattern.to_string()
-                        } else {
-                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                            validate_regex_pattern_or_perror(&p)?;
-                            p
-                        };
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
                             rest,
                             Expr::Subst {
@@ -586,7 +544,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
-                                perl5: adverbs.perl5,
                                 replacement_thunk: None,
                             },
                         ));
@@ -600,13 +557,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         let (after_eq_ws, _) = ws(after_op_eq)?;
                         // Item-assignment precedence: stop before `and`/`or`/...
                         let (rest, rhs_expr) = expression_no_word_logical(after_eq_ws)?;
-                        let pattern_str = if adverbs.perl5 {
-                            pattern.to_string()
-                        } else {
-                            let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                            validate_regex_pattern_or_perror(&p)?;
-                            p
-                        };
+                        let pattern_str = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern_str)?;
                         return Ok((
                             rest,
                             build_topic_subst_compound_expr(
@@ -627,13 +579,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             {
                                 return Err(PError::expected("substitution"));
                             }
-                            let pattern = if adverbs.perl5 {
-                                pattern.to_string()
-                            } else {
-                                let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                                validate_regex_pattern_or_perror(&p)?;
-                                p
-                            };
+                            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                            validate_regex_pattern_or_perror(&pattern)?;
                             return Ok((
                                 rest,
                                 Expr::Subst {
@@ -646,7 +593,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     global: adverbs.global,
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
-                                    perl5: adverbs.perl5,
                                     replacement_thunk: None,
                                 },
                             ));
@@ -655,20 +601,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // Item-assignment precedence: `s{p} = "" and f()` assigns
                         // only `""`; `and f()` belongs to the enclosing statement.
                         let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
-                        // Perl5 substitutions keep the legacy `$_ = $_.subst(...)`
-                        // lowering: the `.subst` closure path binds Perl5 captures
-                        // (`$1`, `$0`, ...) correctly per match, which the generic
-                        // Subst interpolator cannot reproduce for Perl5 regex.
-                        if adverbs.perl5 {
-                            return Ok((
-                                rest,
-                                build_topic_subst_expr(
-                                    pattern.to_string(),
-                                    replacement_expr,
-                                    &adverbs,
-                                )?,
-                            ));
-                        }
                         // Compiling to a `Subst` node (rather than
                         // `$_ = $_.subst(...)`) makes the expression
                         // value the proper Match / List-of-Match result (so e.g.
@@ -692,7 +624,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
-                                perl5: adverbs.perl5,
                                 replacement_thunk: Some(Box::new(replacement_expr)),
                             },
                         ));
@@ -708,7 +639,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // this function.
     if let Some(after_s) = input.strip_prefix('S') {
         let had_adverbs = starts_with_adverb(after_s);
-        let (spec, adverbs) = parse_match_adverbs(after_s)?;
+        let (spec, adverbs) = parse_match_adverbs(after_s, "S")?;
         // Allow whitespace between adverbs and the delimiter (e.g.
         // `S:g /pattern/replacement/`), mirroring the lowercase `s` parser.
         let pre_ws_len = spec.len();
@@ -742,11 +673,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 // never `$/`, since the delimiter always separates pattern from
                 // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
                 // the separator is not swallowed.
-                let scan_fn = if adverbs.perl5 {
-                    scan_to_delim_p5
-                } else {
-                    scan_to_delim_subst_pattern
-                };
+                let scan_fn = scan_to_delim_subst_pattern;
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     let r2 = if is_paired {
                         let (r2, _) = ws(after_pat)?;
@@ -756,10 +683,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
-                    } else if adverbs.perl5 {
-                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
-                        // only `\` escapes and the close delimiter are significant.
-                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
                         scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
@@ -771,11 +694,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
-                        let pattern = if adverbs.perl5 {
-                            pattern.to_string()
-                        } else {
-                            apply_inline_match_adverbs(pattern.to_string(), &adverbs)
-                        };
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
@@ -788,7 +707,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
-                                perl5: adverbs.perl5,
                                 replacement_thunk: None,
                             },
                         ));
@@ -804,11 +722,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             {
                                 return Err(PError::expected("substitution"));
                             }
-                            let pattern = if adverbs.perl5 {
-                                pattern.to_string()
-                            } else {
-                                apply_inline_match_adverbs(pattern.to_string(), &adverbs)
-                            };
+                            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             return Ok((
                                 rest,
                                 Expr::NonDestructiveSubst {
@@ -821,7 +735,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     global: adverbs.global,
                                     nth: adverbs.nth.clone(),
                                     x: adverbs.repeat,
-                                    perl5: adverbs.perl5,
                                     replacement_thunk: None,
                                 },
                             ));
@@ -830,19 +743,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // Item-assignment precedence: stop before `and`/`or`/...
                         let (after_eq_ws, _) = ws(after_eq)?;
                         let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
-                        // Perl5 substitutions keep the legacy `.subst` closure
-                        // lowering, which binds Perl5 captures (`$1`, `$0`, ...)
-                        // per match; the generic interpolator cannot reproduce it.
-                        if adverbs.perl5 {
-                            return Ok((
-                                rest,
-                                build_non_destructive_subst_expr(
-                                    pattern.to_string(),
-                                    replacement_expr,
-                                    &adverbs,
-                                )?,
-                            ));
-                        }
                         // Carry the RHS expression as a thunk evaluated once per
                         // match with `$/`, `$0`, ... bound to that match.
                         // Crucially this does NOT rebind `$_` (it stays the
@@ -864,7 +764,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 global: adverbs.global,
                                 nth: adverbs.nth.clone(),
                                 x: adverbs.repeat,
-                                perl5: adverbs.perl5,
                                 replacement_thunk: Some(Box::new(replacement_expr)),
                             },
                         ));
@@ -920,7 +819,6 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     global: false,
                     nth: None,
                     x: None,
-                    perl5: false,
                     replacement_thunk: None,
                 },
             ));
@@ -1005,7 +903,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         && !after_m.starts_with("=>")
         && !after_m.starts_with("::")
     {
-        let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
+        let (spec, mut adverbs) = parse_match_adverbs(after_m, "m")?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         let pre_ws_len = spec.len();
         let (spec, _) = ws(spec)?;
@@ -1035,11 +933,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
-                let scan_result = if adverbs.perl5 {
-                    scan_to_delim_p5(r, open_ch, close_ch, is_paired)
-                } else {
-                    scan_to_delim(r, open_ch, close_ch, is_paired)
-                };
+                let scan_result = scan_to_delim(r, open_ch, close_ch, is_paired);
                 if let Some((pattern, rest)) = scan_result {
                     // Disambiguate `m-foo` style identifiers (e.g., user-defined
                     // callable names like `m-bar`) from `m-...-` regex literals.
@@ -1052,9 +946,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     reject_trailing_p5_modifiers(rest)?;
                     let source_pattern = pattern.to_string();
                     let pattern = apply_inline_match_adverbs(source_pattern.clone(), &adverbs);
-                    if !adverbs.perl5 {
-                        validate_regex_pattern_or_perror(&pattern)?;
-                    }
+                    validate_regex_pattern_or_perror(&pattern)?;
                     // m// always matches against $_ (unlike rx//)
                     let regex_val = if adverbs_need_value(&adverbs) {
                         build_regex_with_adverbs(pattern, &adverbs)

@@ -48,7 +48,7 @@ docker run --rm -v "$PWD:/work:ro" ghcr.io/tokuhirom/mutsu mutsu hello.raku</cod
         <p><code>mzef install</code> は <code>$HOME</code>（イメージ内では <code>/root</code>）以下に書き込みます。インストール結果を実行間で保持するには、そこに名前付きボリュームをマウントしてください。</p>
 
         <h3>ソースからビルドする</h3>
-        <p>Rust 1.94 以降（edition 2024）と、<code>pcre2-sys</code> のビルドに使う C コンパイラが必要です。</p>
+        <p>Rust 1.94 以降（edition 2024）と、NativeCall が使う同梱 <code>libffi</code> のビルドに使う C コンパイラが必要です。</p>
         <pre><code>git clone https://github.com/tokuhirom/mutsu.git
 cd mutsu
 cargo build --release

@@ -963,7 +963,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -984,7 +983,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -2218,6 +2216,12 @@ pub(crate) enum Stmt {
         /// multi family whose proto was `is export(:some-tag, :ALL)`.
         export_tags: Vec<String>,
         custom_traits: Vec<String>,
+        /// The same traits as `custom_traits` with their argument
+        /// expressions (`is also<a b>`), index-aligned. A `proto method`'s
+        /// traits dispatch to a user `trait_mod:<is>` exactly as a `method`'s
+        /// do, and that needs the argument.
+        #[serde(default)]
+        trait_args: Vec<(String, Option<Expr>)>,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

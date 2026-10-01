@@ -825,7 +825,7 @@ mod tests {
         assert!(matches!(
             &expr1,
             Expr::MatchRegex(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2) && !a.perl5)
+                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
         ));
 
         let (rest2, expr2) = primary("m:x(2)/ab/").unwrap();
@@ -833,7 +833,7 @@ mod tests {
         assert!(matches!(
             &expr2,
             Expr::MatchRegex(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2) && !a.perl5)
+                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
         ));
     }
 
@@ -864,22 +864,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_p5_regex_with_adverb() {
-        let (rest1, expr1) = primary("m:P5/(?<name>.+)/").unwrap();
-        assert_eq!(rest1, "");
-        assert!(matches!(
-            &expr1,
-            Expr::MatchRegex(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "(?<name>.+)" && a.perl5)
-        ));
-
-        let (rest2, expr2) = primary("rx:P5/a/").unwrap();
-        assert_eq!(rest2, "");
-        assert!(matches!(
-            &expr2,
-            Expr::Literal(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "a" && a.perl5)
-        ));
+    fn perl5_regex_adverb_is_not_allowed() {
+        // Rakudo and roast dropped Perl 5 regexes (ADR-0138): `:P5`/`:Perl5`
+        // is an adverb no quoting construct takes.
+        for src in ["m:P5/a/", "rx:Perl5/a/", "s:P5/a/b/", "S:Perl5/a/b/"] {
+            assert!(primary(src).is_err(), "{src} must not parse");
+        }
     }
 
     #[test]
@@ -900,7 +890,7 @@ mod tests {
         assert!(matches!(
             &expr,
             Expr::MatchRegex(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == " s o+ " && a.exhaustive && a.repeat.is_none() && !a.perl5)
+                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == " s o+ " && a.exhaustive && a.repeat.is_none())
         ));
     }
 

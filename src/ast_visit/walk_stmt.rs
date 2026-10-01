@@ -380,6 +380,7 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             is_export: _,
             export_tags,
             custom_traits,
+            trait_args,
             is_method: _,
             is_our: _,
         } => {
@@ -389,6 +390,11 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             names(v, return_type.iter(), NameKind::Type);
             names(v, export_tags, NameKind::Module);
             names(v, custom_traits, NameKind::Trait);
+            // The names above are the same traits; only their argument
+            // expressions are new to the visitor.
+            for e in trait_args.iter().filter_map(|(_, a)| a.as_ref()) {
+                v.visit_expr(e);
+            }
             super::walk_stmts(v, body);
         }
         Stmt::Let {

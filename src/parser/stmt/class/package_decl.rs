@@ -742,6 +742,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                     .iter()
                     .map(|(n, _)| n.clone())
                     .collect(),
+                trait_args: traits.custom_traits.clone(),
                 is_method,
                 is_our,
             },
@@ -771,6 +772,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 .iter()
                 .map(|(n, _)| n.clone())
                 .collect(),
+            trait_args: traits.custom_traits.clone(),
             is_method,
             is_our,
         },
