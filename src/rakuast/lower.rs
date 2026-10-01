@@ -6,6 +6,7 @@
 //! `Statement::Expression` wrappers around it). Constructs outside that set
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
+use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
@@ -269,6 +270,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
+        RakuAstClass::CallName if call_name_stash(node).is_some() => {
+            Ok(Stmt::Expr(lower_expr(node)?))
+        }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => {
             let name = call_name_str(node)?;
             let args = arg_exprs(node)?;
@@ -1007,8 +1011,8 @@ fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<Strin
     if type_node.class != RakuAstClass::TypeSimple {
         return Err(unsupported(node));
     }
-    match positional_leaf(named_child_or_positional(type_node)?)?.view() {
-        ValueView::Str(s) => Ok(s.to_string()),
+    match name_parts::name_shape(named_child_or_positional(type_node)?) {
+        Some(NameShape::Identifier(name)) => Ok(name),
         _ => Err(unsupported(node)),
     }
 }
@@ -1140,12 +1144,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         {
             match type_node.class {
                 RakuAstClass::TypeSimple => {
-                    let name_node = named_child_or_positional(type_node)?;
-                    if let ValueView::Str(s) = positional_leaf(name_node)?.view() {
-                        def.type_constraint = Some(s.to_string());
-                    } else {
-                        return Err(unsupported(owner));
-                    }
+                    def.type_constraint = Some(simple_type_name(owner, type_node)?);
                 }
                 RakuAstClass::TypeSetting => {} // implicit `Any`
                 _ => return Err(unsupported(owner)),
@@ -1378,8 +1377,8 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// The identifier string of a call node's `name` (a `Name`) child.
 fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> {
-    match positional_leaf(named_child(node, "name")?)?.view() {
-        ValueView::Str(s) => Ok(s.to_string()),
+    match name_parts::name_shape(named_child(node, "name")?) {
+        Some(NameShape::Identifier(name)) => Ok(name),
         _ => Err(unsupported(node)),
     }
 }
@@ -1565,28 +1564,27 @@ fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, Runtime
 }
 
 /// Lower a `RakuAST::Name` used as a term. Static names are the barewords that
-/// the parser already uses for declared constants; an expression part is the
-/// dynamic `::(...)` lookup retained by `Expr::IndirectTypeLookup`.
+/// the parser already uses for declared constants; a stash lookup (`Foo::`,
+/// a trailing empty edge) is the parser's `PseudoStash`; a leading empty edge
+/// followed by an expression part is the dynamic `::(...)` lookup retained by
+/// `Expr::IndirectTypeLookup`.
 fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    if node.class != RakuAstClass::Name {
-        return Err(unsupported(node));
+    match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
+        NameShape::Identifier(name) => Ok(Expr::BareWord(name)),
+        NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
+        NameShape::Indirect(inner) => Ok(Expr::IndirectTypeLookup(Box::new(lower_expr(inner)?))),
     }
-    let Some(field) = node.fields.first() else {
-        return Err(unsupported(node));
-    };
-    match &field.value {
-        RakuAstFieldValue::Node(value) => match value.view() {
-            ValueView::Str(name) if field.name.is_none() => Ok(Expr::BareWord(name.to_string())),
-            ValueView::RakuAst(part) if field.name.is_none() => {
-                if part.class != RakuAstClass::NamePartExpression {
-                    return Err(unsupported(node));
-                }
-                let inner = named_child_or_positional(part)?;
-                Ok(Expr::IndirectTypeLookup(Box::new(lower_expr(inner)?)))
-            }
-            _ => Err(unsupported(node)),
-        },
-        _ => Err(unsupported(node)),
+}
+
+/// The stash a `Call::Name` names when it is the argument-less form Rakudo
+/// gives an unresolved stash lookup (`Foo::`), or `None` for an ordinary call.
+fn call_name_stash(node: &RakuAstNode) -> Option<String> {
+    if node.fields.iter().any(|f| f.name == Some("args")) {
+        return None;
+    }
+    match name_parts::name_shape(named_child(node, "name").ok()?)? {
+        NameShape::Stash(stash) => Some(stash),
+        _ => None,
     }
 }
 
@@ -1841,7 +1839,7 @@ fn pointy_block_source(
             return None;
         }
         let simple_type_name = |type_name: &str| {
-            type_name.split("::").all(|part| {
+            name_parts::identifier_segments(type_name).all(|part| {
                 !part.is_empty()
                     && part
                         .chars()
@@ -2636,13 +2634,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
         // bareword term, which mutsu evaluates to the type object.
-        RakuAstClass::TypeSimple => {
-            let name_node = named_child_or_positional(node)?;
-            match positional_leaf(name_node)?.view() {
-                ValueView::Str(s) => Ok(Expr::BareWord(s.to_string())),
-                _ => Err(unsupported(node)),
-            }
-        }
+        RakuAstClass::TypeSimple => Ok(Expr::BareWord(simple_type_name(node, node)?)),
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
@@ -2783,6 +2775,11 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }),
         // A named call `f(1, 2)` -> Expr::Call (the listop I/O calls are handled
         // as statements in `lower_stmt_inner`; here they are ordinary calls too).
+        // An argument-less `Call::Name` of a stash name is how Rakudo renders
+        // an unresolved stash lookup `Foo::`; it is the same lookup.
+        RakuAstClass::CallName if let Some(stash) = call_name_stash(node) => {
+            Ok(Expr::PseudoStash(stash))
+        }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => Ok(Expr::Call {
             name: crate::symbol::Symbol::intern(&call_name_str(node)?),
             args: arg_exprs(node)?,

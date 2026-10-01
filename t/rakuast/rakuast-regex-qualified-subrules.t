@@ -13,7 +13,7 @@ RakuAST::StatementList.new(
   RakuAST::Statement::Expression.new(
     expression => RakuAST::QuotedRegex.new(
       body => RakuAST::Regex::Assertion::Named.new(
-        name      => RakuAST::Name.from-identifier-parts("G", "foo"),
+        name      => RakuAST::Name.from-identifier-parts("G","foo"),
         capturing => True
       )
     )
@@ -26,7 +26,7 @@ RakuAST::StatementList.new(
   RakuAST::Statement::Expression.new(
     expression => RakuAST::QuotedRegex.new(
       body => RakuAST::Regex::Assertion::Named.new(
-        name => RakuAST::Name.from-identifier-parts("G", "foo")
+        name => RakuAST::Name.from-identifier-parts("G","foo")
       )
     )
   )
@@ -40,7 +40,7 @@ RakuAST::StatementList.new(
       body => RakuAST::Regex::Assertion::Alias.new(
         name      => "alias",
         assertion => RakuAST::Regex::Assertion::Named.new(
-          name      => RakuAST::Name.from-identifier-parts("G", "foo"),
+          name      => RakuAST::Name.from-identifier-parts("G","foo"),
           capturing => True
         )
       )
@@ -56,7 +56,7 @@ is $name.parts[0].^name, 'RakuAST::Name::Part::Simple',
     'qualified name parts use the simple part node';
 is $name.parts[0].name, 'G', 'the first qualified name part is accessible';
 is $name.parts[1].name, 'foo', 'the final qualified name part is accessible';
-is $name.gist, 'RakuAST::Name.from-identifier-parts("G", "foo")',
+is $name.gist, 'RakuAST::Name.from-identifier-parts("G","foo")',
     'a qualified name renders with the measured constructor';
 
 my $constructed-name = RakuAST::Name.from-identifier-parts('GQualified', 'foo');
@@ -95,7 +95,7 @@ my $grammar-ast = Q[grammar GQualifiedAst {
     token foo { 'a' }
     token TOP { <GQualifiedAst::foo> }
 }].AST;
-ok $grammar-ast.gist.contains('Name.from-identifier-parts("GQualifiedAst", "foo")'),
+ok $grammar-ast.gist.contains('Name.from-identifier-parts("GQualifiedAst","foo")'),
     'a grammar declaration retains qualified subrule provenance';
 my $grammar = EVAL($grammar-ast);
 ok $grammar.parse('a'), 'a grammar lowered from RakuAST resolves its qualified subrule';

@@ -17,6 +17,7 @@ RakuAST::StatementList.new(
     expression => RakuAST::ApplyInfix.new(
       left  => RakuAST::Term::Name.new(
         RakuAST::Name.new(
+          RakuAST::Name::Part::Empty.new,
           RakuAST::Name::Part::Expression.new(
             RakuAST::QuotedString.new(
               segments   => (
