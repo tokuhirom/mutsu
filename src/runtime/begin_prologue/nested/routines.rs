@@ -54,6 +54,10 @@ pub(super) struct Dependencies {
 /// What the block for one frame holds, in the order it holds it.
 #[derive(Default)]
 pub(super) struct FrameBlock {
+    /// The scope's imports, repeated ([`super::decls`]).
+    pub(super) imports: Vec<Stmt>,
+    /// The scope's types the body names, repeated ([`super::decls`]).
+    pub(super) types: Vec<Stmt>,
     pub(super) copy_in: Vec<Stmt>,
     routines: Vec<Stmt>,
     pub(super) copy_out: Vec<Stmt>,
@@ -65,7 +69,9 @@ impl FrameBlock {
     /// an inner name shadows an outer one as it does there.
     pub(super) fn nest(blocks: BTreeMap<usize, FrameBlock>, mut inner: Vec<Stmt>) -> Vec<Stmt> {
         for (_, frame_block) in blocks.into_iter().rev() {
-            let mut block = frame_block.copy_in;
+            let mut block = frame_block.imports;
+            block.extend(frame_block.types);
+            block.extend(frame_block.copy_in);
             block.extend(frame_block.routines);
             block.extend(inner);
             block.extend(frame_block.copy_out);
@@ -97,8 +103,18 @@ pub(super) struct Scan {
 impl Scan {
     pub(super) fn of(stmts: &[Stmt]) -> Scan {
         let (code, fns) = crate::compiler::Compiler::new().compile(stmts);
+        let mut free = code.free_var_syms.clone();
+        // Compiled on its own, an assignment to a code variable the code does
+        // not declare (`&g = { ... }`) is an assignment to a routine name,
+        // which names no variable at all.
+        for name in super::decls::Mentions::of(stmts).code_var_writes() {
+            let sym = crate::symbol::Symbol::intern(&name);
+            if !free.contains(&sym) {
+                free.push(sym);
+            }
+        }
         let mut scan = Scan {
-            free: code.free_var_syms.clone(),
+            free,
             callees: HashSet::new(),
             reflective: false,
         };
@@ -242,7 +258,12 @@ impl Walker<'_> {
         // scope, so a body that does that cannot say which ones it needs. Nor
         // can one that calls a routine it does not know: that routine may
         // evaluate a string it is given where it was called from.
-        let routines_in_scope = self.frames.iter().any(|f| !f.routines.is_empty());
+        // A type an inner scope declares is only supplied when the body names it
+        // ([`super::decls`]), so it is subject to the same rule.
+        let routines_in_scope = self
+            .frames
+            .iter()
+            .any(|f| !f.routines.is_empty() || !f.types.is_empty());
         // The body sees every scope; a routine sees the ones it was declared in,
         // up to its own position.
         let mut pending = vec![(Scan::of(body), None)];
@@ -254,8 +275,16 @@ impl Walker<'_> {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
             }
             for callee in &scan.callees {
-                let selected =
-                    self.resolve_callee(&callee.resolve(), scope, &mut deps, &mut pending);
+                let name = callee.resolve();
+                // `g()` calls a code variable `my &g` when that is the innermost
+                // `&g`.
+                if self.code_var_shadows_routine(&name, scope) {
+                    let var = crate::symbol::Symbol::intern(&format!("&{name}"));
+                    self.resolve_free_name(var, scope, &mut deps, &mut pending)?;
+                    continue;
+                }
+                let selected = self.resolve_callee(&name, scope, &mut deps, &mut pending)
+                    || self.calls_into_inner_type(&name);
                 if !selected && routines_in_scope && !is_core_routine(*callee) {
                     return None;
                 }
@@ -280,6 +309,7 @@ impl Walker<'_> {
         }
         // `&helper` reads the routine `helper` declared ahead, if one is.
         if let Some(routine) = name.strip_prefix('&')
+            && !self.code_var_shadows_routine(routine, scope)
             && self.resolve_callee(routine, scope, deps, pending)
         {
             return Some(());
@@ -287,7 +317,9 @@ impl Walker<'_> {
         match self.find_binding(&name, scope) {
             Some((frame, binding)) => {
                 let access = match &self.frames[frame].bindings[binding].kind {
-                    BindingKind::Param => Access::CopyIn(Box::new(super::unbound_decl(&name))),
+                    BindingKind::Param => {
+                        Access::CopyIn(Box::new(super::cell_ast::unbound_decl(&name)))
+                    }
                     BindingKind::Our(decl) => Access::CopyIn(decl.clone()),
                     BindingKind::Local { .. } => Access::Cell,
                     BindingKind::Opaque => return None,
@@ -338,6 +370,28 @@ impl Walker<'_> {
             };
             visible.iter().rposition(|b| b.name == name).map(|b| (f, b))
         })
+    }
+
+    /// Whether the innermost `&name` that `scope` sees is an inner code
+    /// variable (`my &name = ...`) rather than a routine declared ahead. A
+    /// routine and a code variable of one name in the same scope would be a
+    /// redeclaration.
+    fn code_var_shadows_routine(&self, name: &str, scope: Option<Scope>) -> bool {
+        let Some((var_frame, _)) = self.find_binding(&format!("&{name}"), scope) else {
+            return false;
+        };
+        self.find_routine(name, scope)
+            .is_none_or(|(routine_frame, _)| var_frame >= routine_frame)
+    }
+
+    /// The declarations of the routines `deps` selects.
+    pub(super) fn routine_decls<'a>(
+        &'a self,
+        deps: &'a Dependencies,
+    ) -> impl Iterator<Item = &'a Stmt> + 'a {
+        deps.routines
+            .iter()
+            .map(|&(frame, routine)| &self.frames[frame].routines[routine].decl)
     }
 
     /// The innermost routine called `name`, among the scopes `scope` sees.
