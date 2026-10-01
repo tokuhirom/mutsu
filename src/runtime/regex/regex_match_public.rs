@@ -76,13 +76,11 @@ impl Interpreter {
             }
             let after_name = &after_colon[name_len..];
             let body = after_name.trim_start();
-            let stmt_text;
-            let consumed_len;
             let scoped_token_decl = matches!(decl_name, "my" | "our" | "state")
                 && (body.starts_with("token ")
                     || body.starts_with("regex ")
                     || body.starts_with("rule "));
-            if scoped_token_decl {
+            let (stmt_text, consumed_len) = if scoped_token_decl {
                 let Some(open_idx) = body.find('{') else {
                     break;
                 };
@@ -93,19 +91,22 @@ impl Interpreter {
                 if body[end_idx..].starts_with(';') {
                     end_idx += 1;
                 }
-                stmt_text = format!("{decl_name} {}", body[..end_idx].trim());
-                consumed_len =
-                    (rest.len() - after_name.len()) + (after_name.len() - body.len()) + end_idx;
+                (
+                    format!("{decl_name} {}", body[..end_idx].trim()),
+                    (rest.len() - after_name.len()) + (after_name.len() - body.len()) + end_idx,
+                )
             } else {
                 let Some(semi_idx) = Self::find_top_level_semicolon(body) else {
                     break;
                 };
-                stmt_text = format!("{decl_name} {}", body[..semi_idx].trim());
-                consumed_len = (rest.len() - after_name.len())
-                    + (after_name.len() - body.len())
-                    + semi_idx
-                    + 1;
-            }
+                (
+                    format!("{decl_name} {}", body[..semi_idx].trim()),
+                    (rest.len() - after_name.len())
+                        + (after_name.len() - body.len())
+                        + semi_idx
+                        + 1,
+                )
+            };
             decls.push((decl_name.to_string(), stmt_text));
             rest = &rest[consumed_len..];
         }

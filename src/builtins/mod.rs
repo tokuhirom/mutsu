@@ -339,12 +339,14 @@ fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeE
         ));
     }
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|chunk| {
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&chunk| {
             if big_endian {
-                u16::from_be_bytes([chunk[0], chunk[1]])
+                u16::from_be_bytes(chunk)
             } else {
-                u16::from_le_bytes([chunk[0], chunk[1]])
+                u16::from_le_bytes(chunk)
             }
         })
         .collect();

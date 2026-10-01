@@ -15,25 +15,24 @@ pub(crate) fn sha1_digest(data: &[u8]) -> [u8; 20] {
     ];
     let bit_len = (data.len() as u64).wrapping_mul(8);
 
-    let mut chunks = data.chunks_exact(64);
-    for block in &mut chunks {
+    let (blocks, rest) = data.as_chunks::<64>();
+    for block in blocks {
         compress(&mut h, block);
     }
 
     // Padding: 0x80, then zeros, then the 64-bit big-endian bit length. It
     // spills into a second block when the remainder leaves no room for both.
-    let rest = chunks.remainder();
     let mut tail = [0u8; 128];
     tail[..rest.len()].copy_from_slice(rest);
     tail[rest.len()] = 0x80;
     let tail_len = if rest.len() + 1 + 8 <= 64 { 64 } else { 128 };
     tail[tail_len - 8..tail_len].copy_from_slice(&bit_len.to_be_bytes());
-    for block in tail[..tail_len].chunks_exact(64) {
+    for block in tail[..tail_len].as_chunks::<64>().0 {
         compress(&mut h, block);
     }
 
     let mut out = [0u8; 20];
-    for (slot, word) in out.chunks_exact_mut(4).zip(h.iter()) {
+    for (slot, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(h.iter()) {
         slot.copy_from_slice(&word.to_be_bytes());
     }
     out
@@ -58,11 +57,11 @@ fn hex_upper(nibble: u8) -> char {
 }
 
 /// One 64-byte block through the compression function. `block` is always
-/// exactly 64 bytes (both call sites feed it from `chunks_exact(64)`).
-fn compress(h: &mut [u32; 5], block: &[u8]) {
+/// exactly 64 bytes (both call sites feed it from `as_chunks::<64>()`).
+fn compress(h: &mut [u32; 5], block: &[u8; 64]) {
     let mut w = [0u32; 80];
-    for (word, chunk) in w.iter_mut().zip(block.chunks_exact(4)) {
-        *word = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    for (word, chunk) in w.iter_mut().zip(block.as_chunks::<4>().0) {
+        *word = u32::from_be_bytes(*chunk);
     }
     for i in 16..80 {
         w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
