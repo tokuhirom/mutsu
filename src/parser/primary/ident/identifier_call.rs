@@ -1634,7 +1634,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &after_bracket[end + 1..],
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                            index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
                         },
                     ));
@@ -1650,7 +1650,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &after_bracket[end + 1..],
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                            index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
                         },
                     ));
@@ -2655,4 +2655,21 @@ fn control_flow_label(input: &str) -> (&str, Option<String>) {
         return (r, Some(label));
     }
     (input, None)
+}
+
+/// The index expression for `MY::<...>`-style angle subscripts: several
+/// whitespace-separated words form a slice (`MY::<$x $y>`), a single word (or
+/// text containing a nested `<`, e.g. `&infix:<+>`) stays one literal key.
+fn stash_angle_index(symbol: &str) -> Expr {
+    let words: Vec<&str> = symbol.split_whitespace().collect();
+    if words.len() > 1 && !symbol.contains('<') {
+        Expr::ArrayLiteral(
+            words
+                .into_iter()
+                .map(|w| Expr::Literal(Value::str(w.to_string())))
+                .collect(),
+        )
+    } else {
+        Expr::Literal(Value::str(symbol.to_string()))
+    }
 }
