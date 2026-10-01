@@ -318,7 +318,10 @@ fn stmt_ident(stmt: &Stmt) -> Option<(SiteIdent, bool)> {
         Stmt::VarDecl { .. } => SiteIdent::Variable,
         // `class Foo:ver<1> { }` and similar come back as their metadata
         // setters followed by the declaration itself.
-        Stmt::SyntheticBlock(stmts) => return stmts.last().and_then(stmt_ident),
+        Stmt::SyntheticBlock(stmts) => {
+            return crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
+                .and_then(stmt_ident);
+        }
         _ => return None,
     };
     let named = match &ident {

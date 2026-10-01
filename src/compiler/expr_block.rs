@@ -79,12 +79,7 @@ impl Compiler {
                     });
                 } else {
                     self.compile_expr(topic);
-                    if let Some(source_name) = match topic {
-                        Expr::Var(name) => Some(name.clone()),
-                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                        Expr::HashVar(name) => Some(format!("%{}", name)),
-                        _ => None,
-                    } {
+                    if let Some(source_name) = topic.container_var_key() {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();
                         let name_idx = self.code.add_constant(Value::str(source_name));
                         self.code.note_rebind_target(source_slot);

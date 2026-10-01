@@ -35,7 +35,7 @@ pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
 /// only for the `42`. Trailing `SetLine` markers are skipped when locating
 /// the final real statement.
 pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
-    let last_real = stmts.iter().rposition(|s| !matches!(s, Stmt::SetLine(_)));
+    let last_real = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers);
     let line = std::cell::Cell::new(1i64);
     for (i, stmt) in stmts.iter().enumerate() {
         if Some(i) == last_real {
@@ -182,7 +182,7 @@ pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
 /// real statement. Trailing bookkeeping markers (`SetLine`) are not statements
 /// and are kept out of the reckoning.
 fn sunk_prefix(body: &[Stmt]) -> &[Stmt] {
-    match body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) {
+    match crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers) {
         Some(last) => &body[..last],
         None => body,
     }
@@ -255,9 +255,7 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // so it must be reported before the generic sigiled-name skip below.
         Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
-        Expr::Var(n) => Some(format!("${}", n)),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
         Expr::BareWord(s) if is_type_name(s) => Some(format!("constant value {}", s)),
         Expr::Binary { left, op, right } => {
@@ -328,9 +326,7 @@ fn render_source(expr: &Expr) -> Option<String> {
             _ => Some(lit.to_string_value()),
         },
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
-        Expr::Var(n) => Some(crate::env::sigiled_scalar_name(n)),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::BareWord(s) => Some(s.clone()),
         Expr::Unary { op, expr: inner } => {
             let sym = pure_prefix_symbol(op)?;

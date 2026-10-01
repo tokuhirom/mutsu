@@ -93,34 +93,24 @@ pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, Vec<bool>
         Stmt::VarDecl { name, expr, .. } if name.starts_with("__with_tmp_") => expr,
         _ => return None,
     };
-    let mut positionals = Vec::new();
-    let root = flatten_index_source(decl, &mut positionals)?;
-    let container = match root {
-        Expr::Var(name) if !name.starts_with(['!', '.']) => name.clone(),
-        Expr::ArrayVar(name) if !name.starts_with(['!', '.']) => format!("@{name}"),
-        Expr::HashVar(name) if !name.starts_with(['!', '.', '?']) => format!("%{name}"),
-        _ => return None,
-    };
+    let mut path = Vec::new();
+    let root = decl.index_path(&mut path);
+    let container = element_source_root_key(root)?;
+    let positionals = path.iter().map(|(_, positional)| *positional).collect();
     Some((container, positionals))
 }
 
-/// Flatten a chained index expression to its root and record the source-order
-/// positional/hash nature of each subscript. The expressions themselves stay
-/// in the AST; the compiler uses this shape to evaluate them once before the
-/// VM records the complete lvalue path.
-fn flatten_index_source<'a>(expr: &'a Expr, positionals: &mut Vec<bool>) -> Option<&'a Expr> {
-    match expr {
-        Expr::Index {
-            target,
-            is_positional,
-            index: _,
-        } => {
-            let root = flatten_index_source(target, positionals)?;
-            positionals.push(*is_positional);
-            Some(root)
-        }
-        _ if positionals.is_empty() => Some(expr),
-        _ => None,
+/// The container key a `with`/`without` element source is recorded under: a
+/// plain lexical variable, not an attribute (`$!x`, `$.x`) or a compile-time
+/// `%?` hash, whose element writes do not go through a named lexical. The
+/// compiler's matching side (`compile_expr_index`) must agree, so both call
+/// this.
+// Cost: O(|name|).
+pub(crate) fn element_source_root_key(root: &Expr) -> Option<String> {
+    match root {
+        Expr::Var(name) | Expr::ArrayVar(name) if name.starts_with(['!', '.']) => None,
+        Expr::HashVar(name) if name.starts_with(['!', '.', '?']) => None,
+        other => other.container_var_key(),
     }
 }
 

@@ -44,7 +44,7 @@ impl Compiler {
     ///
     /// Returns `None` for a statically-recognizable slice, which must compile
     /// as an ordinary subscript instead (see `index_expr_is_slice`).
-    pub(super) fn var_on_index_source_name(target: &Expr) -> Option<String> {
+    pub(super) fn var_on_index_source_name(&self, target: &Expr) -> Option<String> {
         let index_target = match target {
             Expr::Index {
                 target: index_target,
@@ -62,7 +62,7 @@ impl Compiler {
             } => index_target,
             _ => return None,
         };
-        Self::index_assign_target_name(index_target)
+        self.index_assign_target_name(index_target)
     }
 
     /// Does this `.VAR` target take the element-descriptor path at all?
@@ -80,7 +80,7 @@ impl Compiler {
     /// `%*ENV<k>` to `GetEnvIndex`. Neither is a real container whose elements
     /// would answer `Scalar` anyway.
     pub(super) fn var_on_index_takes_element_path(&self, target: &Expr) -> bool {
-        if Self::var_on_index_source_name(target).is_some() {
+        if self.var_on_index_source_name(target).is_some() {
             return true;
         }
         // A `:=` bind compiles subscripts through the autovivify opcodes; leave
@@ -101,7 +101,7 @@ impl Compiler {
 
     /// Compile method call on indexed target: `.VAR` on `@a[0]` / `%h<k>` / `@sh[0;0]`
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
-        if let Some(source_name) = Self::var_on_index_source_name(target) {
+        if let Some(source_name) = self.var_on_index_source_name(target) {
             // Read the element with the ordinary subscript machinery and hand
             // the result to `__mutsu_index_var_meta` along with the name of the
             // container it came from. The builtin needs the value itself for
@@ -181,23 +181,13 @@ impl Compiler {
         quoted: bool,
     ) {
         let target_name = match target {
-            Expr::Var(n) => n.clone(),
-            Expr::ArrayVar(n) => format!("@{}", n),
-            Expr::HashVar(n) => format!("%{}", n),
-            Expr::CodeVar(n) => format!("&{}", n),
             // A sigil-less constant is reached through its term key (#9962).
-            Expr::BareWord(n) if self.names_term_constant(n) => {
-                crate::runtime::term_names::term_key(n)
-            }
-            Expr::BareWord(n) => n.clone(),
-            Expr::DoStmt(stmt) => {
-                if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
-                    name.clone()
-                } else {
-                    unreachable!()
-                }
-            }
-            _ => unreachable!(),
+            Expr::BareWord(n) => self.sigilless_storage_key(n),
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { name, .. } => name.clone(),
+                _ => unreachable!(),
+            },
+            other => other.var_key().expect("a variable method target"),
         };
         // `.name` on an array/hash variable returns the sigil'd variable name
         // (e.g. `%h.name` → "%h", `@a.name` → "@a"), matching Raku's container
@@ -425,7 +415,7 @@ impl Compiler {
             is_positional,
         } = target
         {
-            let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
+            let var_name = self.postfix_index_name(idx_target).unwrap_or_default();
             let target_slot = self.local_map.get(&var_name).copied();
             let name_resolved = name.resolve();
             let arity = args.len() as u32;
@@ -530,7 +520,7 @@ impl Compiler {
         // `$obj.attr<a><b>.push`) is bound to a temp: the temp's value is
         // node-shared with the produced container, so a store through the
         // temp name writes through to the real container.
-        let (mut cur_name, mut cur_slot) = match Self::postfix_index_name(base) {
+        let (mut cur_name, mut cur_slot) = match self.postfix_index_name(base) {
             Some(n) => {
                 let slot = self.local_map.get(&n).copied();
                 self.compile_expr(base);
@@ -685,7 +675,7 @@ impl Compiler {
                 );
                 return;
             }
-            if let Some(var_name) = Self::postfix_index_name(delete_target) {
+            if let Some(var_name) = self.postfix_index_name(delete_target) {
                 if Self::index_assign_target_requires_eval(delete_target) {
                     self.compile_expr(delete_target);
                     self.code.emit(OpCode::Pop);
@@ -785,7 +775,7 @@ impl Compiler {
             } else {
                 format!("not-{}", *mode)
             };
-            let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
+            let var_name = self.postfix_index_name(idx_target).unwrap_or_default();
             let call_args = vec![
                 (**idx_target).clone(),
                 (**idx_index).clone(),
@@ -939,12 +929,7 @@ impl Compiler {
             });
             return;
         }
-        let target_var_name = match target {
-            Expr::Var(n) => Some(n.clone()),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            _ => None,
-        };
+        let target_var_name = target.container_var_key();
         self.compile_expr(target);
         // The subscript-receiver producer applies to the dynamic spelling too:
         // the method name is a runtime value, so rawness is even less knowable

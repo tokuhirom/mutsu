@@ -1195,10 +1195,10 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         },
         crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
-        crate::ast::Expr::Var(name) => Some(format!("${name}")),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
-        crate::ast::Expr::ArrayVar(name) => Some(format!("@{name}")),
-        crate::ast::Expr::HashVar(name) => Some(format!("%{name}")),
+        crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
+            expr.sigiled_var_name()
+        }
         crate::ast::Expr::CodeVar(name) => Some(format!("&{name}")),
         crate::ast::Expr::BareWord(name) => Some(name.clone()),
         crate::ast::Expr::Unary { op, expr } => Some(format!(

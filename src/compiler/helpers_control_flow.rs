@@ -553,10 +553,7 @@ impl Compiler {
     pub(super) fn container_var_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) if name == "?RESOURCES" => None,
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::Var(name) => Some(name.clone()),
-            _ => None,
+            other => other.container_var_key(),
         }
     }
 

@@ -206,14 +206,9 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
 /// key used by `LetSave` for that variable (scalars drop their `$` sigil;
 /// arrays/hashes keep their `@`/`%`). Returns `None` for non-variable bases
 /// (e.g. a method call), which the multi-level `temp` lowering cannot save.
+// Cost: O(d + |name|), d = subscript depth.
 fn lvalue_base_name(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Var(n) => Some(n.clone()),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
-        Expr::Index { target, .. } => lvalue_base_name(target),
-        _ => None,
-    }
+    expr.index_root().container_var_key()
 }
 
 /// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.

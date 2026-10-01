@@ -10,25 +10,23 @@ src/chain_compare.rs                                  1  # build_chain_cmp_expr:
 src/compiler/const_fold.rs                            1  # const_operand_mode is a constant evaluator (folding), not an analysis
 src/compiler/control_if.rs                            1
 src/compiler/decl_plan.rs                             3
-src/compiler/expr_binary.rs                           4  # 4 value-path spines/rewrites of andthen/orelse chains and native operands: stay hand-rolled
+src/compiler/expr_binary.rs                           3  # 3 value-path rewrites/spines (subst_topic_var, retarget_chain_rhs over andthen/orelse chains; native_int_operand_signedness): stay hand-rolled; the chain-root name is Expr::lvalue_root
 src/compiler/expr_call.rs                             1
 src/compiler/expr_closure.rs                          3  # 2 codegen (compile_*) + expr_refs_topic, an operand spine (is this operand the topic?)
-src/compiler/expr_data.rs                             1
 src/compiler/expr_helpers.rs                          2  # 2 spines/lowerings: subst pattern to text, container-name path
 src/compiler/expr_ops.rs                              1
-src/compiler/helpers_ast_utils.rs                     5  # lvalue-to-assignment lowering, 3 lvalue spines, type_decl_shell_body transform
+src/compiler/helpers_ast_utils.rs                     3  # assign_expr_for_lvalue lowering, peel_compound_assign spine, type_decl_shell_body transform (the lvalue/index-chain spines are Expr::lvalue_root / Expr::index_path)
 src/compiler/helpers_call_args.rs                     5  # 2 codegen (compile_*) + 3 value-path spines (needs_decont, bind_target_returns_aggregate*: statement tail)
 src/compiler/helpers_control_flow.rs                  1  # control_block_is_resume_safe: shape classifier over a CONTROL block's arms (single-default delegation)
 src/compiler/helpers_do_expr.rs                       1  # do_if_branch_supported: shape gate over if-branch nesting only
 src/compiler/helpers_sub_body.rs                      1  # recursion over ParamDef sub-signatures; the Vec<Stmt> is its output, not an AST walk
-src/compiler/mod.rs                                   8  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and 2 name spines
+src/compiler/mod.rs                                   7  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and the for_iterable_source_name spine
 src/compiler/package_runtime_body.rs                  1  # top-level lexical names of a package body: descends only into SyntheticBlock groups, not nested scopes
-src/compiler/stmt.rs                                  5  # 5 spines: lvalue root and statement-tail value shapes
+src/compiler/stmt.rs                                  4  # 4 spines: statement-tail value shapes
 src/opcode.rs                                         2  # collect_nested_has_decl_stmts/collect_has_decls_in_scope collect &'a Stmt borrows, which Visit's lifetime-free hooks cannot hand out
 src/param_destructure.rs                              1  # destructure_binds: lowering of a sub-signature into bind statements, recursing over ParamDefs
 src/parser/decl_doc.rs                                1  # stmt_ident: spine to the declaration a SyntheticBlock wrapper ends with
 src/parser/expr/mod.rs                                1  # reassociate_fat_arrow_operand: parser rewrite along the right spine of a loose-logical chain
-src/parser/expr/postfix/dot_assign.rs                 1  # lvalue_assign_name: lvalue spine (through Grouped/CompoundAssign)
 src/parser/expr/precedence/assign.rs                  3  # 3 parser lowerings/lvalue spines: grouped-lvalue unwrap, assignment-target lowering, compound-assignment lowering
 src/parser/expr/precedence/comparison.rs              1  # comparison_tail: recursive-descent parse function (the Expr is its accumulator), not a walk
 src/parser/expr/precedence/feed.rs                    2  # lower_feed_node: feed lowering; feed_leftmost_operand_mut: spine to a feed chain's leftmost operand
@@ -49,7 +47,6 @@ src/parser/stmt/decl/my_decl_helpers.rs               1  # build_sigilless_bind_
 src/parser/stmt/nested_block_methods.rs               2  # hoist_in_block mutates (hoists methods out of blocks); collect_block_routines is a one-scope declaration scan (through SyntheticBlock only)
 src/parser/stmt/simple/lib_paths.rs                   1  # static_path: constant evaluator of a path-method chain (`$?FILE.IO.parent.add(...)`)
 src/parser/stmt/simple/module_exports/export_hook.rs  5  # 5 one-scope declaration scans: the unit scope (through `unit module`) and the `sub EXPORT` body's own scope (through block wrappers), the scopes rakudo's EXPORT idioms draw from
-src/parser/stmt/simple_expr_stmt/let_temp.rs          1  # lvalue_base_name: lvalue spine to an indexed chain's base variable
 src/parser/stmt/sub/param_validate.rs                 1  # literal_value_from_expr: constant evaluator of a signed literal
 src/parser/stmt/sub_param/where_constraint.rs         2  # 2 left-spine recursions (does the block lead with `*`?)
 src/rakuast/convert.rs                                7
@@ -59,10 +56,9 @@ src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type bod
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
 src/runtime/phasers.rs                                1  # stmt_declares_var looks at one scope's statement list only, through the transparent SyntheticBlock grouping
-src/runtime/run.rs                                    3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
+src/runtime/run.rs                                    2  # 2 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue follow the last statement only, located by ast::last_value_stmt): stay hand-rolled
 src/runtime/run_prelude.rs                            2  # mark_prelude_subs tags the unit's top-level subs (through SyntheticBlock only; one scope, not a tree rewrite); declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
 src/runtime/types/mod.rs                              1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                              3
 src/whatever_curry/build.rs                           3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/whatever_curry/replace.rs                         1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
-src/with_desugar.rs                                   1  # flatten_index_source: spine of an index chain to its root

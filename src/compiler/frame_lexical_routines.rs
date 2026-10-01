@@ -177,7 +177,7 @@ impl Compiler {
     /// frame-lexical treatment on their own (no traits, no multi, a plain
     /// name that no builtin answers to, not the body's value).
     fn frame_lexical_candidates(&self, body: &[Stmt]) -> Vec<Symbol> {
-        let last_decl = match body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(..))) {
+        let last_decl = match crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers) {
             Some(Stmt::SubDecl { name, .. }) => Some(*name),
             _ => None,
         };

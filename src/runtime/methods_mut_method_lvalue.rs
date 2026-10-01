@@ -1692,12 +1692,7 @@ impl Interpreter {
     /// The variable name (with sigil) a target expression assigns through, or
     /// `None` for a non-variable target. `%!hash` -> `Some("%!hash")`.
     fn expr_lvalue_var_name(expr: &Expr) -> Option<String> {
-        match expr {
-            Expr::Var(n) => Some(crate::env::sigiled_scalar_name(n)),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            _ => None,
-        }
+        expr.sigiled_var_name()
     }
 
     /// Assign through an `is raw` container-accessor method whose body is a

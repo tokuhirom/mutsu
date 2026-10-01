@@ -89,14 +89,8 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             // The write-back name is a property of what the parentheses
             // hold: `(my $x = $s).substr-rw(...) = $c` writes back through
             // `$x`.
-            let target_var_name = match target.peel_parens() {
-                Expr::Var(v) => Some(v.clone()),
-                Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                Expr::HashVar(v) => Some(format!("%{}", v)),
-                Expr::BareWord(v) => Some(v.clone()),
-                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name =
+                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
             let method_name = if modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
@@ -121,14 +115,8 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             modifier,
             ..
         } => {
-            let target_var_name = match target.as_ref() {
-                Expr::Var(v) => Some(v.clone()),
-                Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                Expr::HashVar(v) => Some(format!("%{}", v)),
-                Expr::BareWord(v) => Some(v.clone()),
-                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name =
+                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
             crate::parser::stmt::assign::dynamic_method_lvalue_assign_expr(
                 *target,
                 target_var_name,

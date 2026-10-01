@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::{LvaluePeel, LvalueRoot};
 use crate::value::ValueView;
 
 impl Compiler {
@@ -23,19 +24,10 @@ impl Compiler {
 
     /// The chain's root lvalue variable name (`x` / `@a` / `%h`), if the leftmost
     /// operand of an `andthen`/`orelse`/`notandthen` chain is a simple variable.
+    // Cost: O(c), c = chain length.
     fn chain_root_lvalue_name(expr: &Expr) -> Option<String> {
-        match expr {
-            Expr::Var(n) => Some(n.clone()),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            Expr::Grouped(inner) => Self::chain_root_lvalue_name(inner),
-            Expr::Binary {
-                left,
-                op: TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen,
-                ..
-            } => Self::chain_root_lvalue_name(left),
-            _ => None,
-        }
+        expr.lvalue_root(LvaluePeel::GROUPED | LvaluePeel::TOPIC_CHAIN)
+            .map(LvalueRoot::into_spelled_key)
     }
 
     /// Replace the implied topic `$_` with `var` in a `.=`-method-call target so
@@ -708,10 +700,9 @@ impl Compiler {
             }
             // When both sides are index expressions, use ContainerEqIndexed
             // to check binding metadata on array/hash elements.
-            if let (Some(left_encoded), Some(right_encoded)) = (
-                Self::encode_index_source(left),
-                Self::encode_index_source(right),
-            ) {
+            if let (Some(left_encoded), Some(right_encoded)) =
+                (left.element_source_key(), right.element_source_key())
+            {
                 self.compile_expr(left);
                 self.compile_expr(right);
                 let left_idx = self.code.add_constant(Value::str(left_encoded));
@@ -745,7 +736,7 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerEqRaw);
                 return;
             }
-            // Both sides are Index expressions that `encode_index_source` could
+            // Both sides are Index expressions that `Expr::element_source_key` could
             // not encode (nested `@a[i][j]`, or a non-literal subscript). Promote
             // each leaf to its shared `ContainerRef` cell via scalar_bind_autovivify
             // (+ bind_terminal so a scalar leaf is boxed) and compare cell identity
@@ -827,15 +818,9 @@ impl Compiler {
         if let Some(opcode) = Self::binary_opcode(op) {
             if matches!(op, TokenKind::Ident(name) if name == "does") {
                 let var_name = match left {
-                    Expr::Var(name) => Some(name.clone()),
                     // A sigil-less constant's binding is its term key (#9962).
-                    Expr::BareWord(name) if self.names_term_constant(name) => {
-                        Some(crate::runtime::term_names::term_key(name))
-                    }
-                    Expr::BareWord(name) => Some(name.clone()),
-                    Expr::HashVar(name) => Some(format!("%{}", name)),
-                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                    _ => None,
+                    Expr::BareWord(name) => Some(self.sigilless_storage_key(name)),
+                    other => other.container_var_key(),
                 };
                 let is_bareword = matches!(left, Expr::BareWord(_));
                 if let Some(name) = var_name {

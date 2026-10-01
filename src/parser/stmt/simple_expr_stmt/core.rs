@@ -22,8 +22,8 @@ use crate::value::Value;
 use crate::value::ValueView;
 
 use super::lvalue::{
-    bind_source_metadata_expr, callable_lvalue_assign_expr, decl_target_var_name,
-    grouped_assign_lvalue_stmt, method_lvalue_assign_expr, named_sub_lvalue_assign_expr,
+    bind_source_metadata_expr, callable_lvalue_assign_expr, grouped_assign_lvalue_stmt,
+    method_lvalue_assign_expr, method_lvalue_target_name, named_sub_lvalue_assign_expr,
     single_target_list_lvalue_stmt,
 };
 use super::predicates::{
@@ -55,13 +55,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                     is_positional: true,
                 };
             }
-            let target_var_name = match target.as_ref() {
-                Expr::Var(v) => Some(v.clone()),
-                Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                Expr::HashVar(v) => Some(format!("%{}", v)),
-                Expr::DoStmt(s) => decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name = method_lvalue_target_name(&target);
             let method_name = if modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
@@ -81,13 +75,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
             modifier,
             ..
         } => {
-            let target_var_name = match target.as_ref() {
-                Expr::Var(v) => Some(v.clone()),
-                Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                Expr::HashVar(v) => Some(format!("%{}", v)),
-                Expr::DoStmt(s) => decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name = method_lvalue_target_name(&target);
             crate::parser::stmt::assign::dynamic_method_lvalue_assign_expr(
                 *target,
                 target_var_name,
@@ -757,13 +745,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: _,
         } = &target_expr
         {
-            let target_var_name = match target.as_ref() {
-                Expr::Var(var_name) => Some(var_name.clone()),
-                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
-                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
-                Expr::DoStmt(s) => decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name = method_lvalue_target_name(&target);
             let method_name = if *modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
@@ -918,13 +900,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let stmt = Stmt::Expr(assigned);
                 return parse_statement_modifier(r, stmt);
             }
-            let target_var_name = match target.as_ref() {
-                Expr::Var(var_name) => Some(var_name.clone()),
-                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
-                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
-                Expr::DoStmt(s) => decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name = method_lvalue_target_name(&target);
             let method_name = if *modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
