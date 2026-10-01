@@ -27,6 +27,7 @@
 //! keeps the refusal: the candidate body is *read*, never run.
 
 use super::*;
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::value::ValueView;
 
 /// One package declarator a slang grammar role registered.
@@ -197,33 +198,46 @@ impl Interpreter {
 
 /// Walk the candidate prologue for the two facts a declarator is made of:
 /// the `$*PKGDECL` it declares and the `$*LANG.set_how` calls it makes.
+// Cost: O(n), n = size of the prologue's AST.
 fn collect_declarator_facts(
     stmts: &[Stmt],
     kind: &mut Option<String>,
     set_hows: &mut Vec<(String, String)>,
 ) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {
-                collect_declarator_facts(inner, kind, set_hows);
-            }
-            Stmt::VarDecl { name, expr, .. } if name == "*PKGDECL" => {
-                if let Some(text) = literal_str(expr) {
-                    *kind = Some(text);
-                }
-            }
-            Stmt::Expr(Expr::MethodCall {
-                target, name, args, ..
-            }) if matches!(&**target, Expr::Var(v) if v == "*LANG")
-                && name.resolve() == "set_how"
-                && args.len() == 2 =>
-            {
-                if let (Some(k), Some(how)) = (literal_str(&args[0]), type_name(&args[1])) {
-                    set_hows.push((k, how));
-                }
-            }
-            _ => {}
+    let mut scan = DeclaratorFacts { kind, set_hows };
+    walk_stmts(&mut scan, stmts);
+}
+
+/// The walk of [`collect_declarator_facts`] (ADR-0137 visitor): a fact
+/// anywhere in the prologue's code blocks counts.
+struct DeclaratorFacts<'a> {
+    kind: &'a mut Option<String>,
+    set_hows: &'a mut Vec<(String, String)>,
+}
+
+impl Visit for DeclaratorFacts<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Stmt::VarDecl { name, expr, .. } = stmt
+            && name == "*PKGDECL"
+            && let Some(text) = literal_str(expr)
+        {
+            *self.kind = Some(text);
         }
+        walk_stmt(self, stmt);
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::MethodCall {
+            target, name, args, ..
+        } = expr
+            && matches!(&**target, Expr::Var(v) if v == "*LANG")
+            && name.resolve() == "set_how"
+            && args.len() == 2
+            && let (Some(k), Some(how)) = (literal_str(&args[0]), type_name(&args[1]))
+        {
+            self.set_hows.push((k, how));
+        }
+        walk_expr(self, expr);
     }
 }
 
@@ -287,5 +301,22 @@ mod tests {
         let prologue = candidate_prologue("<?{ $*IN-DECL }> :my $*PKGDECL := 'role';");
         assert!(!prologue.contains("IN-DECL"));
         assert!(prologue.contains("my $*PKGDECL := 'role';"));
+    }
+
+    #[test]
+    fn facts_in_a_nested_code_block_are_found() {
+        let stmts = crate::parse_dispatch::parse_source(
+            "my $*PKGDECL := 'bundle'; if True { $*LANG.set_how('bundle', Some::HOW) }",
+        )
+        .map(|(stmts, _)| stmts)
+        .unwrap();
+        let mut kind = None;
+        let mut set_hows = Vec::new();
+        collect_declarator_facts(&stmts, &mut kind, &mut set_hows);
+        assert_eq!(kind.as_deref(), Some("bundle"));
+        assert_eq!(
+            set_hows,
+            vec![("bundle".to_string(), "Some::HOW".to_string())]
+        );
     }
 }
