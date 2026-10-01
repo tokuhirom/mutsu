@@ -4311,6 +4311,9 @@ impl Compiler {
                     || module == "isms"
                     || module == "nqp"
                     || module == "soft"
+                    // `use worries` only toggles parse-time warnings, which
+                    // the parser already applied.
+                    || module == "worries"
                     || module == "oo"
                     || module == "class"
                     // `use experimental :pack/:cached/:macros/...` enables
