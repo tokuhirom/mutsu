@@ -434,7 +434,8 @@ impl Interpreter {
         // `t/oo/method/class-body-use-import-visible-in-method.t` pins
         // (#8883, no inheritance involved there either).
         let saved_package = self.current_package();
-        if self.has_class_scoped_subs(owner_class) {
+        if self.has_class_scoped_subs(owner_class) || self.class_has_method_type_decls(owner_class)
+        {
             self.set_current_package(owner_class.to_string());
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
@@ -1772,7 +1773,9 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class) {
+        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class)
+            || self.class_has_method_type_decls(owner_class)
+        {
             let saved = self.current_package();
             self.set_current_package(owner_class.to_string());
             Some(saved)
