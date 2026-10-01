@@ -58,6 +58,10 @@ macro_rules! differential_case {
 }
 
 differential_case!(
+    separated_and_conjunction_code_views,
+    r#"my @l; "x1,2,3" ~~ / (x) [ (\d) { @l.push: $/.list.map(~*).join('|') } ] +% [ (',') { @l.push: ~$/ } ] /; "1;2" ~~ / :r [ (\d) { @l.push: +$/[1] } ] +%% [ (';') ] /; "ab" ~~ / (a) [ (\w) { @l.push: +$/.list } & \w { @l.push: ~$0 } ] /; "aa" ~~ / :my $x = 'a'; [ \w & $x ] $x /; @l.push: ~$/; .say for @l"#
+);
+differential_case!(
     greedy_give_back,
     r#"for <aaab abab ab b ""> -> $s { say ($s ~~ / a+ b /).gist; say ($s ~~ / ^ a* b $ /).gist }"#
 );
@@ -327,6 +331,28 @@ say $n;"#;
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no compiled= in: {line}"));
     assert!(compiled >= 3, "the code patterns were not compiled: {line}");
+}
+
+/// #10456: code inside a separated quantifier's atom or separator, or in a
+/// `&` conjunction's branches, must take the compiled engine — each reads the
+/// enclosing captures through an inline level's view rather than declining.
+#[test]
+fn separated_and_conjunction_code_is_compiled() {
+    let src = r#"my @log;
+"x1,2" ~~ / (x) [ (\d) { @log.push: +$/[1] } ] +% [ ',' { @log.push: 's' ~ $/[1].elems } ] /;
+"ab" ~~ / (a) [ (\w) { @log.push: +$/.list } & \w { @log.push: ~$0 } ] /;
+say @log.join(',');"#;
+    let (ok, out, err) = run(src, &[("MUTSU_VM_STATS", "1")]);
+    assert!(ok, "run failed: {err}");
+    assert_eq!(out, "1,s1,2,2,a\n");
+    let line = err
+        .lines()
+        .find_map(|l| l.split("regex-vm: ").nth(1))
+        .unwrap_or_else(|| panic!("no regex-vm stats line: {err}"));
+    assert!(
+        !line.contains("separator-code") && !line.contains("conjunction-code"),
+        "a separated or conjunction code pattern declined to the walk: {line}"
+    );
 }
 
 /// Slice D (#10254): a grammar with plain, proto, quantified and goal-matched

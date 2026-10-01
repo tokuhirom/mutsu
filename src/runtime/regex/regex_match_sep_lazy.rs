@@ -128,9 +128,11 @@ impl Interpreter {
         // continuation has rejected the ones before them.
         let stopped = {
             let w = &mut walk;
-            let capture_start = store.caps().positional.len();
-            let mut atom_store = CapStore::new(store.caps().clone());
-            atom_store.merge_delta(w.assemble(None));
+            let capture_start = super::regex_match_sep_view::sep_iteration_slot(store.caps(), 0);
+            let mut atom_store = CapStore::new(super::regex_match_sep_view::sep_chain_view(
+                store.caps(),
+                w.assemble(None),
+            ));
             let _capture_scope =
                 super::regex_helpers::InlineCaptureScope::enter(capture_start, w.atom_stride);
             let mut first = |interp: &mut Interpreter,
@@ -200,19 +202,33 @@ impl Interpreter {
             // the separator's lengths be tried in priority order, and a
             // separator carrying a side-effecting code block is not a shape
             // this ADR set out to fix.
-            let sep_ends = self.regex_match_ends_from_caps_in_pkg(&sep.pattern, chars, cur, pkg);
+            let sep_ends = self.sep_ends_seeing_chain(
+                &sep.pattern,
+                chars,
+                cur,
+                pkg,
+                store.caps(),
+                || walk.assemble(None),
+                walk.atom_stride,
+                false,
+            );
             for (sep_end, scaps) in sep_ends {
                 super::regex_helpers::record_regex_farthest_position(sep_end);
+                // The separator is folded before the atom after it matches, so
+                // code in that atom sees it (rakudo's `$/[1]` there lists every
+                // separator so far).
+                walk.sep_caps.push(scaps);
                 let stopped = {
                     let w = &mut *walk;
-                    let capture_start = store.caps().positional.len();
-                    let mut atom_store = CapStore::new(store.caps().clone());
-                    atom_store.merge_delta(w.assemble(None));
+                    let capture_start =
+                        super::regex_match_sep_view::sep_iteration_slot(store.caps(), 0);
+                    let mut atom_store = CapStore::new(
+                        super::regex_match_sep_view::sep_chain_view(store.caps(), w.assemble(None)),
+                    );
                     let _capture_scope = super::regex_helpers::InlineCaptureScope::enter(
                         capture_start,
                         w.atom_stride,
                     );
-                    let scaps = &scaps;
                     let mut next = |interp: &mut Interpreter,
                                     _atom_store: &mut CapStore,
                                     atom_end: usize,
@@ -225,11 +241,9 @@ impl Interpreter {
                             .push(super::regex_match_sep::with_iteration_capture(
                                 token, sep_end, atom_end, acaps,
                             ));
-                        w.sep_caps.push(scaps.clone());
                         let stop = interp
                             .sep_extend_chain(w, token, pattern, chars, atom_end, pkg, store, on);
                         w.atom_caps.pop();
-                        w.sep_caps.pop();
                         stop
                     };
                     self.for_each_atom_candidate(
@@ -243,6 +257,7 @@ impl Interpreter {
                         &mut next,
                     )
                 };
+                walk.sep_caps.pop();
                 if stopped {
                     return true;
                 }
@@ -276,7 +291,16 @@ impl Interpreter {
         }
         let sep = token.separator.as_ref().unwrap();
         if sep.allow_trailing {
-            let trailing = self.regex_match_ends_from_caps_in_pkg(&sep.pattern, chars, cur, pkg);
+            let trailing = self.sep_ends_seeing_chain(
+                &sep.pattern,
+                chars,
+                cur,
+                pkg,
+                store.caps(),
+                || walk.assemble(None),
+                walk.atom_stride,
+                false,
+            );
             for (ts_end, ts_caps) in trailing {
                 if ts_end < cur {
                     continue;

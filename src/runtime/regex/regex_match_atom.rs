@@ -411,12 +411,19 @@ impl Interpreter {
             let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
             // first-branch candidates: HIGHEST-priority-first from ends fn.
             // Build the output LOWEST-priority-first by reversing.
+            let outer = super::regex_backref_scope::current_outer_caps_seed();
             let mut first_ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
             first_ends.reverse();
             for (end, first_caps) in first_ends {
                 let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
                 let mut ok = true;
                 for branch in rest {
+                    // Later branches see the earlier ones' captures, as the
+                    // streamed driver's do (`arm_conjunction_branch_seed`).
+                    let _seed = super::regex_backref_scope::arm_conjunction_branch_seed(
+                        outer.as_ref(),
+                        &merged,
+                    );
                     if let Some(bcaps) =
                         self.regex_match_branch_ending_at(branch, chars, pos, end, pkg)
                     {
