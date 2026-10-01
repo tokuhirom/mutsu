@@ -34,6 +34,7 @@
 //! lifted into the prologue by [`nested`] ahead of that statement.
 
 mod nested;
+mod nested_exports;
 mod package_body;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
@@ -125,10 +126,20 @@ fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
     names
 }
 
+/// Give every exported declaration nested in a unit's code a BEGIN-time
+/// registration at the statement that contains it (#10543). Runs once per
+/// unit, ahead of its first [`take_unit_prologue`]: a second run would lift
+/// the same declarations again.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
+    nested_exports::lift_nested_exports(stmts);
+}
+
 /// Put a compilation unit's BEGIN prologue at its head. This is the whole of
 /// the reordering a module's top level gets; the mainline and EVAL get it as
 /// part of `phasers::reorder_phasers`. Returns the prologue's length.
 pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
+    lift_nested_exports(stmts);
     let mut prologue = take_unit_prologue(stmts);
     let prologue_len = prologue.len();
     if prologue_len > 0 {

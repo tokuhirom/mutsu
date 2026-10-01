@@ -30,6 +30,7 @@ fn next_temp_name() -> String {
 /// Returns the length of the unit's BEGIN prologue (ADR-0134), which is left at
 /// the head of `stmts`.
 pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
+    crate::runtime::begin_prologue::lift_nested_exports(stmts);
     reorder_recursive(stmts, true)
 }
 
@@ -43,6 +44,7 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
 /// declared subs from a parent scope (the EVAL scope is already the
 /// outermost scope), so lifting BEGIN from them is safe.
 pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
+    crate::runtime::begin_prologue::lift_nested_exports(stmts);
     reorder_recursive(stmts, true);
     // Second pass: lift BEGIN from closure bodies to the top level.
     let mut extra_begin: Vec<Stmt> = Vec::new();
