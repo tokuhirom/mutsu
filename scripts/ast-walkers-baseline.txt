@@ -60,7 +60,6 @@ src/runtime/begin_prologue/mod.rs                     4  # partition_stmt/partit
 src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
-src/runtime/dispatch_proto_rewrite.rs                 2
 src/runtime/phasers.rs                                1  # stmt_declares_var looks at one scope's statement list only, through the transparent SyntheticBlock grouping
 src/runtime/run.rs                                    3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
 src/runtime/run_prelude.rs                            2  # mark_prelude_subs tags the unit's top-level subs (through SyntheticBlock only; one scope, not a tree rewrite); declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
