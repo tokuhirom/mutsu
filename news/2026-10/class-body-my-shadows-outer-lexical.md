@@ -25,7 +25,7 @@ is no second notion of "what the body declares". A `my` in a nested block of
 the body, a differently-named outer lexical and a method parameter are
 unaffected, as in rakudo.
 
-Pinned by `t/oo/class-body-my-shadows-outer-lexical.t` (20 tests, rakudo's
+Pinned by `t/oo/class/class-body-my-shadows-outer-lexical.t` (20 tests, rakudo's
 output for every shape: `my`, `state`, `@`/`%`, `my sub`, `our`, writes through
 one or two methods, a per-class counter, closures, a submethod, a class
 declared in a routine, and the role case).
