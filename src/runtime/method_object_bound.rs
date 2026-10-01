@@ -75,11 +75,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if !self
-            .class_mro(inst_class.as_str())
-            .iter()
-            .any(|c| *c == owner)
-        {
+        if !self.class_mro(inst_class.as_str()).contains(&owner) {
             return None;
         }
         Some(crate::qualified::qualified(owner, name))
