@@ -738,11 +738,11 @@ impl Interpreter {
                                 }
                                 false
                             }
-                            // Every end up to the first that covers the subject: the
+                            // Every end (up to the first that covers the subject): the
                             // match is kept and the run backtracks for the next one.
-                            Goal::UntilFull(out) => {
+                            Goal::Ends { out, stop_at_full } => {
                                 out.push((pos, root_snapshot!()));
-                                if pos == chars.len() {
+                                if *stop_at_full && pos == chars.len() {
                                     break 'run None;
                                 }
                                 false

@@ -6233,6 +6233,21 @@ impl Interpreter {
             OpCode::RoutineScope { body_end } => {
                 self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
             }
+            // Cost: O(1) plus the body and, on an early exit, the loop's NEXT/UNDO/LEAVE queues.
+            OpCode::LoopExitGuard {
+                body_end,
+                exit_start,
+                end,
+                label,
+            } => {
+                self.exec_loop_exit_guard_op(
+                    code,
+                    (*body_end, *exit_start, *end),
+                    label,
+                    ip,
+                    compiled_fns,
+                )?;
+            }
             // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;

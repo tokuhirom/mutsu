@@ -11,6 +11,10 @@ pub(crate) mod cclass;
 pub(crate) mod collation;
 pub(crate) mod comb;
 pub(crate) mod cross_product;
+#[cfg(test)]
+#[path = "emoji_name_gen.rs"]
+mod emoji_name_gen;
+pub(crate) mod emoji_name_table;
 pub(crate) mod exception_message;
 pub(crate) mod fast_0arg;
 mod functions;

@@ -849,6 +849,14 @@ pub(crate) enum DoBlockIsolation {
     Lexical,
 }
 
+/// Which jump target of an [`OpCode::LoopExitGuard`] to patch.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum LoopExitGuardField {
+    BodyEnd,
+    ExitStart,
+    End,
+}
+
 /// Bytecode operations for the VM.
 /// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
 /// re-bind.
@@ -4094,6 +4102,22 @@ pub(crate) enum OpCode {
     /// runs on the error path too, so `return`/`die` escaping the body still
     /// unwinds the registry.
     RoutineScope { body_end: u32 },
+
+    /// The early-exit guard of one loop iteration (`Stmt::LoopExitGuard`).
+    /// Layout: guarded body at `[ip+1..body_end)`, the NEXT queue at
+    /// `[body_end..exit_start)`, the UNDO+LEAVE queue at `[exit_start..end)`.
+    ///
+    /// The body normally falls through to `end`. When a `next`/`last`/`redo`/
+    /// `return` signal unwinds out of it, the VM runs the NEXT queue (only for a
+    /// `next` aimed at this loop, per `label`) and then the UNDO+LEAVE queue,
+    /// and re-raises the signal for the loop runner. Doing this dynamically is
+    /// what reaches a `next` raised inside a closure the body called.
+    LoopExitGuard {
+        body_end: u32,
+        exit_start: u32,
+        end: u32,
+        label: Option<String>,
+    },
 
     /// Bracket a callable body with a lexical import scope. A use inside a
     /// routine or closure is executed at call time in mutsu, so the registry
@@ -11096,6 +11120,23 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::LetBlock { body_end, .. } => *body_end = target,
             _ => panic!("patch_let_block_end on non-LetBlock opcode"),
+        }
+    }
+
+    pub(crate) fn patch_loop_exit_guard(&mut self, idx: usize, field: LoopExitGuardField) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::LoopExitGuard {
+                body_end,
+                exit_start,
+                end,
+                ..
+            } => match field {
+                LoopExitGuardField::BodyEnd => *body_end = target,
+                LoopExitGuardField::ExitStart => *exit_start = target,
+                LoopExitGuardField::End => *end = target,
+            },
+            _ => panic!("patch_loop_exit_guard on non-LoopExitGuard opcode"),
         }
     }
 

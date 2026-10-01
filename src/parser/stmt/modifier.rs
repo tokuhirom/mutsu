@@ -206,136 +206,6 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
     first_is_cond && next_is_loop
 }
 
-/// Check if an expression ends with a block body (e.g., `try { ... }`,
-/// `do { ... }`, `gather { ... }`, or a call whose final argument is a bare
-/// block such as `$lock.protect: { ... }` / `@a.map: { ... }`). Such
-/// expressions should not have statement modifiers attached across a newline:
-/// in Raku a statement ending in a `}` block at end of line is self-terminating.
-fn expr_ends_with_block(expr: &Expr) -> bool {
-    match expr {
-        Expr::Try { .. } | Expr::Gather(_) | Expr::DoBlock { .. } | Expr::DoStmt(_) => true,
-        // A bare closure literal is itself block-final: `my &f = sub ($x) { $x }`
-        // / `my &f = -> $x { $x }` ends the statement's text with the closure's
-        // `}`, exactly like `my @a = gather { ... }` below. Without this, the
-        // next line's `if`/`for` is swallowed as a postfix modifier and its
-        // `{ ... }` becomes a bare block that runs unconditionally (rakudo's
-        // `Pod::To::Text` opens with precisely this shape).
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => true,
-        Expr::MethodCall { args, .. }
-        | Expr::HyperMethodCall { args, .. }
-        | Expr::DynamicMethodCall { args, .. }
-        | Expr::Call { args, .. }
-        | Expr::UserRoutineCall { args, .. } => {
-            // Recurse into the final argument: a block-taking construct that
-            // desugars to a call (`supply { ... }` becomes
-            // `Supply.on-demand(<block>)`) still ends the statement's text with
-            // its `}` — `$msg.set-body-byte-stream: supply { ... }` followed by
-            // a newline must not swallow the next line's `given`/`if` as a
-            // statement modifier (Cro::Core t/message-with-body.rakutest).
-            match args.last() {
-                Some(Expr::AnonSub { is_block: true, .. }) => true,
-                // A lowered block-taking construct carries its user block as a
-                // Lambda (`supply { ... }` -> `Supply.on-demand(<lambda>)`).
-                Some(Expr::Lambda { .. }) => true,
-                Some(last) => expr_ends_with_block(last),
-                None => false,
-            }
-        }
-        // Index assignment preserves the assigned expression as its final
-        // source term. This matters for `%hash<key> = &routine.wrap: { ... }`
-        // followed by a prefix statement on the next line: the assignment's
-        // closing block is the statement terminator, just like a direct call's.
-        Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
-            expr_ends_with_block(value)
-        }
-        // `$x //= do if COND { ... } else { ... }` / `$!a = do { ... }` in
-        // expression form (HTTP::UserAgent's `get-proxy`).
-        Expr::CompoundAssign { rhs, .. } => expr_ends_with_block(rhs),
-        Expr::AssignExpr { expr, .. } => expr_ends_with_block(expr),
-        // A pair whose value is a block closes the line with that block's `}`:
-        // `@a.push: $key => { ... }` followed by a newline and `if COND -> $x {`
-        // is two statements, exactly like a direct block argument (Commands'
-        // `extended-help-from-hash`).
-        Expr::PositionalPair(inner) => expr_ends_with_block(inner),
-        // `COND ?? A !! do { ... }` ends the line with the else branch's `}`
-        // (zef's `Zef::Client` install phase).
-        Expr::Ternary { else_expr, .. } => expr_ends_with_block(else_expr),
-        Expr::Binary {
-            op: TokenKind::FatArrow,
-            right,
-            ..
-        } => expr_ends_with_block(right),
-        _ => false,
-    }
-}
-
-/// Like [`expr_ends_with_block`] but for a whole statement: it also unwraps a
-/// `my $x = EXPR` / `$x = EXPR` whose initializer expression ends in a block
-/// (`my @a = gather { ... }`, `my @a = do for ... { ... }`). Such a declaration
-/// or assignment is equally self-terminating when its trailing `}` sits at the
-/// end of a line, so the next line's `if`/`for`/etc. must NOT be swallowed as a
-/// postfix modifier. Without this, `my @a = gather { ... }\nif COND { ... }`
-/// mis-parses `if COND` as a modifier (rewriting the decl to run its init only
-/// when COND) and turns the `{ ... }` into a separate bare block.
-pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Expr(e) => expr_ends_with_block(e),
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_ends_with_block(expr),
-        // Sigilless declarations are lowered to a synthetic block carrying
-        // compiler markers after the real declaration.  Ignore those markers
-        // and inspect the last source-bearing statement so
-        // `my \name = do { ... }` gets the same block-final boundary as an
-        // ordinary declaration.
-        Stmt::SyntheticBlock(stmts) => stmts
-            .iter()
-            .rev()
-            .find(|stmt| {
-                !matches!(
-                    stmt,
-                    Stmt::MarkBind
-                        | Stmt::MarkBoundContainer(_)
-                        | Stmt::MarkReadonly(_, _)
-                        | Stmt::MarkSigilless(_)
-                        | Stmt::MarkSigillessReadonly(_)
-                        | Stmt::SetLine(_)
-                )
-            })
-            .is_some_and(stmt_ends_with_block),
-        // `my regex/token/rule NAME { ... }` is a block-form declaration, so it
-        // ends the statement. Without this, the next line's `if` was absorbed as
-        // a statement modifier and the declaration was re-parented into the
-        // conditional's then-branch — meaning the rule was not yet declared when
-        // the condition's own regex referenced it (`<NAME>` then fell back to a
-        // method call on Match). Pinned by `t/regex-decl-stmt-terminator.t`.
-        Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => true,
-        // A statement-level call whose last argument ends in a block
-        // (`subtest 'x' => { ... }`, `say $k => { ... }`): the same boundary as
-        // the expression-call form above. Without it the next line's
-        // `if COND { ... }` became a modifier and its block a stray term.
-        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
-            args.last().is_some_and(expr_ends_with_block)
-        }
-        Stmt::Call { args, .. } => match args.last() {
-            Some(
-                crate::ast::CallArg::Positional(e)
-                | crate::ast::CallArg::Slip(e)
-                | crate::ast::CallArg::Named { value: Some(e), .. },
-            ) => expr_ends_with_block(e),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-/// After a statement-modifier keyword's condition, a `{` block (or `-> ... {`
-/// pointy header) means this is actually a full control statement (`if COND
-/// { ... }`), not a postfix modifier — modifiers never take a block. Mirrors
-/// the guard the `for`/`with` modifiers already apply to their own headers.
-fn block_follows_modifier_condition(r: &str) -> bool {
-    let r = r.trim_start();
-    r.starts_with('{') || r.starts_with("->")
-}
-
 /// A bare block to the left of `while`/`until` is the modifier's operand: the
 /// loop repeatedly evaluates the Block value without invoking its body.
 fn while_modifier_operand(stmt: Stmt) -> Stmt {
@@ -365,48 +235,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     } else {
         rest
     };
-    // Blocks: never attach a statement modifier across a newline.
-    if matches!(stmt, Stmt::Block(_)) {
-        let consumed_len = input.len().saturating_sub(rest.len());
-        if input[..consumed_len].contains('\n') {
-            return Ok((input, stmt));
-        }
-    }
-    // Block-valued expressions (`try { ... }`, `do { ... }`, etc.), including a
-    // `my @a = gather { ... }` / `$x = do { ... }` whose initializer ends in a
-    // block: a newline after the closing brace should terminate the statement,
-    // preventing the next line's `if`/`for`/etc. from being treated as a
-    // statement modifier.
-    if stmt_ends_with_block(&stmt) {
-        let consumed_len = input.len().saturating_sub(rest.len());
-        // …and only when the `}` really does end the line. The AST test answers
-        // "does this statement's last expression *contain* a trailing block",
-        // which is also true of `@a = @a.grep({ ... })` — there the line ends in
-        // `)`, so the statement is unfinished and the next line's `if` IS its
-        // modifier (App::Moneymoor writes ten modules that way). Read the source
-        // text before the statement's end to tell the two apart; with no source
-        // recorded (a nested/EVAL buffer), keep the conservative old answer.
-        // Most callers leave the whitespace after the expression in `input`,
-        // but declaration RHS parsers may already have consumed it.  In that
-        // case `input` starts at the next line's modifier keyword, so the
-        // newline is no longer visible in the slice even though the source
-        // line is empty before the keyword.  Treat that source-position shape
-        // as the same block-final boundary; otherwise
-        // `my \Role = do { ... }` followed by `unless ...` is parsed as a
-        // statement modifier on the declaration, moving the declaration into
-        // the conditional body (and making the condition observe an
-        // uninitialized `Role`).
-        let source_line_starts_at_modifier = matches!(stmt, Stmt::SyntheticBlock(_))
-            && crate::parser::primary::source_span_at(input)
-                .is_some_and(|(pre, _)| pre.trim().is_empty());
-        if (input[..consumed_len].contains('\n') || source_line_starts_at_modifier)
-            && crate::parser::primary::source_span_at(input).is_none_or(|(pre, _)| {
-                pre.trim_end().ends_with('}')
-                    || (source_line_starts_at_modifier && pre.trim().is_empty())
-            })
-        {
-            return Ok((input, stmt));
-        }
+    // A block's `}` at end of line ends the statement (rakudo's `$*ENDSTMT`):
+    // `my @a = gather { ... }` / `try { ... }` / `my $h = {a => 1}` / a bare
+    // block, followed on the next line by `if COND { ... }`, is two statements,
+    // not a modifier on the first. The brace parsers record that position
+    // (`parser::stmt_ending_brace`); `@a = @a.grep({ ... })` ends in `)`, so
+    // its next-line `if` still IS a modifier.
+    if crate::parser::stmt_ending_brace::at_stmt_ending_brace(rest) {
+        return Ok((input, stmt));
     }
     let mut current_stmt = stmt;
     let mut rest = rest;
@@ -552,13 +388,6 @@ fn closure_signature_as_for_params(
 
 /// Try to parse a single statement modifier. Returns None if no modifier matched.
 fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>, PError> {
-    // Whether the statement being modified itself ends in a `{ ... }` block
-    // (`$lock.protect: { ... }`, `my @a = gather { ... }`). Only then does a `{`
-    // after the modifier's condition mean "this `if` starts a new control
-    // statement" rather than a postfix modifier. For a non-block statement
-    // (`die X if COND { ... }`) the `if` IS a modifier and the trailing block is
-    // a separate statement.
-    let modified_ends_block = stmt_ends_with_block(&stmt);
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
@@ -571,13 +400,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        // A `{` block after the condition means this is a full `if COND { ... }`
-        // control statement, not a postfix modifier (modifiers take no block).
-        // This arises after a block-final statement on the previous line whose
-        // trailing newline was consumed (`$lock.protect: { ... }` then `if ...`).
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         if let Some(split) = try_split_decl_modifier(&then_stmt, &cond) {
@@ -607,9 +429,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         let neg_cond = Expr::Unary {
@@ -822,9 +641,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         return Ok(Some((
             r,
             Stmt::While {
@@ -846,9 +662,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         return Ok(Some((
             r,
             Stmt::While {
@@ -873,9 +686,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
         return Ok(Some((
             r,
@@ -898,10 +708,6 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        // A real `when COND { ... }` statement is not a modifier — leave it to control::when_stmt.
-        if modified_ends_block && block_follows_modifier_condition(r) {
-            return Ok(None);
-        }
         // `When` signals a match by raising `succeed`, which only an enclosing topicalizer
         // catches. Wrapping in a `given $_` gives it that catcher without changing the topic,
         // and composes with a following `given` modifier, which re-topicalizes `$_` first.

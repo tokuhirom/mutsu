@@ -243,13 +243,8 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     if module == "lib"
         && let Some(ref expr) = arg
     {
-        match expr {
-            Expr::ArrayLiteral(items) => {
-                for item in items {
-                    super::super::simple::try_add_parse_time_lib_path(item);
-                }
-            }
-            other => super::super::simple::try_add_parse_time_lib_path(other),
+        for path in crate::parser::use_lib_args(expr) {
+            super::super::simple::try_add_parse_time_lib_path(path);
         }
     }
     // `use Module Empty` and `use Module ()` load the module without importing

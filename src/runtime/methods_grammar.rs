@@ -2130,13 +2130,16 @@ impl Interpreter {
         let Some(parsed) = self.parse_regex(pattern) else {
             return 0;
         };
+        // A different pattern from `parsed`: its derived analyses (the compiled
+        // program among them, which bakes in the `$` anchor) are its own.
         let probe = RegexPattern {
             anchor_end: false,
+            derived: Default::default(),
             ..(*parsed).clone()
         };
         let chars: Vec<char> = text.chars().collect();
         let pkg = self.current_package_sym();
-        self.regex_match_all_ends_walked(&probe, &chars, 0, pkg, "all-ends:grammar-probe")
+        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, pkg)
             .into_iter()
             .map(|(end, _)| end)
             .max()

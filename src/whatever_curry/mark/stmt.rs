@@ -186,6 +186,9 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         | Stmt::TrustsDecl { .. }
         // Built after marking, from declarations already marked in place.
         | Stmt::NestedTypeShells(_)
+        // Emitted by the compiler's loop-phaser lowering, after marking.
+        | Stmt::LoopExitGuard { .. }
+        | Stmt::LoopExitGuardEnd
         | Stmt::SetLine(_) => {}
     }
 }

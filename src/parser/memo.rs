@@ -13,6 +13,9 @@ pub(super) enum MemoEntry<T: Clone> {
     Ok {
         consumed: usize,
         value: Box<T>,
+        /// The statement-ending-brace marks the parse left behind, replayed
+        /// on a hit (`parser::stmt_ending_brace`).
+        braces: super::stmt_ending_brace::Snapshot,
     },
     /// Like `Ok`, but `rest` was not a subslice of the memoized `input` — it
     /// pointed into a permanently leaked buffer instead (see
@@ -121,7 +124,14 @@ impl<T: Clone + 'static> ParseMemo<T> {
         if let Some(entry) = hit {
             self.stats.with(|s| s.borrow_mut().hits += 1);
             return Some(match entry {
-                MemoEntry::Ok { consumed, value } => Ok((&input[consumed..], *value)),
+                MemoEntry::Ok {
+                    consumed,
+                    value,
+                    braces,
+                } => {
+                    super::stmt_ending_brace::replay(&braces);
+                    Ok((&input[consumed..], *value))
+                }
                 MemoEntry::OkLeaked {
                     rest_ptr,
                     rest_len,
@@ -178,6 +188,7 @@ impl<T: Clone + 'static> ParseMemo<T> {
                     MemoEntry::Ok {
                         consumed: input.len().saturating_sub(rest.len()),
                         value: Box::new(value.clone()),
+                        braces: super::stmt_ending_brace::snapshot_within(input, rest),
                     }
                 } else if super::primary::is_within_leaked_region(rest) {
                     MemoEntry::OkLeaked {

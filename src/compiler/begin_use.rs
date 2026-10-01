@@ -179,22 +179,15 @@ impl Visit for LibPaths {
 /// `<a b>`), a shape match: a literal inside any other expression
 /// (`$?FILE.IO.add('lib')`) is not a repository spec.
 fn push_literals(expr: &Expr, out: &mut Vec<String>) {
-    match expr {
-        Expr::Literal(v) => {
-            if let ValueView::Str(s) = v.view() {
-                let path = s.to_string();
-                if !path.is_empty() && !out.contains(&path) {
-                    out.push(path);
-                }
+    for arg in crate::parser::use_lib_args(expr) {
+        if let Expr::Literal(v) = arg
+            && let ValueView::Str(s) = v.view()
+        {
+            let path = s.to_string();
+            if !path.is_empty() && !out.contains(&path) {
+                out.push(path);
             }
         }
-        Expr::ArrayLiteral(items) => {
-            for item in items {
-                push_literals(item, out);
-            }
-        }
-        Expr::Grouped(inner) => push_literals(inner, out),
-        _ => {}
     }
 }
 

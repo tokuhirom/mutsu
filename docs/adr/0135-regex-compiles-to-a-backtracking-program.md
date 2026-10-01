@@ -831,6 +831,34 @@ Slice E opens by making the whole residue visible. `MUTSU_VM_STATS` prints a sec
 
 `scripts/rx-decline-survey.sh` sums the line across files as it sums `regex-vm:`.
 
+### Slice E, second part: every end at a position is compiled
+
+`Grammar.parse`'s goal (`UntilFull`) becomes `Goal::Ends { out, stop_at_full }`: at the pattern's
+own `Match` the run records the end and backtracks for the next one, stopping at the first end that
+covers the subject only when asked. `regex_match_ends_from_caps_in_pkg`, the walk's "every end at
+`start`" entry, now tries it first (`rx_try_all_ends`), so `:ov`/`:ex`, LTM lookahead fates, cursor
+token methods and the walk's own sub-pattern calls (an alternation branch of a declined pattern)
+run compiled whenever their pattern has a program. A `:m` pattern keeps the walk there
+(`ignoremark-ends`): the walk remaps the whole end list across the stripped subject.
+
+The differential sweep found one bug that the change exposed: the parse-failure probe
+(`all_complete_match_ends_max`) built an unanchored copy of the start pattern with
+`..(*parsed).clone()`, which shared the original's `derived` analyses, so the copy ran the
+original's compiled program, `$` included. A pattern built by struct update from another now gets
+fresh `derived` analyses there, as `regex_match_atom`'s scoped `:i` copy already did.
+
+### Slice E, third part: frugal quantifiers under ratchet
+
+`frugal-ratchet`, the most common decline left in `t/grammar` and `t/regex`, compiles. In rakudo a
+frugal quantifier keeps growing on demand under ratchet; only each iteration's atom (and separator)
+commits. So the loop keeps its choice point (no `whole` cut when frugal) and the per-iteration cut
+stays, for `*?`, `+?`, `**?`, `??` and `% sep`. Comparing with rakudo found two walk bugs, fixed in the
+walk the same way: a ratcheted `??` tried the atom before the empty arm, and a ratcheted `+? % sep`
+stopped at its minimal count (`match_separated_quantifier_ratchet` now offers every length, the
+shortest preferred). A separated one whose atom or separator runs code still declines
+(`separator-frugal-ratchet-code`): the walk grows that chain eagerly, so the code would run a
+different number of times.
+
 ### Reproducing §2
 
 ```raku

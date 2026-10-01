@@ -140,225 +140,6 @@ impl Compiler {
         }
     }
 
-    fn next_targets_current_loop(
-        next_label: &Option<String>,
-        current_loop_label: Option<&str>,
-        in_nested_loop: bool,
-    ) -> bool {
-        match next_label {
-            Some(lbl) => current_loop_label == Some(lbl.as_str()),
-            None => !in_nested_loop,
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn rewrite_next_targets_in_stmt(
-        stmt: &Stmt,
-        current_loop_label: Option<&str>,
-        next_ph: &[Stmt],
-        leave_ph: &[Stmt],
-        undo_ph: &[Stmt],
-        in_nested_loop: bool,
-    ) -> Stmt {
-        match stmt {
-            Stmt::Next(label)
-                if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop) =>
-            {
-                // Verified against real `raku` (`todo/tickets/loop-body-keep-undo-not-run-on-last-next.md`):
-                // an explicit `next` runs its NEXT phasers FIRST (synchronously,
-                // as part of the `next` transfer itself), THEN the value-based
-                // KEEP/UNDO decision, THEN LEAVE. An early `next` means the
-                // iteration's trailing value is undefined (`return_value` is
-                // `None`), which per the definedness rule in
-                // `should_run_success_queue` always routes to UNDO, never KEEP.
-                // This order (NEXT, UNDO, LEAVE) is the OPPOSITE of the normal
-                // (uninterrupted) fall-through order (KEEP/UNDO, LEAVE, NEXT) —
-                // both verified separately against `raku`.
-                let mut wrapped = Vec::new();
-                wrapped.extend(next_ph.iter().cloned());
-                wrapped.extend(undo_ph.iter().cloned());
-                wrapped.extend(leave_ph.iter().cloned());
-                wrapped.push(stmt.clone());
-                Stmt::SyntheticBlock(wrapped)
-            }
-            Stmt::Last(label)
-                if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop)
-                    && (!leave_ph.is_empty() || !undo_ph.is_empty()) =>
-            {
-                // Same reasoning as the `next` case above (verified against
-                // `raku`): UNDO (never KEEP) then LEAVE before the actual `last`.
-                let mut wrapped = Vec::new();
-                wrapped.extend(undo_ph.iter().cloned());
-                wrapped.extend(leave_ph.iter().cloned());
-                wrapped.push(stmt.clone());
-                Stmt::SyntheticBlock(wrapped)
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                binding_var,
-                is_statement_modifier,
-                is_unless,
-                with_kind,
-            } => Stmt::If {
-                is_statement_modifier: *is_statement_modifier,
-                is_unless: *is_unless,
-                with_kind: *with_kind,
-                cond: cond.clone(),
-                then_branch: Self::rewrite_next_targets_in_stmts(
-                    then_branch,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    in_nested_loop,
-                ),
-                else_branch: Self::rewrite_next_targets_in_stmts(
-                    else_branch,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    in_nested_loop,
-                ),
-                binding_var: binding_var.clone(),
-            },
-            Stmt::Block(body) => Stmt::Block(Self::rewrite_next_targets_in_stmts(
-                body,
-                current_loop_label,
-                next_ph,
-                leave_ph,
-                undo_ph,
-                in_nested_loop,
-            )),
-            Stmt::SyntheticBlock(body) => {
-                Stmt::SyntheticBlock(Self::rewrite_next_targets_in_stmts(
-                    body,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    in_nested_loop,
-                ))
-            }
-            Stmt::Label { name, stmt } => Stmt::Label {
-                name: name.clone(),
-                stmt: Box::new(Self::rewrite_next_targets_in_stmt(
-                    stmt,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    in_nested_loop,
-                )),
-            },
-            Stmt::While {
-                cond,
-                body,
-                label,
-                is_statement_modifier,
-                is_until,
-            } => Stmt::While {
-                cond: cond.clone(),
-                body: Self::rewrite_next_targets_in_stmts(
-                    body,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    true,
-                ),
-                label: label.clone(),
-                is_statement_modifier: *is_statement_modifier,
-                is_until: *is_until,
-            },
-            Stmt::For {
-                iterable,
-                param,
-                param_def,
-                params,
-                params_def,
-                body,
-                label,
-                mode,
-                rw_block,
-                explicit_zero_params,
-                is_statement_modifier,
-                uses_block_magic,
-            } => Stmt::For {
-                iterable: iterable.clone(),
-                param: param.clone(),
-                param_def: param_def.clone(),
-                params: params.clone(),
-                params_def: params_def.clone(),
-                body: Self::rewrite_next_targets_in_stmts(
-                    body,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    true,
-                ),
-                label: label.clone(),
-                mode: *mode,
-                rw_block: *rw_block,
-                explicit_zero_params: *explicit_zero_params,
-                is_statement_modifier: *is_statement_modifier,
-                uses_block_magic: *uses_block_magic,
-            },
-            Stmt::Loop {
-                init,
-                cond,
-                step,
-                body,
-                repeat,
-                label,
-                is_until,
-            } => Stmt::Loop {
-                init: init.clone(),
-                cond: cond.clone(),
-                step: step.clone(),
-                body: Self::rewrite_next_targets_in_stmts(
-                    body,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    true,
-                ),
-                repeat: *repeat,
-                label: label.clone(),
-                is_until: *is_until,
-            },
-            other => other.clone(),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn rewrite_next_targets_in_stmts(
-        stmts: &[Stmt],
-        current_loop_label: Option<&str>,
-        next_ph: &[Stmt],
-        leave_ph: &[Stmt],
-        undo_ph: &[Stmt],
-        in_nested_loop: bool,
-    ) -> Vec<Stmt> {
-        stmts
-            .iter()
-            .map(|stmt| {
-                Self::rewrite_next_targets_in_stmt(
-                    stmt,
-                    current_loop_label,
-                    next_ph,
-                    leave_ph,
-                    undo_ph,
-                    in_nested_loop,
-                )
-            })
-            .collect()
-    }
-
     /// `wants_value` is set by a caller that COLLECTS the body's trailing value
     /// (`ForParts::collect` — the expression form `do for ... { ... }`), and clear
     /// for the statement forms, which sink it.
@@ -567,26 +348,28 @@ impl Compiler {
         next_ph.reverse();
         // LEAVE phasers run in LIFO (reverse declaration) order per Raku spec
         let leave_ph_reversed: Vec<Stmt> = leave_ph.iter().rev().cloned().collect();
-        // KEEP/UNDO phasers must also be dispatched when the iteration exits
-        // early via `last`/`next`: per the definedness rule (see
-        // `should_run_success_queue`), an interrupted iteration's trailing
-        // value is undefined, which always routes to UNDO, never KEEP — see
-        // `todo/tickets/loop-body-keep-undo-not-run-on-last-next.md`. So the
-        // rewrite also has to run whenever UNDO phasers are present, even with
-        // no NEXT/LEAVE phaser declared.
-        let body_main = if next_ph.is_empty() && leave_ph_reversed.is_empty() && undo_ph.is_empty()
-        {
-            body_main
-        } else {
-            Self::rewrite_next_targets_in_stmts(
-                &body_main,
-                label,
-                &next_ph,
-                &leave_ph_reversed,
-                &undo_ph,
-                false,
-            )
-        };
+        // An iteration that exits early -- `next`/`last`/`redo`/`return`, raised
+        // in the body or by a closure it calls -- runs NEXT (for a `next` aimed
+        // at this loop), then UNDO, then LEAVE, before the signal reaches the
+        // loop: verified against real `raku`
+        // (`todo/tickets/loop-body-keep-undo-not-run-on-last-next.md`). An
+        // interrupted iteration's value is undefined, which per the definedness
+        // rule (see `should_run_success_queue`) always routes to UNDO, never KEEP.
+        // The VM queues them when the signal unwinds out of the guarded region
+        // (`OpCode::LoopExitGuard`), because only then is it known whether a
+        // `next` written in a closure leaves this loop (#10566).
+        let exit_guard = (!next_ph.is_empty()
+            || !leave_ph_reversed.is_empty()
+            || !undo_ph.is_empty())
+        .then(|| {
+            let mut exit_ph = undo_ph.clone();
+            exit_ph.extend(leave_ph_reversed.iter().cloned());
+            Stmt::LoopExitGuard {
+                label: label.map(str::to_string),
+                next_ph: next_ph.clone(),
+                exit_ph,
+            }
+        });
 
         // FIRST runs before ENTER on the first iteration (per Raku spec).
         // The "already ran" flag is cleared BEFORE the phaser body, not after:
@@ -636,6 +419,8 @@ impl Compiler {
         // When we have both result_var (KEEP/UNDO) and post_topic_var (POST),
         // we need to capture the body's last expression into both.
         let capture_var = result_var.clone().or(post_topic_var.clone()).or(value_var);
+        let guarded = exit_guard.is_some();
+        loop_body.extend(exit_guard);
         let body_taken = matches!(
             body_main.last(),
             Some(Stmt::Take(_, false)) if capture_var.is_some()
@@ -696,6 +481,9 @@ impl Compiler {
             }
         } else {
             loop_body.extend(body_main);
+        }
+        if guarded {
+            loop_body.push(Stmt::LoopExitGuardEnd);
         }
         // POST phasers run after the body, in reverse source order
         // POST sees the block's return value as $_

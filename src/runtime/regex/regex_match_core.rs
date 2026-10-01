@@ -247,27 +247,11 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        if let Some(found) = self.rx_try_all_ends(pattern, chars, start, pkg) {
+            return found;
+        }
         self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
-    }
-
-    /// [`Self::regex_match_ends_from_caps_in_pkg`] for an entry point outside
-    /// the walk: every end at `start` has no compiled form yet, so the walk
-    /// answers, counted under `site` on `MUTSU_VM_STATS`'s `regex-walk:` line
-    /// (ADR-0135 §4 E).
-    // Cost: as `regex_match_ends_from_caps_in_pkg`.
-    pub(in crate::runtime) fn regex_match_all_ends_walked(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-        site: &'static str,
-    ) -> Vec<(usize, RegexCaptures)> {
-        crate::vm::vm_stats_regex_vm::record_regex_walk(
-            crate::vm::vm_stats_regex_vm::WalkUse::Walked,
-            site,
-        );
-        self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg)
     }
 
     /// Like `regex_match_ends_from_caps_in_pkg`, but stops as soon as a match
@@ -291,22 +275,24 @@ impl Interpreter {
         // The start rule is itself a rule invocation: a grammar method it calls
         // writes to its cursor, which is the parse's own Match (#9803).
         self.enter_rule_cursor();
-        let mut ends = self.regex_walk_ends_until_full_for_diff(pattern, chars, start, pkg);
+        let mut ends = self.regex_walk_ends_for_diff(pattern, chars, start, pkg, true);
         let cursor = self.leave_rule_cursor();
         Self::file_rule_cursor(cursor, &mut ends);
         ends
     }
 
-    /// The tree walk's ends up to the first full match — the answer the
-    /// compiled engine is held to under `MUTSU_RX_DIFF` (ADR-0135 D6).
-    pub(super) fn regex_walk_ends_until_full_for_diff(
+    /// The tree walk's ends (up to the first full match with `stop_at_full`)
+    /// — the answer the compiled engine is held to under `MUTSU_RX_DIFF`
+    /// (ADR-0135 D6), and the path every pattern it declines takes.
+    pub(super) fn regex_walk_ends_for_diff(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
+        stop_at_full: bool,
     ) -> Vec<(usize, RegexCaptures)> {
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, true)
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, stop_at_full)
     }
 
     /// Backtracking match returning the complete-match end positions (with
@@ -906,8 +892,11 @@ impl Interpreter {
                 let named_zero_capture =
                     !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
                         && !token.subrule_call_capture;
-                if token.frugal && !token.ratchet {
-                    // Frugal: prefer zero matches — try zero first.
+                if token.frugal {
+                    // Frugal: prefer zero matches — try zero first. Ratchet
+                    // does not change that (raku: `"ab" ~~ /:r a?? ab/`
+                    // matches); it only commits the atom to its first
+                    // candidate below.
                     if self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -957,7 +946,7 @@ impl Interpreter {
                 }
                 // Greedy: the zero candidate is tried last. A ratcheted `?`
                 // takes it only when the atom did not match at all.
-                if (!token.ratchet && !token.frugal) || (token.ratchet && !any_candidate) {
+                if !token.frugal && (!token.ratchet || !any_candidate) {
                     return self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -1146,8 +1135,9 @@ impl Interpreter {
         if zero_or_one {
             Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
         }
-        // Frugal `??`: the zero-width arm is preferred, so it goes first.
-        let zero_first = zero_or_one && token.frugal && !token.ratchet;
+        // Frugal `??`: the zero-width arm is preferred, so it goes first, under
+        // ratchet too (raku: `"ab" ~~ /:r [a||x]?? ab/` matches).
+        let zero_first = zero_or_one && token.frugal;
         if zero_first
             && self.walk_seqalt_zero(
                 ctx,
