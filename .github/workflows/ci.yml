@@ -842,10 +842,17 @@ jobs:
       # model) under the job, which would turn a toolchain update into what
       # looks like a soundness regression — on a required check. Bump this
       # deliberately, in its own PR, and read the diff in Miri's behaviour.
-      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
-        with:
-          toolchain: nightly-2026-08-01
-          components: miri, rust-src
+      #
+      # Installed with rustup directly rather than dtolnay/rust-toolchain:
+      # Dependabot re-pins that action to the SHA of its newest *version*
+      # branch (e.g. `1.98.1`), and a version branch ignores the `toolchain:`
+      # input and installs that stable release, which ships no Miri (the grouped
+      # actions bump PR #10433 failed exactly so).
+      - name: Install pinned nightly with Miri
+        run: |
+          rustup toolchain install nightly-2026-08-01 --profile minimal \
+            --component miri --component rust-src --no-self-update
+          rustup default nightly-2026-08-01
 
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
