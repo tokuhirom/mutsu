@@ -590,7 +590,7 @@ impl Interpreter {
     /// Is the right-hand side of a `<name=…>` alias an interpolation — a
     /// scalar (`$var`, `$*dyn`) or a `{ … }` code block — rather than a rule
     /// name? Such a target names no rule, so the alias is its only capture.
-    pub(super) fn is_interpolated_alias_target(rhs: &str) -> bool {
+    pub(crate) fn is_interpolated_alias_target(rhs: &str) -> bool {
         (rhs.starts_with('{') && rhs.ends_with('}'))
             || rhs.strip_prefix('$').is_some_and(|rest| {
                 rest.strip_prefix(['*', '?'])
