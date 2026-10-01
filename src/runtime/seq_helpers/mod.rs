@@ -4,3 +4,5 @@ mod role_type;
 mod seq_arithmetic;
 mod signature_helpers;
 mod smart_match;
+
+pub(crate) use smart_match::RegexClosureBinding;

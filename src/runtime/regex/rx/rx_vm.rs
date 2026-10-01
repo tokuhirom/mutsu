@@ -60,6 +60,8 @@ impl Interpreter {
         seed: Option<RegexCaptures>,
         scratch: &mut Scratch,
     ) -> Option<(usize, RegexCaptures)> {
+        // The closure scopes this run installs (`rx_scope`).
+        let mut scopes = super::rx_scope::Scopes::default();
         let Scratch {
             regs,
             reg_trail,
@@ -362,6 +364,28 @@ impl Interpreter {
                         );
                         pc += 1;
                         enter_cands!(cands)
+                    }
+                    // Cost: O(b), b = the scope's bindings (`rx_scope_enter`).
+                    RxOp::ScopeEnter { atom, slot } => {
+                        let RegexAtom::CaptureIsolatedGroupScoped(_, scope) =
+                            &program.atoms[atom as usize]
+                        else {
+                            debug_assert!(false, "a ScopeEnter op names a scoped group");
+                            break 'run None;
+                        };
+                        let k = self.rx_scope_enter(&mut scopes, scope);
+                        set_reg!(slot, k);
+                        reg_trail.push((super::rx_scope::UNDO_ENTER, k));
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(b), b = the scope's bindings (`rx_scope_exit`).
+                    RxOp::ScopeExit { slot } => {
+                        let k = reg!(slot);
+                        self.rx_scope_exit(&mut scopes, k);
+                        reg_trail.push((super::rx_scope::UNDO_EXIT, k));
+                        pc += 1;
+                        true
                     }
                     // Cost: one all-ends run of the body over the stripped subject
                     // (`regex_match_ends_from_caps_in_pkg`), O(e) to map its e ends
@@ -986,9 +1010,15 @@ impl Interpreter {
                     if let Some(delta) = cand_delta {
                         levels.edit(|s| s.merge_delta(delta));
                     }
-                    while reg_trail.len() > mark.reg {
-                        let (i, old) = reg_trail.pop().expect("register trail entry");
-                        regs[i] = old;
+                    while let Some((i, old)) = (reg_trail.len() > mark.reg)
+                        .then(|| reg_trail.pop())
+                        .flatten()
+                    {
+                        if i >= super::rx_scope::UNDO_EXIT {
+                            self.rx_scope_undo(&mut scopes, i, old);
+                        } else {
+                            regs[i] = old;
+                        }
                     }
                     // Windows and frames opened after this choice point are dead.
                     if FRAMES {
@@ -1076,6 +1106,7 @@ impl Interpreter {
             fmarks.clear();
             frames.clear();
         }
+        self.rx_scopes_unwind(&mut scopes);
         super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }
