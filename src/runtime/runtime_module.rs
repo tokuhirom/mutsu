@@ -777,6 +777,8 @@ impl Interpreter {
                     | "MONKEY"
                     | "newline"
                     | "soft"
+                    // `use worries`: a parse-time warning toggle (see the parser).
+                    | "worries"
                     | "fatal"
                     | "oo"
                     | "class"
