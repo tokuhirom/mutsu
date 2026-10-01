@@ -603,15 +603,17 @@ impl Compiler {
             // A range / sequence / repetition operator builds a LIST of
             // indices (`@a[2 ..^ 4] = @o`, `@a[^2] = @o`), so it is a slice
             // even though it is a single `Binary` node (#10370).
-            Expr::Binary { op, .. } => !matches!(
-                op,
-                TokenKind::DotDot
-                    | TokenKind::DotDotCaret
-                    | TokenKind::CaretDotDot
-                    | TokenKind::CaretDotDotCaret
-                    | TokenKind::DotDotDot
-                    | TokenKind::DotDotDotCaret
-            ) && !matches!(op, TokenKind::Ident(name) if name == "xx"),
+            Expr::Binary { op, .. } => {
+                !matches!(
+                    op,
+                    TokenKind::DotDot
+                        | TokenKind::DotDotCaret
+                        | TokenKind::CaretDotDot
+                        | TokenKind::CaretDotDotCaret
+                        | TokenKind::DotDotDot
+                        | TokenKind::DotDotDotCaret
+                ) && !matches!(op, TokenKind::Ident(name) if name == "xx")
+            }
             Expr::Var(_) | Expr::Unary { .. } => true,
             _ => false,
         };
