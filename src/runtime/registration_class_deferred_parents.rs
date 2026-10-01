@@ -45,7 +45,7 @@ pub(super) struct DeferredParentCx<'a> {
     /// Every declared parent in source order (header `is` and body `also is`).
     pub(super) source_parents: &'a [String],
     pub(super) class_lang_rev: &'a str,
-    pub(super) is_hoisted_shell: bool,
+    pub(super) is_hoisted_shell: super::registration_class::HoistedShell,
     pub(super) composed_roles_list: &'a mut Vec<String>,
     pub(super) direct_composed_roles: &'a mut Vec<String>,
 }

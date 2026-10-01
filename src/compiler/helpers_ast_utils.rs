@@ -795,23 +795,7 @@ impl Compiler {
                 self.in_unit_package = true;
             }
             if !seen_runtime_stmt {
-                // Declaration/pragma statements register symbols but run no
-                // user code; anything else may forward-reference a later type.
-                seen_runtime_stmt = !matches!(
-                    stmt,
-                    Stmt::SetLine(_)
-                        | Stmt::Use { .. }
-                        | Stmt::No { .. }
-                        | Stmt::Need { .. }
-                        | Stmt::Import { .. }
-                        | Stmt::SubDecl { .. }
-                        | Stmt::ProtoDecl { .. }
-                        | Stmt::TokenDecl { .. }
-                        | Stmt::ClassDecl { .. }
-                        | Stmt::RoleDecl { .. }
-                        | Stmt::EnumDecl { .. }
-                        | Stmt::SubsetDecl { .. }
-                );
+                seen_runtime_stmt = !Self::runs_no_user_code(stmt);
                 continue;
             }
             match stmt {
@@ -821,8 +805,8 @@ impl Compiler {
                     name_expr: None,
                     body,
                     ..
-                } if !Self::is_stub_class_body(body) => self.emit_type_decl_shell(stmt),
-                Stmt::RoleDecl { .. } => self.emit_type_decl_shell(stmt),
+                } if !Self::is_stub_class_body(body) => self.emit_type_decl_shell(stmt, false),
+                Stmt::RoleDecl { .. } => self.emit_type_decl_shell(stmt, false),
                 _ => {}
             }
         }
@@ -830,12 +814,37 @@ impl Compiler {
         self.in_unit_package = original_in_unit_package;
     }
 
+    /// Whether a unit-level statement only declares or imports: it registers
+    /// symbols but runs no user code, so nothing can forward-reference a
+    /// later type while it runs.
+    // Cost: O(1).
+    pub(super) fn runs_no_user_code(stmt: &Stmt) -> bool {
+        matches!(
+            stmt,
+            Stmt::SetLine(_)
+                | Stmt::Use { .. }
+                | Stmt::No { .. }
+                | Stmt::Need { .. }
+                | Stmt::Import { .. }
+                | Stmt::SubDecl { .. }
+                | Stmt::ProtoDecl { .. }
+                | Stmt::TokenDecl { .. }
+                | Stmt::ClassDecl { .. }
+                | Stmt::RoleDecl { .. }
+                | Stmt::EnumDecl { .. }
+                | Stmt::SubsetDecl { .. }
+        )
+    }
+
     /// Emit the `__hoisted` declaration-only shell registration of one
     /// class/role declaration, qualified against the compiler's current
     /// package (see [`Self::hoist_type_decl_shells`]). A class keeps only the
     /// declaration subset of its body; a role keeps its whole body, whose
-    /// statements only run when the role is composed.
-    pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt) {
+    /// statements only run when the role is composed. A `nested` shell (one
+    /// of a declaration nested in code, `hoist_nested_type_decl_shells`) is
+    /// also marked `__hoisted_nested`: its composition is the compile-time
+    /// one, see `HoistedShell::Nested`.
+    pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt, nested: bool) {
         let keep_trait =
             |t: &str| t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED");
         let mut shell = self.qualify_decl_name(stmt);
@@ -848,6 +857,9 @@ impl Compiler {
                 *body = Self::type_decl_shell_body(body);
                 custom_traits.retain(|(t, _)| keep_trait(t));
                 custom_traits.push(("__hoisted".to_string(), None));
+                if nested {
+                    custom_traits.push(("__hoisted_nested".to_string(), None));
+                }
                 self.add_class_decl_plan(&shell)
             }
             Stmt::RoleDecl { custom_traits, .. } => {

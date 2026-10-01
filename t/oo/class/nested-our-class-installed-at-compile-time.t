@@ -4,7 +4,7 @@ use Test;
 # its package at compile time, whether or not the code declaring it ever
 # runs (#10470).
 
-plan 12;
+plan 17;
 
 sub never-called { class NeverCalled { method m { 42 } } }
 is NeverCalled.^name, 'NeverCalled', 'class in an uncalled sub is installed';
@@ -38,3 +38,24 @@ ok Child.^mro.map(*.^name).first('Int'), 'parent of a nested class is known';
 
 sub uses-own { class Own { method v { 3 } }; Own.v }
 is uses-own(), 3, 'the in-place registration still works from inside the routine';
+
+# The nested class is composed once, at compile time: its role's body runs
+# once, not again on each entry of the routine, and a role declared earlier
+# at unit level is already there to compose.
+role CountedRole { $GLOBAL::counted-role-runs++; method c { 'c' } }
+sub declares-counted { class CountedClass does CountedRole { } }
+is $GLOBAL::counted-role-runs, 1, 'role body ran once at compile time';
+is CountedClass.c, 'c', 'the uncalled routine\'s class composed the earlier role';
+declares-counted() for ^2;
+is $GLOBAL::counted-role-runs, 1, 'and does not run again when the routine runs';
+
+# A parameterized role re-registered on each routine entry closes over that
+# entry's lexicals.
+sub make-param-reader($x) {
+    my $captured = $x;
+    role EntryReader[::T] { method value() { $captured } }
+    class EntryComposed does EntryReader[Int] { }
+    EntryComposed.new;
+}
+is make-param-reader(1).value, 1, 'parameterized role method sees the first entry';
+is make-param-reader(2).value, 2, 'and the second entry';

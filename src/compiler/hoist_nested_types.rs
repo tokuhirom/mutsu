@@ -128,9 +128,18 @@ impl Compiler {
     /// class/role declared inside code anywhere in the unit (see the module
     /// doc comment). Only a mainline unit runs this pass: a routine body is
     /// part of a unit that already shelled its nested declarations.
+    ///
+    /// The shells are emitted in source order, the order Rakudo composes the
+    /// types in at compile time. A nested declaration may compose a role or
+    /// inherit a class declared at unit level before it (`role R { };
+    /// sub f { class C does R { } }`), and a unit-level type that only
+    /// declarations precede registers in place without a forward shell
+    /// (`hoist_type_decl_shells`), so it would not exist yet at the head of
+    /// the unit. Such a type gets a shell of its own here, ahead of the
+    /// nested ones that follow it.
     // Cost: O(n), n = size of the unit's AST.
     pub(super) fn hoist_nested_type_decl_shells(&mut self, stmts: &[Stmt]) {
-        let found = {
+        let per_stmt: Vec<Vec<(Option<String>, Stmt)>> = {
             let qualify_outer = |name: &str| self.qualify_package_name(name);
             let mut collector = NestedTypeDecls {
                 packages: Vec::new(),
@@ -138,30 +147,67 @@ impl Compiler {
                 found: Vec::new(),
                 qualify_outer: &qualify_outer,
             };
-            for stmt in stmts {
-                collector.visit_stmt(stmt);
-            }
-            collector.found
+            stmts
+                .iter()
+                .map(|stmt| {
+                    collector.visit_stmt(stmt);
+                    std::mem::take(&mut collector.found)
+                })
+                .collect()
         };
-        if found.is_empty() {
+        let Some(last) = per_stmt.iter().rposition(|found| !found.is_empty()) else {
             return;
-        }
+        };
         let original_package = self.current_package.clone();
         let original_in_unit_package = self.in_unit_package;
-        for (package, decl) in &found {
-            match package {
-                Some(package) => {
-                    self.current_package = package.clone();
+        let mut in_prefix = true;
+        for (i, stmt) in stmts[..=last].iter().enumerate() {
+            if let Stmt::Package {
+                name,
+                is_unit: true,
+                ..
+            } = stmt
+            {
+                // As in `hoist_type_decl_shells`: the rest of the scope is in
+                // the unit package.
+                self.current_package = self.qualify_package_name(&name.resolve());
+                self.in_unit_package = true;
+            }
+            let (package, in_unit_package) = (self.current_package.clone(), self.in_unit_package);
+            in_prefix = in_prefix && Self::runs_no_user_code(stmt);
+            if in_prefix && i < last && Self::is_shellable_unit_type_decl(stmt) {
+                self.emit_type_decl_shell(stmt, true);
+            }
+            for (nested_package, decl) in &per_stmt[i] {
+                if let Some(nested_package) = nested_package {
+                    self.current_package = nested_package.clone();
                     self.in_unit_package = true;
                 }
-                None => {
-                    self.current_package = original_package.clone();
-                    self.in_unit_package = original_in_unit_package;
-                }
+                self.emit_type_decl_shell(decl, true);
+                self.current_package = package.clone();
+                self.in_unit_package = in_unit_package;
             }
-            self.emit_type_decl_shell(decl);
         }
         self.current_package = original_package;
         self.in_unit_package = original_in_unit_package;
+    }
+
+    /// Whether a unit-level declaration is one a shell can stand in for: an
+    /// `our`-scoped, statically named, non-stub class, or an `our` role.
+    // Cost: O(len(body)) for the stub check.
+    fn is_shellable_unit_type_decl(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::ClassDecl {
+                is_lexical: false,
+                is_unit: false,
+                name_expr: None,
+                body,
+                ..
+            } => !Self::is_stub_class_body(body),
+            Stmt::RoleDecl { custom_traits, .. } => {
+                !custom_traits.iter().any(|(t, _)| t == "__my_scoped")
+            }
+            _ => false,
+        }
     }
 }

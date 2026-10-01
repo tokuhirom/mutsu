@@ -381,9 +381,15 @@ impl Interpreter {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
-            let is_hoisted_shell = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted");
+            let has_trait = |name: &str| custom_traits.iter().any(|(t, _)| t == name);
+            let hoisted_shell = if has_trait("__hoisted_nested") {
+                crate::runtime::HoistedShell::Nested
+            } else if has_trait("__hoisted") {
+                crate::runtime::HoistedShell::Forward
+            } else {
+                crate::runtime::HoistedShell::No
+            };
+            let is_hoisted_shell = hoisted_shell.is_shell();
             // A DECLARE'd class can use its HOW while the class body is being
             // registered.  Red's `is relationship` attribute trait is one
             // such case: its trait handler calls `.^add-relationship` on the
@@ -436,7 +442,7 @@ impl Interpreter {
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
                         body_plan,
-                        is_hoisted_shell,
+                        is_hoisted_shell: hoisted_shell,
                     },
                 )
             )
