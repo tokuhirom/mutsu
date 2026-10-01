@@ -499,6 +499,7 @@ fn every_variant_roundtrips_losslessly() {
             source_tree: None,
             signature: None,
             topic: None,
+            declared_source: None,
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

@@ -1580,6 +1580,13 @@ impl Interpreter {
                 {
                     Some(type_owner)
                 }
+                // A `proto token name {*}` is keyed under the grammar that
+                // owns its `:sym<>` candidates, like the tokens above.
+                crate::opcode::DeferredBodyOpKind::Plain
+                    if matches!(op.raw, Stmt::ProtoToken { .. }) =>
+                {
+                    Some(regex_owner)
+                }
                 crate::opcode::DeferredBodyOpKind::Plain => None,
             };
             let is_use_or_need = matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });

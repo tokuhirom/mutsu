@@ -302,6 +302,13 @@ impl Interpreter {
                 "X::AdHoc.new(payload => {payload_raku})"
             ))));
         }
+        // A grammar `token`/`rule`/`regex` method object (`.^lookup`,
+        // `.^method_table`) gists as its declaration source.
+        if method == "gist"
+            && let Some(src) = attributes.as_map().get("__mutsu_regex_source")
+        {
+            return Some(Ok(src.clone()));
+        }
         if method == "gist"
             && class_name.resolve() != "Pod::Block::Declarator"
             && self.is_pod_block_instance(target)

@@ -2845,6 +2845,9 @@ pub struct RegexClosure {
     /// (#9396); a `$_` held in a local slot is captured by value.
     /// `None` means "use the `$_` visible where the regex is boolified".
     pub topic: Option<Value>,
+    /// The verbatim declaration text (`token foo { ... }`) of a grammar
+    /// `token`/`rule`/`regex` declaration -- what `Regex.gist` prints.
+    pub declared_source: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
