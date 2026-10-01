@@ -140,18 +140,21 @@ impl Interpreter {
         if candidates.is_empty() {
             return None;
         }
-        // `:m` remaps positions across the whole result set; an inherited `:i`
-        // needs the body compiled under it.
-        if candidates
-            .iter()
-            .any(|(parsed, _, _)| parsed.ignore_mark || (ic && !parsed.ignore_case))
-        {
+        // `:m` remaps positions across the whole result set.
+        if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
             return None;
         }
         // Several candidates without a proto dedup their ends across each
         // other; a mix of both is not a shape the walk's proto dispatch names.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
+            return None;
+        }
+        // The walk's eager arm scopes the caller's `:i` over a proto candidate's
+        // body (`subrule_candidate_ends`), which needs the body compiled under it:
+        // that call bridges. A plain call is the walk's streamed shape, which
+        // does not inherit `:i` — and neither does rakudo.
+        if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
             return None;
         }
         if self.subrule_has_qq_thunks(&spec.lookup_name, pkg) {
