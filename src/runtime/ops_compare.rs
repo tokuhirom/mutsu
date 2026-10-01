@@ -32,6 +32,9 @@ impl Interpreter {
             ValueView::Array(items, ..) => items.items_with_default().into_owned(),
             ValueView::Seq(items) => items.to_vec(),
             ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+            // An itemized hash (`$(%h)`, `%h.item`) is ONE list element, like the
+            // itemized-Array arm above (mirrors `utils::value_to_list`).
+            ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
             ValueView::Hash(items) => items
                 .iter()
                 .map(|(k, v)| items.typed_pair(k, v.clone()))

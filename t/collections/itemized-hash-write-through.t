@@ -1,6 +1,6 @@
 use Test;
 
-plan 32;
+plan 45;
 
 # An itemized hash (`$(%h)`, `%h.item`, `${...}`) is still THE hash: element
 # assignment through a scalar that holds it, through the array element that
@@ -119,6 +119,25 @@ plan 32;
     is (1, %h.item, 3).elems, 3, '%h.item is ONE item in a list';
     is [%h.item].elems, 1, '%h.item is ONE element of an array literal';
     is (%h.item,).raku, '(${:a(1)},)', 'a List holding %h.item renders the container';
+}
+
+# --- as a listop argument an itemized hash is ONE item, a bare one flattens ----
+# (the `Scalar` wrapper `.item` used to add was what stopped these flattening)
+{
+    my %h = a => 1, b => 2, c => 3;
+    is (map { .WHAT.gist }, $(%h)).join(' '), '(Hash)', 'map &f, $(%h): one Hash';
+    is (map { .WHAT.gist }, %h.item).join(' '), '(Hash)', 'map &f, %h.item: one Hash';
+    is (map { .WHAT.gist }, ${"a" => 1, "b" => 2}).join(' '), '(Hash)', 'map &f, ${...}: one Hash';
+    is (map { .WHAT.gist }, %h).elems, 3, 'map &f, %h: a bare hash still flattens to its pairs';
+    is (grep { True }, $(%h)).elems, 1, 'grep: an itemized hash is one item';
+    is (first { True }, $(%h)).^name, 'Hash', 'first: an itemized hash is one item';
+    is (first { True }, %h).^name, 'Pair', 'first: a bare hash still flattens to its pairs';
+    is Set.new($(%h)).elems, 1, 'Set.new($(%h)) has one element';
+    is Set.new(%h).elems, 3, 'Set.new(%h) still flattens a bare hash';
+    is Bag.new($(%h)).elems, 1, 'Bag.new($(%h)) has one element';
+    is Mix.new($(%h)).elems, 1, 'Mix.new($(%h)) has one element';
+    is (set $(%h)).elems, 1, 'set $(%h) has one element';
+    is (bag $(%h)).elems, 1, 'bag $(%h) has one element';
 }
 
 # --- a method call decontainerizes its invocant -------------------------------

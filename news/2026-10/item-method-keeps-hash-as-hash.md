@@ -20,10 +20,20 @@ the subscript-assign lanes do not recognise as a hash. They treated the variable
 yet" and replaced it. The arm now delegates to `Value::item()`, so there is one place that decides
 how a value records its container, and an array, a hash and a slip all behave the same way.
 
+Because the `Scalar` box is gone, the consumers that flatten a bare hash into its pairs had to
+learn to leave an itemized one whole, exactly as they already did for an itemized Array: the
+`map`/`first` listops, `Set.new`/`Bag.new`/`Mix.new` and the `.Set`/`.Bag`/`.Mix` element
+flattening, the `set`/`bag`/`mix` listops, and `Interpreter::value_to_list` (a duplicate of
+`utils::value_to_list` that lacked the arm). `map { ... }, $(%h)` and `Set.new($(%h))` therefore
+still see ONE item, and a `$`-held hash now does too (`my $x = %h.item; Set.new($x).elems` was 3).
+Two neighbouring divergences this surfaced are filed separately:
+[#10660](https://github.com/tokuhirom/mutsu/issues/10660) and
+[#10661](https://github.com/tokuhirom/mutsu/issues/10661).
+
 A method call decontainerizes its invocant in rakudo, and `Hash.Hash` is the hash itself, so
 `.Hash` on a `$`-held hash now returns it without the `$` (`my $s = %h; $s.Hash.raku` is
 `{:a(1)}`, as `.hash` already did). `[$y, $y].raku` for a `$y` that held `%h.item` also now matches
 rakudo, because the element is a plain itemized hash instead of a `Scalar` around one.
 
-Pinned by `t/collections/itemized-hash-write-through.t` (32 assertions, every one also
+Pinned by `t/collections/itemized-hash-write-through.t` (45 assertions, every one also
 checked against `raku`). Closes #10601.
