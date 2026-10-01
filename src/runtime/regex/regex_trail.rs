@@ -305,9 +305,26 @@ impl CapStore {
 
     /// Append one span-bearing entry under a capture name.
     pub(super) fn push_named_node(&mut self, key: &str, sub: Arc<CapNode>) {
-        let key = crate::symbol::Symbol::intern(key);
-        self.record_named_key(key);
-        self.caps.named.slot_mut(key).nodes.push(sub);
+        self.push_named_node_sym(crate::symbol::Symbol::intern(key), sub);
+    }
+
+    /// [`Self::push_named_node`] for an already interned name.
+    // Cost: O(n) amortized, n = the names this level has filed.
+    pub(super) fn push_named_node_sym(&mut self, key: crate::symbol::Symbol, sub: Arc<CapNode>) {
+        let (present, slot) = self.caps.named.slot_entry(key);
+        self.trail.push(Undo::NamedTrunc {
+            key,
+            len: slot.nodes.len(),
+            present,
+            quantified: slot.quantified,
+        });
+        slot.nodes.push(sub);
+    }
+
+    /// Set the node's `make` value (last write wins, as in raku).
+    // Cost: O(1).
+    pub(super) fn set_ast(&mut self, ast: Value) {
+        self.trail.push(Undo::Ast(self.caps.ast.replace(ast)));
     }
 
     /// Mark a name as quantified (renders as an Array even for 0/1 entries).

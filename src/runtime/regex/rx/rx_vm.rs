@@ -11,8 +11,9 @@
 //! A `<subrule>` call that resolves to a plain compiled rule (`rx_call`)
 //! switches the loop to the callee's program in a new frame and capture level;
 //! the callee's `Match` is the return, which files the callee's captures as
-//! the subrule's own Match (`build_named_candidates_from_inner`, the walk's
-//! own builder) and continues the caller.
+//! the subrule's own Match straight into the caller's capture level
+//! (`file_named_candidate`, the filing the walk's delta builder makes too) and
+//! continues the caller.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -690,9 +691,10 @@ impl Interpreter {
                         }
                     }
                     // Cost: O(c), c = this level's captures (one snapshot); in a
-                    // callee frame also the one `build_named_candidates_from_inner`
-                    // call that files them as the subrule's Match, O(1) plus the
-                    // callee's own captures moved, not copied.
+                    // callee frame also the one `file_named_candidate` call that
+                    // files them as the subrule's Match, O(n) for the n names the
+                    // caller's level has filed, the callee's own captures moved,
+                    // not copied.
                     RxOp::Match => match if FRAMES { frame.clone() } else { None } {
                         None => match &mut goal {
                             Goal::First => break 'run Some((pos, root_snapshot!())),
@@ -750,14 +752,18 @@ impl Interpreter {
                                     debug_assert!(false, "a frame's site is a `<subrule>` atom");
                                     break 'run None;
                                 };
-                                let (_, delta) = self.build_named_candidate_from_inner(
-                                    pos,
-                                    inner,
-                                    f.entry_pos,
-                                    name.spec(),
-                                    None,
-                                );
-                                let delta = Some(delta);
+                                // Filed straight into the caller's level, which
+                                // the close above made the innermost one again.
+                                levels.edit(|s| {
+                                    self.file_named_candidate(
+                                        s,
+                                        pos,
+                                        inner,
+                                        f.entry_pos,
+                                        name.spec(),
+                                        None,
+                                    )
+                                });
                                 frame = f.parent.clone();
                                 match &frame {
                                     Some(p) => {
@@ -778,9 +784,6 @@ impl Interpreter {
                                     reg_trail.truncate(f.trail_base);
                                     regs.truncate(f.base);
                                     ends.truncate(f.ends_base);
-                                }
-                                if let Some(delta) = delta {
-                                    levels.edit(|s| s.merge_delta(delta));
                                 }
                                 continue 'run;
                             } else {
