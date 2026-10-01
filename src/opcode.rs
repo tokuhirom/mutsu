@@ -10760,6 +10760,12 @@ impl CompiledCode {
                     | OpCode::Note(_)
             );
         }
+        // `s///` / `tr///` write the topic without naming it, so a block
+        // `{ s/a/b/ }` called on a variable must alias `$_` to it just as
+        // `{ $_ = ... }` does (List::MoreUtils `apply`).
+        if !self.writes_topic && matches!(op, OpCode::Subst { .. } | OpCode::Transliterate { .. }) {
+            self.writes_topic = true;
+        }
         if !self.writes_topic
             && let Some(idx) = self.op_name_write_const_idx(&op)
             && let Some(ValueView::Str(name)) = self.constants.get(idx as usize).map(Value::view)
