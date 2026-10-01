@@ -150,12 +150,13 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         *rest_out = after_star;
     } else if let Some(after_slash) = r.strip_prefix('/') {
         // Regex: /pattern/
-        let end = after_slash
-            .find('/')
-            .ok_or_else(|| PError::expected("closing / in handles regex"))?;
-        let pattern = after_slash[..end].to_string();
-        specs.push(HandleSpec::Regex(pattern));
-        *rest_out = &after_slash[end + 1..];
+        // Scan with the regex-literal scanner so `\/`, quoted strings and
+        // character classes containing `/` do not end the pattern early.
+        let (pattern, rest) =
+            crate::parser::primary::regex::scan_to_delim(after_slash, '/', '/', false)
+                .ok_or_else(|| PError::expected("closing / in handles regex"))?;
+        specs.push(HandleSpec::Regex(pattern.to_string()));
+        *rest_out = rest;
     } else if let Some(after_paren) = r.strip_prefix('(') {
         // Parenthesized list: (:name<target>, :name2('target2'))
         let mut cursor = after_paren;
