@@ -160,9 +160,6 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     prologue
 }
 
-/// The lexical names a unit declares at its top level, in `VarDecl` naming
-/// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
-/// in the unit's frame.
 /// The variable names a unit mentions outside its BEGIN bodies.
 ///
 /// A BEGIN that is lifted runs in a block of its own, so a variable it
@@ -235,14 +232,20 @@ fn strict_pragma(stmt: &Stmt) -> Option<bool> {
     }
 }
 
+/// The lexical names a unit declares at its top level, in `VarDecl` naming
+/// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
+/// in the unit's frame.
+///
+/// A `unit module` body is not looked into: a BEGIN in a package body is never
+/// lifted (see `nested::walk`), so no lifted BEGIN reads its lexicals.
+// Cost: O(n), n = number of statements in the unit's own scope.
 fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
-    for stmt in stmts {
+    for stmt in crate::ast::scope_members(stmts) {
         match stmt {
             Stmt::VarDecl { name, .. } => {
                 names.insert(name.clone());
             }
-            Stmt::SyntheticBlock(inner) => names.extend(unit_lexical_names(inner)),
             Stmt::SubDecl { name, .. } => {
                 names.insert(format!("&{}", name.resolve()));
             }

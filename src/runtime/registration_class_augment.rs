@@ -164,13 +164,6 @@ impl Interpreter {
         self.set_current_package(name.to_string());
 
         // Process body statements and add methods/attributes to the existing class
-        let flattened_body: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
         // ADR-0019 D3-6: BUILD/TWEAK's `:$!attr` validation (below) needs the
         // full set of attribute names visible on this class — those already
         // registered plus any this augmentation itself declares — matching
@@ -183,7 +176,7 @@ impl Interpreter {
             .get(name)
             .map(|cd| cd.attributes.iter().map(|a| a.name.clone()).collect())
             .unwrap_or_default();
-        for stmt in &flattened_body {
+        for stmt in crate::ast::scope_members(body) {
             if let Stmt::HasDecl { .. } = stmt {
                 own_attrs.insert(
                     crate::opcode::CompiledAttrDecl::from_stmt(
@@ -194,7 +187,7 @@ impl Interpreter {
                 );
             }
         }
-        for stmt in flattened_body {
+        for stmt in crate::ast::scope_members(body) {
             match stmt {
                 Stmt::MethodDecl { .. } => {
                     // ADR-0019 D3-4: shared typed mirror of `Stmt::MethodDecl`

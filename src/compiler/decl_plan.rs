@@ -154,11 +154,7 @@ impl Compiler {
         &self,
         body: &[Stmt],
     ) -> Vec<Option<crate::opcode::CompiledDeclExpr>> {
-        body.iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
+        crate::ast::scope_members(body)
             .filter_map(|stmt| match stmt {
                 Stmt::MethodDecl { name_expr, .. } => {
                     Some(name_expr.as_ref().map(|e| self.compile_decl_expr(e)))
@@ -353,12 +349,7 @@ impl Compiler {
                 _ => None,
             })
             .collect::<std::collections::HashMap<_, _>>();
-        let does_args: Vec<Option<&Vec<Expr>>> = body
-            .iter()
-            .flat_map(|stmt| match stmt {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
+        let does_args: Vec<Option<&Vec<Expr>>> = crate::ast::scope_members(body)
             .filter_map(|stmt| match stmt {
                 Stmt::DoesDecl { args, .. } => Some(args.as_ref()),
                 _ => None,
@@ -487,13 +478,7 @@ impl Compiler {
         apply_auto_positional_slurpy: bool,
         is_hoisted_shell: bool,
     ) -> Vec<Option<Symbol>> {
-        let flattened: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
+        let flattened = crate::ast::scope_members(body);
         let package_name = package_name.map(str::to_string);
         let mut keys = Vec::new();
         // The type body's own `Stmt::SetLine` markers are what tell each method
@@ -591,13 +576,7 @@ impl Compiler {
         &self,
         body: &[Stmt],
     ) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
-        let flattened: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
+        let flattened = crate::ast::scope_members(body);
         // Mirrors `compile_method_body_keys`'s `decl_line` walk: the type
         // body's own `Stmt::SetLine` markers are what tell each `has` which
         // line its keyword sits on, so the line has to be tracked here,
@@ -918,11 +897,7 @@ impl Compiler {
     /// which this precompute turns into two typed ops rather than collapsing
     /// them, preserving the walk's exact statement-by-statement shape.
     fn compile_role_parent_ops(&self, body: &[Stmt]) -> Vec<crate::opcode::RoleParentOp> {
-        body.iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
+        crate::ast::scope_members(body)
             .filter_map(|stmt| match stmt {
                 Stmt::DoesDecl {
                     name,
@@ -968,7 +943,7 @@ impl Compiler {
 
     /// Precompile a full `CompiledAttrDecl` for each attribute a role body
     /// declares (ADR-0019 D2b remainder), keyed by attribute name — see
-    /// `compile_class_attr_decls`. Mirrors `role_body_prescan`'s single-level
+    /// `compile_class_attr_decls`. Mirrors `role_body_prescan`'s scope-member
     /// `SyntheticBlock` flatten with no nested-sub surfacing (roles have none
     /// — `walk_role_body`'s own comment confirms it) and includes class-level
     /// (`our`/`my`) attributes, unlike the class side: `role_body_has_decl`
@@ -983,11 +958,7 @@ impl Compiler {
         &self,
         body: &[Stmt],
     ) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
-        body.iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
+        crate::ast::scope_members(body)
             .filter_map(|stmt| match stmt {
                 Stmt::HasDecl { name, .. } => Some((
                     *name,

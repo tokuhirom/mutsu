@@ -131,7 +131,7 @@ impl Interpreter {
     /// by the time this runs.
     ///
     /// `body_plan` (ADR-0019 D7-4/D9) is the sole driver of this walk — it
-    /// is already single-level `SyntheticBlock`-flattened and classified by
+    /// is already `SyntheticBlock`-flattened (`crate::ast::scope_members`) and classified by
     /// the compiler (`crate::opcode::role_body_plan`), so there is no
     /// runtime-side flatten to redo.
     pub(super) fn walk_role_body(

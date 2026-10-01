@@ -107,3 +107,8 @@ a separate decision when the first rewriting pass wants one.
   record (`parser/stmt_ending_brace.rs`) instead of two AST classifiers, `use lib` argument
   decoding is `use_lib_args`, and operator chains are `Expr::flatten_binary_chain` /
   `flatten_meta_chain` (`ast/chains.rs`).
+- **Scope members** (#10468): the ~20 one-scope declaration scans that looked through
+  `SyntheticBlock` by hand (14 one-level `flat_map` copies, 6 private recursions) share
+  `ast::scope_members` (any depth; `unit module` and keep-a-bind-group-whole as explicit
+  options) (120 → 109). A role body now keeps a bind group whole like a class body; a `sub
+  EXPORT` scan no longer collects from an earlier bare block of the hook.

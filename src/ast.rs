@@ -2335,6 +2335,7 @@ mod chains;
 mod lvalue;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+mod scope_members;
 mod tail;
 mod virtual_call;
 
@@ -2345,6 +2346,7 @@ pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,
     collect_where_assign_placeholders,
 };
+pub(crate) use scope_members::{scope_members, scope_members_mut};
 pub(crate) use tail::{
     TailSkip, is_nil_valued_tail_phaser, last_value_stmt, last_value_stmt_index,
 };
