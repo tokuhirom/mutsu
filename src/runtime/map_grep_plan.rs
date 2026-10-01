@@ -345,9 +345,9 @@ impl Interpreter {
             // consuming frame's binding is an unrelated lexical and is restored.
             let same_binding = c.overwrites
                 && plan.code.free_var_writes.contains(&c.name)
-                && current.as_ref().is_some_and(|cur| {
-                    crate::runtime::utils::container_identity_identical(cur, v)
-                });
+                && current
+                    .as_ref()
+                    .is_some_and(|cur| crate::runtime::utils::container_identity_identical(cur, v));
             if !c.is_temporary && !same_binding {
                 saved.push((c.name, current));
             }
