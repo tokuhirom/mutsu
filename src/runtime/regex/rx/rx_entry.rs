@@ -212,8 +212,24 @@ impl Interpreter {
         pkg: Symbol,
         end: Option<usize>,
     ) -> Option<(usize, RegexCaptures)> {
+        self.rx_run_seeded(program, chars, start, pkg, end, None)
+    }
+
+    /// [`Self::rx_run`], with the pattern level starting from `seed` (an
+    /// inline level's captures, `rx_levels::inline_level_caps`) instead of
+    /// empty: a nested run that is part of the enclosing regex.
+    // Cost: as `rx_run`.
+    pub(super) fn rx_run_seeded(
+        &mut self,
+        program: &RxProgram,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        end: Option<usize>,
+        seed: Option<RegexCaptures>,
+    ) -> Option<(usize, RegexCaptures)> {
         let goal = end.map_or(Goal::First, Goal::End);
-        self.rx_run_goal(program, chars, start, pkg, goal)
+        self.rx_run_goal_seeded(program, chars, start, pkg, goal, seed)
     }
 
     fn rx_run_goal(
@@ -224,14 +240,26 @@ impl Interpreter {
         pkg: Symbol,
         goal: Goal<'_>,
     ) -> Option<(usize, RegexCaptures)> {
+        self.rx_run_goal_seeded(program, chars, start, pkg, goal, None)
+    }
+
+    fn rx_run_goal_seeded(
+        &mut self,
+        program: &RxProgram,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        goal: Goal<'_>,
+        seed: Option<RegexCaptures>,
+    ) -> Option<(usize, RegexCaptures)> {
         let _region = crate::profile::enter(crate::profile::Region::Regex);
         let mut scratch = SCRATCH.with(|s| s.borrow_mut().pop()).unwrap_or_default();
         // A program with no call never builds a frame: its loop is compiled
         // without the frame machinery.
         let result = if program.has_call {
-            self.rx_run_in::<true>(program, chars, start, pkg, goal, &mut scratch)
+            self.rx_run_in::<true>(program, chars, start, pkg, goal, seed, &mut scratch)
         } else {
-            self.rx_run_in::<false>(program, chars, start, pkg, goal, &mut scratch)
+            self.rx_run_in::<false>(program, chars, start, pkg, goal, seed, &mut scratch)
         };
         SCRATCH.with(|s| s.borrow_mut().push(scratch));
         result

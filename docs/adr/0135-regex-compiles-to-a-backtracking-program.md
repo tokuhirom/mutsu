@@ -613,6 +613,38 @@ atom under `** { … }` records one capture per iteration where rakudo records t
 and the scalar `$( $re )` of a Regex value matches the literal text of its source (#10445), besides
 #10417 and #10418 from the second part.
 
+**Slice C, fourth part (#10456): code in a `%` quantifier and in a `&` branch landed.** An
+iteration of a separated quantifier and a conjunction branch still match in a level of their own,
+but when they hold code that level is an *inline* one (`OpenSepIter`, `OpenInline`;
+`rx_levels::inline_level_caps`). It starts with the enclosing level's whole view
+(`inline_capture_view`, flattened) linked as its outer captures, and with the enclosing match
+start and `:my` lexicals. A separated quantifier's iteration also gets the iterations collected so
+far, folded (`rx_sep_fold`, the walk's `SepChainWalk::assemble`), with its own captures folded into
+the atom slots, or into the separator slots for a separator (`merge_positional`). A conjunction's
+later branches run in nested runs seeded with the same view plus the earlier branches' captures
+(`ConjTail { seeded }`, `rx_run_seeded`). The levels close as before. The outer link is stripped,
+so nothing of the view travels out with the captures.
+
+The values are rakudo's (`t/regex/syntax/regex-separated-and-conjunction-code-view.t`). Comparing
+the engines found four walk bugs, fixed in the walk the same way (`regex_match_sep_view.rs`,
+`arm_conjunction_branch_seed`):
+
+- The fold start was relative to the walk level's own captures, so a quantifier in a `[ … ]` after
+  a capture folded into the earlier capture's slot (`inline_visible_positional_len`).
+- An atom did not see the separator just before it.
+- A separator's code saw nothing of the chain, in either the backtracking or the ratcheted scan
+  (`regex_match_sep_ratchet.rs`, split out of `regex_match_sep.rs`).
+- A conjunction's later branch ran under the barrier the first branch's last code atom armed, so it
+  saw neither the enclosing captures nor the earlier branches'.
+
+Two differences from rakudo that both engines share are filed: zero iterations drop the quantifier's
+positional slot (#10534), and a nested separated quantifier's fold sits beside the outer slot
+instead of in it (#10535).
+
+Survey (`scripts/rx-decline-survey.sh`, all of `t/` and the roast whitelist): `separator-code` 7 → 0
+and `conjunction-code` 2 → 0, with 9,900 patterns compiled and 113 declined. D6 agreed with the
+walk on every file of `t/regex/`, `t/grammar/` and the whitelisted `roast/S05-*` (611 files).
+
 **Slice D, first part (#10254): subrule calls landed.**
 
 A `<subrule>` call compiles to one `Call` op carrying its `NamedAtom`; the program stays a pure
