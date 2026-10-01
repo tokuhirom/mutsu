@@ -20,6 +20,15 @@ use crate::regex_tree::{RegexNode, RegexTree, SubruleArgs};
 /// implementation overrides only the hooks it needs and calls the matching
 /// `walk_*_mut` function to keep descending.
 pub(crate) trait VisitMut {
+    /// A statement list: a block, routine, loop or branch body, a regex code
+    /// block. Every `walk_*_mut` hands a body here rather than to
+    /// [`walk_stmts_mut`], so a pass that must see a body as a list — to
+    /// insert, remove or reorder statements, or to look at a statement's
+    /// neighbour — overrides this one hook (ADR-10499 §4).
+    fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        walk_stmts_mut(self, body);
+    }
+
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         super::walk_mut_stmt::walk_stmt_mut(self, stmt);
     }
@@ -217,7 +226,7 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
             code: _,
             body,
             sequential: _,
-        } => walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         RegexNode::Quantified {
             atom,
             quantifier: _,

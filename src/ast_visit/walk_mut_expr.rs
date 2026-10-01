@@ -144,7 +144,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             is_raw: _,
             is_block: _,
             doc: _,
-        } => super::walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Expr::AnonSubParams {
             params: _,
             param_defs,
@@ -158,7 +158,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         } => {
             params_mut(v, param_defs);
             traits_mut(v, custom_traits.as_mut_slice());
-            super::walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Expr::CallOn { target, args } => {
             v.visit_expr_mut(target);
@@ -169,7 +169,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             body,
             is_whatever_code: _,
             param_sigilless: _,
-        } => super::walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Expr::Index {
             target,
             index,
@@ -245,9 +245,9 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         }
         Expr::Call { name: _, args } => exprs_mut(v, args),
         Expr::Try { body, catch } => {
-            super::walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
             if let Some(c) = catch {
-                super::walk_stmts_mut(v, c);
+                v.visit_stmts_mut(c);
             }
         }
         Expr::Reduction { op: _, expr } => v.visit_expr_mut(expr),
@@ -296,7 +296,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             body,
             label: _,
             origin: _,
-        } => super::walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Expr::DoStmt(stmt) => v.visit_stmt_mut(stmt),
         Expr::ControlFlow { kind: _, label: _ } => {}
         Expr::IndirectCodeLookup { package, name: _ } => v.visit_expr_mut(package),

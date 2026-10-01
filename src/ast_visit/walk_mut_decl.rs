@@ -38,7 +38,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             for (_parent, args) in parent_args {
                 exprs_mut(v, args);
             }
-            super::walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::HasDecl {
             name: _,
@@ -108,7 +108,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
                 walk_handle_spec_mut(v, h);
             }
             traits_mut(v, custom_traits);
-            super::walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::RoleDecl {
             name: _,
@@ -124,7 +124,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
         } => {
             params_mut(v, type_param_defs);
             traits_mut(v, custom_traits);
-            super::walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         // Every other variant is walked by `walk_stmt_mut` itself.
         _ => {}

@@ -86,7 +86,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 params_mut(v, alt_defs);
             }
             traits_mut(v, custom_traits);
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::TokenDecl {
             name: _,
@@ -115,7 +115,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             if let Some(tree) = source_regex {
                 walk_regex_tree_mut(v, tree);
             }
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::ProtoToken { name: _ } => {}
         Stmt::TrustsDecl { name: _ } => {}
@@ -125,13 +125,13 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             kind: _,
             is_unit: _,
             is_my: _,
-        } => walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Stmt::PackageRuntimeBody {
             name: _,
             body,
             lexicals: _,
             decl: _,
-        } => walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
@@ -157,7 +157,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_param_mut(p);
             }
             params_mut(v, params_def);
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::Say(items) | Stmt::Put(items) | Stmt::Print(items) | Stmt::Note(items) => {
             exprs_mut(v, items)
@@ -192,7 +192,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         | Stmt::React { body }
         | Stmt::Default(body)
         | Stmt::Catch(body)
-        | Stmt::Control(body) => walk_stmts_mut(v, body),
+        | Stmt::Control(body) => v.visit_stmts_mut(body),
         Stmt::If {
             cond,
             then_branch,
@@ -203,8 +203,8 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             with_kind: _,
         } => {
             v.visit_expr_mut(cond);
-            walk_stmts_mut(v, then_branch);
-            walk_stmts_mut(v, else_branch);
+            v.visit_stmts_mut(then_branch);
+            v.visit_stmts_mut(else_branch);
         }
         Stmt::While {
             cond,
@@ -214,7 +214,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             is_until: _,
         } => {
             v.visit_expr_mut(cond);
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::Loop {
             init,
@@ -231,7 +231,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             for e in [cond, step].into_iter().flatten() {
                 v.visit_expr_mut(e);
             }
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::Whenever {
             supply,
@@ -241,7 +241,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         } => {
             v.visit_expr_mut(supply);
             params_mut(v, param_defs);
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::Last(_label) | Stmt::Next(_label) | Stmt::Redo(_label) => {}
         Stmt::Given {
@@ -256,7 +256,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             is_statement_modifier: _,
         } => {
             v.visit_expr_mut(cond);
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::DocPhaser(inner) => v.visit_stmt_mut(inner),
         Stmt::Label { name: _, stmt } => v.visit_stmt_mut(stmt),
@@ -295,7 +295,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             body,
             does_roles: _,
             is_role: _,
-        } => walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Stmt::SubsetDecl {
             name: _,
             base: _,
@@ -316,7 +316,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             body,
             condition: _,
             end_index: _,
-        } => walk_stmts_mut(v, body),
+        } => v.visit_stmts_mut(body),
         Stmt::ProtoDecl {
             name: _,
             params: _,
@@ -334,7 +334,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             for e in trait_args.iter_mut().filter_map(|(_, a)| a.as_mut()) {
                 v.visit_expr_mut(e);
             }
-            walk_stmts_mut(v, body);
+            v.visit_stmts_mut(body);
         }
         Stmt::Let {
             name: _,
