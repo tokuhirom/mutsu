@@ -169,7 +169,7 @@ impl Interpreter {
                 // those, so they are restored afterwards while a plain assignment
                 // (`EVAL '$a = 999'`, which must write through) is untouched.
                 let eval_shadowed: Vec<(crate::symbol::Symbol, Option<Value>)> =
-                    super::eval_decl_scans::eval_declared_lexical_keys(&stmts)
+                    Self::collect_eval_declared_lexical_keys(&stmts)
                         .into_iter()
                         .map(|key| {
                             let sym = crate::symbol::Symbol::intern(&key);
@@ -345,6 +345,66 @@ impl Interpreter {
         }
     }
 
+    /// The env keys of the `my` lexicals an EVAL'd snippet declares, in the form
+    /// the environment uses (scalars sigil-less, `@`/`%` keeping their sigil).
+    ///
+    /// Only plain `my` declarations count: `our` is package-scoped and `state`
+    /// keeps its own cell, and neither shadows a caller lexical the way a `my`
+    /// does. Nested blocks and loop bodies are walked (a `my` there is even more
+    /// clearly EVAL-scoped), but routine/class bodies are not — their lexicals
+    /// live in their own frame and never reach the caller's pad by this route.
+    fn collect_eval_declared_lexical_keys(stmts: &[Stmt]) -> HashSet<String> {
+        fn env_key(name: &str) -> Option<String> {
+            let name = name.strip_prefix('\\').unwrap_or(name);
+            let key = match name.strip_prefix('$') {
+                // Scalars are stored sigil-less (`$a` -> `"a"`).
+                Some(bare) => bare,
+                None => name,
+            };
+            crate::env::is_plain_user_lexical(key).then(|| key.to_string())
+        }
+        fn walk(stmts: &[Stmt], out: &mut HashSet<String>) {
+            for stmt in stmts {
+                match stmt {
+                    Stmt::VarDecl {
+                        name,
+                        is_state,
+                        is_our,
+                        is_dynamic,
+                        ..
+                    } => {
+                        if !*is_state
+                            && !*is_our
+                            && !*is_dynamic
+                            && let Some(key) = env_key(name)
+                        {
+                            out.insert(key);
+                        }
+                    }
+                    Stmt::For { body, .. }
+                    | Stmt::While { body, .. }
+                    | Stmt::Loop { body, .. }
+                    | Stmt::Block(body)
+                    | Stmt::SyntheticBlock(body)
+                    | Stmt::Default(body)
+                    | Stmt::Catch(body) => walk(body, out),
+                    Stmt::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        walk(then_branch, out);
+                        walk(else_branch, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut out = HashSet::new();
+        walk(stmts, &mut out);
+        out
+    }
+
     /// When EVAL is called inside a class body, method declarations should be
     /// added to the enclosing class rather than lowered to subs. This method
     /// extracts MethodDecl statements and injects them into the current class,
@@ -433,6 +493,45 @@ impl Interpreter {
                 let _ = self.eval_block_value(body);
             }
         }
+    }
+
+    /// Walk bare blocks collecting `our sub` names (package-scoped): two
+    /// `our sub foo` declarations install the same package symbol, so a duplicate
+    /// across sibling blocks (or block vs mainline) is X::Redeclaration. `my sub`
+    /// is lexical and does not conflict across blocks, so it is ignored here.
+    pub(super) fn find_our_routine_redeclaration(
+        stmts: &[Stmt],
+        seen: &mut HashSet<String>,
+    ) -> Option<RuntimeError> {
+        for stmt in stmts {
+            match stmt {
+                Stmt::SubDecl {
+                    name,
+                    multi: false,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(t, _)| t == "__our_scoped") => {
+                    let n = name.resolve().to_string();
+                    if !n.is_empty() && !seen.insert(n.clone()) {
+                        let mut attrs = ValueMap::default();
+                        attrs.insert("symbol".to_string(), Value::str(n.clone()));
+                        attrs.insert("what".to_string(), Value::str("routine".to_string()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!("Redeclaration of routine '{}'", n)),
+                        );
+                        return Some(RuntimeError::typed("X::Redeclaration", attrs));
+                    }
+                }
+                Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                    if let Some(e) = Self::find_our_routine_redeclaration(body, seen) {
+                        return Some(e);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Suggest lexically-declared variable names close to an undeclared
