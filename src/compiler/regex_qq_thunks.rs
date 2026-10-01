@@ -25,7 +25,15 @@ impl Compiler {
         if !qq_thunks.is_empty() {
             captures.get_or_insert_with(Vec::new).extend(qq_thunks);
         }
-        if captures.is_some() || topic.is_some() {
+        // A regex is a code object, so every evaluation of its literal is a
+        // distinct value (`===`, `.WHICH`, `set_name`): it always loads
+        // through `LoadRegexClosure`, which mints a fresh payload, never as
+        // the shared constant.
+        let is_regex = matches!(
+            v.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        );
+        if is_regex || captures.is_some() || topic.is_some() {
             self.code.emit(OpCode::LoadRegexClosure {
                 const_idx: idx,
                 topic,

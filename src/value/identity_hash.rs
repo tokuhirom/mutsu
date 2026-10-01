@@ -192,6 +192,39 @@ mod tests {
         );
     }
 
+    /// Two evaluations of one regex literal are distinct code objects (each
+    /// payload draws its own `RegexId`), but they are the same declaration.
+    #[test]
+    fn regex_evaluations_hash_as_one_declaration() {
+        let adverbs = Value::regex_with_adverbs(crate::value::RegexAdverbs {
+            pattern: std::sync::Arc::new("a".to_string()),
+            global: false,
+            exhaustive: false,
+            overlap: false,
+            repeat: None,
+            nth: None,
+            pos: false,
+            pos_value: None,
+            continue_: false,
+            continue_value: None,
+            ignore_case: true,
+            sigspace: false,
+            samecase: false,
+            samespace: false,
+            source_adverbs: None,
+            captured: None,
+            topic: None,
+            source_tree: None,
+            id: Default::default(),
+        });
+        let plain = Value::regex("a".to_string());
+        for v in [adverbs, plain] {
+            let fresh = v.fresh_regex_code_object();
+            assert_ne!(v.regex_which_id(), fresh.regex_which_id());
+            assert_eq!(fp(&v), fp(&fresh));
+        }
+    }
+
     /// The identity contract: `Int(1) == Num(1.0)` under `PartialEq`, but they
     /// are different declarations, so they must hash apart.
     #[test]

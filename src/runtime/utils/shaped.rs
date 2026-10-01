@@ -292,6 +292,12 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
         (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
+        // A regex is a code object: identical only to an alias of itself, not
+        // to another evaluation of the same literal (`eqv` stays structural).
+        (
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_),
+        ) => left.regex_identity() == right.regex_identity(),
         // `===` is `.WHICH eq .WHICH`: the BASE value's identity plus the
         // composed type. Comparing the raw `overrides` maps could never answer
         // True for two separately-built values, because every role application

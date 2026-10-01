@@ -2268,6 +2268,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         captured: None,
         topic: None,
         source_tree: None,
+        id: Default::default(),
     };
     for adverb in &tree.adverbs {
         if adverb.argument.is_some() {
