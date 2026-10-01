@@ -1736,7 +1736,15 @@ impl Interpreter {
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // resolve_code_var handles pseudo-package stripping internally
-        let mut target = loan_env!(self, resolve_code_var(&name));
+        // A named routine's free `&name` is the binding visible at its
+        // declaration (the unit-lexical cell), not a same-named `my &name`
+        // in the CALLER's env (#10483).
+        let mut target = dispatch_key::with_amp_name(&name, |amp| self.unit_scope_lexical(amp))
+            .map(Value::into_deref)
+            .unwrap_or(Value::NIL);
+        if target.is_nil() {
+            target = loan_env!(self, resolve_code_var(&name));
+        }
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
         // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,
         // see `news/2026-08/named-callable-parameter-binds.md`). `&cb()` in such

@@ -587,8 +587,8 @@ impl Interpreter {
                     let name = sym.resolve();
                     // ADR-0039 slice 1: `@`/`%` are captured the same way as
                     // scalars now (the "Known limitations" follow-up ADR-0024
-                    // named). `&` stays excluded — the code/sub lane has its
-                    // own registries (ADR-0025). `is_user_variable_key`
+                    // named). A `&` code variable is captured too (#10483),
+                    // read back by `CallOnCodeVar`. `is_user_variable_key`
                     // already excludes the anonymous-container slot names
                     // (`@__ANON_ARRAY__`/`%__ANON_HASH__`: the char after the
                     // sigil is `_`, not a letter), so no extra guard is
@@ -597,7 +597,7 @@ impl Interpreter {
                     // slot checks below already establish that the key is a
                     // variable rather than a type, which is all the lowercase
                     // rule of `is_plain_user_lexical` was guessing at.
-                    if !crate::env::is_user_variable_key(&name) || name.starts_with('&') {
+                    if !crate::env::is_user_variable_key(&name) {
                         continue;
                     }
                     // `our`/`state`/`dynamic`-declared names are excluded —

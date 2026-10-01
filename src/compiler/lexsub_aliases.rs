@@ -84,10 +84,9 @@ impl Compiler {
         for var in vars {
             let var_name = var.resolve();
             // Plain `my` lexicals only: dynamic, attribute, special and
-            // `__mutsu_*` names resolve through their own stores, and the `&`
-            // lane has its own registries (ADR-0025).
+            // `__mutsu_*` names resolve through their own stores. A `&` code
+            // variable is aliased like any other lexical (mutsu#10483).
             if !crate::env::is_plain_user_lexical(&var_name)
-                || var_name.starts_with('&')
                 || self.constant_vars.contains(&var_name)
                 || self.sigilless_locals.contains(&var_name)
                 || self.enclosing_sigilless.contains(&var_name)
