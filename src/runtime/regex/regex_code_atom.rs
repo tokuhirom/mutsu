@@ -25,6 +25,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
+        pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
         let RegexAtom::CodeAssertion {
             code,
@@ -61,7 +62,16 @@ impl Interpreter {
         if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
             return Some((pos, RegexCaptures::default()));
         }
-        self.rx_code_call(code, pos, current_caps, |interp| {
+        // `self` in the block is a grammar instance (Rakudo's cursor at the
+        // rule's entry), not the cursor that becomes the rule's Match: what the
+        // block writes to its attributes does not reach the Match. Only a
+        // grammar needs one; a class's regex already sees its own `self`.
+        let self_cursor = (code.contains("self") && self.class_is_grammar(&pkg.resolve()))
+            .then(|| self.new_grammar_cursor(chars, pos, pkg));
+        let saved_self = self_cursor
+            .as_ref()
+            .map(|cursor| self.env.insert("self".to_string(), cursor.clone()));
+        let result = self.rx_code_call(code, pos, current_caps, |interp| {
             // The text matched up to this atom — becomes `$/.Str` inside the
             // code, so `$/.lc` / `~$/` see the matched-so-far text (e.g. the
             // card grammar's `%*PLAYED{$/.lc}++` dup check).
@@ -129,7 +139,14 @@ impl Interpreter {
             // to the subrule's own node rather than the parent's.
             new_caps.ast = outcome.made;
             Some((pos, new_caps))
-        })
+        });
+        if let Some(prev) = saved_self {
+            match prev {
+                Some(prev) => self.env.insert("self".to_string(), prev),
+                None => self.env.remove("self"),
+            };
+        }
+        result
     }
 
     /// Run one `:my $x = …;` / `:our` / `:temp` / `:let` declaration `code` at
