@@ -71,7 +71,7 @@ pub(super) fn move_package_phasers(stmt: &mut Stmt, moved: &mut Moved) {
         enclosing: Vec::new(),
         moved,
     };
-    mover.decl(stmt);
+    mover.take_from_decl(stmt);
 }
 
 struct Mover<'a> {
@@ -80,12 +80,12 @@ struct Mover<'a> {
 }
 
 impl Mover<'_> {
-    fn decl(&mut self, stmt: &mut Stmt) {
+    fn take_from_decl(&mut self, stmt: &mut Stmt) {
         match stmt {
             // An exported type is the declaration plus its export marker.
             Stmt::SyntheticBlock(inner) => {
                 for member in inner.iter_mut() {
-                    self.decl(member);
+                    self.take_from_decl(member);
                 }
             }
             Stmt::ClassDecl {
@@ -169,7 +169,7 @@ impl Mover<'_> {
                     locals.extend(unshared.iter().cloned());
                     self.routine_body(body, &locals);
                 }
-                other => self.decl(other),
+                other => self.take_from_decl(other),
             }
             i += 1;
         }
@@ -413,12 +413,15 @@ impl Visit for Locals {
 fn unshared_names(body: &[Stmt], lexicals: &[String]) -> HashSet<String> {
     let shared: HashSet<&str> = lexicals.iter().map(|l| bare(l)).collect();
     let mut declared = HashSet::new();
-    for stmt in body {
+    // The body's own statement list, and the group declarations
+    // (`my ($a, $b)`) in it.
+    let mut pending: Vec<&Stmt> = body.iter().collect();
+    while let Some(stmt) = pending.pop() {
         match stmt {
             Stmt::VarDecl { name, .. } => {
                 declared.insert(bare(name).to_string());
             }
-            Stmt::SyntheticBlock(inner) => declared.extend(unshared_names(inner, &[])),
+            Stmt::SyntheticBlock(inner) => pending.extend(inner),
             _ => {}
         }
     }

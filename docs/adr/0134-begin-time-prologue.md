@@ -556,7 +556,7 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
 
 **INIT and CHECK in a type, package or routine body — implemented** (#10552,
 `src/runtime/begin_prologue/package_phasers.rs`,
-`t/control/init-check-in-package-body.t`).
+`t/modules/init-check-in-package-body.t`).
 
 - **The gap.** The per-level phaser reordering (`runtime/phasers.rs`) stops at
   a class, role or package body, so an `INIT`/`CHECK` there ran when the body
