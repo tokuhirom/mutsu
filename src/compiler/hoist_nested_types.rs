@@ -14,14 +14,16 @@
 //! class body's statements keep running at run time (as in Rakudo) and the
 //! type object stays the same one.
 //!
-//! Where the shells run: the BEGIN prologue (ADR-0134) collects each
-//! top-level statement's nested declarations ([`nested_type_decls`]) into a
-//! [`Stmt::NestedTypeShells`] marker at that statement's place among the
-//! unit's BEGIN-time effects, so a shell runs after the declarations that
+//! Where the shells run: in a unit with a nested class that composes a role
+//! ([`nested_decl_composes_role`]), the BEGIN prologue (ADR-0134) collects
+//! each top-level statement's nested declarations ([`nested_type_decls`])
+//! into a [`Stmt::NestedTypeShells`] marker at that statement's place among
+//! the unit's BEGIN-time effects, so a shell runs after the declarations that
 //! precede it and sees the unit's lexicals in their static state: a role body
-//! that bumps `my $n` declared above the routine leaves `$n` bumped. A unit
-//! compiled without that partition shells its nested declarations at its head
-//! instead ([`Compiler::hoist_nested_type_decl_shells`]).
+//! that bumps `my $n` declared above the routine leaves `$n` bumped. Any other
+//! unit shells its nested declarations at its head
+//! ([`Compiler::hoist_nested_type_decl_shells`]); there no shell runs user
+//! code, so the place is not observable (#10524 tracks retiring this).
 
 use super::Compiler;
 use crate::ast::{NestedTypeShell, Stmt};
@@ -126,6 +128,18 @@ pub(crate) fn nested_type_decls(stmt: &Stmt) -> Vec<NestedTypeShell> {
     collector.found
 }
 
+/// Whether a nested declaration composes a role, so that its compile-time
+/// composition runs the role's body.
+// Cost: O(len(body)).
+pub(crate) fn nested_decl_composes_role(decl: &Stmt) -> bool {
+    match decl {
+        Stmt::ClassDecl {
+            does_parents, body, ..
+        } => !does_parents.is_empty() || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. })),
+        _ => false,
+    }
+}
+
 impl Compiler {
     /// Emit the shell registration of one nested declaration, qualified
     /// against the packages enclosing it inside its top-level statement.
@@ -150,9 +164,8 @@ impl Compiler {
     }
 
     /// Emit a declaration-only shell registration for every non-lexical
-    /// class/role declared inside code anywhere in a unit compiled without
-    /// the BEGIN prologue's partition (which places them itself, see the
-    /// module doc comment). Only a mainline unit runs this pass: a routine
+    /// class/role declared inside code anywhere in a unit whose BEGIN
+    /// prologue did not place them itself (see the module doc comment). Only a mainline unit runs this pass: a routine
     /// body is part of a unit that already shelled its nested declarations.
     ///
     /// The shells are emitted in source order, the order Rakudo composes the

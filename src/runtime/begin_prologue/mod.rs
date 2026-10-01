@@ -56,12 +56,25 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     // after the lift, so a type declared in a lifted BEGIN registers there
     // alone.
     let mut type_shells: Vec<Option<Stmt>> = Vec::with_capacity(stmts.len());
+    let mut composes_role = false;
     for stmt in stmts.iter_mut() {
         let before = lifted.effects.len();
         nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
         effects.push(lifted.effects.split_off(before));
         let shells = crate::compiler::nested_type_decls(stmt);
+        composes_role |= shells
+            .iter()
+            .any(|shell| crate::compiler::nested_decl_composes_role(&shell.decl));
         type_shells.push((!shells.is_empty()).then_some(Stmt::NestedTypeShells(shells)));
+    }
+    // Only a composition runs user code (a role body), so only then does it
+    // matter where among the unit's statements the shells run.
+    // TODO: place every unit's shells here and drop the compiler's head-of-
+    // unit fallback (`hoist_nested_type_decl_shells`). Extending the
+    // prologue's bound over every unit with a nested type exposes partition
+    // bugs that make that unsafe for now (#10524).
+    if !composes_role {
+        type_shells.iter_mut().for_each(|shells| *shells = None);
     }
     let decls = lifted.decls;
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),

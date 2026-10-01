@@ -536,7 +536,8 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
 `t/oo/role/nested-class-runs-role-body-at-compile-time.t`).
 
 - The compile-time shell of an `our` class or role declared inside code
-  (#10470) is a BEGIN-time effect. The partition collects each top-level
+  (#10470) is a BEGIN-time effect. In a unit with a nested class that
+  composes a role, the partition collects each top-level
   statement's nested type declarations into a `Stmt::NestedTypeShells` marker,
   placed in the prologue after that statement's own declaration part, and the
   prologue's bound extends to the last such statement. The compiler emits a
@@ -547,5 +548,8 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   repeated on every entry of the enclosing code runs the body no more. That
   registration gets back the nested-block method captures the shell's run
   filed.
-- A unit compiled without the partition (a run-time chunk) still shells its
-  nested declarations at its head.
+- **Residue:** any other unit (and a run-time chunk, which gets no
+  partition) still shells its nested declarations at its head. No shell there
+  runs user code, so the place is not observable; it is kept because
+  extending the bound over every unit with a nested type exposes partition
+  bugs ([#10524](https://github.com/tokuhirom/mutsu/issues/10524)).
