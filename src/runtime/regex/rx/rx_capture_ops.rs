@@ -108,6 +108,7 @@ impl Interpreter {
                     chars,
                     pos,
                     levels.top().caps(),
+                    pkg,
                 )?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);

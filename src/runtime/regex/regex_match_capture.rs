@@ -520,7 +520,7 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::CodeAssertion { .. } => {
-                return self.regex_code_atom(atom, chars, pos, current_caps);
+                return self.regex_code_atom(atom, chars, pos, current_caps, pkg);
             }
             RegexAtom::CodeInterp { code, list } => {
                 return self
