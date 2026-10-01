@@ -2460,8 +2460,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || crate::parser::stmt::simple::is_imported_function(&name))
         // A comma ends a no-arg call too (`:$user = generate-key, :$host`): left
         // as a BareWord it would resolve at run time in the *caller's* scope, which
-        // cannot see a module's lexical sub (Email::MessageID).
-        && (is_terminator || rest_trimmed.starts_with(','))
+        // cannot see a module's lexical sub (Email::MessageID). A capitalised name is a type object.
+        && (is_terminator
+            || (rest_trimmed.starts_with(',')
+                && !name.starts_with(char::is_uppercase)))
     {
         let args = vec![Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(
