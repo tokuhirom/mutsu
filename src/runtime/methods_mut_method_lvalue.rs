@@ -1710,11 +1710,7 @@ impl Interpreter {
         value: &Value,
         preserve_hash_entries: bool,
     ) -> Result<Option<Value>, RuntimeError> {
-        let stmts: Vec<&Stmt> = method_def
-            .body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let stmts: Vec<&Stmt> = method_def.body.iter().filter(|s| !s.is_marker()).collect();
         if stmts.len() != 1 {
             return Ok(None);
         }

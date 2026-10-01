@@ -396,7 +396,16 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
 
     // Try to detect if this is a hash literal: { key => val, ... }
     if body_is_hash_composer(r) {
-        let (rest, hash) = super::hash::parse_hash_literal_body(r)?;
+        // Rakudo reads a hash composer as a block first, so its pairs are
+        // statements of a statement list and are numbered for `use trace`.
+        let semilist = crate::parser::stmt::trace::semilist_open(r);
+        let result = super::hash::parse_hash_literal_body(r);
+        match (&result, semilist) {
+            (Ok((rest, _)), Some(list)) => list.close_after(rest),
+            (Err(_), Some(list)) => list.abandon(),
+            _ => {}
+        }
+        let (rest, hash) = result?;
         crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
         crate::parser::stmt_ending_brace::mark_block_term(rest);
         return Ok((rest, hash));

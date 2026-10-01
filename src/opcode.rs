@@ -4365,6 +4365,12 @@ pub(crate) enum OpCode {
     /// The u32 is a constant index for the pragma name.
     SetPragma(u32),
 
+    /// `use trace`: write the string constant at the given index to the
+    /// process's stderr. Like rakudo's `writefh(getstderr, ..)` this goes to the
+    /// real standard error stream, not through the `$*ERR` dynamic variable, so
+    /// a program that rebinds `$*ERR` does not capture it.
+    Trace(u32),
+
     /// State variable initialization.
     /// slot = local slot index, key_idx = interned `Symbol` id (see
     /// `Symbol::from_id`/`Symbol::id`) for the unique state key — not a
@@ -5156,7 +5162,7 @@ fn implicit_legacy_param(name: &str) -> ParamDef {
 }
 
 fn is_stub_routine_body(body: &[Stmt]) -> bool {
-    let mut semantic = body.iter().filter(|stmt| !matches!(stmt, Stmt::SetLine(_)));
+    let mut semantic = body.iter().filter(|stmt| !stmt.is_marker());
     matches!(
         (semantic.next(), semantic.next()),
         (

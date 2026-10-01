@@ -70,10 +70,7 @@ impl Interpreter {
         "__mutsu_lazy_gather_take_limit_reached__";
 
     pub(crate) fn is_stub_method_body(body: &[Stmt]) -> bool {
-        let filtered: Vec<_> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let filtered: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
         filtered.len() == 1
             && matches!(
                 filtered[0],

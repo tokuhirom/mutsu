@@ -1326,10 +1326,7 @@ impl Compiler {
     /// resumable warns. Conservative: anything it does not recognise → false
     /// (falls back to the existing unwinding path).
     fn control_block_is_resume_safe(stmts: &[Stmt]) -> bool {
-        let meaningful: Vec<&Stmt> = stmts
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let meaningful: Vec<&Stmt> = stmts.iter().filter(|s| !s.is_marker()).collect();
         if meaningful.is_empty() {
             return false;
         }
@@ -1384,10 +1381,7 @@ impl Compiler {
     /// branch degrades to that existing approximation instead of losing the
     /// deep continuation entirely on the resuming branch.
     fn control_block_body_resumes(body: &[Stmt]) -> bool {
-        let meaningful: Vec<&Stmt> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let meaningful: Vec<&Stmt> = body.iter().filter(|s| !s.is_marker()).collect();
         if meaningful.iter().any(|s| Self::stmt_exits_control_block(s)) {
             return false;
         }
@@ -1399,18 +1393,12 @@ impl Compiler {
                 ..
             }) => {
                 let branch_resumes = |b: &[Stmt]| -> bool {
-                    let m: Vec<&Stmt> = b
-                        .iter()
-                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                        .collect();
+                    let m: Vec<&Stmt> = b.iter().filter(|s| !s.is_marker()).collect();
                     !m.iter().any(|s| Self::stmt_exits_control_block(s))
                         && matches!(m.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
                 };
                 let else_ok = {
-                    let m: Vec<&Stmt> = else_branch
-                        .iter()
-                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                        .collect();
+                    let m: Vec<&Stmt> = else_branch.iter().filter(|s| !s.is_marker()).collect();
                     m.is_empty() || branch_resumes(else_branch)
                 };
                 branch_resumes(then_branch) && else_ok

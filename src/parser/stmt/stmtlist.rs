@@ -111,6 +111,9 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Vec<PError>) {
         let r = consume_semicolons(r);
         let Ok((r, _)) = ws_bol(r) else { break };
         if r.is_empty() || r.starts_with('}') {
+            if !stmts.is_empty() {
+                trace::end_of_list(r);
+            }
             break;
         }
         // Emit the same `Stmt::SetLine` marker the strict list emits. It is the
@@ -122,11 +125,16 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Vec<PError>) {
         // strict parse.
         let line = crate::parser::primary::current_line_number(r);
         let line_valid = crate::parser::primary::is_within_original_source(r);
+        let attempt = trace::begin(r, line, stmts.is_empty());
+        let start = r;
         match statement(r) {
             Ok((r, stmt)) => {
+                let hook = attempt.hook(start, r, &stmt);
+                trace::apply_pragma(&stmt);
                 if line_valid {
                     stmts.push(Stmt::SetLine(line));
                 }
+                stmts.extend(hook);
                 stmts.push(stmt);
                 rest = r;
             }
@@ -307,16 +315,24 @@ pub(crate) fn stmt_list_with_mode(
     let mut stmts = Vec::new();
     let mut rest = input;
     let mut saw_compunit_declarator = false;
+    // Whether the previous statement's parse stopped short of its own `;`
+    // (see `trace::empty_statements`).
+    let mut open_terminator = false;
     loop {
         // Use ws_bol (beginning-of-line) so that Pod blocks at the start of
         // the file or after newlines are consumed.  The regular ws() defaults
         // to at_line_start=false, which is correct for mid-line positions.
         let (r, _) = ws_bol(rest)?;
         // Consume any standalone semicolons
+        let separators = r;
         let r = consume_semicolons(r);
+        trace::empty_statements(separators, r, open_terminator);
         let (r, _) = ws_bol(r)?;
         // End of block or input
         if r.is_empty() || r.starts_with('}') {
+            if !stmts.is_empty() {
+                trace::end_of_list(r);
+            }
             return Ok((r, stmts));
         }
         // VCS conflict markers (`<<<<<<<` ... `=======` ... `>>>>>>>`): record the
@@ -498,6 +514,7 @@ pub(crate) fn stmt_list_with_mode(
         let line = crate::parser::primary::current_line_number(r);
         let line_valid = crate::parser::primary::is_within_original_source(r);
         let input_before_stmt = r;
+        let attempt = trace::begin(r, line, allow_mainline_capture && stmts.is_empty());
         match statement(r) {
             Ok((r, stmt)) => {
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
@@ -547,9 +564,13 @@ pub(crate) fn stmt_list_with_mode(
                 ) {
                     saw_compunit_declarator = true;
                 }
+                let hook = attempt.hook(input_before_stmt, r, &stmt);
+                trace::apply_pragma(&stmt);
+                open_terminator = !consumed.ends_with(';');
                 if emit_setline && line_valid {
                     stmts.push(Stmt::SetLine(line));
                 }
+                stmts.extend(hook);
                 stmts.push(stmt);
                 rest = consume_trailing_comma(r);
                 // In Raku, a stray `)` before `;` at statement level is allowed

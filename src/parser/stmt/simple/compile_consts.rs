@@ -247,6 +247,21 @@ pub(crate) fn worries_suppressed() -> bool {
     })
 }
 
+/// Turn the `use trace` lexical pragma on or off (`no trace`) for the rest of
+/// the current scope; nested scopes inherit it through `push_scope`.
+pub(in crate::parser) fn set_trace_pragma(on: bool) {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.trace_pragma = on;
+        }
+    });
+}
+
+/// Whether `use trace` is in effect in the current (innermost) scope.
+pub(in crate::parser) fn trace_pragma_active() -> bool {
+    SCOPES.with(|s| s.borrow().last().is_some_and(|scope| scope.trace_pragma))
+}
+
 /// Check if a function name was registered via `use` module import.
 /// Searches all scopes from innermost to outermost.
 pub(crate) fn is_imported_function(name: &str) -> bool {

@@ -613,7 +613,13 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     // May have body or just semicolon
     let mut body = Vec::new();
     if rest.starts_with('{') {
-        let (rest, parsed_body) = match block(rest) {
+        // `{*}` is the proto's dispatcher, not a statement list, to rakudo.
+        let parsed = if crate::parser::stmt::trace::is_dispatcher_body(rest) {
+            crate::parser::stmt::trace::unnumbered(|| block(rest))
+        } else {
+            block(rest)
+        };
+        let (rest, parsed_body) = match parsed {
             Ok(ok) => ok,
             Err(_) => consume_raw_braced_body(rest)?,
         };

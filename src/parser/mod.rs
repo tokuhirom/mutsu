@@ -670,6 +670,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             // once every scope's bindings are known.
             stmt::simple::settle_core_type_fold();
             crate::whatever_curry::mark::mark_program(&mut stmts);
+            // `use trace` hooks hold their statement's source offset until the
+            // whole unit's statement attempts are known.
+            stmt::trace::number_statements(&mut stmts);
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();
@@ -860,7 +863,8 @@ pub(crate) fn parse_program_recovering(
     } else {
         (input, None)
     };
-    let (stmts, skipped) = stmt::stmt_list_partial(source);
+    let (mut stmts, skipped) = stmt::stmt_list_partial(source);
+    stmt::trace::number_statements(&mut stmts);
     let errors = skipped
         .into_iter()
         .map(|e| render_parse_error(source, e))

@@ -25,7 +25,7 @@ impl Interpreter {
     /// happen. An explicit `return-rw $!attr` anywhere in the body also counts:
     /// it decides the return value wherever it sits.
     pub(crate) fn rw_method_attribute_target(body: &[Stmt]) -> Option<(String, char)> {
-        let significant = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+        let significant = || body.iter().filter(|s| !s.is_marker());
         let last = significant().next_back()?;
         let extract_attr = |expr: &Expr| -> Option<(String, char)> {
             match expr {
@@ -330,7 +330,7 @@ impl Interpreter {
     /// (The simpler `{ $!attr }` form is handled by
     /// `rw_method_attribute_target`.)
     pub(crate) fn rw_method_indexed_attr_target(body: &[Stmt]) -> Option<(String, String, bool)> {
-        let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
+        let first = body.iter().find(|s| !s.is_marker())?;
         let expr = match first {
             Stmt::Expr(e) | Stmt::Return(e) => e,
             _ => return None,
@@ -366,7 +366,7 @@ impl Interpreter {
     /// `(index_expr, is_positional)`; the element lives in the instance's
     /// backing `__mutsu_array_storage`, so `$obj.z = v` writes `storage[2]`.
     pub(crate) fn rw_method_self_index_target(body: &[Stmt]) -> Option<(Expr, bool)> {
-        let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
+        let first = body.iter().find(|s| !s.is_marker())?;
         let expr = match first {
             Stmt::Expr(e) | Stmt::Return(e) => e,
             _ => return None,

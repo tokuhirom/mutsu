@@ -779,6 +779,9 @@ impl Interpreter {
                     | "soft"
                     // `use worries`: a parse-time warning toggle (see the parser).
                     | "worries"
+                    // `use trace`: the parser emits `Stmt::Trace` hooks; nothing
+                    // is left to do when the `use` itself runs.
+                    | "trace"
                     | "fatal"
                     | "oo"
                     | "class"

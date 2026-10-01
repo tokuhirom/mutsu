@@ -3646,10 +3646,7 @@ impl Compiler {
                 // Detect stub body: `module Foo { ... }` — body is a stub operator
                 // Filter out SetLine when checking, since the parser now emits
                 // line tracking statements in all block bodies.
-                let non_setline_body: Vec<_> = body
-                    .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                    .collect();
+                let non_setline_body: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
                 let is_stub_body = non_setline_body.len() == 1
                     && matches!(non_setline_body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                         if fn_name.resolve() == "__mutsu_stub_die"
@@ -4233,10 +4230,7 @@ impl Compiler {
                 // `proto method`/`proto submethod` never installs at the
                 // package level (Phase D territory) and compiles no body here
                 // either — see `CompiledProtoDeclPlan::is_method`.
-                let significant: Vec<&Stmt> = body
-                    .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                    .collect();
+                let significant: Vec<&Stmt> = body.iter().filter(|s| !s.is_marker()).collect();
                 let trivial = significant.is_empty()
                     || (significant.len() == 1
                         && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
@@ -4316,6 +4310,9 @@ impl Compiler {
                     // `use worries` only toggles parse-time warnings, which
                     // the parser already applied.
                     || module == "worries"
+                    // `use trace` is applied by the parser too: it emits a
+                    // `Stmt::Trace` ahead of every statement it governs.
+                    || module == "trace"
                     || module == "oo"
                     || module == "class"
                     // `use experimental :pack/:cached/:macros/...` enables
@@ -4815,6 +4812,17 @@ impl Compiler {
                 // and let the VM read it back from `ip` where a line is observable.
                 self.last_source_line = Some(*line);
                 self.code.set_emit_line(*line);
+            }
+            Stmt::Trace { id, line, source } => {
+                // `use trace`: the whole message is a compile-time constant, as in
+                // rakudo (the statement text and number are fixed by the parse),
+                // so the run-time cost of a traced statement is one stderr write.
+                // The file is the unit's name as it was spelled, e.g. `-e` or the
+                // script path given on the command line.
+                let file = crate::unit_source_file::current().map_or("<unknown>", |f| f.as_str());
+                let text = format!("{id} ({file} line {line})\n{source}\n");
+                let idx = self.code.add_constant(Value::str(text));
+                self.code.emit(OpCode::Trace(idx));
             }
         }
     }
