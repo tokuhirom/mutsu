@@ -161,11 +161,10 @@ impl Walker<'_> {
                     match member {
                         Stmt::VarDecl { name, .. } => self.bind_opaque(name.clone()),
                         // An exported type is its declaration plus a marker.
-                        Stmt::ClassDecl { .. } | Stmt::Package { .. } | Stmt::RoleDecl { .. }
-                            if self.frames.is_empty() =>
-                        {
-                            self.walk_stmt(member, None)
+                        Stmt::ClassDecl { .. } | Stmt::Package { .. } if self.frames.is_empty() => {
+                            self.walk_package(member)
                         }
+                        Stmt::RoleDecl { .. } if self.frames.is_empty() => self.walk_role(member),
                         // A nested `will begin` trait is a BEGIN-time effect
                         // this slice does not lift. A top-level one is split
                         // by the unit partition itself.

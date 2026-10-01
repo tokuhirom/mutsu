@@ -603,7 +603,7 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
 
 **INIT and CHECK that read a routine's own lexical — implemented** (#10562,
 `src/runtime/begin_prologue/nested/phasers.rs`,
-`t/control/init-check-routine-lexicals.t`).
+`t/routines/init-check-routine-lexicals.t`).
 
 - **The gap.** An `INIT` or `CHECK` that names a lexical of the routine it is
   written in (`sub f { my $z; INIT $z = 5; $z }`) was lifted to the unit's

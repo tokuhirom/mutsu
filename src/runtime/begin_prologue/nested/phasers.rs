@@ -157,20 +157,23 @@ impl Walker<'_> {
     }
 
     /// Walk the routines and imports among the members of a package or role
-    /// body, in the scope `frame` stands for.
+    /// body, in the scope `frame` stands for. A type nested in a package is
+    /// walked for its own phasers; one nested in a role is not.
     fn walk_members(&mut self, body: &mut [Stmt], frame: Frame) {
+        let in_package = frame.package.is_some();
         self.frames.push(frame);
         for (i, member) in body.iter_mut().enumerate() {
-            match member {
-                Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => {
-                    self.walk_stmt(member, Some((i, false)))
-                }
-                Stmt::ClassDecl { .. } | Stmt::Package { .. } => self.walk_package(member),
+            let walked = match member {
+                Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => true,
+                Stmt::ClassDecl { .. } | Stmt::Package { .. } => in_package,
                 // What the body imports, its routines see too.
                 Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
-                    self.declare_type_or_import(member)
+                    true
                 }
-                _ => {}
+                _ => false,
+            };
+            if walked {
+                self.walk_stmt(member, Some((i, false)));
             }
         }
         self.frames.pop();
