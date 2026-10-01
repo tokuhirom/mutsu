@@ -67,5 +67,5 @@ src/runtime/run_prelude.rs                            2  # mark_prelude_subs tag
 src/runtime/types/mod.rs                              1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                              3
 src/whatever_curry/build.rs                           3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
-src/whatever_curry/replace.rs                         2  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
+src/whatever_curry/replace.rs                         1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
 src/with_desugar.rs                                   1  # flatten_index_source: spine of an index chain to its root
