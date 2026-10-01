@@ -130,10 +130,58 @@ pub(super) fn is_callsite_marker(e: &Expr) -> bool {
 }
 
 /// Whether `body` contains a `return` anywhere: in an inlined body it would
-/// leave the enclosing chunk instead of the sub.
+/// leave the enclosing chunk instead of the sub. Found with the typed AST
+/// visitor (ADR-0137): a `return` statement, or `return` named as a routine
+/// (`return(...)`, `&return`, ...). A string literal `"return"` is not one.
+// Cost: O(n), n = size of `body`'s AST.
 fn body_mentions_return(body: &[Stmt]) -> bool {
-    let Ok(json) = serde_json::to_string(body) else {
-        return true;
-    };
-    json.contains("\"Return\"") || json.contains("\"return\"")
+    use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
+
+    #[derive(Default)]
+    struct FindReturn(bool);
+    impl Visit for FindReturn {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            if self.0 {
+                return;
+            }
+            if matches!(stmt, Stmt::Return(_)) {
+                self.0 = true;
+                return;
+            }
+            walk_stmt(self, stmt);
+        }
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !self.0 {
+                walk_expr(self, expr);
+            }
+        }
+        fn visit_name(&mut self, name: &str, _kind: NameKind) {
+            self.0 |= name == "return";
+        }
+    }
+    let mut find = FindReturn::default();
+    for stmt in body {
+        find.visit_stmt(stmt);
+    }
+    find.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::body_mentions_return;
+
+    fn mentions(src: &str) -> bool {
+        body_mentions_return(&crate::parser::parse_program(src).expect("parse").0)
+    }
+
+    #[test]
+    fn return_statement_and_call_are_found() {
+        assert!(mentions("return 1"));
+        assert!(mentions("if $x { -> { return 2 } }"));
+    }
+
+    #[test]
+    fn a_string_literal_return_is_not_a_return() {
+        assert!(!mentions(r#"say "return"; 'return'.say"#));
+    }
 }

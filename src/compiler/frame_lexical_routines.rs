@@ -22,7 +22,7 @@
 //!
 //! Anything the proof cannot cover leaves the declaration exactly as before.
 
-use super::frame_lexical_ast_scan::AstScan;
+use super::frame_lexical_ast_scan::{AstScan, stmt_names};
 use super::*;
 use crate::opcode::{CompiledCode, FrameLexicalRef};
 use crate::value::ValueView;
@@ -162,12 +162,8 @@ pub(super) fn scan_chunk(
             if compiled_slots.contains(&idx) && !ast_slots.contains(&idx) {
                 continue;
             }
-            let Ok(json) = serde_json::to_string(stmt) else {
-                bad.extend(names.iter().copied());
-                continue;
-            };
             for sym in names {
-                if json.contains(&format!("\"{}\"", sym.as_str())) {
+                if stmt_names(stmt, sym.as_str()) {
                     bad.push(*sym);
                 }
             }
@@ -238,14 +234,11 @@ impl Compiler {
         if candidates.is_empty() {
             return;
         }
-        let Ok(json) = serde_json::to_value(body) else {
-            return;
-        };
         let mut scan = AstScan {
             names: candidates.iter().map(|n| n.as_str().to_string()).collect(),
             ..AstScan::default()
         };
-        scan.walk(&json, None, None);
+        scan.scan(body);
         if scan.reject_all {
             return;
         }
