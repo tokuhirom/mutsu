@@ -77,22 +77,56 @@ impl Value {
             signature,
             topic,
             declared_source: None,
+            name: Default::default(),
         }))
     }
 
-    /// A regex value that carries the signature of the anonymous
-    /// `token`/`regex`/`rule` declarator term it came from. `<&$re('a')>`
-    /// binds these parameters before the pattern is matched — without them
-    /// the declarator's arguments would be silently discarded.
-    pub(crate) fn regex_with_signature(pattern: String, params: Vec<crate::ast::ParamDef>) -> Self {
+    /// The value of an anonymous `token`/`regex`/`rule` declarator term.
+    ///
+    /// It is a code object, so it always gets the closure payload: that is
+    /// where `Code.set_name` keeps the name (`Regex.name`). A declared
+    /// signature rides on it too — `<&$re('a')>` binds these parameters before
+    /// the pattern is matched; without them the declarator's arguments would
+    /// be silently discarded.
+    pub(crate) fn anon_regex_code(
+        pattern: String,
+        params: Option<Vec<crate::ast::ParamDef>>,
+    ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern: Arc::new(pattern),
             scope: None,
             source_tree: None,
-            signature: Some(Arc::new(params)),
+            signature: params.map(Arc::new),
             topic: None,
             declared_source: None,
+            name: Default::default(),
         }))
+    }
+
+    /// Whether this regex value carries the closure payload (and so can be
+    /// renamed by `Code.set_name`).
+    // Cost: O(1).
+    pub(crate) fn is_regex_code_payload(&self) -> bool {
+        self.0.regex_closure_payload().is_some()
+    }
+
+    /// The name `Code.set_name` gave this regex, if any.
+    // Cost: O(1).
+    pub(crate) fn regex_name(&self) -> Option<crate::symbol::Symbol> {
+        self.0.regex_closure_payload()?.name.get()
+    }
+
+    /// `Code.set_name` on a regex: rename it in place, seen through every
+    /// alias. `false` when the value has no closure payload to hold a name.
+    // Cost: O(1).
+    pub(crate) fn set_regex_name(&self, name: crate::symbol::Symbol) -> bool {
+        match self.0.regex_closure_payload() {
+            Some(closure) => {
+                closure.name.set(name);
+                true
+            }
+            None => false,
+        }
     }
 
     /// The parameters an anonymous regex declarator term declared, or `None`
@@ -123,6 +157,7 @@ impl Value {
                     signature: self.regex_signature(),
                     topic: None,
                     declared_source: None,
+                    name: Default::default(),
                 }))
             }
             ValueView::RegexWithAdverbs(adverbs) => {
@@ -198,6 +233,7 @@ impl Value {
                     signature: self.regex_signature(),
                     topic: None,
                     declared_source: Some(Arc::from(text)),
+                    name: Default::default(),
                 }))
             }
             _ => self.clone(),

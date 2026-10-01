@@ -334,6 +334,16 @@ impl NanBox {
             .as_deref()
     }
 
+    /// The closure payload of a `RegexCaptured` value.
+    #[inline]
+    pub(in crate::value) fn regex_closure_payload(&self) -> Option<&crate::value::RegexClosure> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        Some(unsafe { peek_arc::<crate::value::RegexClosure>(bits) })
+    }
+
     /// The verbatim declaration text of a grammar `token`/`rule`/`regex`.
     #[inline]
     pub(in crate::value) fn regex_declared_source(&self) -> Option<&str> {

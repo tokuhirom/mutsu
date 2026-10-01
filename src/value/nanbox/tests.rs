@@ -500,6 +500,7 @@ fn every_variant_roundtrips_losslessly() {
             signature: None,
             topic: None,
             declared_source: None,
+            name: Default::default(),
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

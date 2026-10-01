@@ -1166,6 +1166,33 @@ impl Interpreter {
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return Ok(Value::NIL);
                 }
+                // A regex value (`EVAL 'regex { a | b }'`, `token { ... }`)
+                // becomes the type's grammar rule `method_name`, exactly as a
+                // `regex x { ... }` declared in its body would: `.parse` and a
+                // `<x>` subrule resolve it through `token_defs`. A declarator
+                // term's signature becomes the rule's.
+                // Cost: O(p), p = the regex's parameters.
+                if matches!(
+                    method_value.view(),
+                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                ) {
+                    let param_defs: Vec<crate::ast::ParamDef> = method_value
+                        .regex_signature()
+                        .map(|sig| (*sig).clone())
+                        .unwrap_or_default();
+                    let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
+                    let body = vec![Stmt::Expr(Expr::Literal(method_value.clone()))];
+                    self.register_token_decl_in(
+                        &class_name,
+                        &method_name,
+                        &params,
+                        &param_defs,
+                        &body,
+                        false,
+                        None,
+                    );
+                    return Ok(Value::NIL);
+                }
                 // A builtin/operator code value is a name-only Routine rather
                 // than a Sub with an AST body. Materialize it as a plain
                 // forwarding block once, so the existing add_method path can
@@ -1572,6 +1599,21 @@ impl Interpreter {
                     ValueView::Str(name) => name.to_string(),
                     _ => return Ok(Value::NIL),
                 };
+                // A `Metamodel::GrammarHOW.new_type` type given no parent
+                // composes as a `Grammar` (rakudo's GrammarHOW default parent
+                // type), so `.parse` and `~~ Grammar` work on it.
+                let is_grammar_how = self
+                    .registry()
+                    .declared_native_how
+                    .get(&class_name)
+                    .is_some_and(|how| how == "Perl6::Metamodel::GrammarHOW");
+                if is_grammar_how
+                    && let Some(class_def) = self.registry_mut().classes.get_mut(&class_name)
+                    && class_def.parents.is_empty()
+                {
+                    class_def.parents.push("Grammar".to_string());
+                    class_def.mro = [].into();
+                }
                 let mro = self.class_mro(&class_name);
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.mro = mro;

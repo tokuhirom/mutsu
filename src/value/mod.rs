@@ -2848,6 +2848,61 @@ pub struct RegexClosure {
     /// The verbatim declaration text (`token foo { ... }`) of a grammar
     /// `token`/`rule`/`regex` declaration -- what `Regex.gist` prints.
     pub declared_source: Option<Arc<str>>,
+    /// The name `Code.set_name` gave this regex (`Regex.name`). A Raku regex
+    /// is a code object with identity, so renaming it is seen through every
+    /// alias of the value: the cell lives in the shared `Arc` payload.
+    pub name: RegexName,
+}
+
+/// The mutable name of a [`RegexClosure`] (`$regex.set_name('x')`).
+///
+/// Stored as an interned [`Symbol`] id so a rename is one atomic store into
+/// the shared payload; cloning the payload snapshots the current name.
+pub struct RegexName(std::sync::atomic::AtomicU32);
+
+impl Default for RegexName {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl RegexName {
+    const UNSET: u32 = u32::MAX;
+
+    /// A cell holding `name` (or no name).
+    pub fn new(name: Option<Symbol>) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(
+            name.map_or(Self::UNSET, |s| s.id()),
+        ))
+    }
+
+    /// The name set by `set_name`, if any.
+    // Cost: O(1).
+    pub fn get(&self) -> Option<Symbol> {
+        match self.0.load(std::sync::atomic::Ordering::Relaxed) {
+            Self::UNSET => None,
+            id => Some(Symbol::from_id(id)),
+        }
+    }
+
+    /// Rename the regex.
+    // Cost: O(1).
+    pub fn set(&self, name: Symbol) {
+        self.0
+            .store(name.id(), std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Clone for RegexName {
+    fn clone(&self) -> Self {
+        Self::new(self.get())
+    }
+}
+
+impl std::fmt::Debug for RegexName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RegexName").field(&self.get()).finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

@@ -2710,6 +2710,29 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
+            // `Code.set_name` on a regex: rename the code object in place, so
+            // every alias of it reports the new `.name`. Answers the name, as
+            // rakudo's `set_name` does.
+            // Cost: O(n), n = chars of the new name (interned).
+            "set_name"
+                if args.len() == 1
+                    && matches!(
+                        target.view(),
+                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                    ) =>
+            {
+                let name = args[0].to_string_value();
+                if target.set_regex_name(Symbol::intern(&name)) {
+                    Ok(Value::str(name))
+                } else {
+                    // TODO: a synthesized regex (no closure payload) or one
+                    // carrying adverbs has no shared cell to hold a name; give
+                    // every regex value the code-object payload.
+                    Err(RuntimeError::new(
+                        "Cannot set_name on a regex value without a code-object payload",
+                    ))
+                }
+            }
             "name"
                 if args.is_empty()
                     && !matches!(
@@ -2746,10 +2769,14 @@ impl Interpreter {
                     ValueView::Array(..) if crate::runtime::value_type_name(&target) == "Array" => {
                         Ok(Value::NIL)
                     }
-                    // A regex is a `Code`, and an anonymous one's name is "".
-                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => {
-                        Ok(Value::str(String::new()))
-                    }
+                    // A regex is a `Code`, and an anonymous one's name is ""
+                    // until `set_name` gives it one.
+                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Ok(Value::str(
+                        target
+                            .regex_name()
+                            .map(|name| name.resolve())
+                            .unwrap_or_default(),
+                    )),
                     // `Code`'s `name` reads an attribute, which a `Code` type
                     // object does not have.
                     ValueView::Package(name)

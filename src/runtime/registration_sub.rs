@@ -2061,9 +2061,27 @@ impl Interpreter {
         multi: bool,
         source_line: Option<i64>,
     ) {
+        let package = self.current_package();
+        self.register_token_decl_in(&package, name, params, param_defs, body, multi, source_line);
+    }
+
+    /// [`Self::register_token_decl`] into an explicit `package`: the
+    /// `Metamodel` path, where `$type.^add_method('x', $regex)` installs a
+    /// regex value as the type's grammar rule `x`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn register_token_decl_in(
+        &mut self,
+        package: &str,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+        multi: bool,
+        source_line: Option<i64>,
+    ) {
         let def = FunctionDef {
             is_cached: false,
-            package: Symbol::intern(&self.current_package()),
+            package: Symbol::intern(package),
             name: Symbol::intern(name),
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
@@ -2085,7 +2103,7 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
-        self.insert_token_def(name, def, multi);
+        self.insert_token_def_in(package, name, def, multi);
     }
 
     /// [`Self::register_token_decl`], extracting its arguments from a raw
