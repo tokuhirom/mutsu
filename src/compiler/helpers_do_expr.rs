@@ -188,7 +188,7 @@ impl Compiler {
     fn wrap_loop_body_last_in_take(body: &[Stmt]) -> Vec<Stmt> {
         use crate::ast::{Expr as AExpr, Stmt as AStmt};
         let mut stmts = body.to_vec();
-        let last_idx = stmts.iter().rposition(|s| !matches!(s, AStmt::SetLine(_)));
+        let last_idx = stmts.iter().rposition(|s| !s.is_marker());
         if let Some(idx) = last_idx {
             match stmts[idx].clone() {
                 AStmt::Expr(expr) => stmts[idx] = AStmt::Take(expr, false),
