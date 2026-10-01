@@ -1658,6 +1658,9 @@ pub(crate) struct Compiler {
     /// compiler, so the fold also reaches a sibling named sub that calls it,
     /// which makes the capture transitive.
     lexical_sub_free_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
+    /// The subset of [`Compiler::lexical_sub_free_vars`] each sub (transitively)
+    /// writes; folded at call sites into `nested_routine_free_writes`.
+    lexical_sub_written_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
     /// Placeholder params (`^p` caret-form) an interpret-path caller has
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
@@ -1914,6 +1917,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             lexical_sub_free_vars: Default::default(),
+            lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             with_element_source_capture: None,
             last_source_line: None,
@@ -2410,6 +2414,7 @@ impl Compiler {
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
+        sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
     }
 
@@ -2418,10 +2423,17 @@ impl Compiler {
     /// routine body is recorded: a mainline or bare-block sub already resolves
     /// its free variables lexically (ADR-0024), and a routine-nested one is
     /// the case ADR-0024 leaves on dynamic resolution.
-    pub(crate) fn record_lexical_sub_free_vars(&mut self, name: &str, free: Vec<Symbol>) {
+    pub(crate) fn record_lexical_sub_free_vars(
+        &mut self,
+        name: &str,
+        free: Vec<Symbol>,
+        written: Vec<Symbol>,
+    ) {
         if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
             return;
         }
+        std::rc::Rc::make_mut(&mut self.lexical_sub_written_vars)
+            .insert(Symbol::intern(name), written);
         std::rc::Rc::make_mut(&mut self.lexical_sub_free_vars).insert(Symbol::intern(name), free);
     }
 
@@ -2434,6 +2446,11 @@ impl Compiler {
             && !free.is_empty()
         {
             self.code.nested_routine_free_reads.push(free.clone());
+        }
+        if let Some(written) = self.lexical_sub_written_vars.get(name)
+            && !written.is_empty()
+        {
+            self.code.nested_routine_free_writes.push(written.clone());
         }
     }
 

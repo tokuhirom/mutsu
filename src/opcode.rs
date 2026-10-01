@@ -6831,6 +6831,16 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/nested-named-sub-free-var-capture.md` and
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
+    /// The variables each lexically visible nested sub called (or fetched as
+    /// `&name`) from this code WRITES, one entry per call site. Kept apart from
+    /// `nested_routine_free_reads` (reads and writes together) and from
+    /// `free_var_writes` (capture boxing); only the readonly-registry
+    /// reconcile reads it, via `nested_sub_written_free`.
+    pub(crate) nested_routine_free_writes: Vec<Vec<Symbol>>,
+    /// `nested_routine_free_writes` minus this code's own locals: the free
+    /// variables a by-name nested-sub call may write. See
+    /// `Interpreter::capture_readonly_state` (#10400).
+    pub(crate) nested_sub_written_free: Vec<Symbol>,
     /// Own locals that a directly-nested named sub WRITES (computed from
     /// `named_sub_captures`). The VM boxes these into a shared `ContainerRef` cell
     /// at their declaration site (`box_decl_local_cell`). Distinct from
@@ -7776,6 +7786,8 @@ impl CompiledCode {
             amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
+            nested_routine_free_writes: Vec::new(),
+            nested_sub_written_free: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),
             container_ref_capture_syms: Vec::new(),
@@ -10341,6 +10353,17 @@ impl CompiledCode {
                     .retain(|sym| !self.for_loop_param_syms.contains(sym));
             }
         }
+        let mut nested_written: Vec<Symbol> = Vec::new();
+        for sym in self.nested_routine_free_writes.iter().flatten().chain(
+            self.closure_compiled_codes
+                .iter()
+                .flat_map(|n| n.nested_sub_written_free.iter()),
+        ) {
+            if !sym.with_str(|s| own.contains(s)) && !nested_written.contains(sym) {
+                nested_written.push(*sym);
+            }
+        }
+        self.nested_sub_written_free = nested_written;
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
