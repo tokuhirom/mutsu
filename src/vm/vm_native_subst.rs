@@ -9,7 +9,7 @@
 //! `OpCode::Subst` and runs natively in `exec_subst_op`. This routes the common
 //! `.subst` *method* call through the same building blocks instead of the
 //! interpreter, falling back for anything that needs the interpreter's richer
-//! handling (closure replacements, regex-with-adverbs objects, Perl5 regex, the
+//! handling (closure replacements, regex-with-adverbs objects, the
 //! `:nth`/`:x`/`:c`/`:p`/`:ii`/`:mm`/`:ss` adverbs, non-`Str` invocants, …).
 //!
 //! The output is built to match `dispatch_subst` byte-for-byte (including
@@ -74,7 +74,7 @@ impl Interpreter {
         };
 
         match pattern.view() {
-            // Plain (non-adverb, non-Perl5) regex literal: `.subst(/pat/, ...)`.
+            // Plain (non-adverb) regex literal: `.subst(/pat/, ...)`.
             ValueView::Regex(_) => {
                 // A regex `.subst` performs a real match, so clear any stale
                 // numeric/named capture vars from a previous match first (this

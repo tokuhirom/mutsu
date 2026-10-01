@@ -350,8 +350,9 @@ impl Compiler {
         // `@a[i]:delete:exists` reports the slot as missing even though
         // the slot still holds a type-object hole after deletion.
         let array_var_name = match target {
-            Expr::Index { target: t, .. } => Self::postfix_index_name(t)
-                .and_then(|n| if n.starts_with('@') { Some(n) } else { None }),
+            Expr::Index { target: t, .. } => {
+                Self::postfix_index_name(t).filter(|n| n.starts_with('@'))
+            }
             _ => None,
         };
         if let Some(name) = array_var_name {

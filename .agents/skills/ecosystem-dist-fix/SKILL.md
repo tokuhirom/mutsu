@@ -249,6 +249,10 @@ failed file's reason from the job's stage log in `tmp/jobs/<id>/` rather than re
 
 ## 7. Re-measure with `--only` and update the ledger record
 
+> **Not when you came from [`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md):**
+> that wrapper skips this whole step and commits no `ecosystem/dists/` record (user decision,
+> 2026-10-01; per-PR record rewrites conflicted). A *named*-distribution run still does it.
+
 **Every interpreter change made in this loop ends with a `--only` re-measure — no exceptions.** It
 is not a formality: it is how you learn whether the fix moved the distribution at all, and how
 often it moved a *different* file than the one you were chasing. The record is part of the

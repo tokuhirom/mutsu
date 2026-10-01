@@ -338,7 +338,7 @@ impl Interpreter {
             }
             RegexAtom::CodeInterp { code, list } => {
                 return self
-                    .regex_code_interp_ends(
+                    .regex_code_interp_ends_unrecorded(
                         code,
                         *list,
                         chars,

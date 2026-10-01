@@ -139,10 +139,9 @@ pub(super) fn parse_hyper_func_op(input: &str) -> Option<(String, bool, bool, us
         (true, '\u{00AB}'.len_utf8(), r)
     } else if let Some(r) = input.strip_prefix(">>") {
         (false, 2, r)
-    } else if let Some(r) = input.strip_prefix("<<") {
-        (true, 2, r)
     } else {
-        return None;
+        let r = input.strip_prefix("<<")?;
+        (true, 2, r)
     };
 
     // Check for [&func] pattern (e.g. [&infix:<+>])

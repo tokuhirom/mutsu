@@ -272,16 +272,22 @@ impl TrirCompiler<'_> {
         // scalar name reaches here — anything with a `::`, a sigil or a
         // twigil is a package/dynamic/pseudo-package access, which TRIR does
         // not serve.
-        if name.is_empty()
-            || name.contains("::")
-            || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '='])
-        {
+        if !Self::is_plain_outer_name(name) {
             self.note_decline(|| format!("free variable {name}"));
             return None;
         }
         let idx = self.outer(name);
         self.ops.push(TrOp::LoadOuter(idx));
         Some(TrKind::Obj)
+    }
+
+    /// Whether `name` (not a binding of this frame) is a free variable TRIR
+    /// serves as an outer: a plain, unqualified, sigil-less scalar name.
+    // Cost: O(n), n = length of `name`.
+    pub(super) fn is_plain_outer_name(name: &str) -> bool {
+        !(name.is_empty()
+            || name.contains("::")
+            || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '=']))
     }
 
     fn compile_unary(&mut self, op: &TokenKind, expr: &Expr, sink: bool) -> Option<TrKind> {

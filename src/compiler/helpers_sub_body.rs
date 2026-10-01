@@ -247,6 +247,8 @@ impl Compiler {
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
         self.attach_param_chunks(param_defs, name);
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -600,6 +602,7 @@ impl Compiler {
         // declaration metadata so `Code.line` can report it without a second
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
+        sub_compiler.code.declared_in_routine = self.is_routine || self.lexically_in_routine;
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
@@ -747,7 +750,10 @@ impl Compiler {
             .push(cf.code.free_var_syms.clone());
         let mut lexical_free = cf.code.free_var_syms.clone();
         lexical_free.extend(cf.code.free_var_writes.iter().copied());
-        self.record_lexical_sub_free_vars(name, lexical_free);
+        let mut written_free: Vec<Symbol> = cf.code.free_var_writes.clone();
+        written_free.extend(cf.code.free_var_container_writes.iter().copied());
+        written_free.extend(cf.code.nested_sub_written_free.iter().copied());
+        self.record_lexical_sub_free_vars(name, lexical_free, written_free);
         // An `our sub` is installed into the package registry and outlives its
         // declaring block, but a registry routine has no per-sub closure env. So
         // every lexical it READS or WRITES must be boxed into a shared cell at its
@@ -1213,6 +1219,8 @@ impl Compiler {
         promoted_decls: &[String],
     ) -> CompiledCode {
         self.attach_param_chunks(param_defs, "<anon>");
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();

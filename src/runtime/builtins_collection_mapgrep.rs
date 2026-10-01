@@ -447,7 +447,7 @@ impl Interpreter {
                 // `methods_collection_ops/first_polymod_tree.rs`.
                 ValueView::Pair(key, _) => {
                     return Ok(RuntimeError::unexpected_adverb_failure(
-                        &[key.to_string()],
+                        std::slice::from_ref(key),
                         "first",
                         "List",
                     ));

@@ -379,18 +379,12 @@ impl Interpreter {
             // Cost: O(n + r) plus per-match engine and replacement work, n = chars of
             // the invocant, r = matches: one leftmost scan over a shared MatchTarget
             // (`subst_scan_matches`), stopped as soon as the adverbs have what they
-            // need. A `:P5` pattern still enumerates through the PCRE path.
+            // need.
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                 let pat: String = match pattern.view() {
                     ValueView::Regex(p) => p.to_string(),
                     ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                     _ => unreachable!(),
-                };
-                let is_p5 = matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.perl5);
-                let pat = if is_p5 {
-                    self.interpolate_regex_pattern(&pat)
-                } else {
-                    pat
                 };
                 let pat_global =
                     matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.global) || global;
@@ -425,48 +419,30 @@ impl Interpreter {
                     || continue_from.is_some();
 
                 if has_adverbs || pat_global {
-                    let mut selected = if is_p5 {
-                        #[cfg(feature = "pcre2")]
-                        let all_captures = self.regex_match_all_with_captures_p5(&pat, &text);
-                        #[cfg(not(feature = "pcre2"))]
-                        let all_captures = self.regex_match_all_with_captures(&pat, &text);
-                        let mut selected = self.select_non_overlapping_matches(all_captures);
-                        // Apply :p(N) - the first match must start exactly at N.
-                        if let Some(p) = pos_start {
-                            selected.retain(|cap| cap.from >= p);
-                            if selected.is_empty() || selected[0].from != p {
-                                empty_match_var(self);
-                                return Ok(Value::str(text));
-                            }
-                        }
-                        selected
+                    // How many matches the adverbs can possibly use, so the
+                    // scan stops there instead of running the pattern (and
+                    // any `{ ... }` block in it) over the rest of the text.
+                    let limit: Option<usize> = if !nth_deferred.is_empty() {
+                        None
+                    } else if let Some(list) = &nth {
+                        Some(list.iter().copied().max().unwrap_or(0).max(0) as usize)
+                    } else if let Some((_, hi)) = resolve_x_count(&x_count) {
+                        Some(hi)
+                    } else if !pat_global {
+                        Some(1)
                     } else {
-                        // How many matches the adverbs can possibly use, so the
-                        // scan stops there instead of running the pattern (and
-                        // any `{ ... }` block in it) over the rest of the text.
-                        let limit: Option<usize> = if !nth_deferred.is_empty() {
-                            None
-                        } else if let Some(list) = &nth {
-                            Some(list.iter().copied().max().unwrap_or(0).max(0) as usize)
-                        } else if let Some((_, hi)) = resolve_x_count(&x_count) {
-                            Some(hi)
-                        } else if !pat_global {
-                            Some(1)
-                        } else {
-                            None
-                        };
-                        let Some(selected) = self.subst_scan_matches(
-                            &pat,
-                            &text,
-                            pos_start.or(continue_from).unwrap_or(0),
-                            pos_start,
-                            limit,
-                        ) else {
-                            // :p(N) with no match starting exactly at N.
-                            empty_match_var(self);
-                            return Ok(Value::str(text));
-                        };
-                        selected
+                        None
+                    };
+                    let Some(mut selected) = self.subst_scan_matches(
+                        &pat,
+                        &text,
+                        pos_start.or(continue_from).unwrap_or(0),
+                        pos_start,
+                        limit,
+                    ) else {
+                        // :p(N) with no match starting exactly at N.
+                        empty_match_var(self);
+                        return Ok(Value::str(text));
                     };
 
                     // Apply :c(N) - filter matches starting from character position N
@@ -552,20 +528,7 @@ impl Interpreter {
                     self.env.insert("/".to_string(), match_var.clone());
                     self.publish_subst_capture_env(&match_var);
                     Ok(Value::str(result))
-                } else if let Some(captures) = {
-                    if is_p5 {
-                        #[cfg(feature = "pcre2")]
-                        {
-                            self.regex_match_with_captures_p5(&pat, &text)
-                        }
-                        #[cfg(not(feature = "pcre2"))]
-                        {
-                            self.regex_match_with_captures(&pat, &text)
-                        }
-                    } else {
-                        self.regex_match_with_captures(&pat, &text)
-                    }
-                } {
+                } else if let Some(captures) = { self.regex_match_with_captures(&pat, &text) } {
                     // Set $/ to the match object
                     let match_obj = Value::make_match_object_full(
                         captures.from as i64,

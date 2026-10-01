@@ -68,7 +68,7 @@ impl Interpreter {
                 // (`(1,2,3).first(* > 1, :zzz)` answered `2`).
                 ValueView::Pair(key, _) => {
                     return Ok(RuntimeError::unexpected_adverb_failure(
-                        &[key.to_string()],
+                        std::slice::from_ref(key),
                         "first",
                         crate::runtime::utils::value_type_name(&target),
                     ));

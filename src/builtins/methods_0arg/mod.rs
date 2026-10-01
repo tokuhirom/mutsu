@@ -129,11 +129,10 @@ fn normalize_unicode_digits(s: &str) -> Option<String> {
         } else if ch == '\u{2212}' {
             result.push('-');
             has_unicode = true;
-        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+        } else {
+            let d = crate::builtins::unicode::unicode_decimal_digit_value(ch)?;
             result.push(char::from_digit(d, 10).unwrap());
             has_unicode = true;
-        } else {
-            return None;
         }
     }
     if has_unicode { Some(result) } else { None }
@@ -2373,6 +2372,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         );
     }
     // Kernel type object methods
+    // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
+    // Cost: O(1), reads the process-cached uname(2) result.
+    if let ValueView::Package(name) = target.view()
+        && name == "Kernel"
+        && method == "hostname"
+    {
+        return Some(Ok(Value::str(
+            crate::runtime::io_sysinfo_host::host_info()
+                .hostname
+                .clone(),
+        )));
+    }
     if let ValueView::Package(name) = target.view()
         && name == "Kernel"
         && method == "endian"

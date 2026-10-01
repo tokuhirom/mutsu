@@ -5,10 +5,9 @@ fn rewrite_prefixed_angle_list(code: &str) -> Option<String> {
         ('~', rest)
     } else if let Some(rest) = code.strip_prefix('+') {
         ('+', rest)
-    } else if let Some(rest) = code.strip_prefix('?') {
-        ('?', rest)
     } else {
-        return None;
+        let rest = code.strip_prefix('?')?;
+        ('?', rest)
     };
     let inner = rest.trim_start();
     if !inner.starts_with('<') || !inner.ends_with('>') {

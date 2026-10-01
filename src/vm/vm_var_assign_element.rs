@@ -355,10 +355,7 @@ impl Interpreter {
                     // shadow (`code.locals == ["%h", "%h"]`) it answered the
                     // OUTER binding's slot — which this path then nil'd and
                     // re-seeded, corrupting a variable the store never touched.
-                    match self.resolve_local_slot(code, target_slot, var_name) {
-                        Some(slot) => Some(slot),
-                        None => return None,
-                    }
+                    Some(self.resolve_local_slot(code, target_slot, var_name)?)
                 } else {
                     None
                 };

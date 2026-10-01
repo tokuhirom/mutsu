@@ -42,7 +42,7 @@ pub(in crate::parser) fn scan_to_delim(
     close_ch: char,
     is_paired: bool,
 ) -> Option<(&str, &str)> {
-    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false, false)
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false)
 }
 
 /// Scan the *replacement* half of a substitution (`s/pat/REPL/`).
@@ -300,19 +300,7 @@ pub(in crate::parser) fn scan_to_delim_subst_pattern(
     close_ch: char,
     is_paired: bool,
 ) -> Option<(&str, &str)> {
-    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false, true)
-}
-
-/// Like `scan_to_delim` but with an option to skip Raku-specific handling
-/// (angle brackets, single-quoted strings, `$` variable detection).
-/// In P5 mode, only backslash escapes and the close delimiter are significant.
-pub(in crate::parser) fn scan_to_delim_p5(
-    input: &str,
-    open_ch: char,
-    close_ch: char,
-    is_paired: bool,
-) -> Option<(&str, &str)> {
-    scan_to_delim_inner(input, open_ch, close_ch, is_paired, true, false)
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, true)
 }
 
 /// Skip a character-class body (`<[...]>`, `<-[...]>`, `<+[...]>`, `<![...]>`,
@@ -407,7 +395,6 @@ fn scan_to_delim_inner(
     open_ch: char,
     close_ch: char,
     is_paired: bool,
-    p5_mode: bool,
     subst_pattern: bool,
 ) -> Option<(&str, &str)> {
     let mut depth = 1u32;
@@ -425,7 +412,7 @@ fn scan_to_delim_inner(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
-        } else if !p5_mode && c == '#' {
+        } else if c == '#' {
             // # starts a comment in Raku regex.
             // #`[...] is an embedded comment (bracket-delimited), and so are
             // the declarator blocks #|{...} / #={...}: the regex's whitespace
@@ -462,20 +449,19 @@ fn scan_to_delim_inner(
                     }
                 }
             }
-        } else if !p5_mode && c == '<' && input[i + 1..].starts_with('<') {
+        } else if c == '<' && input[i + 1..].starts_with('<') {
             // << is a left word boundary assertion — skip both chars
             chars.next(); // consume second <
-        } else if !p5_mode && c == '>' && input[i + 1..].starts_with('>') {
+        } else if c == '>' && input[i + 1..].starts_with('>') {
             // >> is a right word boundary assertion — skip both chars
             chars.next(); // consume second >
-        } else if !p5_mode && c == '{' {
+        } else if c == '{' {
             // A bare `{ ... }` embedded code block is Main-slang code, not regex:
             // skip the whole balanced (string-aware) brace block so a delimiter
             // inside it — most commonly the `/` of the `$/` match variable
-            // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early. In P5
-            // mode `{n,m}` is a quantifier, not code, so this is Raku-only.
+            // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early.
             skip_interp_block(&mut chars)?;
-        } else if !p5_mode && c == ':' && starts_regex_decl(&input[i + 1..]) {
+        } else if c == ':' && starts_regex_decl(&input[i + 1..]) {
             // `:my $c = $/;` / `:our …` / `:constant …` / `:let …` / `:temp …`
             // (scalar form) or `:my token NAME { … }` (block form, a
             // lexically-scoped named sub-rule) — an embedded declaration
@@ -484,15 +470,11 @@ fn scan_to_delim_inner(
             // typically the `/` of `$/` — is not mistaken for the enclosing
             // regex's own closing delimiter.
             skip_regex_decl_clause(&mut chars, &input[i + 1..])?;
-        } else if !p5_mode && c == '<' && starts_char_class(&input[i + 1..]) {
+        } else if c == '<' && starts_char_class(&input[i + 1..]) {
             // Skip character class <[...]>, <-[...]>, <+[...]>, <![...]> content
             // without interpreting quotes. Handles <['"]>, <-["\\\t]>, etc.
             skip_char_class(&mut chars)?;
-        } else if !p5_mode
-            && c == '<'
-            && !input[i + 1..].starts_with('[')
-            && !input[i + 1..].starts_with('(')
-        {
+        } else if c == '<' && !input[i + 1..].starts_with('[') && !input[i + 1..].starts_with('(') {
             // Track angle bracket nesting for regex constructs.
             // Prevents # inside <...> from being treated as a comment,
             // and { } inside <?{...}> from affecting brace depth.
@@ -577,7 +559,7 @@ fn scan_to_delim_inner(
                     }
                 }
             }
-        } else if !p5_mode && is_regex_quote_open(c) {
+        } else if is_regex_quote_open(c) {
             // Skip quoted string content in regex (e.g., '/' or '\\').
             // This prevents delimiters inside string atoms like m/ "/" ** 2 /
             // from prematurely ending the regex literal.
@@ -591,7 +573,7 @@ fn scan_to_delim_inner(
                     None => return None,
                 }
             }
-        } else if !p5_mode && !subst_pattern && c == '$' && !is_paired {
+        } else if !subst_pattern && c == '$' && !is_paired {
             // In non-paired delimiters (like /), $ followed by the close
             // delimiter MIGHT be a variable reference ($/ is the match variable)
             // or it might be the end-of-string anchor followed by the closing
@@ -609,7 +591,7 @@ fn scan_to_delim_inner(
                     chars.next(); // skip the delimiter char (it's part of $/)
                 }
             }
-        } else if !p5_mode && (c == '@' || c == '$') && !is_paired {
+        } else if (c == '@' || c == '$') && !is_paired {
             // @(...) or $(...) parenthesized expressions inside regex.
             // Track parenthesis depth so that delimiters (like /) inside
             // the expression don't prematurely close the regex.

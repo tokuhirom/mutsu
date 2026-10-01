@@ -79,24 +79,11 @@ impl Interpreter {
         attrs.insert("str".to_string(), Value::str(captures.matched_text()));
         attrs.insert("from".to_string(), Value::int(captures.from as i64));
         attrs.insert("to".to_string(), Value::int(captures.to as i64));
-        let positional: Vec<Value> = if !captures.positional_slots().is_empty() {
-            captures
-                .positional_slots()
-                .iter()
-                .map(|slot| match slot {
-                    Some((from, to)) => {
-                        make_capture_match(&captures.span_text(*from, *to), *from, *to)
-                    }
-                    None => Value::NIL,
-                })
-                .collect()
-        } else {
-            captures
-                .positional
-                .iter()
-                .map(|slot| make_capture_match(&captures.slot_text(slot), slot.from, slot.to))
-                .collect()
-        };
+        let positional: Vec<Value> = captures
+            .positional
+            .iter()
+            .map(|slot| make_capture_match(&captures.slot_text(slot), slot.from, slot.to))
+            .collect();
         attrs.insert("list".to_string(), Value::array(positional));
         let mut named = ValueMap::default();
         for (k, v) in &captures.named {
@@ -134,18 +121,8 @@ impl Interpreter {
         // Reset stale numeric/named captures before applying new ones.
         self.reset_capture_env_vars();
 
-        for (i, slot) in captures.positional_slots().iter().enumerate() {
-            let value = match slot {
-                Some((from, to)) => make_capture_match(&captures.span_text(*from, *to), *from, *to),
-                None => Value::NIL,
-            };
-            self.env
-                .insert_sym(crate::symbol::wk::capture_index(i), value);
-        }
-        if captures.positional_slots().is_empty() {
-            self.env
-                .insert_sym(crate::symbol::wk::capture_index(0), Value::NIL);
-        }
+        self.env
+            .insert_sym(crate::symbol::wk::capture_index(0), Value::NIL);
         // Set named capture env vars from the match object's named hash
         let named_v = match_obj.match_named();
         if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
@@ -486,177 +463,6 @@ impl Interpreter {
             .and_then(Value::match_to)
             .map(|to| to as usize)
             .unwrap_or(0)
-    }
-
-    #[cfg(feature = "pcre2")]
-    pub(in crate::runtime) fn regex_match_with_captures_p5(
-        &self,
-        pattern: &str,
-        text: &str,
-    ) -> Option<RegexCaptures> {
-        let re = self.compile_p5_regex(pattern)?;
-        let mut locs = re.capture_locations();
-        let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
-        let names = re.capture_names();
-        // pcre2 reports BYTE offsets; recorded spans are char indices into
-        // the shared subject (ADR-0016 P3), so translate at the boundary.
-        let to_char = |b: usize| text.get(..b).map_or(b, |p| p.chars().count());
-        let mut out = RegexCaptures {
-            from: to_char(m0.start()),
-            to: to_char(m0.end()),
-            ..RegexCaptures::default()
-        };
-        out.set_target(Some(crate::runtime::MatchTarget::new(text)));
-        for idx in 1..locs.len() {
-            if names.get(idx).is_some_and(Option::is_none) {
-                if let Some((start, end)) = locs.get(idx) {
-                    let (cs, ce) = (to_char(start), to_char(end));
-                    out.positional.push(crate::runtime::PosSlot::span(cs, ce));
-                    out.positional_slots_mut().push(Some((cs, ce)));
-                } else {
-                    out.positional_slots_mut().push(None);
-                }
-                continue;
-            }
-            if let (Some(Some(name)), Some((start, end))) = (names.get(idx), locs.get(idx)) {
-                text.get(start..end)?;
-                out.named
-                    .entry(Symbol::intern(name))
-                    .or_default()
-                    .merge(NamedSlot::leaf(to_char(start), to_char(end)));
-            }
-        }
-        Some(out)
-    }
-
-    #[cfg(feature = "pcre2")]
-    pub(in crate::runtime) fn regex_match_all_with_captures_p5(
-        &self,
-        pattern: &str,
-        text: &str,
-    ) -> Vec<RegexCaptures> {
-        let Some(re) = self.compile_p5_regex(pattern) else {
-            return Vec::new();
-        };
-        let names = re.capture_names();
-        let mut out = Vec::new();
-        let mut start = 0usize;
-        let bytes = text.as_bytes();
-        let mut locs = re.capture_locations();
-        // pcre2 reports BYTE offsets; recorded spans are char indices into
-        // the shared subject (ADR-0016 P3), so translate at the boundary.
-        let to_char = |b: usize| text.get(..b).map_or(b, |p| p.chars().count());
-        let target = crate::runtime::MatchTarget::new(text);
-        while start <= bytes.len() {
-            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
-                break;
-            };
-            if text.get(m0.start()..m0.end()).is_none() {
-                break;
-            }
-            let mut item = RegexCaptures {
-                from: to_char(m0.start()),
-                to: to_char(m0.end()),
-                ..RegexCaptures::default()
-            };
-            item.set_target(Some(target.clone()));
-            for idx in 1..locs.len() {
-                if names.get(idx).is_some_and(Option::is_none) {
-                    if let Some((c_start, c_end)) = locs.get(idx) {
-                        if text.get(c_start..c_end).is_none() {
-                            continue;
-                        }
-                        let (cs, ce) = (to_char(c_start), to_char(c_end));
-                        item.positional.push(crate::runtime::PosSlot::span(cs, ce));
-                        item.positional_slots_mut().push(Some((cs, ce)));
-                    } else {
-                        item.positional_slots_mut().push(None);
-                    }
-                    continue;
-                }
-                if let (Some(Some(name)), Some((c_start, c_end))) = (names.get(idx), locs.get(idx))
-                {
-                    if text.get(c_start..c_end).is_none() {
-                        continue;
-                    }
-                    item.named
-                        .entry(Symbol::intern(name))
-                        .or_default()
-                        .merge(NamedSlot::leaf(to_char(c_start), to_char(c_end)));
-                }
-            }
-            // Advance past the match (at least 1 byte to avoid infinite loop)
-            if m0.end() == start {
-                start += 1;
-            } else {
-                start = m0.end();
-            }
-            out.push(item);
-        }
-        out
-    }
-
-    /// Every P5 match of `pattern` in `text` with its positional capture texts.
-    ///
-    /// Raku numbers a `:P5` substitution's captures the Raku way — P5 group 1 is
-    /// `$0` — so the replacement (an ordinary `qq` quote, `:P5` or not) can
-    /// interpolate `$0`, `$1`, ... exactly as it does for a Raku pattern.
-    #[cfg(feature = "pcre2")]
-    pub(crate) fn regex_find_all_p5_with_captures(
-        &mut self,
-        pattern: &str,
-        text: &str,
-    ) -> Vec<(usize, usize, Vec<String>)> {
-        let Some(re) = self.compile_p5_regex(pattern) else {
-            return Vec::new();
-        };
-        let bytes = text.as_bytes();
-        let mut results = Vec::new();
-        let mut start = 0usize;
-        let mut locs = re.capture_locations();
-        while start <= bytes.len() {
-            let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
-                break;
-            };
-            let char_start = text[..m0.start()].chars().count();
-            let char_end = text[..m0.end()].chars().count();
-            // Group 0 is the whole match; Raku exposes group N as `$(N-1)`.
-            let caps = (1..locs.len())
-                .map(|i| {
-                    locs.get(i)
-                        .and_then(|(s, e)| text.get(s..e))
-                        .unwrap_or("")
-                        .to_string()
-                })
-                .collect();
-            results.push((char_start, char_end, caps));
-            if m0.end() == start {
-                start += 1;
-            } else {
-                start = m0.end();
-            }
-        }
-        results
-    }
-
-    #[cfg(not(feature = "pcre2"))]
-    pub(crate) fn regex_find_all_p5_with_captures(
-        &mut self,
-        pattern: &str,
-        text: &str,
-    ) -> Vec<(usize, usize, Vec<String>)> {
-        let mut out = Vec::new();
-        let mut pos = 0usize;
-        // One target for the whole scan: rebuilding it per match is quadratic in
-        // subject length (#8247).
-        let target = MatchTarget::new(text);
-        while let Some((s, e, caps, _named, _spans)) =
-            self.regex_find_first_from_with_all_captures_in(pattern, &target, pos)
-        {
-            out.push((s, e, caps));
-            pos = if e > s { e } else { s + 1 };
-        }
-        out
     }
 
     /// Extract the regex value from a named token/regex definition.

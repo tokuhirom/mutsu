@@ -86,6 +86,9 @@ pub(crate) struct PatternDerived {
     /// backtrack retry in #8510's shape), so a full re-walk per call is pure
     /// waste once this pattern's own answer is known.
     pub(crate) contains_backref: std::sync::OnceLock<bool>,
+    /// Whether this pattern's subtree contains a code atom at its own capture
+    /// level (`atom_contains_code`'s per-pattern memo).
+    pub(crate) contains_code: std::sync::OnceLock<bool>,
     /// This pattern's own positional-capture-group count (`count_capture_groups`'s
     /// per-pattern memo). Also a pure function of the pattern shape, re-walked
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
@@ -224,6 +227,11 @@ pub(crate) struct OuterBackrefCaps {
     /// captures belong in the quantifier's folded positional slots rather
     /// than after them. The range is absolute in the visible positional list.
     pub(crate) merge_positional: Option<(usize, usize)>,
+    /// Where the enclosing level's match began. A same-scope sub-pattern (a
+    /// `[ … ]` group, an alternative) is part of the same regex, so `$/` in a
+    /// code block inside it spans from the *enclosing* start, not from the
+    /// sub-pattern's own.
+    pub(crate) match_from: usize,
 }
 
 impl OuterBackrefCaps {
@@ -249,10 +257,7 @@ impl OuterBackrefCaps {
             if let Some(node) = cur.named.get(name).and_then(|slot| slot.nodes.last()) {
                 return Some(node);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 
@@ -263,10 +268,7 @@ impl OuterBackrefCaps {
             if let Some(slot) = cur.positional.get(idx) {
                 return Some(slot);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 }
@@ -420,7 +422,7 @@ impl RegexCaptures {
     /// Convert this accumulator into the immutable stored node it describes
     /// (ADR-0016 P2). Consumes the accumulator; drops the accumulator-only
     /// fields nothing reads through a stored node (`hash_captures`,
-    /// `positional_slots`, `capture_start`/`capture_end`, `match_from`). The
+    /// `capture_start`/`capture_end`, `match_from`). The
     /// child payload is allocated only when something would go in it.
     pub(crate) fn into_cap_node(mut self) -> CapNode {
         // Take the cold payload whole: a leaf (the common case) never had one,
@@ -475,7 +477,7 @@ pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 /// The engine constructs, moves, clones and drops a `RegexCaptures` **per
 /// match candidate** — millions of times over one grammar parse — while every
 /// field in here is written by a minority of patterns: `:my` declarators,
-/// capture aliases, `%<name>=` hash captures, the pcre2/`:P5` slot axis, a
+/// capture aliases, `%<name>=` hash captures, a
 /// protoregex `:sym<>` win, and the two engine-entry-point links (`target`,
 /// `outer_backref`). Keeping them inline made the accumulator 336 bytes, so
 /// the per-candidate `memcpy` traffic and three `HashMap` drops were paid by
@@ -489,12 +491,6 @@ pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 /// when it was never allocated.
 #[derive(Clone, Default)]
 pub(crate) struct RareCaps {
-    /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
-    /// spans, where `None` represents an unmatched capture. A separate
-    /// numbering axis from `positional` (it has `None` holes where
-    /// `positional` has no entry at all); written only by the pcre2/`:P5`
-    /// path.
-    pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
     /// Variables declared via `:my $var = expr;` inside regex.
     /// These are made available to `<{ code }>` closures.
     ///
@@ -532,8 +528,7 @@ impl RareCaps {
     /// after a drain/take so a payload that has been emptied out again does
     /// not make every later clone copy an empty one.
     fn is_empty(&self) -> bool {
-        self.positional_slots.is_empty()
-            && self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
+        self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
             && self.sym.is_none()
             && self.capture_alias_map.is_empty()
             && self.action_name.is_none()
@@ -731,16 +726,6 @@ impl RegexCaptures {
     }
 
     #[inline]
-    pub(crate) fn positional_slots(&self) -> &[Option<(usize, usize)>] {
-        self.rare().map_or(&[], |rare| &rare.positional_slots)
-    }
-
-    #[inline]
-    pub(crate) fn positional_slots_mut(&mut self) -> &mut Vec<Option<(usize, usize)>> {
-        &mut self.rare_mut().positional_slots
-    }
-
-    #[inline]
     pub(crate) fn sym(&self) -> Option<&String> {
         self.rare().and_then(|rare| rare.sym.as_ref())
     }
@@ -857,7 +842,6 @@ mod cap_node_tests {
         assert!(caps.rare().is_none());
         assert!(caps.regex_vars().is_empty());
         assert!(caps.hash_captures().is_empty());
-        assert!(caps.positional_slots().is_empty());
         assert!(caps.sym().is_none());
         assert!(caps.target().is_none());
         assert!(caps.outer_backref().is_none());

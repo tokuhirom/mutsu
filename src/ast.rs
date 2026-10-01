@@ -963,7 +963,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -984,7 +983,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -1420,6 +1418,15 @@ pub(crate) enum ForMode {
     Lazy,
 }
 
+/// The declaration a [`Stmt::PackageRuntimeBody`] belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum PackageRuntimeDecl {
+    /// A `class`/`grammar` declaration, with its lexical flag and site id.
+    Class { is_lexical: bool, decl_id: u64 },
+    /// A brace-scoped `package`/`module`.
+    Package,
+}
+
 /// The declarator keyword used for a `Stmt::Package`. Determines the
 /// `package-kind` reported by X::Attribute::Package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -1697,6 +1704,22 @@ pub(crate) enum Stmt {
         is_unit: bool,
         /// True when declared with `my package` (lexically scoped).
         is_my: bool,
+    },
+    /// The run-time part of a class or package body whose declaration the
+    /// BEGIN prologue moved ahead (ADR-0134 §7, slice 1 residue). It re-enters
+    /// the declared package at the declaration's source position and runs the
+    /// body's bare statements and variable initializers there. The prologue
+    /// keeps the declaration with only its BEGIN-time part.
+    PackageRuntimeBody {
+        name: Symbol,
+        /// The run-time statements, in source order.
+        body: Vec<Stmt>,
+        /// The `my` lexicals the declaration's body declares, which `body`
+        /// reads and writes through the package's static store.
+        lexicals: Vec<String>,
+        /// Which declaration the body belongs to, so the package name is
+        /// qualified the way that declaration's own registration qualifies it.
+        decl: PackageRuntimeDecl,
     },
     Return(Expr),
     For {
@@ -2218,6 +2241,12 @@ pub(crate) enum Stmt {
         /// multi family whose proto was `is export(:some-tag, :ALL)`.
         export_tags: Vec<String>,
         custom_traits: Vec<String>,
+        /// The same traits as `custom_traits` with their argument
+        /// expressions (`is also<a b>`), index-aligned. A `proto method`'s
+        /// traits dispatch to a user `trait_mod:<is>` exactly as a `method`'s
+        /// do, and that needs the argument.
+        #[serde(default)]
+        trait_args: Vec<(String, Option<Expr>)>,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
         /// whose `{*}` dispatches to the matching multi method candidate,

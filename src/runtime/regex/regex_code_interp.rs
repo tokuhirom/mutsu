@@ -208,11 +208,41 @@ impl Interpreter {
     /// `pos`, lowest priority first, each with its capture delta — the shape
     /// the backtracking engine expects of a `Group` (a list element that is a
     /// `Regex` keeps its captures, as it did when it was spliced in as text).
+    /// The match engines call this one: under `MUTSU_RX_DIFF` it is recorded
+    /// and replayed like every other call-out (ADR-0135 D6).
     ///
     /// Cost: O(n + r) plus the code's run and the result's match, n = the
     /// subject's length, r = the result's rendered length.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn regex_code_interp_ends(
+        &mut self,
+        code: &str,
+        list: bool,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: Symbol,
+        ignore_case: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
+        self.rx_code_call(code, pos, current_caps, |interp| {
+            interp.regex_code_interp_ends_unrecorded(
+                code,
+                list,
+                chars,
+                pos,
+                current_caps,
+                pkg,
+                ignore_case,
+            )
+        })
+    }
+
+    /// [`Self::regex_code_interp_ends`] without the D6 record, for the
+    /// position-only matcher, which the compiled engine never stands in for.
+    ///
+    /// Cost: as [`Self::regex_code_interp_ends`].
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn regex_code_interp_ends_unrecorded(
         &mut self,
         code: &str,
         list: bool,

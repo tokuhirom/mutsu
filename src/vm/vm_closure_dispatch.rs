@@ -661,6 +661,14 @@ impl Interpreter {
             self.env_mut().insert_sym(k, val);
         }
 
+        // `readonly_vars` is keyed by bare name and follows the CALLER's frames,
+        // so a readonly parameter of whoever calls this closure must not decide
+        // whether its own captured `$x` may be assigned: restore the readonly
+        // state those variables had where the closure was created. The call
+        // frame pushed above journals the change, so the caller's marks come
+        // back on return (#10389).
+        self.reconcile_captured_readonly(data.captured_readonly.as_ref(), cc);
+
         loan_env!(self, push_caller_env());
 
         // Push Sub value to block_stack for callframe().code

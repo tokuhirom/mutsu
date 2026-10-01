@@ -1798,7 +1798,7 @@ impl Interpreter {
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
-                    && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
+                    && let Some(constraint) = self.element_store_constraint(&var_name)
                 {
                     for v in &vals {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
@@ -2096,7 +2096,7 @@ impl Interpreter {
                     }
                 }
                 // Check value type constraint for hash slice assignment
-                if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
+                if let Some(constraint) = self.element_store_constraint(&var_name)
                     && !self.is_container_subclass(&constraint)
                 {
                     for v in &vals {
@@ -2336,7 +2336,7 @@ impl Interpreter {
                 } else {
                     idx.to_string_value()
                 };
-                let array_elem_constraint = loan_env!(self, var_type_constraint(&var_name));
+                let array_elem_constraint = self.element_store_constraint(&var_name);
                 // For a `$`-sigil variable a CONTAINER type describes the whole
                 // container, not its elements — but a PARAMETERISED one says
                 // exactly what its elements must be, and Rakudo checks each
@@ -2459,7 +2459,7 @@ impl Interpreter {
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if let Some((_, ref rhs_values)) = range_slice
                     && (var_name.starts_with('@') || var_name.starts_with('%'))
-                    && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
+                    && let Some(constraint) = self.element_store_constraint(&var_name)
                 {
                     for v in rhs_values {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {

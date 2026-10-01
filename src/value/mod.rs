@@ -1436,7 +1436,25 @@ pub struct SubData {
     /// id as dead when the last copy is dropped, so the store can release the
     /// clone's entries instead of keeping one per clone forever (#9504).
     pub(crate) state_scope_guard: Option<Arc<crate::runtime::state_scope_reaper::StateScopeGuard>>,
+    /// The readonly state, at creation, of the scalar free variables this code
+    /// object WRITES: `Some` holds exactly those marked readonly then (a
+    /// non-`is rw` parameter of the creating routine, a `:=`-bound alias) with
+    /// their [`crate::ast::ReadonlyKind`]; every other written free variable
+    /// was writable. `None` means the creation site recorded nothing (a
+    /// hand-built code object, a routine with no written free variable) and
+    /// the call leaves the registry alone.
+    ///
+    /// `Interpreter::readonly_vars` is keyed by bare name and follows the
+    /// *dynamic* call stack, so a readonly parameter of whoever happens to be
+    /// calling this code object would otherwise decide whether the captured
+    /// variable of the same name may be assigned (#10389). Entering the code
+    /// object reconciles the registry against this record instead
+    /// (`Interpreter::reconcile_captured_readonly`).
+    pub(crate) captured_readonly: Option<CapturedReadonly>,
 }
+
+/// See [`SubData::captured_readonly`].
+pub(crate) type CapturedReadonly = Arc<[(Symbol, crate::ast::ReadonlyKind)]>;
 
 /// A code object's parameter names, interned once.
 ///
@@ -2763,7 +2781,6 @@ pub struct RegexAdverbs {
     pub overlap: bool,
     pub repeat: Option<usize>,
     pub nth: Option<Arc<String>>,
-    pub perl5: bool,
     pub pos: bool,
     /// Literal position argument of `:pos(N)` (anchor the match to start
     /// exactly at character offset N). `None` means `:pos` without an explicit

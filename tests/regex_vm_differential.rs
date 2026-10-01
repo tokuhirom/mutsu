@@ -70,6 +70,10 @@ differential_case!(
     r#"say ("a,a,a" ~~ / a+? % ',' /).gist; say ("a,a,a" ~~ / a*? % ',' /).gist; say ("a,a,a" ~~ / a**?2..3 % ',' /).gist; say ("a,a,a" ~~ / ^ a+? % ',' ',a' /).gist; say ("a,a,a" ~~ / ^ a**?2..3 % ',' $ /).gist"#
 );
 differential_case!(
+    sigspace_separated_quantifiers,
+    r#"say ("a, a, a" ~~ / :s a*? % "," /).gist; say ("a, a, a" ~~ / :s a**?2..3 % "," /).gist; say ("a , a , a" ~~ / :s a+ % "," /).gist; say ("a , a , a" ~~ / :s a +% "," /).gist; say ("a, a, a," ~~ / :s a+? %% "," $ /).gist; say ("1, 2" ~~ / :s <digit>+ % "," /).gist; say ("1,2" ~~ / <digit>+ % "," /).gist; say ("1, 2" ~~ / :s $<x>=\d ** 2 % "," /).gist"#
+);
+differential_case!(
     ratchet_quantifiers,
     r#"say so "aaa" ~~ / :r a+ a /; say so "aab" ~~ / :r a+ b /; say ("ab" ~~ / :r a? b /).gist; say so "a" ~~ / :r a? a /"#
 );
@@ -185,6 +189,58 @@ differential_case!(
     r#"say ("abc" ~~ / \w+ & ab /).gist; say ("abc" ~~ / <[a..c]>+ & .* c /).gist; say ("ab12" ~~ / (\w+) & (\w\w) /).gist; say ("foobar" ~~ / [ \w+ & foo ] bar /).gist; say ("aaa" ~~ / a+ & a ** 2 /).gist; say "ab cd".match(/ \w+ & <[a..c]>+ /, :g).join("|"); say ("abc" ~~ / $<x>=\w+ & $<y>=[ab] c /)<x y>.join(","); say ("aXb" ~~ / a [ . & <:Lu> ] b /).gist; say ("abc" ~~ / a && ab /).gist; say ("aa" ~~ / $<x>=(\w) [ $<x> & . ] /).gist; say ("ab" ~~ / ( <alpha> & . )+ /).gist; say ("abab" ~~ / [ \w+ & ab ]+ /).gist"#
 );
 
+differential_case!(
+    code_blocks,
+    r#"my @log; say so "abc" ~~ / a { @log.push("blk@" ~ $/.Str) } b c /; say @log.join(","); @log = (); say so "aab" ~~ / a+ { @log.push("n" ~ $/.chars) } b /; say @log.join(","); @log = (); say so "aax" ~~ / a+ { @log.push("n" ~ $/.chars) } b /; say @log.join(","); @log = (); say so "aaa" ~~ / a* { @log.push("n" ~ $/.chars) } a /; say @log.join(","); @log = (); say ("ab" ~~ / (a) { @log.push("c0=" ~ $0) } (b) /).gist; say @log.join(","); @log = (); say so "abc" ~~ / a [ b { @log.push($/.Str) } || c ] c /; say @log.join(",")"#
+);
+differential_case!(
+    code_assertions,
+    r#"my @log; say so "abc" ~~ / a <?{ @log.push("as1"); True }> b <?{ @log.push("as2"); False }> c /; say @log.join(","); @log = (); say so "abc" ~~ / a <!{ @log.push("neg"); False }> b c /; say @log.join(","); my $n = 0; say so "aaaa" ~~ / [ <?{ $n++; True }> . ]+ /; say $n; @log = (); say ("abd" ~~ / a [ b <?{ @log.push($/.Str); True }> | c ] d /).gist; say @log.join(","); say ("12" ~~ / (\d) <?{ +$0 == 1 }> \d /).gist; say ("22" ~~ / (\d) <?{ +$0 == 1 }> \d /).gist"#
+);
+differential_case!(
+    code_scopes,
+    r#""abc" ~~ / a [ b { say "grp: ", $/.Str } ] c /; "abc" ~~ / a ( b { say "cap: ", $/.Str } ) c /; "abc" ~~ / (a) [ b { say "grp0: ", $0.Str } ] c /; "abc" ~~ / (a) [ (b) { say "grp1: ", $0.Str, $1.Str } ] c /; "abc" ~~ / (a) ( (b) { say "cap1: ", $0.Str } ) c /; "aaab" ~~ / [ a { say "it: ", $/.Str } ]+ b /"#
+);
+differential_case!(
+    code_my_declarations,
+    r#"my @log; say so "abc" ~~ / :my $x = 3; a { @log.push("x=$x") } b <?{ $x == 3 }> c /; say @log.join(","); say ("abab" ~~ / :my $i = 0; [ ab { $i++ } ]+ <?{ $i == 2 }> /).gist; say ("ab" ~~ / :my @l = 1, 2; a <?{ @l.elems == 2 }> b /).gist; say ("ab" ~~ / :my $y = 'b'; a $y /).gist"#
+);
+differential_case!(
+    code_block_dies,
+    r#"my $r = do { "abc" ~~ / a { die "boom" } b /; "no error" }; CATCH { default { say "caught: ", .message } }; say $r"#
+);
+differential_case!(
+    code_in_lookaround_and_conjunction,
+    r#"my @log; say ("ab" ~~ / a <?before b { @log.push("la") }> b /).gist; say @log.join(","); @log = (); say ("ab" ~~ / <?after a { @log.push("lb") }> b /).gist; say @log.join(","); @log = (); say ("abc" ~~ / \w+ { @log.push("c1") } & ab /).gist; say @log.join(",")"#
+);
+
+differential_case!(
+    isolated_groups,
+    r#"my $re = /\d+/; say ("a12b" ~~ / a <$re> b /).gist; say ("a12b" ~~ / a $re b /).gist; my $r2 = /(\d)(\d)/; say ("a12b" ~~ / a <$r2> b /).gist; say ("a12b" ~~ / (a) <$r2> (b) /).gist; my @log; my $r3 = /x { @log.push("r3@" ~ $/.Str) }/; say so "ax" ~~ / a <$r3> /; say @log.join(","); say ("aaa1" ~~ / [ <$re> | a ]+ /).gist; say ("12ab" ~~ / <$re>+ ab /).gist; say ("1234" ~~ / <$re> <$re> /).gist; say ("1234" ~~ / :r <$re> \d /).gist"#
+);
+differential_case!(
+    closure_and_variable_interpolation,
+    r#"say ("aab" ~~ / <{ 'a+' }> b /).gist; my $n = 2; say ("aaab" ~~ / <{ 'a' x $n }> a? b /).gist; say ("ab" ~~ / :my $x = 'a'; $x b /).gist; say ("aab" ~~ / :my $x = 'a'; $x+ b /).gist; say ("abab" ~~ / :my $x = 'ab'; $x ** 2 /).gist; my @log; say so "abc" ~~ / a <{ @log.push("closure@" ~ $/.Str); 'b' }> c /; say @log.join(",")"#
+);
+differential_case!(
+    code_that_matches_a_regex_with_code,
+    r#"my @log; say so "ab" ~~ / a <?{ "x" ~~ / x { @log.push("inner") } /; @log.push("outer"); True }> b /; say @log.join(","); @log = (); say so "ab" ~~ / a { so "yy" ~~ / y <?{ @log.push("assert"); True }> y / } b { @log.push("tail") } /; say @log.join(",")"#
+);
+
+differential_case!(
+    lexicals_in_nested_levels,
+    r#"my @log; say so "xab" ~~ / x :my $v = 'a'; ( $v { @log.push("in:" ~ $v) } b ) /; say @log.join(","); say ("ab" ~~ / :my $v = 'a'; ( $v ) b /).gist; say ("aab" ~~ / :my $v = 'a'; [ $v ]+ b /).gist; say ("a,a" ~~ / :my $v = 'a'; ( $v )+ % ',' /).gist; say ("ab" ~~ / :my $v = 'a'; [ <?{ $v eq 'a' }> a ] b /).gist"#
+);
+
+differential_case!(
+    code_interpolation_candidates,
+    r#"my @alts = <ab a>; say ("abc" ~~ / @(@alts) c /).gist; say ("abc" ~~ / $( 'ab' ) c /).gist; say ("aab" ~~ / @( <a aa> ) b /).gist; say ("xab" ~~ / x [ @(<a ab>) ]+ /).gist; say ("xaab" ~~ / x @(<a aa>) b /).gist; say ("abab" ~~ / :r @(<a ab>) <[ab]>+ /).gist; my @log; say so "ab" ~~ / a $( @log.push("interp"); 'b' ) /; say @log.join(","); @log = (); say ("aab" ~~ / @( @log.push("pick"); <aa a> ) b /).gist; say @log.join(",")"#
+);
+differential_case!(
+    code_repeat_counts,
+    r#"my $n = 3; say ("aaaa" ~~ / a ** {$n} /).gist; say ("aaaa" ~~ / ^ a ** {$n} $ /).gist; say ("aaaa" ~~ / a ** {2..3} a /).gist; say ("abab" ~~ / [ab] ** {2} /).gist; say ("aaa" ~~ / :r a ** {1..*} a /).gist; say ("aaaa" ~~ / a **? {1..*} /).gist; say ("abcabc" ~~ / [ <alpha> ** {2} ]+ /).gist; my @log; say so "aaab" ~~ / a ** { @log.push("again"); 1..3 } b /; say @log.join(","); @log = (); say so "xaab" ~~ / x [ a ** { @log.push("it"); 1 } ]+ b /; say @log.join(",")"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.
@@ -207,4 +263,33 @@ say +$big.match(/ (\w+) \s (\d+) /, :g);"#;
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no compiled= in: {line}"));
     assert!(compiled >= 3, "the §2.3 shapes were not compiled: {line}");
+}
+
+/// Slice C (#10253): a pattern holding a code atom must take the compiled
+/// engine. A silently declined `{ … }` / `<?{ … }>` / `:my` pattern would pass
+/// every differential case above while measuring nothing.
+#[test]
+fn code_atoms_are_compiled() {
+    let src = r#"my $n = 0;
+say so "abc" ~~ / a { $n++ } b /;
+say so "abc" ~~ / a <?{ $n++; True }> b /;
+say so "abc" ~~ / :my $x = 1; a <?{ $x == 1 }> b /;
+say $n;"#;
+    let (ok, out, err) = run(src, &[("MUTSU_VM_STATS", "1")]);
+    assert!(ok, "run failed: {err}");
+    assert_eq!(out, "True\nTrue\nTrue\n2\n");
+    let line = err
+        .lines()
+        .find_map(|l| l.split("regex-vm: ").nth(1))
+        .unwrap_or_else(|| panic!("no regex-vm stats line: {err}"));
+    assert!(
+        !line.contains("code="),
+        "a code atom declined to the walk: {line}"
+    );
+    let compiled: u64 = line
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix("compiled="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no compiled= in: {line}"));
+    assert!(compiled >= 3, "the code patterns were not compiled: {line}");
 }

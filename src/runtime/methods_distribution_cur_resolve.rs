@@ -43,7 +43,7 @@ impl Interpreter {
         if let Some(provides) = meta.hash_get_str("provides")
             && let ValueView::Hash(map) = provides.view()
         {
-            for (_, v) in map.iter() {
+            for v in map.values() {
                 let path_str = v.to_string_value();
                 files.insert(
                     path_str.clone(),

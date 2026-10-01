@@ -24,19 +24,15 @@ const BLOCK: usize = 32;
 // Cost: O(n), n = haystack.len(); the block test is a branch-free compare the
 // compiler vectorizes, so the constant is a fraction of a per-char loop.
 fn find_char(haystack: &[char], c: char) -> Option<usize> {
-    let mut blocks = haystack.chunks_exact(BLOCK);
+    let (blocks, remainder) = haystack.as_chunks::<BLOCK>();
     let mut base = 0;
-    for block in &mut blocks {
+    for block in blocks {
         if block.iter().fold(false, |hit, &x| hit | (x == c)) {
             return block.iter().position(|&x| x == c).map(|i| base + i);
         }
         base += BLOCK;
     }
-    blocks
-        .remainder()
-        .iter()
-        .position(|&x| x == c)
-        .map(|i| base + i)
+    remainder.iter().position(|&x| x == c).map(|i| base + i)
 }
 
 /// The smallest `i` with `from <= i <= last` where `needle` occurs at `i` in

@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 36;
+plan 39;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -53,6 +53,14 @@ is_run 'my @x = gather 43', { :0status, :err(/"Useless use" .* 43/) },
     'gather body as initializer warns its useless statements';
 is_run 'sub f { my @x = gather 43 }; f()', { :0status, :err(/"Useless use" .* 43/) },
     'gather body inside a sub warns';
+# Every position is searched (typed AST visitor, ADR-0137) -- but a signature
+# is not, matching rakudo.
+is_run 'class C { has $.x = gather { 47; take 1 } }; C.new', { :0status, :err(/"Useless use" .* 47/) },
+    'gather body in an attribute default warns';
+is_run 'my %h = a => gather { 44; take 1 }; %h<a>[0]', { :0status, :err(/"Useless use" .* 44/) },
+    'gather body in a pair value warns';
+is_run 'sub f($x = gather { 42; take 1 }) { $x }; f()', { :0status, :err('') },
+    'gather body in a parameter default does not warn';
 is_run 'my @x = gather { take 1 }; say @x.elems', { :0status, :out("1\n"), :err('') },
     'gather body with only a take does not warn';
 

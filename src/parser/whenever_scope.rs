@@ -22,150 +22,71 @@
 //!
 //! When a `whenever` is reached with `in_scope == false`, we record its line.
 //!
-//! The walker is intentionally conservative: an unhandled container is simply
-//! not recursed into, which can only *miss* an out-of-scope `whenever` (a false
-//! negative), never produce a false positive that would reject valid code.
+//! The walk is the typed AST visitor (ADR-0137): every construct is descended
+//! into, so a `whenever` hidden in a condition, an argument list or any other
+//! child is found too.
 
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 
 use super::SUPPLY_EMITTER_PREFIX;
 
 /// Returns the 1-based source line of the first `whenever` block found outside
 /// the scope of a `react`/`supply` block, or `None` if every `whenever` is
 /// properly scoped.
+// Cost: O(n), n = size of the AST.
 pub(crate) fn find_out_of_scope_whenever(stmts: &[Stmt]) -> Option<i64> {
-    let mut line = 0i64;
-    let mut found: Option<i64> = None;
-    walk_stmts(stmts, false, &mut line, &mut found);
-    found
+    let mut scan = WheneverScope::default();
+    walk_stmts(&mut scan, stmts);
+    scan.found
 }
 
-fn walk_stmts(stmts: &[Stmt], in_scope: bool, line: &mut i64, found: &mut Option<i64>) {
-    for s in stmts {
-        walk_stmt(s, in_scope, line, found);
+#[derive(Default)]
+struct WheneverScope {
+    /// Whether some `react`/`supply` block lexically encloses the current node.
+    in_scope: bool,
+    line: i64,
+    found: Option<i64>,
+}
+
+impl WheneverScope {
+    fn scoped(&mut self, in_scope: bool, f: impl FnOnce(&mut Self)) {
+        let saved = std::mem::replace(&mut self.in_scope, in_scope);
+        f(self);
+        self.in_scope = saved;
     }
 }
 
-fn walk_stmt(stmt: &Stmt, in_scope: bool, line: &mut i64, found: &mut Option<i64>) {
-    match stmt {
-        Stmt::SetLine(n) => *line = *n,
-
-        // Scope openers.
-        Stmt::React { body } => walk_stmts(body, true, line, found),
-        Stmt::Whenever { supply, body, .. } => {
-            if !in_scope && found.is_none() {
-                *found = Some(*line);
-            }
-            walk_expr(supply, in_scope, line, found);
-            // A whenever body is itself inside a react/supply scope, and nested
-            // `whenever` blocks are allowed there.
-            walk_stmts(body, true, line, found);
+impl Visit for WheneverScope {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.found.is_some() {
+            return;
         }
-
-        // Routine / package boundaries do NOT break the enclosure: Rakudo's
-        // check is purely lexical, so a `whenever` inside a `sub`/`method`/class
-        // that is itself lexically nested in a `supply`/`react` block is valid
-        // (`supply { my sub g { whenever … } }`). Preserve the current scope.
-        Stmt::SubDecl { body, .. }
-        | Stmt::MethodDecl { body, .. }
-        | Stmt::ClassDecl { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::Package { body, .. } => {
-            walk_stmts(body, in_scope, line, found);
+        match stmt {
+            Stmt::SetLine(n) => self.line = *n,
+            Stmt::React { body } => self.scoped(true, |v| walk_stmts(v, body)),
+            // Nested `whenever` blocks inside an in-scope one stay in scope.
+            Stmt::Whenever { .. } if !self.in_scope => self.found = Some(self.line),
+            // Routine, package and closure boundaries do NOT break the
+            // enclosure: Rakudo's check is purely lexical, so a `whenever`
+            // inside a `sub`/`method`/class nested in a `supply`/`react` block
+            // is valid (`supply { my sub g { whenever … } }`).
+            _ => walk_stmt(self, stmt),
         }
-
-        // Inline blocks / control flow: preserve scope.
-        Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::Given { body, .. }
-        | Stmt::When { body, .. }
-        | Stmt::While { body, .. } => walk_stmts(body, in_scope, line, found),
-        Stmt::For { body, iterable, .. } => {
-            walk_expr(iterable, in_scope, line, found);
-            walk_stmts(body, in_scope, line, found);
-        }
-        Stmt::Loop { body, init, .. } => {
-            if let Some(init) = init {
-                walk_stmt(init, in_scope, line, found);
-            }
-            walk_stmts(body, in_scope, line, found);
-        }
-        Stmt::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            walk_stmts(then_branch, in_scope, line, found);
-            walk_stmts(else_branch, in_scope, line, found);
-        }
-        Stmt::Label { stmt, .. } => walk_stmt(stmt, in_scope, line, found),
-
-        // Expression-bearing statements: descend into the expression to reach
-        // `supply { }` emitters and closures.
-        Stmt::Expr(e) | Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
-            walk_expr(e, in_scope, line, found);
-        }
-        Stmt::Take(e, _) => walk_expr(e, in_scope, line, found),
-
-        _ => {}
     }
-}
 
-fn walk_expr(expr: &Expr, in_scope: bool, line: &mut i64, found: &mut Option<i64>) {
-    match expr {
-        // The `supply { }` sugar lowers to `Supply.on-demand(-> $emitter { ... })`
-        // where the emitter closure name marks a genuine supply scope. A normal
-        // pointy/closure `Lambda` (`-> $x { }`) is a lexical boundary that does
-        // NOT break an existing supply/react enclosure, so preserve `in_scope`.
-        Expr::Lambda { param, body, .. } => {
-            let opens_scope = in_scope || param.starts_with(SUPPLY_EMITTER_PREFIX);
-            walk_stmts(body, opens_scope, line, found);
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.found.is_some() {
+            return;
         }
-        // A closure boundary is also purely lexical: a `whenever` inside an
-        // anonymous `sub { }` or a pointy `-> { }` nested in a `supply`/`react`
-        // block is valid, so preserve the current scope (a top-level closure
-        // still has `in_scope == false` and its `whenever` is still rejected).
-        Expr::AnonSub { body, .. } => {
-            walk_stmts(body, in_scope, line, found);
-        }
-        Expr::AnonSubParams { body, .. } => walk_stmts(body, in_scope, line, found),
-
-        // ADR-0033 Phase 1: an un-expanded WhateverCurry marker is, like the
-        // `Lambda`/`AnonSubParams` cases above, a purely lexical boundary —
-        // preserve the current scope and descend into its (still un-curried)
-        // body.
-        Expr::WhateverCurry(inner) => walk_expr(inner, in_scope, line, found),
-
-        // `todo/tickets/chained-compare-ast-node.md`: a chain operand can
-        // itself be a block-valued expression carrying `whenever`.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands {
-                walk_expr(o, in_scope, line, found);
+        match expr {
+            // The `supply { }` sugar lowers to `Supply.on-demand(-> $emitter
+            // { ... })`, where the emitter closure's parameter name marks a
+            // genuine supply scope. Any other closure keeps the current scope.
+            Expr::Lambda { param, .. } if param.starts_with(SUPPLY_EMITTER_PREFIX) => {
+                self.scoped(true, |v| walk_expr(v, expr))
             }
+            _ => walk_expr(self, expr),
         }
-
-        // Inline block-valued expressions preserve scope.
-        Expr::Block(body) | Expr::Gather(body) => walk_stmts(body, in_scope, line, found),
-        Expr::DoBlock { body, .. } => walk_stmts(body, in_scope, line, found),
-        Expr::DoStmt(s) => walk_stmt(s, in_scope, line, found),
-
-        // Call / method-call arguments may carry the supply emitter closure or
-        // other block arguments.
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args {
-                walk_expr(a, in_scope, line, found);
-            }
-        }
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            walk_expr(target, in_scope, line, found);
-            for a in args {
-                walk_expr(a, in_scope, line, found);
-            }
-        }
-
-        _ => {}
     }
 }

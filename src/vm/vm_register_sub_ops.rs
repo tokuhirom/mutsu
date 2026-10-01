@@ -1418,6 +1418,13 @@ impl Interpreter {
             // `current_package()` actually names such a stash.
             self.export_implicit_stash_proto(&name_str);
         }
+        // A method proto's traits are `trait_mod:<is>(Method ...)` applications
+        // made once, at declaration (`class_body_proto_method_decl`,
+        // `role_body_deferred_proto_method`); this op also re-runs for every
+        // composition of a role, and passing a `Sub` would never match.
+        if *is_method {
+            return Ok(());
+        }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
         if !custom_traits.is_empty() {
             let has_trait_mod =
