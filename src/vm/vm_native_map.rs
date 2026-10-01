@@ -31,6 +31,7 @@
 
 use super::*;
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::token_kind::TokenKind;
 use crate::value::SubData;
 
@@ -274,79 +275,96 @@ pub(crate) fn native_rw_map_block_shape(data: &SubData) -> Option<NativeRwMapSha
 /// - `Some(true)` — simple but mutates `$_` (`$_++`/`$_--`, `$_ = …`, `$_ .= …`,
 ///   bare `s///`/`tr///`). map rw-aliases `$_` to the source element, so the
 ///   caller only runs such a block natively when it can write the mutation back.
+// Cost: O(n), n = size of the block body.
 fn classify_body(stmts: &[Stmt]) -> Option<bool> {
-    let mut mutates = false;
-    for s in stmts {
-        mutates |= classify_stmt(s)?;
-    }
-    Some(mutates)
+    let mut scan = MapBodyClassifier::default();
+    walk_stmts(&mut scan, stmts);
+    (!scan.escapes).then_some(scan.mutates_topic)
 }
 
-fn classify_exprs(exprs: &[Expr]) -> Option<bool> {
-    let mut mutates = false;
-    for e in exprs {
-        mutates |= classify_expr(e)?;
-    }
-    Some(mutates)
+/// The whitelist [`classify_body`] walks: every statement and expression form
+/// it accepts is listed, and anything else marks the body as escaping.
+#[derive(Default)]
+struct MapBodyClassifier {
+    /// A form the scanner cannot prove safe (control flow, a closure, a
+    /// declaration, ...): the caller must fall back.
+    escapes: bool,
+    mutates_topic: bool,
 }
 
-fn classify_stmt(stmt: &Stmt) -> Option<bool> {
-    match stmt {
-        // A bare `s///` / `tr///` statement mutates the topic `$_` in place.
-        Stmt::Expr(Expr::Subst { .. }) | Stmt::Expr(Expr::Transliterate { .. }) => Some(true),
-        Stmt::Expr(e) => classify_expr(e),
-        Stmt::VarDecl { expr, .. } => classify_expr(expr),
-        // Assigning to the topic `$_` (`$_ = …`, `$_ ~= …`, `$_ .= …`) mutates
-        // the source element; assignments to other (captured/outer) names are
-        // handled by the closure's free-var writeback and are not a topic mutation.
-        Stmt::Assign { name, expr, .. } => Some(classify_expr(expr)? || name == "_"),
-        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => classify_exprs(es),
-        // A line-number marker for diagnostics; neither escapes nor mutates.
-        // Pointy/`Lambda` block bodies carry these (placeholder blocks don't),
-        // so accepting them lets `-> $a { ... }` map natively too.
-        Stmt::SetLine(_) => Some(false),
-        // Self-contained nested control structures: safe as long as their bodies
-        // are simple (a `last`/`next` inside them is over-conservatively rejected
-        // by the leaf rules below, which is fine).
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => Some(classify_expr(cond)? | classify_body(then_branch)? | classify_body(else_branch)?),
-        Stmt::Block(body) | Stmt::SyntheticBlock(body) => classify_body(body),
-        // Everything else — control flow (`return`/`last`/`next`/`redo`/`take`/
-        // `goto`/`proceed`/`succeed`), phasers, declarations, loops, given/when,
-        // etc. — is treated as an escape: fall back to the interpreter.
-        _ => None,
+impl Visit for MapBodyClassifier {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.escapes {
+            return;
+        }
+        match stmt {
+            // A bare `s///` / `tr///` statement mutates the topic `$_` in place.
+            Stmt::Expr(Expr::Subst { .. }) | Stmt::Expr(Expr::Transliterate { .. }) => {
+                self.mutates_topic = true
+            }
+            // Assigning to the topic `$_` (`$_ = …`, `$_ ~= …`, `$_ .= …`)
+            // mutates the source element; assignments to other
+            // (captured/outer) names are handled by the closure's free-var
+            // writeback and are not a topic mutation.
+            Stmt::Assign { name, expr, .. } => {
+                self.mutates_topic |= name == "_";
+                self.visit_expr(expr);
+            }
+            Stmt::Expr(_)
+            | Stmt::VarDecl { .. }
+            | Stmt::Say(_)
+            | Stmt::Put(_)
+            | Stmt::Print(_)
+            | Stmt::Note(_)
+            // A line-number marker for diagnostics; neither escapes nor
+            // mutates. Pointy/`Lambda` block bodies carry these (placeholder
+            // blocks don't), so accepting them lets `-> $a { ... }` map
+            // natively too.
+            | Stmt::SetLine(_)
+            // Self-contained nested control structures: safe as long as their
+            // bodies are simple (a `last`/`next` inside them is
+            // over-conservatively rejected by the leaf rules).
+            | Stmt::If { .. }
+            | Stmt::Block(_)
+            | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
+            // Everything else — control flow (`return`/`last`/`next`/`redo`/
+            // `take`/`goto`/`proceed`/`succeed`), phasers, declarations, loops,
+            // given/when, etc. — is treated as an escape: fall back to the
+            // interpreter.
+            _ => self.escapes = true,
+        }
     }
-}
 
-fn classify_expr(expr: &Expr) -> Option<bool> {
-    match expr {
-        // Leaves with no embedded statements or control flow.
-        Expr::Literal(_)
-        | Expr::Var(_)
-        | Expr::ArrayVar(_)
-        | Expr::HashVar(_)
-        | Expr::CodeVar(_)
-        | Expr::CaptureVar(_)
-        | Expr::BareWord(_)
-        | Expr::Whatever
-        | Expr::HyperWhatever
-        | Expr::EnvIndex(_)
-        | Expr::NonDestructiveSubst { .. }
-        | Expr::MatchRegex(_)
-        | Expr::MatchRegexTree { .. } => Some(false),
-        // A nested `s///` / `tr///` (e.g. under `~~`) targets whichever value the
-        // surrounding construct aliases to `$_`, which we cannot determine here;
-        // be conservative. Only a *statement-level* `s///`/`tr///` is recognized
-        // as a topic mutation (see `classify_stmt`).
-        Expr::Subst { .. } | Expr::Transliterate { .. } => None,
-        // Control-flow expressions escape the loop.
-        Expr::ControlFlow { .. } => None,
-        Expr::Unary { op, expr } | Expr::PostfixOp { op, expr } => {
-            if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.escapes {
+            return;
+        }
+        match expr {
+            // Leaves with no embedded statements or control flow.
+            Expr::Literal(_)
+            | Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::CodeVar(_)
+            | Expr::CaptureVar(_)
+            | Expr::BareWord(_)
+            | Expr::Whatever
+            | Expr::HyperWhatever
+            | Expr::EnvIndex(_)
+            | Expr::NonDestructiveSubst { .. }
+            | Expr::MatchRegex(_)
+            | Expr::MatchRegexTree { .. } => {}
+            // A nested `s///` / `tr///` (e.g. under `~~`) targets whichever
+            // value the surrounding construct aliases to `$_`, which we cannot
+            // determine here; be conservative. Only a *statement-level*
+            // `s///`/`tr///` is recognized as a topic mutation (see
+            // `visit_stmt`). Control-flow expressions escape the loop.
+            Expr::Subst { .. } | Expr::Transliterate { .. } | Expr::ControlFlow { .. } => {
+                self.escapes = true
+            }
+            Expr::Unary { op, expr } | Expr::PostfixOp { op, expr }
+                if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) =>
+            {
                 // `$_++` / `$_--` mutate the topic. A `++`/`--` of a plain
                 // *named* scalar (`$c++`, a captured-outer or block-local var)
                 // does NOT touch the topic and is reproduced by the native loop
@@ -356,54 +374,50 @@ fn classify_expr(expr: &Expr) -> Option<bool> {
                 // element `@a[$i]++`, an attribute `$o.x++`, a deref) is not a
                 // plain name write and stays an escape (fall back).
                 match expr.as_ref() {
-                    Expr::Var(n) if n == "_" => Some(true),
-                    Expr::Var(_) => Some(false),
-                    _ => None,
-                }
-            } else {
-                classify_expr(expr)
-            }
-        }
-        Expr::Reduction { expr, .. }
-        | Expr::PositionalPair(expr)
-        | Expr::ZenSlice(expr)
-        | Expr::IndirectTypeLookup(expr) => classify_expr(expr),
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => Some(classify_expr(left)? | classify_expr(right)?),
-        Expr::InfixFunc { left, right, .. } => Some(classify_expr(left)? | classify_exprs(right)?),
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => Some(classify_expr(cond)? | classify_expr(then_expr)? | classify_expr(else_expr)?),
-        Expr::Index { target, index, .. } => Some(classify_expr(target)? | classify_expr(index)?),
-        Expr::MethodCall { target, args, .. }
-        | Expr::DynamicMethodCall { target, args, .. }
-        | Expr::HyperMethodCall { target, args, .. }
-        | Expr::HyperMethodCallDynamic { target, args, .. } => {
-            Some(classify_expr(target)? | classify_exprs(args)?)
-        }
-        Expr::CallOn { target, args } => Some(classify_expr(target)? | classify_exprs(args)?),
-        // The `.=`-on-topic marker (`$_ .= meth` / `.=meth`) mutates `$_`, exactly
-        // like the `Stmt::Assign { name: "_" }` case in `classify_stmt`.
-        Expr::Call { name, .. } if name.resolve() == "__mutsu_topic_dotassign" => Some(true),
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => classify_exprs(args),
-        Expr::StringInterpolation(items)
-        | Expr::ArrayLiteral(items)
-        | Expr::BracketArray(items, _)
-        | Expr::CaptureLiteral(items) => classify_exprs(items),
-        Expr::Hash(items) => {
-            let mut mutates = false;
-            for (_, val) in items {
-                if let Some(v) = val {
-                    mutates |= classify_expr(v)?;
+                    Expr::Var(n) if n == "_" => self.mutates_topic = true,
+                    Expr::Var(_) => {}
+                    _ => self.escapes = true,
                 }
             }
-            Some(mutates)
+            // The `.=`-on-topic marker (`$_ .= meth` / `.=meth`) mutates `$_`,
+            // exactly like the `Stmt::Assign { name: "_" }` case.
+            Expr::Call { name, .. } if name.resolve() == "__mutsu_topic_dotassign" => {
+                self.mutates_topic = true
+            }
+            Expr::Unary { .. }
+            | Expr::PostfixOp { .. }
+            | Expr::Reduction { .. }
+            | Expr::PositionalPair(_)
+            | Expr::ZenSlice(_)
+            | Expr::IndirectTypeLookup(_)
+            | Expr::Binary { .. }
+            | Expr::HyperOp { .. }
+            | Expr::MetaOp { .. }
+            | Expr::InfixFunc { .. }
+            | Expr::Ternary { .. }
+            | Expr::Index { .. }
+            | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
+            | Expr::HyperMethodCall { .. }
+            | Expr::HyperMethodCallDynamic { .. }
+            | Expr::CallOn { .. }
+            | Expr::Call { .. }
+            | Expr::UserRoutineCall { .. }
+            | Expr::StringInterpolation(_)
+            | Expr::ArrayLiteral(_)
+            | Expr::BracketArray(..)
+            | Expr::CaptureLiteral(_)
+            | Expr::Hash(_) => walk_expr(self, expr),
+            // Anything else (do-blocks, gather, lambdas, try, symbolic deref,
+            // …) may embed statements or reflective behavior we cannot vet
+            // here: fall back.
+            _ => self.escapes = true,
         }
-        // Anything else (do-blocks, gather, lambdas, try, symbolic deref, …) may
-        // embed statements or reflective behavior we cannot vet here: fall back.
-        _ => None,
+    }
+
+    // Unreachable through the accepted forms (a regex literal is a leaf);
+    // kept explicit so an accepted form never vets regex code blocks.
+    fn visit_regex_node(&mut self, _node: &crate::regex_tree::RegexNode) {
+        self.escapes = true;
     }
 }

@@ -303,13 +303,12 @@ impl Compiler {
     }
 
     /// Check if a block body contains placeholder variables ($^a, $^b, etc.)
+    /// that belong to the block itself — the same parameters
+    /// `collect_placeholders_shallow` gives the closure it then compiles, so
+    /// the two answers cannot disagree.
+    // Cost: O(n log n), n = size of `stmts` (the collector sorts its names).
     pub(super) fn has_block_placeholders(stmts: &[Stmt]) -> bool {
-        for stmt in stmts {
-            if Self::stmt_has_placeholder(stmt) {
-                return true;
-            }
-        }
-        false
+        !crate::ast::collect_placeholders_shallow(stmts).is_empty()
     }
 
     /// A closure passed as a **method argument** escapes the creating frame.
@@ -1199,72 +1198,6 @@ impl Compiler {
                     | TokenKind::DotDotDotCaret
             ),
             Expr::Whatever | Expr::HyperWhatever | Expr::ArrayLiteral(_) => true,
-            _ => false,
-        }
-    }
-
-    pub(super) fn stmt_has_placeholder(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
-                Self::expr_has_placeholder(e)
-            }
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-                Self::expr_has_placeholder(expr)
-            }
-            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-                es.iter().any(Self::expr_has_placeholder)
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::expr_has_placeholder(cond)
-                    || then_branch.iter().any(Self::stmt_has_placeholder)
-                    || else_branch.iter().any(Self::stmt_has_placeholder)
-            }
-            Stmt::Block(stmts) => stmts.iter().any(Self::stmt_has_placeholder),
-            _ => false,
-        }
-    }
-
-    pub(super) fn expr_has_placeholder(expr: &Expr) -> bool {
-        match expr {
-            Expr::Var(name) => name.starts_with('^'),
-            Expr::CodeVar(name) => name.starts_with('^'),
-            Expr::Binary { left, right, .. } => {
-                Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
-            }
-            Expr::Unary { expr, .. } => Self::expr_has_placeholder(expr),
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::expr_has_placeholder(cond)
-                    || Self::expr_has_placeholder(then_expr)
-                    || Self::expr_has_placeholder(else_expr)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::MethodCall { target, args, .. }
-            | Expr::DynamicMethodCall { target, args, .. }
-            | Expr::HyperMethodCall { target, args, .. }
-            | Expr::HyperMethodCallDynamic { target, args, .. } => {
-                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::Index { target, index, .. } | Expr::IndexAssign { target, index, .. } => {
-                Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
-            }
-            Expr::CallOn { target, args } => {
-                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::StringInterpolation(parts)
-            | Expr::ArrayLiteral(parts)
-            | Expr::BracketArray(parts, _)
-            | Expr::CaptureLiteral(parts) => parts.iter().any(Self::expr_has_placeholder),
             _ => false,
         }
     }

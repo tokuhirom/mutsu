@@ -414,23 +414,7 @@ impl Compiler {
     /// it to the unit level would be wrong. Direct (depth-0) children are left
     /// to `hoist_sub_decls`, which already registers them.
     pub(super) fn hoist_nested_our_subs(&mut self, stmts: &[Stmt]) {
-        fn collect(stmts: &[Stmt], depth: usize, out: &mut Vec<Stmt>) {
-            for stmt in stmts {
-                match stmt {
-                    Stmt::SubDecl { custom_traits, .. }
-                        if depth > 0 && custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
-                    {
-                        out.push(stmt.clone());
-                    }
-                    Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                        collect(body, depth + 1, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let mut nested = Vec::new();
-        collect(stmts, 0, &mut nested);
+        let nested = super::body_scans::nested_our_subs(stmts);
         for mut hoisted in nested {
             let name = match &mut hoisted {
                 Stmt::SubDecl {
@@ -455,7 +439,7 @@ impl Compiler {
                     }
                     *name
                 }
-                _ => unreachable!("collect() only pushes SubDecl statements"),
+                _ => unreachable!("nested_our_subs() only collects SubDecl statements"),
             };
             let idx = self.add_sub_decl_plan(&hoisted);
             self.code.emit(OpCode::RegisterDecl(idx));
