@@ -327,7 +327,7 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or_else(|| Self::try_reconstruct_typed_key(key, &target_type));
                     if !loan_env!(self, type_matches_value(&target_type, &key_as_typed_value)) {
-                        return Err(runtime::utils::type_check_element_typed_error(
+                        return Err(self.type_check_element_failure(
                             var_name,
                             constraint,
                             &Value::str(key.clone()),
@@ -345,9 +345,7 @@ impl Interpreter {
                         if let Some(default) = self.var_default(var_name) {
                             default.clone()
                         } else if explicit_initializer && self.is_definite_constraint(constraint) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                var_name, constraint, val,
-                            ));
+                            return Err(self.type_check_element_failure(var_name, constraint, val));
                         } else {
                             val.clone()
                         }
@@ -363,9 +361,7 @@ impl Interpreter {
                             )?
                         };
                         if !self.type_matches_value(&target_type, &coerced) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                var_name, constraint, val,
-                            ));
+                            return Err(self.type_check_element_failure(var_name, constraint, val));
                         }
                         coerced
                     }
@@ -448,9 +444,7 @@ impl Interpreter {
                 if let Some(default) = self.var_default(var_name) {
                     coerced_items.push(default.clone());
                 } else if explicit_initializer && self.is_definite_constraint(constraint) {
-                    return Err(runtime::utils::type_check_element_typed_error(
-                        var_name, constraint, item,
-                    ));
+                    return Err(self.type_check_element_failure(var_name, constraint, item));
                 } else if native_constraint {
                     // A native element type has no type object; Nil reverts to the
                     // array's numeric/string zero.
@@ -527,9 +521,7 @@ impl Interpreter {
                 )?
             };
             if !self.type_matches_value(&target_type, &coerced) {
-                return Err(runtime::utils::type_check_element_typed_error(
-                    var_name, constraint, item,
-                ));
+                return Err(self.type_check_element_failure(var_name, constraint, item));
             }
             // Wrap/check native integer overflow for native typed arrays
             let coerced = Self::wrap_native_int_by_constraint(&target_type, coerced)?;
@@ -907,11 +899,7 @@ impl Interpreter {
                 } else {
                     format!("${}", name)
                 };
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    &display,
-                    &constraint,
-                    new_val,
-                ));
+                return Err(self.type_check_assignment_failure(&display, &constraint, new_val));
             }
         }
         Ok(())
@@ -954,11 +942,7 @@ impl Interpreter {
             && !new_val.is_nil()
             && !self.type_matches_value(&constraint, &new_val)
         {
-            return Err(RuntimeError::typecheck_assignment(
-                &constraint,
-                &new_val,
-                None,
-            ));
+            return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
         }
         *guard = new_val.clone();
         drop(guard);

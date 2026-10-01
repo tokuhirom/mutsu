@@ -289,7 +289,7 @@ impl Interpreter {
                     && !value.is_nil()
                     && !self.type_matches_value(vt, &value)
                 {
-                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                    return Err(self.type_check_element_failure(
                         target_var.unwrap_or("%"),
                         vt,
                         &value,
@@ -629,10 +629,8 @@ impl Interpreter {
                         && !self.type_matches_value(&c.ty, &value)
                     {
                         return Err(match c.element_of {
-                            Some(owner) => crate::runtime::utils::type_check_element_typed_error(
-                                &owner, &c.ty, &value,
-                            ),
-                            None => RuntimeError::typecheck_assignment(&c.ty, &value, None),
+                            Some(owner) => self.type_check_element_failure(&owner, &c.ty, &value),
+                            None => self.typecheck_assignment_failure(&c.ty, &value, None),
                         });
                     }
                     *cell.lock().unwrap() = value.clone();

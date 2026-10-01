@@ -1662,9 +1662,7 @@ impl Interpreter {
                                 && !matches!(kc.as_str(), "" | "Any" | "Mu")
                                 && !self.type_matches_value(kc, k)
                             {
-                                return Err(crate::runtime::utils::type_check_element_typed_error(
-                                    &key, kc, k,
-                                ));
+                                return Err(self.type_check_element_failure(&key, kc, k));
                             }
                             if let Some(vc) = &value_constraint
                                 && !matches!(vc.as_str(), "" | "Any" | "Mu")
@@ -1672,11 +1670,7 @@ impl Interpreter {
                                 if !matches!(v.view(), ValueView::Nil)
                                     && !self.type_matches_value(vc, v)
                                 {
-                                    return Err(
-                                        crate::runtime::utils::type_check_element_typed_error(
-                                            &key, vc, v,
-                                        ),
-                                    );
+                                    return Err(self.type_check_element_failure(&key, vc, v));
                                 }
                                 // A typed Hash-valued append merges two nested
                                 // hashes, so it does not turn the value into an
@@ -1700,9 +1694,7 @@ impl Interpreter {
                                     };
                                     if !self.type_matches_value(vc, &resulting) {
                                         return Err(
-                                            crate::runtime::utils::type_check_element_typed_error(
-                                                &key, vc, &resulting,
-                                            ),
+                                            self.type_check_element_failure(&key, vc, &resulting)
                                         );
                                     }
                                 }

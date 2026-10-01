@@ -81,9 +81,7 @@ impl Interpreter {
                 && !item.is_nil()
                 && !self.type_matches_value(value_type, item)
             {
-                return Err(runtime::utils::type_check_element_typed_error(
-                    name, value_type, item,
-                ));
+                return Err(self.type_check_element_failure(name, value_type, item));
             }
         }
         val = self.tag_container_metadata(
@@ -521,11 +519,7 @@ impl Interpreter {
                     Value::package(Symbol::intern(&nominal))
                 }
             } else if !self.type_matches_value(&constraint, &val) {
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    &name,
-                    &constraint,
-                    &val,
-                ));
+                return Err(self.type_check_assignment_failure(&name, &constraint, &val));
             } else if !matches!(val.view(), ValueView::Package(_)) {
                 loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
             } else {

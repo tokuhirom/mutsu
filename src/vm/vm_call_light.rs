@@ -590,12 +590,13 @@ impl Interpreter {
                     match crate::runtime::types::wrap_native_int_for_binding(tc, val.clone()) {
                         // A type object: the binder's own "Cannot unbox" error.
                         Err(e) => e,
-                        Ok(_) => RuntimeError::typecheck_binding_parameter_with_repr(
-                            &crate::runtime::types::param_display_name(pd),
-                            tc,
-                            &val,
-                        )
-                        .with_parameter_object(pd, Some(&*self)),
+                        Ok(_) => self
+                            .typecheck_binding_parameter_failure(
+                                &crate::runtime::types::param_display_name(pd),
+                                tc,
+                                &val,
+                            )
+                            .with_parameter_object(pd, Some(&*self)),
                     }
                 }
                 None => positional_light_type_error(

@@ -1802,11 +1802,7 @@ impl Interpreter {
                 {
                     for v in &vals {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                &var_name,
-                                &constraint,
-                                v,
-                            ));
+                            return Err(self.type_check_element_failure(&var_name, &constraint, v));
                         }
                     }
                 }
@@ -2101,11 +2097,7 @@ impl Interpreter {
                 {
                     for v in &vals {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                &var_name,
-                                &constraint,
-                                v,
-                            ));
+                            return Err(self.type_check_element_failure(&var_name, &constraint, v));
                         }
                     }
                 }
@@ -2113,7 +2105,7 @@ impl Interpreter {
                 if let Some(key_constraint) = loan_env!(self, var_hash_key_constraint(&var_name)) {
                     for key in keys.iter() {
                         if !self.type_matches_value(&key_constraint, key) {
-                            return Err(runtime::utils::type_check_element_typed_error(
+                            return Err(self.type_check_element_failure(
                                 &var_name,
                                 &key_constraint,
                                 key,
@@ -2392,9 +2384,7 @@ impl Interpreter {
                         && !allomorph_ok
                         && !self.type_matches_value(key_type, &idx)
                     {
-                        return Err(runtime::utils::type_check_binding_typed_error(
-                            key_type, &idx,
-                        ));
+                        return Err(self.type_check_binding_failure(key_type, &idx));
                     }
                 }
                 // (`scalar_container_element_constraint` above has already
@@ -2408,11 +2398,7 @@ impl Interpreter {
                     && !val.is_nil()
                     && !self.type_matches_value(&constraint, &val)
                 {
-                    return Err(runtime::utils::type_check_element_typed_error(
-                        &var_name,
-                        &constraint,
-                        &val,
-                    ));
+                    return Err(self.type_check_element_failure(&var_name, &constraint, &val));
                 }
                 // Check key type constraint for single-key hash element assignment
                 if var_name.starts_with('%')
@@ -2420,11 +2406,7 @@ impl Interpreter {
                         loan_env!(self, var_hash_key_constraint(&var_name))
                     && !self.type_matches_value(&key_constraint, &idx)
                 {
-                    return Err(runtime::utils::type_check_element_typed_error(
-                        &var_name,
-                        &key_constraint,
-                        &idx,
-                    ));
+                    return Err(self.type_check_element_failure(&var_name, &key_constraint, &idx));
                 }
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.
@@ -2463,11 +2445,7 @@ impl Interpreter {
                 {
                     for v in rhs_values {
                         if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                &var_name,
-                                &constraint,
-                                v,
-                            ));
+                            return Err(self.type_check_element_failure(&var_name, &constraint, v));
                         }
                     }
                 }
@@ -3489,7 +3467,7 @@ impl Interpreter {
                         val = Value::package(Symbol::intern(&nominal));
                     }
                 } else if !self.type_matches_value(&constraint, &val) {
-                    return Err(runtime::utils::type_check_assignment_typed_error(
+                    return Err(self.type_check_assignment_failure(
                         &resolved_name,
                         &constraint,
                         &val,
@@ -4806,9 +4784,7 @@ impl Interpreter {
         if loan_env!(self, type_matches_value(&ty, &probe)) {
             return None;
         }
-        Some(crate::runtime::utils::type_check_element_typed_error(
-            &slot_name, &ty, &probe,
-        ))
+        Some(self.type_check_element_failure(&slot_name, &ty, &probe))
     }
 
     /// The `Proxy` a chained subscript store would land ON, if any -- for a
