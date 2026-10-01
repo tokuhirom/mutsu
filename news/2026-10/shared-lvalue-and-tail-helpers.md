@@ -45,4 +45,4 @@ treat a trailing `LEAVE`/`KEEP`/`UNDO`/`PRE`/`POST` as making the value `Nil`. A
 The AST-walker baseline fell by 10 walkers (148 to 138). Four rows left the list entirely
 (`expr_data.rs`, `dot_assign.rs`, `let_temp.rs`, `with_desugar.rs`), and `expr_binary.rs`,
 `helpers_ast_utils.rs`, `mod.rs`, `stmt.rs` and `run.rs` each lost one or two. Pinned by
-`t/lang/constant-sigilless-element-lvalue.t` and `t/control/trailing-phaser-block-value.t`.
+`t/collections/constant-sigilless-element-lvalue.t` and `t/control/trailing-phaser-block-value.t`.
