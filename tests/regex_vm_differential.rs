@@ -276,6 +276,18 @@ differential_case!(
     r#"grammar G { token TOP { (<a> <b>) <x=a> $<y>=<b> [ <a> <b> ]+ } token a { 'a' } token b { 'b' } }; my $m = G.parse("ababababab"); say $m.so; say $m[0]<a>.Str, $m[0]<b>.Str; say $m<x>.Str, $m<y>.Str; say $m<a>.elems, $m<b>.elems; say $m.gist"#
 );
 
+// ADR-10488 D3: separated quantifiers and goal matches whose sides file only
+// disjoint names match in place; shared names, positional captures and markers
+// on the side merged last keep the folded levels.
+differential_case!(
+    separated_quantifiers_filing_in_place,
+    r#"grammar G { rule TOP { <item>* % ',' } token item { \w+ } }; say G.parse("a, bb, c")<item>».Str.join("|"); grammar H { token TOP { [ <k> '=' <v> ]+ % ';' } token k { \w } token v { \d } }; my $m = H.parse("a=1;b=2"); say $m<k>».Str, $m<v>».Str, $m<k>.^name; say H.parse("a=1")<v>.^name; grammar J { token TOP { <x>+ % <x> } token x { \w } }; say J.parse("abc")<x>».Str.join("|"); grammar K { token TOP { <i>+ % (',') } token i { \d } }; my $k = K.parse("1,2,3"); say $k<i>».Str.join("|"), " ", $k[0]».Str.join("|"); grammar M { token TOP { [ <d>+ ]+ % '-' } token d { \d } }; say M.parse("12-3")<d>».Str.join("|"); grammar A { token TOP { [ <x=item> ]+ % ',' } token item { \w } }; my $a = A.parse("p,q"); say $a<x>».Str.join("|"), $a<item>».Str.join("|"), $a<x>[1] === $a<item>[1]; grammar Z { token TOP { <item>* % ',' } token item { \w } }; say Z.parse("")<item>.^name"#
+);
+differential_case!(
+    goal_matches_filing_in_place,
+    r#"grammar G { rule TOP { '[' ~ ']' <list> } rule list { <item>* % ',' } token item { \w+ } }; say G.parse("[a, bb, c ]")<list><item>».Str.join("|"); grammar P { token TOP { '(' ~ ')' (\d+) } }; my $p = P.parse("(42)"); say ~$p[0], $p.list.elems; grammar Q { token TOP { '(' ~ <close> <body> } token close { ')' } token body { \w+ } }; my $q = Q.parse("(xy)"); say ~$q<body>, ~$q<close>; grammar R { token TOP { '{' ~ '}' [ <k> ':' <k> ] } token k { \w } }; say R.parse(q[{a:b}])<k>».Str.join("|"); grammar S { token TOP { <a> '(' ~ ')' <a> } token a { \w } }; say S.parse("x(y)")<a>».Str.join("|"); grammar T { token TOP { '(' ~ <a> <a>+ } token a { \w } }; say T.parse("(bcd")<a>».Str.join("|"); grammar U { token TOP { '(' ~ ')' \d+ } }; say U.parse("(12").so"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

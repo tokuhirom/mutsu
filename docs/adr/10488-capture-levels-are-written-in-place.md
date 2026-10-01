@@ -81,7 +81,9 @@ whose writes are trailed. A callee frame's return therefore costs the node and n
   quantified the token's names and every name filed since the quantifier began, read off the
   level's capture trail (the fold marked every name an iteration's level held). `filed_keys`
   decides "can file": a subrule call's capture name, the rule's own name for an alias that keeps
-  it, a silent call's action marker, a token's `$<x>=` aliases.
+  it, a silent call's action marker, a token's `$<x>=` aliases. (The fold's order for a shared
+  name is itself not rakudo's, which is match order, #10574; this decision keeps the engines'
+  output unchanged, and fixing that lets the separated quantifier drop the disjointness test.)
 - A **`~` goal match** matched its inner pattern and its goal in levels of their own and merged
   them, the goal's first (`GoalEnd`). When the goal files no positional capture or marker and no
   name the inner pattern can file, both sides match in place.
@@ -126,8 +128,9 @@ budget), and `CapNode` holds them as `Option<Symbol>`.
   simpler by the same measure (`SepNames` replaces `Collect`/`SepEmit` for that shape).
 - **Risk**: the two engines now differ in *how* they reach a separated quantifier's or a goal
   match's captures (the walk still folds levels). D6 compares the resulting trees on every file of `t/` and the
-  roast whitelist, and `t/grammar/grammar-separated-quantifier-named-captures.t` pins the rakudo
-  values. One difference is deliberate and unobservable: a `<x=.y>` alias inside such an atom now
+  roast whitelist (a sweep under `MUTSU_RX_DIFF=1`), `tests/regex_vm_differential.rs` gained the
+  in-place shapes and the shapes that keep the fold, and
+  `t/grammar/grammar-separated-quantifier-named-captures.t` pins the rakudo values. One difference is deliberate and unobservable: a `<x=.y>` alias inside such an atom now
   reaches the level's capture alias map, which the fold dropped; nothing reads that map's attribute.
 - The walk keeps building deltas; it is deleted in ADR-0135 Slice E, so making it allocate less
   would be discarded work (ADR-0135 §7).
@@ -158,3 +161,8 @@ debug and release counts agree to within 30 allocations on `main`: 192,865 and 1
 | D4 frame arena, proto ranking in scratch | 125,336 |
 | D3 static name sets, separated quantifiers in place (named-only separators) | 120,876 |
 | D3 goal matches and sigspace separators in place; trail and LTM vector reuse | 60,366 |
+
+The release build of the last step: **60,340** allocations (the issue's goal is at most 100,000),
+of which the parse's own are ~32,100, from ~164,600: about 3.9 per subrule Match instead of 20.
+Instructions fell from 180.4M to 120.7M. `tests/grammar_parse_alloc_budget.rs` pins the
+per-element slope of the same grammar.

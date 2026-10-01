@@ -17,18 +17,22 @@ place instead:
   (it was a hash map whose table and per-name vector were each allocated on first use).
 - A callee frame's return files the subrule's Match straight into the caller's level, through the
   same filing decision the walk's delta builder uses (`file_named_candidate` and a `CapSink`).
-- A separated quantifier or a goal match whose two sides file positional captures or markers on
-  only one side, and no name on both, files in place: the fold the levels existed for would produce
-  the same tree. The names it marks list-valued are interned when the pattern compiles.
+- A separated quantifier whose atom and separator file only names, none in common, and a goal
+  match whose goal files only names its inner pattern does not, match in place: the fold the levels
+  existed for would produce the same tree. The names a quantifier marks list-valued are interned
+  when the pattern compiles.
 - Call frames live in an arena indexed by position; a proto's ranking, a level's undo trail and an
   LTM measurement's vectors are reused.
 - A capture's `:sym` and alias rule name are interned `Symbol`s, inline.
 
-`scripts/bench-det.sh benchmarks/bench-grammar-parse-big.raku` allocations: 192,837 → RELEASE_ALLOCS
-(release); instructions RELEASE_IR_BEFORE → RELEASE_IR_AFTER. The step-by-step figures are in the
-ADR. `tests/grammar_parse_alloc_budget.rs` pins the per-element slope of the same grammar.
+`scripts/bench-det.sh benchmarks/bench-grammar-parse-big.raku` (release): allocations
+192,837 → 60,340, of which the parse's own fell from ~164,600 to ~32,100 (5.1x); instructions
+180.4M → 120.7M (-33%). The step-by-step figures are in the ADR.
+`tests/grammar_parse_alloc_budget.rs` pins the per-element slope of the same grammar.
 
-Two differences from rakudo turned up while checking goal matches against it, both older than this
-change and shared by both regex engines: a `rule`'s separated quantifier accepts whitespace before
-its separator (#10569), and a `<(` / `)>` marker inside a goal match's inner pattern makes
-`Grammar.parse` fail (#10570).
+Three differences from rakudo turned up while checking these shapes against it, all older than
+this change and shared by both regex engines: a `rule`'s separated quantifier accepts whitespace
+before its separator (#10569); a `<(` / `)>` marker inside a goal match's inner pattern makes
+`Grammar.parse` fail (#10570); and a name captured by both sides of a separated quantifier or a
+goal match lists its entries side by side rather than in match order (#10574), which is why the
+in-place forms require the two sides to file no name in common.

@@ -54,6 +54,9 @@ fn pattern_files_names_only(pattern: &RegexPattern) -> bool {
 /// quantifier's iterations or a goal match's two sides may file in place only
 /// when their sets are disjoint: the fold put one side's entries of a shared
 /// name after all of the other's, which in-place filing would interleave.
+// TODO(#10574): rakudo lists a shared name's entries in match order, which is
+// what in-place filing gives; once the fold does too, a separated quantifier
+// needs no disjointness test.
 fn filed_keys(pattern: &RegexPattern, out: &mut Vec<Symbol>) {
     for t in &pattern.tokens {
         for name in [&t.named_capture, &t.secondary_named_capture]
