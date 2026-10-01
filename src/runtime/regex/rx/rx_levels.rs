@@ -122,8 +122,9 @@ impl Levels {
     /// group's: `<$rx>` is a match of its own that the caller never sees).
     // Cost: O(1) (the store itself is kept for a backtrack into the group).
     pub(super) fn discard(&mut self) {
-        let store = self.stack.pop().expect("an open capture level");
-        self.journal.push(Journal::Closed(store));
+        if let Some(store) = self.stack.pop() {
+            self.journal.push(Journal::Closed(store));
+        }
     }
 
     /// Close the innermost level and keep its captures as one iteration of a
