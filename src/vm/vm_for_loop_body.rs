@@ -1118,10 +1118,24 @@ impl Interpreter {
                 // A VM-array object's bare slot values are just as immutable
                 // (`for @tuple.kv -> \k, \v { v = 42 }`); a chunk carrying a
                 // container is left alone, since that slot is writable.
-                let buffer_chunk_bare = (source_value_buffer || spec.source_items_are_bare)
-                    && !spec.multi_param_names.is_empty()
+                // A source the compiler only knows is PARTLY bare
+                // (`source_items_are_bare`, e.g. `for $%h, Any -> \h, \T`)
+                // qualifies only when every slot is a plain scalar value, the
+                // one shape whose unchanged binding compares equal to its slot.
+                let buffer_chunk_bare = !spec.multi_param_names.is_empty()
                     && matches!(item.view(), ValueView::Array(chunk, ..)
-                        if !chunk.items().iter().any(Self::binding_carries_element_cell));
+                    if !chunk.items().iter().any(Self::binding_carries_element_cell)
+                        && (source_value_buffer
+                            || (spec.source_items_are_bare
+                                && chunk.items().iter().all(|v| {
+                                    matches!(
+                                        v.view(),
+                                        ValueView::Int(_)
+                                            | ValueView::Num(_)
+                                            | ValueView::Str(_)
+                                            | ValueView::Bool(_)
+                                    )
+                                }))));
                 let quant_chunk_before: Option<Vec<Value>> = ((source_immutable_quant
                     || buffer_chunk_bare)
                     && !spec.multi_param_names.is_empty())
