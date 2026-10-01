@@ -1014,6 +1014,7 @@ impl Interpreter {
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
+            self.note_amp_param_shadowed_names(type_param_defs);
             loan_env!(
                 self,
                 register_role_decl(

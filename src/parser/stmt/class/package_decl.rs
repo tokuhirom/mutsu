@@ -601,6 +601,14 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     let (rest, _) = ws(rest)?;
     // Parse traits (is export, etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    // A `proto sub infix:<precedes>(...) {*}` declares the operator for the
+    // rest of the scope, exactly as an `only`/`multi` sub would: `$a precedes
+    // $b` must parse even before (or without) any candidate (#10516).
+    if !is_method && !is_regex_proto {
+        crate::parser::stmt::simple::register_user_sub(&name);
+        crate::parser::stmt::simple::register_user_callable_term_symbol(&name);
+        crate::parser::stmt::sub::register_parse_affecting_traits(&name, &traits);
+    }
     let (rest, _) = ws(rest)?;
     // May have body or just semicolon
     let mut body = Vec::new();
