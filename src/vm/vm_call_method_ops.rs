@@ -445,6 +445,12 @@ impl Interpreter {
                 }
                 Some(out)
             }
+            // A grammar cursor is minted without BUILD, so an unset declared
+            // attribute reads as its uninitialised value (the type object, an
+            // empty `@` / `%`), which the full dispatch builds (#9803).
+            None if attributes.contains_key(crate::value::match_view::cursor_match_marker()) => {
+                None
+            }
             // Public accessor exists but the attribute is unset.
             None => Some(Value::NIL),
         }

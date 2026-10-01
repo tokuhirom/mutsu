@@ -950,12 +950,14 @@ impl Interpreter {
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
             let alias_map = captures.take_capture_alias_map();
+            let cursor = captures.take_cursor();
             let match_obj = Value::make_match_object_full_with_regex_vars(
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
                 captures.regex_vars(),
+                cursor,
                 gtarget,
             );
             let match_obj = {
@@ -1138,6 +1140,7 @@ impl Interpreter {
             &caps.positional,
             &caps.named,
             caps.regex_vars(),
+            caps.rare().and_then(|rare| rare.cursor.clone()),
             caps.target_or_new(text),
         )
     }
@@ -1151,6 +1154,7 @@ impl Interpreter {
             &kids.positional,
             &kids.named,
             &kids.regex_vars,
+            kids.cursor.clone(),
             target.clone(),
         )
     }
