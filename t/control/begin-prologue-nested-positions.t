@@ -7,7 +7,7 @@ use Test;
 # against rakudo: the BEGIN runs once, before the unit's mainline, even when
 # its enclosing code never runs.
 
-plan 12;
+plan 13;
 
 my @log;
 
@@ -50,3 +50,6 @@ is sees-static().raku, 'Any', 'a BEGIN in a default sees the inner lexical in it
 my @runs;
 for ^2 { @runs.push(BEGIN { @log.push('value'); 3 } + 0) }
 is-deeply @runs, [3, 3], 'a value-form BEGIN operand is a constant of its site';
+
+sub compound { my $y = 1; $y += BEGIN { @log.push('compound'); 1 }; $y }
+is @log.grep('compound').elems, 1, 'a BEGIN on the right of a compound assignment runs once';
