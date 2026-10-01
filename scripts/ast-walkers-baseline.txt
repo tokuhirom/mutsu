@@ -38,7 +38,6 @@ src/parser/expr/precedence_meta_ops/hyper_concat.rs   2  # 2 lowerings of a hype
 src/parser/expr/whatever.rs                           2  # contains_whatever/contains_xx_with_bare_whatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/parser/expr/whatever_wrap.rs                      2  # 2 parser rewrites: `o` composition operands and method-call chains wrapped as WhateverCode
 src/parser/primary/container/meta_ops.rs              3  # X/Z meta-op operand-chain spines and the chained-zip normalization rewrite
-src/parser/primary/ident/supply.rs                    1
 src/parser/primary/misc/colonpair.rs                  1  # render_signature_item: renders a signature item back to source text
 src/parser/primary/misc/hash.rs                       1  # hash_pair_from_expr: shape match of one hash-literal entry (through pair markers)
 src/parser/sink_warn.rs                               5  # sink-context propagation: visits only sink positions, by design
