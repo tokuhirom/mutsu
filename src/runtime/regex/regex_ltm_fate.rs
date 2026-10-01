@@ -36,6 +36,13 @@ pub(crate) fn ltm_fate_frame_open() -> Option<usize> {
     LTM_FATE_MAX.with(|f| f.replace(None))
 }
 
+/// Take the furthest fate recorded in the current frame so far, leaving the
+/// frame empty: a run that must tell which of its paths a fate belongs to
+/// reads it after each atom.
+pub(crate) fn ltm_fate_frame_take() -> Option<usize> {
+    LTM_FATE_MAX.with(|f| f.take())
+}
+
 /// Close a frame opened by [`ltm_fate_frame_open`]: restore the enclosing
 /// frame's fate and return this frame's own furthest fate.
 pub(crate) fn ltm_fate_frame_close(enclosing: Option<usize>) -> Option<usize> {
