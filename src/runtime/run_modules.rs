@@ -1611,18 +1611,23 @@ impl Interpreter {
                 };
                 qualified
                     .strip_prefix(prefix)
+                    .map(|rest| rest.split('\u{0}').next().unwrap_or(rest))
                     .is_some_and(|rest| !rest.contains("::") && exported_here.contains(rest))
             });
             let aliases: Vec<(String, String)> = owned_types
                 .filter_map(|qualified| {
-                    qualified
+                    // A lexical (`my`) type is filed under a NUL-suffixed key;
+                    // its source-facing short name stops at the NUL.
+                    let source_name = qualified.split('\u{0}').next().unwrap_or(qualified);
+                    source_name
                         .rsplit_once("::")
                         .map(|(_, short)| (short.to_string(), qualified.clone()))
                 })
                 .filter(|(short, qualified)| {
                     short != qualified
                         && !Self::is_builtin_type(short)
-                        && !self.is_my_scoped_package_item(qualified)
+                        && (exported_here.contains(short)
+                            || !self.is_my_scoped_package_item(qualified))
                 })
                 .collect();
             if !aliases.is_empty() {
