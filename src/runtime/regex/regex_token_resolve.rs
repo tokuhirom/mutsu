@@ -473,8 +473,23 @@ impl Interpreter {
                 self.resolve_one_token_pattern_with_args(&def, arg_values)
             });
             match resolved {
-                Ok(candidates) => {
+                Ok(mut candidates) => {
                     bound_candidate = true;
+                    // An inherited rule dispatches its own subrules virtually
+                    // through the receiver grammar, exactly as the argument-less
+                    // path does (`resolve_unqualified_token_patterns_in_pkg`):
+                    // under `grammar Top is A is B`, a rule of `A` calling a
+                    // rule only `B` declares must find it.
+                    for entry in candidates.iter_mut() {
+                        if entry.1 != pkg
+                            && self
+                                .mro_readonly(pkg.as_str())
+                                .iter()
+                                .any(|scope| scope.as_str() == entry.1.as_str())
+                        {
+                            entry.1 = pkg;
+                        }
+                    }
                     out.extend(candidates);
                 }
                 Err(err) => {

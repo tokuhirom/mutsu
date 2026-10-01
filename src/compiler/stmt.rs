@@ -4834,6 +4834,7 @@ impl Compiler {
             Stmt::Block(body) => {
                 self.compile_block_inline(body);
             }
+            s if self.compile_type_decl_value(s) => {}
             Stmt::SyntheticBlock(body) => {
                 // A parser wrapper (e.g. a tail `my $*x := ...` bind used as
                 // the last statement of a phaser-carrying block or a `let`

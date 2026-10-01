@@ -201,6 +201,7 @@ impl Compiler {
                         }
                     }
                     Stmt::SyntheticBlock(inner) => self.compile_synthetic_block_inline(inner),
+                    s if self.compile_type_decl_value(s) => {}
                     Stmt::VarDecl { .. } => {
                         self.compile_stmt(stmt);
                         // VarDecl returns the variable value (like Raku)

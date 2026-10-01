@@ -999,6 +999,7 @@ impl Compiler {
                         sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                         continue;
                     }
+                    s if sub_compiler.compile_type_decl_value(s) => continue,
                     // ENTER phaser as last statement: compile body inline
                     // so the value is left on stack as implicit return
                     Stmt::Phaser {
@@ -1528,6 +1529,9 @@ impl Compiler {
                     sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                     continue;
                 }
+                if is_value && sub_compiler.compile_type_decl_value(stmt) {
+                    continue;
+                }
                 if is_value && let Stmt::Assign { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
                     sub_compiler.emit_tail_var_stmt_value(stmt, name, true);
@@ -1681,6 +1685,7 @@ impl Compiler {
                             sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                             continue;
                         }
+                        s if sub_compiler.compile_type_decl_value(s) => continue,
                         Stmt::Assign { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
                             sub_compiler.emit_tail_var_stmt_value(stmt, name, true);
