@@ -10,7 +10,9 @@
 //! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`),
 //! lookaround, `:i` / `:m` and `&`. Slice C (#10253) adds the call-out atoms
 //! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
-//! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`). A pattern holding
+//! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`), then the
+//! interpolation atoms: a capture-isolated group (`<$rx>`), `$x` of an in-regex
+//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). A pattern holding
 //! anything else is declined as a whole and keeps the tree walk (ADR-0135
 //! D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
@@ -111,6 +113,9 @@ pub(super) enum RxOp {
         start: u16,
         nested: bool,
     },
+    /// Close the capture level `OpenCapture` opened for a capture-isolated
+    /// group (`<$rx>`) and drop its captures.
+    DropCapture,
     /// Match `atoms[i]`, whose match reads or writes captures (a
     /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
     /// lookaround), through the walk's own single-candidate matcher, and
@@ -197,9 +202,10 @@ pub(crate) struct RxProgram {
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
-    /// Whether the program runs Raku code (a `Code` or `VarDecl` op). The
-    /// position-only matcher treats code atoms as inert, so it must not run a
-    /// program that has any.
+    /// Whether the program runs Raku code or reads an in-regex lexical (a
+    /// `Code`, `VarDecl` or `<{ … }>` op, or a `$x` interpolation). The
+    /// position-only matcher treats code atoms as inert and has no lexicals to
+    /// read, so it must not run a program that has any.
     pub(super) has_code: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,

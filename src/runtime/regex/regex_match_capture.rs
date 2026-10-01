@@ -528,39 +528,13 @@ impl Interpreter {
                     .pop();
             }
             RegexAtom::ClosureInterpolation { code, body } => {
-                let target: String = chars.iter().collect();
-                let pattern_str = self.eval_regex_closure_interpolation(
+                return self.regex_closure_interp_atom(
                     code,
                     body.as_ref(),
+                    chars,
+                    pos,
                     current_caps,
-                    &target,
                 );
-                if let Some(ref pat_str) = pattern_str
-                    && Interpreter::contains_dangerous_regex_code(pat_str)
-                {
-                    super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
-                        *e.borrow_mut() = Some(Interpreter::make_security_policy_error());
-                    });
-                    return None;
-                }
-                if let Some(pat_str) = pattern_str
-                    && let Some(parsed) = self.parse_regex(&pat_str)
-                {
-                    let pkg = self.current_package_sym();
-                    if let Some((end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
-                    {
-                        let mut new_caps = RegexCaptures::default();
-                        new_caps
-                            .positional
-                            .extend(inner_caps.positional.iter().cloned());
-                        for (k, v) in &inner_caps.named {
-                            new_caps.named.entry(*k).or_default().merge(v.clone());
-                        }
-                        return Some((end, new_caps));
-                    }
-                }
-                return None;
             }
             RegexAtom::CaptureStartMarker => {
                 let new_caps = RegexCaptures {

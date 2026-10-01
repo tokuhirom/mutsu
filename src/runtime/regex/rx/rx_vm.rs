@@ -456,6 +456,7 @@ impl Interpreter {
                 }
                 // Cost: see `rx_capture_op`.
                 op @ (RxOp::OpenCapture
+                | RxOp::DropCapture
                 | RxOp::CloseCapture { .. }
                 | RxOp::CapAtom(_)
                 | RxOp::Code(_)

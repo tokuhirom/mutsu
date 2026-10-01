@@ -214,6 +214,19 @@ differential_case!(
     r#"my @log; say ("ab" ~~ / a <?before b { @log.push("la") }> b /).gist; say @log.join(","); @log = (); say ("ab" ~~ / <?after a { @log.push("lb") }> b /).gist; say @log.join(","); @log = (); say ("abc" ~~ / \w+ { @log.push("c1") } & ab /).gist; say @log.join(",")"#
 );
 
+differential_case!(
+    isolated_groups,
+    r#"my $re = /\d+/; say ("a12b" ~~ / a <$re> b /).gist; say ("a12b" ~~ / a $re b /).gist; my $r2 = /(\d)(\d)/; say ("a12b" ~~ / a <$r2> b /).gist; say ("a12b" ~~ / (a) <$r2> (b) /).gist; my @log; my $r3 = /x { @log.push("r3@" ~ $/.Str) }/; say so "ax" ~~ / a <$r3> /; say @log.join(","); say ("aaa1" ~~ / [ <$re> | a ]+ /).gist; say ("12ab" ~~ / <$re>+ ab /).gist; say ("1234" ~~ / <$re> <$re> /).gist; say ("1234" ~~ / :r <$re> \d /).gist"#
+);
+differential_case!(
+    closure_and_variable_interpolation,
+    r#"say ("aab" ~~ / <{ 'a+' }> b /).gist; my $n = 2; say ("aaab" ~~ / <{ 'a' x $n }> a? b /).gist; say ("ab" ~~ / :my $x = 'a'; $x b /).gist; say ("aab" ~~ / :my $x = 'a'; $x+ b /).gist; say ("abab" ~~ / :my $x = 'ab'; $x ** 2 /).gist; my @log; say so "abc" ~~ / a <{ @log.push("closure@" ~ $/.Str); 'b' }> c /; say @log.join(",")"#
+);
+differential_case!(
+    code_that_matches_a_regex_with_code,
+    r#"my @log; say so "ab" ~~ / a <?{ "x" ~~ / x { @log.push("inner") } /; @log.push("outer"); True }> b /; say @log.join(","); @log = (); say so "ab" ~~ / a { so "yy" ~~ / y <?{ @log.push("assert"); True }> y / } b { @log.push("tail") } /; say @log.join(",")"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

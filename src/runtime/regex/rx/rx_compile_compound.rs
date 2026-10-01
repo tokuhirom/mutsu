@@ -219,7 +219,7 @@ impl Compiler {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
             RegexQuant::Repeat(min, max) => (min, max),
-            RegexQuant::RepeatCode(_) => return Err("code"),
+            RegexQuant::RepeatCode(_) => return Err("repeat-code"),
             RegexQuant::One | RegexQuant::ZeroOrOne => return Err("separator-quant"),
         };
         if max.is_some_and(|max| max == 0 || min > max) {

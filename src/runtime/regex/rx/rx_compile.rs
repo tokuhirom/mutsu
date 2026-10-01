@@ -195,15 +195,19 @@ pub(super) fn min_len(pattern: &RegexPattern) -> usize {
 /// non-ratcheted quantifier over `atom` (`quantifier_atom_needs_candidate_backtracking`
 /// or an alternation inside), rather than growing a chain of first candidates?
 fn loop_body_backtracks(atom: &RegexAtom) -> bool {
-    matches!(atom, RegexAtom::Group(_) | RegexAtom::CaptureGroup(_))
-        || atom_contains_alternation(atom)
+    matches!(
+        atom,
+        RegexAtom::Group(_) | RegexAtom::CaptureGroup(_) | RegexAtom::CaptureIsolatedGroup(_)
+    ) || atom_contains_alternation(atom)
 }
 
 /// The fewest characters one match of `atom` consumes.
 fn atom_min_len(atom: &RegexAtom) -> usize {
     match atom {
         a if is_consuming(a) => 1,
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => min_len(p),
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
+            min_len(p)
+        }
         RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
             alts.iter().map(min_len).min().unwrap_or(0)
         }
@@ -292,7 +296,7 @@ impl Compiler {
                 }
                 self.repeat(token, min, max)?
             }
-            RegexQuant::RepeatCode(_) => return Err("code"),
+            RegexQuant::RepeatCode(_) => return Err("repeat-code"),
         }
         if let Some((pos_base, start)) = alias {
             let tok = self.toks.len() as u32;
@@ -384,17 +388,46 @@ impl Compiler {
                 self.ops.push(RxOp::VarDecl(i));
                 self.has_code = true;
             }
-            RegexAtom::ClosureInterpolation { .. } => return Err("code"),
+            RegexAtom::ClosureInterpolation { .. } => {
+                // `<{ … }>`: the code yields a pattern that is matched here, its
+                // first match only (the walk's own single-candidate arm, which
+                // `CapAtom` calls).
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+                self.has_code = true;
+            }
             RegexAtom::WsRule => return Err("ws-rule"),
-            RegexAtom::CaptureIsolatedGroup(_) | RegexAtom::CaptureIsolatedGroupScoped(..) => {
-                return Err("isolated-group");
+            RegexAtom::CaptureIsolatedGroup(p) => {
+                // `<$rx>` and friends: the body is a regex of its own, matched in
+                // a level whose captures are dropped when it closes
+                // (`GroupShape::Isolated`). Under ratchet the group commits to
+                // its first end, as a capturing group does.
+                self.ops.push(RxOp::OpenCapture);
+                let height = token.ratchet.then(|| self.reg());
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Height(h));
+                }
+                self.pattern(p)?;
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Cut(h));
+                }
+                self.ops.push(RxOp::DropCapture);
             }
+            // Its body runs in the closure scope the interpolated regex captured;
+            // installing that scope around a body the program can backtrack into
+            // needs an enter/exit pair of ops.
+            RegexAtom::CaptureIsolatedGroupScoped(..) => return Err("isolated-group-scoped"),
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
-            RegexAtom::VarInterp(..)
-            | RegexAtom::CodeInterp { .. }
-            | RegexAtom::QqInterp { .. } => {
-                return Err("interpolation");
+            RegexAtom::VarInterp(_) => {
+                // `$x` of an in-regex `:my` lexical (or an outer one): the
+                // value is read from the level's lexicals when the atom is
+                // matched, and matched as a literal.
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+                self.has_code = true;
             }
+            RegexAtom::CodeInterp { .. } => return Err("code-interp"),
+            RegexAtom::QqInterp { .. } => return Err("qq-interp"),
             RegexAtom::TildeMarker | RegexAtom::GoalMatch { .. } => return Err("goal-match"),
             RegexAtom::RecurseSelf(_) => return Err("recurse-self"),
             _ => return Err("other-atom"),

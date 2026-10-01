@@ -110,6 +110,14 @@ impl Levels {
         caps
     }
 
+    /// Close the innermost level and drop its captures (a capture-isolated
+    /// group's: `<$rx>` is a match of its own that the caller never sees).
+    // Cost: O(1) (the store itself is kept for a backtrack into the group).
+    pub(super) fn discard(&mut self) {
+        let store = self.stack.pop().expect("an open capture level");
+        self.journal.push(Journal::Closed(store));
+    }
+
     /// Close the innermost level and keep its captures as one iteration of a
     /// separated quantifier: an atom's, or (`sep`) a separator's.
     // Cost: O(c), as `close`.

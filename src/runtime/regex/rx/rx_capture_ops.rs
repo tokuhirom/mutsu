@@ -28,6 +28,8 @@ impl Interpreter {
         match op {
             // Cost: O(1).
             RxOp::OpenCapture => levels.open(pos),
+            // Cost: O(1).
+            RxOp::DropCapture => levels.discard(),
             // Cost: O(c) amortized, c = the closed level's captures (one
             // snapshot); O(1) for a group whose body captures nothing.
             RxOp::CloseCapture { start, nested } => {
