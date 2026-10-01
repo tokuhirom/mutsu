@@ -72,6 +72,11 @@ a separate decision when the first rewriting pass wants one.
   export/`state`-sub scans, the slang declarator facts and the static-`require` scan ported
   (15 walkers; 10 more annotated as spines, transforms or one-scope declaration scans);
   `$!x` is now rejected in every position rakudo rejects it, `@!x`/`%!x` too.
+- **Parser-side analyses** (#10468): the `use`d-module declaration scans become one walk
+  (`module_exports/decl_scan.rs`), plus the inline-package export scans, the `X::Syntax::NoSelf`
+  checks and the `use lib` replay (16 walkers ported); every other parser-side row carries a note
+  (lowering, spine, renderer, one-scope scan). `is export` is found at any depth, as rakudo
+  exports it; off the package spine a lexical or non-exported declaration stays private.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter

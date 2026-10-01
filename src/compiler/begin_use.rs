@@ -36,6 +36,7 @@
 
 use super::Compiler;
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 use crate::opcode::OpCode;
 use crate::value::{Value, ValueView};
 use std::sync::Mutex;
@@ -144,28 +145,39 @@ fn is_pragma_like(module: &str) -> bool {
 /// order. Only literal spellings are collected: an expression form
 /// (`use lib $dir`) cannot be replayed ahead of the mainline that computes it,
 /// and a preload that then fails to resolve is discarded anyway.
+///
+/// Every position is searched (ADR-0137): `use lib` is a BEGIN-time change to
+/// the repository chain wherever it is written — rakudo's chain already holds
+/// the path of a `use lib` inside a never-called `sub` — and a nested `use`
+/// it serves is recorded from any depth too ([`UnitUseCtx::note_use`]).
+// Cost: O(n), n = size of the unit's AST.
 pub(crate) fn literal_lib_paths(stmts: &[Stmt]) -> Vec<String> {
-    let mut out = Vec::new();
-    collect_lib_paths(stmts, &mut out);
-    out
+    let mut scan = LibPaths(Vec::new());
+    walk_stmts(&mut scan, stmts);
+    scan.0
 }
 
-fn collect_lib_paths(stmts: &[Stmt], out: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::Use {
-                module,
-                arg: Some(arg),
-                ..
-            } if module == "lib" => push_literals(arg, out),
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                collect_lib_paths(body, out);
-            }
-            _ => {}
+/// The walk of [`literal_lib_paths`], in source order.
+struct LibPaths(Vec<String>);
+
+impl Visit for LibPaths {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Stmt::Use {
+            module,
+            arg: Some(arg),
+            ..
+        } = stmt
+            && module == "lib"
+        {
+            push_literals(arg, &mut self.0);
         }
+        walk_stmt(self, stmt);
     }
 }
 
+/// The string literals of a `use lib` argument list (`'a'`, `'a', 'b'`,
+/// `<a b>`), a shape match: a literal inside any other expression
+/// (`$?FILE.IO.add('lib')`) is not a repository spec.
 fn push_literals(expr: &Expr, out: &mut Vec<String>) {
     match expr {
         Expr::Literal(v) => {
