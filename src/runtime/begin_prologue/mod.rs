@@ -39,6 +39,7 @@ mod package_body;
 mod package_phasers;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
@@ -46,10 +47,16 @@ use std::collections::HashSet;
 /// returned, and `stmts` is left holding the remainder. If the unit has no
 /// BEGIN-time effect, the prologue is empty and `stmts` is
 /// untouched.
-pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
+pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     let unit_names = unit_lexical_names(stmts);
+    let outside_begin = names_outside_begin(stmts);
+    let mut unit = nested::UnitContext {
+        is_eval,
+        strict_off: false,
+        outside_begin: &outside_begin,
+    };
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
     // The compile-time composition of the `our` types declared in each
@@ -71,7 +78,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
         composed_early.push(moved.needs_prologue);
         moved_phasers.push(moved.phasers);
         let before = lifted.effects.len();
-        nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
+        nested::lift_in_stmt(stmt, &unit_names, unit, &mut lifted);
+        if let Some(off) = strict_pragma(stmt) {
+            unit.strict_off = off;
+        }
         effects.push(lifted.effects.split_off(before));
         let shells = crate::compiler::nested_type_decls(stmt);
         composes_role |= shells
@@ -146,6 +156,78 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
 /// The lexical names a unit declares at its top level, in `VarDecl` naming
 /// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
 /// in the unit's frame.
+/// The variable names a unit mentions outside its BEGIN bodies.
+///
+/// A BEGIN that is lifted runs in a block of its own, so a variable it
+/// auto-declares (`no strict; BEGIN { $auto = 3 }`) lives only there. Code
+/// outside the BEGIN that reads the same name finds nothing -- where the BEGIN,
+/// left in place, ran in that code's own scope and set it. Such a name is not
+/// lifted.
+struct OutsideBegin(HashSet<String>);
+
+impl Visit for OutsideBegin {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if !matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                ..
+            }
+        ) {
+            walk_stmt(self, stmt);
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if !matches!(
+            expr,
+            Expr::PhaserExpr {
+                kind: PhaserKind::Begin,
+                ..
+            }
+        ) {
+            walk_expr(self, expr);
+        }
+    }
+
+    fn visit_name(&mut self, name: &str, kind: NameKind) {
+        if matches!(
+            kind,
+            NameKind::Var
+                | NameKind::ArrayVar
+                | NameKind::HashVar
+                | NameKind::CodeVar
+                | NameKind::AssignTarget
+                | NameKind::VarDecl
+        ) {
+            self.0.insert(name.to_string());
+        }
+    }
+}
+
+// Cost: O(n), n = size of the unit's AST.
+fn names_outside_begin(stmts: &[Stmt]) -> HashSet<String> {
+    let mut scan = OutsideBegin(HashSet::new());
+    for stmt in stmts {
+        scan.visit_stmt(stmt);
+    }
+    scan.0
+}
+
+/// What a statement does to `strict`: `Some(true)` for `no strict`,
+/// `Some(false)` for `use strict`, `None` for any other statement.
+fn strict_pragma(stmt: &Stmt) -> Option<bool> {
+    match stmt {
+        Stmt::No { module, arg: None } if module == "strict" => Some(true),
+        Stmt::Use {
+            module,
+            condition: None,
+            ..
+        } if module == "strict" => Some(false),
+        _ => None,
+    }
+}
+
 fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
     for stmt in stmts {
@@ -177,7 +259,7 @@ pub(crate) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
 /// part of `phasers::reorder_phasers`. Returns the prologue's length.
 pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
     lift_nested_exports(stmts);
-    let mut prologue = take_unit_prologue(stmts);
+    let mut prologue = take_unit_prologue(stmts, false);
     let prologue_len = prologue.len();
     if prologue_len > 0 {
         prologue.append(stmts);

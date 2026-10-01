@@ -92,11 +92,30 @@ pub(super) struct Lifted {
     halted: bool,
 }
 
+/// What a unit's top level tells the walk about one of its statements.
+#[derive(Clone, Copy)]
+pub(super) struct UnitContext<'a> {
+    /// The unit is an EVAL's: a free name it does not declare may be one of its
+    /// caller's lexicals.
+    pub(super) is_eval: bool,
+    /// `strict` is off where the statement sits, by a `no strict` among the
+    /// unit's top-level statements ahead of it.
+    pub(super) strict_off: bool,
+    /// The variable names the unit mentions outside its BEGIN bodies.
+    pub(super) outside_begin: &'a HashSet<String>,
+}
+
 /// Lift every liftable BEGIN nested in `stmt`, a top-level statement of a
 /// unit whose top-level lexical names are `unit_names`.
-pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted: &mut Lifted) {
+pub(super) fn lift_in_stmt<'a>(
+    stmt: &mut Stmt,
+    unit_names: &'a HashSet<String>,
+    unit: UnitContext<'a>,
+    lifted: &'a mut Lifted,
+) {
     let mut walker = Walker {
         unit_names,
+        unit,
         frames: Vec::new(),
         lifted,
     };
@@ -105,6 +124,7 @@ pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted
 
 struct Walker<'a> {
     unit_names: &'a HashSet<String>,
+    unit: UnitContext<'a>,
     frames: Vec<Frame>,
     lifted: &'a mut Lifted,
 }
