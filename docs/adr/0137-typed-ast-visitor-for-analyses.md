@@ -1,7 +1,7 @@
 # ADR-0137: AST analyses walk the AST through one typed visitor, never its serialized form
 
-- **Status**: Accepted (implemented for the four serde-based analyses; hand-rolled walkers
-  port opportunistically)
+- **Status**: Accepted (implemented for the four serde-based analyses; the hand-rolled walkers
+  are being ported under the `check-ast-walkers` ratchet — see "Implementation status")
 - **Date**: 2026-10-01
 - **Related**: [#10441](https://github.com/tokuhirom/mutsu/issues/10441),
   [ADR-0113](0113-frame-lexical-inner-subs.md) (frame-lexical proof)
@@ -52,7 +52,21 @@ a separate decision when the first rewriting pass wants one.
 - Positions that name code by text compiled later (`s///` replacements, regex code-block text)
   are reported as `NameKind::Source`; analyses treat a whole-word occurrence in them as a mention,
   which is stricter than the old exact-leaf comparison.
-- The remaining hand-rolled walkers (`parser/outer_redecl`, `parser/sink_warn.rs`,
-  `parser/whenever_scope.rs`, `runtime/begin_prologue/nested.rs`,
-  `runtime/eval_routine_magicals.rs`, `runtime/undeclared_routines.rs`, ...) keep working and are
-  ported when next touched.
+- The remaining hand-rolled walkers are ported onto the visitor (see below), so a variant is
+  never handled by one walker and silently skipped by another.
+
+## Implementation status
+
+- **Slice 1** (#10441): `src/ast_visit/`; the four serde-based analyses ported.
+- **Slice 2**: `scripts/check-ast-walkers.py` (`make check-ast-walkers`, part of `make checks`)
+  counts recursive `Stmt`/`Expr` walkers per file against `scripts/ast-walkers-baseline.txt`; the
+  count may only fall. Ported: `parser/whenever_scope.rs`, `runtime/eval_routine_magicals.rs`,
+  `runtime/undeclared_routines.rs`, the gather search in `parser/sink_warn.rs` (267 → 259).
+  `NameKind::Attribute` split out of `Decl` (an attribute does not declare a routine).
+- **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
+  not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
+  gather search, for one, must not enter a signature (rakudo does not sink-check a parameter
+  default), which the port expresses by overriding `visit_param`.
+- **Stays hand-rolled by design**: a walk that visits only some positions *because that is the
+  semantics* (the sink-context propagation in `parser/sink_warn.rs`), and code generation
+  (`compile_*`, TRIR, RakuAST conversion). Mutating walkers wait for a `VisitMut` decision.

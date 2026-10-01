@@ -41,10 +41,11 @@ pub(crate) enum NameKind {
     /// The name of a `sub` declaration (`Stmt::SubDecl`).
     SubDecl,
     /// The name of any other declaration: method, token/rule/regex, proto,
-    /// package, class, role, enum (and its keys), subset, attribute,
-    /// augment, `does`/`trusts`, and the routines a nested-method capture
-    /// lists.
+    /// package, class, role, enum (and its keys), subset, augment, and the
+    /// routines a nested-method capture lists.
     Decl,
+    /// The name of an attribute declaration (`Stmt::HasDecl`).
+    Attribute,
     /// `&name` (`Expr::CodeVar`).
     CodeVar,
     /// `$name` (`Expr::Var`).
