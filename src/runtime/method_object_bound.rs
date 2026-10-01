@@ -97,10 +97,6 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = args.first()?;
         let qualified = self.bound_method_object_name(method_obj, invocant)?;
-        Some(self.call_method_with_values(
-            invocant.clone(),
-            qualified.as_str(),
-            args[1..].to_vec(),
-        ))
+        Some(self.call_method_with_values(invocant.clone(), qualified.as_str(), args[1..].to_vec()))
     }
 }
