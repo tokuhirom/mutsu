@@ -7,16 +7,14 @@
 //! capture store and rewinds on backtrack.
 
 use super::super::*;
-use super::regex_helpers::count_capture_groups;
+use super::regex_helpers::{count_capture_groups, count_pattern_capture_groups};
 use super::regex_trail::CapStore;
 use std::collections::HashSet;
 
 /// How many positional slots one match of a separator pattern takes.
+// Cost: O(1) once the pattern's count is memoized.
 pub(super) fn separator_stride(sep: &RegexPattern) -> usize {
-    sep.tokens
-        .iter()
-        .map(|t| count_capture_groups(&t.atom))
-        .sum()
+    count_pattern_capture_groups(sep)
 }
 
 /// A separated quantifier's capture delta for one chain: every name under the
@@ -374,25 +372,17 @@ impl Interpreter {
         // Positional captures: atom groups occupy the first `atom_stride` slots,
         // separator groups the next `sep_stride`. The folded slot keeps the
         // last iteration's span/subcap as its representative values.
+        // An iteration's slot that an inner quantifier already folded
+        // (`[ [ (\d) ] +% '.' ] +% ';'`) contributes all its entries: raku has
+        // one flat list for a capture group under nested quantifiers.
         let fold_group = |sources: &[&RegexCaptures], g: usize| -> PosSlot {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             for src in sources {
                 if let Some(slot) = src.positional.get(g) {
-                    list.push((slot.from, slot.to, slot.subcap.clone()));
+                    slot.push_entries_to(&mut list);
                 }
             }
-            let (from, to, subcap) = list
-                .last()
-                .map(|(a, b, sc)| (*a, *b, sc.clone()))
-                .unwrap_or((0, 0, None));
-            PosSlot {
-                from,
-                to,
-                subcap,
-                quantified: Some(list),
-                nil: false,
-                alternation_padding: false,
-            }
+            PosSlot::folded(list)
         };
         let atom_refs: Vec<&RegexCaptures> = atom_caps.iter().collect();
         for g in 0..atom_stride {

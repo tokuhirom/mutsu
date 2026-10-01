@@ -652,11 +652,52 @@ the engines found four walk bugs, fixed in the walk the same way (`regex_match_s
 
 Two differences from rakudo that both engines share are filed: zero iterations drop the quantifier's
 positional slot (#10534), and a nested separated quantifier's fold sits beside the outer slot
-instead of in it (#10535).
+instead of in it (#10535, settled by the fifth part below).
 
 Survey (`scripts/rx-decline-survey.sh`, all of `t/` and the roast whitelist): `separator-code` 7 → 0
 and `conjunction-code` 2 → 0, with 9,900 patterns compiled and 113 declined. D6 agreed with the
 walk on every file of `t/regex/`, `t/grammar/` and the whitelisted `roast/S05-*` (611 files).
+
+**Slice C, fifth part (#10535): a capture group under nested quantifiers is one slot.** In
+`[ [ (\d) { … } ] +% '.' ] +% ';'` rakudo has one `$0`: the groups around `(\d)` do not capture, so every
+iteration of both quantifiers lands in the same flat list, in what code sees mid-match and in the match's
+value. mutsu had three defects, which share the cause that a quantifier's fold knew nothing of the
+quantifier around it. The repro in #10535 only showed the first.
+
+- **The view.** Code in an inner iteration read the outer view with the inner fold *appended* as a slot of
+  its own (`[]|[1,2]` where rakudo has `[1,2]`). The enclosing level of a nested quantifier is itself an
+  iteration, whose own captures fold into the outer iteration's slots (`merge_positional`), and the
+  inner quantifier's captures *are* those captures. The view now composes the folds from the outermost
+  link in (`regex_backref_scope.rs`): `ViewFold` places one level's own captures in the view it reads,
+  folding the first `stride` of them into the slots from `start` and appending the rest, and
+  `OuterBackrefCaps::append_captures` applies each link's *parent's* range to the link's own captures
+  (it used to ignore it). `merge_positional` counts slots of that merged view, so the start an iteration
+  gets (`sep_iteration_slot` in the walk, `inline_level_caps` in the compiled engine, through
+  `inline_view_slot` / `inline_view_fold`) is where the quantifier's slots *land*, not where they
+  would follow. The compiled engine keeps its flat single link; its `extra` (the iterations folded so
+  far) now folds through the same `ViewFold` instead of being appended.
+- **The value.** An outer fold (`fold_quantified_captures`, `append_separated_captures`) listed one entry
+  per iteration slot, the last entry only for a slot an inner quantifier had already folded, so
+  `"1.2;3.4" ~~ / [ [ (\d) ] +% '.' ] +% ';' /` gave `[2,4]` and `[ [ (\d) ]+ ]+` on `1234` gave `[4]`.
+  A slot that is already a list now contributes each of its entries (`PosSlot::push_entries_to`; the
+  folded slot is built by `PosSlot::folded`), in all three folds and in the view's. A capturing group's
+  own quantified sub-captures sit inside its Match, not in the iteration's slots, so they are not
+  flattened (`( (\d) +% '.' ) +% ';'` keeps a list per outer iteration). An alternation's empty-list
+  padding slot, which used to add a bogus `(0, 0)` entry, now adds none.
+- **The stride.** `count_pattern_capture_groups` and `pattern_capture_group_list_flags` ignored the
+  capture groups of a nested separated token's *separator*, though such a token takes the atom's slots
+  and then the separator's. The outer quantifier's stride was one short, so
+  `[ [ (\d) ] +% (<[.]>) ] +% ';'` lost the separator slot and `[ (\d) +% (<[.]>) ]+` folded the
+  separator's entries into the atom's list. `separator_stride` is now the same memoized count.
+
+The values are rakudo's (`t/regex/match/regex-nested-quantifier-capture-fold.t`, 30 cases, verified under
+`raku`), and `tests/regex_vm_differential.rs` pins that both engines and D6 agree on them. D6 agreed with the
+walk on every file of `t/regex/` and `t/grammar/` (534 files). Three things found on the way are out of
+scope and filed: code in an *unseparated* quantifier's iteration sees the raw per-iteration entries, not
+the folded slot (`[ (\d) { … } ]+` shows `1|2|3`, in both engines, so D6 cannot see it, and nested
+plain-in-separated makes the engines disagree; #10597); an aliased group `$<x>=(\d)` under any
+quantifier takes a positional slot rakudo does not (#10598); and the walk folds a `[ … ]` group after
+a capture inside a separated atom into the wrong slot, which the compiled engine does right (#10599).
 
 **Slice D, first part (#10254): subrule calls landed.**
 

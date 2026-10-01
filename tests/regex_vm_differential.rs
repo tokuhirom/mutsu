@@ -62,6 +62,10 @@ differential_case!(
     r#"my @l; "x1,2,3" ~~ / (x) [ (\d) { @l.push: $/.list.map(~*).join('|') } ] +% [ (',') { @l.push: ~$/ } ] /; "1;2" ~~ / :r [ (\d) { @l.push: +$/[1] } ] +%% [ (';') ] /; "ab" ~~ / (a) [ (\w) { @l.push: +$/.list } & \w { @l.push: ~$0 } ] /; "aa" ~~ / :my $x = 'a'; [ \w & $x ] $x /; @l.push: ~$/; .say for @l"#
 );
 differential_case!(
+    nested_separated_quantifier_capture_fold,
+    r#"my @l; my sub v($m) { $m.list.map({ $_ ~~ Positional ?? '[' ~ .map(~*).join(',') ~ ']' !! ($_ // 'Nil').Str }).join('|') }; "1.2;3.4" ~~ / [ [ (\d) { @l.push: v($/) } ] +% '.' ] +% ';' /; "a1.b2;c3" ~~ / [ [ (<alpha>) (<digit>) { @l.push: v($/) } ] +% '.' ] +% ';' /; "1.2;3.4" ~~ / [ [ (\d) { @l.push: v($/) } ] +% (<[.]>) ] +% ';' /; "1.2;3.4" ~~ / [ [ (\d) ] +% '.' { @l.push: v($/) } ] +% ';' /; "1.2;3.4/5" ~~ / [ [ [ (\d) { @l.push: v($/) } ] +% '.' ] +% ';' ] +% '/' /; "x1.2;3" ~~ / (x) [ [ (\d) { @l.push: v($/) } ] +% '.' ] +% ';' /; @l.push: v("1.2;3.4" ~~ / [ [ (\d) ] +% (<[.]>) ] +% (';') /); @l.push: v("1.2.3" ~~ / [ (\d) +% (<[.]>) ]+ /); @l.push: v("1234" ~~ / [ [ (\d) ]+ ]+ /); .say for @l"#
+);
+differential_case!(
     greedy_give_back,
     r#"for <aaab abab ab b ""> -> $s { say ($s ~~ / a+ b /).gist; say ($s ~~ / ^ a* b $ /).gist }"#
 );

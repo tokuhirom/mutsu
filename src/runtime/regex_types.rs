@@ -164,6 +164,37 @@ impl PosSlot {
             ..Default::default()
         }
     }
+
+    /// Add what this slot holds to `list`, the entries of a slot that folds
+    /// several iterations. A slot an inner quantifier already folded
+    /// (`[ [ (\d) ]+ ]+`) contributes each of its entries, not one entry for
+    /// itself: a capture group under nested quantifiers is one flat list in
+    /// raku, because the groups around it do not capture.
+    // Cost: O(e), e = the entries the slot already holds (one when it holds none).
+    pub(crate) fn push_entries_to(&self, list: &mut Vec<QuantifiedCaptureEntry>) {
+        match &self.quantified {
+            Some(inner) => list.extend(inner.iter().cloned()),
+            None => list.push((self.from, self.to, self.subcap.clone())),
+        }
+    }
+
+    /// The slot that holds `list`: its span and sub-Match are the last entry's,
+    /// the representative a backreference reads.
+    // Cost: O(1) beyond the list.
+    pub(crate) fn folded(list: Vec<QuantifiedCaptureEntry>) -> Self {
+        let (from, to, subcap) = list
+            .last()
+            .map(|(from, to, subcap)| (*from, *to, subcap.clone()))
+            .unwrap_or((0, 0, None));
+        PosSlot {
+            from,
+            to,
+            subcap,
+            quantified: Some(list),
+            nil: false,
+            alternation_padding: false,
+        }
+    }
 }
 
 /// The enclosing pattern level's captures, as seen by a **backreference inside
@@ -181,7 +212,13 @@ pub(crate) struct OuterBackrefCaps {
     pub(crate) parent: Option<Arc<OuterBackrefCaps>>,
     /// When a separated quantifier is matching its next atom, the atom's
     /// captures belong in the quantifier's folded positional slots rather
-    /// than after them. The range is absolute in the visible positional list.
+    /// than after them. The range is a slot range of the view the level reads
+    /// (`RegexCaptures::inline_capture_view`): every enclosing link's captures
+    /// with this link's own folded in, counted after each enclosing fold, so
+    /// it points into the outer iteration's slots when the quantifier is
+    /// nested in another one. It also says how *this link's* `positional`
+    /// folds into its `parent`'s view, since those are the enclosing level's
+    /// own captures (`ViewFold`).
     pub(crate) merge_positional: Option<(usize, usize)>,
     /// Where the enclosing level's match began. A same-scope sub-pattern (a
     /// `[ … ]` group, an alternative) is part of the same regex, so `$/` in a
@@ -191,18 +228,8 @@ pub(crate) struct OuterBackrefCaps {
 }
 
 impl OuterBackrefCaps {
-    /// Append captures from the outermost scope through this level in source
-    /// order. This is the `$ /` view for inline code; backreference lookup
-    /// below intentionally keeps its innermost-slot semantics instead.
-    pub(crate) fn append_captures(&self, out: &mut RegexCaptures) {
-        if let Some(parent) = self.parent.as_ref() {
-            parent.append_captures(out);
-        }
-        for (key, slot) in &self.named {
-            out.named.slot_mut(*key).merge(slot.clone());
-        }
-        out.positional.extend(self.positional.iter().cloned());
-    }
+    // `append_captures`, the `$/` view of inline code, lives with the rest of
+    // the view in `regex_backref_scope`.
 
     /// The most recent entry recorded for `name` at this level or any enclosing
     /// one (innermost wins, matching the accumulate-then-read order the flat
@@ -306,49 +333,8 @@ impl CapNode {
 }
 
 impl RegexCaptures {
-    /// Build the capture state visible to inline regex code. An inline walk
-    /// has its own local accumulator, but code in a same-scope group sees the
-    /// captures already taken by the enclosing regex as well.
-    pub(crate) fn inline_capture_view(&self) -> RegexCaptures {
-        let Some(outer) = self.outer_backref() else {
-            return self.clone();
-        };
-
-        let mut visible = RegexCaptures {
-            // Capture lookup crosses the inline-walk boundary, but the
-            // in-progress `$/` span remains that walk's own span.  Code such
-            // as XML's `{ make ~$/ }` must see the current attribute value,
-            // not the whole enclosing element.
-            match_from: self.match_from,
-            ..Default::default()
-        };
-        outer.append_captures(&mut visible);
-
-        if let Some((start, stride)) = outer.merge_positional {
-            let merge_count = stride.min(self.positional.len());
-            for (offset, slot) in self.positional.iter().take(merge_count).enumerate() {
-                let Some(target) = visible.positional.get_mut(start + offset) else {
-                    break;
-                };
-                let entry = (slot.from, slot.to, slot.subcap.clone());
-                let list = target.quantified.get_or_insert_with(Vec::new);
-                list.push(entry);
-                target.from = slot.from;
-                target.to = slot.to;
-                target.subcap = slot.subcap.clone();
-                target.nil = false;
-            }
-            visible
-                .positional
-                .extend(self.positional.iter().skip(merge_count).cloned());
-        } else {
-            visible.positional.extend(self.positional.iter().cloned());
-        }
-        for (key, slot) in &self.named {
-            visible.named.slot_mut(*key).merge(slot.clone());
-        }
-        visible
-    }
+    // `inline_capture_view`, the capture state visible to inline regex code,
+    // lives with the rest of the view in `regex_backref_scope`.
 
     pub(crate) fn inline_match_from(&self) -> usize {
         self.match_from

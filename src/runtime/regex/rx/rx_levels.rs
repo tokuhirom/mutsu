@@ -254,8 +254,13 @@ impl Levels {
 /// With `fold = (offset, stride)`, the level's own first `stride` positional
 /// captures fold into the slots `extra` adds from `offset` on
 /// (`merge_positional`), as one more iteration: an atom's at offset 0, a
-/// separator's after the atom's slots. The level shares the enclosing `:my` lexicals and match start:
-/// `$/` in its code spans from where the enclosing regex's match began.
+/// separator's after the atom's slots. `extra`'s slots are the enclosing
+/// level's own captures from there on, so when the enclosing level is itself
+/// an iteration of an outer separated quantifier they fold into the outer
+/// iteration's slots instead of sitting after them (rakudo has one slot for a
+/// capture group under nested quantifiers). The level shares the enclosing
+/// `:my` lexicals and match start: `$/` in its code spans from where the
+/// enclosing regex's match began.
 // Cost: O(c), c = the captures visible to `enclosing` plus `extra`'s.
 pub(super) fn inline_level_caps(
     enclosing: &RegexCaptures,
@@ -263,11 +268,17 @@ pub(super) fn inline_level_caps(
     fold: Option<(usize, usize)>,
 ) -> RegexCaptures {
     let mut view = enclosing.inline_capture_view();
-    let merge_positional = fold.map(|(offset, stride)| (view.positional.len() + offset, stride));
-    if let Some(extra) = extra {
+    let own = enclosing.positional.len();
+    let place = enclosing.inline_view_fold();
+    let merge_positional = fold.map(|(offset, stride)| (place.slot(own + offset), stride));
+    if let Some(mut extra) = extra {
+        let slots = std::mem::take(&mut extra.positional);
         let mut store = CapStore::new(view);
         store.merge_delta(extra);
         view = store.into_caps();
+        for (j, slot) in slots.iter().enumerate() {
+            place.place(&mut view.positional, own + j, slot);
+        }
     }
     let outer = OuterBackrefCaps {
         named: view.named,
