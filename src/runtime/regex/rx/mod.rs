@@ -262,6 +262,11 @@ pub(super) enum RxOp {
     /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
     /// on the backtrack stack as one choice point.
     InterpEnds(u32),
+    /// A scoped `[:m …]` group, `atoms[i]`: its ends at `pos`, matched over
+    /// the mark-stripped subject and mapped back
+    /// (`regex_match_ends_from_caps_in_pkg`, which runs the body's own program
+    /// there), entered highest priority first with the group's capture delta.
+    GroupEnds(u32),
     /// A `<subrule>` call, `atoms[atom]` (ADR-0135 D3). The callee is resolved
     /// when the call is reached: a plain rule whose program exists runs as an
     /// [`rx_frame::Frame`] in this same loop, and its ends are entered one at a

@@ -246,6 +246,34 @@ impl Interpreter {
         Some(found.pop())
     }
 
+    /// [`Self::rx_try_ends`] for a `:m` pattern: the mark-stripped pattern's
+    /// ends over the subject's stripped view, mapped back by the walk's own
+    /// `ignoremark_on_target`, as the walk's all-ends entry does. `None` (take
+    /// the walk) without a published subject or when the stripped pattern does
+    /// not compile.
+    // Cost: the stripped run, plus O(c) per end to map its c capture spans back.
+    fn rx_try_ignoremark_ends(
+        &mut self,
+        pattern: &RegexPattern,
+        start: usize,
+        pkg: Symbol,
+        stop_at_full: bool,
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
+        let Some(target) = super::super::regex_helpers::current_match_target() else {
+            return walked("ignoremark-no-target");
+        };
+        let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
+        if let Err(why) = rx_program_for_run(&stripped, true) {
+            return walked(why);
+        }
+        let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
+            interp
+                .rx_try_ends(stripped, chars, 0, pkg, stop_at_full)
+                .unwrap_or_default()
+        };
+        Some(self.ignoremark_on_target(pattern, &target, start, &mut run))
+    }
+
     /// Run `program` at `start`.
     // Cost: O(s) in the steps the backtracking search takes; each op below
     // states its own cost.
@@ -358,8 +386,7 @@ impl Interpreter {
             return walked(why);
         }
         if pattern.ignore_mark {
-            // The walk remaps the whole end list across the stripped subject.
-            return walked("ignoremark-ends");
+            return self.rx_try_ignoremark_ends(pattern, start, pkg, stop_at_full);
         }
         let program = match rx_program_for_run(pattern, true) {
             Ok(program) => program,

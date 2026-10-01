@@ -402,6 +402,27 @@ impl Compiler {
                 let i = self.push_atom(a);
                 self.ops.push(RxOp::Assert(i));
             }
+            // `[:m …]`: the walk matches the body against the mark-stripped
+            // subject and maps its ends back (`ignoremark_on_target`), every
+            // end up front, so the op asks the same entry for them and enters
+            // them highest priority first; under ratchet it commits to the
+            // first. Code or a backreference in the body would read the
+            // enclosing level through the walk's inline seeds, which the
+            // nested run does not arm.
+            RegexAtom::Group(p) if p.ignore_mark => {
+                if pattern_contains_code(p) || pattern_contains_backref(p) {
+                    return Err("ignoremark-code");
+                }
+                let height = token.ratchet.then(|| self.reg());
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Height(h));
+                }
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::GroupEnds(i));
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Cut(h));
+                }
+            }
             RegexAtom::Group(p) => self.pattern(p)?,
             RegexAtom::CaptureGroup(p) => {
                 // A body that captures gets a level of its own, so its
