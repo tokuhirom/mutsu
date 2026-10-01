@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slice C in part (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slices C and D in part (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -612,6 +612,119 @@ Three more walk bugs, which both engines share and D6 therefore cannot see, are 
 atom under `** { … }` records one capture per iteration where rakudo records the whole span (#10444),
 and the scalar `$( $re )` of a Regex value matches the literal text of its source (#10445), besides
 #10417 and #10418 from the second part.
+
+**Slice D, first part (#10254): subrule calls landed.**
+
+A `<subrule>` call compiles to one `Call` op carrying its `NamedAtom`; the program stays a pure
+function of the pattern, and the call is resolved when it is reached (`rx_call.rs`). Four things can
+come out of that resolution:
+
+- **A plain rule with a program** runs as a frame in the run's own loop. The callee gets a register
+  window in one arena, a capture level of its own (`levels.open(pos, false)`, a regex of its own: it
+  inherits no `:my` lexical), and a persistent `Rc<Frame>` linked to its caller. Its choice points go
+  on the **same** backtrack stack. When it returns, its level closes into the callee's captures,
+  which are filed as the subrule's Match by the walk's own builder
+  (`build_named_candidate_from_inner`, split out of `build_named_candidates_from_inner`) and merged
+  into the caller's level.
+- **A proto whose candidates all have programs** ranks them at the call with the walk's own LTM
+  measurement (`rx_rank_proto`, ADR-0046) and enters the first that matches as a frame with the
+  `:sym<…>` on its Match. A `Choice::Proto` entry holds the next-ranked candidates; the first that
+  returns commits the call (the proto's greedy first end only, as the eager arm does), which drops
+  the entry.
+- **A call with no rule behind it** (`<.ws>` of a `rule`, `<wb>`, `<alpha>`, …) asks the walk's
+  single-candidate arm directly. A grammar method of that name bridges instead.
+- **Anything else** (arguments, `$*` parameters, wrapped tokens, a custom HOW, a left-recursive
+  rule, a rule the compiler declined, `:m`, an inherited `:i`) is the bridge of D5: the walk's eager
+  producer (`regex_match_atom_all_with_capture_opts`) computes the callee's ends and they are
+  entered highest priority first through one `Choice::Cands`. That is exactly what the walk does for
+  those shapes today, so the bridge changes nothing about them.
+
+The frame shape is the shape `drive_named_subrule_candidates` streams, with one difference that the
+compiled engine allows: a rule that calls itself is fine as long as it cannot re-enter *at the same
+position* (`subrule_cannot_left_reenter`). A frame, unlike the walk's stream, needs no
+left-recursion activation to stay sound, so the whole JSON-style grammar (`value` → `array` →
+`value`) runs frames. A live walk activation of the same name still sends the call to the walk.
+
+Ratchet is a cut. `commit` (the call's token is ratcheted, or the call is a proto's) truncates the
+backtrack stack to its height at the call when the callee returns, so nothing ever resumes in the
+callee. A call that is not committed leaves the callee's choice points where they are, and **every
+choice point records its frame** (`FMark`, a side stack that only exists for choice points pushed
+while a callee is live): a failure after the callee returned resumes inside it with its callers
+behind it, Rakudo's bstack model. That is the "non-ratchet callee resumption" Slice E listed, and it
+costs nothing extra, so it landed here. Two returns at the same end are one candidate, as in the
+walk (`Frame::seen`).
+
+A return that leaves no choice point in the callee forgets the callee's journal, register trail,
+window and `AtomRun` ends (`settled`), and the undo trails restart whenever the stack is empty, so a
+run of ratcheted calls stays flat in memory.
+
+Quantified calls: `<x>*`, `<x>+` and `** n` call the walk's single-candidate arm per iteration
+(`CapAtom`), one first end each, as `grow_one_iter` does. A ratcheted `*` / `+` first offers the
+walk's possessive scan (`NamedRun`, over the leaf `regex_named_ratchet_run` that
+`walk_ratchet_fast_paths` now calls too, so there is one implementation).
+
+`Grammar.parse` is answered by a compiled run (`rx_try_ends_until_full`, `Goal::UntilFull`): it
+collects the ends in priority order up to the first that covers the subject, which is the list
+`regex_match_ends_stop_at_full` returns. `~` goal matches compile (`GoalEnd`, `GoalOk`,
+`GoalFail`): the inner pattern and the goal each match in a level of their own, the goal's captures
+merge first, and a goal that matches nowhere after an end of the inner pattern records the failure
+for the "expected goal" report from a handler sitting below the goal's choice points.
+
+D6 changed in three ways. The walk's replay is now the walk alone (a nested pattern it matches no
+longer answers from the compiled engine), `node_span` describes a Match tree recursively, and the
+replay runs with the reduce log set aside (`isolate_reduced_log`), because the walk re-logged every
+subrule the compiled run had already logged and each action ran twice. Differential mode declines
+a match when a wrapped token or a custom HOW is live: that is user code the record cannot replay.
+
+Correctness comes from three sweeps, all in differential mode (`MUTSU_RX_DIFF=1`, D6): every file of `t/` (5,535)
+and every whitelisted roast file (1,426) ran with no disagreement between the compiled engine and the walk, and
+`tests/regex_vm_differential.rs` gained eight cases (non-ratchet resumption, end dedup, proto, quantified calls, `~`,
+recursion and left recursion, captures under groups and aliases). `t/grammar/grammar-subrule-call-frames.t` pins the
+rakudo values (verified against `raku`) for the shapes that rakudo supports. One walk quirk both engines share, so D6
+cannot see it, is filed: the walk deduplicates a callee's ends where rakudo enters each path
+([#10489](https://github.com/tokuhirom/mutsu/issues/10489)).
+
+Two things the sweeps found: an iteration of a `*` / `+` over a call runs the call's action when an action-driven parse
+reads a `$*` variable (`maybe_run_reduce_time_dynvar_action`, Template::Mustache's delimiter change,
+`t/grammar/grammar-reduce-time-dynvar.t`), which the walk does in `grow_one_iter` and the compiled loop now does after
+each committed iteration (`ReduceAction`); and the first version of the loop cost the Slice A scan rows 20-30%. The run
+loop is now compiled twice (`rx_run_in::<FRAMES>`, chosen by `RxProgram::has_call`), a choice point stays four words
+(the frame state of one pushed inside a callee lives in a side stack, `FMark`), and the one wide variant is boxed.
+
+**Grammar headroom (§2.4), measured.** Release, warm, best of five, this box, rakudo 2026.07 on the same files:
+
+| workload | before | after | rakudo |
+|---|---:|---:|---:|
+| `bench-grammar-parse-big` (10,453 chars), wall | 32.5 ms | 25.0 ms (-23%) | 74 ms |
+| the same, callgrind, one parse | 241.1 M instr | 179.7 M (-25.5%) | |
+| the same, per document character (net of the 12.0 M start-up) | 21,900 | 16,040 | |
+| `bench-grammar-json-tiny` (JSON::Tiny::Grammar, 31,590 chars), wall | 45.0 ms | 40.0 ms (-11%) | 92 ms |
+| `benchmarks/bench-yaml-parse.raku` shape, 120 rows, wall (#7576) | 0.60-0.71 s | 0.63-0.65 s | |
+| §2.3 scan row `[ \w+ \s ] ** 3 \d ** 6`, wall / callgrind (40 KB) | 138 ms / 132.6 M | 138 ms / 138.4 M (+4.4%) | |
+
+So the compiled form does **not** buy a grammar parse anything like the 32-40x of §2.3: the whole of
+`bench-grammar-parse-big` now runs in one compiled loop (`regex-vm: compiled=15 declined=0`) and it is a quarter faster,
+not an order of magnitude. ADR §2.4 expected exactly this, and the profile says where the rest is:
+
+- **LTM ranking of proto candidates**: 22.5% inclusive (`ltm_measure`, 35,528 calls for about 5,000 proto calls: one
+  NFA run per candidate, seven candidates in `value`), of which 19.6 M is the one-time NFA build.
+- **Allocation**: 186,000 allocator calls per parse (225,000 before), about 21% of the instructions with `memcpy`. They
+  are the match tree itself: a `RegexCaptures` per callee, its named map, the `CapNode`, the capture lists.
+- **The loop itself** is 10% (`rx_run_in::<true>`) and `CapStore::merge_delta` 9% inclusive.
+
+The §2.3 premise (a flat program is 30x cheaper than the walk per position) holds for patterns whose cost is the
+walk; a grammar's cost is per subrule: resolution, ranking, the Match tree. Those are what is left to remove, and they
+are filed as `todo:perf` issues with their own goals rather than closed here
+([#10487](https://github.com/tokuhirom/mutsu/issues/10487) one NFA run per proto call,
+[#10488](https://github.com/tokuhirom/mutsu/issues/10488) the allocations of the Match tree). On YAMLish the compiled engine changes
+nothing measurable (#7576): its cost was never the engine.
+
+What is left of Slice D: **#9803** (an attribute written in a method a token calls is lost on the Match: the cursor
+as the grammar instance, where the `Frame` is the place for it), and the walk's `drive_named_subrule_candidates` and
+eager `Named` arm, which Slice E deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*`
+parameters, wrapped tokens, a scoped `[:m …]`, which keeps `JSON::Tiny`'s string token on the walk). The survey over
+`t/grammar` and `t/regex` puts compiled patterns at 97.2% (3,594 of 3,696), with no `subrule` decline left; the
+declines are `frugal-ratchet` 20, `nullable-loop` 19, `ignoremark` 18, `isolated-group-scoped` 17 and a tail.
 
 ### Reproducing §2
 

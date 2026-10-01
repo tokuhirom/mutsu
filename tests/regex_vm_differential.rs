@@ -328,3 +328,36 @@ say $n;"#;
         .unwrap_or_else(|| panic!("no compiled= in: {line}"));
     assert!(compiled >= 3, "the code patterns were not compiled: {line}");
 }
+
+/// Slice D (#10254): a grammar with plain, proto, quantified and goal-matched
+/// `<subrule>` calls must take the compiled engine whole. A silently declined
+/// call would pass every differential case above while measuring nothing.
+#[test]
+fn subrule_calls_are_compiled() {
+    let src = r#"grammar G {
+    token TOP { <value>+ % ',' }
+    proto token value {*}
+    token value:sym<num>  { <digits> }
+    token value:sym<list> { '[' ~ ']' <value>* % ',' }
+    token digits { \d+ }
+}
+say G.parse("1,[2,3],4").so;
+say so "ab" ~~ / <G::digits> | 'a' /;"#;
+    let (ok, out, err) = run(src, &[("MUTSU_VM_STATS", "1")]);
+    assert!(ok, "run failed: {err}");
+    assert_eq!(out, "True\nTrue\n");
+    let line = err
+        .lines()
+        .find_map(|l| l.split("regex-vm: ").nth(1))
+        .unwrap_or_else(|| panic!("no regex-vm stats line: {err}"));
+    assert!(
+        !line.contains("subrule"),
+        "a subrule call declined to the walk: {line}"
+    );
+    let runs: u64 = line
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix("runs="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no runs= in: {line}"));
+    assert!(runs >= 1, "the grammar parse did not run compiled: {line}");
+}
