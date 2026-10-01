@@ -273,9 +273,9 @@ Usage:
 ## Known Limitations
 
 - **Some compile-time diagnostics are missing.** Most visibly, an undeclared variable is not rejected at compile time the way strict mode requires.
-- **Limited exception types.** Not all `X::` exception classes are implemented, so a `CATCH` matching a rare one may not fire.
+- **A few rare exception types are missing.** Nearly every `X::` type Rakudo ships exists; the exceptions are the roles `X::Await::Died`, `X::HyperRace::Died` and `X::Wrapper`, so a `CATCH` matching one of them may not fire.
 - **The package manager is young.** Zef ships bundled as `mzef` and runs on mutsu, but installing arbitrary ecosystem distributions is not yet dependable.
-- **`RakuAST` exists but is far from complete**, and feeds spanning multiple lines do not parse yet.
+- **`RakuAST` exists but is far from complete.**
 
 The [manual](https://tokuhirom.github.io/mutsu/manual.html#compat) keeps the current
 account of what works and what does not — including the things people assume are
