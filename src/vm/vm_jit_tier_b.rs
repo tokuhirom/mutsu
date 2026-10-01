@@ -163,14 +163,14 @@ impl TierB {
         len: CVal,
         back: i64,
     ) -> CVal {
-        let idx = b.ins().iadd_imm(len, -back);
-        let off = b.ins().ishl_imm(idx, 3);
+        let idx = b.ins().iadd_imm_s(len, -back);
+        let off = b.ins().ishl_imm_u(idx, 3);
         b.ins().iadd(ptr, off)
     }
 
     /// Store `len + delta` back into the stack's length word.
     pub(super) fn adjust_len(&self, b: &mut FunctionBuilder, len: CVal, delta: i64) {
-        let new_len = b.ins().iadd_imm(len, delta);
+        let new_len = b.ins().iadd_imm_s(len, delta);
         b.ins().store(
             Self::mf(),
             new_len,
@@ -181,18 +181,18 @@ impl TierB {
 
     /// `word >> 48` — the 16-bit page.
     pub(super) fn page(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
-        b.ins().ushr_imm(word, w::PAGE_SHIFT as i64)
+        b.ins().ushr_imm_u(word, w::PAGE_SHIFT as i64)
     }
 
     /// `page == INT_PAGE` (small inline Int; boxed Ints go slow-path).
     pub(super) fn is_int_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
-        b.ins().icmp_imm(IntCC::Equal, page, w::INT_PAGE as i64)
+        b.ins().icmp_imm_s(IntCC::Equal, page, w::INT_PAGE as i64)
     }
 
     /// `NUM_PAGE_MIN <= page <= NUM_PAGE_MAX` (encoded f64).
     pub(super) fn is_num_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
-        let shifted = b.ins().iadd_imm(page, -(w::NUM_PAGE_MIN as i64));
-        b.ins().icmp_imm(
+        let shifted = b.ins().iadd_imm_s(page, -(w::NUM_PAGE_MIN as i64));
+        b.ins().icmp_imm_s(
             IntCC::UnsignedLessThanOrEqual,
             shifted,
             (w::NUM_PAGE_MAX - w::NUM_PAGE_MIN) as i64,
@@ -201,20 +201,20 @@ impl TierB {
 
     /// Sign-extend the 48-bit Int payload to i64.
     fn sx48(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
-        let hi = b.ins().ishl_imm(word, 16);
-        b.ins().sshr_imm(hi, 16)
+        let hi = b.ins().ishl_imm_u(word, 16);
+        b.ins().sshr_imm_u(hi, 16)
     }
 
     /// Pack an in-range i64 back into a small-Int word.
     fn pack_int(&self, b: &mut FunctionBuilder, v: CVal) -> CVal {
-        let payload = b.ins().band_imm(v, w::PAYLOAD48_MASK as i64);
+        let payload = b.ins().band_imm_u(v, w::PAYLOAD48_MASK as i64);
         b.ins()
-            .bor_imm(payload, (w::INT_PAGE << w::PAGE_SHIFT) as i64)
+            .bor_imm_u(payload, (w::INT_PAGE << w::PAGE_SHIFT) as i64)
     }
 
     /// Decode an encoded Num word to an f64 SSA value.
     fn decode_num(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
-        let bits = b.ins().iadd_imm(word, -(w::DOUBLE_OFFSET as i64));
+        let bits = b.ins().iadd_imm_s(word, -(w::DOUBLE_OFFSET as i64));
         b.ins().bitcast(types::F64, MemFlagsData::new(), bits)
     }
 
@@ -222,7 +222,7 @@ impl TierB {
     /// quiet-NaN word, exactly like `Value::num`).
     fn encode_num(&self, b: &mut FunctionBuilder, f: CVal) -> CVal {
         let bits = b.ins().bitcast(types::I64, MemFlagsData::new(), f);
-        let word = b.ins().iadd_imm(bits, w::DOUBLE_OFFSET as i64);
+        let word = b.ins().iadd_imm_s(bits, w::DOUBLE_OFFSET as i64);
         let not_nan = b.ins().fcmp(FloatCC::Equal, f, f);
         let nan_word = b.ins().iconst(types::I64, w::NUM_CANONICAL_NAN_WORD as i64);
         b.ins().select(not_nan, word, nan_word)
@@ -234,7 +234,7 @@ impl TierB {
         let addr = std::ptr::addr_of!(super::vm_jit::USER_INFIX_DECLS) as usize;
         let addr = b.ins().iconst(self.ptr_ty, addr as i64);
         let ctr = b.ins().load(types::I32, Self::mf(), addr, 0);
-        b.ins().icmp_imm(IntCC::Equal, ctr, 0)
+        b.ins().icmp_imm_s(IntCC::Equal, ctr, 0)
     }
 
     /// Call a fallible `(interp) -> status` shim and return-from-function on a
@@ -318,12 +318,12 @@ impl TierB {
                 (r, Some(of))
             }
         };
-        let hi = b.ins().ishl_imm(res, 16);
-        let back = b.ins().sshr_imm(hi, 16);
+        let hi = b.ins().ishl_imm_u(res, 16);
+        let back = b.ins().sshr_imm_u(hi, 16);
         let fits = b.ins().icmp(IntCC::Equal, back, res);
         let ok = match mul_of {
             Some(of) => {
-                let no_of = b.ins().icmp_imm(IntCC::Equal, of, 0);
+                let no_of = b.ins().icmp_imm_s(IntCC::Equal, of, 0);
                 b.ins().band(fits, no_of)
             }
             None => fits,
@@ -444,8 +444,8 @@ impl TierB {
         };
         let store_blk = b.create_block();
         if needs_range_check {
-            let hi = b.ins().ishl_imm(res, 16);
-            let back = b.ins().sshr_imm(hi, 16);
+            let hi = b.ins().ishl_imm_u(res, 16);
+            let back = b.ins().sshr_imm_u(hi, 16);
             let fits = b.ins().icmp(IntCC::Equal, back, res);
             b.ins().brif(fits, store_blk, &[], slow_blk, &[]);
         } else {
@@ -511,7 +511,7 @@ impl TierB {
         b.switch_to_block(int_blk);
         let av = self.sx48(b, wa);
         let bv = self.sx48(b, wb);
-        let nonzero = b.ins().icmp_imm(IntCC::NotEqual, bv, 0);
+        let nonzero = b.ins().icmp_imm_s(IntCC::NotEqual, bv, 0);
         let calc_blk = b.create_block();
         b.ins().brif(nonzero, calc_blk, &[], slow_blk, &[]);
 
@@ -521,9 +521,9 @@ impl TierB {
         let rem = b.ins().srem(av, bv);
         // Floor correction applies exactly when the truncated remainder is
         // non-zero and the operand signs differ.
-        let rem_nz = b.ins().icmp_imm(IntCC::NotEqual, rem, 0);
+        let rem_nz = b.ins().icmp_imm_s(IntCC::NotEqual, rem, 0);
         let sign_xor = b.ins().bxor(av, bv);
-        let signs_differ = b.ins().icmp_imm(IntCC::SignedLessThan, sign_xor, 0);
+        let signs_differ = b.ins().icmp_imm_s(IntCC::SignedLessThan, sign_xor, 0);
         let correct = b.ins().band(rem_nz, signs_differ);
         let zero = b.ins().iconst(types::I64, 0);
         let res = match op {
@@ -541,8 +541,8 @@ impl TierB {
         // `mod`'s result is bounded by the divisor and `div`'s by the dividend, so
         // both fit the small-Int range for every input except `MIN_48 div -1`.
         // Check anyway, and let the shim box the one case that does not.
-        let hi = b.ins().ishl_imm(res, 16);
-        let back = b.ins().sshr_imm(hi, 16);
+        let hi = b.ins().ishl_imm_u(res, 16);
+        let back = b.ins().sshr_imm_u(hi, 16);
         let fits = b.ins().icmp(IntCC::Equal, back, res);
         let int_store = b.create_block();
         b.ins().brif(fits, int_store, &[], slow_blk, &[]);
@@ -591,8 +591,8 @@ impl TierB {
             NumCmp::Eq => b.ins().icmp(IntCC::Equal, wa, wb),
             NumCmp::Ne => b.ins().icmp(IntCC::NotEqual, wa, wb),
             _ => {
-                let sa = b.ins().ishl_imm(wa, 16);
-                let sb = b.ins().ishl_imm(wb, 16);
+                let sa = b.ins().ishl_imm_u(wa, 16);
+                let sb = b.ins().ishl_imm_u(wb, 16);
                 let cc = match op {
                     NumCmp::Lt => IntCC::SignedLessThan,
                     NumCmp::Le => IntCC::SignedLessThanOrEqual,
@@ -667,7 +667,7 @@ impl TierB {
         b.ins().brif(full, slow, &[], fast, &[]);
 
         b.switch_to_block(fast);
-        let off = b.ins().ishl_imm(len, 3);
+        let off = b.ins().ishl_imm_u(len, 3);
         let addr = b.ins().iadd(ptr, off);
         let wv = b.ins().iconst(types::I64, word as i64);
         b.ins().store(Self::mf(), wv, addr, 0);
@@ -742,13 +742,13 @@ impl TierB {
         let lbase = b
             .ins()
             .load(types::I64, Self::mf(), self.interp, self.lay.locals_base);
-        let abs = b.ins().iadd_imm(lbase, idx as i64);
+        let abs = b.ins().iadd_imm_s(lbase, idx as i64);
         let inbounds = b.ins().icmp(IntCC::UnsignedLessThan, abs, llen);
         let tag_chk = b.create_block();
         b.ins().brif(inbounds, tag_chk, &[], slow_blk, &[]);
 
         b.switch_to_block(tag_chk);
-        let byte_off = b.ins().imul_imm(abs, 8);
+        let byte_off = b.ins().imul_imm_s(abs, 8);
         let slot_addr = b.ins().iadd(lptr, byte_off);
         let word = b.ins().load(types::I64, Self::mf(), slot_addr, 0);
         // Refcount-free scalar probe, as two *ordered range tests* rather than
@@ -762,8 +762,8 @@ impl TierB {
         // exactly those two. Everything else (Nil included — the arm has a
         // whole undeclared-check branch for it) goes to the shim.
         let page = self.page(b, word);
-        let page_rel = b.ins().iadd_imm(page, -(w::INT_PAGE as i64));
-        let int_or_num = b.ins().icmp_imm(
+        let page_rel = b.ins().iadd_imm_s(page, -(w::INT_PAGE as i64));
+        let int_or_num = b.ins().icmp_imm_s(
             IntCC::UnsignedLessThanOrEqual,
             page_rel,
             (w::NUM_PAGE_MAX - w::INT_PAGE) as i64,
@@ -773,11 +773,11 @@ impl TierB {
         b.ins().brif(int_or_num, push_chk, &[], kind_chk, &[]);
 
         b.switch_to_block(kind_chk);
-        let masked = b.ins().band_imm(word, w::KIND_MASK as i64);
+        let masked = b.ins().band_imm_u(word, w::KIND_MASK as i64);
         let kind_rel = b
             .ins()
-            .iadd_imm(masked, (w::BOOL_PATTERN as i64).wrapping_neg());
-        let inline_kind = b.ins().icmp_imm(
+            .iadd_imm_s(masked, (w::BOOL_PATTERN as i64).wrapping_neg());
+        let inline_kind = b.ins().icmp_imm_s(
             IntCC::UnsignedLessThanOrEqual,
             kind_rel,
             w::BOOL_PACKAGE_SPAN as i64,
@@ -793,7 +793,7 @@ impl TierB {
         let push_blk = b.create_block();
         b.ins().brif(full, slow_blk, &[], push_blk, &[]);
         b.switch_to_block(push_blk);
-        let off = b.ins().ishl_imm(slen, 3);
+        let off = b.ins().ishl_imm_u(slen, 3);
         let addr = b.ins().iadd(sptr, off);
         b.ins().store(Self::mf(), word, addr, 0);
         self.adjust_len(b, slen, 1);
@@ -825,10 +825,10 @@ impl TierB {
         let len = self.stack_len(b);
         let top_addr = self.slot_addr(b, ptr, len, 1);
         let wt = b.ins().load(types::I64, Self::mf(), top_addr, 0);
-        let masked = b.ins().band_imm(wt, w::KIND_MASK as i64);
+        let masked = b.ins().band_imm_u(wt, w::KIND_MASK as i64);
         let is_pair = b
             .ins()
-            .icmp_imm(IntCC::Equal, masked, w::PAIR_PATTERN as i64);
+            .icmp_imm_s(IntCC::Equal, masked, w::PAIR_PATTERN as i64);
         let slow = b.create_block();
         let done = b.create_block();
         b.ins().brif(is_pair, slow, &[], done, &[]);

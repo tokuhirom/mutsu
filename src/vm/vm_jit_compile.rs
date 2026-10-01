@@ -178,7 +178,8 @@ fn build(
     };
     let module = &mut engine.module;
 
-    let ptr = module.target_config().pointer_type();
+    let frontend_config = module.target_config();
+    let ptr = frontend_config.pointer_type();
     let mut ctx = module.make_context();
     ctx.func.signature.params.push(AbiParam::new(ptr)); // interp
     ctx.func.signature.params.push(AbiParam::new(ptr)); // code
@@ -689,7 +690,7 @@ fn build(
         b.ins().return_(&[zero]);
     }
     b.seal_all_blocks();
-    b.finalize();
+    b.finalize(frontend_config);
 
     engine.fn_counter += 1;
     let name = format!("mutsu_jit_{}", engine.fn_counter);
