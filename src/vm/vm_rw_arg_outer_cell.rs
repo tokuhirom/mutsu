@@ -53,6 +53,13 @@ impl Interpreter {
             }
             return self.promote_package_lexical_to_cell(sym, stored);
         }
+        // Only a module routine's compunit lexical: a mainline sub's captured
+        // cells (ADR-0024's `UNIT<mainline>` bucket) and a routine-nested
+        // sub's aliases already reach `WrapVarRef` through their own capture
+        // paths, which keep a same-named shadow in the caller apart.
+        if crate::qualified::is_global_package(self.current_package_sym()) {
+            return None;
+        }
         self.unit_lexical_slot(name)
             .filter(|v| v.is_container_ref())
             .cloned()
