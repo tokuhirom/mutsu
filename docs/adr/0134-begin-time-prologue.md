@@ -420,6 +420,11 @@ of a nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/decls.rs`,
   - A BEGIN that names a type whose body runs code (`my class K { say 1 }`),
     has a user trait, or reads a lexical of the scope. Repeating it would run
     that code at BEGIN time.
+  - A BEGIN that names an inner type and may change a type through its
+    metaobject (a metamethod other than a read-only one, `.HOW`, `augment`).
+    The scope's in-place declaration registers the type afresh, so a change
+    made to the repeat would be lost
+    (`t/vm/scope/lexical-class-refines-builtin.t`).
   - A BEGIN that reads an inner variable whose type constraint names an inner
     type (`my K $v`): the variable's static cell is declared at the unit's
     level, where the type does not exist.

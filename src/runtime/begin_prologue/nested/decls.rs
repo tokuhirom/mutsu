@@ -24,7 +24,10 @@
 //!   reads nothing of the inner scopes. A `my` type is stored under its
 //!   declaration site (ADR-0047), so the repeat registers the same type the
 //!   scope declares in place, as each call of the scope already does. Any other
-//!   named type keeps the BEGIN on its pre-ADR path.
+//!   named type keeps the BEGIN on its pre-ADR path, and so does a BEGIN that
+//!   may change the type it names through its metaobject (`.^add_method`):
+//!   the scope's own declaration registers the type afresh, which would lose
+//!   the change.
 //!
 //! Names reached dynamically (`EVAL`, `::($name)`, a pseudo-package) are not
 //! visible to the scan. A body that uses one, or that calls a routine it does
@@ -57,7 +60,33 @@ pub(super) struct Mentions {
     symbolic: bool,
     /// A `BEGIN` of its own.
     has_begin: bool,
+    /// It may change a type through its metaobject (`K.^add_method(...)`,
+    /// `K.HOW`, `augment`).
+    changes_type: bool,
 }
+
+/// The metamethods that only read a type. Any other may change it.
+const READ_ONLY_METAMETHODS: &[&str] = &[
+    "name",
+    "shortname",
+    "mro",
+    "can",
+    "isa",
+    "does",
+    "lookup",
+    "find_method",
+    "methods",
+    "attributes",
+    "roles",
+    "parents",
+    "ver",
+    "auth",
+    "api",
+    "archetypes",
+    "is_composed",
+    "enum_values",
+    "enum_value_list",
+];
 
 impl Visit for Mentions {
     fn visit_stmt(&mut self, stmt: &Stmt) {
@@ -68,6 +97,7 @@ impl Visit for Mentions {
                 ..
             }
         );
+        self.changes_type |= matches!(stmt, Stmt::AugmentClass { .. });
         walk_stmt(self, stmt);
     }
 
@@ -79,6 +109,11 @@ impl Visit for Mentions {
                 ..
             }
         );
+        if let Expr::MethodCall { name, modifier, .. } = expr {
+            let name = name.resolve();
+            self.changes_type |= name == "HOW"
+                || (*modifier == Some('^') && !READ_ONLY_METAMETHODS.contains(&name.as_str()));
+        }
         walk_expr(self, expr);
     }
 
@@ -343,6 +378,12 @@ impl Walker<'_> {
                 mentions.names.extend(extra.names);
                 mentions.symbolic |= extra.symbolic;
             }
+        }
+        // The scope's own declaration registers the type afresh when the
+        // scope runs, so a change the BEGIN makes to the repeat would be lost
+        // (`BEGIN K.^add_method(...)`).
+        if !selected.is_empty() && mentions.changes_type {
+            return None;
         }
         for (f, t) in selected {
             let decl = self.frames[f].types[t]
