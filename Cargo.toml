@@ -43,31 +43,95 @@ jit = [
     "dep:cranelift-native",
 ]
 
+# Dependency policy
+# -----------------
+# Every external crate costs build time, a share of the maintenance burden
+# (breaking upgrades, MSRV bumps) and supply-chain exposure. A crate earns
+# a place here only if it is one of these:
+#   (a) a genuinely complex implementation that we should not own: big-integer
+#       arithmetic, Unicode segmentation/normalization/collation, a
+#       code generator, a serialization format;
+#   (b) a portability or platform layer: OS/libc bindings, dynamic loading,
+#       FFI, terminal line editing, the wasm bridge;
+#   (c) a small crate with a measured performance reason (hashers).
+# Data a crate merely carries (Unicode/emoji name tables and the like) is
+# generated into a committed, test-checked table instead (see
+# `src/builtins/*_gen.rs`). Never add a crate to save a few dozen lines, or to
+# get a "general" engine for a narrow question (a regex to test one property,
+# JSON to inspect the AST). Before adding one, check `cargo tree -p <crate>`
+# for what it pulls in (build scripts and proc-macros count), and record the
+# verdict next to it below. Prefer `default-features = false` plus only the
+# features actually used.
+#
+# Audit 2026-10-01: each entry says what it is used for and the verdict. KEEP
+# means justified under (a)-(c); REMOVE/TRIM link the tracking issue.
 [dependencies]
+# REMOVE (#10439): runtime use is `\p{..}` property tests on one char
+# (`runtime/unicode.rs`, `builtins/uniprop/`) and a source-text scan in the
+# parser (`module_exports/export_hook.rs`). Neither needs a regex engine.
+# Range tables (or `regex-syntax` alone) replace it. The dev-only `*_gen.rs`
+# consistency tests may keep it as a dev-dependency.
 regex = "1.12.3"
+# REMOVE (#10436): one call site, matching `handles /re/` delegation with
+# PCRE syntax instead of Raku regex semantics.
 fancy-regex = "0.19"
+# UNDER REVIEW (#10225): `:P5` regex execution. It builds a C library
+# (pcre2-sys via `cc`), so it is the heaviest dependency for portability. Its
+# fate follows the `:P5` support decision.
 pcre2 = { version = "0.2", optional = true }
+# REMOVE (#10438): char <-> Unicode name at 3 call sites, but its build
+# script pulls in phf_codegen + rand (15 crates). Generate a committed table.
 unicode_names2 = "3"
+# KEEP (a): Int/Rat/FatRat big-integer arithmetic.
 num-bigint = { version = "0.5", features = ["serde"] }
+# KEEP: the numeric traits num-bigint is built on. Already a transitive dep.
 num-traits = "0.2"
+# KEEP: floored div/mod and gcd on BigInt. It is a dependency of num-bigint
+# anyway, so dropping the direct use would remove nothing from the graph.
 num-integer = "0.1"
+# KEEP (a): grapheme cluster segmentation (UAX #29), tracking Unicode versions.
 unicode-segmentation = "1.13.3"
+# KEEP (a): NFC/NFD/NFKC/NFKD normalization, tracking Unicode versions.
 unicode-normalization = "0.1"
+# KEEP (b): REPL line editing (native only).
 rustyline = { version = "18", optional = true }
+# REMOVE (#10437): one call site (CLDR emoji short names for `\c[...]`),
+# which also scans all entries linearly per lookup. Generate a committed table.
 emojis = "0.9"
+# KEEP (b): POSIX calls: signals, processes, file locks, localtime, user/group
+# lookup, uname (native only).
 libc = { version = "0.2", optional = true }
+# KEEP (a): WHATWG legacy encodings for `encode`/`decode` (the tables are the
+# bulk of it).
 encoding_rs = "0.8"
+# KEEP (b): the wasm build's JS bridge and panic reporting (wasm only).
 wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+# KEEP (c): FxHash for internal (non-user-keyed) maps.
 rustc-hash = "2.1.1"
+# KEEP (c): fast seeded hasher for maps keyed by user data (`value/user_key_map.rs`).
 foldhash = "0.2"
+# KEEP (a): AST/value serialization for precomp and the scan cache.
 serde = { version = "1", features = ["derive"] }
+# KEEP (a) for real JSON I/O (META6.json, profiler report, wasm output).
+# Its use for walking a JSON copy of the AST in compile-time analyses is a
+# design hack tracked in #10441, not a reason to keep it.
 serde_json = "1"
+# KEEP (a), TRIM (#10440): the precomp/scan-cache binary format, used only
+# through its serde bridge. The default `derive` feature (a proc-macro)
+# is unused.
 bincode = { version = "2", features = ["serde"] }
+# KEEP (a): Unicode Collation Algorithm for `coll` and `collate`. It is
+# the largest subtree (~32 crates), but UCA is not something to own.
 icu_collator = "2.1"
 icu_collator_data = "2.1"
+# KEEP (b): NativeCall, which opens shared libraries (dlopen/dlsym or
+# LoadLibrary) and looks up symbols (native only, ADR-0096 §D4).
 libloading = { version = "0.9", optional = true }
+# KEEP (b): NativeCall, which calls C functions with a signature known only at
+# run time (native only).
 libffi = { version = "5", optional = true }
+# KEEP (a): the Cranelift method JIT (ADR-0004), behind the `jit` feature.
 cranelift-codegen = { version = "0.133", optional = true }
 cranelift-frontend = { version = "0.133", optional = true }
 cranelift-jit = { version = "0.133", optional = true }
