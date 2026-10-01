@@ -18,6 +18,25 @@ impl Interpreter {
         })
     }
 
+    /// The environment a `** {code}` count runs in. Like a `{ ... }` block, the
+    /// count sees the enclosing level's captures when it sits in a same-scope
+    /// sub-pattern (`[ $<x>=a ** {$<n>} ]`, which is also the shape a
+    /// `$<x>=a ** {$<n>}` alias is wrapped into): `$<n>` was captured by the
+    /// level above, not by this one. The view carries captures only, so the
+    /// regex's `:my` lexicals are laid over it from `caps` itself.
+    // Cost: O(c), c = the captures visible to the code; O(1) extra without an
+    // enclosing level.
+    fn repeat_count_env(&self, caps: &RegexCaptures) -> Env {
+        if caps.outer_backref().is_none() {
+            return self.make_regex_eval_env(caps);
+        }
+        let mut env = self.make_regex_eval_env(&caps.inline_capture_view());
+        for (k, v) in caps.regex_vars() {
+            env.insert(k.clone(), v.clone());
+        }
+        env
+    }
+
     /// Evaluate a `** {code}` quantifier code block and return (min, max).
     /// The code should return either a numeric value (exact count) or a Range.
     /// Returns None if the code fails to evaluate or produces an invalid/infinite value;
@@ -28,7 +47,7 @@ impl Interpreter {
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
         let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
-        let env = self.make_regex_eval_env(caps);
+        let env = self.repeat_count_env(caps);
         let val = match self.run_regex_sub_eval(env, None, |interp| {
             interp.eval_block_value_cached(&stmts, id)
         }) {
