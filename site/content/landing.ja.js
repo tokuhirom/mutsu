@@ -37,7 +37,7 @@ export default {
         '追加設定なしで動きます。',
       docker: 'イメージには両方のバイナリが入っています。<code>mzef</code> で入れた' +
         'モジュールを残したい場合は <code>$HOME</code> に名前付きボリュームをマウントしてください。',
-      source: 'Rust 1.92 以降と C コンパイラが必要です。<code>make test</code> でローカルの' +
+      source: 'Rust 1.98.1 以降と C コンパイラが必要です。<code>make test</code> でローカルの' +
         'テスト、<code>make roast</code> で公式仕様テストが走ります。',
     },
   },

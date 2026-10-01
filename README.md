@@ -107,8 +107,8 @@ Roast measures the language against its spec. The other question — *does the
 module I actually use work?* — is measured by running each zef distribution's own
 test suite under both rakudo and mutsu and comparing the two. Of the
 **1,638** distributions in the ecosystem index, **1,202** can be graded against
-a rakudo baseline, and **69.1%** of those (830) pass every test file that
-rakudo passes (**77.0%** of test files, **89.3%** of assertions). Look up a
+a rakudo baseline, and **69.4%** of those (834) pass every test file that
+rakudo passes (**77.1%** of test files, **89.4%** of assertions). Look up a
 particular distribution on the [ecosystem
 page](https://tokuhirom.github.io/mutsu/ecosystem.html); the per-distribution
 records are in [`ecosystem/`](ecosystem/), the metric over time is

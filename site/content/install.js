@@ -11,7 +11,7 @@ export default [
     id: 'mise',
     label: 'mise',
     code: [
-      '# latest release (or pin: @0.7.0)',
+      '# latest release (or pin: @0.24.0)',
       'mise use -g github:tokuhirom/mutsu',
       '',
       "mutsu -e 'say \"Hello, World!\"'",

@@ -30,7 +30,7 @@ export default {
         <h3>mise を使う（推奨）</h3>
         <p>ビルド済みバイナリを GitHub Releases で配布しています（Linux / macOS、x86-64 / arm64 の 4 種）。<a href="https://mise.jdx.dev/" rel="noopener">mise</a> を使うと、インタプリタ <code>mutsu</code> と同梱パッケージマネージャ <code>mzef</code> の<strong>両方</strong>が PATH に入ります。</p>
         <pre><code>mise use -g github:tokuhirom/mutsu        # 最新リリース
-mise use -g github:tokuhirom/mutsu@0.18.0 # バージョン固定
+mise use -g github:tokuhirom/mutsu@0.24.0 # バージョン固定
 
 mutsu -e 'say "Hello, World!"'
 mzef --version</code></pre>
@@ -48,7 +48,7 @@ docker run --rm -v "$PWD:/work:ro" ghcr.io/tokuhirom/mutsu mutsu hello.raku</cod
         <p><code>mzef install</code> は <code>$HOME</code>（イメージ内では <code>/root</code>）以下に書き込みます。インストール結果を実行間で保持するには、そこに名前付きボリュームをマウントしてください。</p>
 
         <h3>ソースからビルドする</h3>
-        <p>Rust 1.94 以降（edition 2024）と、NativeCall が使う同梱 <code>libffi</code> のビルドに使う C コンパイラが必要です。</p>
+        <p>Rust 1.98.1 以降（edition 2024）と、NativeCall が使う同梱 <code>libffi</code> のビルドに使う C コンパイラが必要です。</p>
         <pre><code>git clone https://github.com/tokuhirom/mutsu.git
 cd mutsu
 cargo build --release
@@ -234,8 +234,7 @@ mutsu --dump-bytecode -e 'say 1 + 2'   # コンパイラが何を吐いたか</c
         <h3>既知の穴</h3>
         <ul>
           <li>コンパイル時診断がいくつか足りません。いちばん目につくのは、未宣言変数が strict モードの要求どおりにはコンパイル時に弾かれないことです。</li>
-          <li><code>X::</code> 例外型がすべて揃ってはいないので、珍しい型でマッチする <code>CATCH</code> が発火しないことがあります。</li>
-          <li>複数行にまたがるフィード演算子はまだパースできません（1 行のフィードは動きます）。</li>
+          <li>珍しい例外型がいくつか足りません。Rakudo が持つ <code>X::</code> 型はほぼすべて揃っていて、足りないのはロールの <code>X::Await::Died</code>、<code>X::HyperRace::Died</code>、<code>X::Wrapper</code> だけです。これらにマッチする <code>CATCH</code> は発火しないことがあります。</li>
           <li><code>RakuAST</code> はありますが、完成には程遠い状態です。</li>
           <li>エコシステムの任意のディストリビューションを入れるのは、まだ安定してできるとは言えません。上の <a href="#packages">mzef</a> を参照。</li>
         </ul>
