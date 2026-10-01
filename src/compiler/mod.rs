@@ -1107,6 +1107,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod begin_use;
+mod body_scans;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_placeholder;
@@ -1154,6 +1155,8 @@ mod package_runtime_body;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
+pub(crate) mod routine_scans;
+pub(crate) mod scope_scan;
 mod stmt;
 mod subst_thunk;
 mod term_constants;
@@ -4277,54 +4280,12 @@ impl Compiler {
         retry.compile_unit(stmts)
     }
 
+    /// Record every sigilless `constant Name = Type` alias in the unit, at any
+    /// depth (`body_scans::type_aliases`).
+    // Cost: O(n), n = size of `stmts`.
     fn seed_type_aliases(&mut self, stmts: &[Stmt]) {
-        for stmt in stmts {
-            match stmt {
-                Stmt::VarDecl {
-                    name,
-                    expr: Expr::BareWord(target),
-                    custom_traits,
-                    ..
-                } if custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__constant")
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
-                    self.type_aliases.insert(name.clone(), target.clone());
-                }
-                Stmt::Package { body, .. }
-                | Stmt::ClassDecl { body, .. }
-                | Stmt::RoleDecl { body, .. }
-                | Stmt::SubDecl { body, .. }
-                | Stmt::TokenDecl { body, .. }
-                | Stmt::RuleDecl { body, .. }
-                | Stmt::MethodDecl { body, .. }
-                | Stmt::ProtoDecl { body, .. }
-                | Stmt::Block(body)
-                | Stmt::SyntheticBlock(body)
-                | Stmt::React { body }
-                | Stmt::Whenever { body, .. }
-                | Stmt::Default(body)
-                | Stmt::Catch(body)
-                | Stmt::Control(body)
-                | Stmt::Phaser { body, .. }
-                | Stmt::AugmentClass { body, .. } => self.seed_type_aliases(body),
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    self.seed_type_aliases(then_branch);
-                    self.seed_type_aliases(else_branch);
-                }
-                Stmt::For { body, .. }
-                | Stmt::While { body, .. }
-                | Stmt::Loop { body, .. }
-                | Stmt::Given { body, .. }
-                | Stmt::When { body, .. } => self.seed_type_aliases(body),
-                Stmt::Label { stmt, .. } => self.seed_type_aliases(std::slice::from_ref(stmt)),
-                _ => {}
-            }
+        for (name, target) in body_scans::type_aliases(stmts) {
+            self.type_aliases.insert(name, target);
         }
     }
 

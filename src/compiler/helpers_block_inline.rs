@@ -715,149 +715,95 @@ impl Compiler {
         if block_locals.is_empty() {
             return None;
         }
-        // Recursively find HeredocInterpolation nodes in the body
-        for stmt in body {
-            if let Some(var_name) = self.find_heredoc_in_stmt(stmt, &block_locals) {
-                let msg = format!(
-                    "Variable '${}' is not declared. \
-                     Perhaps you forgot a 'sub' if this was intended to be part of a signature?",
-                    var_name
-                );
-                return Some(Value::str(msg));
-            }
+        // Find a block-closing HeredocInterpolation in the body's own scope.
+        let mut scan = HeredocScopeScan {
+            block_locals: &block_locals,
+            outer_map: &self.local_map,
+            found: None,
+        };
+        crate::ast_visit::walk_stmts(&mut scan, body);
+        if let Some(var_name) = scan.found {
+            let msg = format!(
+                "Variable '${}' is not declared. \
+                 Perhaps you forgot a 'sub' if this was intended to be part of a signature?",
+                var_name
+            );
+            return Some(Value::str(msg));
         }
         None
     }
+}
 
-    /// Search a statement for HeredocInterpolation nodes that reference block-local
-    /// variables not visible in the outer scope.
-    fn find_heredoc_in_stmt(
-        &self,
-        stmt: &Stmt,
-        block_locals: &std::collections::HashSet<String>,
-    ) -> Option<String> {
-        match stmt {
-            Stmt::Expr(expr) => self.find_heredoc_in_expr(expr, block_locals),
-            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-                for expr in exprs {
-                    if let Some(name) = self.find_heredoc_in_expr(expr, block_locals) {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            Stmt::Return(expr) | Stmt::Die(expr) | Stmt::Fail(expr) => {
-                self.find_heredoc_in_expr(expr, block_locals)
-            }
-            _ => None,
+/// Finds a heredoc in a block's own scope whose body references a variable
+/// declared only in that block (ADR-0137 visitor).
+///
+/// Only a heredoc whose marker line itself closes an enclosing block (a `}`
+/// remained on that line — see the `HeredocInterpolation` doc comment) can
+/// have a `my` local of that block go out of scope before Raku resolves the
+/// heredoc body. A heredoc used as an ordinary statement (the marker's line
+/// ends in `;`/nothing) leaves every enclosing block open for its whole body,
+/// so a `my` declared earlier in that same block is visible via plain lexical
+/// scoping — not an error. A heredoc in a nested block closes *that* block,
+/// whose own locals its own check covers, so nested scopes are not entered.
+struct HeredocScopeScan<'a> {
+    block_locals: &'a std::collections::HashSet<String>,
+    outer_map: &'a HashMap<String, u32>,
+    found: Option<String>,
+}
+
+impl crate::ast_visit::Visit for HeredocScopeScan<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.found.is_none() {
+            super::scope_scan::walk_stmt_own_scope(self, stmt);
         }
     }
 
-    /// Search an expression for HeredocInterpolation nodes that reference
-    /// block-local variables not visible in the outer scope.
-    fn find_heredoc_in_expr(
-        &self,
-        expr: &Expr,
-        block_locals: &std::collections::HashSet<String>,
-    ) -> Option<String> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.found.is_some() || super::scope_scan::opens_own_scope(expr) {
+            return;
+        }
         match expr {
-            // Only a heredoc whose marker line itself closes an enclosing
-            // block (a `}` remained on that line — see the
-            // `HeredocInterpolation` doc comment) can have a `my` local of
-            // that block go out of scope before Raku resolves the heredoc
-            // body. A heredoc used as an ordinary statement (the marker's
-            // line ends in `;`/nothing) leaves every enclosing block open for
-            // its whole body, so a `my` declared earlier in that same block
-            // is visible via plain lexical scoping — not an error.
             Expr::HeredocInterpolation(content, true) => {
                 let resolved = crate::parser::interpolate_heredoc_content(content);
-                Self::find_undeclared_heredoc_var(&resolved, block_locals, &self.local_map)
+                let mut vars = UndeclaredHeredocVar {
+                    sub_locals: self.block_locals,
+                    outer_map: self.outer_map,
+                    found: None,
+                };
+                crate::ast_visit::walk_expr(&mut vars, &resolved);
+                self.found = vars.found;
             }
-            Expr::HeredocInterpolation(_, false) => None,
-            // Recurse into subexpressions that might contain a heredoc
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                for arg in args {
-                    if let Some(name) = self.find_heredoc_in_expr(arg, block_locals) {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            Expr::MethodCall { target, args, .. } => {
-                if let Some(name) = self.find_heredoc_in_expr(target, block_locals) {
-                    return Some(name);
-                }
-                for arg in args {
-                    if let Some(name) = self.find_heredoc_in_expr(arg, block_locals) {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            _ => None,
+            _ => crate::ast_visit::walk_expr(self, expr),
+        }
+    }
+}
+
+/// Finds a variable in a heredoc interpolation expression that is declared
+/// only in the block's scope (`sub_locals`) but not in the outer scope
+/// (`outer_map`), so it is not visible at the heredoc terminator position.
+struct UndeclaredHeredocVar<'a> {
+    sub_locals: &'a std::collections::HashSet<String>,
+    outer_map: &'a HashMap<String, u32>,
+    found: Option<String>,
+}
+
+impl crate::ast_visit::Visit for UndeclaredHeredocVar<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.found.is_none() {
+            crate::ast_visit::walk_expr(self, expr);
         }
     }
 
-    /// Find a variable in a heredoc interpolation expression that is declared
-    /// only in the sub scope (sub_locals) but not in the outer scope (outer_map).
-    fn find_undeclared_heredoc_var(
-        expr: &Expr,
-        sub_locals: &std::collections::HashSet<String>,
-        outer_map: &HashMap<String, u32>,
-    ) -> Option<String> {
-        match expr {
-            Expr::Var(name) => {
-                // Skip dynamic/compile-time/special variables
-                if name.starts_with('*')
-                    || name.starts_with('?')
-                    || name.starts_with("DYNAMIC::")
-                    || name.starts_with('~')
-                {
-                    return None;
-                }
-                // If the variable is declared in the sub but not in the outer scope,
-                // it's not visible at the heredoc terminator position.
-                if sub_locals.contains(name) && !outer_map.contains_key(name.as_str()) {
-                    return Some(name.clone());
-                }
-                None
-            }
-            Expr::StringInterpolation(parts) => {
-                for part in parts {
-                    if let Some(name) =
-                        Self::find_undeclared_heredoc_var(part, sub_locals, outer_map)
-                    {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            Expr::MethodCall { target, args, .. } => {
-                if let Some(name) = Self::find_undeclared_heredoc_var(target, sub_locals, outer_map)
-                {
-                    return Some(name);
-                }
-                for arg in args {
-                    if let Some(name) =
-                        Self::find_undeclared_heredoc_var(arg, sub_locals, outer_map)
-                    {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            Expr::Block(stmts) => {
-                for stmt in stmts {
-                    if let Stmt::Expr(e) = stmt
-                        && let Some(name) =
-                            Self::find_undeclared_heredoc_var(e, sub_locals, outer_map)
-                    {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            _ => None,
+    fn visit_name(&mut self, name: &str, kind: crate::ast_visit::NameKind) {
+        if self.found.is_some() || kind != crate::ast_visit::NameKind::Var {
+            return;
+        }
+        // Skip dynamic/compile-time/special variables.
+        if name.starts_with(['*', '?', '~']) || name.starts_with("DYNAMIC::") {
+            return;
+        }
+        if self.sub_locals.contains(name) && !self.outer_map.contains_key(name) {
+            self.found = Some(name.to_string());
         }
     }
 }

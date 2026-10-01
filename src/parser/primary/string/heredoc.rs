@@ -143,7 +143,10 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         // the one shape where a `my` local declared in that block can be out
         // of scope by the time Raku resolves the heredoc body. See the
         // `HeredocInterpolation` doc comment and `check_heredoc_scope_errors`.
-        let closes_block_same_line = rest_of_line.contains('}');
+        // Only an *unbalanced* `}` closes an enclosing block: the braces of a
+        // subscript or a block opened on the same line (`... unless
+        // %h{$k}{$v};`) close nothing.
+        let closes_block_same_line = closes_enclosing_block(rest_of_line);
         let expr = if interpolate {
             Expr::HeredocInterpolation(content, closes_block_same_line)
         } else if flags.has_interpolation() || flags.words || flags.backslash {
@@ -272,4 +275,35 @@ pub(crate) fn dedent_heredoc_by_columns(content: &str, target_cols: usize) -> St
         dedented.push_str(&segment[strip_pos..]);
     }
     dedented
+}
+
+/// Whether `rest` (the text after a heredoc marker on its own line) closes a
+/// block that was open before the marker: a `}` with no matching `{` earlier
+/// on the line.
+// Cost: O(n), n = `rest.len()`.
+fn closes_enclosing_block(rest: &str) -> bool {
+    let mut depth = 0usize;
+    for c in rest.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth == 0 => return true,
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod closes_enclosing_block_tests {
+    use super::closes_enclosing_block;
+
+    #[test]
+    fn only_an_unbalanced_brace_closes_a_block() {
+        assert!(closes_enclosing_block(" }"));
+        assert!(closes_enclosing_block("; say 1 }"));
+        assert!(!closes_enclosing_block(")).throw unless %h{$a}{$b};"));
+        assert!(closes_enclosing_block(" if %h{$a} }"));
+        assert!(!closes_enclosing_block(";"));
+    }
 }

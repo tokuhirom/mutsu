@@ -6,32 +6,28 @@
 # Adding a walker means editing this list by hand, which a reviewer sees: say
 # why the visitor cannot express it.
 
-src/analysis/symbols.rs                                 1
 src/ast.rs                                             15
 src/chain_compare.rs                                    1
 src/compiler/begin_use.rs                               2
-src/compiler/const_fold.rs                              2
+src/compiler/const_fold.rs                              1  # const_operand_mode is a constant evaluator (folding), not an analysis
 src/compiler/control_if.rs                              1
 src/compiler/decl_plan.rs                               3
-src/compiler/expr_binary.rs                             4
+src/compiler/expr_binary.rs                             4  # 4 value-path spines/rewrites of andthen/orelse chains and native operands: stay hand-rolled
 src/compiler/expr_call.rs                               1
-src/compiler/expr_closure.rs                            5
+src/compiler/expr_closure.rs                            3  # 2 codegen (compile_*) + expr_refs_topic, an operand spine (is this operand the topic?)
 src/compiler/expr_data.rs                               1
-src/compiler/expr_helpers.rs                            4
+src/compiler/expr_helpers.rs                            3  # 3 spines/lowerings: subst pattern to text, container-name path, xor chain flattening
 src/compiler/expr_ops.rs                                2
-src/compiler/helpers_ast_utils.rs                       6
-src/compiler/helpers_block_inline.rs                    2
-src/compiler/helpers_call_args.rs                       7
-src/compiler/helpers_control_flow.rs                    7
-src/compiler/helpers_do_expr.rs                         1
+src/compiler/helpers_ast_utils.rs                       5  # lvalue-to-assignment lowering, 3 lvalue spines, type_decl_shell_body transform
+src/compiler/helpers_call_args.rs                       5  # 2 codegen (compile_*) + 3 value-path spines (needs_decont, bind_target_returns_aggregate*: statement tail)
+src/compiler/helpers_control_flow.rs                    1  # control_block_is_resume_safe: shape classifier over a CONTROL block's arms (single-default delegation)
+src/compiler/helpers_do_expr.rs                         1  # do_if_branch_supported: shape gate over if-branch nesting only
 src/compiler/helpers_phasers.rs                         3
-src/compiler/helpers_stmt_analysis.rs                   4
-src/compiler/helpers_sub_body.rs                        1
-src/compiler/mod.rs                                     9
+src/compiler/helpers_sub_body.rs                        1  # recursion over ParamDef sub-signatures; the Vec<Stmt> is its output, not an AST walk
+src/compiler/mod.rs                                     8  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and 2 name spines
 src/compiler/package_runtime_body.rs                    1  # top-level lexical names of a package body: descends only into SyntheticBlock groups, not nested scopes
-src/compiler/stmt.rs                                    6
-src/method_signature_shared.rs                          2
-src/opcode.rs                                           5
+src/compiler/stmt.rs                                    5  # 5 spines: lvalue root and statement-tail value shapes
+src/opcode.rs                                           2  # collect_nested_has_decl_stmts/collect_has_decls_in_scope collect &'a Stmt borrows, which Visit's lifetime-free hooks cannot hand out
 src/param_destructure.rs                                1
 src/parser/decl_doc.rs                                  1
 src/parser/expr/mod.rs                                  1
@@ -93,8 +89,6 @@ src/runtime/system_eval_names.rs                        8
 src/runtime/system_eval_vars.rs                         7
 src/runtime/types/mod.rs                                1
 src/trir/compile/expr.rs                                3
-src/vm/vm_call_func_ops.rs                              4
-src/vm/vm_native_map.rs                                 1
 src/whatever_curry/build.rs                             4
 src/whatever_curry/mark/stmt.rs                         1
 src/whatever_curry/replace.rs                           2

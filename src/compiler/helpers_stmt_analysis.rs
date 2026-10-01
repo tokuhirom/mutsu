@@ -8,13 +8,11 @@ impl Compiler {
     /// `OpCode::ResetStateLocals` / `reset_state_locals_in_range`), so descending
     /// would only make this block emit a redundant reset. Drives whether an
     /// inline nested block needs a `ResetStateLocals` at all, so the common
-    /// state-free `if` keeps its current bytecode.
+    /// state-free `if` keeps its current bytecode. A statement modifier opens no
+    /// block, so `state $n = 0 if 1` declares at this level.
+    // Cost: O(n), n = size of the part of `stmts` in the block's own scope.
     pub(super) fn stmts_declare_state(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| match s {
-            Stmt::VarDecl { is_state, expr, .. } => *is_state || Self::expr_has_state_decl(expr),
-            Stmt::Expr(expr) => Self::expr_has_state_decl(expr),
-            _ => false,
-        })
+        super::body_scans::stmts_declare_state(stmts)
     }
 
     /// Emit a [`OpCode::ResetStateLocals`] for an inline nested block body that
@@ -64,139 +62,27 @@ impl Compiler {
         }
     }
 
-    /// Check if a statement list contains `let` or `temp` statements (not inside sub/lambda bodies).
+    /// Check if a statement list contains `let` or `temp` saves this block's
+    /// save frame must resolve (not inside closures, routines or loop bodies,
+    /// which own a frame of their own).
     ///
     /// This is what decides whether a block gets an `OpCode::LetBlock` save
-    /// frame, so every statement kind that can carry an expression a `let` can
-    /// hide in has to be walked — a declaration's or an assignment's initializer
-    /// included (`my $seen = $( let $a = 23; $a )`, GH-7645). Missing one does
-    /// not merely defer the resolution to the enclosing block: nothing resolves
-    /// the save at all and the speculative value becomes permanent.
+    /// frame, so every position a `let` can hide in has to be seen — a
+    /// declaration's or an assignment's initializer (`my $seen = $( let $a =
+    /// 23; $a )`, GH-7645), a ternary arm, an operand, a `given`/`when` body.
+    /// Missing one does not merely defer the resolution to the enclosing
+    /// block: nothing resolves the save at all and the speculative value
+    /// becomes permanent. The walk is `body_scans::has_let` (ADR-0137).
+    // Cost: O(n), n = size of `stmts` outside nested code objects.
     pub(super) fn has_let_deep(stmts: &[Stmt]) -> bool {
-        for s in stmts {
-            match s {
-                Stmt::Let { .. } | Stmt::TempMethodAssign { .. } => return true,
-                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-                    if Self::expr_has_let_deep(expr) {
-                        return true;
-                    }
-                }
-                Stmt::Block(inner) => {
-                    if Self::has_let_deep(inner) {
-                        return true;
-                    }
-                }
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    if Self::has_let_deep(then_branch) || Self::has_let_deep(else_branch) {
-                        return true;
-                    }
-                }
-                Stmt::Expr(expr) => {
-                    if Self::expr_has_let_deep(expr) {
-                        return true;
-                    }
-                }
-                Stmt::Call { args, .. } => {
-                    for arg in args {
-                        if let crate::ast::CallArg::Positional(expr) = arg
-                            && Self::expr_has_let_deep(expr)
-                        {
-                            return true;
-                        }
-                    }
-                }
-                Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-                    for expr in exprs {
-                        if Self::expr_has_let_deep(expr) {
-                            return true;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
+        super::body_scans::has_let(stmts, false)
     }
 
     /// Check if a statement list contains actual `let` (not `temp`) statements.
     /// Used to decide whether the block's return value matters for save/restore.
+    // Cost: O(n), n = size of `stmts` outside nested code objects.
     pub(super) fn has_real_let_deep(stmts: &[Stmt]) -> bool {
-        for s in stmts {
-            match s {
-                Stmt::Let { is_temp: false, .. } => return true,
-                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-                    if Self::expr_has_real_let_deep(expr) {
-                        return true;
-                    }
-                }
-                Stmt::Block(inner) => {
-                    if Self::has_real_let_deep(inner) {
-                        return true;
-                    }
-                }
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    if Self::has_real_let_deep(then_branch) || Self::has_real_let_deep(else_branch)
-                    {
-                        return true;
-                    }
-                }
-                Stmt::Expr(expr) => {
-                    if Self::expr_has_real_let_deep(expr) {
-                        return true;
-                    }
-                }
-                Stmt::Call { args, .. } => {
-                    for arg in args {
-                        if let crate::ast::CallArg::Positional(expr) = arg
-                            && Self::expr_has_real_let_deep(expr)
-                        {
-                            return true;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-
-    /// Check if an expression contains actual `let` (not `temp`) deep inside.
-    fn expr_has_real_let_deep(expr: &Expr) -> bool {
-        match expr {
-            Expr::DoBlock { body, .. } => Self::has_real_let_deep(body),
-            Expr::DoStmt(stmt) => Self::has_real_let_deep(std::slice::from_ref(stmt)),
-            Expr::Try { body, .. } => Self::has_real_let_deep(body),
-            Expr::Grouped(inner) => Self::expr_has_real_let_deep(inner),
-            Expr::CompoundAssign {
-                target,
-                rhs,
-                expanded,
-                ..
-            } => {
-                Self::expr_has_real_let_deep(target)
-                    || Self::expr_has_real_let_deep(rhs)
-                    || Self::expr_has_real_let_deep(expanded)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                args.iter().any(Self::expr_has_real_let_deep)
-            }
-            Expr::MethodCall { args, target, .. }
-            | Expr::DynamicMethodCall { args, target, .. }
-            | Expr::HyperMethodCall { args, target, .. }
-            | Expr::HyperMethodCallDynamic { args, target, .. } => {
-                Self::expr_has_real_let_deep(target)
-                    || args.iter().any(Self::expr_has_real_let_deep)
-            }
-            _ => false,
-        }
+        super::body_scans::has_let(stmts, true)
     }
 
     /// Compile `body` inside an `OpCode::ImportScope` region when `stmts` (the
@@ -223,60 +109,6 @@ impl Compiler {
         stmts
             .iter()
             .any(|s| matches!(s, Stmt::Use { .. } | Stmt::Import { .. } | Stmt::No { .. }))
-    }
-
-    pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {
-        match expr {
-            Expr::DoBlock { body, .. } => Self::has_let_deep(body),
-            Expr::DoStmt(stmt) => Self::has_let_deep(&[*stmt.clone()]),
-            Expr::Try { body, .. } => Self::has_let_deep(body),
-            Expr::Grouped(inner) => Self::expr_has_let_deep(inner),
-            // `$t += $( let $a = 23; 1 )` parses as a `Stmt::Assign` whose expr
-            // is the compound node, so the save hides two levels down.
-            Expr::CompoundAssign {
-                target,
-                rhs,
-                expanded,
-                ..
-            } => {
-                Self::expr_has_let_deep(target)
-                    || Self::expr_has_let_deep(rhs)
-                    || Self::expr_has_let_deep(expanded)
-            }
-            Expr::IndexAssign {
-                target,
-                index,
-                value,
-                ..
-            } => {
-                Self::expr_has_let_deep(target)
-                    || Self::expr_has_let_deep(index)
-                    || Self::expr_has_let_deep(value)
-            }
-            // Detect `undefine temp $var`: Call("undefine", [Call("temp", ...)])
-            // The compiler expands this to LetSave + assign, so the enclosing block
-            // needs LetBlock wrapping for proper save/restore.
-            Expr::Call { name, args, .. } => {
-                if name.resolve() == "undefine"
-                    && args.len() == 1
-                    && matches!(
-                        &args[0],
-                        Expr::Call { name: inner, .. }
-                            if inner.resolve() == "temp"
-                    )
-                {
-                    return true;
-                }
-                args.iter().any(Self::expr_has_let_deep)
-            }
-            Expr::MethodCall { args, target, .. }
-            | Expr::DynamicMethodCall { args, target, .. }
-            | Expr::HyperMethodCall { args, target, .. }
-            | Expr::HyperMethodCallDynamic { args, target, .. } => {
-                Self::expr_has_let_deep(target) || args.iter().any(Self::expr_has_let_deep)
-            }
-            _ => false,
-        }
     }
 
     /// The declaration inside the bind source of `$target := my $z = ...`,

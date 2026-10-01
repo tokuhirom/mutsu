@@ -63,6 +63,10 @@ a separate decision when the first rewriting pass wants one.
   count may only fall. Ported: `parser/whenever_scope.rs`, `runtime/eval_routine_magicals.rs`,
   `runtime/undeclared_routines.rs`, the gather search in `parser/sink_warn.rs` (267 → 259).
   `NameKind::Attribute` split out of `Decl` (an attribute does not declare a routine).
+- **Compiler/VM helpers** (#10468): the compile-time body scans (`let`/`temp` frame, `state`
+  reset, succeed barrier, topic rebind, block-local `my`, heredoc scope, `return-rw`, non-Nil
+  `return`, OTF gates, native-map classifier, implicit `@_`/`%_`, LSP outline) ported, 71 → 39 in
+  the cluster; the shared "own scope" boundary is `compiler/scope_scan.rs`.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter
