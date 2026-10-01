@@ -199,6 +199,19 @@ impl Interpreter {
         true
     }
 
+    /// The persisted value of a package-qualified name (`$GLOBAL::n`,
+    /// `$Pkg::x`) that the running frame's env no longer holds: the read twin of
+    /// the `our_vars` write in [`Self::store_scalar_by_name_for`], and the same
+    /// fallback `GetGlobal` takes. A read-modify-write that skipped it would
+    /// start from zero on every call of a routine that creates the variable.
+    // Cost: O(1) hash probe; O(|name|) for the `::` scan.
+    pub(crate) fn qualified_our_var_read(&self, name: &str) -> Option<Value> {
+        if !crate::runtime::utils::has_double_colon(name) {
+            return None;
+        }
+        self.get_our_var(name).cloned()
+    }
+
     /// The by-name scalar write tail shared by the three read-modify-write ops
     /// (`++`, `--`, and the fused compound assignment `AtomicCompoundVar`):
     /// put `val` where the name's variable actually lives.
