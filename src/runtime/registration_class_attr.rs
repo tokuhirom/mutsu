@@ -97,7 +97,7 @@ impl Visit for AttrScan<'_, '_> {
     }
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
-        // A `$!attr` / `@!attr` / `%!attr` read, or an assignment to one. The
+        // A `$!attr` / `@!attr` / `%!attr` / `&!attr` read, or an assignment to one. The
         // AST spells a `$` variable without its sigil and an `@`/`%` one
         // without it as a variable but with it as an assignment target.
         // `$!` by itself is the error variable, not an attribute. `$.attr`
@@ -110,6 +110,7 @@ impl Visit for AttrScan<'_, '_> {
             NameKind::Var => ('$', name),
             NameKind::ArrayVar => ('@', name),
             NameKind::HashVar => ('%', name),
+            NameKind::CodeVar => ('&', name),
             NameKind::AssignTarget => match name.strip_prefix(['@', '%']) {
                 Some(rest) => (name.chars().next().unwrap_or('$'), rest),
                 None => ('$', name),

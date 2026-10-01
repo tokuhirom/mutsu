@@ -1172,6 +1172,13 @@ impl Interpreter {
             // should propagate) and stale captured values (which should not
             // override live values).
             let original_env = self.env.clone();
+            // rakudo runs END after the mainline's warning handler is gone, so
+            // an unhandled `warn` (explicit, or an uninitialized-value
+            // warning) is swallowed in every END body; only a CONTROL handler
+            // the body installs itself sees it. Suppression models exactly
+            // that: it still lets a handler registered after this point run.
+            let warn_mark = self.warn_suppression_mark();
+            self.push_warn_suppression();
             for phaser in phasers.iter().rev() {
                 let (body, captured_env, package) = (&phaser.body, &phaser.env, &phaser.package);
                 // Track which keys are being added from captured env
@@ -1226,6 +1233,9 @@ impl Interpreter {
                     self.exit_status_locked = true;
                     self.halted = false;
                 }
+                if body_result.is_err() {
+                    self.restore_warn_suppression(warn_mark);
+                }
                 body_result?;
                 // Remove only the overlay keys (captured lexicals not in
                 // the current scope), keeping mutations to shared variables.
@@ -1233,6 +1243,7 @@ impl Interpreter {
                     self.env.remove(k);
                 }
             }
+            self.restore_warn_suppression(warn_mark);
             // Restore the halt for anything downstream that reads it, then drop
             // the status lock: `finish` also runs for a nested in-process
             // program (`is_run`), whose interpreter goes on being used.
