@@ -21,7 +21,7 @@
 
 use super::Compiler;
 use crate::ast::{Expr, Stmt};
-use crate::ast_visit::{Visit, walk_expr};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt};
 use crate::opcode::OpCode;
 use crate::value::{Value, ValueView};
 
@@ -34,89 +34,80 @@ use crate::value::{Value, ValueView};
 pub(crate) fn static_require_targets(stmts: &[Stmt]) -> Vec<String> {
     let mut scan = ScopeRequires::default();
     for stmt in stmts {
-        scan.scope_stmt(stmt);
+        scan.visit_stmt(stmt);
     }
     scan.targets
 }
 
+/// The walk of [`static_require_targets`] (ADR-0137 visitor).
 #[derive(Default)]
 struct ScopeRequires {
     targets: Vec<String>,
-}
-
-impl ScopeRequires {
-    /// One statement of the scope being scanned. Only the statement kinds that
-    /// run in the scope itself are searched; every other kind opens a scope of
-    /// its own (or is not a place a `require` can sit), and is skipped.
-    fn scope_stmt(&mut self, stmt: &Stmt) {
-        match stmt {
-            Stmt::Expr(e)
-            | Stmt::VarDecl { expr: e, .. }
-            | Stmt::Assign { expr: e, .. }
-            | Stmt::Return(e)
-            | Stmt::Die(e)
-            | Stmt::Fail(e) => self.visit_expr(e),
-            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-                for e in exprs {
-                    self.visit_expr(e);
-                }
-            }
-            // The lowering of a postfix `if`/`unless`: it opens no block.
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                is_statement_modifier: true,
-                ..
-            } => {
-                self.visit_expr(cond);
-                for s in then_branch.iter().chain(else_branch) {
-                    self.scope_stmt(s);
-                }
-            }
-            // A parser desugaring that groups statements without a scope.
-            Stmt::SyntheticBlock(inner) => {
-                for s in inner {
-                    self.scope_stmt(s);
-                }
-            }
-            _ => {}
-        }
-    }
+    /// How many expressions enclose the node being visited. A statement met
+    /// inside an expression sits in a nested block, closure or `do`, whose
+    /// `require` belongs to that scope.
+    expr_depth: usize,
+    /// Set by a statement-prefix `try` for the one statement it carries, which
+    /// opens no scope.
+    prefix_stmt: bool,
 }
 
 impl Visit for ScopeRequires {
-    // A statement reached from an expression sits in a nested block, closure or
-    // `do`, whose `require` belongs to that scope.
-    fn visit_stmt(&mut self, _stmt: &Stmt) {}
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        let prefix = std::mem::take(&mut self.prefix_stmt);
+        if self.expr_depth > 0 && !prefix {
+            return;
+        }
+        match stmt {
+            // The statement kinds that run in the scope itself. Every other
+            // kind opens a scope of its own, or is not a place a `require` can
+            // sit, and is skipped.
+            Stmt::Expr(_)
+            | Stmt::VarDecl { .. }
+            | Stmt::Assign { .. }
+            | Stmt::Return(_)
+            | Stmt::Die(_)
+            | Stmt::Fail(_)
+            | Stmt::Say(_)
+            | Stmt::Put(_)
+            | Stmt::Print(_)
+            | Stmt::Note(_)
+            // A parser desugaring that groups statements without a scope.
+            | Stmt::SyntheticBlock(_)
+            // The lowering of a postfix `if`/`unless`: it opens no block.
+            | Stmt::If {
+                is_statement_modifier: true,
+                ..
+            } => walk_stmt(self, stmt),
+            _ => {}
+        }
+    }
 
     // A parameter default belongs to its closure's scope too.
     fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
 
     fn visit_expr(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Call { name, args } if name.resolve() == "require" => {
-                if let Some(Expr::Literal(target)) = args.first()
-                    && let ValueView::Package(module) = target.view()
-                {
-                    let module = module.resolve();
-                    if !self.targets.contains(&module) {
-                        self.targets.push(module);
-                    }
-                }
+        if let Expr::Call { name, args } = expr
+            && name.resolve() == "require"
+            && let Some(Expr::Literal(target)) = args.first()
+            && let ValueView::Package(module) = target.view()
+        {
+            let module = module.resolve();
+            if !self.targets.contains(&module) {
+                self.targets.push(module);
             }
-            // `try STMT` carries its statement as the one bare `Stmt::Expr` of
-            // the body and opens no scope. A braced `try { ... }` is a block of
-            // its own: its statements start with a line marker.
-            Expr::Try { body, .. } => {
-                if let [Stmt::Expr(inner)] = body.as_slice() {
-                    self.visit_expr(inner);
-                }
-                return;
-            }
-            _ => {}
         }
+        // `try STMT` carries its statement as the one bare `Stmt::Expr` of the
+        // body. A braced `try { ... }` is a block of its own: its statements
+        // start with a line marker.
+        self.prefix_stmt = matches!(
+            expr,
+            Expr::Try { body, .. } if matches!(body.as_slice(), [Stmt::Expr(_)])
+        );
+        self.expr_depth += 1;
         walk_expr(self, expr);
+        self.expr_depth -= 1;
+        self.prefix_stmt = false;
     }
 }
 
