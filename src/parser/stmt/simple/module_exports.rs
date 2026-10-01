@@ -7,13 +7,13 @@ mod decl_scan;
 mod dynamic_stash;
 mod enum_values;
 mod export_hook;
+mod source_scan;
 use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
 use export_hook::{
     collect_export_hook_operator_subs, collect_export_hook_value_terms,
-    collect_unit_scope_routines, declares_export_sub, source_declares_export_sub,
-    unit_scope_routine_names_fallback,
+    collect_unit_scope_routines, declares_export_sub,
 };
 
 /// Everything one module-file scan learns that importers need replayed:
@@ -806,7 +806,11 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     type_names.extend(decls.type_names);
     let mut enum_type_names: Vec<String> = transitive_enum_types;
     enum_type_names.extend(decls.enum_type_names);
-    let declares_export_hook = declares_export_sub(&stmts) || source_declares_export_sub(source);
+    // The source-text fallbacks below see code only: Pod and heredoc bodies
+    // are blanked out first.
+    let code = source_scan::code_text(source);
+    let declares_export_hook =
+        declares_export_sub(&stmts) || source_scan::declares_export_sub(&code);
     let mut enum_values: Vec<String> = decls.enum_values;
     let tagged_enum_values: Vec<(String, Vec<String>)> = decls.tagged_enum_values;
     // Keep the scanned values the AST walk cannot see (a computed enum body's
@@ -858,7 +862,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // body rather than drawn from `UNIT::` — see the function's own doc
         // for why a value term (unlike a routine) needs this at all.
         collect_export_hook_value_terms(&stmts, &mut value_terms);
-        for name in unit_scope_routine_names_fallback(source) {
+        for name in source_scan::unit_scope_routine_names(&code) {
             exports.entry(name.clone()).or_insert(InlineModuleExport {
                 name,
                 precedence: None,
@@ -869,7 +873,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     }
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
-    for (name, is_test_assertion) in extract_exported_names_fallback(source) {
+    for (name, is_test_assertion) in source_scan::exported_names(&code) {
         exports.entry(name.clone()).or_insert(InlineModuleExport {
             name,
             precedence: None,
@@ -983,47 +987,6 @@ pub(super) fn sub_export_entry(
         associativity,
         is_test_assertion,
     }
-}
-
-fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
-    // `sub foo(...) is export`
-    // `multi sub foo(...) is export`
-    // `proto sub foo(|) is export`
-    // Group 2 captures the declaration text between the name and `is export`,
-    // which may include a `is test-assertion` trait; group 3 is the export tag
-    // list, matched only so a tagged `is export(:foo)` is recognised as an
-    // export at all -- its contents are not consulted (see below).
-    let sub_re = Regex::new(
-        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
-    )
-    .expect("valid exported-sub regex");
-    // `proto foo(|) is export` (without the `sub` keyword)
-    let proto_re = Regex::new(
-        r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
-    )
-    .expect("valid exported-proto regex");
-
-    let test_assertion_re =
-        Regex::new(r"\bis\s+test-assertion\b").expect("valid test-assertion regex");
-
-    let mut names: HashMap<String, bool> = HashMap::new();
-    for re in [&sub_re, &proto_re] {
-        for caps in re.captures_iter(source) {
-            // Group 3 (the `is export(...)` tag list) is deliberately not
-            // consulted: like the AST walk above, this set is parse-time
-            // routine-name knowledge, not the importer's actual import set.
-            if let Some(name) = caps.get(1) {
-                let prefix = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-                let is_ta = test_assertion_re.is_match(prefix);
-                let entry = names.entry(name.as_str().to_string()).or_insert(false);
-                *entry = *entry || is_ta;
-            }
-        }
-    }
-
-    let mut names: Vec<(String, bool)> = names.into_iter().collect();
-    names.sort();
-    names
 }
 
 /// What `use Test` puts in scope, as a parse-time shortcut.

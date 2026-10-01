@@ -1,5 +1,4 @@
 use crate::value::Value;
-use std::sync::OnceLock;
 
 /// Render a `*_Quick_Check` result as Raku's full property-value name. Unlike
 /// MoarVM (which returns the short `Y`/`N`/`M` codes — a `#?rakudo.moar todo` in
@@ -153,11 +152,7 @@ fn unicode_bidi_mirroring_glyph(ch: char) -> String {
 
 /// Emoji property.
 fn is_emoji(ch: char) -> bool {
-    // Use regex for Emoji property
-    static EMOJI_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = EMOJI_RE.get_or_init(|| regex::Regex::new(r"^\p{Emoji}$").unwrap());
-    let mut buf = [0u8; 4];
-    re.is_match(ch.encode_utf8(&mut buf))
+    super::binary_props::check_binary_property(ch, "Emoji")
 }
 
 /// Emoji_Modifier property.
@@ -168,10 +163,7 @@ fn is_emoji_modifier(ch: char) -> bool {
 
 /// Emoji_Presentation property.
 fn is_emoji_presentation(ch: char) -> bool {
-    static EMOJI_PRES_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = EMOJI_PRES_RE.get_or_init(|| regex::Regex::new(r"^\p{Emoji_Presentation}$").unwrap());
-    let mut buf = [0u8; 4];
-    re.is_match(ch.encode_utf8(&mut buf))
+    super::binary_props::check_binary_property(ch, "Emoji_Presentation")
 }
 
 /// Emoji_All: True if any Emoji property is true.

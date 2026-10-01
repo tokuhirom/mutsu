@@ -62,6 +62,7 @@ mod unicode_name_data;
 mod unicode_name_gen;
 pub(crate) mod unicode_named_sequence_table;
 pub(crate) mod unicode_numval_table;
+pub(crate) mod unicode_prop_class;
 pub(crate) mod unicode_script;
 mod unicode_script_data;
 #[cfg(test)]
