@@ -4,12 +4,16 @@ use Test;
 # `GLOBAL::<$g> = v` writes the variable; `Pkg::<@a> = v` / `Pkg::<%h> = v`
 # is an assignment to an immutable value (#10425). Measured against rakudo.
 
-plan 6;
+plan 8;
 
 our $g = 1;
 GLOBAL::<$g> = 7;
 is $g, 7, 'GLOBAL::<$g> = v stores into the variable';
 is $GLOBAL::g, 7, '... visible through $GLOBAL::g';
+
+GLOBAL::<$fresh> = 'new';
+is GLOBAL::<$fresh>, 'new', 'a never-declared GLOBAL::<$x> reads back';
+is $GLOBAL::fresh, 'new', '... through $GLOBAL::x too';
 
 package Q { our @a; our %h }
 

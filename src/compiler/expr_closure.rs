@@ -699,6 +699,19 @@ impl Compiler {
                 ),
                 other => (false, other.clone()),
             };
+            // `GLOBAL::<$x> = v` (plain assign): the statement form's store, so
+            // a never-declared `$GLOBAL::x` lands where the GLOBAL stash reads
+            // it back (the expression-form `AssignExpr` op does not register it).
+            if !is_bind && stash_name == "GLOBAL::" {
+                self.with_escape(true, |c| c.compile_expr(&rhs));
+                let qualified = format!("GLOBAL::{bare}");
+                self.emit_set_named_var(&qualified);
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(self.qualify_variable_name(&qualified)));
+                self.code.emit(OpCode::GetGlobal(name_idx));
+                return true;
+            }
             // `$Pkg::v` compiles to AssignExpr name "Pkg::v" (sigil dropped).
             self.compile_expr(&Expr::AssignExpr {
                 name: format!("{stash_name}{bare}"),
