@@ -25,5 +25,5 @@ A method call decontainerizes its invocant in rakudo, and `Hash.Hash` is the has
 `{:a(1)}`, as `.hash` already did). `[$y, $y].raku` for a `$y` that held `%h.item` also now matches
 rakudo, because the element is a plain itemized hash instead of a `Scalar` around one.
 
-Pinned by `t/collections/hash/itemized-hash-write-through.t` (32 assertions, every one also
+Pinned by `t/collections/itemized-hash-write-through.t` (32 assertions, every one also
 checked against `raku`). Closes #10601.
