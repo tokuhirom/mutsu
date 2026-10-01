@@ -66,6 +66,14 @@ differential_case!(
     r#"say ("<a><b>" ~~ / '<' .+? '>' /).gist; say ("xaaay" ~~ / a+? /).gist; say ("abc" ~~ / a .*? c /).gist; say ("ab" ~~ / a b?? /).gist"#
 );
 differential_case!(
+    frugal_separated_quantifiers,
+    r#"say ("a,a,a" ~~ / a+? % ',' /).gist; say ("a,a,a" ~~ / a*? % ',' /).gist; say ("a,a,a" ~~ / a**?2..3 % ',' /).gist; say ("a,a,a" ~~ / ^ a+? % ',' ',a' /).gist; say ("a,a,a" ~~ / ^ a**?2..3 % ',' $ /).gist"#
+);
+differential_case!(
+    sigspace_separated_quantifiers,
+    r#"say ("a, a, a" ~~ / :s a*? % "," /).gist; say ("a, a, a" ~~ / :s a**?2..3 % "," /).gist; say ("a , a , a" ~~ / :s a+ % "," /).gist; say ("a , a , a" ~~ / :s a +% "," /).gist; say ("a, a, a," ~~ / :s a+? %% "," $ /).gist; say ("1, 2" ~~ / :s <digit>+ % "," /).gist; say ("1,2" ~~ / <digit>+ % "," /).gist; say ("1, 2" ~~ / :s $<x>=\d ** 2 % "," /).gist"#
+);
+differential_case!(
     ratchet_quantifiers,
     r#"say so "aaa" ~~ / :r a+ a /; say so "aab" ~~ / :r a+ b /; say ("ab" ~~ / :r a? b /).gist; say so "a" ~~ / :r a? a /"#
 );
@@ -114,6 +122,97 @@ differential_case!(
     optional_captures,
     r#"say ("b" ~~ / (a)? b /).gist; say ("ab" ~~ / (a)? b /).gist; say ("b" ~~ / (a)? (b) /)[1].from; say ("b" ~~ / $<x>=[a]? b /).gist; say ("b" ~~ / $<x>=(a)? b /).gist; say ("ab" ~~ / $<x>=(a)?? ab /).gist; say ("b" ~~ / [ (a) (c) ]? b /).gist; say ("ab" ~~ / :r (a)? b /).gist"#
 );
+differential_case!(
+    sequential_alternation,
+    r#"say ("abcd" ~~ / a [ bc || b ] cd /).gist; say ("b1" ~~ / [ (a) || (b) ] (\d) /).gist; say ("b1" ~~ / [ (a) (x) || (b) ] (\d) /)[2].Str; say ("aab" ~~ / [ a || aa ]+ b /).gist; say ("aab" ~~ / :r [ a || aa ] b /).gist; say ("aab" ~~ / :r [ aa || a ] b /).gist; say ("q" ~~ / [ a || b ]? q /).gist; say ("ab" ~~ / $<x>=a [ $<x>=b || c ] /)<x>.elems; say ("cc" ~~ / [ <[ab]> || c ] ** 2 /).gist; say ("abc" ~~ / :r [ \w+ || \d ] 'c' /).gist; say ("x" ~~ / [ a || (b)+ || x ] /)[0].raku; say ("ab" ~~ / $<y>=[ a || b ] b /)<y>.Str; say ("adx" ~~ / [ a || b ]+ [ (c) || d ] (x) /).list.elems; say ("adx" ~~ / [ a || b ]+? [ (c) || d ] (x) /)[1].Str; say ("aaa" ~~ / ^ [ a || aa ] ** 2 $ /).gist; say ("abab" ~~ / ^ [ a || ab ] **? 2..3 b $ /).gist"#
+);
+differential_case!(
+    nullable_loop_bodies,
+    r#"say ("aab" ~~ / [ a? ]* b /).gist; say ("aab" ~~ / ( a? )+ b /)[0].elems; say ("xb" ~~ / [ a* ]+ b /).gist; say ("ab" ~~ / :r [ a? ]* b /).gist; say ("ab" ~~ / [ a? ]*? b /).gist; say ("abab" ~~ / ^ [ a b? ]* $ /).gist; say ("aaa" ~~ / ^ [ a? a? ] ** 2 $ /).gist; say ("aaa" ~~ / ^ ( a? a? ) ** 2..3 $ /)[0].elems; say ("abc" ~~ / [ \w* ]* c /).gist; say so "" ~~ / ^ [ x? ]+ $ /; say ("ab" ~~ / [ a || b? ]+ $ /).gist; say ("a b" ~~ / ^^ ** 2 a /).gist; say "a b c".comb(/ [ \s* \w ]+? /).join("|")"#
+);
+differential_case!(
+    composite_classes,
+    r#"say ("abc1x" ~~ / <+alpha -[b]>+ /).gist; say ("Hello World" ~~ / <+upper +digit>+ /).gist; say ("ab12cd" ~~ / <[a..z] - [c]>+ /).gist; say so "x\r\ny" ~~ / x <+[\n]> y /; say ("é1" ~~ / <+alpha>+ /).gist; say ("a^b" ~~ / <+graph -punct>+ /).gist; say "abc".comb(/ <+alnum -[b]> /).join("|"); grammar G { token alpha { 'Z' }; token TOP { <+alpha -[q]>+ } }; say G.parse("aZb").gist; grammar H { token vowel { <[aeiou]> }; token TOP { <-vowel>+ } }; say H.parse("xyz").gist; say H.parse("xay").gist"#
+);
+differential_case!(
+    separated_quantifiers,
+    "say \"a,b,c\" ~~ / \\w+ % ',' /; say \"a,b,c,\" ~~ / \\w+ %% ',' /; say \"a,b,c,x\" ~~ / \\w+ % ',' ',x' /; say \"a,b\" ~~ / ^ \\w* % ',' $ /; say \"\" ~~ / ^ \\w* % ',' $ /; say \";b\" ~~ / ^ <-[;]>* % ';' $ /; say \"a,b,c\" ~~ / \\w ** 2 % ',' /; say \"a,b,c\" ~~ / ^ \\w ** 1..2 % ',' /; say \"a, b ,c\" ~~ / \\w+ % [ \\s* ',' \\s* ] /; say \"a,b,c\" ~~ / :r \\w+ % ',' /; say \"a,b,c,\" ~~ / :r \\w+ %% ',' /; say \"a,b,c,x\" ~~ / :r \\w+ % ',' ',x' /; say \"a,b,c\" ~~ / :r \\w+ % ',' ',' /; say \"ab,cd\" ~~ / [ a || ab ]+ % ',' cd /; say \"aa,aa\" ~~ / ^ [ a+ ]+ % ',' $ /; say \"1-2--3\" ~~ / \\d+ % '-'+ /; say \"x\" ~~ / :r \\d* % ',' x /; say \"a,,b\" ~~ / ^ \\w* % ',' $ /;"
+);
+
+differential_case!(
+    backreferences,
+    r#"say ("xyzzy" ~~ / (.) $0 /).gist; say ("abcabc" ~~ / (\w+) $0 /).gist; say ("abba" ~~ / (.)(.) $1 $0 /).gist; say ("aba" ~~ / (a) [ (b) $0 ] /).gist; say ("abb" ~~ / (a) [ (b) $0 ] /).gist; say ("aXa" ~~ / $<q>=. X $<q> /).gist; say ("aa" ~~ / $<x>=(\w) ( $<x> ) /).gist; say ("abab" ~~ / (a)(b) $0 $1 /).gist; say ("aa bb" ~~ / (\w) $0 ' ' (\w) $1 /).gist; say ("abcab" ~~ / (a)(b) .* $0 $1 /).gist; say ("aab" ~~ / (a)+ $0 /).gist"#
+);
+differential_case!(
+    capture_markers,
+    r#"say ("foobar" ~~ / foo <( bar )> /).gist; say ("foobar" ~~ / foo <( bar /).gist; say ("foobar" ~~ / foo )> bar /).gist; say "a1 b2".match(/ \w <( \d /, :g).join(","); say ("xab" ~~ / x [ a <( b ] /).gist; say "a-b".subst(/ a <( '-' )> b /, "+"); say ~("xab" ~~ / x [ c || a <( b ] /); say ~("xab" ~~ / [ c || x a )> ] b /)"#
+);
+differential_case!(
+    nested_captures,
+    r#"say ("ab ab" ~~ / ((a)(b)) ' ' $0 /).gist; say ("abab" ~~ / ((a)(b))+ /).gist; say ("aaa" ~~ / ( (a)* ) /).gist; say ("a1b2" ~~ / ( (\w) (\d) )+ /)[0][1][0].Str; say ("xay" ~~ / x ( $<in>=a ) y /)[0]<in>.Str; say ("ab" ~~ / $<o>=( (a) b ) /)<o>[0].Str; say ("aab" ~~ / ( (a)+? ) b /).gist; say ("ab" ~~ / :r ( (a) ) b /).gist; say ("abc" ~~ / ( [ (a) || (b) ] ) /).gist; say ("b" ~~ / ( (a) )? b /).gist"#
+);
+differential_case!(
+    quantified_aliases,
+    r#"say ("123" ~~ / $<x>=(\d)+ /).gist; say ("a1b2" ~~ / [ $<x>=\w $<y>=(\d) ]+ /).gist; say ("aaab" ~~ / $<x>=[a]+ b /).gist; say ("ab" ~~ / $<x>=(a)* b /)<x>.elems; say ("b" ~~ / $<x>=(a)* b /)<x>.elems; say ("aab" ~~ / $<x>=(a)+? b /)<x>.elems; say ("aa" ~~ / :r $<x>=(a) ** 2 /).gist; say ("abc" ~~ / $<x>=[ (\w) ]+ /).gist"#
+);
+differential_case!(
+    separated_captures,
+    r#"say "a,b,c" ~~ / (\w)+ % ',' /; say "a,b,c," ~~ / (\w)+ %% (',') /; say "a1-b2-c3" ~~ / [ (\w)(\d) ]+ % '-' /; say "x=1;y=2" ~~ / [ $<k>=\w '=' $<v>=\d ]+ % ';' /; say "a, b ,c" ~~ / (\w) ** 2..3 % [ \s* (',') \s* ] /; say "ab" ~~ / :r (\w)* % ',' b /; say "a,b" ~~ / :r (\w)+ %% ',' /; say "" ~~ / (\w)* % ',' /; say "a;;b" ~~ / (\w*)+ % ';' /; say "1,2,3" ~~ / ^ (\d)+ % (',') $ /; say "aXbXc" ~~ / ((\w))+ % X /; say "a,b,c,x" ~~ / (\w)+ % ',' ',x' /"#
+);
+
+differential_case!(
+    alias_forms_and_position_assertions,
+    r#"say ("ab12" ~~ / $<a>=<alpha>+ /)<a>.Str; say ("abc" ~~ / @<x>=(.(.)) /)<x>.elems; say ("abc" ~~ / @<x>=[ \w ] /)<x>.elems; say ("aab" ~~ / a <?same> a /).gist; say ("abc" ~~ / <at(1)> b /).Str; say ("abc" ~~ / \w <!same> \w /).Str"#
+);
+
+differential_case!(
+    ltm_alternation,
+    r#"say ("ab" ~~ / a | ab /).gist; say ("abc" ~~ / [ a | ab ] c /).gist; say ("aaab" ~~ / [ a+ | q ] ab /).gist; say ("foobar" ~~ / foo | foobar | fo /).gist; say ("ab" ~~ / (a) | (a)(b) /).gist; say ("xy" ~~ / $<k>=x | $<k>=xy /).gist; say ("abab" ~~ / [ a | ab ]+ $ /).gist; say ("ab" ~~ / :r [ a | ab ] b /).gist; say ("ab" ~~ / :r [ ab | a ] b /).gist; say "a bb ccc".comb(/ \w ** 2 | \w /).join("|"); say ("ab" ~~ / [ (a) | b ]+ /).gist; say ("abc" ~~ / a [ b | bc ]? /).gist; say ("xyz" ~~ / [ x | xy ] [ yz | z ] /).gist; say ("aab" ~~ / (a) [ $0 b | a ] /).gist; say ("abcd" ~~ / [ [ ab | a ] | abc ] [ cd | d ] /).gist; say ("x" ~~ / ^ [ [ a | b | x ] | y ] $ /).gist"#
+);
+
+differential_case!(
+    lookaround,
+    r#"say ("ab" ~~ / a <?before b> /).gist; say ("ac" ~~ / a <!before b> /).gist; say ("ab" ~~ / <?after a> b /).gist; say ("xb" ~~ / <!after a> b /).gist; say "foo1 bar2 baz".comb(/ \w+ <?before \d> /).join("|"); say "a1b2c3".comb(/ <?after \d> \w /).join("|"); say ("aab" ~~ / a+ <?before b> /).gist; say ("abab" ~~ / <?after ab> ab /).gist; say ("ab" ~~ / a <?before [ b | c ]> /).gist; say ("x" ~~ / <?before x> <!before y> x /).gist; say ("ab" ~~ / :r a <?before b>? b /).gist; say ("aa" ~~ / $<x>=(\w) <?before $<x>> . /).gist"#
+);
+
+differential_case!(
+    ignorecase,
+    r#"say ("ABC" ~~ / :i abc /).gist; say ("xABCy" ~~ / :i [a|b]+ c /).gist; say ("FOO bar" ~~ / :i foo \s BAR /).gist; say ("aBC" ~~ / a [:i bc] /).gist; say ("ABC" ~~ / a [:i bc] /).gist; say ("Straße" ~~ / :i strasse /).gist; say "Hello HELLO hello".comb(/ :i hello /).elems; say ("ÉCOLE" ~~ / :i école /).gist; say ("aA" ~~ / :i (a) $0 /).gist; say ("xY" ~~ / :i <[a..z]>+ /).gist; say ("ﬁ" ~~ / :i fi /).gist; say "A-b-C".comb(/ :i <[abc]> /).join; say ("xAy" ~~ / :i x <?before a> . y /).gist"#
+);
+differential_case!(
+    ignoremark,
+    r#"say ("café" ~~ / :m cafe /).gist; say ("cafe" ~~ / :m café /).gist; say ("ÀB" ~~ / :m :i ab /).gist; say ("naïve x" ~~ / :m (naive) \s (x) /).gist; say "résumé resume".match(/ :m resume /, :g).elems; say ("e\x[301]x" ~~ / :m ex /).gist; say ("xé" ~~ / x [:m e] /).gist; say "ÀÉÎ".subst(/ :m e /, "E")"#
+);
+
+differential_case!(
+    conjunction,
+    r#"say ("abc" ~~ / \w+ & ab /).gist; say ("abc" ~~ / <[a..c]>+ & .* c /).gist; say ("ab12" ~~ / (\w+) & (\w\w) /).gist; say ("foobar" ~~ / [ \w+ & foo ] bar /).gist; say ("aaa" ~~ / a+ & a ** 2 /).gist; say "ab cd".match(/ \w+ & <[a..c]>+ /, :g).join("|"); say ("abc" ~~ / $<x>=\w+ & $<y>=[ab] c /)<x y>.join(","); say ("aXb" ~~ / a [ . & <:Lu> ] b /).gist; say ("abc" ~~ / a && ab /).gist; say ("aa" ~~ / $<x>=(\w) [ $<x> & . ] /).gist; say ("ab" ~~ / ( <alpha> & . )+ /).gist; say ("abab" ~~ / [ \w+ & ab ]+ /).gist"#
+);
+
+differential_case!(
+    code_blocks,
+    r#"my @log; say so "abc" ~~ / a { @log.push("blk@" ~ $/.Str) } b c /; say @log.join(","); @log = (); say so "aab" ~~ / a+ { @log.push("n" ~ $/.chars) } b /; say @log.join(","); @log = (); say so "aax" ~~ / a+ { @log.push("n" ~ $/.chars) } b /; say @log.join(","); @log = (); say so "aaa" ~~ / a* { @log.push("n" ~ $/.chars) } a /; say @log.join(","); @log = (); say ("ab" ~~ / (a) { @log.push("c0=" ~ $0) } (b) /).gist; say @log.join(","); @log = (); say so "abc" ~~ / a [ b { @log.push($/.Str) } || c ] c /; say @log.join(",")"#
+);
+differential_case!(
+    code_assertions,
+    r#"my @log; say so "abc" ~~ / a <?{ @log.push("as1"); True }> b <?{ @log.push("as2"); False }> c /; say @log.join(","); @log = (); say so "abc" ~~ / a <!{ @log.push("neg"); False }> b c /; say @log.join(","); my $n = 0; say so "aaaa" ~~ / [ <?{ $n++; True }> . ]+ /; say $n; @log = (); say ("abd" ~~ / a [ b <?{ @log.push($/.Str); True }> | c ] d /).gist; say @log.join(","); say ("12" ~~ / (\d) <?{ +$0 == 1 }> \d /).gist; say ("22" ~~ / (\d) <?{ +$0 == 1 }> \d /).gist"#
+);
+differential_case!(
+    code_scopes,
+    r#""abc" ~~ / a [ b { say "grp: ", $/.Str } ] c /; "abc" ~~ / a ( b { say "cap: ", $/.Str } ) c /; "abc" ~~ / (a) [ b { say "grp0: ", $0.Str } ] c /; "abc" ~~ / (a) [ (b) { say "grp1: ", $0.Str, $1.Str } ] c /; "abc" ~~ / (a) ( (b) { say "cap1: ", $0.Str } ) c /; "aaab" ~~ / [ a { say "it: ", $/.Str } ]+ b /"#
+);
+differential_case!(
+    code_my_declarations,
+    r#"my @log; say so "abc" ~~ / :my $x = 3; a { @log.push("x=$x") } b <?{ $x == 3 }> c /; say @log.join(","); say ("abab" ~~ / :my $i = 0; [ ab { $i++ } ]+ <?{ $i == 2 }> /).gist; say ("ab" ~~ / :my @l = 1, 2; a <?{ @l.elems == 2 }> b /).gist; say ("ab" ~~ / :my $y = 'b'; a $y /).gist"#
+);
+differential_case!(
+    code_block_dies,
+    r#"my $r = do { "abc" ~~ / a { die "boom" } b /; "no error" }; CATCH { default { say "caught: ", .message } }; say $r"#
+);
+differential_case!(
+    code_in_lookaround_and_conjunction,
+    r#"my @log; say ("ab" ~~ / a <?before b { @log.push("la") }> b /).gist; say @log.join(","); @log = (); say ("ab" ~~ / <?after a { @log.push("lb") }> b /).gist; say @log.join(","); @log = (); say ("abc" ~~ / \w+ { @log.push("c1") } & ab /).gist; say @log.join(",")"#
+);
 
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
@@ -137,4 +236,33 @@ say +$big.match(/ (\w+) \s (\d+) /, :g);"#;
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("no compiled= in: {line}"));
     assert!(compiled >= 3, "the §2.3 shapes were not compiled: {line}");
+}
+
+/// Slice C (#10253): a pattern holding a code atom must take the compiled
+/// engine. A silently declined `{ … }` / `<?{ … }>` / `:my` pattern would pass
+/// every differential case above while measuring nothing.
+#[test]
+fn code_atoms_are_compiled() {
+    let src = r#"my $n = 0;
+say so "abc" ~~ / a { $n++ } b /;
+say so "abc" ~~ / a <?{ $n++; True }> b /;
+say so "abc" ~~ / :my $x = 1; a <?{ $x == 1 }> b /;
+say $n;"#;
+    let (ok, out, err) = run(src, &[("MUTSU_VM_STATS", "1")]);
+    assert!(ok, "run failed: {err}");
+    assert_eq!(out, "True\nTrue\nTrue\n2\n");
+    let line = err
+        .lines()
+        .find_map(|l| l.split("regex-vm: ").nth(1))
+        .unwrap_or_else(|| panic!("no regex-vm stats line: {err}"));
+    assert!(
+        !line.contains("code="),
+        "a code atom declined to the walk: {line}"
+    );
+    let compiled: u64 = line
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix("compiled="))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no compiled= in: {line}"));
+    assert!(compiled >= 3, "the code patterns were not compiled: {line}");
 }

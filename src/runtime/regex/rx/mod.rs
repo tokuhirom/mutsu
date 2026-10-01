@@ -3,11 +3,16 @@
 //! (`rx_vm`).
 //!
 //! Slice A (#10251) covers the regular core of the language: one-grapheme
-//! atoms, zero-width assertions, groups, capture groups whose body captures
-//! nothing, and greedy / frugal / ratcheted / counted quantifiers over bodies
-//! that capture nothing. A pattern holding anything else is declined as a
-//! whole and keeps the tree walk (ADR-0135 D5); the reason is reported under
-//! `MUTSU_VM_STATS`.
+//! atoms, zero-width assertions, groups, capture groups (nested ones in
+//! capture levels of their own, `rx_levels`), aliases, backreferences, the
+//! `<(` / `)>` markers, sequential alternation (`||`), and greedy / frugal /
+//! ratcheted / counted / separated quantifiers over any of these. Slice B
+//! (#10252) adds `|` alternation, ranked by the walk's LTM key (`rx_ltm`),
+//! lookaround, `:i` / `:m` and `&`. Slice C (#10253) adds the call-out atoms
+//! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
+//! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`). A pattern holding
+//! anything else is declined as a whole and keeps the tree walk (ADR-0135
+//! D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -17,8 +22,12 @@
 //! produces the captures the walk would have produced.
 
 mod rx_atom;
+mod rx_capture_ops;
 mod rx_compile;
+mod rx_compile_compound;
 mod rx_diff;
+mod rx_levels;
+mod rx_ltm;
 mod rx_vm;
 
 use crate::runtime::regex_types::{RegexAtom, RegexToken};
@@ -75,10 +84,38 @@ pub(super) enum RxOp {
         exit: u32,
         greedy: bool,
     },
-    /// Close a `( … )` whose body captures nothing, opened at `regs[start]`.
-    CloseCapture {
+    /// The end of one iteration of a nullable loop body that began at
+    /// `regs[start]`: fail when it consumed nothing and, after `regs[ctr]`
+    /// iterations, such an iteration no longer counts toward `min..=max`
+    /// (`max == u32::MAX`: no bound) — the walk's `zero_width_iter_counts`.
+    ZeroIter {
+        ctr: u16,
+        start: u16,
+        min: u32,
+        max: u32,
+    },
+    /// `pos` has moved past `regs[start]` (a separated quantifier's step).
+    Advanced {
         start: u16,
     },
+    /// `regs[ctr] >= min` (a separated quantifier's minimum count).
+    AtLeast {
+        ctr: u16,
+        min: u32,
+    },
+    /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
+    OpenCapture,
+    /// Close a `( … )` opened at `regs[start]`: its captures are the level
+    /// `OpenCapture` opened when `nested`, else none.
+    CloseCapture {
+        start: u16,
+        nested: bool,
+    },
+    /// Match `atoms[i]`, whose match reads or writes captures (a
+    /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
+    /// lookaround), through the walk's own single-candidate matcher, and
+    /// merge the capture delta it returns.
+    CapAtom(u32),
     /// Apply `toks[tok]`'s `$<name>=` / `$N=` alias over `regs[start]..pos`,
     /// with the positional count at token start in `regs[pos_base]`.
     Named {
@@ -104,6 +141,47 @@ pub(super) enum RxOp {
         tok: u32,
         pos_base: u16,
     },
+    /// `regs[r] =` the number of collected separated-quantifier iterations.
+    SepBase(u16),
+    /// Close the innermost capture level as one collected iteration: a
+    /// separator's when `sep`, else an atom's.
+    Collect {
+        sep: bool,
+    },
+    /// The end of the separated quantifier `toks[tok]`: fold the iterations
+    /// collected since `regs[base]` into its capture delta.
+    SepEmit {
+        tok: u32,
+        base: u16,
+    },
+    /// The end of a `&` conjunction `toks[tok]` whose first branch ran in
+    /// the capture level opened at `regs[start]`: every other branch must
+    /// match exactly `regs[start]..pos` (a nested run of its own program);
+    /// all branches' captures then merge into the enclosing level.
+    ConjTail {
+        tok: u32,
+        start: u16,
+    },
+    /// A `|` alternation, `ltm_alts[i]`: rank its branches at `pos` by the
+    /// walk's LTM key and enter them best first, each lower-ranked one only
+    /// when everything above it has failed (ADR-0135 D4).
+    LtmAlt(u32),
+    /// The end of one `||` branch: pad the alternation `alts[alt]`'s
+    /// positional slot space past what the branch took since `regs[pos_base]`
+    /// (unless `suppress_padding`), and mark its list-valued names quantified.
+    AltTail {
+        alt: u32,
+        pos_base: u16,
+        suppress_padding: bool,
+    },
+    /// A call-out: run the `{ … }` block, `<?{ … }>` or `<!{ … }>` assertion
+    /// `atoms[i]` on the caller's interpreter and merge the capture delta it
+    /// returns (`regex_code_atom`, the walk's own). Fails when an assertion
+    /// fails or the block dies.
+    Code(u32),
+    /// A call-out: run the `:my` / `:our` / `:temp` / `:let` declaration
+    /// `atoms[i]` and merge the lexicals it declared (`regex_var_decl_atom`).
+    VarDecl(u32),
     /// A complete match ending at `pos`.
     Match,
 }
@@ -113,11 +191,28 @@ pub(super) enum RxOp {
 pub(crate) struct RxProgram {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<RegexAtom>,
+    /// Per atom: whether it is tested under `:i` (its pattern level's flag).
+    pub(super) atom_ic: Vec<bool>,
     pub(super) toks: Vec<RegexToken>,
+    /// One per `||`: its shared positional width and list-valued names.
+    pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
     pub(super) nregs: usize,
+    /// Whether the program runs Raku code (a `Code` or `VarDecl` op). The
+    /// position-only matcher treats code atoms as inert, so it must not run a
+    /// program that has any.
+    pub(super) has_code: bool,
+    /// One per `|`: its token (in `toks`) and each branch's first op.
+    pub(super) ltm_alts: Vec<LtmAltTable>,
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
-    pub(super) ascii: std::sync::OnceLock<Box<[u128]>>,
+    pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+}
+
+/// A compiled `|`: the alternation token (`toks[tok]`, whose atom holds the
+/// branches the LTM ranking measures) and the pc each branch starts at.
+pub(super) struct LtmAltTable {
+    pub(super) tok: u32,
+    pub(super) pcs: Box<[u32]>,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.

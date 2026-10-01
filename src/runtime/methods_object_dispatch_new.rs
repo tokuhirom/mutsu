@@ -832,6 +832,7 @@ impl Interpreter {
             if is_io_path_like && !self.has_user_method(class_key, "new") {
                 // Pure path-string assembly (registry reads only) — shared with the
                 // VM's `try_native_io_path_construct`.
+                let args = self.fetch_proxy_ctor_args(&args)?;
                 return self.build_io_path_instance(*class_name, &cn_resolved, &args);
             }
             // A user subclass of IO::CatHandle (e.g. `class Foo is IO::CatHandle {}`)
@@ -927,6 +928,7 @@ impl Interpreter {
                         return Ok(result);
                     }
                     // Shared with the VM's native fast path.
+                    let args = self.fetch_proxy_ctor_args(&args)?;
                     return Self::build_native_date(&args);
                 }
                 "DateTime" => {
@@ -934,6 +936,7 @@ impl Interpreter {
                         return Ok(result);
                     }
                     // Shared with the VM's native fast path.
+                    let args = self.fetch_proxy_ctor_args(&args)?;
                     return Self::build_native_datetime(&args);
                 }
                 "IO::Socket::INET" => {

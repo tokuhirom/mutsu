@@ -333,6 +333,49 @@ impl ArrayData {
         }
     }
 
+    /// The live elements as an iteration or a whole-array view reads them: a
+    /// hole -- a `:delete`d slot or a gap an out-of-range store grew -- reads
+    /// as the container's `is default(...)` value, exactly as `@a[$i]` does
+    /// (`resolve_array_entry` in the VM's element read).
+    ///
+    /// The slot itself keeps holding the `Any` (or element-type) hole marker:
+    /// `:exists`, `.List` and the trailing-hole trim tell a hole from an
+    /// explicit element by that marker plus `initialized` ([`Self::hole_at`]),
+    /// so storing the default in the slot would make every explicit write of
+    /// the default value look like a hole. The substitution therefore happens
+    /// on the way out. A `Nil`/absent default, or an array without a hole,
+    /// borrows the elements untouched.
+    // Cost: O(1) for an array with no `is default` value or no `initialized`
+    // set (borrowed); O(e), e = elements, to look for holes (and to copy when
+    // there are any).
+    pub fn items_with_default(&self) -> std::borrow::Cow<'_, [Value]> {
+        let items = self.items();
+        let Some(default) = self.default.as_deref().filter(|d| !d.is_nil()) else {
+            return std::borrow::Cow::Borrowed(items);
+        };
+        // A bulk-constructed array (`initialized == None`) has no gaps.
+        if self.initialized.is_none()
+            || !items.iter().enumerate().any(|(i, v)| {
+                matches!(v.view(), crate::value::ValueView::Package(_)) && self.hole_at(i)
+            })
+        {
+            return std::borrow::Cow::Borrowed(items);
+        }
+        std::borrow::Cow::Owned(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    if self.hole_at(i) {
+                        default.clone()
+                    } else {
+                        v.clone()
+                    }
+                })
+                .collect(),
+        )
+    }
+
     /// Record an explicit assignment to index `i` while preserving the
     /// all-present meaning of `initialized == None` for bulk-constructed
     /// arrays. Once a bulk array receives an element-wise write, materialize

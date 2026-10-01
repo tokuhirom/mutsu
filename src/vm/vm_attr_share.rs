@@ -173,7 +173,15 @@ impl Interpreter {
             // write a parent frame's slots when that frame owns the source
             // lexical (its saved env holds the name), else the callee slot index
             // clobbers an unrelated same-index local.
-            if frame.saved_env.contains_key_own_tier(resolved_source) {
+            //
+            // `__ANON_STATE__` (the anonymous `$`) is the exception: a method
+            // frame also keeps a mirror of that key in its env (its implicit
+            // `__ANON_STATE__` param), so the ownership test passes for a
+            // method caller, and the callee's slot 0 would land on the caller's
+            // `self`. An anonymous scalar is never a caller's variable.
+            if resolved_source != "__ANON_STATE__"
+                && frame.saved_env.contains_key_own_tier(resolved_source)
+            {
                 frame
                     .saved_env
                     .insert(resolved_source.to_string(), container.clone());

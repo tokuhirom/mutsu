@@ -247,22 +247,6 @@ impl Interpreter {
         )
     }
 
-    /// Run `f` with no `CATCH` region registered, restoring the caller's
-    /// regions afterwards. For code that runs on this thread only as an
-    /// optimization of running it elsewhere — a `.then` callback on an
-    /// already-resolved promise, which Rakudo always cues on the scheduler —
-    /// so a `die` inside it is captured by the Rust caller (it breaks the
-    /// derived promise) and must never be handled inline by a `CATCH` of the
-    /// frame that merely registered the callback. Otherwise that handler runs
-    /// once at the `die` and again when the broken promise is awaited.
-    /// Cost: O(1).
-    pub(crate) fn with_catch_regions_isolated<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        let saved = std::mem::take(&mut self.catch_handlers);
-        let out = f(self);
-        self.catch_handlers = saved;
-        out
-    }
-
     /// ADR-0072 throw-site hook. Runs the active regions' `CATCH` handlers
     /// inline, innermost first, in the dynamic scope of the throw (Slices 2-3),
     /// and reports what to do next:

@@ -109,18 +109,20 @@ fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
 /// Returns the length of the BEGIN prologue left at the head of `stmts` (zero
 /// below the top level).
 fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
-    // Flatten SyntheticBlocks so VarDecls get hoisted properly.
-    flatten_synthetic_blocks(stmts);
-
     // At a compilation unit's top level, the BEGIN-time effects run first, in
     // source order (ADR-0134). The prologue is taken out before the per-level
     // reordering below, which then only sees the run-time remainder, so no
-    // bucketing can move a BEGIN above a declaration it observes.
+    // bucketing can move a BEGIN above a declaration it observes. It is taken
+    // before the flattening, so a desugared multi-statement declaration
+    // (`my ($a, $b) = f()`) reaches the partition as the one unit it is.
     let mut prologue = if is_top {
         crate::runtime::begin_prologue::take_unit_prologue(stmts)
     } else {
         Vec::new()
     };
+
+    // Flatten SyntheticBlocks so VarDecls get hoisted properly.
+    flatten_synthetic_blocks(stmts);
     for stmt in prologue.iter_mut() {
         recurse_into_stmt(stmt);
     }
@@ -1216,6 +1218,9 @@ fn recurse_into_expr(expr: &mut Expr) {
     }
 }
 
+/// Marks a declaration whose initializer reads its static cell (ADR-0134).
+pub(crate) const BEGIN_STATIC_TRAIT: &str = "__begin_static";
+
 /// Split a `VarDecl` into its *static* declaration and the run-time assignment
 /// of its initializer, if it has one. The static half is the container holding
 /// what an uninitialized declaration of its sigil holds; it is what a BEGIN-time
@@ -1241,6 +1246,11 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     if custom_traits.iter().any(|(t, _)| t == "__constant") {
         return None;
     }
+    // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
+    // already its static half: its initializer reads the static value.
+    if custom_traits.iter().any(|(t, _)| t == BEGIN_STATIC_TRAIT) {
+        return Some((stmt.clone(), None));
+    }
     // A bare `my @a;`/`my %h;` (no explicit initializer) still parses with a
     // sigil-based default literal (`Literal(Array([]))` / `Literal(Hash({}))`),
     // not `Literal(NIL)` — so testing the initializer expression against a NIL
@@ -1262,10 +1272,25 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     // instead of leaving the array empty (S02-types/assigning-refs.t semantics
     // for `@a = Nil` are correct there — they just don't apply to "no
     // initializer at all").
+    // A native type the static half cannot give a zero to (a NativeCall
+    // `ulong`, say) keeps its declaration whole: it holds no Nil.
+    if let Some(tc) = type_constraint.as_deref()
+        && tc.starts_with(|c: char| c.is_ascii_lowercase())
+        && crate::runtime::Interpreter::native_scalar_default(tc).is_none()
+        && !name.starts_with(['@', '%'])
+    {
+        return None;
+    }
     let static_default = match name.as_bytes().first() {
         Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
         Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
-        _ => Expr::Literal(Value::NIL),
+        // A native scalar (`my int $x`) holds its zero, never Nil.
+        _ => Expr::Literal(
+            type_constraint
+                .as_deref()
+                .and_then(crate::runtime::Interpreter::native_scalar_default)
+                .unwrap_or(Value::NIL),
+        ),
     };
     let static_decl = Stmt::VarDecl {
         name: name.clone(),

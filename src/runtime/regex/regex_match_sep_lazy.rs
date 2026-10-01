@@ -44,16 +44,14 @@ impl SepChainWalk {
     /// Assemble this chain's capture delta, optionally with a `%%` trailing
     /// separator's captures folded in.
     fn assemble(&self, trailing: Option<&RegexCaptures>) -> RegexCaptures {
-        let mut caps = self.names_delta();
-        Interpreter::append_separated_captures(
-            &mut caps,
+        super::regex_match_sep::separated_capture_delta(
+            &self.names,
             &self.atom_caps,
             &self.sep_caps,
             trailing,
             self.atom_stride,
             self.sep_stride,
-        );
-        caps
+        )
     }
 
     /// The names still have to render as an EMPTY list when the quantifier
@@ -106,12 +104,7 @@ impl Interpreter {
         let Some((min, max)) = self.separated_quantifier_bounds(token, &current_caps) else {
             return false;
         };
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = super::regex_match_sep::separator_stride(&sep.pattern);
         let mut walk = SepChainWalk {
             min,
             max,
@@ -122,6 +115,12 @@ impl Interpreter {
             sep_caps: Vec::new(),
             nodes: 0,
         };
+        if token.frugal && min == 0 {
+            let delta = walk.names_delta();
+            if on(self, store, start, delta) {
+                return true;
+            }
+        }
         // First atom: every match length, highest-priority first. A frugal atom
         // matches as few chars as possible, but an outer anchor following the
         // quantifier may require it to expand, so the shorter/longer variants
@@ -139,7 +138,10 @@ impl Interpreter {
                              end: usize,
                              caps: RegexCaptures| {
                 super::regex_helpers::record_regex_farthest_position(end);
-                w.atom_caps.push(caps);
+                w.atom_caps
+                    .push(super::regex_match_sep::with_iteration_capture(
+                        token, start, end, caps,
+                    ));
                 let stop = interp.sep_extend_chain(w, token, pattern, chars, end, pkg, store, on);
                 w.atom_caps.pop();
                 stop
@@ -160,7 +162,7 @@ impl Interpreter {
         }
         // Zero iterations is the lowest-priority outcome for a greedy
         // quantifier, so it goes last.
-        if min == 0 {
+        if !token.frugal && min == 0 {
             let delta = walk.names_delta();
             return on(self, store, start, delta);
         }
@@ -188,6 +190,9 @@ impl Interpreter {
         }
         walk.nodes += 1;
         super::regex_helpers::record_regex_farthest_position(cur);
+        if token.frugal && self.sep_emit_chain(walk, token, chars, cur, pkg, store, on) {
+            return true;
+        }
         let can_extend = walk.max.is_none_or(|m| walk.atom_caps.len() < m);
         if can_extend {
             let sep = token.separator.as_ref().unwrap();
@@ -216,7 +221,10 @@ impl Interpreter {
                         if atom_end <= cur {
                             return false;
                         }
-                        w.atom_caps.push(acaps);
+                        w.atom_caps
+                            .push(super::regex_match_sep::with_iteration_capture(
+                                token, sep_end, atom_end, acaps,
+                            ));
                         w.sep_caps.push(scaps.clone());
                         let stop = interp
                             .sep_extend_chain(w, token, pattern, chars, atom_end, pkg, store, on);
@@ -240,7 +248,7 @@ impl Interpreter {
                 }
             }
         }
-        self.sep_emit_chain(walk, token, chars, cur, pkg, store, on)
+        !token.frugal && self.sep_emit_chain(walk, token, chars, cur, pkg, store, on)
     }
 
     /// Report the chain that stops at `cur` as this quantifier's candidate(s):

@@ -38,90 +38,20 @@
     "unresolved": []
   },
   "dist": "CSS::TagSet",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "unknown base property: text-decoration",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-pango.t",
-      "raku": {
-        "nok": 0,
-        "ok": 22,
-        "plan": 22,
-        "secs": 38.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'load-stylesheet' for invocant of type 'Array'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-pdf.t",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 8.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "unknown base property: -xhtml-align",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-xhtml.t",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 7.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "CSS::TagSet": "ok",
-    "CSS::TagSet::Pango": "ok",
-    "CSS::TagSet::TaggedPDF": "ok",
-    "CSS::TagSet::XHTML": "ok"
+    "CSS::TagSet::Pango": "raku_also_fails",
+    "CSS::TagSet::TaggedPDF": "Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:",
+    "CSS::TagSet::XHTML": "Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
+    "mutsu_commit": "6748c2a6",
+    "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -131,13 +61,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_TAGSET/095dbd2cdc57ece26ec7cdf31726aabd1d0a88df.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 45,
-    "baseline_files": 3,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 3
+    "regressed_files": 0
   },
   "version": "0.1.4"
 }

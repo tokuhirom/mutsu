@@ -15,7 +15,7 @@ use Test;
 # `element` token closes with `[ '/>' | '>' <child>* '</' $<name> '>' ]`, so no
 # XML document with a closing tag parsed at all.
 
-plan 14;
+plan 17;
 
 ok 'aa' ~~ / $<x>=(\w) $<x> /,          'named backref, no group';
 ok 'aa' ~~ / $<x>=(\w) [ $<x> ] /,      'named backref inside a non-capturing group';
@@ -37,3 +37,9 @@ nok 'aa' ~~ / $<x>=(\w) ( [ $<x> ] ) /,
     'the capturing-group barrier also hides the outer level from a nested group';
 nok 'aa' ~~ / $<x>=(\w) <?before $<x>> . /,
     'a lookaround does not see the enclosing capture';
+
+# A group's own captures continue the enclosing level's numbering, so `$0`
+# inside `[ (b) … ]` is still the outer `(a)`, not the group's first capture.
+ok 'aba' ~~ / (a) [ (b) $0 ] /, 'a backreference in a group numbers from the enclosing level';
+nok 'abb' ~~ / (a) [ (b) $0 ] /, '... so it does not name the group\'s own first capture';
+ok 'abb' ~~ / (a) [ (b) $1 ] /, 'the group\'s own capture takes the next number';

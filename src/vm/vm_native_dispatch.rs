@@ -65,6 +65,14 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         use crate::runtime::utils::collection_contains_instance;
+        // `Any.kv`/`.pairs`/... are `self.list.<method>`: an object that
+        // overrides `list` answers from that list, not as one item.
+        if let Some(view) = self
+            .try_any_list_view_method(target, method_sym.as_str(), args)
+            .transpose()
+        {
+            return Some(view);
+        }
         // The `(receiver kind, method symbol)` table (#8888). For a plain
         // aggregate or `Str` calling one of the pure value queries the table
         // lists, every probe between here and the family cascade is known to
@@ -592,6 +600,12 @@ impl Interpreter {
         // Callable offset is resolved to an Int here (issue #10118).
         let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
         let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
+        // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
+        // and cannot run a user `WHICH`, so deposit it first
+        // (see `runtime::which_identity`).
+        if args.is_empty() && matches!(method_name, "unique" | "repeated" | "squish") {
+            self.warm_which_identity(target);
+        }
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

@@ -67,6 +67,8 @@ impl Interpreter {
                 | "Mixy"
                 | "grab"
                 | "grabpairs"
+                | "add"
+                | "remove"
                 | "pick"
                 | "pickpairs"
                 | "roll"
@@ -238,6 +240,17 @@ impl Interpreter {
             // binds the returned value to the variable.
             return Some(Ok(target.clone()));
         }
+        // `BagHash.add` / `.remove` adjust the wrapped bag's counts in place
+        // through its shared node (see `vm_baghash_mutators`), so the
+        // subclass instance observes them with no write-back.
+        // Cost: O(n) in the number of items added/removed.
+        if let Some(receiver) =
+            crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&storage, method)
+        {
+            return Some(crate::vm::vm_baghash_mutators::apply_baghash_mutator(
+                receiver, method, args,
+            ));
+        }
         // Seed a synthetic binding so the native mutating fast paths (which
         // write the updated container back into `self.env` by NAME) have
         // somewhere to write.
@@ -299,6 +312,8 @@ impl Interpreter {
                 | "DELETE-KEY"
                 | "grab"
                 | "grabpairs"
+                | "add"
+                | "remove"
                 | "__mutsu_container_at_key"
                 | "__mutsu_container_assign_key"
         ) {
@@ -335,8 +350,9 @@ impl Interpreter {
             )),
             inst_id,
         );
+        // Through the shared cell, not over it: see `Env::insert_through`.
         self.env_mut()
-            .insert(target_name.to_string(), updated_instance.clone());
+            .insert_through(target_name.to_string(), updated_instance.clone());
         updated_instance
     }
 }

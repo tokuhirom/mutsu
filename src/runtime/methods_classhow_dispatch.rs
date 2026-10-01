@@ -708,7 +708,7 @@ impl Interpreter {
                     }
                 }
                 if include_roles || include_concretizations {
-                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations)?;
                     Ok(Value::array(mro))
                 } else {
                     let mro = self.classhow_mro_names_without_does_roles(&args[0]);
@@ -825,7 +825,7 @@ impl Interpreter {
                     }
                 }
                 if include_roles || include_concretizations {
-                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
+                    let mro = self.classhow_mro_with_roles(&args[0], include_concretizations)?;
                     let filtered = self.filter_mro_unhidden(&args[0], mro);
                     Ok(Value::array(filtered))
                 } else {
@@ -1925,6 +1925,30 @@ impl Interpreter {
                     _ => self.mop_receiver_owner(&args[0]),
                 };
                 Ok(Value::hash(self.class_method_table(&type_name)))
+            }
+            // Cost: O(m), m = methods declared directly on the class.
+            // `Metamodel::MethodContainer.method_names`: the local method
+            // names (own methods, accessors, submethods; not inherited).
+            "method_names" if !args.is_empty() => {
+                let type_name = self.mop_receiver_owner(&args[0]);
+                let mut names: Vec<String> = self
+                    .class_method_table(&type_name)
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                // Submethods are in the submethod table, not the method table.
+                let registry = self.registry();
+                for name in registry.owner_method_names(&type_name) {
+                    let name = name.resolve();
+                    if !names.contains(&name.to_string())
+                        && registry
+                            .user_method_overloads(&type_name, &name)
+                            .is_some_and(|defs| defs.iter().any(|d| d.is_my))
+                    {
+                        names.push(name.to_string());
+                    }
+                }
+                Ok(Value::array(names.into_iter().map(Value::str).collect()))
             }
             "private_method_table" if !args.is_empty() => {
                 let type_name = self.mop_receiver_owner(&args[0]);

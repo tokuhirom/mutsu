@@ -820,8 +820,10 @@ impl Compiler {
                 for dimension in dimensions {
                     self.compile_expr(dimension);
                 }
-                self.code
-                    .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+                self.code.emit(OpCode::MultiDimIndexBindRef {
+                    ndims: dimensions.len() as u32,
+                    is_positional: false,
+                });
             }
             // The parser represents a one-dimensional static slice such as
             // `%h<a b>` or `.{*;*;*}` as an Index whose index is an
@@ -841,8 +843,10 @@ impl Compiler {
                 for dimension in dimensions {
                     self.compile_expr(dimension);
                 }
-                self.code
-                    .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+                self.code.emit(OpCode::MultiDimIndexBindRef {
+                    ndims: dimensions.len() as u32,
+                    is_positional: false,
+                });
             }
             _ => self.compile_expr(target),
         }

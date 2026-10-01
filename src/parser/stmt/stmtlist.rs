@@ -519,23 +519,23 @@ pub(crate) fn stmt_list_with_mode(
                     ));
                 }
                 // A statement that stopped short of a separator on the same line
-                // in front of a word that is not an infix left a term behind:
-                // `my $x = (1,2) cross (3,4)`, where `cross` is not an infix,
-                // would otherwise silently become two statements. rakudo:
-                // "Two terms in a row" (#9918).
-                // TODO: this should hold for any leftover term, but the
-                // statement parser still stops early before some legitimate
-                // continuations (`temp our $x`, `... orelse Nil`); see #10257.
+                // left a term behind: `my $x = (1,2) cross (3,4)`, where `cross`
+                // is not an infix, would otherwise silently become two
+                // statements. rakudo: "Two terms in a row" (#9918, #10257).
                 // The statement parser may already have consumed its `;` and
                 // any trailing whitespace or comment (and with it the newline).
+                // When the rest of the statement list does not parse, its own
+                // error is the precise one (`1, => 2` is an infix in term
+                // position, `multi sub foo;` a unit-scoped sub, `for 1, 2 {` a
+                // missing block); either way nothing is silently split.
                 let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
                 let consumed = consumed_raw.trim_end();
                 if !consumed.ends_with(';')
                     && !consumed.ends_with('}')
                     && !consumed_raw[consumed.len()..].contains(['\n', '\r'])
                     && !has_statement_separator(r)
-                    && crate::parser::expr::precedence::starts_with_undeclared_infix_word(r_ws)
                 {
+                    stmt_list_with_mode(r_ws, false, false)?;
                     return Err(PError::fatal_at(
                         "Confused. Two terms in a row".to_string(),
                         r_ws,

@@ -194,9 +194,11 @@ impl Interpreter {
     /// Produces a shared `ContainerRef` cell for the leaf when every dimension
     /// is a single scalar index; otherwise (slice dimensions) it falls back to
     /// the plain read value, which does not alias.
+    // Cost: O(d + E), d = dimensions, E = selected leaves for a slice.
     pub(super) fn exec_multi_dim_index_bind_ref_op(
         &mut self,
         ndims: u32,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
@@ -206,6 +208,10 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+        let assoc_scalar_slice = Self::assoc_multislice(is_positional)
+            && dims.len() >= 2
+            && Self::walks_associative(&target)
+            && !dims.iter().any(Self::dim_is_multi);
 
         // A role-punned positional object has no array storage for
         // `multi_dim_slot_ref` to descend into.  Ordinary rvalue indexing
@@ -219,7 +225,11 @@ impl Interpreter {
         }
 
         if let Some(slot) = self.multi_dim_slot_ref(&target, &dims)? {
-            self.stack.push(slot);
+            self.stack.push(if assoc_scalar_slice {
+                Value::array(vec![slot.into_container_ref()])
+            } else {
+                slot
+            });
             return Ok(());
         }
         // A subscript containing a slice dimension (`*`, an index list, or --
@@ -268,7 +278,11 @@ impl Interpreter {
             return Ok(());
         }
         let result = self.multi_dim_index_read(&target, &dims)?;
-        self.stack.push(result);
+        self.stack.push(if assoc_scalar_slice {
+            Value::array(vec![result])
+        } else {
+            result
+        });
         Ok(())
     }
 

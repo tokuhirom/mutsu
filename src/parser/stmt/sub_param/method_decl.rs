@@ -13,8 +13,23 @@ pub(crate) fn mark_params_as_invocant(params: &mut [ParamDef]) {
     }
 }
 
+/// `only method ...` / `only submethod ...`: `only` is the default
+/// (non-multi) dispatch declarator, so it is skipped. Left behind as a word of
+/// its own it was "Two terms in a row" (`Cro::HTTP::Server`'s
+/// `only method new`, #10257).
+fn skip_only_declarator<'a>(input: &'a str, kw: &str) -> &'a str {
+    if let Some(r) = super::super::keyword("only", input)
+        && let Ok((r, _)) = ws1(r)
+        && super::super::keyword(kw, r).is_some()
+    {
+        return r;
+    }
+    input
+}
+
 /// Parse `method` declaration.
 pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
+    let input = skip_only_declarator(input, "method");
     let (rest, multi) = if let Some(r) = super::super::keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("method", r)
@@ -33,6 +48,7 @@ pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse `submethod` declaration (treated like method, not inherited by subclasses).
 /// Accepts an optional `multi` declarator prefix (`multi submethod foo(...) {...}`).
 pub(crate) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
+    let input = skip_only_declarator(input, "submethod");
     let (r, multi) = if let Some(r) = super::super::keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("submethod", r)

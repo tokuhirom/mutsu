@@ -718,6 +718,9 @@ pub(super) fn dispatch(
             } else {
                 gist_item
             };
+            // A hole gists as the container's `is default(...)` value, not the
+            // `Any` marker the slot holds (`ArrayData::items_with_default`).
+            let items = items.items_with_default();
             // Shaped arrays: format with newlines between rows
             if kind == crate::value::ArrayKind::Shaped
                 && items

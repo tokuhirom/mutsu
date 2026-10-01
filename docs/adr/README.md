@@ -158,6 +158,6 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0131](0131-imported-operator-candidates-are-scoped-to-the-importing-compunit.md) | An imported operator candidate is visible only to its declaring and importing compunits | Accepted (implemented) |
 | [0132](0132-nested-routine-exports-install-at-enclosing-routine-registration.md) | An `is export` routine nested in a routine body is exported when the enclosing routine is installed | Accepted (implemented) |
 | [0133](0133-no-per-call-ast-compile-at-runtime.md) | The runtime executes precompiled chunks — no per-call AST compile | Proposed (Slice 1, signature expressions, implemented) |
-| [0134](0134-begin-time-prologue.md) | BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals | Accepted (slice 1 of 3 implemented) |
+| [0134](0134-begin-time-prologue.md) | BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals | Accepted (slices 1–2 implemented; slice 3 partly, #10336) |
 | [0135](0135-regex-compiles-to-a-backtracking-program.md) | A regex compiles to a flat backtracking program; the tree walk is retired | Accepted (Slice A in progress; slices #10251-#10255) |
 | [0136](0136-declarator-docs-attached-by-the-parser.md) | Declarator docs (`#\|` / `#=`) are attached by the parser, not by a source line scanner | Accepted (implemented) |

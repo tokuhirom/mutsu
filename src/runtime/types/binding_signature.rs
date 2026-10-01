@@ -1526,6 +1526,7 @@ impl Interpreter {
                     after_sigil
                         .strip_prefix('!')
                         .or_else(|| after_sigil.strip_prefix('.'))
+                        .or_else(|| after_sigil.strip_prefix('*'))
                         .unwrap_or(after_sigil)
                 } else {
                     &pd.name
@@ -2256,6 +2257,7 @@ impl Interpreter {
                     after_sigil
                         .strip_prefix('!')
                         .or_else(|| after_sigil.strip_prefix('.'))
+                        .or_else(|| after_sigil.strip_prefix('*'))
                         .unwrap_or(after_sigil)
                 } else {
                     &pd.name
@@ -3694,6 +3696,7 @@ impl Interpreter {
                             || pd.name == format!("%:{}", key)
                             || pd.name == format!("&:{}", key)
                             // Named params with sigils: :@l has name "@l", match key "l"
+                            || (pd.named && pd.name == format!("*{}", key))
                             || (pd.named
                                 && (pd.name == format!("@{}", key)
                                     || pd.name == format!("%{}", key)

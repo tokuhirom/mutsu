@@ -22,6 +22,6 @@ is ('a a' ~~ m:globalized/a/).elems, 2,
     'a localized regex adverb is canonicalized';
 is q:worded<a b>.List, ('a', 'b'),
     'a localized quote adverb is canonicalized';
-my @values = <x>;
+mine @values = <x>;
 is (@values[0]:kvp).elems, 2,
     'a localized postcircumfix adverb is canonicalized';

@@ -45,6 +45,13 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     };
     let items = if crate::runtime::utils::is_shaped_array(target) {
         crate::runtime::utils::shaped_array_leaves(target)
+    } else if let Some(cells) = crate::runtime::Interpreter::array_element_cells(target) {
+        // A real mutable Array's iterator yields its element CONTAINERS, as
+        // rakudo's `ReifiedArrayIterator` does: `for` over a class whose
+        // `iterator` is `@!x.iterator` aliases `@!x`'s elements, and
+        // `my $x := @a.iterator.pull-one; $x = 5` writes `@a[0]` (#10350).
+        // The same promotion `@a.values` hands out (ADR-0036 slice 3).
+        cells
     } else if let ValueView::Array(arr, kind) = target.view()
         && kind.is_itemized()
     {

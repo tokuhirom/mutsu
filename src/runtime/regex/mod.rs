@@ -1,6 +1,8 @@
 pub(crate) mod regex_arg_purity;
+mod regex_backref_scope;
 mod regex_call_graph;
 mod regex_casefold;
+mod regex_code_atom;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
@@ -8,6 +10,7 @@ mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;
 pub(crate) mod regex_helpers;
+mod regex_ignoremark;
 mod regex_interpolate;
 mod regex_left_call_graph;
 mod regex_lexical_ref;

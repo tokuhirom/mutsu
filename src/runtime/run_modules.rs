@@ -1238,6 +1238,16 @@ impl Interpreter {
                     if name.starts_with(['@', '%', '&', '$']) {
                         return false;
                     }
+                    // A file-scope scalar `my $x` is stored under the sigil-less
+                    // key `x`, so a variable holding a type object (`my Int $x;`,
+                    // `my IO::Handle $fh;`, `my $t = Int;`) looks exactly like a
+                    // leaked package binding by value alone. It is a variable, not
+                    // a type name: the `unit_lexicals` extraction below takes it
+                    // over from `env`, so removing it here would make that
+                    // extraction read a missing key as `Nil` (#10379).
+                    if unit_lex_names.iter().any(|n| n == *name) {
+                        return false;
+                    }
                     match value.view() {
                         ValueView::Package(target) => {
                             let target = target.resolve();

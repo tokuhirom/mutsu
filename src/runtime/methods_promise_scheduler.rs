@@ -33,6 +33,19 @@ impl Interpreter {
             .then_some(sched)
     }
 
+    /// The `$*SCHEDULER` in effect when it is a `CurrentThreadScheduler`
+    /// instance. `start` cues its body through it (the native `.cue` runs
+    /// inline), so the promise is already resolved when `start` returns.
+    // Cost: O(1).
+    pub(in crate::runtime) fn current_thread_scheduler(&mut self) -> Option<Value> {
+        let sched = self.env().get("*SCHEDULER")?.clone();
+        matches!(
+            sched.view(),
+            ValueView::Instance { class_name, .. } if class_name == "CurrentThreadScheduler"
+        )
+        .then_some(sched)
+    }
+
     /// Whether `value` is one of the built-in schedulers (instance or type
     /// object), which mutsu drives natively instead of through `.cue`.
     fn is_builtin_scheduler(value: &Value) -> bool {
@@ -125,6 +138,7 @@ impl Interpreter {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
+            captured_readonly: None,
         }))
     }
 
@@ -206,7 +220,11 @@ impl Interpreter {
         block: Value,
     ) -> Result<Value, RuntimeError> {
         promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
-        let result = crate::vm::guard_worker_panic(|| self.call_value(block, vec![]));
+        // The body's failure breaks `promise`, so no `CATCH` around the cue
+        // site may run for it (ADR-0072): keep it behind a catch marker.
+        let result = self.with_catch_marker(|this| {
+            crate::vm::guard_worker_panic(|| this.call_value(block, vec![]))
+        });
         let (kept, value) = match result {
             Ok(v) => (true, v),
             Err(e) => {

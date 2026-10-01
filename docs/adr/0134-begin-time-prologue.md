@@ -1,6 +1,6 @@
 # ADR-0134: BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals
 
-- Status: Accepted (2026-09-30; slice 1 implemented — see §7)
+- Status: Accepted (2026-09-30; slices 1–3 implemented — see §7)
 - Date: 2026-09-30
 - Deciders: tokuhirom, Claude
 - Addresses: [#9919](https://github.com/tokuhirom/mutsu/issues/9919)
@@ -254,7 +254,7 @@ status here.
 
 ## 7. Implementation status
 
-**Slice 1 — implemented** (`src/runtime/begin_prologue.rs`,
+**Slice 1 — implemented** (`src/runtime/begin_prologue/mod.rs`,
 `t/control/begin-prologue-static-state.t`).
 
 - The prologue is produced as an AST partition of the unit's top level,
@@ -282,9 +282,151 @@ status here.
 - When the mainline's undeclared-routine check fails, the prologue alone runs
   first (`run_begin_prologue_only`), so the BEGIN's output precedes the
   compile error, as on rakudo.
-- **Residue until slice 2:**
-  - A package body moves whole, so a bare run-time statement inside a class
-    or `module Foo { ... }` body that precedes a unit-level BEGIN runs with
-    the prologue instead of in its source position.
-  - Value-form BEGIN and nested BEGIN keep their pre-ADR handling
-    (`BeginOnceExpr`, the nested reorder rules).
+- **Residue:** a package body moves whole, so a bare run-time statement
+  inside a class or `module Foo { ... }` body that precedes a unit-level BEGIN
+  runs with the prologue instead of in its source position.
+
+**Slice 2 — implemented** (`src/runtime/begin_prologue/nested.rs`,
+`t/control/begin-prologue-nested.t`).
+
+- **What is lifted.** A statement-form or value-form BEGIN nested in a routine,
+  closure, loop, conditional or block is lifted into the prologue. It goes
+  just ahead of the top-level statement that contains it. A value-form BEGIN
+  at the unit's top level is lifted the same way. The prologue's bound
+  (slice 1) extends to the last statement with a lifted effect.
+- **Value.** A value-form BEGIN, or a statement-form one that ends its block,
+  stores into a unit-level slot (`__begin_value_N`), and the site reads that
+  slot, decontainerized (`$slot<>`) so a list value still flattens into an
+  array. This uses a slot rather than §2.2's `site_id` / `once_store` pairing:
+  the slot is an ordinary unit lexical captured like any other, so it needs no
+  second mechanism.
+- **Static cells (§2.2).** An inner lexical the body reads gets a unit-level
+  cell (`__begin_cell_N`).
+  - The lifted body runs in a block that declares the name from the cell and
+    copies it back afterwards.
+  - The inner declaration moves to its scope's head and starts from the cell,
+    marked `__begin_static` so the reorder pass keeps it whole. Its
+    initializer stays in place as an assignment.
+  - A parameter the body reads is a fresh, unbound declaration. An `our`
+    variable is re-declared.
+  - The free names come from compiling the body on its own
+    (`CompiledCode::free_var_syms`).
+- **Nested `constant`.** A nested `constant` whose initializer reads a
+  cell-backed lexical is lifted the same way, so it sees the static value
+  (`roast/S04-declarations/constant.t` test 27).
+- **Deviation from §2.1.3.** An `@`/`%` lexical is copied from its cell on
+  each scope entry, where rakudo binds the same object into every frame
+  (`sub f { my @a; BEGIN @a.push(1); @a.push(2); say @a }; f(); f()` prints
+  `[1 2]` twice, where rakudo prints `[1 2]` then `[1 2 2]`). Every scalar
+  case matches rakudo.
+- **Not lifted.** These keep their pre-ADR handling (`BeginOnceExpr`, the
+  nested reorder rules):
+  - a BEGIN whose enclosing inner scopes declare ahead of it a routine, a
+    code variable (which can declare an operator), a type, a package or an
+    import (a plain routine no longer does: see "Slice 2 follow-up" below);
+  - a BEGIN in a package body, including a method's;
+  - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
+    scope;
+  - a BEGIN whose body uses a placeholder, which is `X::Placeholder::Block`;
+  - a BEGIN that reads a name the unit does not declare (an EVAL's caller
+    lexical, for example), or reads a `state`, `constant` or group-declared
+    inner lexical;
+  - `will begin`.
+
+  Once one BEGIN-time effect is not lifted, no later nested one is, because
+  lifting it would run it ahead of an effect that precedes it in the source
+  (`roast/S04-declarations/will.t`).
+
+**Slice 2 follow-up — a routine declared ahead of a nested BEGIN, implemented**
+(`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-inner-subs.t`; closes #10329).
+
+- **The gap.** An inner scope that had declared a `sub` ahead of a BEGIN
+  blocked the lift, because the prologue runs before that scope is entered and
+  the routine does not exist there. `sub f { sub helper { 1 }; BEGIN say "b" }`
+  never ran its BEGIN when `f` was not called.
+- **The mechanism.** The lifted body gets a copy of each routine it calls. It
+  runs in one block per scope it reads from, nested as those scopes are. A
+  scope's block declares the copies of the variables the body (or a copied
+  routine) reads from that scope, taken from the same static cells as before,
+  then the routines declared in that scope, then the body. So a routine closes
+  over the same declarations it does in place, and a name shadows as it does
+  there. The routine's own declaration stays in place, so each frame of the
+  scope still gets its own. This is the first alternative of the issue
+  (re-declare the routine in the lifted body's block). Giving routines static
+  cells was not needed.
+- **Which routines.** The compiled body is scanned for the routines it calls by
+  bare name and reads as `&name`. Each routine it selects is scanned the same
+  way, so the closure is transitive, and its free variables resolve against the
+  bindings that preceded its own declaration. A plain `sub` is copyable. A
+  `multi`, an `our sub`, an exported routine, an operator or other category
+  routine (its syntax is already registered by the parser, which a scan of the
+  called names cannot see), and a redeclaring one still block the scope
+  ([#10395](https://github.com/tokuhirom/mutsu/issues/10395)).
+- **Dynamic access.** `EVAL`, `CALLER::`/`OUTER::`/`MY::`, a pseudo-package
+  qualified call (`MY::helper()`) and `::($name)` can name any routine in
+  scope. A body that uses one in a scope that declares a routine keeps its
+  pre-ADR handling, as before. Lifting it instead would fail at startup, where
+  the old handling was silent. So does a body that calls a routine which is
+  neither one of the scope's (copied) nor a core one
+  (`Interpreter::is_builtin_function`): an imported or unit-level routine may
+  evaluate a string where it was called from, and `BEGIN throws-like
+  'lightning()', ...` names `lightning` only inside that string
+  (`roast/S06-advanced/stub.t`). The scan sees the callee names in the body and
+  in every copied routine, qualified ones included. It cannot see through a
+  callee, which is why the rule is about what may be called, and stays in force
+  only in a scope that declares a routine (a scope with none is unchanged).
+- **Still not lifted.** A type, package, import or `my &code` declared ahead,
+  because the body's references to a type cannot be listed soundly from the
+  compiled code: `::($name)` and a parameter's type constraint do not reach the
+  constant pool, and a type cannot simply be declared twice, since two
+  declarations are two type objects
+  ([#10394](https://github.com/tokuhirom/mutsu/issues/10394)). The first
+  non-liftable BEGIN still halts lifting for the rest of the unit
+  (`Lifted::halted`), so one of these also keeps the BEGINs after it on the old
+  path.
+
+**Slice 3 — `use`, `constant` and conditional `use` implemented**
+(`src/runtime/begin_prologue/mod.rs`,
+`t/modules/import-export/use-if-begin-time.t`,
+`t/modules/import-export/use-constant-begin-time.t`; closes #9919 and #10336).
+
+- **Bound.** The prologue's bound reaches the last top-level BEGIN-time
+  effect: a BEGIN, a `constant`, and every `use` / `need` / `import` except a
+  positional pragma. So a unit's loads and constants all run in the prologue,
+  in source order, ahead of the run-time statements that precede them.
+- **Positional pragmas.** A lowercase pragma other than `use lib` and `use if`
+  (`use strict`, `no strict`, `use fatal`, `use soft`, ...) is applied by
+  mutsu as run-time state at its own position. It stays in the run-time
+  remainder and does not extend the bound; moving it would switch the mode on
+  for the statements before it. `use lib` and `use if` move, because later
+  loads depend on them.
+- **Multi-statement declarations.** The mainline takes its prologue before
+  flattening its `SyntheticBlock`s, so a desugared declaration (`my ($a, $b) =
+  f()`, whose members carry no `__has_initializer` marker) stays whole in the
+  run-time remainder instead of losing its initializers. An exported type
+  (`class C is export { }`, the declaration plus its `__MUTSU_EXPORT_TYPE__`
+  marker) moves whole into the prologue.
+- **Block imports over an outer import.** A block's `use` that re-imports a
+  name the unit already imported (`use M :t; { use M } t`) used to remove the
+  name on block exit. The import scope now remembers the value it shadowed
+  and puts it back. The prologue made this common (the unit's `use` now runs
+  before the block's), but the bug was independent of it.
+- **Conditional `use`.** `use Foo:if(EXPR)` evaluates `EXPR` in the prologue,
+  into a unit slot the `use` then reads. An undefined value dies with `Did not
+  provide compile-time-value for :if adverb in use statement`, before the
+  mainline runs. The run-time guard around `UseModule` stays, but it now runs
+  in the prologue.
+- **Native types.** A native variable split ahead of a prologue effect starts
+  its static half from the native zero. A native type with no known zero (a
+  NativeCall `ulong`) keeps its declaration whole.
+- **Residue:**
+  - A `False` condition still leaves the names the parse-time scan registered
+    for the module in place (#10331). Calling one therefore fails at run time
+    rather than at compile time. Fixing it needs §2.4's parse feedback.
+  - The undefined-condition error is a plain `die` raised in the prologue, not
+    a `===SORRY!===` compile error.
+  - A `use` nested in a block still loads through GH-8201's `PreloadModule`
+    hoist, not the prologue, and `constant`s nested in inner scopes run in
+    position unless slice 2 lifts them. Only top-level loads and constants
+    are prologue effects.

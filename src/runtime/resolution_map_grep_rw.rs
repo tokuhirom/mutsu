@@ -94,6 +94,7 @@ impl Interpreter {
                 requires_full_binding
                     || is_routine_callback
                     || super::resolution_map_grep::sub_is_call_carrier(&data)
+                    || super::resolution_map_grep::sub_reads_block_var(&data)
             };
             if needs_call_path {
                 // Fall through to call_sub_value path for complex cases
@@ -450,7 +451,8 @@ impl Interpreter {
                 // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
                 // carries only bytecode — the compile-the-AST fast path below
                 // would evaluate an empty predicate; run the real call path.
-                    || (data.body.is_empty() && data.compiled_routine.is_some()));
+                    || (data.body.is_empty() && data.compiled_routine.is_some())
+                    || super::resolution_map_grep::sub_reads_block_var(&data));
             if needs_full_binding {
                 let mut matched = Vec::new();
                 for (i, item) in list_items.iter().enumerate() {

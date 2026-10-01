@@ -283,64 +283,24 @@ impl Interpreter {
         // from both text and pattern, match on the stripped versions, then
         // map positions back to the original text.
         if pattern.ignore_mark {
-            use super::regex_helpers::{map_pos, remap_caps_spans_derived_offset};
+            use super::regex_helpers::map_pos;
             use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open};
             if let Some(target) = super::regex_helpers::current_match_target() {
-                let stripped = target.stripped();
-                let derived_start = stripped.original_to_stripped(start);
-                let stripped_pattern = strip_marks_pattern(pattern);
-                let enclosing_fate = ltm_fate_frame_open();
-                let mut results = self.regex_match_ends_from_caps_in_pkg_impl(
-                    &stripped_pattern,
-                    &stripped.chars()[derived_start..],
-                    0,
-                    pkg,
-                    first_only,
-                    stop_at_full,
+                return self.ignoremark_on_target(
+                    pattern,
+                    &target,
+                    start,
+                    &mut |interp, stripped_pattern, stripped_chars| {
+                        interp.regex_match_ends_from_caps_in_pkg_impl(
+                            stripped_pattern,
+                            stripped_chars,
+                            0,
+                            pkg,
+                            first_only,
+                            stop_at_full,
+                        )
+                    },
                 );
-                ltm_fate_frame_close_into(enclosing_fate, |fate| {
-                    stripped.stripped_to_original(fate + derived_start)
-                });
-                let orig_len = target.chars().len();
-                // `start` is the position this call was offered, which may be
-                // a character `:ignoremark` strips away entirely (a bare
-                // combining mark, say). `derived_start` already skipped past
-                // it to reach the first surviving character the inner match
-                // actually starts consuming from, so when that differs from
-                // `start`, `start` was never a real consumed position and
-                // `true_start` is this match's real beginning. Record it as
-                // `capture_start` (the top-level caller's `caps.from = caps
-                // .capture_start.unwrap_or(start)` fallback) so it propagates
-                // up through `group_merge_delta` for a *scoped* `[:m ...]`
-                // group too, not only a whole-pattern `:m`.
-                //
-                // Only do this when a skip actually happened: `start` is also
-                // where THIS group was entered when it is not the very first
-                // atom in the pattern (e.g. `'q'? [:m 'x']`, `<:Lu> [:m
-                // 'AFE']`) -- there, nothing at `start` was stripped, so
-                // `true_start == start` and setting `capture_start` here
-                // would wrongly overwrite the outer match's real (earlier)
-                // start once merged up, dropping whatever a preceding atom
-                // already consumed.
-                let true_start = stripped.stripped_to_original(derived_start);
-                for (end, caps) in &mut results {
-                    *end = stripped.stripped_to_original(*end + derived_start);
-                    if let Some(cs) = caps.capture_start.as_mut() {
-                        *cs = stripped.stripped_to_original(*cs + derived_start);
-                    } else if true_start != start {
-                        caps.capture_start = Some(true_start);
-                    }
-                    if let Some(ce) = caps.capture_end.as_mut() {
-                        *ce = stripped.stripped_to_original(*ce + derived_start);
-                    }
-                    remap_caps_spans_derived_offset(
-                        caps,
-                        stripped.stripped_map(),
-                        orig_len,
-                        derived_start,
-                    );
-                }
-                return results;
             }
 
             // Direct internal callers outside a public match target retain the
@@ -437,6 +397,11 @@ impl Interpreter {
         // Backreference read-through to the enclosing pattern level (see
         // `OuterBackrefCaps`). Never published outward — cleared below.
         base.set_outer_backref(super::regex_helpers::take_inline_outer_caps_seed());
+        // A same-scope sub-pattern belongs to the regex that contains it, so the
+        // `$/` a code block inside it sees starts where that regex's match did.
+        if let Some(outer) = base.outer_backref() {
+            base.match_from = outer.match_from;
+        }
         let mut store = CapStore::new(base);
         let ctx = WalkCtx {
             pattern,
@@ -805,9 +770,10 @@ impl Interpreter {
                                store: &mut CapStore,
                                next: usize,
                                delta: RegexCaptures| {
+                // The token's own capture name was applied per item
+                // (`with_iteration_capture`); a whole-span alias is a group.
                 let m = store.mark();
                 store.merge_delta(delta);
-                Self::store_apply_named_capture(store, token, pos, next, pos_base);
                 let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 stop
@@ -1028,6 +994,13 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 };
+                if !token.ratchet && atom_contains_alternation(&token.atom) {
+                    // As for `*`/`+`: a later constraint can force another
+                    // branch in an earlier iteration (`[ a || aa ] ** 2`).
+                    return self.walk_quant_group_candidates(
+                        ctx, idx, pos, min, max, false, store, matches,
+                    );
+                }
                 self.walk_quant_chain(ctx, idx, pos, min, max, false, store, matches)
             }
         }
@@ -1665,6 +1638,14 @@ impl Interpreter {
                 if hash_per_iter {
                     interp.maybe_run_reduce_time_dynvar_action(token, store.caps());
                 }
+                // The flag covers this iteration's atom only. The recursion
+                // below also runs the rest of the pattern after the loop, and
+                // an alternation there is not quantified: it pads its branches
+                // as usual (`[a || b]+ [ (c) || d ] (x)` numbers `(x)` as $1).
+                let in_atom = prior_quantified.map(|prior| {
+                    super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH
+                        .with(|flag| flag.replace(prior))
+                });
                 stop = interp.walk_quant_group_candidates_dfs(
                     ctx,
                     idx,
@@ -1679,6 +1660,10 @@ impl Interpreter {
                     store,
                     matches,
                 );
+                if let Some(in_atom) = in_atom {
+                    super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH
+                        .with(|flag| flag.set(in_atom));
+                }
                 store.rewind(mark);
                 stop
             };

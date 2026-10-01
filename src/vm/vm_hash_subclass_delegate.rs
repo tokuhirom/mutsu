@@ -315,8 +315,9 @@ impl Interpreter {
             )),
             inst_id,
         );
+        // Through the shared cell, not over it: see `Env::insert_through`.
         self.env_mut()
-            .insert(target_name.to_string(), updated_instance.clone());
+            .insert_through(target_name.to_string(), updated_instance.clone());
         updated_instance
     }
 }

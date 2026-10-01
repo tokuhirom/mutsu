@@ -141,7 +141,7 @@ impl Interpreter {
             )
         };
         if result_is_list {
-            Value::array(selected.iter().map(to_match).collect())
+            Value::array(selected.iter().map(to_match).collect()).item()
         } else if let Some(c) = selected.first() {
             to_match(c)
         } else {
@@ -410,7 +410,7 @@ impl Interpreter {
                     !single_nth && (pat_global || x_count.is_some() || nth_is_multi);
                 let empty_match_var = |me: &mut Self| {
                     let v = if result_is_list {
-                        Value::array(Vec::new())
+                        Value::array(Vec::new()).item()
                     } else {
                         Value::NIL
                     };
@@ -549,7 +549,8 @@ impl Interpreter {
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
                     let match_var = Self::subst_match_var(&selected, &text, result_is_list);
-                    self.env.insert("/".to_string(), match_var);
+                    self.env.insert("/".to_string(), match_var.clone());
+                    self.publish_subst_capture_env(&match_var);
                     Ok(Value::str(result))
                 } else if let Some(captures) = {
                     if is_p5 {
@@ -573,7 +574,7 @@ impl Interpreter {
                         &captures.named,
                         captures.target_or_new(&text),
                     );
-                    self.env.insert("/".to_string(), match_obj);
+                    self.env.insert("/".to_string(), match_obj.clone());
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
                     let matched_text: String = chars[captures.from..captures.to].iter().collect();
@@ -586,6 +587,9 @@ impl Interpreter {
                         Some(&text),
                         transforms,
                     )?;
+                    // A closure replacement restores `$0`.. around its call;
+                    // republish so they read this substitution's captures.
+                    self.publish_subst_capture_env(&match_obj);
                     Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
                 } else {
                     empty_match_var(self);

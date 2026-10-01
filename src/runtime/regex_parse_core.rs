@@ -399,6 +399,73 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     names
 }
 
+/// What [`Interpreter::consume_repeat_separator`] found after a repeating
+/// quantifier.
+#[derive(Default)]
+struct SeparatorParse {
+    /// The `%` / `%%` separator, if one follows.
+    separator: Option<Box<RegexSeparatorSpec>>,
+    /// Under `:sigspace`, whitespace separated the quantifier from its `%`:
+    /// a `<.ws>` follows the whole separated quantifier.
+    ws_after_quant: bool,
+}
+
+/// The `<.ws>` token `:sigspace` inserts for significant whitespace.
+fn sigspace_ws_token(ratchet: bool) -> RegexToken {
+    RegexToken {
+        atom: RegexAtom::WsRule,
+        quant: RegexQuant::One,
+        named_capture: None,
+        hash_capture: None,
+        secondary_named_capture: None,
+        force_list_capture: false,
+        ratchet,
+        frugal: false,
+        separator: None,
+        from_runtime_interpolation: false,
+        subrule_call_capture: false,
+    }
+}
+
+/// Make a quantified token repeat `[atom <.ws>]` instead of `atom`: under
+/// `:sigspace`, whitespace between an atom and its quantifier is matched after
+/// the atom in every iteration. The token's captures stay on the inner atom,
+/// so they are still collected once per iteration.
+// Cost: O(1).
+fn append_per_item_ws(token: &mut RegexToken, ignore_case: bool, ignore_mark: bool) {
+    if matches!(token.quant, RegexQuant::One) {
+        return;
+    }
+    let ratchet = token.ratchet;
+    let placeholder = RegexToken {
+        atom: RegexAtom::Group(RegexPattern {
+            tokens: Vec::new(),
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case,
+            ignore_mark,
+            derived: Default::default(),
+        }),
+        quant: RegexQuant::One,
+        named_capture: None,
+        hash_capture: None,
+        secondary_named_capture: None,
+        force_list_capture: false,
+        ratchet,
+        frugal: false,
+        separator: None,
+        from_runtime_interpolation: false,
+        subrule_call_capture: false,
+    };
+    let mut item = std::mem::replace(token, placeholder);
+    token.quant = std::mem::replace(&mut item.quant, RegexQuant::One);
+    token.frugal = std::mem::take(&mut item.frugal);
+    token.separator = item.separator.take();
+    if let RegexAtom::Group(group) = &mut token.atom {
+        group.tokens = vec![item, sigspace_ws_token(ratchet)];
+    }
+}
+
 /// Try to consume a trailing quantifier (`*`, `+`, `?`, `**N..M`, `**{code}`,
 /// plus a frugal `?` modifier) from `chars`, the same shapes the main atom
 /// loop accepts after an ordinary atom. Returns `None` (leaving `chars`
@@ -476,6 +543,40 @@ fn try_consume_quantifier(
 /// `<?:!Letter>` is the positive assertion of the *negated* property, and
 /// `<!:!Letter>` negates that again ("there is a character here and it IS a
 /// letter"). Returns the bare property name and whether the inner `!` was present.
+/// One branch of a top-level `|` / `||` / `&` / `&&`, with the inline adverbs
+/// in effect for the whole regex (`:i`, `:s`, `:ratchet`) put back in front of
+/// it, ready to be parsed on its own.
+///
+/// Each branch is parsed as a pattern of its own, so an adverb the enclosing
+/// regex consumed before the split is gone unless it is re-applied here:
+/// `/ :s a b & a b /` would otherwise match its second branch without the
+/// whitespace matchers sigspace adds, and `/ :r \w+ & xy /` would let `\w+`
+/// backtrack to `xy` instead of taking `xyz` possessively. Alternation and
+/// conjunction share this so the two cannot drift.
+// Cost: O(b), b = length of the branch.
+fn branch_with_inline_adverbs(
+    branch: &str,
+    ignore_case: bool,
+    sigspace: bool,
+    ratchet: bool,
+) -> String {
+    let mut pattern = branch.to_string();
+    if ignore_case && !branch.starts_with(":i") {
+        pattern = format!(":i {}", pattern);
+    }
+    if sigspace {
+        pattern = format!(":s {}", pattern);
+    }
+    if ratchet {
+        // `:ratchet` is scoped to the whole regex, so it must reach every
+        // top-level branch -- `token TOP { 'z' | \d+ \d }` is as possessive as
+        // `token TOP { \d+ \d }`. Losing it here also let an ordered
+        // alternation inside such a branch backtrack into its later branches.
+        pattern = format!(":ratchet {}", pattern);
+    }
+    pattern
+}
+
 fn strip_inner_prop_negation(prop: &str) -> (&str, bool) {
     match prop.strip_prefix('!') {
         Some(rest) => (rest, true),
@@ -714,14 +815,25 @@ impl Interpreter {
     /// a quantified interpolated array (`@oct ** 4 % \.` mis-parsed the `%`
     /// as a stray hash sigil instead of a separator — regression pinned by
     /// `t/regex-anchored-separated-repeat.t`).
+    ///
+    /// Under `:sigspace` the whitespace around the separator is significant,
+    /// as in Rakudo: whitespace after the separator atom is a `<.ws>` that
+    /// belongs to the separator (`a+ % "," ` matches `","<.ws>` between
+    /// items), and whitespace between the quantifier and the `%` is a `<.ws>`
+    /// after the whole separated quantifier, reported through
+    /// `SeparatorParse::ws_after_quant` for the caller to push once the
+    /// quantified token itself is in place.
     fn consume_repeat_separator(
         &self,
         chars: &mut std::iter::Peekable<std::str::Chars>,
         quant: &RegexQuant,
         mode: RegexParseMode,
-    ) -> Option<Box<RegexSeparatorSpec>> {
+        sigspace: bool,
+        ratchet: bool,
+    ) -> SeparatorParse {
+        let mut result = SeparatorParse::default();
         if matches!(quant, RegexQuant::One | RegexQuant::ZeroOrOne) {
-            return None;
+            return result;
         }
         // Skip whitespace before the `%`.
         let mut lookahead = chars.clone();
@@ -760,9 +872,10 @@ impl Interpreter {
             }
         };
         if lookahead.peek() != Some(&'%') || is_hash_alias {
-            return None;
+            return result;
         }
         // Commit: consume up to and including the `%`/`%%`.
+        result.ws_after_quant = sigspace && chars.peek().is_some_and(|c| c.is_whitespace());
         while chars.peek().is_some_and(|c| c.is_whitespace()) {
             chars.next();
         }
@@ -786,13 +899,35 @@ impl Interpreter {
         for _ in 0..sep_atom_str.chars().count() {
             chars.next();
         }
-        self.parse_regex_with_mode(sep_atom_str.trim(), mode)
-            .map(|pattern| {
+        let sep_source = sep_atom_str.trim();
+        if !sigspace {
+            result.separator = self.parse_regex_with_mode(sep_source, mode).map(|pattern| {
                 Box::new(RegexSeparatorSpec {
                     pattern,
                     allow_trailing,
                 })
-            })
+            });
+            return result;
+        }
+        // The separator atom is itself parsed under sigspace (`% [ "," ]`
+        // keeps the `<.ws>` inside the group), and whitespace after it is the
+        // separator's own trailing `<.ws>`.
+        let ws_after_sep = chars.peek().is_some_and(|c| c.is_whitespace());
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        result.separator = self
+            .parse_regex_with_mode(&format!(":s {sep_source}"), mode)
+            .map(|mut pattern| {
+                if ws_after_sep {
+                    pattern.tokens.push(sigspace_ws_token(ratchet));
+                }
+                Box::new(RegexSeparatorSpec {
+                    pattern,
+                    allow_trailing,
+                })
+            });
+        result
     }
 
     /// Parse `pattern`, memoizing the structural parse in
@@ -1247,21 +1382,7 @@ impl Interpreter {
                 // (ignore-case) and `:s` (sigspace) must propagate to the
                 // re-parsed sub-pattern, otherwise an alternative like `(a) (b)`
                 // loses its sigspace whitespace matchers and fails to match.
-                let mut alt_pat = alt_src.to_string();
-                if ignore_case && !alt_src.starts_with(":i") {
-                    alt_pat = format!(":i {}", alt_pat);
-                }
-                if sigspace {
-                    alt_pat = format!(":s {}", alt_pat);
-                }
-                if ratchet {
-                    // `:ratchet` is scoped to the whole regex, so it must reach a
-                    // top-level `|` / `||` alternative too — `token TOP { 'z' |
-                    // \d+ \d }` is as possessive as `token TOP { \d+ \d }`.
-                    // Losing it here also let an ordered alternation inside such
-                    // an alternative backtrack into its later branches.
-                    alt_pat = format!(":ratchet {}", alt_pat);
-                }
+                let alt_pat = branch_with_inline_adverbs(alt_src, ignore_case, sigspace, ratchet);
                 if let Some(p) = self.parse_regex_with_mode(&alt_pat, mode) {
                     alt_patterns.push(p);
                 }
@@ -1318,11 +1439,7 @@ impl Interpreter {
                 if regex_branch_is_blank(part_src) {
                     continue;
                 }
-                let part_pat = if ignore_case && !part_src.starts_with(":i") {
-                    format!(":i {}", part_src)
-                } else {
-                    part_src.to_string()
-                };
+                let part_pat = branch_with_inline_adverbs(part_src, ignore_case, sigspace, ratchet);
                 if let Some(p) = self.parse_regex_with_mode(&part_pat, mode) {
                     conj_patterns.push(p);
                 }
@@ -1336,7 +1453,9 @@ impl Interpreter {
                         hash_capture: None,
                         secondary_named_capture: None,
                         force_list_capture: false,
-                        ratchet: false,
+                        // As for a whole-pattern alternation, a conjunction in a
+                        // ratcheted regex is itself ratcheted.
+                        ratchet,
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
@@ -1422,7 +1541,10 @@ impl Interpreter {
                     // ever reaching that code, so before this call it
                     // silently dropped the separator (mis-parsed as a stray
                     // `%`). See `consume_repeat_separator`'s doc comment.
-                    let separator = self.consume_repeat_separator(&mut chars, &quant, mode);
+                    let SeparatorParse {
+                        separator,
+                        ws_after_quant,
+                    } = self.consume_repeat_separator(&mut chars, &quant, mode, sigspace, ratchet);
                     let mut span_tokens: Vec<RegexToken> = tokens.split_off(start);
                     if span_tokens.len() == 1 {
                         // A single-char interpolated value: quantify that one
@@ -1456,6 +1578,9 @@ impl Interpreter {
                             from_runtime_interpolation: true,
                             subrule_call_capture: false,
                         });
+                    }
+                    if ws_after_quant {
+                        tokens.push(sigspace_ws_token(ratchet));
                     }
                 }
                 continue;
@@ -1963,6 +2088,7 @@ impl Interpreter {
                         super::regex::regex_helpers::declare_enclosing_regex_var(&name);
                         declared_regex_vars.insert(name);
                     }
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     tokens.push(RegexToken {
                         atom: RegexAtom::VarDecl { code: decl_code },
                         quant: RegexQuant::One,
@@ -3041,6 +3167,7 @@ impl Interpreter {
                             if is_closure_interp {
                                 RegexAtom::ClosureInterpolation { code, body: None }
                             } else {
+                                super::regex::regex_helpers::note_regex_code_lowered();
                                 RegexAtom::CodeAssertion {
                                     code,
                                     negated,
@@ -4383,6 +4510,7 @@ impl Interpreter {
                             return None;
                         }
                     }
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     RegexAtom::CodeAssertion {
                         code,
                         negated: false,
@@ -4434,7 +4562,10 @@ impl Interpreter {
             };
             let mut quant = RegexQuant::One;
             // In Raku regex, whitespace between an atom and its quantifier is
-            // insignificant. Peek past whitespace to find quantifier characters.
+            // insignificant -- except under `:sigspace`, where it is a `<.ws>`
+            // matched after the atom in every iteration (`<alpha> +% \,`
+            // repeats `<alpha><.ws>`; Rakudo's `sigmaybe`).
+            let mut ws_before_quant = false;
             {
                 let mut lookahead = chars.clone();
                 while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
@@ -4445,6 +4576,7 @@ impl Interpreter {
                     .is_some_and(|ch| *ch == '*' || *ch == '+' || *ch == '?')
                 {
                     // Consume the whitespace before the quantifier
+                    ws_before_quant = sigspace && chars.peek().is_some_and(|ch| ch.is_whitespace());
                     while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
                         chars.next();
                     }
@@ -4601,7 +4733,10 @@ impl Interpreter {
             // separator is a single atom (the next atom in the stream); the rest
             // of the line is matched after the quantified group. `%%` permits an
             // optional trailing separator.
-            let token_separator = self.consume_repeat_separator(&mut chars, &quant, mode);
+            let SeparatorParse {
+                separator: token_separator,
+                ws_after_quant,
+            } = self.consume_repeat_separator(&mut chars, &quant, mode, sigspace, ratchet);
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
             // See the `'<'` arm: an aliased negated subrule assertion can never
@@ -4664,11 +4799,10 @@ impl Interpreter {
                 && !aliased_subrule_call
                 && !matches!(atom, RegexAtom::CaptureGroup(_))
                 && hash_capture.is_none()
-                && token_separator.is_none()
-                && matches!(
+                && (matches!(
                     quant,
                     RegexQuant::ZeroOrMore | RegexQuant::OneOrMore | RegexQuant::Repeat(..)
-                );
+                ) || (token_separator.is_some() && matches!(quant, RegexQuant::RepeatCode(_))));
             // An `@<name>=` array-sigil alias only produces a List when the
             // aliased atom is itself a *capturing* construct — a capture group
             // (`@<x>=(\w)`) or a subrule call (`@<x>=<alpha>`, `@<x>=<myrule>`),
@@ -4695,7 +4829,9 @@ impl Interpreter {
                     force_list_capture: false,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
-                    separator: None,
+                    // The alias names the whole separated span, so the
+                    // separator stays on the quantified inner token.
+                    separator: token_separator,
                     // ADR-0046 Slice 1: `runtime_value_atom` marks an atom
                     // built directly by `array_var_alternation_atom` (the
                     // `<@var>` form) or the `<$var>` regex-value reroute --
@@ -4756,6 +4892,22 @@ impl Interpreter {
                     from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
                     subrule_call_capture,
                 });
+            }
+            if ws_before_quant && let Some(last) = tokens.last_mut() {
+                // A whole-span alias wraps the quantified token in a group;
+                // the per-item `<.ws>` belongs to that inner quantified token.
+                let target = match &mut last.atom {
+                    RegexAtom::Group(inner)
+                        if matches!(last.quant, RegexQuant::One) && inner.tokens.len() == 1 =>
+                    {
+                        &mut inner.tokens[0]
+                    }
+                    _ => last,
+                };
+                append_per_item_ws(target, ignore_case, ignore_mark);
+            }
+            if ws_after_quant {
+                tokens.push(sigspace_ws_token(ratchet));
             }
         }
         let tokens = merge_grapheme_literal_tokens(tokens);

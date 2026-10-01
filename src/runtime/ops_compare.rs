@@ -29,7 +29,7 @@ impl Interpreter {
             {
                 Self::value_to_list(inner)
             }
-            ValueView::Array(items, ..) => items.to_vec(),
+            ValueView::Array(items, ..) => items.items_with_default().into_owned(),
             ValueView::Seq(items) => items.to_vec(),
             ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
             ValueView::Hash(items) => items

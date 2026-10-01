@@ -31,6 +31,15 @@ impl Interpreter {
         end: usize,
         caps: &SubstMatchCaps,
     ) -> Value {
+        if let Some(spans) = &caps.spans {
+            return Value::make_match_object_full_visible(
+                start as i64,
+                end as i64,
+                &spans.positional,
+                &spans.named,
+                target.clone(),
+            );
+        }
         Value::make_match_object_with_captures(
             start as i64,
             end as i64,

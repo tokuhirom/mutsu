@@ -5,6 +5,7 @@
 //! - `adverb`:     Subscript adverb parsing (`:exists`, `:delete`, `:k`, `:kv`, etc.)
 //! - `call_method`: Method call helpers (bracket indices, quoted method names, postfix operators)
 //! - `dot_assign`: `.=` mutating method call parsing
+//! - `named_adverb`: Subscript adverbs with a non-built-in name (`@a[0]:foo`)
 //! - `loop_`:      Main postfix/prefix expression loops (`prefix_expr`, `postfix_expr`, etc.)
 
 mod adverb;
@@ -12,6 +13,7 @@ mod call_method;
 mod dot_assign;
 mod helpers;
 mod loop_;
+mod named_adverb;
 
 // Re-exports preserving original visibility
 pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};

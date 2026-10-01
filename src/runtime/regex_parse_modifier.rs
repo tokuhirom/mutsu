@@ -498,6 +498,7 @@ impl Interpreter {
                         .or_else(|| super::regex::regex_helpers::interp_closure_scope_get(&name))
                         .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
+                        .or_else(|| self.regex_package_chain_var_fallback(&format!("${name}")))
                         .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;

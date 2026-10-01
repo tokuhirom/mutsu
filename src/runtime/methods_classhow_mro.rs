@@ -2,6 +2,14 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    pub(super) fn is_role_mixed_type(invocant: &Value) -> bool {
+        let ValueView::Mixin(inner, mixins) = invocant.view() else {
+            return false;
+        };
+        let base = crate::value::what_type_name(inner.as_ref());
+        crate::value::types::role_mixin_suffix_excluding(mixins, &base).is_some()
+    }
+
     pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant.view() {
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
@@ -43,6 +51,12 @@ impl Interpreter {
                 }
             }
         };
+        // A role mixin introduces a synthetic subtype ahead of the wrapped
+        // class. The latter remains a distinct MRO level even when both have
+        // the same display name after `.^set_name`.
+        if Self::is_role_mixed_type(invocant) {
+            mro.insert(0, class_name.clone());
+        }
         // A grammar's MRO threads through Grammar -> Match -> Capture -> Cool.
         // Trigger this whenever the type is (or inherits from) Grammar. A
         // `class`/role pun that merely *declares* a token/rule is not a
@@ -108,13 +122,27 @@ impl Interpreter {
         &mut self,
         invocant: &Value,
         _concretizations: bool,
-    ) -> Vec<Value> {
+    ) -> Result<Vec<Value>, RuntimeError> {
         let class_name = self.mop_receiver_owner(invocant);
         let base_mro = self.classhow_mro_names(invocant);
         let mut result: Vec<Value> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
 
-        for entry in &base_mro {
+        for (index, entry) in base_mro.iter().enumerate() {
+            if index == 0 && Self::is_role_mixed_type(invocant) {
+                result.push(self.dispatch_what(invocant, Vec::new())?);
+                if let ValueView::Mixin(_, mixins) = invocant.view() {
+                    for role in
+                        crate::value::types::mixin_roles_applied_last_first(mixins, &class_name)
+                    {
+                        // A base class may compose the same role. Rakudo lists
+                        // it once at each MRO level, so leave the base level's
+                        // ordinary `seen` accounting untouched here.
+                        result.push(Value::package(Symbol::intern(&role)));
+                    }
+                }
+                continue;
+            }
             // Check if this entry is a role (in the parents list because of `does`)
             let base_entry = entry
                 .split_once('[')
@@ -165,7 +193,7 @@ impl Interpreter {
                 }
             }
         }
-        result
+        Ok(result)
     }
 
     /// Add a role's parent roles/classes to the MRO result.

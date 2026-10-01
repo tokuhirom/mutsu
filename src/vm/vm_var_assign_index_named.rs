@@ -1091,7 +1091,9 @@ impl Interpreter {
         // store (which would spuriously create an attribute keyed by the index).
         if is_positional
             && !bind_mode
-            && let Some(inst) = self.env().get(&var_name).cloned()
+            // A closure-captured `@`-variable is held behind a shared cell;
+            // the instance inside it is the target all the same (#10356).
+            && let Some(inst) = self.env().get(&var_name).map(Value::deref_container)
             && let ValueView::Instance { attributes, .. } = inst.view()
             && attributes.contains_key("__mutsu_array_storage")
         {
@@ -1114,7 +1116,9 @@ impl Interpreter {
                         // sentinel, only `ArrayData::initialized` is.
                         items.resize(idx_u + 1, Self::native_fill_for_constraint(None));
                     }
-                    items.live_mut()[idx_u] = val.clone();
+                    // Through an element container a `for` alias or a `:=`
+                    // bind holds, like a plain Array's store (#10350).
+                    Value::assign_element_slot(&mut items.live_mut()[idx_u], val.clone());
                     // Materialize the "all present" range before recording
                     // `idx_u` as present, so a skipped intermediate slot from
                     // the resize above is correctly left OUT and reads as a

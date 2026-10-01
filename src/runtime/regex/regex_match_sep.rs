@@ -8,6 +8,66 @@
 
 use super::super::*;
 use super::regex_helpers::count_capture_groups;
+use super::regex_trail::CapStore;
+use std::collections::HashSet;
+
+/// How many positional slots one match of a separator pattern takes.
+pub(super) fn separator_stride(sep: &RegexPattern) -> usize {
+    sep.tokens
+        .iter()
+        .map(|t| count_capture_groups(&t.atom))
+        .sum()
+}
+
+/// A separated quantifier's capture delta for one chain: every name under the
+/// quantifier marked quantified, then the atoms' and the separators' captures
+/// folded side by side (`append_separated_captures`). Every engine that
+/// matches a separated quantifier builds its delta here.
+// Cost: O(n + c), n = the names, c = the captures across the chain.
+pub(super) fn separated_capture_delta(
+    names: &HashSet<String>,
+    atom_caps: &[RegexCaptures],
+    sep_caps: &[RegexCaptures],
+    trailing: Option<&RegexCaptures>,
+    atom_stride: usize,
+    sep_stride: usize,
+) -> RegexCaptures {
+    let mut caps = RegexCaptures::default();
+    for n in names {
+        caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+    }
+    Interpreter::append_separated_captures(
+        &mut caps,
+        atom_caps,
+        sep_caps,
+        trailing,
+        atom_stride,
+        sep_stride,
+    );
+    caps
+}
+
+/// Apply a separated token's own capture name to ONE iteration's atom match
+/// (`from..to`, captures `caps`). A capture name left on a separated token
+/// (a builtin subrule `<digit>+ % ','`, an angle alias, an aliased capture
+/// group or subrule call) names each item, so `$<digit>` is a List with one
+/// Match per item, exactly like the unseparated `<digit>+`. A sigil alias of
+/// the whole quantified span (`$<x>=\d+ % ','`) is wrapped in a group by the
+/// parser and never reaches here.
+// Cost: O(c), c = the iteration's captures.
+pub(super) fn with_iteration_capture(
+    token: &RegexToken,
+    from: usize,
+    to: usize,
+    caps: RegexCaptures,
+) -> RegexCaptures {
+    if token.named_capture.is_none() {
+        return caps;
+    }
+    let mut store = CapStore::new(caps);
+    Interpreter::store_apply_named_capture(&mut store, token, from, to, 0);
+    store.into_caps()
+}
 
 impl Interpreter {
     /// Resolve a separator quantifier's bounds once for the current match
@@ -56,13 +116,19 @@ impl Interpreter {
             return Vec::new();
         };
         let atom_stride = count_capture_groups(&token.atom);
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
+
+        let zero = (min == 0).then(|| {
+            let mut caps = RegexCaptures::default();
+            for name in &names {
+                caps.named
+                    .entry(Symbol::intern(name))
+                    .or_default()
+                    .quantified = true;
+            }
+            (start, caps)
+        });
 
         // Enumerate every valid `atom (sep atom)*` chain via DFS, backtracking
         // the separator. A purely greedy linear scan (match the first atom, then
@@ -83,6 +149,11 @@ impl Interpreter {
         // engine (iterating in reverse) tries the highest-priority candidate
         // first.
         let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
+        if token.frugal
+            && let Some(candidate) = &zero
+        {
+            out.push(candidate.clone());
+        }
         for (atom_caps, sep_caps, end) in &chains {
             let count = atom_caps.len();
             if count < min {
@@ -94,12 +165,8 @@ impl Interpreter {
                 continue;
             }
             let assemble = |trailing: Option<&RegexCaptures>, end: usize| {
-                let mut caps = RegexCaptures::default();
-                for n in names.iter() {
-                    caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-                }
-                Self::append_separated_captures(
-                    &mut caps,
+                let caps = separated_capture_delta(
+                    &names,
                     atom_caps,
                     sep_caps,
                     trailing,
@@ -128,12 +195,10 @@ impl Interpreter {
         // The names still have to be marked quantified — `<pair>* %% ','` that
         // matched nothing captures an EMPTY list under `$/<pair>`, not a single
         // empty Match (`load-yaml("{}")` is an empty Hash, not `{"" => Any}`).
-        if min == 0 {
-            let mut caps = RegexCaptures::default();
-            for n in names.iter() {
-                caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-            }
-            out.push((start, caps));
+        if !token.frugal
+            && let Some(candidate) = zero
+        {
+            out.push(candidate);
         }
         out.reverse();
         out
@@ -198,7 +263,7 @@ impl Interpreter {
                 )
                 .pop()
         {
-            atom_caps.push(caps);
+            atom_caps.push(with_iteration_capture(token, start, end, caps));
             super::regex_helpers::record_regex_farthest_position(end);
             cur = end;
             while can_extend(atom_caps.len()) {
@@ -226,7 +291,7 @@ impl Interpreter {
                     break;
                 }
                 sep_caps.push(scaps);
-                atom_caps.push(acaps);
+                atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
                 cur = atom_end;
             }
         }
@@ -245,17 +310,8 @@ impl Interpreter {
             return vec![(start, caps)];
         }
         let atom_stride = count_capture_groups(&token.atom);
-        let sep_stride: usize = sep
-            .pattern
-            .tokens
-            .iter()
-            .map(|t| count_capture_groups(&t.atom))
-            .sum();
+        let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
-        let mut caps = RegexCaptures::default();
-        for n in names.iter() {
-            caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
-        }
         // Trailing separator for `%%`: Rakudo consumes it greedily, and
         // ratchet commits to that single choice.
         let mut end = cur;
@@ -268,8 +324,8 @@ impl Interpreter {
             end = ts_end;
             trailing = Some(ts_caps);
         }
-        Self::append_separated_captures(
-            &mut caps,
+        let caps = separated_capture_delta(
+            &names,
             &atom_caps,
             &sep_caps,
             trailing.as_ref(),
@@ -324,7 +380,7 @@ impl Interpreter {
         // the 20_000 chain cap), so a zero-width atom cannot loop forever.
         for (end, caps) in first_matches.into_iter().rev() {
             super::regex_helpers::record_regex_farthest_position(end);
-            let mut atom_caps = vec![caps];
+            let mut atom_caps = vec![with_iteration_capture(token, start, end, caps)];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
                 token,
@@ -366,6 +422,9 @@ impl Interpreter {
         if out.len() > 20_000 {
             return;
         }
+        if token.frugal {
+            out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        }
         let can_extend = max.is_none_or(|m| atom_caps.len() < m);
         if can_extend {
             for (sep_end, scaps) in self.regex_match_ends_from_caps_in_pkg(
@@ -391,7 +450,7 @@ impl Interpreter {
                     if atom_end <= cur {
                         continue;
                     }
-                    atom_caps.push(acaps);
+                    atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
                     sep_caps.push(scaps.clone());
                     self.extend_separated_chain(
                         token,
@@ -410,7 +469,9 @@ impl Interpreter {
                 }
             }
         }
-        out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        if !token.frugal {
+            out.push((atom_caps.clone(), sep_caps.clone(), cur));
+        }
     }
 
     /// Append captures from a separated quantifier into `caps`, folding each

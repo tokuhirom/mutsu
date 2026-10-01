@@ -6,7 +6,7 @@ use lib $?FILE.IO.parent(2).add('lib');
 # sees lexicals in their static state -- declared, but with no run-time
 # initializer applied yet. What it stores there is the lexical's starting value.
 
-plan 12;
+plan 13;
 
 my $c = True;
 my $seen-c;
@@ -46,6 +46,10 @@ constant PK = 3;
 my $k;
 BEGIN $k = PK;
 is $k, 3, 'a constant declared earlier is visible to a BEGIN';
+
+my int $native = 3;
+BEGIN 1;
+is $native, 3, 'a native variable split ahead of a BEGIN starts from its zero, not Nil';
 
 is EVAL('my $x = 0; BEGIN { $x = 1 }; $x'), 0,
     'an EVAL unit gets the same prologue';

@@ -139,6 +139,7 @@ impl Interpreter {
                 | "base_type"
                 | "definite"
                 | "methods"
+                | "method_names"
                 | "attributes"
                 | "attribute_table"
                 | "parents"

@@ -246,10 +246,47 @@ fn parse_temp_undefine_var(input: &str) -> Result<(&str, String), PError> {
     }
 }
 
+/// `temp my $x = 1` / `temp our $out = ''`: `temp` over a declaration.
+///
+/// The declarator's initializer belongs to the declaration, so the declaration
+/// runs first and `temp` then saves the value it left (rakudo restores `''`,
+/// not the package variable's earlier value, at scope exit). Lowered to the
+/// declaration followed by a bare `temp` of the declared variable. Without this
+/// `temp` was left behind as a bare word statement of its own (#10257).
+///
+/// Returns `None` when no single-variable declaration follows.
+fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
+    if !["my", "our", "state"]
+        .iter()
+        .any(|kw| keyword(kw, input).is_some())
+    {
+        return None;
+    }
+    let (rest, decl) = crate::parser::stmt::decl::my_decl_expr(input).ok()?;
+    let Stmt::VarDecl { name, .. } = &decl else {
+        return None;
+    };
+    let save = Stmt::Let {
+        name: name.clone(),
+        index: None,
+        value: None,
+        is_temp: true,
+        undefine_first: false,
+        nested_lvalue: false,
+    };
+    Some(parse_statement_modifier(
+        rest,
+        Stmt::SyntheticBlock(vec![decl, save]),
+    ))
+}
+
 /// Parse `temp` statement — same semantics as `let` (save/restore at scope exit).
 pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
     let (rest, _) = ws1(rest)?;
+    if let Some(parsed) = temp_declaration_stmt(rest) {
+        return parsed;
+    }
     if let Ok((expr_rest, expr)) = expression(rest) {
         // temp on a *multi-level* indexed lvalue: `temp $s[1]<k>[1] = 23`.
         // `expression` parses the whole `lvalue = value` into a nested

@@ -56,6 +56,10 @@ pub(crate) struct PatternDerived {
     /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
     /// pattern many times during one match).
     pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
+    /// Case-folded form, for a whole-pattern `:i` over a subject or pattern
+    /// with a multi-character fold (matched on the folded subject), so its
+    /// compiled program is built once rather than per match.
+    pub(crate) folded: std::sync::OnceLock<Arc<RegexPattern>>,
     /// The unanchored-scan prefilter (ADR-0099 Stage 1), for a pattern that
     /// mentions no rule name — a pure function of the pattern, so one slot.
     pub(crate) prefilter:
@@ -82,6 +86,9 @@ pub(crate) struct PatternDerived {
     /// backtrack retry in #8510's shape), so a full re-walk per call is pure
     /// waste once this pattern's own answer is known.
     pub(crate) contains_backref: std::sync::OnceLock<bool>,
+    /// Whether this pattern's subtree contains a code atom at its own capture
+    /// level (`atom_contains_code`'s per-pattern memo).
+    pub(crate) contains_code: std::sync::OnceLock<bool>,
     /// This pattern's own positional-capture-group count (`count_capture_groups`'s
     /// per-pattern memo). Also a pure function of the pattern shape, re-walked
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
@@ -220,6 +227,11 @@ pub(crate) struct OuterBackrefCaps {
     /// captures belong in the quantifier's folded positional slots rather
     /// than after them. The range is absolute in the visible positional list.
     pub(crate) merge_positional: Option<(usize, usize)>,
+    /// Where the enclosing level's match began. A same-scope sub-pattern (a
+    /// `[ … ]` group, an alternative) is part of the same regex, so `$/` in a
+    /// code block inside it spans from the *enclosing* start, not from the
+    /// sub-pattern's own.
+    pub(crate) match_from: usize,
 }
 
 impl OuterBackrefCaps {

@@ -127,6 +127,14 @@ pub(crate) fn seed_native_subclass_payloads(
             .unwrap_or_default();
         attrs.insert("__mutsu_str_value", Value::str(payload));
     }
+    // An `is IterationBuffer` subclass keeps its elements in a reserved array
+    // attribute, which nqp code (`nqp::push(self, ...)`) writes into from the
+    // first statement of a method. `nqp::create` seeds it (`create_instance`),
+    // so `.new` / `.bless` have to as well.
+    let items = nqp_ops_list::iteration_buffer_items_key();
+    if class_mro.iter().any(|name| name == "IterationBuffer") && !attrs.contains_key(items) {
+        attrs.insert(items, Value::real_array(Vec::new()));
+    }
 }
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":
@@ -753,6 +761,7 @@ mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod methods_introspect;
 mod methods_io_dispatch;
+mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
 mod methods_mixin_what_cache;
@@ -881,6 +890,7 @@ mod registration_class_parents;
 pub(crate) mod registration_class_validate;
 mod registration_role;
 mod registration_role_body;
+mod registration_role_body_lexical;
 mod registration_role_decl;
 mod registration_role_method;
 pub(crate) mod registration_sub;
@@ -5204,6 +5214,12 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: HashSet<Symbol>,
+    /// The value each of `imported_env_keys` held before this scope first
+    /// imported over it, for the keys that already had one. The block's
+    /// import shadows that outer binding, so `pop_import_scope` puts it back
+    /// instead of removing the key (`use M :t; { use M } t` still sees the
+    /// outer import of `t`).
+    pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
     /// Imported environment aliases visible before this scope was pushed.
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     /// Imported routine aliases visible before this scope was pushed. The
@@ -5673,6 +5689,7 @@ mod tests {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
+            captured_readonly: None,
         });
 
         let mut interp = Interpreter::new();

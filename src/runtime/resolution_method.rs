@@ -450,10 +450,16 @@ impl Interpreter {
                     .param_defs
                     .iter()
                     .filter(|p| {
-                        p.where_constraint.is_some()
-                            || p.type_constraint.as_deref().is_some_and(|tc| {
-                                self.constraint_is_subset(Self::constraint_base_for_distance(tc))
-                            })
+                        // Positional params only, like the sub dispatch's
+                        // `constrained_count`: a named param's constraint
+                        // decides applicability, not narrowness.
+                        !p.named
+                            && (p.where_constraint.is_some()
+                                || p.type_constraint.as_deref().is_some_and(|tc| {
+                                    self.constraint_is_subset(Self::constraint_base_for_distance(
+                                        tc,
+                                    ))
+                                }))
                     })
                     .count();
                 let sigil_typed = def
@@ -633,7 +639,11 @@ impl Interpreter {
                 continue;
             }
             if let Some(tc) = &pd.type_constraint {
-                let base = Self::constraint_base_for_distance(tc);
+                // A coercion parameter (`IO() $p`, `Str(Int) $s`) is exactly as
+                // wide as the type it accepts (`Any` for the bare `T()` form),
+                // not the target type it coerces to.
+                let base = super::dispatch_candidates::coercion_accepted_constraint(tc)
+                    .unwrap_or_else(|| Self::constraint_base_for_distance(tc));
                 // A subset's nominal distance is that of its ultimate base type
                 // (`subset T of Any` ranks like `Any`, not as an unknown type at
                 // distance 500 — which would wrongly lose to a bare `Any`). The
@@ -662,6 +672,17 @@ impl Interpreter {
                         self.type_hierarchy_distance(&resolved, value)
                     };
                 }
+            } else if (pd.name.starts_with('@') || pd.name.starts_with('%')) && arg_idx < args.len()
+            {
+                // An unconstrained `@`/`%` param carries an implicit
+                // Positional/Associative constraint, so it out-narrows an
+                // `Any`-wide candidate (same as multi-SUB dispatch).
+                let implicit = if pd.name.starts_with('@') {
+                    "Positional"
+                } else {
+                    "Associative"
+                };
+                total += self.type_hierarchy_distance(implicit, args[arg_idx]);
             } else {
                 total += 1000;
             }

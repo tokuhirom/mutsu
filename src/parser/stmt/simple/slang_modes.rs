@@ -316,10 +316,12 @@ mod tests {
     #[test]
     fn ident_trailing_punct_off_leaves_call_name_unsuffixed() {
         // Without the mode, a bare `?` after an identifier is not part of the
-        // name: `pass` parses as its own bareword term/statement, and the
-        // `?"ok"` that follows parses separately as the stock boolean-coercion
-        // prefix operator — never as a single call named "pass?".
-        let stmts = parse_with_modes(SlangModes::default(), "pass? \"ok\";").unwrap();
+        // name: `pass` is a term of its own and `?"ok"` a second term on the
+        // same line — "Two terms in a row" (rakudo: "Bogus postfix"), never a
+        // single call named "pass?".
+        let Ok(stmts) = parse_with_modes(SlangModes::default(), "pass? \"ok\";") else {
+            return;
+        };
         assert!(
             !stmts.iter().any(
                 |s| matches!(s, Stmt::Expr(Expr::Call { name, .. }) if name.as_str() == "pass?")

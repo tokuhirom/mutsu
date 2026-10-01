@@ -106,7 +106,7 @@ pub(super) fn composite_class_chain_set(
     ctx: Ctx,
 ) -> Option<FirstSet> {
     let mut set = positive_first_set(an, positive, ctx)?;
-    narrow_by_negatives(&mut set, negative, ctx.ignore_case);
+    narrow_by_negatives(an, &mut set, negative, ctx);
     // `\r\n` is one grapheme cluster, and the arm resolves the `\r` that starts
     // one to `\n` before testing — so a set holding `\n` must offer that `\r`
     // as a start position. Applied after the narrowing on purpose: a negative
@@ -163,13 +163,27 @@ fn positive_item_first_set(an: &mut Analyzer, item: &ClassItem, ctx: Ctx) -> Opt
 
 /// Remove every ASCII character a negative item provably rejects.
 ///
-/// Sound with no resolution because [`composite_item_matches`] answering
-/// `true` is the same `true` the engine's arm short-circuits on, and the
-/// grammar-token fallback it does not run can only make `neg_match` *more*
-/// often true — which would reject more characters, not fewer.
-fn narrow_by_negatives(set: &mut FirstSet, negative: &[ClassItem], ignore_case: bool) {
+/// A built-in named item counts only when the grammar does not override it,
+/// because an override replaces the built-in predicate in the engine.
+fn narrow_by_negatives(an: &mut Analyzer, set: &mut FirstSet, negative: &[ClassItem], ctx: Ctx) {
     if negative.is_empty() {
         return;
+    }
+    let ignore_case = ctx.ignore_case;
+    // A named item the grammar overrides is decided by its token, not by the
+    // built-in predicate, so it proves nothing here: leave it out.
+    let mut provable: Vec<&ClassItem> = Vec::new();
+    for item in negative {
+        if let ClassItem::NamedBuiltin(name) = item {
+            let Some(interp) = an.interp.as_deref_mut() else {
+                continue;
+            };
+            an.resolved_subrule = true;
+            if interp.composite_item_may_dispatch_token(name, ctx.pkg) {
+                continue;
+            }
+        }
+        provable.push(item);
     }
     for cp in 0u8..128 {
         let c = cp as char;
@@ -177,7 +191,7 @@ fn narrow_by_negatives(set: &mut FirstSet, negative: &[ClassItem], ignore_case: 
             continue;
         }
         let probe = composite_probe_chars(c, ignore_case);
-        if negative
+        if provable
             .iter()
             .any(|item| composite_item_matches(item, &probe))
         {

@@ -94,6 +94,15 @@ impl Interpreter {
                 _ => crate::runtime::utils::coerce_to_array(val),
             },
             '%' => match val.view() {
+                // A `$`-held hash (`${...}`, or `$h` from `my $h = {...}`)
+                // handed to a `%` attribute is bound like a `%`-sigil
+                // parameter: peel the item holder, then store the Hash itself
+                // (rakudo: `C.new(pm => ${a=>1}).pm.raku` is `{:a(1)}`).
+                // Left wrapped, `%!pm{$k} = $v` replaced the whole hash
+                // (CSS::Module's `has Hash %.property-metadata`).
+                ValueView::Scalar(_) | ValueView::ContainerRef(_) => {
+                    Self::coerce_attr_value_by_sigil(val.clone().deitemize_for_sigil_bind(), '%')
+                }
                 // A `%` attribute owns a Hash container.  If the value came
                 // from a nested element of another Hash (JSON decoding is a
                 // common example), it may still carry that scalar holder's

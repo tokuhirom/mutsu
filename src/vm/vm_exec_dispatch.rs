@@ -1979,6 +1979,19 @@ impl Interpreter {
                         && constraint != "Nil"
                         && self.var_default(&name).is_none()
                     {
+                        if !self.vardecl_context().get() && self.is_definite_constraint(&constraint)
+                        {
+                            let nominal = loan_env!(
+                                self,
+                                nominal_type_object_name_for_constraint(&constraint)
+                            );
+                            let reset_value = Value::package(Symbol::intern(&nominal));
+                            return Err(runtime::utils::definite_type_check_assignment_error(
+                                &name,
+                                &constraint,
+                                &reset_value,
+                            ));
+                        }
                         val = if constraint_from_cell {
                             self.typed_scalar_nil_seed_value_with_base(
                                 &constraint,
@@ -4854,9 +4867,12 @@ impl Interpreter {
                 self.exec_multi_dim_index_assign_generic_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(d), d = indices.
-            OpCode::MultiDimIndexBindRef(ndims) => {
-                self.exec_multi_dim_index_bind_ref_op(*ndims)?;
+            // Cost: O(d + E), d = dimensions, E = selected leaves for a slice.
+            OpCode::MultiDimIndexBindRef {
+                ndims,
+                is_positional,
+            } => {
+                self.exec_multi_dim_index_bind_ref_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
             // Cost: O(E), E = nodes of the hash tree walked (the result has one entry per node).

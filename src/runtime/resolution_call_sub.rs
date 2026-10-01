@@ -885,6 +885,7 @@ impl Interpreter {
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
                 state_scope_guard: data.state_scope_guard.clone(),
+                captured_readonly: data.captured_readonly.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

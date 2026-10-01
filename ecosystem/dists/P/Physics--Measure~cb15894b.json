@@ -24,11 +24,11 @@
       "cmp": "no_baseline",
       "path": "t/04-uni.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hdn_2z4_/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/04-uni.rakutest:6]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-q82cbay6/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/04-uni.rakutest:6]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.77,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -38,11 +38,11 @@
       "cmp": "no_baseline",
       "path": "t/05-cvt.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hdn_2z4_/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/05-cvt.rakutest:7]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-q82cbay6/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/05-cvt.rakutest:7]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/06-com.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hdn_2z4_/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/06-com.rakutest:7]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-q82cbay6/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/06-com.rakutest:7]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.08,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,11 +66,11 @@
       "cmp": "no_baseline",
       "path": "t/14-err.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hdn_2z4_/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/14-err.rakutest:6]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-q82cbay6/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/14-err.rakutest:6]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.06,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -80,11 +80,11 @@
       "cmp": "no_baseline",
       "path": "t/16-rnd.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hdn_2z4_/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/16-rnd.rakutest:6]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-q82cbay6/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory [at dist/t/16-rnd.rakutest:6]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.2,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.82,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -118,11 +118,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
+    "mutsu_commit": "6748c2a6",
+    "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

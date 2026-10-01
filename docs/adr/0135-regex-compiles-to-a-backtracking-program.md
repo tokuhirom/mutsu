@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slice A in progress (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slice C in part (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -353,9 +353,192 @@ A `MUTSU_VM_STATS` sweep over the first half of `t/` puts the patterns still dec
 Slice A shapes (`sequential-alternation` 11, `composite-class` 8, `nullable-loop` 7,
 `separator` 4).
 
-Still to come in Slice A: `||`, backreferences, `%` separators, nested quantified captures,
-nullable loop bodies, `<( )>` markers, `CompositeClass`, and moving the unanchored scan loop into
-the VM.
+**Slice A, third part: `||` landed.** Sequential alternation compiles in
+`walk_seq_alternation`'s order: every end of branch *k* is tried against the rest of the pattern
+before branch *k+1* is entered. Each branch ends with an `AltTail` op that merges what
+`alternation_branch_delta` adds: padding to the widest branch, and the list-valued names marked
+quantified. The padding is built by `alternation_tail_delta`, a helper the walk shares. Under
+ratchet the alternation commits to the first matching branch's first end. Two shapes still
+decline: a ratcheted alternation with a nullable branch before the last, and a numbered alias
+inside a branch.
+
+The comparison exposed two walk bugs, both now fixed against rakudo:
+
+- The quantified-alternation padding flag leaked into the continuation after a
+  `walk_quant_group_candidates` loop.
+- `**` over an alternation never backtracked into an earlier iteration's branch choice.
+
+**Slice A, fourth part: nullable loop bodies landed.** A quantifier whose body can match empty
+ends each iteration with a `ZeroIter` guard. The guard calls the walk's `zero_width_iter_counts`,
+and rejecting an iteration backtracks into the body's other candidates, as the walk's group DFS
+does. The walk's chain takes first candidates only, so a nullable body compiles when it is a
+DFS shape (a group, or anything containing an alternation), when it is ratcheted, or when it is a
+single-candidate assertion.
+
+**Slice A, fifth part: `CompositeClass` landed.** It is a one-grapheme atom tested by
+`match_consuming_atom`. A class with a named item can fall back to a grammar token, which depends
+on the package and the real subject, so it skips the per-program ASCII probe table.
+
+A full `MUTSU_VM_STATS` sweep (all of `t/` plus the roast whitelist, after `||`) counted 4937
+compiled and 2281 declined patterns. Later slices account for most of the declines: `subrule`
+494, `code` 357, `alternation` 347, `ignorecase` 253 and `lookaround` 220. The old catch-all
+`other-atom` (216) is now split into `isolated-group`, `interpolation`, `ws-rule`, `goal-match`
+and `conjunction`, which also belong to later slices.
+
+The same part compiles `%` and `%%` over a capture-free atom and separator, in the order of
+`for_each_separated_candidate` (non-ratchet) and `match_separated_quantifier_ratchet`. Two new
+ops support it: `Advanced` for the per-step progress guard, and `AtLeast` for the minimum count.
+Frugal separated quantifiers now use the native separator parser, shortest-first candidates in the
+walk, and frugal `Split`/`Repeat` priorities in the compiled engine (#10306). The LTM text
+expansion leaves non-sigspace frugal separators intact so neither parser loses the modifier.
+Sigspace separated quantifiers still use the LTM text expansion; its frugal ordering and
+per-iteration whitespace remain #10339.
+
+**Slice A, sixth part: the rest of the capture language landed.** Slice A's atoms are now
+complete.
+
+- **Capture levels.** A `( … )` whose body captures opens a capture level of its own
+  (`rx_levels.rs`), so its captures number from zero and become the group's sub-Match through
+  the walk's `capture_group_delta`. Backtracking can resume inside a group that has already
+  closed. So every change to the level stack is journaled: a store edit keeps its level and
+  trail mark, and a close keeps the popped store whole. A choice point records one journal
+  length. Nested quantified captures (`((a)(b))+`, `[ (a)* ]+`) then need nothing new: each
+  iteration pushes its slots and the loop folds them with `fold_quantified`.
+- **Backreferences and `<(` / `)>`** are one op, `CapAtom`. It calls the walk's own
+  single-candidate matcher and merges the delta it returns. A capture group whose body holds a
+  backreference also opens a level, because a group is its own capture scope
+  (`/ $<x>=(\w) ( $<x> ) /` fails in rakudo).
+- **Quantified aliases** (`$<x>=(\d)+`, `$<x>=[a]+`) apply the alias once per iteration, over
+  that iteration's span, as `grow_one_iter` does.
+- **Captures under `%` / `%%`.** Each atom and each separator matches in a level of its own,
+  and the closed levels are collected in match order. At the quantifier's end, `SepEmit` folds
+  them side by side through `separated_capture_delta`, a helper the walk's three separated
+  paths now share. A separated quantifier whose atom or separator holds a backreference still
+  declines (`separator-backref`), because the walk matches each iteration against the captures
+  folded so far. An aliased one declines too (`separator-alias`).
+
+The comparison found two more walk bugs, both fixed against rakudo:
+
+- A backreference inside `[ … ]` or a `||` branch numbered from the group's own captures. So
+  `/ (a) [ (b) $0 ] /` compared `$0` against `b`. The walk now continues the enclosing level's
+  numbering (`RegexCaptures::backref_positional`).
+- `alternation_branch_delta` dropped a `<(` / `)>` marker set inside a `|` or `||` branch, so
+  `/ x [ c || a <( b ] /` matched `xab` instead of `b`.
+
+The same part compiles `@<x>=` and secondary-name aliases, `<?same>` and `<at(N)>`, and
+reports `<~~>` as `recurse-self` instead of `other-atom`. `scripts/rx-decline-survey.sh` now sums
+the D5 counter over all of `t/` and the roast whitelist. Its totals went from 5,154 compiled and
+2,149 declined to 5,290 and 2,007. The declines are now almost all later slices: `subrule` 521
+(D), `code` 375 (C), `alternation` 375, `ignorecase` 255, `lookaround` 226, `ignoremark` 22 and
+`conjunction` 20 (B). A small tail of Slice A shapes remains, each of them a walk behavior the
+compiled engine would have to copy first: `nullable-loop` 17 (a non-DFS nullable body whose
+first candidate the walk's chain keeps), `separator-frugal` 3 (#10306), `frugal-ratchet` 3,
+`seqalt-nullable-ratchet` 2 and `empty-range` 2. Slice E's deletion criterion covers them.
+
+The unanchored scan loop still runs outside the VM, one `rx_run` per start position. Moving it
+in is a performance change, not a language one, and it is tracked as
+[#10315](https://github.com/tokuhirom/mutsu/issues/10315) (`todo:perf`).
+
+**Slice B, first part (#10252): `|` landed.** One `LtmAlt` op per alternation ranks the branches
+at the current position with the walk's own `ltm_branch_rank_key` (`rx_ltm.rs`). It pushes the
+lower-ranked branches as choice points, next-best on top, and enters the best one. A branch is
+therefore entered only after every branch ranked above it has failed against the rest of the
+pattern, which is what #9922 asked for. That issue is closed with
+`t/regex/regex-ltm-losing-branch-code.t`. Its patterns carry code blocks, so the walk still runs
+them until Slice C; the walk's `drive_alternation_candidates` already has the same order. Branch
+captures merge through the `||` path's `AltTail`. Under ratchet, a cut after each branch commits
+to the first branch that matches and to its first end. A numbered alias inside a branch still
+declines (`alt-numbered-alias`), as it does for `||`.
+
+**Slice B, second part: lookahead and lookbehind landed.** A lookaround is a `CapAtom`. The op
+calls the walk's own lookaround test, which matches the body through
+`regex_match_end_from_caps_in_pkg`. That function answers from the body's own compiled program, so
+a lookaround compiles only when its body does. Otherwise the pattern declines with
+`lookaround-body`, and no body drops back to the walk in mid-program (D5). A lookaround body
+therefore runs as a nested `rx_run`. The per-run scratch is now a small pool, so a nested run
+reuses its own warm scratch instead of allocating one per test.
+
+**Slice B, third part: `:i` and `:m` landed.**
+
+- **`:i`.** Every atom records its pattern level's `:i` and passes it to the walk's own
+  tests, as the walk passes `ctx.pattern.ignore_case`. A scoped `[:i …]` therefore covers its
+  body only. The ASCII probe runs under the same flag. An atom whose probe ever consumes more
+  than the one character (a fold that expands) gets no table and takes the full test. A
+  whole-pattern `:i` over a multi-character fold still matches on the case-folded subject. Its
+  folded pattern is now memoized in `PatternDerived` (`casefold_pattern_cached`), so its program
+  is compiled once rather than on every match.
+- **`:m`.** A whole-pattern `:m` runs the mark-stripped pattern's compiled program over the
+  subject's stripped view. It is mapped back by `ignoremark_on_target`, the walk's own remapping,
+  moved into `regex_ignoremark.rs` so both engines share it. A scoped `[:m …]` inside a larger
+  pattern still declines (`ignoremark`), since it would need that remapping at a group boundary.
+
+**Slice B, fourth part: `&` landed; Slice B is complete.** The first branch of a conjunction
+runs inline, in a capture level of its own. A `ConjTail` op then asks every other branch to
+match exactly the same span with a nested run of its own program. `rx_run` takes an optional
+required end for this: the first match in priority order that ends there, which is how the
+walk's `regex_match_branch_ending_at` picks one from the full end list. All branches' captures
+merge with the walk's `merge_regex_captures`. A conjunction declines when a branch holds a
+backreference (`conjunction-backref`), because the branch levels would hide the enclosing
+captures, or when a later branch does not compile (`conjunction-branch`). As a loop body in
+the walk's first-candidate chain, the conjunction is cut after each iteration.
+
+The position-only matcher (`.comb`) took the longest branch end instead of requiring a common
+span, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`. It now asks the capture matcher. Found
+on the way: `:r` does not reach conjunction branches (#10353), and `.comb` with `:m` misses
+matches (#10352). Both are pre-existing, and both engines agree on them.
+
+**Slice C, first part (#10253): `{ }`, `<?{ }>`, `<!{ }>` and `:my` landed.** A code atom is a
+call-out. The walk's `CodeAssertion` and `VarDecl` arms moved into one leaf, `regex_code_atom.rs`
+(`regex_code_atom`, `regex_var_decl_atom`). The walk's single-candidate matcher now calls them, and
+so do the compiled engine's `Code` and `VarDecl` ops, which pass the innermost capture level as the
+code's view and merge the delta that comes back (the `:my` lexicals written, the `make` value).
+Nothing is precomputed, so a code atom runs only where the cursor reaches it, in the order
+backtracking reaches it. The body's compile is the cached one of ADR-0133 and #10121
+(`eval_regex_inline_code`), so there is no per-attempt AST compile and no new `Interpreter`.
+
+- **The position-only matcher** (`.comb` without captures, the walk's group probes) treats a code
+  atom as an inert zero-width pass. A program that runs code (`RxProgram::has_code`, which includes
+  a lookaround body's) therefore declines there and keeps that matcher.
+- **A capture group whose body holds code** opens a capture level of its own, as one whose body
+  captures or back-references does. `$/` inside `( … { … } )` is the group's own match so far, and
+  `$0` its first capture.
+- **Differential mode compares the code.** Running the walk a second time over a pattern with code
+  would run the user's code twice. So the compiled run *records* each invocation (code text,
+  position, the captures visible to it, the result it gave) and the walk *replays* them
+  (`rx_diff.rs`): the walk's n-th invocation must be the recorded n-th one, and it is answered from
+  the record instead of being run. Nested runs (a lookaround body) share the record, and only the
+  outermost run compares. This is the order comparison D6 asks for, and it keeps
+  `MUTSU_RX_DIFF=1` free of doubled side effects.
+- **A bug in the walk, found by that comparison.** A non-capturing group, a `|` / `||` branch or a
+  quantified group gave the walk a capture scope of its own, so `{ say $/.Str }` inside
+  `/ a [ b { … } ] c /` printed `b` where rakudo prints `ab`, and `$0` of the enclosing regex was
+  invisible to the block (`/ (a) [ b { say $0 } ] c /` printed `Nil`). A same-scope sub-pattern that
+  holds code now publishes the enclosing level's captures and match start for the nested walk, the
+  way one that holds a backreference already did (`atom_contains_code`, `OuterBackrefCaps::match_from`;
+  the parser's `note_regex_code_lowered` keeps the cost at zero for a process with no code in a
+  regex). A capture group and a lookaround still get a scope of their own, as in rakudo.
+  `t/regex/match/regex-code-atom-capture-scope.t` pins the rakudo values.
+- **A second walk bug, in the published scope's lifetime.** A sub-pattern publishes its level's
+  captures for ITS nested walks, but the rest of the enclosing pattern runs inside its dynamic
+  extent (candidates are streamed), so a subrule called after a `[ … { … } ]` group inherited the
+  group's match start: `$/` in its code spanned `abc12` where rakudo gives `12`. Backreferences had the
+  same latent leak. A subrule call, a capture group, a lookaround and code that may run a match now
+  arm a barrier whenever a scope is published (`arm_subrule_barrier`, `atom_starts_own_regex`;
+  `t/grammar/grammar-subrule-match-start-after-code-group.t`). `t/grammar/ipv6-mapped-dotted-decimal.t`
+  and `t/modules/batteries/xml-battery.t` caught it.
+- **Two shapes still decline**, for the reason `separator-backref` does: code reads the enclosing
+  captures, and these shapes hide them. Code inside a `%` / `%%` quantifier (`separator-code`) sees
+  the iterations folded so far in the walk (Net::Whois's `$/[*-1][*-1] < 256` octet check, pinned by
+  `t/regex/match/regex-separated-quantifier-code-assertion-captures.t`), where the compiled form
+  matches each iteration in a level of its own. Code inside a `&` branch (`conjunction-code`) runs in
+  a level or a nested run of its own.
+
+`scripts/rx-decline-survey.sh` (all of `t/` and the roast whitelist) puts `code` at 83 (from 406),
+`separator-code` at 7 and `conjunction-code` at 2; compiled patterns went from 5,981 to 6,319.
+D6 agreed with the walk on all of `t/` and the roast whitelist (6,933 files), once the two declines above were in. The
+remaining `code` declines are the parts of Slice C not yet landed: `<{ … }>` closure interpolation and
+`** {n}` (the count is evaluated when the quantifier is reached, so it needs run-time bounds on the
+loop ops), then `<$var>` / `<@var>` / `$( … )` interpolation.
 
 ### Reproducing §2
 

@@ -241,8 +241,10 @@ impl Compiler {
             for dimension in dimensions {
                 self.compile_expr(dimension);
             }
-            self.code
-                .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            self.code.emit(OpCode::MultiDimIndexBindRef {
+                ndims: dimensions.len() as u32,
+                is_positional: false,
+            });
         } else {
             self.compile_expr(&normalized_iterable);
             // `for $obj.attr <-> $v { $v = ... }` / `for $obj."$name"() { $_ = ... }`
@@ -444,6 +446,25 @@ impl Compiler {
                             .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
                     })
                     .collect(),
+                multi_param_declared_rw: {
+                    // The parser folds "some parameter says `is rw`" into
+                    // `rw_block`, so `<->` is only recognisable as a block that
+                    // is rw with NO per-parameter trait. (`<-> $a, $b is rw`
+                    // therefore reads `$a` as plain: a rare mix, and the lax
+                    // side of the rejection.)
+                    let has_rw_trait =
+                        |d: &crate::ast::ParamDef| d.traits.iter().any(|t| t == "rw");
+                    let arrow_rw_block = rw_block && !params_def.iter().any(has_rw_trait);
+                    (0..params.len())
+                        .map(|i| {
+                            params_def.get(i).is_some_and(|d| {
+                                !d.sigilless
+                                    && !d.is_variadic()
+                                    && (arrow_rw_block || has_rw_trait(d))
+                            })
+                        })
+                        .collect()
+                },
                 multi_param_locals,
                 param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
                 multi_param_type_constraints: (0..params.len())

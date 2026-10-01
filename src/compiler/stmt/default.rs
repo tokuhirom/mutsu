@@ -4,7 +4,10 @@ impl Compiler {
     /// Declare a fresh array and apply its default before the initializer
     /// expression runs. The later SetLocal assigns into this container and
     /// therefore preserves an explicit Any that came from an inner `[Nil]`.
-    pub(super) fn emit_default_before_array_initializer(
+    /// Shared by the statement-position declaration (`stmt.rs`) and the
+    /// expression-position one (`expr_block.rs`), so `(my @a is default(1) =
+    /// Nil, Any)` yields the same default-aware container as the statement.
+    pub(in crate::compiler) fn emit_default_before_array_initializer(
         &mut self,
         name_idx: u32,
         slot: u32,
@@ -12,8 +15,11 @@ impl Compiler {
     ) {
         self.compile_expr(&Expr::ArrayLiteral(Vec::new()));
         self.code.emit(OpCode::MarkVarDeclContext);
+        // `SetLocal` consumes the value it stores, so nothing is left to pop:
+        // a `Pop` here discarded whatever an enclosing expression had already
+        // pushed (`10 + do { my @a is default(1) = 1; 5 }`, `@r[0] = my @a is
+        // default(1) = ...`).
         self.code.emit(OpCode::SetLocal(slot));
-        self.code.emit(OpCode::Pop);
         if let Some(arg) = default_trait_expr {
             let escaping = Self::is_closure_literal_arg(arg);
             self.with_escape(escaping, |s| s.compile_expr(arg));
@@ -25,6 +31,19 @@ impl Compiler {
             has_arg: default_trait_expr.is_some(),
             slot: Some(slot),
         });
+    }
+
+    /// `state @a is default(D) = RHS`: store the initializer into the
+    /// container [`Compiler::emit_default_before_array_initializer`] already
+    /// gave its default, then hand that container (not the raw RHS list) to
+    /// `StateVarInit`. The store sees the default, so an explicit `Any`
+    /// element stays `Any` while a `Nil` one becomes the default. The whole
+    /// sequence sits behind the state guard, so it runs on the first entry
+    /// only.
+    pub(in crate::compiler) fn emit_state_array_store_into_defaulted(&mut self, slot: u32) {
+        self.code.emit(OpCode::MarkExplicitInitializerContext);
+        self.code.emit(OpCode::SetLocal(slot));
+        self.code.emit(OpCode::GetLocal(slot));
     }
 
     /// Check if a default value expression statically mismatches a type constraint.

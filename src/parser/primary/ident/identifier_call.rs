@@ -329,6 +329,10 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             if r_mod.starts_with(":file(")
                 || !name_selectors.is_empty()
                 || after_selectors.len() != r_mod.len()
+                || matches!(
+                    bare_name,
+                    "Q" | "q" | "qq" | "qw" | "qqw" | "qx" | "qqx" | "m" | "s" | "rx" | "tr" | "y"
+                )
             {
                 dist_selectors = format!("{name_selectors}{trailing_selectors}");
                 (
@@ -2500,7 +2504,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // argument follows) — is X::Obsolete, matching Rakudo's "Unsupported use of
     // bare ..." (e.g. `ord.Cool`). A real call (`ord $x` / `ord('A')`) parses as
     // a listop/call before reaching this fallback, so it is unaffected.
-    if is_terminator_or_dot && matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs") {
+    let is_perl5_unary = matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs");
+    // …but `lc .contains('x')` (whitespace, then a topic method call) is a real
+    // call: the `.method` term is the argument, i.e. `lc($_.contains('x'))`.
+    if is_perl5_unary
+        && rest.starts_with(char::is_whitespace)
+        && rest_trimmed.starts_with('.')
+        && rest_trimmed[1..].starts_with(crate::parser::helpers::is_raku_identifier_start)
+        && let Ok((r2, arg)) = parse_listop_arg(rest_trimmed)
+    {
+        return Ok((r2, make_call_expr(name, input, vec![arg])));
+    }
+    if is_terminator_or_dot && is_perl5_unary {
         return Err(PError::obsolete(
             &format!("bare \"{name}\""),
             &format!(

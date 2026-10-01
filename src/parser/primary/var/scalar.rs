@@ -172,6 +172,17 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             };
             return Ok((rest, Expr::Itemize(Box::new(inner))));
         }
+        // `$@` / `$%`: the item contextualizer over an anonymous array/hash
+        // (rakudo: `say $@` prints `[]`). Reading `$` alone left the `@` as a
+        // second term.
+        if twigil.is_empty() && !rest.starts_with(is_raku_identifier_start) {
+            let (rest, inner) = if sigil == "@" {
+                super::sigil_vars::array_var(input)?
+            } else {
+                super::sigil_vars::hash_var(input)?
+            };
+            return Ok((rest, Expr::Itemize(Box::new(inner))));
+        }
     }
     // Handle nested scalar dereference syntax ($$x / $&f) by parsing the
     // inner variable term. This keeps '$' from being misparsed as an
@@ -276,6 +287,22 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+    }
+    // `$::Pkg::($name)`: a leading-`::` package head with a symbolic tail is the
+    // same lookup as `$Pkg::($name)`.
+    if let Some(after_colons) = input.strip_prefix("::")
+        && let Ok((after_name, name)) = parse_qualified_ident_prefix_with_hyphens(after_colons)
+        && after_name.starts_with("::(")
+    {
+        let (rest, combined) =
+            parse_symbolic_deref_segments(after_name, Expr::Literal(Value::str(name)))?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "$".to_string(),
+                expr: Box::new(combined),
+            },
+        ));
     }
     // Named parameter variable inside blocks: $:name
     if let Some(after_colon) = input.strip_prefix(':') {
