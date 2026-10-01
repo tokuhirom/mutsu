@@ -872,6 +872,11 @@ impl Compiler {
         }
         self.note_construct_body_block(stmt);
         match stmt {
+            Stmt::NestedTypeShells(shells) => {
+                for shell in shells {
+                    self.emit_nested_type_shell(shell);
+                }
+            }
             Stmt::NestedMethodCapture {
                 index,
                 closure,

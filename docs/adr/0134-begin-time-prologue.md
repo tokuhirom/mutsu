@@ -530,3 +530,26 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
     hoist, not the prologue, and `constant`s nested in inner scopes run in
     position unless slice 2 lifts them. Only top-level loads and constants
     are prologue effects.
+
+**Nested type declarations — implemented** (#10494,
+`src/compiler/hoist_nested_types.rs`,
+`t/oo/role/nested-class-runs-role-body-at-compile-time.t`).
+
+- The compile-time shell of an `our` class or role declared inside code
+  (#10470) is a BEGIN-time effect. In a unit with a nested class that
+  composes a role, the partition collects each top-level
+  statement's nested type declarations into a `Stmt::NestedTypeShells` marker,
+  placed in the prologue after that statement's own declaration part, and the
+  prologue's bound extends to the last such statement. The compiler emits a
+  shell registration for each entry there.
+- The shell is the compile-time composition: it runs the composed roles'
+  bodies through the composition memo, so a role body bumping a unit lexical
+  declared above sees it in its static state, and the in-place registration
+  repeated on every entry of the enclosing code runs the body no more. That
+  registration gets back the nested-block method captures the shell's run
+  filed.
+- **Residue:** any other unit (and a run-time chunk, which gets no
+  partition) still shells its nested declarations at its head. No shell there
+  runs user code, so the place is not observable; it is kept because
+  extending the bound over every unit with a nested type exposes partition
+  bugs ([#10524](https://github.com/tokuhirom/mutsu/issues/10524)).

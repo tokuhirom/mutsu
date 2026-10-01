@@ -4,7 +4,7 @@ use Test;
 # its package at compile time, whether or not the code declaring it ever
 # runs (#10470).
 
-plan 16;
+plan 17;
 
 sub never-called { class NeverCalled { method m { 42 } } }
 is NeverCalled.^name, 'NeverCalled', 'class in an uncalled sub is installed';
@@ -40,10 +40,12 @@ sub uses-own { class Own { method v { 3 } }; Own.v }
 is uses-own(), 3, 'the in-place registration still works from inside the routine';
 
 # The nested class composes a role declared earlier at unit level, and the
-# role's body runs once, not again on each entry of the routine.
+# role's body runs once, at compile time, not again on each entry of the
+# routine (#10494).
 our $counted-role-runs;
 role CountedRole { $counted-role-runs++; method c { 'c' } }
 sub declares-counted { class CountedClass does CountedRole { } }
+is $counted-role-runs, 1, 'the role body ran at compile time';
 is CountedClass.c, 'c', 'the uncalled routine\'s class composed the earlier role';
 declares-counted() for ^2;
 is $counted-role-runs, 1, 'the role body runs once however often the routine runs';

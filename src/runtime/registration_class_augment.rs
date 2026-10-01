@@ -1463,6 +1463,7 @@ impl Interpreter {
                 .composed_role_bodies
                 .insert(compose_key.clone())
             {
+                self.reapply_composed_nested_method_captures(&ancestor, regex_owner);
                 continue;
             }
             let (ops, decl_file) = self

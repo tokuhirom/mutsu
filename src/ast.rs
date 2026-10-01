@@ -1561,6 +1561,17 @@ pub(crate) enum WithBlockKind {
     Orwith,
 }
 
+/// One entry of [`Stmt::NestedTypeShells`].
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct NestedTypeShell {
+    /// The packages enclosing the declaration inside its top-level statement,
+    /// outermost first, as written (a `GLOBAL::` prefix makes one absolute).
+    /// Empty = the package the top-level statement itself is in.
+    pub(crate) packages: Vec<String>,
+    /// The class or role declaration, as written.
+    pub(crate) decl: Stmt,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -1609,6 +1620,18 @@ pub(crate) enum Stmt {
         closure: Box<Expr>,
         routines: Vec<Symbol>,
     },
+    /// The compile-time installation and composition of the `our` classes
+    /// and roles declared inside the code of one top-level statement
+    /// (#10470, #10494): a routine, block or loop body. Rakudo composes such
+    /// a type when it compiles the declaration, so the composed roles' bodies
+    /// run then, whether or not the enclosing code ever runs. The BEGIN
+    /// prologue (ADR-0134) puts this marker where that statement's
+    /// BEGIN-time effects go, so the shells register after the unit's earlier
+    /// declarations and see its lexicals in their static state; the compiler
+    /// emits a declaration-only shell registration for each entry
+    /// (`Compiler::emit_type_decl_shell`). The declarations themselves stay in
+    /// place, and an analysis walking the tree sees them there, not here.
+    NestedTypeShells(Vec<NestedTypeShell>),
     /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
     ///
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.

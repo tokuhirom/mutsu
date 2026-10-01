@@ -825,8 +825,8 @@ impl Compiler {
     /// package (see [`Self::hoist_type_decl_shells`]). A class keeps only the
     /// declaration subset of its body; a role keeps its whole body, whose
     /// statements only run when the role is composed. A `nested` shell (one
-    /// of a declaration nested in code, `hoist_nested_type_decl_shells`) is
-    /// also marked `__hoisted_nested`: it runs no role body, see
+    /// of a declaration nested in code, `Stmt::NestedTypeShells`) is also
+    /// marked `__hoisted_nested`: it is the compile-time composition, see
     /// `HoistedShell::Nested`.
     pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt, nested: bool) {
         let keep_trait =

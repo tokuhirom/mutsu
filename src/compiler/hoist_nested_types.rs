@@ -1,58 +1,54 @@
 //! Compile-time installation of `our`-scoped types declared inside code
-//! (#10470).
+//! (#10470, #10494).
 //!
 //! Rakudo installs an `our` class/role into its package while compiling the
-//! declaration, so `sub f { class K { } }; say K` prints `(K)` although `f`
-//! never runs. mutsu registers such a declaration where it textually sits
-//! (`RegisterDecl` in the routine's bytecode), i.e. only when the enclosing
-//! routine or block runs. This pass walks the compilation unit for type
-//! declarations nested in code and emits a declaration-only shell
-//! registration for each at the head of the unit, exactly like
+//! declaration, and composes the class then, running its roles' bodies, so
+//! `sub f { class K does R { } }; say K` prints `(K)` and has run `R`'s body
+//! although `f` never runs. mutsu registers such a declaration where it
+//! textually sits (`RegisterDecl` in the routine's bytecode), i.e. only when
+//! the enclosing routine or block runs. So each one also gets a
+//! declaration-only shell registration that runs at BEGIN time, exactly like
 //! [`Compiler::hoist_type_decl_shells`] does for the unit's own forward
 //! references. The in-place registration still runs on every entry of the
 //! enclosing code and re-registers the full type under the same name, so the
 //! class body's statements keep running at run time (as in Rakudo) and the
 //! type object stays the same one.
+//!
+//! Where the shells run: in a unit with a nested class that composes a role
+//! ([`nested_decl_composes_role`]), the BEGIN prologue (ADR-0134) collects
+//! each top-level statement's nested declarations ([`nested_type_decls`])
+//! into a [`Stmt::NestedTypeShells`] marker at that statement's place among
+//! the unit's BEGIN-time effects, so a shell runs after the declarations that
+//! precede it and sees the unit's lexicals in their static state: a role body
+//! that bumps `my $n` declared above the routine leaves `$n` bumped. Any other
+//! unit shells its nested declarations at its head
+//! ([`Compiler::hoist_nested_type_decl_shells`]); there no shell runs user
+//! code, so the place is not observable (#10524 tracks retiring this).
 
 use super::Compiler;
-use crate::ast::Stmt;
+use crate::ast::{NestedTypeShell, Stmt};
 use crate::ast_visit::{Visit, walk_stmt};
 
-/// Collects class/role declarations nested in code, each with the package it
-/// is installed in.
-struct NestedTypeDecls<'a> {
+/// Collects class/role declarations nested in code, each with the packages
+/// enclosing it.
+struct NestedTypeDecls {
     /// The packages enclosing the statement being visited, outermost first,
-    /// each fully qualified. Empty = the unit's own package.
+    /// as written. Empty = the package the top-level statement is in.
     packages: Vec<String>,
     /// Whether the statement being visited sits inside code (a routine,
     /// block, closure or statement body) rather than directly in a
     /// declaration scope (the unit, a package, class or role body), where the
     /// declaration registers before or as its scope's code runs.
     in_code: bool,
-    /// `(enclosing package, declaration)`; `None` = the unit's own package.
-    found: Vec<(Option<String>, Stmt)>,
-    /// Qualifies an outermost package name against the unit's package.
-    qualify_outer: &'a dyn Fn(&str) -> String,
+    found: Vec<NestedTypeShell>,
 }
 
-impl NestedTypeDecls<'_> {
-    // Cost: O(len(name)).
-    fn qualified(&self, name: &str) -> String {
-        if let Some(absolute) = name.strip_prefix("GLOBAL::") {
-            return absolute.to_string();
-        }
-        match self.packages.last() {
-            Some(outer) => format!("{outer}::{name}"),
-            None => (self.qualify_outer)(name),
-        }
-    }
-
+impl NestedTypeDecls {
     /// Walk a package-like declaration's body with `name` as the enclosing
     /// package, in declaration (not code) context.
     // Cost: O(n), n = size of the declaration's subtree.
     fn walk_package(&mut self, name: &str, stmt: &Stmt) {
-        let qualified = self.qualified(name);
-        self.packages.push(qualified);
+        self.packages.push(name.to_string());
         let saved = std::mem::replace(&mut self.in_code, false);
         walk_stmt(self, stmt);
         self.in_code = saved;
@@ -60,12 +56,14 @@ impl NestedTypeDecls<'_> {
     }
 
     fn record(&mut self, stmt: &Stmt) {
-        self.found
-            .push((self.packages.last().cloned(), stmt.clone()));
+        self.found.push(NestedTypeShell {
+            packages: self.packages.clone(),
+            decl: stmt.clone(),
+        });
     }
 }
 
-impl Visit for NestedTypeDecls<'_> {
+impl Visit for NestedTypeDecls {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::ClassDecl {
@@ -100,16 +98,10 @@ impl Visit for NestedTypeDecls<'_> {
                 }
                 self.walk_package(&name.resolve(), stmt);
             }
-            Stmt::Package {
-                name,
-                is_unit: true,
-                ..
-            } => {
-                // `unit module M;` packages the rest of the scope: it stays
-                // the enclosing package for every following statement.
-                let qualified = self.qualified(&name.resolve());
-                self.packages.push(qualified);
-            }
+            // `unit module M;` packages the rest of the scope. The compiler
+            // switches its package when it reaches the marker, so the
+            // following statements' shells qualify against it there.
+            Stmt::Package { is_unit: true, .. } => {}
             Stmt::Package { is_my: true, .. } => {}
             Stmt::Package { name, .. } => self.walk_package(&name.resolve(), stmt),
             // Transparent groupings: they open no scope that runs later.
@@ -123,11 +115,58 @@ impl Visit for NestedTypeDecls<'_> {
     }
 }
 
+/// The non-lexical classes and roles declared inside code anywhere in one
+/// top-level statement, in source order (see the module doc comment).
+// Cost: O(n), n = size of the statement's AST.
+pub(crate) fn nested_type_decls(stmt: &Stmt) -> Vec<NestedTypeShell> {
+    let mut collector = NestedTypeDecls {
+        packages: Vec::new(),
+        in_code: false,
+        found: Vec::new(),
+    };
+    collector.visit_stmt(stmt);
+    collector.found
+}
+
+/// Whether a nested declaration composes a role, so that its compile-time
+/// composition runs the role's body.
+// Cost: O(len(body)).
+pub(crate) fn nested_decl_composes_role(decl: &Stmt) -> bool {
+    match decl {
+        Stmt::ClassDecl {
+            does_parents, body, ..
+        } => !does_parents.is_empty() || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. })),
+        _ => false,
+    }
+}
+
 impl Compiler {
+    /// Emit the shell registration of one nested declaration, qualified
+    /// against the packages enclosing it inside its top-level statement.
+    // Cost: O(p + d), p = length of the package path, d = size of the
+    // declaration's shell.
+    pub(super) fn emit_nested_type_shell(&mut self, shell: &NestedTypeShell) {
+        let saved = (self.current_package.clone(), self.in_unit_package);
+        let mut package: Option<String> = None;
+        for segment in &shell.packages {
+            package = Some(match (segment.strip_prefix("GLOBAL::"), &package) {
+                (Some(absolute), _) => absolute.to_string(),
+                (None, Some(outer)) => format!("{outer}::{segment}"),
+                (None, None) => self.qualify_package_name(segment),
+            });
+        }
+        if let Some(package) = package {
+            self.current_package = package;
+            self.in_unit_package = true;
+        }
+        self.emit_type_decl_shell(&shell.decl, true);
+        (self.current_package, self.in_unit_package) = saved;
+    }
+
     /// Emit a declaration-only shell registration for every non-lexical
-    /// class/role declared inside code anywhere in the unit (see the module
-    /// doc comment). Only a mainline unit runs this pass: a routine body is
-    /// part of a unit that already shelled its nested declarations.
+    /// class/role declared inside code anywhere in a unit whose BEGIN
+    /// prologue did not place them itself (see the module doc comment). Only a mainline unit runs this pass: a routine
+    /// body is part of a unit that already shelled its nested declarations.
     ///
     /// The shells are emitted in source order, the order Rakudo composes the
     /// types in at compile time. A nested declaration may compose a role or
@@ -139,22 +178,13 @@ impl Compiler {
     /// nested ones that follow it.
     // Cost: O(n), n = size of the unit's AST.
     pub(super) fn hoist_nested_type_decl_shells(&mut self, stmts: &[Stmt]) {
-        let per_stmt: Vec<Vec<(Option<String>, Stmt)>> = {
-            let qualify_outer = |name: &str| self.qualify_package_name(name);
-            let mut collector = NestedTypeDecls {
-                packages: Vec::new(),
-                in_code: false,
-                found: Vec::new(),
-                qualify_outer: &qualify_outer,
-            };
-            stmts
-                .iter()
-                .map(|stmt| {
-                    collector.visit_stmt(stmt);
-                    std::mem::take(&mut collector.found)
-                })
-                .collect()
-        };
+        if stmts
+            .iter()
+            .any(|stmt| matches!(stmt, Stmt::NestedTypeShells(_)))
+        {
+            return;
+        }
+        let per_stmt: Vec<Vec<NestedTypeShell>> = stmts.iter().map(nested_type_decls).collect();
         let Some(last) = per_stmt.iter().rposition(|found| !found.is_empty()) else {
             return;
         };
@@ -173,19 +203,12 @@ impl Compiler {
                 self.current_package = self.qualify_package_name(&name.resolve());
                 self.in_unit_package = true;
             }
-            let (package, in_unit_package) = (self.current_package.clone(), self.in_unit_package);
             in_prefix = in_prefix && Self::runs_no_user_code(stmt);
             if in_prefix && i < last && Self::is_shellable_unit_type_decl(stmt) {
                 self.emit_type_decl_shell(stmt, true);
             }
-            for (nested_package, decl) in &per_stmt[i] {
-                if let Some(nested_package) = nested_package {
-                    self.current_package = nested_package.clone();
-                    self.in_unit_package = true;
-                }
-                self.emit_type_decl_shell(decl, true);
-                self.current_package = package.clone();
-                self.in_unit_package = in_unit_package;
+            for shell in &per_stmt[i] {
+                self.emit_nested_type_shell(shell);
             }
         }
         self.current_package = original_package;
