@@ -140,27 +140,27 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
 name = "cranelift-assembler-x64"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e06aeba2c965fc446d13c56a6ccb2631b78445d7544543dd9a25289977630914"
+checksum = "16c273ba1bfc3a1cb27cb4f83df27134f3cb638a61f5ed79ab22cf86eb13da0d"
 dependencies = [
  "cranelift-assembler-x64-meta",
 ]
 
 [[package]]
 name = "cranelift-assembler-x64-meta"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee2d2dde4ec1352715595b5cfa6fe2e5b8ebb9da3457b3ee8db0aa2808c069aa"
+checksum = "cbf8909326a466739e83ffe11e74c0c8c6b4bfa911b612aece915daa746cff58"
 dependencies = [
  "cranelift-srcgen",
 ]
 
 [[package]]
 name = "cranelift-bforest"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03b4982ef9fa54ec9eee841e891e7ddc5434be1250e88de31572e000c888f30b"
+checksum = "3cb26b06b54d8b2f8cdf4d440a32fc3b3b91c71c162333a69a70a66fa265fc45"
 dependencies = [
  "cranelift-entity",
  "wasmtime-internal-core",
@@ -168,18 +168,18 @@ dependencies = [
 
 [[package]]
 name = "cranelift-bitset"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529143118c4eeb58c39ecb02319557d512be6c61348486422974ab8e3906b8a8"
+checksum = "7ce4e57dbb7f73d08011808a19787c3a03c3e7854b2a479ed0b788915fb671be"
 dependencies = [
  "wasmtime-internal-core",
 ]
 
 [[package]]
 name = "cranelift-codegen"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7780677247ad3577e3a6a3ebf43f39b325a11d6393db72b2c9968a910d4d13d"
+checksum = "74b0a8968f33d0bc13bc86fe70dd3947e93acc9f358ed9848e9988448972a9be"
 dependencies = [
  "bumpalo",
  "cranelift-assembler-x64",
@@ -204,9 +204,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-meta"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac9645250416cbf92454fe61160e17e026e0ce405906a54500b114f923ddffc9"
+checksum = "f69e8e2fe9deb48ef7b8d0c61612f8c1e2277d0421c201e30a4c844a4ebac698"
 dependencies = [
  "cranelift-assembler-x64-meta",
  "cranelift-codegen-shared",
@@ -216,24 +216,24 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-shared"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20ee8d222ff0fd3681791979afbf88586ac9f49010d3db96b3cbe4c96759aee3"
+checksum = "ad4db1e87a65e9c5a832e3ede160830d4e34df938ac38b5604819f8825687e73"
 
 [[package]]
 name = "cranelift-control"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "591abe6f5312bd2c4220f1b3bead56c2ad00257c52668015ba013b85dcf2a17a"
+checksum = "9248cd37bb6ec460981f57ead368e32b1eca7a207ad50e3e9c7adc3b161f20e9"
 dependencies = [
  "arbitrary",
 ]
 
 [[package]]
 name = "cranelift-entity"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5300c49cf940526fe771517b3b3eabd5d0ff164ee61698579cf403fe8d3af3c"
+checksum = "26b8bc91c0a3530d132acbf118965dabe9a084029eb0fa74b64760360dec3316"
 dependencies = [
  "cranelift-bitset",
  "wasmtime-internal-core",
@@ -241,9 +241,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-frontend"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da4adbf760207fdbbe130f1191cce01cdef66831a9f648b1f39ff2800d126d45"
+checksum = "5086f2ebc084a98b387e522680f62ef65a512444d8382151e03088716d3a1714"
 dependencies = [
  "cranelift-codegen",
  "hashbrown 0.17.1",
@@ -254,15 +254,15 @@ dependencies = [
 
 [[package]]
 name = "cranelift-isle"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8315b21ff018226a42a60a4702c2dd75f6447cac26e9bca622e14c22088c2ff5"
+checksum = "b6a658670f779afc2df083be201ebe54805f69b7b9ffa8dab04142b72ed751c9"
 
 [[package]]
 name = "cranelift-jit"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "acac8da2c71d03c39756866a4bbf31f43d912f054cf9cbbaacc33bf80360366a"
+checksum = "08e06a19e861cb46dafe15e5602fcd8a8aeb302e82df10f7886c73410aed1f8b"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -281,9 +281,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-module"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcbbdbe0c3c6cd97359ac2f6744187e89a48e202674e24200afc653f6aa9b7c2"
+checksum = "75623dde4c952712d12e3281a1b7bf7587bca23139ac0d0e3d45de1f99abd772"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -292,9 +292,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-native"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d506ef23a60715bde451b06620b14402166ded3b648454fccbf04f3e46a4aa70"
+checksum = "16a41083b1fd953debd6f32d21fcda765b258f323ce907fdd6b4715f2769c478"
 dependencies = [
  "cranelift-codegen",
  "libc",
@@ -303,9 +303,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-srcgen"
-version = "0.133.1"
+version = "0.134.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48ed47e602652e3410f9387fc0db70fefadcee4d78a78881421aabcab4e26b89"
+checksum = "244d9cd0759b0a3ccdd587cafb13434f9ea43b5c9d07701d277daf5cd0f7b7c1"
 
 [[package]]
 name = "crossbeam-channel"
@@ -711,9 +711,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "memmap2"
-version = "0.2.3"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "723e3ebdcdc5c023db1df315364573789f8857c11b631a2fdfad7c00f5c046b4"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
 ]
@@ -1333,9 +1333,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-core"
-version = "46.0.1"
+version = "47.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fc28372e36eaf8cf70faa83b5779137f7e99c8d18569a125d1580e735cc9e4d"
+checksum = "f41d3b2cb9c3de7b696690af070d408b5e357011832f8b8bb7fbb315dbb620ed"
 dependencies = [
  "hashbrown 0.17.1",
  "libm",
@@ -1343,9 +1343,9 @@ dependencies = [
 
 [[package]]
 name = "wasmtime-internal-jit-icache-coherence"
-version = "46.0.1"
+version = "47.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eba651d44ab0faad4c58106b3adb45068189fb65ef50f0c404b6d9e3bf81a357"
+checksum = "4a52de8b6afbfcd618073f592c1450cb661574e7061f3f4a44f1f7ec0c7f7909"
 dependencies = [
  "cfg-if",
  "libc",
