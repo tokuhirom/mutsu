@@ -50,7 +50,7 @@ struct Reorder;
 
 impl VisitMut for Reorder {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        reorder_recursive(body, false);
+        reorder_recursive(body, false, false);
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -66,7 +66,7 @@ impl VisitMut for Reorder {
         } = stmt
             && let [Stmt::SyntheticBlock(inner)] = body.as_mut_slice()
         {
-            reorder_recursive(inner, false);
+            reorder_recursive(inner, false, false);
             return;
         }
         walk_stmt_mut(self, stmt);
