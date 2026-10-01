@@ -285,7 +285,7 @@ status here.
 - **Package bodies** (#10332, closing the slice's original residue). A
   class, grammar or brace-scoped `module`/`package` declaration the prologue
   takes is split (`src/runtime/begin_prologue/package_body.rs`,
-  `t/control/begin-prologue-package-body.t`):
+  `t/modules/begin-prologue-package-body.t`):
   - the prologue keeps the declaration with its BEGIN-time part: attributes,
     methods, subs, nested types (themselves split the same way), `use`,
     phasers, and the static half of each `my`/`our` variable;
