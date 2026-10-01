@@ -11574,6 +11574,16 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
+        // A class-body `my`/`state` shadows a same-named lexical of the
+        // declaring frame for every method of the class: the method reads the
+        // class static, which `inject_class_body_statics` supplies on entry.
+        // Capturing the frame's slot of that name would install the OUTER
+        // value over the static (the captured environment is applied after the
+        // statics), so such a name is not an outer lexical for this class.
+        let method_outer_lexical_slots: Vec<(Symbol, u32)> = method_outer_lexical_slots
+            .into_iter()
+            .filter(|(outer, _)| !declared_static_names.contains(outer))
+            .collect();
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk
