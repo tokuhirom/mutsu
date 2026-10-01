@@ -60,7 +60,7 @@ pub(super) struct Mentions {
     /// A symbolic lookup or a pseudo-package (`::($name)`, `MY::{...}`).
     symbolic: bool,
     /// A `BEGIN` of its own.
-    has_begin: bool,
+    pub(super) has_begin: bool,
     /// It may change a type through its metaobject (`K.^add_method(...)`,
     /// `K.HOW`, `augment`).
     changes_type: bool,
