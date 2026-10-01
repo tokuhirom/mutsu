@@ -745,7 +745,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: _,
         } = &target_expr
         {
-            let target_var_name = method_lvalue_target_name(&target);
+            let target_var_name = method_lvalue_target_name(target);
             let method_name = if *modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
@@ -900,7 +900,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let stmt = Stmt::Expr(assigned);
                 return parse_statement_modifier(r, stmt);
             }
-            let target_var_name = method_lvalue_target_name(&target);
+            let target_var_name = method_lvalue_target_name(target);
             let method_name = if *modifier == Some('!') {
                 format!("!{}", name.resolve())
             } else {
