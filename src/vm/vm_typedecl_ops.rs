@@ -272,6 +272,27 @@ impl Interpreter {
                 }
                 None => qualified_name.clone(),
             };
+            // A `my class` binds its source-facing names in the declaring scope's
+            // env below. Record what an enclosing same-named binding held first,
+            // so an `if`/loop body that declared it hands that binding back on
+            // exit (#10594); a bare block and an `EVAL` restore their own env.
+            if *is_lexical {
+                let qualified_sym = Symbol::intern(&qualified_name);
+                let short = crate::qualified::is_qualified(qualified_sym)
+                    .then(|| crate::qualified::unqualified_part(qualified_sym).as_str());
+                let alias = source_compound_name(custom_traits);
+                for bound in [
+                    Some(qualified_name.as_str()),
+                    Some(resolved_name.as_str()),
+                    short,
+                    alias.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    self.save_lexical_type_binding_for_scope_exit(bound);
+                }
+            }
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
