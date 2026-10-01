@@ -217,7 +217,6 @@ impl Interpreter {
                     ends_base: ends.len(),
                     proto: $proto,
                     depth,
-                    seen: Vec::new(),
                     cursor: RefCell::new(None),
                 });
                 frame = Some((frames.len() - 1) as FrameId);
@@ -810,18 +809,10 @@ impl Interpreter {
                         },
                         Some(fid) => {
                             let fi = fid as usize;
-                            // A second path to an end the call already returned at
-                            // is not a new candidate.
-                            // A ratcheted call returns once, so it keeps no list.
-                            let fresh = {
-                                let f = &mut frames[fi];
-                                let fresh = f.commit || !f.seen.contains(&pos);
-                                if fresh && !f.commit {
-                                    f.seen.push(pos);
-                                }
-                                fresh
-                            };
-                            if fresh {
+                            // Every path to an end returns, a second path to an
+                            // end already returned at included: Rakudo runs the
+                            // caller's continuation once per path (#10489).
+                            {
                                 // A ratcheted call keeps only its first end; a call
                                 // that left no choice point in the callee cannot be
                                 // resumed either.
@@ -894,8 +885,6 @@ impl Interpreter {
                                     frames.truncate(fi);
                                 }
                                 continue 'run;
-                            } else {
-                                false
                             }
                         }
                     },

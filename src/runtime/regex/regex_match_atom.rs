@@ -895,16 +895,11 @@ impl Interpreter {
                         tmp.reverse(); // HIGHEST (longest) FIRST
                         tmp
                     } else {
-                        // Non-LTM: raw_out is already HIGHEST FIRST (from regex_match_ends_from_caps_in_pkg).
-                        // Dedup: keep first occurrence for each end (first = highest priority).
-                        let mut tmp: Vec<(usize, RegexCaptures)> = Vec::new();
-                        let mut seen_ends = std::collections::HashSet::new();
-                        for item in raw_out {
-                            if seen_ends.insert(item.0) {
-                                tmp.push(item);
-                            }
-                        }
-                        tmp
+                        // Non-LTM: raw_out is already HIGHEST FIRST (from
+                        // regex_match_ends_from_caps_in_pkg). Every path is
+                        // kept, a repeated end included: Rakudo runs the
+                        // caller's continuation once per path (#10489).
+                        raw_out
                     };
 
                     let new_max: Option<usize> = deduped_raw.iter().map(|(e, _)| *e).max();
