@@ -193,9 +193,9 @@ impl Interpreter {
     pub(crate) fn trir_outer_rw_cell(
         &mut self,
         chunk: &TrChunk,
-        name: crate::symbol::Symbol,
+        sym: crate::symbol::Symbol,
     ) -> Option<Value> {
-        let name = name.as_str();
+        let name = sym.as_str();
         let (binding, _) = self.trir_outer_binding(chunk, name)?;
         if binding.is_container_ref() {
             return Some(binding);
@@ -204,6 +204,6 @@ impl Interpreter {
             return None;
         }
         let stored = self.package_scope_lexical(name)?;
-        self.promote_package_lexical_to_cell(name, stored)
+        self.promote_package_lexical_to_cell(sym, stored)
     }
 }

@@ -51,7 +51,7 @@ impl Interpreter {
             if stored.is_container_ref() {
                 return Some(stored);
             }
-            return self.promote_package_lexical_to_cell(name, stored);
+            return self.promote_package_lexical_to_cell(sym, stored);
         }
         self.unit_lexical_slot(name)
             .filter(|v| v.is_container_ref())
@@ -66,10 +66,11 @@ impl Interpreter {
     /// slot sentinel, and an `@`/`%` binds its container value directly.
     pub(crate) fn promote_package_lexical_to_cell(
         &mut self,
-        name: &str,
+        sym: crate::symbol::Symbol,
         stored: Value,
     ) -> Option<Value> {
-        if name.starts_with(['@', '%', '&']) || crate::runtime::utils::has_double_colon(name) {
+        let name = sym.as_str();
+        if name.starts_with(['@', '%', '&']) || crate::qualified::is_qualified(sym) {
             return None;
         }
         let container = stored.into_container_ref();
