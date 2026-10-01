@@ -13,11 +13,27 @@ It complements [`docs/vendoring.md`](vendoring.md) (the mechanics of the vendore
 trees) and the "Working rules" section of
 [`docs/mzef-install-pipeline.md`](mzef-install-pipeline.md) (the zef tree).
 
+## Automated: Dependabot
+
+[`.github/dependabot.yml`](../.github/dependabot.yml) opens the routine update
+PRs, each held back by a `cooldown` (days after upstream publishes) so a broken
+or compromised release can be yanked first; security updates skip the cooldown.
+
+- **cargo** — weekly; every in-range (minor/patch) update in one grouped
+  `chore(deps):` PR, each major bump in its own PR. A major PR still gets the
+  section 1c review before it merges. The `cranelift-*` crates are the
+  exception: they move in lockstep, so all of them share one PR, major included.
+- **github-actions** — weekly, one grouped `ci(deps):` PR; the SHA pins and
+  their `# vX.Y.Z` comments are updated together.
+- **docker** — monthly; only patch updates of the `rust` builder image, since
+  its minor version is the toolchain and moves with the MSRV PR (section 1d).
+
+Dependabot PRs are not auto-merged; review and merge them like any other PR.
+
 ## Suggested cadence
 
-- **Monthly (light):** run the two "check" commands below (`cargo update
-  --dry-run`, `scripts/update-vendor.sh --check`) and apply the low-risk,
-  in-range updates. This is a 15-minute chore that keeps drift small.
+- **Monthly (light):** run `scripts/update-vendor.sh --check` and apply the
+  low-risk vendor updates. In-range crate updates arrive through Dependabot.
 - **Quarterly (full):** additionally audit major-behind crates, re-vendor
   `raku-doc` / `old-design-docs`, and consider a `roast` re-vendor (which has
   test-suite follow-up — see below). Bump the Rust toolchain if a dependency now

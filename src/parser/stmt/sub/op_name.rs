@@ -89,13 +89,10 @@ pub(crate) fn parse_bracket_parts(content: &str) -> Option<Vec<String>> {
             parts.push(unescape_operator_double_quoted(raw));
             rest = after_quote[end + 1..].trim();
         } else if let Some(after_quote) = rest.strip_prefix('\'') {
-            if let Some(end) = after_quote.find('\'') {
-                let raw = &after_quote[..end];
-                parts.push(unescape_operator_single_quoted(raw));
-                rest = after_quote[end + 1..].trim();
-            } else {
-                return None;
-            }
+            let end = after_quote.find('\'')?;
+            let raw = &after_quote[..end];
+            parts.push(unescape_operator_single_quoted(raw));
+            rest = after_quote[end + 1..].trim();
         } else {
             let ident_end = rest
                 .find(|c: char| c == ',' || c == ']' || c.is_whitespace())
@@ -103,18 +100,14 @@ pub(crate) fn parse_bracket_parts(content: &str) -> Option<Vec<String>> {
             let ident = rest[..ident_end].trim();
             if let Some(value) = super::super::simple::lookup_compile_time_constant(ident) {
                 parts.push(value);
-            } else if let Some(bare) = ident.strip_prefix('$') {
+            } else {
+                let bare = ident.strip_prefix('$')?;
                 if let Some(value) = super::super::simple::lookup_compile_time_constant(bare) {
                     parts.push(value);
-                } else if let Some(value) =
-                    super::super::simple::lookup_compile_time_constant(ident)
-                {
-                    parts.push(value);
                 } else {
-                    return None;
+                    let value = super::super::simple::lookup_compile_time_constant(ident)?;
+                    parts.push(value);
                 }
-            } else {
-                return None;
             }
             rest = rest[ident_end..].trim();
         }

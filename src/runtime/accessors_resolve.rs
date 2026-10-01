@@ -249,9 +249,20 @@ impl Interpreter {
             captured_env,
             compiled_routine,
         );
+        // A routine nested in another one (`my sub` inside `sub mk`) writes the
+        // enclosing routine's own variables, whose readonly state is decided
+        // HERE, in the frame that mentions `&name` -- not by whoever calls the
+        // code object later (#10389). A top-level routine's captured variables
+        // belong to no running frame, so the mentioning frame says nothing
+        // about them and nothing is recorded.
+        let captured_readonly = def
+            .compiled
+            .as_ref()
+            .filter(|cf| cf.code.declared_in_routine)
+            .and_then(|cf| self.capture_readonly_state(&cf.code));
         // Preserve empty_sig from the FunctionDef (arity checks, e.g. sort
         // rejecting 0-arity callables) and stabilize the id, in one rewrap.
-        if (empty_sig || stable_id.is_some())
+        if (empty_sig || stable_id.is_some() || captured_readonly.is_some())
             && let ValueView::Sub(data) = sub_val.view()
         {
             let mut new_data = (**data).clone();
@@ -259,6 +270,7 @@ impl Interpreter {
             if let Some(id) = stable_id {
                 new_data.id = id;
             }
+            new_data.captured_readonly = captured_readonly;
             sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
         }
         // Restore any role ever composed onto this routine (`.^mixin(Role)`,

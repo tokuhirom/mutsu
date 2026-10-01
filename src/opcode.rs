@@ -312,6 +312,16 @@ pub(crate) struct ForLoopSpec {
     /// `multi_param_names`. This lets the VM reify a copied `@` parameter's
     /// List value into a mutable Array before the bind-prefix assignments run.
     pub(crate) multi_param_is_copy: Vec<bool>,
+    /// Whether each multi-param binding DECLARES a writable container
+    /// (`is rw`, or any non-sigilless parameter of a `<->` block), parallel to
+    /// `multi_param_names`. Such a parameter cannot bind an item that has no
+    /// container behind it, and raku fails the bind with `X::Parameter::RW`
+    /// whether or not the body assigns. A sigilless `\v` is excluded (it binds
+    /// the bare item and only dies on assignment), and so is a slurpy.
+    ///
+    /// Distinct from [`Self::rw_param_names`], which also names the `.kv` key
+    /// and every sigilless slot because it drives the writeback, not the bind.
+    pub(crate) multi_param_declared_rw: Vec<bool>,
     /// Compiler-baked local slot for each `multi_param_names` entry, when the
     /// name already has one in the enclosing scope. A multi-param loop
     /// declares its parameters (`build_for_bind_stmts`), so a name an enclosing
@@ -3650,8 +3660,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -3698,8 +3706,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -6572,6 +6578,13 @@ pub(crate) struct CompiledCode {
     /// `logging.rakutest` reported the OUTER task's id for the inner task's
     /// end entry).
     pub(crate) writes_topic: bool,
+    /// This chunk is a routine declared INSIDE another routine's body (`my sub`
+    /// or `sub` within `sub mk { ... }`), so the free variables it writes are
+    /// that routine's own lexicals and their readonly state is whatever the
+    /// routine's frame says when a code object for it is made (see
+    /// `Interpreter::capture_readonly_state`). A top-level routine's free
+    /// variables belong to no running frame. Set by the sub-body compile.
+    pub(crate) declared_in_routine: bool,
     /// Whether this code READS the legacy argument array `@_`.
     ///
     /// This is the one thing that lets a routine accept more positional
@@ -7731,6 +7744,7 @@ impl CompiledCode {
             immutable_topic: false,
             declarator_doc: None,
             writes_topic: false,
+            declared_in_routine: false,
             reads_args_array: false,
             reads_args_hash: false,
             has_env_writes: false,

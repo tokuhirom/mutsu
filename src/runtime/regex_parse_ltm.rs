@@ -1056,6 +1056,14 @@ impl Interpreter {
         let with_count = &*WITH_COUNT;
         let bare_sep = &*BARE_SEP;
 
+        // Under sigspace, a separated quantifier is parsed natively: the
+        // per-token parser records the separator's `<.ws>` boundaries in the
+        // separator plan (`consume_repeat_separator`), which keeps a frugal
+        // quantifier's priority and a capture's structure intact. Expanding
+        // it to text here lost both (#10339).
+        if sigspace && Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
+        }
         if let Some(caps) = with_count.captures(&compact) {
             let atom = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
             let frugal = caps.get(2).is_some_and(|m| !m.as_str().is_empty());

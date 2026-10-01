@@ -2256,7 +2256,6 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         overlap: false,
         repeat: None,
         nth: None,
-        perl5: false,
         pos: false,
         pos_value: None,
         continue_: false,

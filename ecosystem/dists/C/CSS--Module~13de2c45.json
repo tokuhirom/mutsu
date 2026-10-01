@@ -23,7 +23,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 63.37,
+        "secs": 68.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.87,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 52,
         "plan": 52,
-        "secs": 2.75,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.84,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 1.72,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 6,
         "ok": 24,
         "plan": 30,
-        "secs": 0.64,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.96,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.97,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 116,
         "plan": 116,
-        "secs": 1.41,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.0,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -148,30 +148,30 @@
         "nok": 0,
         "ok": 179,
         "plan": 179,
-        "secs": 1.28,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "data type mismatch",
-        "nok": 1,
+        "first_failure": "resolution: 300dpi",
+        "nok": 14,
         "ok": 0,
-        "plan": null,
-        "secs": 0.94,
+        "plan": 14,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/css3x-media-queries.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.14,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.89,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -194,30 +194,30 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.04,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Dynamic variable $*USAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.95,
+        "first_failure": "css3 @page at-rule ast",
+        "nok": 7,
+        "ok": 13,
+        "plan": 20,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/css3x-paged-media.t",
       "raku": {
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 0.86,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,7 +230,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.86,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -240,53 +240,52 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.04,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Dynamic variable $*USAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.05,
+        "first_failure": "css3 declarations ast",
+        "nok": 24,
+        "ok": 40,
+        "plan": 64,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/error-handling.t",
       "raku": {
         "nok": 0,
         "ok": 128,
         "plan": 128,
-        "secs": 1.64,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'extend' for invocant of type 'Array'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.07,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/module-extensions.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.1,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -298,7 +297,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.05,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -308,7 +307,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.75,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -318,10 +317,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "No such method 'list' for invocant of type 'Any'",
-        "nok": 3,
-        "ok": 22,
+        "nok": 0,
+        "ok": 25,
         "plan": null,
-        "secs": 1.53,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -331,30 +330,30 @@
         "nok": 0,
         "ok": 48,
         "plan": 48,
-        "secs": 12.09,
+        "secs": 12.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Dynamic variable $*USAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.18,
+        "first_failure": "SVG declarations ast",
+        "nok": 217,
+        "ok": 384,
+        "plan": 601,
+        "secs": 10.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/svg-properties.t",
       "raku": {
         "nok": 0,
         "ok": 869,
         "plan": 869,
-        "secs": 1.96,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -410,11 +409,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-29",
+    "date": "2026-09-30",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "51f43ba",
-    "mutsu_version": "0.23.0",
+    "mutsu_commit": "6748c2a6",
+    "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -428,9 +427,9 @@
   "totals": {
     "baseline_assertions": 1585,
     "baseline_files": 15,
-    "mutsu_assertions": 52,
-    "parity_files": 1,
-    "regressed_files": 14
+    "mutsu_assertions": 503,
+    "parity_files": 2,
+    "regressed_files": 13
   },
   "version": "0.7.7"
 }

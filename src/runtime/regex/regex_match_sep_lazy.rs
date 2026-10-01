@@ -138,7 +138,10 @@ impl Interpreter {
                              end: usize,
                              caps: RegexCaptures| {
                 super::regex_helpers::record_regex_farthest_position(end);
-                w.atom_caps.push(caps);
+                w.atom_caps
+                    .push(super::regex_match_sep::with_iteration_capture(
+                        token, start, end, caps,
+                    ));
                 let stop = interp.sep_extend_chain(w, token, pattern, chars, end, pkg, store, on);
                 w.atom_caps.pop();
                 stop
@@ -218,7 +221,10 @@ impl Interpreter {
                         if atom_end <= cur {
                             return false;
                         }
-                        w.atom_caps.push(acaps);
+                        w.atom_caps
+                            .push(super::regex_match_sep::with_iteration_capture(
+                                token, sep_end, atom_end, acaps,
+                            ));
                         w.sep_caps.push(scaps.clone());
                         let stop = interp
                             .sep_extend_chain(w, token, pattern, chars, atom_end, pkg, store, on);

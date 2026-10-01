@@ -15,6 +15,6 @@ ok IdentifierClass.parse('!'), '<-ident> accepts punctuation';
 
 is (rx/a/).gist, 'rx/a/', 'rx// preserves its source form';
 is (/a/).gist, '/a/', 'slash-delimited regex keeps its source form';
-ok 'FOO' ~~ rx:Perl5:ignorecase/^foo$/, 'Perl5 ignorecase affects matching';
-is (rx:Perl5:ignorecase/^foo$/).gist, 'rx:Perl5:ignorecase/^foo$/',
-    'Perl5 regex preserves its source adverbs';
+ok 'FOO' ~~ rx:ignorecase/^foo$/, ':ignorecase affects matching';
+is (rx:ignorecase/^foo$/).gist, 'rx:ignorecase/^foo$/',
+    'rx// preserves its source adverbs';

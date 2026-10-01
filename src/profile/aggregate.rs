@@ -183,8 +183,11 @@ fn fold_handle(handle: &BufferHandle) {
             return;
         }
         // `drain` keeps the reserved capacity, so the next sample path still
-        // pushes into space that was allocated at arm time.
+        // pushes into space that was allocated at arm time (`mem::take`, which
+        // the lint suggests, would hand that capacity away).
+        #[allow(clippy::drain_collect)]
         let headers: Vec<SampleHeader> = pending.headers.drain(..).collect();
+        #[allow(clippy::drain_collect)]
         let frames: Vec<SampleFrame> = pending.frames.drain(..).collect();
         (headers, frames, std::mem::take(&mut pending.truncated))
     };

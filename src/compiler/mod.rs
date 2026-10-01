@@ -3783,6 +3783,10 @@ impl Compiler {
                     || *name == "kv") =>
             {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
+                    || (*name != "keys"
+                        && *name != "List"
+                        && Self::is_literal_list_receiver(target)
+                        && Self::for_iterable_yields_bare_items(target))
             }
             // `.Seq` reifies whatever items its target already has — it mints
             // no fresh ones — so it inherits the target's bareness exactly:
@@ -3794,6 +3798,23 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty() && *name == "Seq" => Self::for_iterable_yields_bare_items(target),
+            // A view of a LITERAL receiver (`(1,2).values`, `(1,2).kv`,
+            // `(1,2).reverse`, `(1,2).sort`): the literal has no element
+            // containers to hand out, so the view inherits its bareness. A
+            // variable receiver is excluded -- `@a.values` / `@a.sort` alias
+            // the array's own cells and are decided at run time
+            // (`for_source_is_value_sequence`).
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty()
+                && (*name == "values"
+                    || *name == "list"
+                    || *name == "reverse"
+                    || *name == "sort")
+                && Self::is_literal_list_receiver(target) =>
+            {
+                Self::for_iterable_yields_bare_items(target)
+            }
             _ => false,
         }
     }
@@ -3837,6 +3858,23 @@ impl Compiler {
                 .provably_bare_receiver_vars
                 .contains(&format!("${name}")),
             _ => Self::for_iterable_yields_bare_items(iterable),
+        }
+    }
+
+    /// A parenthesised list literal or `Range`, i.e. a receiver that is an
+    /// expression rather than a variable.
+    fn is_literal_list_receiver(e: &Expr) -> bool {
+        match e {
+            Expr::Grouped(inner) => Self::is_literal_list_receiver(inner),
+            Expr::ArrayLiteral(_) => true,
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+            ),
+            _ => false,
         }
     }
 
@@ -3939,7 +3977,9 @@ impl Compiler {
             // Handle @a.reverse → source is @a (reversed)
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "reverse" => Self::for_iterable_source_name(target),
+            } if args.is_empty() && (*name == "reverse" || *name == "sort") => {
+                Self::for_iterable_source_name(target)
+            }
             // `@$h` desugars to `($h).list`: the loop iterates the scalar's
             // inner array and must alias its elements (`$_ .= uc for @$hdr`
             // uppercases in place — Text::CSV's header munge). Tag the source

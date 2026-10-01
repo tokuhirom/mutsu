@@ -600,7 +600,21 @@ impl Compiler {
                     | crate::value::ValueView::Num(_)
                     | crate::value::ValueView::Bool(_)
             ),
-            Expr::Var(_) | Expr::Binary { .. } | Expr::Unary { .. } => true,
+            // A range / sequence / repetition operator builds a LIST of
+            // indices (`@a[2 ..^ 4] = @o`, `@a[^2] = @o`), so it is a slice
+            // even though it is a single `Binary` node (#10370).
+            Expr::Binary { op, .. } => {
+                !matches!(
+                    op,
+                    TokenKind::DotDot
+                        | TokenKind::DotDotCaret
+                        | TokenKind::CaretDotDot
+                        | TokenKind::CaretDotDotCaret
+                        | TokenKind::DotDotDot
+                        | TokenKind::DotDotDotCaret
+                ) && !matches!(op, TokenKind::Ident(name) if name == "xx")
+            }
+            Expr::Var(_) | Expr::Unary { .. } => true,
             _ => false,
         };
         if !single_subscript {
@@ -649,11 +663,40 @@ impl Compiler {
         let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
             !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
         });
-        if !named
-            || matches!(index, Expr::Literal(lit)
-                if lit.as_str().is_some_and(|key| !key.starts_with('&')))
-        {
+        if !named {
             return false;
+        }
+        // `Pkg::<$v> {=,:=} value` is the stash spelling of `$Pkg::v {=,:=}
+        // value`: route it through the qualified-variable assignment, which
+        // writes through the variable's container (and so checks its declared
+        // constraint, ADR-0042) instead of replacing the stash entry. Only a
+        // `$` key: an `@`/`%` stash entry is the Array/Hash itself, not a
+        // Scalar, and rakudo refuses `Pkg::<@a> = ...` as an assignment to an
+        // immutable value.
+        if let Expr::Literal(lit) = index
+            && let Some(key) = lit.as_str()
+            && !key.starts_with('&')
+        {
+            let Some(bare) = key
+                .strip_prefix('$')
+                .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+            else {
+                return false;
+            };
+            let (is_bind, rhs) = match value {
+                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => (
+                    true,
+                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
+                ),
+                other => (false, other.clone()),
+            };
+            // `$Pkg::v` compiles to AssignExpr name "Pkg::v" (sigil dropped).
+            self.compile_expr(&Expr::AssignExpr {
+                name: format!("{stash_name}{bare}"),
+                expr: Box::new(rhs),
+                is_bind,
+            });
+            return true;
         }
         self.compile_bind_index_value(value);
         self.compile_expr(index);

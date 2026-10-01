@@ -630,8 +630,10 @@ impl Compiler {
             // and seeds ONLY a name nothing has bound, so a `state` container
             // that survives from a previous entry is never reset.
             //
-            // `our TYPE $x` is not here because it does not exist: the parser
-            // rejects the combination outright, as rakudo does.
+            // `our TYPE $x` is not hoisted: a package variable's constraint is
+            // registered when its declaration runs and is then carried by the
+            // package variable's own cell (`OpCode::DeclareOurScalar`), so it
+            // holds whichever name the variable is reached through.
             if let Stmt::VarDecl {
                 name,
                 type_constraint,

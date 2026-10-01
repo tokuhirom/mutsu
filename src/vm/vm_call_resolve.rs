@@ -162,18 +162,14 @@ impl Interpreter {
                 .get(self.fn_resolve_gen, memo_key)
                 .copied()
         {
-            match hit {
-                None => return None,
-                Some(key) => {
-                    if let Some(cf) = compiled_fns
-                        .get(&key)
-                        .filter(|cf| cf.fingerprint == expected_fingerprint)
-                    {
-                        return Some(cf);
-                    }
-                    // Stale entry: re-probe below rather than answering `None`.
-                }
+            let key = hit?;
+            if let Some(cf) = compiled_fns
+                .get(&key)
+                .filter(|cf| cf.fingerprint == expected_fingerprint)
+            {
+                return Some(cf);
             }
+            // Stale entry: re-probe below rather than answering `None`.
         }
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         // Probe a candidate key. The map is keyed by `Symbol`; every real key

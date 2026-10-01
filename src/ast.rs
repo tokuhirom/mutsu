@@ -963,7 +963,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -984,7 +983,6 @@ pub(crate) enum Expr {
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
         x: Option<String>,
-        perl5: bool,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a

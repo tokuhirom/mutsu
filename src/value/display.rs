@@ -1164,7 +1164,6 @@ impl Value {
                 let overlap = &a.overlap;
                 let repeat = &a.repeat;
                 let nth = &a.nth;
-                let perl5 = &a.perl5;
                 let ignore_case = &a.ignore_case;
                 let sigspace = &a.sigspace;
                 let samecase = &a.samecase;
@@ -1209,9 +1208,6 @@ impl Value {
                     }
                     if let Some(raw) = nth {
                         prefix.push_str(&format!(":nth({raw})"));
-                    }
-                    if *perl5 {
-                        prefix.push_str(":P5");
                     }
                     if *samecase {
                         prefix.push_str(":ii");

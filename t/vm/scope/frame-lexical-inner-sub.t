@@ -5,7 +5,7 @@ use Test;
 # straight through its compiled body. Everything below must behave exactly
 # like an ordinary lexical sub.
 
-plan 21;
+plan 22;
 
 # Shadowing a same-named outer sub, on both sides of the call.
 sub shadow() { 'outer' }
@@ -128,3 +128,11 @@ sub dies-inside() {
     dies-inside();
     CATCH { default { like .backtrace.Str, /boom/, 'backtrace names the inner sub' } }
 }
+
+# #10441: string literals spelling a reject word or the inner sub's name are
+# data; the inner sub behaves the same either way.
+sub literal-words() {
+    my sub lw() { 'EVAL' ~ '/' ~ 'lw' ~ '/' ~ 'samewith' }
+    lw() ~ '|' ~ lw()
+}
+is literal-words(), 'EVAL/lw/samewith|EVAL/lw/samewith', 'string literals naming reject words';

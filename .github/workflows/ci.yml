@@ -146,7 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
       # registry and the built dependencies (pruning the workspace crate so the
@@ -344,7 +344,7 @@ jobs:
         # through. Stdlib Python, no build, seconds.
         run: make check-dev
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           components: clippy, rustfmt
 
@@ -769,7 +769,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           components: clippy
           targets: wasm32-unknown-unknown
@@ -792,7 +792,7 @@ jobs:
         # `--lib` because that is all the browser package builds (see
         # scripts/build-npm-package.sh). This is the configuration where the
         # platform-gated paths (`#[cfg(unix)]` filesystem calls, the worker
-        # pool, PCRE2) compile out, and where unused locals and dead helpers
+        # pool, NativeCall) compile out, and where unused locals and dead helpers
         # pile up unseen.
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
@@ -842,10 +842,17 @@ jobs:
       # model) under the job, which would turn a toolchain update into what
       # looks like a soundness regression — on a required check. Bump this
       # deliberately, in its own PR, and read the diff in Miri's behaviour.
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          toolchain: nightly-2026-08-01
-          components: miri, rust-src
+      #
+      # Installed with rustup directly rather than dtolnay/rust-toolchain:
+      # Dependabot re-pins that action to the SHA of its newest *version*
+      # branch (e.g. `1.98.1`), and a version branch ignores the `toolchain:`
+      # input and installs that stable release, which ships no Miri (the grouped
+      # actions bump PR #10433 failed exactly so).
+      - name: Install pinned nightly with Miri
+        run: |
+          rustup toolchain install nightly-2026-08-01 --profile minimal \
+            --component miri --component rust-src --no-self-update
+          rustup default nightly-2026-08-01
 
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -946,7 +953,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           targets: wasm32-unknown-unknown
 
@@ -1061,7 +1068,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build
@@ -1402,7 +1409,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build

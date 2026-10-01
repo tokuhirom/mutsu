@@ -534,11 +534,8 @@ impl Interpreter {
                             return None;
                         }
                         // Extract bare component after the last `::`
-                        let bare = if let Some(pos) = name.rfind("::") {
-                            &name[pos + 2..]
-                        } else {
-                            return None;
-                        };
+                        let pos = name.rfind("::")?;
+                        let bare = &name[pos + 2..];
                         if bare.is_empty() {
                             return None;
                         }
@@ -1139,7 +1136,12 @@ impl Interpreter {
                         match name.chars().next() {
                             Some('@') => Value::array(Vec::new()),
                             Some('%') => Value::hash(crate::value::HashData::default()),
-                            _ => Value::NIL,
+                            Some('&') => Value::NIL,
+                            // A scalar's package-qualified storage key drops
+                            // its sigil (`Foo::x`), so any other spelling is
+                            // a scalar: bare `our $x;` holds the `Any` type
+                            // object, not `Nil` (#10393).
+                            _ => Value::package(crate::symbol::wk::any()),
                         }
                     });
                 // Auto-deref ContainerRef for stack use (ContainerRef axis of
@@ -5755,7 +5757,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5771,7 +5772,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5788,7 +5788,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5804,7 +5803,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;

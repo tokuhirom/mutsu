@@ -630,10 +630,9 @@ pub(crate) fn parse_meta_compound_assign_op(input: &str) -> Option<(&str, String
         ("R", rest)
     } else if let Some(rest) = input.strip_prefix('X') {
         ("X", rest)
-    } else if let Some(rest) = input.strip_prefix('Z') {
-        ("Z", rest)
     } else {
-        return None;
+        let rest = input.strip_prefix('Z')?;
+        ("Z", rest)
     };
     if after_meta.starts_with('=') && !after_meta.starts_with("==") && !after_meta.starts_with("=>")
     {

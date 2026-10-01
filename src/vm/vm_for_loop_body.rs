@@ -304,6 +304,14 @@ impl Interpreter {
         if source_immutable_quant {
             rw_writeback = false;
         }
+        // An immutable `Map` yields bare values too: its elements are not
+        // containers, so an `is rw` multi-parameter bind must fail (like an
+        // immutable QuantHash's), not alias.
+        let source_immutable_map = container_binding.as_ref().is_some_and(|name| {
+            self.for_source_binding_value(name).is_some_and(|v| {
+                matches!(v.view(), ValueView::Hash(d) if d.declared_type.as_deref() == Some("Map"))
+            })
+        });
         // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
         // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
         // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
@@ -642,9 +650,9 @@ impl Interpreter {
         // throws, so the deep flag must NOT follow `source_items_are_bare`.
         let topic_readonly = topic_deep_readonly
             || (!spec.is_rw && binds_implicit_topic && spec.source_items_are_bare);
-        // Per item, not per loop: a VM-array object's slot may still hold a
-        // container (see `for_source_is_value_buffer`).
-        let source_value_buffer = self.for_source_is_value_buffer(
+        // Per item, not per loop: an immutable List's or VM-array object's slot
+        // may still hold a container (see `for_source_is_value_sequence`).
+        let source_value_buffer = self.for_source_is_value_sequence(
             code,
             container_binding.as_deref(),
             container_source_slot,
@@ -858,6 +866,38 @@ impl Interpreter {
                 self.unmask_for_params(&masked_params);
                 return Err(RuntimeError::parameter_rw_not_container(&display, &item));
             }
+            // The multi-parameter form of the same rejection, decided per chunk
+            // slot: a slot holding a container (`($a, $b)`, a producer's cell)
+            // binds fine, a bare one fails the bind of the `is rw` / `<->`
+            // parameter that would have to alias it. Gated on the source being
+            // known to hold values, for the reason the compile-time rejection
+            // above is (an unrouted producer also yields no cell, and raku
+            // aliases through it).
+            if !spec.multi_param_names.is_empty()
+                && (spec.source_items_are_bare
+                    || source_value_buffer
+                    || source_immutable_quant
+                    || source_immutable_map)
+                && let ValueView::Array(chunk, ..) = item.view()
+            {
+                for (i, declared) in spec.multi_param_declared_rw.iter().enumerate() {
+                    let name = &spec.multi_param_names[i];
+                    if !*declared || name.starts_with(['@', '%', '&']) {
+                        continue;
+                    }
+                    let Some(slot) = chunk.items().get(i) else {
+                        continue;
+                    };
+                    if Self::binding_carries_element_cell(slot)
+                        || matches!(slot.view(), ValueView::Proxy { .. })
+                    {
+                        continue;
+                    }
+                    let display = Self::for_param_display_name(name);
+                    self.unmask_for_params(&masked_params);
+                    return Err(RuntimeError::parameter_rw_not_container(&display, slot));
+                }
+            }
             // ADR-0045 slices 1-3: promote this element to its own container
             // and bind THAT, so the binding is a real alias for the lifetime of
             // the binding.
@@ -902,6 +942,20 @@ impl Interpreter {
             let aliased = promoted.is_some() || (item_carries_cell && !item_is_quanthash_weight);
             let bare_buffer_item =
                 source_value_buffer && !aliased && !matches!(item.view(), ValueView::Proxy { .. });
+            // The per-item sibling of the compile-time `source_items_are_bare`
+            // rejection above: an `is rw` parameter cannot bind an item that
+            // has no container behind it, and raku fails the bind rather than
+            // the later assignment (`for $l.list -> $x is rw { }`, #10349).
+            if spec.do_writeback
+                && bare_buffer_item
+                && !spec.param_sigilless
+                && let Some(ref name) = param_name
+                && !name.starts_with(['@', '%', '&'])
+            {
+                let display = Self::for_param_display_name(name);
+                self.unmask_for_params(&masked_params);
+                return Err(RuntimeError::parameter_rw_not_container(&display, &item));
+            }
             // A cell handed out by a container-aware producer (`.values`,
             // `.reverse`, `.sort`) carries its container's element constraint
             // but not the container's NAME -- `vm_element_producers.rs` sees a
@@ -1017,14 +1071,23 @@ impl Interpreter {
             // Skip @-sigil and %-sigil params: they bind to a mutable
             // Array/Hash container, so assignments like `@a = values` must
             // be allowed (matching Raku semantics).
-            // So is an `is rw` / sigilless one bound to a VM-array object's
-            // bare slot value: there is no container behind it to write.
-            if (!spec.is_rw || bare_buffer_item)
+            // So is an `is rw` / sigilless one bound to a bare slot value of a
+            // List or VM-array object: there is no container behind it to
+            // write. An `is copy` one owns a fresh container of its own. A
+            // sigilless `\v` names the bare value itself, so assigning to it is
+            // the value-level `X::Assignment::RO` rather than a readonly
+            // variable.
+            let bare_sigilless_source = spec.source_items_are_bare && spec.param_sigilless;
+            if (!spec.is_rw || ((bare_buffer_item || bare_sigilless_source) && !param_is_copy))
                 && let Some(ref name) = param_name
                 && !name.starts_with('@')
                 && !name.starts_with('%')
             {
-                self.mark_readonly(name);
+                if (bare_buffer_item || bare_sigilless_source) && spec.param_sigilless {
+                    self.mark_readonly_with(name, crate::ast::ReadonlyKind::ImmutableValue);
+                } else {
+                    self.mark_readonly(name);
+                }
             }
             // `%`-sigil for-loop bindings preserve a QuantHash value (and keep
             // its type across a `%a = ...pairs` reset) instead of coercing it to
@@ -1066,10 +1129,24 @@ impl Interpreter {
                 // A VM-array object's bare slot values are just as immutable
                 // (`for @tuple.kv -> \k, \v { v = 42 }`); a chunk carrying a
                 // container is left alone, since that slot is writable.
-                let buffer_chunk_bare = source_value_buffer
-                    && !spec.multi_param_names.is_empty()
+                // A source the compiler only knows is PARTLY bare
+                // (`source_items_are_bare`, e.g. `for $%h, Any -> \h, \T`)
+                // qualifies only when every slot is a plain scalar value, the
+                // one shape whose unchanged binding compares equal to its slot.
+                let buffer_chunk_bare = !spec.multi_param_names.is_empty()
                     && matches!(item.view(), ValueView::Array(chunk, ..)
-                        if !chunk.items().iter().any(Self::binding_carries_element_cell));
+                    if !chunk.items().iter().any(Self::binding_carries_element_cell)
+                        && (source_value_buffer
+                            || (spec.source_items_are_bare
+                                && chunk.items().iter().all(|v| {
+                                    matches!(
+                                        v.view(),
+                                        ValueView::Int(_)
+                                            | ValueView::Num(_)
+                                            | ValueView::Str(_)
+                                            | ValueView::Bool(_)
+                                    )
+                                }))));
                 let quant_chunk_before: Option<Vec<Value>> = ((source_immutable_quant
                     || buffer_chunk_bare)
                     && !spec.multi_param_names.is_empty())
@@ -1436,7 +1513,7 @@ impl Interpreter {
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
                         }
-                        if !spec.is_rw
+                        if (!spec.is_rw || spec.param_sigilless)
                             && let Some(ref name) = param_name
                         {
                             self.unmark_readonly(name);
@@ -1453,7 +1530,7 @@ impl Interpreter {
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
                         }
-                        if !spec.is_rw
+                        if (!spec.is_rw || spec.param_sigilless)
                             && let Some(ref name) = param_name
                         {
                             self.unmark_readonly(name);
@@ -1486,7 +1563,7 @@ impl Interpreter {
             self.restore_topic_readonly(saved);
         }
         // Unmark readonly params after loop completion
-        if !spec.is_rw
+        if (!spec.is_rw || spec.param_sigilless)
             && let Some(ref name) = param_name
         {
             self.unmark_readonly(name);

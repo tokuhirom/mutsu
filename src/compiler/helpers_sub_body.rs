@@ -600,6 +600,7 @@ impl Compiler {
         // declaration metadata so `Code.line` can report it without a second
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
+        sub_compiler.code.declared_in_routine = self.is_routine || self.lexically_in_routine;
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
