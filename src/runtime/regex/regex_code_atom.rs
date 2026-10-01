@@ -342,8 +342,17 @@ impl Interpreter {
     ) -> Option<(usize, RegexCaptures)> {
         self.rx_code_call(code, pos, current_caps, |interp| {
             let target: String = chars.iter().collect();
-            let pattern_str =
-                interp.eval_regex_closure_interpolation(code, body, current_caps, &target);
+            let matched_so_far: String = chars
+                [current_caps.inline_match_from().min(chars.len())..pos]
+                .iter()
+                .collect();
+            let pattern_str = interp.eval_regex_closure_interpolation(
+                code,
+                body,
+                current_caps,
+                &target,
+                &matched_so_far,
+            );
             if let Some(ref pat_str) = pattern_str
                 && Interpreter::contains_dangerous_regex_code(pat_str)
             {

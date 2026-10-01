@@ -72,8 +72,21 @@ impl Interpreter {
         parsed_body: Option<&std::sync::Arc<Vec<crate::ast::Stmt>>>,
         caps: &RegexCaptures,
         target: &str,
+        matched_so_far: &str,
     ) -> Option<String> {
-        let env = self.regex_code_interp_env(code, caps, target);
+        let mut env = self.regex_code_interp_env(code, caps, target);
+        // Like a `{ … }` block, the code sees the match so far as `$/`.
+        let visible_caps = caps.inline_capture_view();
+        let live_target = super::regex_helpers::current_match_target()
+            .unwrap_or_else(|| MatchTarget::new(matched_so_far));
+        let cursor = Value::make_match_object_full(
+            visible_caps.match_from as i64,
+            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            &visible_caps.positional,
+            &visible_caps.named,
+            live_target,
+        );
+        env.insert("/".to_string(), cursor);
         // Compiled once per body, not per match attempt (#10121): a
         // parser-produced body is keyed by its parse site, a string body by
         // its parse-cache id.
