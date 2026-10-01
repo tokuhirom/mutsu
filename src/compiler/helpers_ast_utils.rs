@@ -245,16 +245,26 @@ impl Compiler {
     /// [`Compiler::index_assign_target_requires_eval`], and never peels
     /// `temp (...)` (whose evaluation is the save) or parentheses (which would
     /// expose a `(my @a = ...)` declaration the caller would then skip).
+    /// A bareword root counts only when it names a variable here (`my \x`,
+    /// a sigil-less `constant`): `Hash<z>:delete` subscripts a type object.
     // Cost: O(w + |name|), w = wrappers peeled.
     pub(super) fn postfix_index_name(&self, target: &Expr) -> Option<String> {
-        self.lvalue_root_key(
-            target,
-            LvaluePeel::ASSIGN | LvaluePeel::DECL | LvaluePeel::SIGILLESS,
-        )
+        let peel = LvaluePeel::ASSIGN | LvaluePeel::DECL | LvaluePeel::SIGILLESS;
+        match target.lvalue_root(peel)? {
+            crate::ast::LvalueRoot::Key(key) => Some(key),
+            crate::ast::LvalueRoot::Sigilless(name)
+                if self.names_term_constant(name) || self.bareword_denotes_variable(name) =>
+            {
+                Some(self.sigilless_storage_key(name))
+            }
+            crate::ast::LvalueRoot::Sigilless(_) => None,
+        }
     }
 
     /// The variable an element assignment (`@a[0] = 1`, `x<k> = 1`) writes
-    /// through: [`Compiler::postfix_index_name`]'s roots, plus `temp (...)`.
+    /// through: [`Compiler::postfix_index_name`]'s roots, plus `temp (...)`,
+    /// and any bareword -- one this unit cannot see (an `EVAL`'d `x[0] = 1`
+    /// over an outer `my \x`) is still resolved by name at run time.
     // Cost: O(w + |name|), w = wrappers peeled.
     pub(super) fn index_assign_target_name(&self, target: &Expr) -> Option<String> {
         self.lvalue_root_key(
