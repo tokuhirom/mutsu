@@ -225,6 +225,9 @@ impl Interpreter {
                     Value::int(self.trir.nl[r])
                 }
                 TrArg::Obj(s) => self.trir.ol[obase + *s as usize].clone(),
+                TrArg::Outer(i) => {
+                    self.trir.outers[frame.outer_base as usize + *i as usize].clone()
+                }
                 TrArg::Value(_) => {
                     let v = self.trir.os[next_value].clone();
                     next_value += 1;

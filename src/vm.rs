@@ -294,6 +294,7 @@ mod vm_register_sub_ops;
 mod vm_routine_capture;
 mod vm_run_loop;
 mod vm_rw_arg_callee;
+mod vm_rw_arg_outer_cell;
 mod vm_rw_attr_container;
 mod vm_scalar_incdec;
 mod vm_scalar_param_bind;
