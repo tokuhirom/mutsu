@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use super::rx_frame::Choice;
+use super::rx_frame::{Choice, FMark};
 use super::rx_levels::Levels;
 use super::{RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
@@ -33,6 +33,8 @@ pub(super) struct Scratch {
     /// Register writes to undo on backtrack: (index into `regs`, old value).
     pub(super) reg_trail: Vec<(usize, usize)>,
     pub(super) stack: Vec<Choice>,
+    /// The frame state of the choice points pushed inside a callee (`FMark`).
+    pub(super) fmarks: Vec<FMark>,
     pub(super) ends: Vec<usize>,
     pub(super) levels: Levels,
     pub(super) ltm_order: Vec<(usize, (usize, usize))>,
@@ -115,7 +117,7 @@ impl Interpreter {
             // D6: the walk's replay of a compiled run is the walk alone, so a
             // nested pattern it matches is compared too instead of answering
             // from the compiled engine on both sides.
-            && !super::rx_diff::replaying()
+            && !(rx_diff_enabled() && super::rx_diff::replaying())
             // D6 can record and replay a code atom, but not user code reached
             // through a wrapped token or a custom HOW: the walk's replay would
             // run it a second time. Differential mode declines those matches.
@@ -152,12 +154,11 @@ impl Interpreter {
             let replay = super::rx_diff::end_replay();
             let same = super::rx_diff::same_match(&result, &walked);
             if let Err(why) = replay.and(same) {
-                panic!(
-                    "MUTSU_RX_DIFF: compiled engine and walk disagree at start {start} \
-                     of a {}-char subject: {why}\nprogram: {:?}",
+                super::rx_diff::disagreement(format!(
+                    "at start {start} of a {}-char subject: {why}\nprogram: {:?}",
                     chars.len(),
                     program.ops
-                );
+                ));
             }
         }
         Some(result)
@@ -256,12 +257,11 @@ impl Interpreter {
             let replay = super::rx_diff::end_replay();
             let same = super::rx_diff::same_ends(&ends, &walked);
             if let Err(why) = replay.and(same) {
-                panic!(
-                    "MUTSU_RX_DIFF: compiled engine and walk disagree on the ends from {start} \
-                     of a {}-char subject: {why}\nprogram: {:?}",
+                super::rx_diff::disagreement(format!(
+                    "on the ends from {start} of a {}-char subject: {why}\nprogram: {:?}",
                     chars.len(),
                     program.ops
-                );
+                ));
             }
         }
         Some(ends)

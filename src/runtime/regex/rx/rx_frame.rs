@@ -67,13 +67,22 @@ pub(super) struct Frame {
 /// otherwise grow the arena without bound.
 pub(super) const MAX_FRAME_DEPTH: u32 = 100_000;
 
-/// What every choice point restores besides its own resume point.
-#[derive(Clone)]
+/// What every choice point restores besides its own resume point: how far to
+/// rewind the capture journal and the register trail.
+#[derive(Clone, Copy)]
 pub(super) struct Mark {
     /// The capture-level journal length (`Levels::mark`).
     pub(super) cap: usize,
     /// The register-trail length.
     pub(super) reg: usize,
+}
+
+/// What a choice point pushed inside a callee also restores. A run that never
+/// calls has none of these: `Scratch::fmarks` holds one only for a choice point
+/// pushed while a callee frame, or a callee's register window, is live.
+pub(super) struct FMark {
+    /// The choice point's index in the backtrack stack.
+    pub(super) at: usize,
     /// The register arena length: windows above it were opened after this
     /// choice point and are dead once it resumes.
     pub(super) regs_len: usize,

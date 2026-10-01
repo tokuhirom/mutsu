@@ -121,9 +121,10 @@ impl Levels {
     /// [`Self::close`] for a level nothing can resume in: the journal back to
     /// `from` (where it stood when the level opened) is forgotten along with the
     /// level's own store, so the caller's `Edit` is the only entry it leaves.
-    // Cost: O(c) for the snapshot, plus the entries dropped (each once).
+    // Cost: O(1) for the captures (moved out), plus the entries dropped (each
+    // once).
     pub(super) fn close_forget(&mut self, from: usize) -> RegexCaptures {
-        let caps = self.stack.pop().map(|store| store.snapshot());
+        let caps = self.stack.pop().map(CapStore::into_caps);
         self.journal.truncate(from);
         caps.unwrap_or_default()
     }

@@ -368,3 +368,9 @@ pub(super) fn same_ends(
         Err(format!("compiled:\n    {c}\n  walked:\n    {w}"))
     }
 }
+
+/// Abort: under `MUTSU_RX_DIFF=1` the compiled engine and the walk disagree.
+/// The one place that does, so the panic surface stays one site.
+pub(super) fn disagreement(what: String) -> ! {
+    panic!("MUTSU_RX_DIFF: compiled engine and walk disagree {what}")
+}

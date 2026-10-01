@@ -21,7 +21,7 @@ use std::sync::Arc;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_call::CallTarget;
 use super::rx_entry::{Goal, Scratch, program_for};
-use super::rx_frame::{Choice, Frame, MAX_FRAME_DEPTH, Mark};
+use super::rx_frame::{Choice, FMark, Frame, MAX_FRAME_DEPTH, Mark};
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
@@ -58,6 +58,7 @@ impl Interpreter {
             regs,
             reg_trail,
             stack,
+            fmarks,
             ends,
             levels,
             ltm_order,
@@ -66,6 +67,7 @@ impl Interpreter {
         regs.resize(root.nregs, 0);
         reg_trail.clear();
         stack.clear();
+        fmarks.clear();
         ends.clear();
         levels.reset(start);
         let mut cur = Cur::Root(root);
@@ -88,16 +90,39 @@ impl Interpreter {
                 regs[i] = $v;
             }};
         }
-        // What a choice point pushed now restores.
+        // What a choice point pushed now rewinds to.
         macro_rules! mark {
             () => {
                 Mark {
                     cap: levels.mark(),
                     reg: reg_trail.len(),
-                    regs_len: regs.len(),
-                    frame: frame.clone(),
                 }
             };
+        }
+        // Push a choice point, with the frame state it restores when it is
+        // pushed while a callee (or its register window) is live.
+        macro_rules! push_choice {
+            ($choice:expr) => {{
+                let choice = $choice;
+                if frame.is_some() || regs.len() != root.nregs {
+                    fmarks.push(FMark {
+                        at: stack.len(),
+                        regs_len: regs.len(),
+                        frame: frame.clone(),
+                    });
+                }
+                stack.push(choice);
+            }};
+        }
+        // Drop the choice points above height `$n`, and their frame state.
+        macro_rules! truncate_stack {
+            ($n:expr) => {{
+                let n: usize = $n;
+                stack.truncate(n);
+                while fmarks.last().is_some_and(|m| m.at >= n) {
+                    fmarks.pop();
+                }
+            }};
         }
         // Enter the highest-priority of `cands` (lowest priority first); the
         // rest wait on the stack as one choice point resuming at `pc`.
@@ -107,7 +132,7 @@ impl Interpreter {
                 if let Some((end, delta)) = cands.last().cloned() {
                     let left = cands.len() - 1;
                     if left > 0 {
-                        stack.push(Choice::Cands {
+                        push_choice!(Choice::Cands {
                             pc,
                             cands: Rc::new(cands),
                             left,
@@ -167,666 +192,754 @@ impl Interpreter {
             }};
         }
         let result = 'run: loop {
+            // The program is fixed until the loop switches frames, which
+            // every such site does by `continue 'run`: the dispatch below
+            // reads `program` directly, as a loop without calls would.
             let program = cur.get();
-            let ok = match program.ops[pc as usize] {
-                // Cost: O(1) on the ASCII fast path, else O(g), g = the
-                // grapheme's length at `pos`.
-                RxOp::Atom(i) => match self.rx_atom_at(program, i as usize, chars, pos, pkg) {
-                    Some(next) => {
-                        pos = next;
-                        farthest = farthest.max(pos);
-                        pc += 1;
-                        true
-                    }
-                    None => false,
-                },
-                // Cost: O(k·g), k = the iterations matched (each given back at
-                // most once, O(1) per give-back).
-                RxOp::AtomRun {
-                    atom,
-                    min,
-                    max,
-                    possessive,
-                } => {
-                    // `ends[run + c]` is where the cursor stands after `c`
-                    // iterations, so count 0 is the run's own start.
-                    let run = ends.len();
-                    ends.push(pos);
-                    let mut n = 0u32;
-                    let mut at = pos;
-                    while n < max {
-                        let Some(next) = self.rx_atom_at(program, atom as usize, chars, at, pkg)
-                        else {
-                            break;
-                        };
-                        at = next;
-                        ends.push(at);
-                        n += 1;
-                    }
-                    if n < min {
-                        ends.truncate(run);
-                        false
-                    } else {
-                        pos = ends[run + n as usize];
-                        farthest = farthest.max(pos);
-                        if possessive || n == min {
-                            ends.truncate(run);
-                        } else {
-                            // Give back counts n-1 down to min.
-                            stack.push(Choice::Run {
-                                pc: pc + 1,
-                                base: run,
-                                lo: run + min as usize,
-                                hi: run + n as usize,
-                                mark: mark!(),
-                            });
-                        }
-                        pc += 1;
-                        true
-                    }
-                }
-                // Cost: O(1) for every assertion Slice A compiles.
-                RxOp::Assert(i) => {
-                    let hit = self
-                        .regex_match_atom_in_pkg(
-                            &program.atoms[i as usize],
-                            chars,
-                            pos,
-                            pkg,
-                            program.atom_ic[i as usize],
-                        )
-                        .is_some();
-                    pc += 1;
-                    hit
-                }
-                // Cost: O(1).
-                RxOp::AssertStart => {
-                    pc += 1;
-                    pos == 0
-                }
-                // Cost: O(1).
-                RxOp::AssertEnd => {
-                    pc += 1;
-                    pos == chars.len()
-                }
-                // Cost: O(1) amortized.
-                RxOp::Split { prefer, alt } => {
-                    stack.push(Choice::At {
-                        pc: alt,
-                        pos,
-                        mark: mark!(),
-                    });
-                    pc = prefer;
-                    true
-                }
-                // Cost: O(b·m + b log b), b = the branches, m = one LTM
-                // measurement (`rx_ltm_order`); O(b) choice points pushed.
-                RxOp::LtmAlt(t) => {
-                    let table = &program.ltm_alts[t as usize];
-                    self.rx_ltm_order(program, table, chars, pos, pkg, ltm_order);
-                    // Lower-ranked branches wait on the stack, the next-best
-                    // on top; the best one is entered now.
-                    for &(i, _) in ltm_order[1..].iter().rev() {
-                        stack.push(Choice::At {
-                            pc: table.pcs[i],
-                            pos,
-                            mark: mark!(),
-                        });
-                    }
-                    pc = table.pcs[ltm_order[0].0];
-                    true
-                }
-                // Cost: O(n + r) plus the code's run and the match of the pattern
-                // it yields (`regex_code_interp_ends`), then O(c) per candidate
-                // entered, c = the captures it adds.
-                RxOp::InterpEnds(i) => {
-                    let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize] else {
-                        debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
-                        break 'run None;
-                    };
-                    let cands = self.regex_code_interp_ends(
-                        code,
-                        *list,
-                        chars,
-                        pos,
-                        levels.top().caps(),
-                        pkg,
-                        program.atom_ic[i as usize],
-                    );
-                    pc += 1;
-                    enter_cands!(cands)
-                }
-                // Cost: O(1) expected to resolve the callee, then O(1) to enter
-                // its frame; a bridged call is the walk's producer, which
-                // computes the callee's ends (`regex_match_atom_all_with_capture_opts`)
-                // and costs O(c) per candidate entered, c = the captures it adds.
-                // The callee's own ops state their costs.
-                RxOp::Call { atom, commit } => {
-                    let RegexAtom::Named(name) = &program.atoms[atom as usize] else {
-                        debug_assert!(false, "a Call op names a `<subrule>` atom");
-                        break 'run None;
-                    };
-                    let ic = program.atom_ic[atom as usize];
-                    match self.rx_call_target(name, pkg, ic) {
-                        Some(CallTarget::Plain(callee, callee_pkg)) => {
-                            if frame.as_ref().is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) {
-                                false
-                            } else {
-                                let stack_base = stack.len();
-                                enter_frame!(
-                                    callee,
-                                    callee_pkg,
-                                    atom,
-                                    pos,
-                                    pc + 1,
-                                    commit,
-                                    stack_base,
-                                    None
-                                );
-                                true
-                            }
-                        }
-                        Some(CallTarget::Proto(cands)) => {
-                            let ranked = self.rx_rank_proto(&cands, chars, pos);
-                            match ranked.first().copied() {
-                                // No candidate can match here.
-                                None => false,
-                                Some(_)
-                                    if frame
-                                        .as_ref()
-                                        .is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) =>
-                                {
-                                    false
-                                }
-                                Some(first) => {
-                                    // The call is committed to the first ranked
-                                    // candidate that matches, and to its first
-                                    // end, so a cut at its return drops the
-                                    // rest of the ranking too.
-                                    let stack_base = stack.len();
-                                    if ranked.len() > 1 {
-                                        stack.push(Choice::Proto {
-                                            pc: pc + 1,
-                                            pos,
-                                            atom,
-                                            cands: Arc::clone(&cands),
-                                            ranked: Rc::new(ranked),
-                                            next: 1,
-                                            mark: mark!(),
-                                        });
-                                    }
-                                    let (parsed, sub_pkg, _) = &cands[first];
-                                    let Some(callee) = program_for(parsed) else {
-                                        debug_assert!(false, "a proto's candidates compile");
-                                        break 'run None;
-                                    };
-                                    enter_frame!(
-                                        Arc::clone(callee),
-                                        *sub_pkg,
-                                        atom,
-                                        pos,
-                                        pc + 1,
-                                        true,
-                                        stack_base,
-                                        Some((Arc::clone(&cands), first))
-                                    );
-                                    true
-                                }
-                            }
-                        }
-                        None => {
-                            let mut cands = self.regex_match_atom_all_with_capture_opts(
-                                &program.atoms[atom as usize],
-                                chars,
-                                pos,
-                                levels.top().caps(),
-                                pkg,
-                                ic,
-                                commit,
-                            );
-                            // Ratchet commits to the highest-priority end, the
-                            // last (the producer's order is lowest first).
-                            if commit && cands.len() > 1 {
-                                cands.drain(..cands.len() - 1);
-                            }
-                            pc += 1;
-                            enter_cands!(cands)
-                        }
-                    }
-                }
-                // Cost: O(k·m) for the k iterations the scan matches, m = one
-                // match of the callee (`regex_named_ratchet_run`); O(1) when the
-                // scan does not apply.
-                RxOp::NamedRun { atom, min, skip } => {
-                    match self.regex_named_ratchet_run(
-                        &program.atoms[atom as usize],
-                        chars,
-                        pos,
-                        min as usize,
-                        pkg,
-                    ) {
-                        None => {
-                            pc += 1;
-                            true
-                        }
-                        Some(None) => false,
-                        Some(Some((end, delta))) => {
-                            levels.edit(|s| s.merge_delta(delta));
-                            pos = end;
-                            farthest = farthest.max(pos);
-                            pc = skip;
-                            true
-                        }
-                    }
-                }
-                // Cost: O(1).
-                RxOp::Jmp(to) => {
-                    pc = to;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::Mark(r) => {
-                    set_reg!(r, pos);
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::PosBase(r) => {
-                    set_reg!(r, levels.top().caps().positional.len());
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::SepBase(r) => {
-                    set_reg!(r, levels.collected_len());
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::Height(r) => {
-                    set_reg!(r, stack.len());
-                    pc += 1;
-                    true
-                }
-                // Cost: O(k), k = the choice points dropped (each pushed once).
-                RxOp::Cut(r) => {
-                    stack.truncate(reg!(r));
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::CtrZero(r) => {
-                    set_reg!(r, 0);
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::CtrInc(r) => {
-                    set_reg!(r, reg!(r) + 1);
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1) amortized.
-                RxOp::Repeat {
-                    ctr,
-                    min,
-                    max,
-                    body,
-                    exit,
-                    greedy,
-                } => {
-                    let n = reg!(ctr);
-                    if n < min as usize {
-                        pc = body;
-                    } else if max != u32::MAX && n >= max as usize {
-                        pc = exit;
-                    } else {
-                        let (first, second) = if greedy { (body, exit) } else { (exit, body) };
-                        stack.push(Choice::At {
-                            pc: second,
-                            pos,
-                            mark: mark!(),
-                        });
-                        pc = first;
-                    }
-                    true
-                }
-                // Cost: one run of the count code (`regex_repeat_count`), then
-                // O(1) amortized.
-                RxOp::RepeatCount { tok, min, max } => {
-                    let RegexQuant::RepeatCode(code) = &program.toks[tok as usize].quant else {
-                        debug_assert!(false, "a RepeatCount op names a `** {{ … }}` token");
-                        break 'run None;
-                    };
-                    pc += 1;
-                    match self.regex_repeat_count(code, pos, levels.top().caps()) {
-                        Some((lo, hi)) => {
-                            set_reg!(min, lo);
-                            set_reg!(max, hi.unwrap_or(usize::MAX));
-                            true
-                        }
-                        None => false,
-                    }
-                }
-                // Cost: O(1) amortized.
-                RxOp::RepeatDyn {
-                    ctr,
-                    min,
-                    max,
-                    body,
-                    exit,
-                    greedy,
-                } => {
-                    let n = reg!(ctr);
-                    let (min, max) = (reg!(min), reg!(max));
-                    if n < min {
-                        pc = body;
-                    } else if max != usize::MAX && n >= max {
-                        pc = exit;
-                    } else {
-                        let (first, second) = if greedy { (body, exit) } else { (exit, body) };
-                        stack.push(Choice::At {
-                            pc: second,
-                            pos,
-                            mark: mark!(),
-                        });
-                        pc = first;
-                    }
-                    true
-                }
-                // Cost: O(1).
-                RxOp::ZeroIter {
-                    ctr,
-                    start,
-                    min,
-                    max,
-                } => {
-                    pc += 1;
-                    pos != reg!(start)
-                        || zero_width_iter_counts(
-                            reg!(ctr),
-                            min as usize,
-                            (max != u32::MAX).then_some(max as usize),
-                        )
-                }
-                // Cost: O(1).
-                RxOp::GoalOk { height } => {
-                    let at = reg!(height);
-                    if let Some(entry) = stack.get_mut(at) {
-                        *entry = Choice::Dead;
-                    }
-                    pc += 1;
-                    true
-                }
-                // Cost: O(1).
-                RxOp::Advanced { start } => {
-                    pc += 1;
-                    pos > reg!(start)
-                }
-                // Cost: O(1).
-                RxOp::AtLeast { ctr, min } => {
-                    pc += 1;
-                    reg!(ctr) >= min as usize
-                }
-                // Cost: see `rx_capture_op`.
-                op @ (RxOp::OpenCapture
-                | RxOp::OpenIsolated
-                | RxOp::DropCapture
-                | RxOp::CloseCapture { .. }
-                | RxOp::CapAtom(_)
-                | RxOp::Code(_)
-                | RxOp::VarDecl(_)
-                | RxOp::Named { .. }
-                | RxOp::ZeroArm { .. }
-                | RxOp::QuantNames { .. }
-                | RxOp::Fold { .. }
-                | RxOp::AltTail { .. }
-                | RxOp::Collect { .. }
-                | RxOp::SepEmit { .. }
-                | RxOp::GoalEnd { .. }
-                | RxOp::GoalFail { .. }
-                | RxOp::ConjTail { .. }) => {
-                    pc += 1;
-                    match self.rx_capture_op(program, op, &regs[base..], levels, chars, pos, pkg) {
+            loop {
+                let ok = match program.ops[pc as usize] {
+                    // Cost: O(1) on the ASCII fast path, else O(g), g = the
+                    // grapheme's length at `pos`.
+                    RxOp::Atom(i) => match self.rx_atom_at(program, i as usize, chars, pos, pkg) {
                         Some(next) => {
                             pos = next;
                             farthest = farthest.max(pos);
+                            pc += 1;
                             true
                         }
                         None => false,
-                    }
-                }
-                // Cost: O(c), c = this level's captures (one snapshot); in a
-                // callee frame also the one `build_named_candidates_from_inner`
-                // call that files them as the subrule's Match, O(1) plus the
-                // callee's own captures moved, not copied.
-                RxOp::Match => match frame.clone() {
-                    None => match &mut goal {
-                        Goal::First => break 'run Some((pos, levels.top().snapshot())),
-                        Goal::End(end) => {
-                            if pos == *end {
-                                break 'run Some((pos, levels.top().snapshot()));
-                            }
-                            false
+                    },
+                    // Cost: O(k·g), k = the iterations matched (each given back at
+                    // most once, O(1) per give-back).
+                    RxOp::AtomRun {
+                        atom,
+                        min,
+                        max,
+                        possessive,
+                    } => {
+                        // `ends[run + c]` is where the cursor stands after `c`
+                        // iterations, so count 0 is the run's own start.
+                        let run = ends.len();
+                        ends.push(pos);
+                        let mut n = 0u32;
+                        let mut at = pos;
+                        while n < max {
+                            let Some(next) =
+                                self.rx_atom_at(program, atom as usize, chars, at, pkg)
+                            else {
+                                break;
+                            };
+                            at = next;
+                            ends.push(at);
+                            n += 1;
                         }
-                        // Every end up to the first that covers the subject: the
-                        // match is kept and the run backtracks for the next one.
-                        Goal::UntilFull(out) => {
-                            out.push((pos, levels.top().snapshot()));
-                            if pos == chars.len() {
-                                break 'run None;
-                            }
+                        if n < min {
+                            ends.truncate(run);
                             false
+                        } else {
+                            pos = ends[run + n as usize];
+                            farthest = farthest.max(pos);
+                            if possessive || n == min {
+                                ends.truncate(run);
+                            } else {
+                                // Give back counts n-1 down to min.
+                                push_choice!(Choice::Run {
+                                    pc: pc + 1,
+                                    base: run,
+                                    lo: run + min as usize,
+                                    hi: run + n as usize,
+                                    mark: mark!(),
+                                });
+                            }
+                            pc += 1;
+                            true
+                        }
+                    }
+                    // Cost: O(1) for every assertion Slice A compiles.
+                    RxOp::Assert(i) => {
+                        let hit = self
+                            .regex_match_atom_in_pkg(
+                                &program.atoms[i as usize],
+                                chars,
+                                pos,
+                                pkg,
+                                program.atom_ic[i as usize],
+                            )
+                            .is_some();
+                        pc += 1;
+                        hit
+                    }
+                    // Cost: O(1).
+                    RxOp::AssertStart => {
+                        pc += 1;
+                        pos == 0
+                    }
+                    // Cost: O(1).
+                    RxOp::AssertEnd => {
+                        pc += 1;
+                        pos == chars.len()
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::Split { prefer, alt } => {
+                        push_choice!(Choice::At {
+                            pc: alt,
+                            pos,
+                            mark: mark!(),
+                        });
+                        pc = prefer;
+                        true
+                    }
+                    // Cost: O(b·m + b log b), b = the branches, m = one LTM
+                    // measurement (`rx_ltm_order`); O(b) choice points pushed.
+                    RxOp::LtmAlt(t) => {
+                        let table = &program.ltm_alts[t as usize];
+                        self.rx_ltm_order(program, table, chars, pos, pkg, ltm_order);
+                        // Lower-ranked branches wait on the stack, the next-best
+                        // on top; the best one is entered now.
+                        for &(i, _) in ltm_order[1..].iter().rev() {
+                            push_choice!(Choice::At {
+                                pc: table.pcs[i],
+                                pos,
+                                mark: mark!(),
+                            });
+                        }
+                        pc = table.pcs[ltm_order[0].0];
+                        true
+                    }
+                    // Cost: O(n + r) plus the code's run and the match of the pattern
+                    // it yields (`regex_code_interp_ends`), then O(c) per candidate
+                    // entered, c = the captures it adds.
+                    RxOp::InterpEnds(i) => {
+                        let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize]
+                        else {
+                            debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
+                            break 'run None;
+                        };
+                        let cands = self.regex_code_interp_ends(
+                            code,
+                            *list,
+                            chars,
+                            pos,
+                            levels.top().caps(),
+                            pkg,
+                            program.atom_ic[i as usize],
+                        );
+                        pc += 1;
+                        enter_cands!(cands)
+                    }
+                    // Cost: O(1) expected to resolve the callee, then O(1) to enter
+                    // its frame; a bridged call is the walk's producer, which
+                    // computes the callee's ends (`regex_match_atom_all_with_capture_opts`)
+                    // and costs O(c) per candidate entered, c = the captures it adds.
+                    // The callee's own ops state their costs.
+                    RxOp::Call { atom, commit } => {
+                        let RegexAtom::Named(name) = &program.atoms[atom as usize] else {
+                            debug_assert!(false, "a Call op names a `<subrule>` atom");
+                            break 'run None;
+                        };
+                        let ic = program.atom_ic[atom as usize];
+                        match self.rx_call_target_checked(name, pkg, ic) {
+                            Some(CallTarget::Plain(callee, callee_pkg)) => {
+                                if frame.as_ref().is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) {
+                                    false
+                                } else {
+                                    let stack_base = stack.len();
+                                    enter_frame!(
+                                        callee,
+                                        callee_pkg,
+                                        atom,
+                                        pos,
+                                        pc + 1,
+                                        commit,
+                                        stack_base,
+                                        None
+                                    );
+                                    continue 'run;
+                                }
+                            }
+                            Some(CallTarget::Proto(cands)) => {
+                                let ranked = self.rx_rank_proto(&cands, chars, pos);
+                                match ranked.first().copied() {
+                                    // No candidate can match here.
+                                    None => false,
+                                    Some(_)
+                                        if frame
+                                            .as_ref()
+                                            .is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) =>
+                                    {
+                                        false
+                                    }
+                                    Some(first) => {
+                                        // The call is committed to the first ranked
+                                        // candidate that matches, and to its first
+                                        // end, so a cut at its return drops the
+                                        // rest of the ranking too.
+                                        let stack_base = stack.len();
+                                        if ranked.len() > 1 {
+                                            push_choice!(Choice::Proto {
+                                                pc: pc + 1,
+                                                pos,
+                                                atom,
+                                                cands: Arc::clone(&cands),
+                                                ranked: Rc::new(ranked),
+                                                next: 1,
+                                                mark: mark!(),
+                                            });
+                                        }
+                                        let (parsed, sub_pkg, _) = &cands[first];
+                                        let Some(callee) = program_for(parsed) else {
+                                            debug_assert!(false, "a proto's candidates compile");
+                                            break 'run None;
+                                        };
+                                        enter_frame!(
+                                            Arc::clone(callee),
+                                            *sub_pkg,
+                                            atom,
+                                            pos,
+                                            pc + 1,
+                                            true,
+                                            stack_base,
+                                            Some((Arc::clone(&cands), first))
+                                        );
+                                        continue 'run;
+                                    }
+                                }
+                            }
+                            Some(CallTarget::Single) => {
+                                pc += 1;
+                                match self.regex_match_atom_with_capture_in_pkg(
+                                    &program.atoms[atom as usize],
+                                    chars,
+                                    pos,
+                                    levels.top().caps(),
+                                    pkg,
+                                    ic,
+                                ) {
+                                    Some((end, delta)) => {
+                                        levels.edit(|s| s.merge_delta(delta));
+                                        pos = end;
+                                        farthest = farthest.max(pos);
+                                        true
+                                    }
+                                    None => false,
+                                }
+                            }
+                            None => {
+                                let mut cands = self.regex_match_atom_all_with_capture_opts(
+                                    &program.atoms[atom as usize],
+                                    chars,
+                                    pos,
+                                    levels.top().caps(),
+                                    pkg,
+                                    ic,
+                                    commit,
+                                );
+                                // Ratchet commits to the highest-priority end, the
+                                // last (the producer's order is lowest first).
+                                if commit && cands.len() > 1 {
+                                    cands.drain(..cands.len() - 1);
+                                }
+                                pc += 1;
+                                enter_cands!(cands)
+                            }
+                        }
+                    }
+                    // Cost: O(k·m) for the k iterations the scan matches, m = one
+                    // match of the callee (`regex_named_ratchet_run`); O(1) when the
+                    // scan does not apply.
+                    RxOp::NamedRun { atom, min, skip } => {
+                        match self.regex_named_ratchet_run(
+                            &program.atoms[atom as usize],
+                            chars,
+                            pos,
+                            min as usize,
+                            pkg,
+                        ) {
+                            None => {
+                                pc += 1;
+                                true
+                            }
+                            Some(None) => false,
+                            Some(Some((end, delta))) => {
+                                levels.edit(|s| s.merge_delta(delta));
+                                pos = end;
+                                farthest = farthest.max(pos);
+                                pc = skip;
+                                true
+                            }
+                        }
+                    }
+                    // Cost: O(1).
+                    RxOp::Jmp(to) => {
+                        pc = to;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::Mark(r) => {
+                        set_reg!(r, pos);
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::PosBase(r) => {
+                        set_reg!(r, levels.top().caps().positional.len());
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::SepBase(r) => {
+                        set_reg!(r, levels.collected_len());
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::Height(r) => {
+                        set_reg!(r, stack.len());
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(k), k = the choice points dropped (each pushed once).
+                    RxOp::Cut(r) => {
+                        truncate_stack!(reg!(r));
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::CtrZero(r) => {
+                        set_reg!(r, 0);
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::CtrInc(r) => {
+                        set_reg!(r, reg!(r) + 1);
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::Repeat {
+                        ctr,
+                        min,
+                        max,
+                        body,
+                        exit,
+                        greedy,
+                    } => {
+                        let n = reg!(ctr);
+                        if n < min as usize {
+                            pc = body;
+                        } else if max != u32::MAX && n >= max as usize {
+                            pc = exit;
+                        } else {
+                            let (first, second) = if greedy { (body, exit) } else { (exit, body) };
+                            push_choice!(Choice::At {
+                                pc: second,
+                                pos,
+                                mark: mark!(),
+                            });
+                            pc = first;
+                        }
+                        true
+                    }
+                    // Cost: one run of the count code (`regex_repeat_count`), then
+                    // O(1) amortized.
+                    RxOp::RepeatCount { tok, min, max } => {
+                        let RegexQuant::RepeatCode(code) = &program.toks[tok as usize].quant else {
+                            debug_assert!(false, "a RepeatCount op names a `** {{ … }}` token");
+                            break 'run None;
+                        };
+                        pc += 1;
+                        match self.regex_repeat_count(code, pos, levels.top().caps()) {
+                            Some((lo, hi)) => {
+                                set_reg!(min, lo);
+                                set_reg!(max, hi.unwrap_or(usize::MAX));
+                                true
+                            }
+                            None => false,
+                        }
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::RepeatDyn {
+                        ctr,
+                        min,
+                        max,
+                        body,
+                        exit,
+                        greedy,
+                    } => {
+                        let n = reg!(ctr);
+                        let (min, max) = (reg!(min), reg!(max));
+                        if n < min {
+                            pc = body;
+                        } else if max != usize::MAX && n >= max {
+                            pc = exit;
+                        } else {
+                            let (first, second) = if greedy { (body, exit) } else { (exit, body) };
+                            push_choice!(Choice::At {
+                                pc: second,
+                                pos,
+                                mark: mark!(),
+                            });
+                            pc = first;
+                        }
+                        true
+                    }
+                    // Cost: O(1).
+                    RxOp::ZeroIter {
+                        ctr,
+                        start,
+                        min,
+                        max,
+                    } => {
+                        pc += 1;
+                        pos != reg!(start)
+                            || zero_width_iter_counts(
+                                reg!(ctr),
+                                min as usize,
+                                (max != u32::MAX).then_some(max as usize),
+                            )
+                    }
+                    // Cost: O(1).
+                    RxOp::GoalOk { height } => {
+                        let at = reg!(height);
+                        if let Some(entry) = stack.get_mut(at) {
+                            *entry = Choice::Dead;
+                        }
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1).
+                    RxOp::Advanced { start } => {
+                        pc += 1;
+                        pos > reg!(start)
+                    }
+                    // Cost: O(1).
+                    RxOp::AtLeast { ctr, min } => {
+                        pc += 1;
+                        reg!(ctr) >= min as usize
+                    }
+                    // Cost: see `rx_capture_op`.
+                    op @ (RxOp::OpenCapture
+                    | RxOp::OpenIsolated
+                    | RxOp::DropCapture
+                    | RxOp::CloseCapture { .. }
+                    | RxOp::CapAtom(_)
+                    | RxOp::Code(_)
+                    | RxOp::VarDecl(_)
+                    | RxOp::Named { .. }
+                    | RxOp::ZeroArm { .. }
+                    | RxOp::QuantNames { .. }
+                    | RxOp::Fold { .. }
+                    | RxOp::AltTail { .. }
+                    | RxOp::Collect { .. }
+                    | RxOp::SepEmit { .. }
+                    | RxOp::GoalEnd { .. }
+                    | RxOp::GoalFail { .. }
+                    | RxOp::ConjTail { .. }) => {
+                        pc += 1;
+                        match self.rx_capture_op(
+                            program,
+                            op,
+                            &regs[base..],
+                            levels,
+                            chars,
+                            pos,
+                            pkg,
+                        ) {
+                            Some(next) => {
+                                pos = next;
+                                farthest = farthest.max(pos);
+                                true
+                            }
+                            None => false,
+                        }
+                    }
+                    // Cost: O(c), c = this level's captures (one snapshot); in a
+                    // callee frame also the one `build_named_candidates_from_inner`
+                    // call that files them as the subrule's Match, O(1) plus the
+                    // callee's own captures moved, not copied.
+                    RxOp::Match => match frame.clone() {
+                        None => match &mut goal {
+                            Goal::First => break 'run Some((pos, levels.top().snapshot())),
+                            Goal::End(end) => {
+                                if pos == *end {
+                                    break 'run Some((pos, levels.top().snapshot()));
+                                }
+                                false
+                            }
+                            // Every end up to the first that covers the subject: the
+                            // match is kept and the run backtracks for the next one.
+                            Goal::UntilFull(out) => {
+                                out.push((pos, levels.top().snapshot()));
+                                if pos == chars.len() {
+                                    break 'run None;
+                                }
+                                false
+                            }
+                        },
+                        Some(f) => {
+                            // A second path to an end the call already returned at
+                            // is not a new candidate.
+                            // A ratcheted call returns once, so it keeps no list.
+                            let fresh = f.commit || !f.seen.borrow().contains(&pos);
+                            if fresh {
+                                if !f.commit {
+                                    f.seen.borrow_mut().push(pos);
+                                }
+                                // A ratcheted call keeps only its first end; a call
+                                // that left no choice point in the callee cannot be
+                                // resumed either.
+                                if f.commit {
+                                    truncate_stack!(f.stack_base);
+                                }
+                                let settled = stack.len() <= f.stack_base;
+                                let mut inner = if settled {
+                                    levels.close_forget(f.journal_base)
+                                } else {
+                                    levels.close()
+                                };
+                                // A proto candidate's Match carries its `:sym<…>`.
+                                if let Some((cands, idx)) = &f.proto {
+                                    inner.set_sym(cands[*idx].2.clone());
+                                }
+                                let caller: &RxProgram = match &f.parent {
+                                    Some(p) => &p.program,
+                                    None => root,
+                                };
+                                let RegexAtom::Named(name) = &caller.atoms[f.site as usize] else {
+                                    debug_assert!(false, "a frame's site is a `<subrule>` atom");
+                                    break 'run None;
+                                };
+                                let (_, delta) = self.build_named_candidate_from_inner(
+                                    pos,
+                                    inner,
+                                    f.entry_pos,
+                                    name.spec(),
+                                    None,
+                                );
+                                let delta = Some(delta);
+                                frame = f.parent.clone();
+                                match &frame {
+                                    Some(p) => {
+                                        cur = Cur::Callee(Arc::clone(&p.program));
+                                        base = p.base;
+                                        pkg = p.pkg;
+                                    }
+                                    None => {
+                                        cur = Cur::Root(root);
+                                        base = 0;
+                                        pkg = root_pkg;
+                                    }
+                                }
+                                pc = f.ret_pc;
+                                if settled {
+                                    // The callee's window, undo entries and run
+                                    // ends are unreachable now.
+                                    reg_trail.truncate(f.trail_base);
+                                    regs.truncate(f.base);
+                                    ends.truncate(f.ends_base);
+                                }
+                                if let Some(delta) = delta {
+                                    levels.edit(|s| s.merge_delta(delta));
+                                }
+                                continue 'run;
+                            } else {
+                                false
+                            }
                         }
                     },
-                    Some(f) => {
-                        // A second path to an end the call already returned at
-                        // is not a new candidate.
-                        // A ratcheted call returns once, so it keeps no list.
-                        let fresh = f.commit || !f.seen.borrow().contains(&pos);
-                        if fresh {
-                            if !f.commit {
-                                f.seen.borrow_mut().push(pos);
+                };
+                if !ok {
+                    // The newest choice point that is still wanted, with the frame
+                    // state it was pushed with (none for a run that never called).
+                    let (choice, fm) = loop {
+                        let Some(choice) = stack.pop() else {
+                            break 'run None;
+                        };
+                        let fm = if fmarks.last().is_some_and(|m| m.at == stack.len()) {
+                            fmarks.pop()
+                        } else {
+                            None
+                        };
+                        if !matches!(choice, Choice::Dead) {
+                            break (choice, fm);
+                        }
+                    };
+                    // Put a partly consumed choice point back where it was.
+                    macro_rules! repush {
+                        ($choice:expr) => {{
+                            if let Some(m) = &fm {
+                                fmarks.push(FMark {
+                                    at: stack.len(),
+                                    regs_len: m.regs_len,
+                                    frame: m.frame.clone(),
+                                });
                             }
-                            // A ratcheted call keeps only its first end; a call
-                            // that left no choice point in the callee cannot be
-                            // resumed either.
-                            if f.commit {
-                                stack.truncate(f.stack_base);
+                            stack.push($choice);
+                        }};
+                    }
+                    let mut cand_delta = None;
+                    // A proto call's next candidate, entered once the state is back.
+                    let mut enter_proto = None;
+                    let (to_pc, to_pos, mark) = match choice {
+                        Choice::Dead => {
+                            debug_assert!(false, "dead choice points are skipped above");
+                            break 'run None;
+                        }
+                        Choice::At { pc, pos, mark } => (pc, pos, mark),
+                        Choice::Proto {
+                            pc,
+                            pos,
+                            atom,
+                            cands,
+                            ranked,
+                            next,
+                            mark,
+                        } => {
+                            // The call's own height: its entry is popped.
+                            let stack_base = stack.len();
+                            let idx = ranked[next];
+                            if next + 1 < ranked.len() {
+                                repush!(Choice::Proto {
+                                    pc,
+                                    pos,
+                                    atom,
+                                    cands: Arc::clone(&cands),
+                                    ranked: Rc::clone(&ranked),
+                                    next: next + 1,
+                                    mark,
+                                });
                             }
-                            let settled = stack.len() <= f.stack_base;
-                            let mut inner = if settled {
-                                levels.close_forget(f.journal_base)
+                            enter_proto = Some((atom, pos, pc, cands, idx, stack_base));
+                            (pc, pos, mark)
+                        }
+                        Choice::Run {
+                            pc,
+                            base: run,
+                            lo,
+                            hi,
+                            mark,
+                        } => {
+                            let at = ends[hi - 1];
+                            if hi - 1 > lo {
+                                repush!(Choice::Run {
+                                    pc,
+                                    base: run,
+                                    lo,
+                                    hi: hi - 1,
+                                    mark,
+                                });
                             } else {
-                                levels.close()
-                            };
-                            // A proto candidate's Match carries its `:sym<…>`.
-                            if let Some((cands, idx)) = &f.proto {
-                                inner.set_sym(cands[*idx].2.clone());
+                                ends.truncate(run);
                             }
-                            let caller: &RxProgram = match &f.parent {
-                                Some(p) => &p.program,
-                                None => root,
-                            };
-                            let RegexAtom::Named(name) = &caller.atoms[f.site as usize] else {
-                                debug_assert!(false, "a frame's site is a `<subrule>` atom");
+                            (pc, at, mark)
+                        }
+                        Choice::Cands {
+                            pc,
+                            cands,
+                            left,
+                            mark,
+                        } => {
+                            let (end, delta) = cands[left - 1].clone();
+                            if left > 1 {
+                                repush!(Choice::Cands {
+                                    pc,
+                                    cands,
+                                    left: left - 1,
+                                    mark,
+                                });
+                            }
+                            cand_delta = Some(delta);
+                            (pc, end, mark)
+                        }
+                    };
+                    levels.rewind(mark.cap);
+                    if let Some(delta) = cand_delta {
+                        levels.edit(|s| s.merge_delta(delta));
+                    }
+                    while reg_trail.len() > mark.reg {
+                        let (i, old) = reg_trail.pop().expect("register trail entry");
+                        regs[i] = old;
+                    }
+                    // Windows opened after this choice point are dead.
+                    regs.truncate(fm.as_ref().map_or(root.nregs, |m| m.regs_len));
+                    let target_frame = fm.and_then(|m| m.frame);
+                    let same_frame = match (&frame, &target_frame) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                        _ => false,
+                    };
+                    // A choice point of another frame: back to that frame. Every
+                    // path that switches ends in `continue 'run`.
+                    if !same_frame {
+                        match &target_frame {
+                            Some(f) => {
+                                cur = Cur::Callee(Arc::clone(&f.program));
+                                base = f.base;
+                                pkg = f.pkg;
+                            }
+                            None => {
+                                cur = Cur::Root(root);
+                                base = 0;
+                                pkg = root_pkg;
+                            }
+                        }
+                        frame = target_frame;
+                        match enter_proto {
+                            Some((atom, entry, ret_pc, cands, idx, stack_base)) => {
+                                let (parsed, sub_pkg, _) = &cands[idx];
+                                let Some(callee) = program_for(parsed) else {
+                                    debug_assert!(false, "a proto's candidates compile");
+                                    break 'run None;
+                                };
+                                enter_frame!(
+                                    Arc::clone(callee),
+                                    *sub_pkg,
+                                    atom,
+                                    entry,
+                                    ret_pc,
+                                    true,
+                                    stack_base,
+                                    Some((Arc::clone(&cands), idx))
+                                );
+                            }
+                            None => {
+                                pc = to_pc;
+                                pos = to_pos;
+                            }
+                        }
+                        continue 'run;
+                    }
+                    match enter_proto {
+                        Some((atom, entry, ret_pc, cands, idx, stack_base)) => {
+                            let (parsed, sub_pkg, _) = &cands[idx];
+                            let Some(callee) = program_for(parsed) else {
+                                debug_assert!(false, "a proto's candidates compile");
                                 break 'run None;
                             };
-                            let wrapped = self.build_named_candidates_from_inner(
-                                vec![(pos, inner)],
-                                f.entry_pos,
-                                name.spec(),
-                                None,
-                            );
-                            let delta = wrapped.into_iter().next().map(|(_, delta)| delta);
-                            frame = f.parent.clone();
-                            match &frame {
-                                Some(p) => {
-                                    cur = Cur::Callee(Arc::clone(&p.program));
-                                    base = p.base;
-                                    pkg = p.pkg;
-                                }
-                                None => {
-                                    cur = Cur::Root(root);
-                                    base = 0;
-                                    pkg = root_pkg;
-                                }
-                            }
-                            pc = f.ret_pc;
-                            if settled {
-                                // The callee's window, undo entries and run
-                                // ends are unreachable now.
-                                reg_trail.truncate(f.trail_base);
-                                regs.truncate(f.base);
-                                ends.truncate(f.ends_base);
-                            }
-                            if let Some(delta) = delta {
-                                levels.edit(|s| s.merge_delta(delta));
-                            }
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                },
-            };
-            if !ok {
-                let choice = loop {
-                    match stack.pop() {
-                        None => break 'run None,
-                        Some(Choice::Dead) => {}
-                        Some(choice) => break choice,
-                    }
-                };
-                let mut cand_delta = None;
-                // A proto call's next candidate, entered once the state is back.
-                let mut enter_proto = None;
-                let (to_pc, to_pos, mark) = match choice {
-                    Choice::Dead => {
-                        debug_assert!(false, "dead choice points are skipped above");
-                        break 'run None;
-                    }
-                    Choice::At { pc, pos, mark } => (pc, pos, mark),
-                    Choice::Proto {
-                        pc,
-                        pos,
-                        atom,
-                        cands,
-                        ranked,
-                        next,
-                        mark,
-                    } => {
-                        // The call's own height: its entry is popped.
-                        let stack_base = stack.len();
-                        let idx = ranked[next];
-                        if next + 1 < ranked.len() {
-                            stack.push(Choice::Proto {
-                                pc,
-                                pos,
+                            enter_frame!(
+                                Arc::clone(callee),
+                                *sub_pkg,
                                 atom,
-                                cands: Arc::clone(&cands),
-                                ranked: Rc::clone(&ranked),
-                                next: next + 1,
-                                mark: mark.clone(),
-                            });
-                        }
-                        enter_proto = Some((atom, pos, pc, cands, idx, stack_base));
-                        (pc, pos, mark)
-                    }
-                    Choice::Run {
-                        pc,
-                        base: run,
-                        lo,
-                        hi,
-                        mark,
-                    } => {
-                        let at = ends[hi - 1];
-                        if hi - 1 > lo {
-                            stack.push(Choice::Run {
-                                pc,
-                                base: run,
-                                lo,
-                                hi: hi - 1,
-                                mark: mark.clone(),
-                            });
-                        } else {
-                            ends.truncate(run);
-                        }
-                        (pc, at, mark)
-                    }
-                    Choice::Cands {
-                        pc,
-                        cands,
-                        left,
-                        mark,
-                    } => {
-                        let (end, delta) = cands[left - 1].clone();
-                        if left > 1 {
-                            stack.push(Choice::Cands {
-                                pc,
-                                cands,
-                                left: left - 1,
-                                mark: mark.clone(),
-                            });
-                        }
-                        cand_delta = Some(delta);
-                        (pc, end, mark)
-                    }
-                };
-                levels.rewind(mark.cap);
-                if let Some(delta) = cand_delta {
-                    levels.edit(|s| s.merge_delta(delta));
-                }
-                while reg_trail.len() > mark.reg {
-                    let (i, old) = reg_trail.pop().expect("register trail entry");
-                    regs[i] = old;
-                }
-                // Windows opened after this choice point are dead.
-                regs.truncate(mark.regs_len);
-                let same_frame = match (&frame, &mark.frame) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => Rc::ptr_eq(a, b),
-                    _ => false,
-                };
-                if !same_frame {
-                    match &mark.frame {
-                        Some(f) => {
-                            cur = Cur::Callee(Arc::clone(&f.program));
-                            base = f.base;
-                            pkg = f.pkg;
+                                entry,
+                                ret_pc,
+                                true,
+                                stack_base,
+                                Some((Arc::clone(&cands), idx))
+                            );
+                            continue 'run;
                         }
                         None => {
-                            cur = Cur::Root(root);
-                            base = 0;
-                            pkg = root_pkg;
+                            pc = to_pc;
+                            pos = to_pos;
                         }
                     }
-                    frame = mark.frame;
-                }
-                if let Some((atom, entry, ret_pc, cands, idx, stack_base)) = enter_proto {
-                    let (parsed, sub_pkg, _) = &cands[idx];
-                    let Some(callee) = program_for(parsed) else {
-                        debug_assert!(false, "a proto's candidates compile");
-                        break 'run None;
-                    };
-                    enter_frame!(
-                        Arc::clone(callee),
-                        *sub_pkg,
-                        atom,
-                        entry,
-                        ret_pc,
-                        true,
-                        stack_base,
-                        Some((Arc::clone(&cands), idx))
-                    );
-                } else {
-                    pc = to_pc;
-                    pos = to_pos;
                 }
             }
         };
         // Drop the frames the leftover choice points hold.
         stack.clear();
+        fmarks.clear();
         super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }

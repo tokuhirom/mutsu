@@ -639,8 +639,9 @@ impl Compiler {
         let nullable = atom_min_len(&token.atom) == 0;
         if nullable && !token.ratchet && !loop_body_backtracks(&token.atom) {
             // The walk's chain takes an iteration's first candidate only;
-            // mirroring that needs a body with a single candidate.
-            if !is_assertion(&token.atom) {
+            // mirroring that needs a body with a single candidate: an
+            // assertion, or a `<subrule>` (a `CapAtom`, one end per iteration).
+            if !is_assertion(&token.atom) && !matches!(token.atom, RegexAtom::Named(_)) {
                 return Err("nullable-loop");
             }
         }

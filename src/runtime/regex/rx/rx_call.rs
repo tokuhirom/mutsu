@@ -38,6 +38,9 @@ pub(super) enum CallTarget {
     /// A proto: the `:sym<…>` candidates, ranked at the call by the walk's own
     /// LTM measurement (ADR-0046), of which the first that matches wins.
     Proto(Arc<Vec<ParsedTokenCandidate>>),
+    /// No rule of that name: a builtin (`<.ws>`, `<wb>`, `<alpha>`, …) the walk's
+    /// single-candidate arm decides, with at most one end.
+    Single,
 }
 
 impl Interpreter {
@@ -98,6 +101,27 @@ impl Interpreter {
         target
     }
 
+    /// [`Self::rx_call_target`] with the one verdict a method definition can
+    /// change: a plain grammar METHOD named like the rule is invoked by the
+    /// walk's producer (`try_regex_subrule_as_method`), so such a call bridges.
+    // Cost: O(1) expected.
+    pub(super) fn rx_call_target_checked(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        ic: bool,
+    ) -> Option<CallTarget> {
+        let target = self.rx_call_target(name, pkg, ic)?;
+        if matches!(target, CallTarget::Single)
+            && self
+                .registry()
+                .method_overloads_present_sym(pkg, name.spec().lookup_sym)
+        {
+            return None;
+        }
+        Some(target)
+    }
+
     /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
     /// decide the shape of the call.
     fn resolve_call_target(
@@ -108,7 +132,10 @@ impl Interpreter {
     ) -> Option<CallTarget> {
         let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
-        if raw_empty || candidates.is_empty() {
+        if raw_empty {
+            return Some(CallTarget::Single);
+        }
+        if candidates.is_empty() {
             return None;
         }
         // `:m` remaps positions across the whole result set; an inherited `:i`
