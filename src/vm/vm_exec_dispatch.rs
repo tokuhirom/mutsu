@@ -1139,7 +1139,12 @@ impl Interpreter {
                         match name.chars().next() {
                             Some('@') => Value::array(Vec::new()),
                             Some('%') => Value::hash(crate::value::HashData::default()),
-                            _ => Value::NIL,
+                            Some('&') => Value::NIL,
+                            // A scalar's package-qualified storage key drops
+                            // its sigil (`Foo::x`), so any other spelling is
+                            // a scalar: bare `our $x;` holds the `Any` type
+                            // object, not `Nil` (#10393).
+                            _ => Value::package(crate::symbol::wk::any()),
                         }
                     });
                 // Auto-deref ContainerRef for stack use (ContainerRef axis of
