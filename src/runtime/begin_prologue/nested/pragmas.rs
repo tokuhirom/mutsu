@@ -27,6 +27,7 @@
 //!   run time, which repeating it would move to startup.
 
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr};
 
 /// Where a lifted body's block may repeat a pragma.
 pub(super) enum Repeat {
@@ -86,12 +87,21 @@ pub(super) fn is_pragma(stmt: &Stmt) -> bool {
 }
 
 /// A pragma argument the repeat can compile anywhere: it reads no variable
-/// (`:crlf`, `:D`, `<$x>`, `6.d`).
+/// (`:crlf`, `:D`, `<$x>`, `6.d`). It is built from literals, pairs and lists.
 fn is_literal_arg(arg: &Expr) -> bool {
-    match arg {
-        Expr::Literal(_) => true,
-        Expr::Binary { left, right, .. } => is_literal_arg(left) && is_literal_arg(right),
-        Expr::ArrayLiteral(items) => items.iter().all(is_literal_arg),
-        _ => false,
+    let mut check = LiteralArg(true);
+    check.visit_expr(arg);
+    check.0
+}
+
+/// Whether every expression it visits is a literal, a pair or a list of them.
+struct LiteralArg(bool);
+
+impl Visit for LiteralArg {
+    fn visit_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Literal(_) | Expr::Binary { .. } | Expr::ArrayLiteral(_) => walk_expr(self, expr),
+            _ => self.0 = false,
+        }
     }
 }
