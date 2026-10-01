@@ -74,13 +74,10 @@ src/runtime/begin_prologue/nested.rs                    2
 src/runtime/begin_prologue/nested/decls.rs              2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs              3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/dispatch_proto_rewrite.rs                   2
-src/runtime/eval_check.rs                               8
+src/runtime/eval_type_scans.rs                          1  # 1 spine (decodes a `use lib` argument list: a path or a nested list of them): stays hand-rolled
 src/runtime/phasers.rs                                  6
 src/runtime/run.rs                                      3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
 src/runtime/run_prelude.rs                              2  # mark_prelude_subs mutates; declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
-src/runtime/system.rs                                   2
-src/runtime/system_eval_names.rs                        8
-src/runtime/system_eval_vars.rs                         7
 src/runtime/types/mod.rs                                1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                                3
 src/whatever_curry/build.rs                             4

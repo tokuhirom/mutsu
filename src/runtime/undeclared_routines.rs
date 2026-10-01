@@ -105,6 +105,23 @@ struct Scan {
     /// The unit imports names the walker cannot see (use/require/...): skip
     /// the whole check rather than risk a false positive.
     bail: bool,
+    /// The `EVAL` flavour of the check (`ScanMode::Eval`).
+    eval: bool,
+}
+
+/// Which compilation unit the scan judges.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanMode {
+    /// A program, module or `require`d file.
+    Mainline,
+    /// An `EVAL`'d snippet. Its `use` statements do not end the check: the
+    /// parser has already harvested the names they import
+    /// (`parser::is_imported_function`), and the caller's own routines are in
+    /// scope, so a still-unknown name is reported as rakudo does
+    /// (`EVAL 'use Test; zork()'`). A capitalised callee (`Zork(1)`) is judged
+    /// too: rakudo rejects an undeclared one at compile time
+    /// ("Undeclared name"), and a type of that name suppresses it.
+    Eval,
 }
 
 /// A declared name with its sigil and twigil removed.
@@ -158,7 +175,10 @@ impl Scan {
         // type coercions (a different error class with many more legitimate
         // sources), qualified/adverbed names carry `:`/`::`, and `__`-names
         // are compiler-synthesized.
-        if !first.is_ascii_lowercase() || name.contains(':') || name.starts_with("__") {
+        if !(first.is_ascii_lowercase() || self.eval && first.is_ascii_uppercase())
+            || name.contains(':')
+            || name.starts_with("__")
+        {
             return;
         }
         self.calls.push((name.to_string(), self.line));
@@ -167,12 +187,16 @@ impl Scan {
 
 impl Visit for Scan {
     fn visit_stmt(&mut self, stmt: &Stmt) {
-        if self.bail {
+        // The `EVAL` scan keeps walking after a bail: its declarations also
+        // feed the undeclared-name check (`scope_blind_declared_names`).
+        if self.bail && !self.eval {
             return;
         }
         match stmt {
             Stmt::SetLine(n) => self.line = *n,
-            Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
+            Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. }
+                if !self.eval =>
+            {
                 self.bail = true;
             }
             // Dynamically-named sub: the declared name is unknowable.
@@ -251,12 +275,19 @@ struct Unexplained {
     declared_routines: HashSet<String>,
 }
 
-fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
+fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
     let mut scan = Scan {
         line: 1,
+        eval: mode == ScanMode::Eval,
         ..Default::default()
     };
     walk_stmts(&mut scan, stmts);
+    scan
+}
+
+// Cost: O(n), n = size of the unit's AST.
+fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
+    let scan = scan_unit(stmts, mode);
     if scan.bail {
         return None;
     }
@@ -269,6 +300,15 @@ fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
         calls,
         declared_routines: scan.declared_routines,
     })
+}
+
+/// Every name the unit declares anywhere — routines, variables (without
+/// their sigil), parameters, types, enum keys, terms — collected scope-blind,
+/// the same set the undeclared-routine check suppresses with. Reused by the
+/// `EVAL` undeclared-name check so the two agree on what "declared" means.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
+    scan_unit(stmts, ScanMode::Eval).declared
 }
 
 /// The CHECK-time undeclared-routine analysis, without constructing an
@@ -284,7 +324,7 @@ fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
 pub(crate) fn check_undeclared_routines_without_interpreter(
     stmts: &[Stmt],
 ) -> Result<(), RuntimeError> {
-    let Some(found) = unexplained_calls(stmts) else {
+    let Some(found) = unexplained_calls(stmts, ScanMode::Mainline) else {
         return Ok(());
     };
     let Some((name, line)) = found.calls.first() else {
@@ -329,7 +369,19 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let Some(found) = unexplained_calls(stmts) else {
+        self.check_undeclared_routines(stmts, ScanMode::Mainline)
+    }
+
+    /// The undeclared-routine check for a unit of kind `mode`; see
+    /// [`ScanMode`] for how an `EVAL`'d snippet differs.
+    // Cost: O(n + c * r), n = size of the unit's AST, c = unexplained calls,
+    // r = cost of one registry/env lookup.
+    pub(crate) fn check_undeclared_routines(
+        &self,
+        stmts: &[Stmt],
+        mode: ScanMode,
+    ) -> Result<(), RuntimeError> {
+        let Some(found) = unexplained_calls(stmts, mode) else {
             return Ok(());
         };
         for (name, line) in &found.calls {
@@ -341,10 +393,21 @@ impl Interpreter {
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())
                 || self.get_our_var(name).is_some()
+                // A sigilless constant in scope: an `EVAL` of a bare term
+                // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
+                || self.term_binding(name).is_some()
                 || self.registry().classes.contains_key(name)
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)
                 || self.registry().enum_types.contains_key(name)
+                // A capitalised callee (only judged in `EVAL`) is a coercion
+                // when a type of that name exists, and a core term (`IterationEnd`)
+                // is not a routine call at all.
+                || (name.starts_with(|c: char| c.is_ascii_uppercase())
+                    && (self.has_type(name)
+                        || self.has_class(name)
+                        || Self::is_builtin_type(name)
+                        || super::eval_name_scans::is_core_term(name)))
             {
                 continue;
             }
