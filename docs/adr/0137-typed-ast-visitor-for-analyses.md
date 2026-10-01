@@ -77,6 +77,11 @@ a separate decision when the first rewriting pass wants one.
   checks and the `use lib` replay (16 walkers ported); every other parser-side row carries a note
   (lowering, spine, renderer, one-scope scan). `is export` is found at any depth, as rakudo
   exports it; off the package spine a lexical or non-exported declaration stays private.
+- **Placeholders and declared names** (#10468): the placeholder collectors, the bare-vs-`$^name`
+  ordering checks, the virtual-call check, routine-local name collection and the WhateverCode
+  "mentions `$_`" check ported (25 → 5 in the cluster) onto one shared placeholder-scope walk in
+  `ast/placeholders.rs`, driven by the ADR-0048 oracle; the remaining 5 are WhateverCode
+  priming-scope operand walks and closure construction.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter
