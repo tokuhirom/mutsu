@@ -1,7 +1,7 @@
 # The remaining rewriting passes move onto `VisitMut`
 
 The second slice of ADR-10499 ports the rewriting passes that remained after the first slice
-(166 → 158 hand-rolled walkers). Three of them used to rebuild every node by hand and are now a
+(148 → 140 hand-rolled walkers). Three of them used to rebuild every node by hand and are now a
 clone plus an in-place `VisitMut`: the WhateverCode placeholder replacement, the proto `{*}`
 rewrite and the loop-exit phaser wrapping. The WhateverCode replacement also had two copies,
 one for numbered placeholders and one for `$_`, which are now a single pass. The supply-body

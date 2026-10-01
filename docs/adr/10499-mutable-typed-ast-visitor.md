@@ -92,7 +92,7 @@ by field.
   (`runtime/dispatch_proto_rewrite.rs`, by value → clone + `VisitMut`); the supply-body
   `emit`/`done` rewrite (`parser/primary/ident/supply.rs`, merged with its expression twin);
   the loop-exit phaser wrapping and the ENTER-expression hoist (`compiler/loop_exit_phasers.rs`).
-  166 → 158 walkers. What stays hand-rolled in the baseline is code generation, lowerings,
+  148 → 140 walkers. What stays hand-rolled in the baseline is code generation, lowerings,
   single-path spines, one-scope statement-list transforms (the BEGIN prologue partition, the
   prelude tagging) and `replace.rs`'s priming-scope spine, each with its note. The parser-side
   `nested_block_methods.rs` hoist is left to the parser cluster of #10468.
