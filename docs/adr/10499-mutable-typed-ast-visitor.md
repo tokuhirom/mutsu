@@ -1,7 +1,7 @@
 # ADR-10499: Rewriting passes walk the AST through one exhaustive mutable visitor
 
-- **Status**: Accepted (maintainer decision, 2026-10-01; not yet implemented — see
-  "Implementation status")
+- **Status**: Accepted (maintainer decision, 2026-10-01; `VisitMut` implemented, the rewriting
+  passes are being ported — see "Implementation status")
 - **Date**: 2026-10-01
 - **Related**: [ADR-0137](0137-typed-ast-visitor-for-analyses.md) (the read-only visitor, which
   deferred this decision), [ADR-0133](0133-no-per-call-ast-compile-at-runtime.md) (`ParamCode`),
@@ -77,4 +77,12 @@ by field.
 
 ## Implementation status
 
-- Not started. Lands after the read-only ports of #10468.
+- **Slice 1**: `trait VisitMut` and the `walk_*_mut` functions (`src/ast_visit/visit_mut.rs`,
+  `walk_mut_{stmt,expr,decl}.rs`). Beyond §1 the trait has one more hook,
+  `visit_stmts_mut(&mut Vec<Stmt>)`: every walk hands a statement list to it, which is the
+  "list handling" of §4 (an ordered pass keeps its list loop there; a lift edits the list).
+  Ported: the outer-redeclaration scope walk (`parser/outer_redecl/`), the nested-BEGIN lift
+  (`runtime/begin_prologue/nested/walk.rs`), the phaser lift and reorder recursion
+  (`runtime/phasers/lift.rs`); 192 → 182 walkers. Copies of executed code are skipped by every
+  lift: the `target`/`rhs` of a `CompoundAssign` (a model-layer copy of `expanded`), and a regex
+  tree (#10550).

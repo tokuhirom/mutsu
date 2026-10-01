@@ -4,7 +4,8 @@
   are being ported under the `check-ast-walkers` ratchet — see "Implementation status")
 - **Date**: 2026-10-01
 - **Related**: [#10441](https://github.com/tokuhirom/mutsu/issues/10441),
-  [ADR-0113](0113-frame-lexical-inner-subs.md) (frame-lexical proof)
+  [ADR-0113](0113-frame-lexical-inner-subs.md) (frame-lexical proof),
+  [ADR-10499](10499-mutable-typed-ast-visitor.md) (the mutable `VisitMut` for rewriting passes)
 
 ## Context
 
