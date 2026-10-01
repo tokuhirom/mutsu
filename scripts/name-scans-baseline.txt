@@ -1,3 +1,3 @@
 qualify 160
 global-cmp 86
-scan 339
+scan 338
