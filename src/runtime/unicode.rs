@@ -1,10 +1,4 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-
-thread_local! {
-    static UNICODE_PROP_CACHE: RefCell<HashMap<String, Option<regex::Regex>>> =
-        RefCell::new(HashMap::new());
-}
+use crate::builtins::unicode_prop_class::in_property_class;
 
 pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
     // Paren-argument form Prop("Value") / Prop(Value): the <+:Prop(...)>
@@ -17,8 +11,8 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
         let args = &name[open + 1..name.len() - 1];
         return check_unicode_property_with_args(prop, args, c);
     }
-    // Handle Unicode block properties (InXxx) separately since the regex crate
-    // doesn't support the unicode-block feature
+    // Handle Unicode block properties (InXxx) separately: `\p{..}` has no
+    // Block classes.
     if let Some(block_name) = name.strip_prefix("In")
         && let Some((start, end)) = unicode_block_range(block_name)
     {
@@ -31,7 +25,7 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
     {
         let prop = &name[..open];
         let value = &name[open + 1..close];
-        // BiDi class is not supported by the regex crate; handle manually
+        // `\p{..}` has no Bidi_Class; handle it manually
         if prop == "bc" {
             return check_bidi_class(value, c);
         }
@@ -40,39 +34,17 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
             "gc" => format!("General_Category={}", value),
             _ => format!("{}={}", prop, value),
         };
-        let via_regex = UNICODE_PROP_CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            let entry = cache.entry(full_prop.clone()).or_insert_with(|| {
-                let pattern = format!(r"^\p{{{}}}", full_prop);
-                regex::Regex::new(&pattern).ok()
-            });
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            entry.as_ref().map(|re| re.is_match(s))
-        });
-        // The regex crate only supports a handful of value-typed properties
+        let via_class = in_property_class(&full_prop, c);
+        // `\p{..}` only knows a handful of value-typed properties
         // (General_Category, Script, Script_Extensions). For everything else
         // (Line_Break, Word_Break, Bidi_Class, East_Asian_Width, Joining_Type,
-        // ...) the pattern fails to compile; fall back to the uniprop matcher.
-        return match via_regex {
+        // ...) the class does not resolve; fall back to the uniprop matcher.
+        return match via_class {
             Some(matched) => matched,
             None => crate::builtins::uniprop::unimatch(c, value, Some(prop)),
         };
     }
-    UNICODE_PROP_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let entry = cache.entry(name.to_string()).or_insert_with(|| {
-            let pattern = format!(r"^\p{{{}}}", name);
-            regex::Regex::new(&pattern).ok()
-        });
-        match entry {
-            Some(re) => {
-                let mut buf = [0u8; 4];
-                re.is_match(c.encode_utf8(&mut buf))
-            }
-            None => false,
-        }
-    })
+    in_property_class(name, c).unwrap_or(false)
 }
 
 /// Check a Unicode property with arguments, e.g. NumericValue(0 ^..^ 1) or name(/:s LATIN SMALL/).
@@ -96,7 +68,7 @@ pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) 
         // `<:prop(value)>` assertion at all (`<:Nv(1)>` never matches,
         // `<:Numeric_Value(1)>` does) -- confirmed directly against `raku`,
         // see issue #8486. Falling through to the generic branch below
-        // reconstructs `Nv<1>`, which the regex crate and `unimatch` both
+        // reconstructs `Nv<1>`, which `\p{..}` and `unimatch` both
         // fail to resolve as a property, so it correctly never matches
         // either instead of being special-cased false.
         "numericvalue" | "numeric_value" => check_numeric_value_property(args, c),
@@ -221,42 +193,18 @@ fn unicode_numeric_value(c: char) -> Option<f64> {
     None
 }
 
-/// Check if a character's Unicode name matches a regex pattern.
+/// `<:name("LATIN SMALL LETTER A")>`: the smartmatch of the name against a
+/// string, i.e. equality. A regex argument is not decided here (see
+/// `unicode_name_prop`); every caller that can meet one routes it to the
+/// regex engine first, so it answers `false`.
 fn check_name_property(args: &str, c: char) -> bool {
-    let args = args.trim();
-    // The argument can be a regex like /:s LATIN SMALL LETTER/
-    let pattern = if let Some(inner) = args.strip_prefix('/') {
-        inner.strip_suffix('/').unwrap_or(inner)
-    } else {
-        args
-    };
-    // Get Unicode name of the character
-    let name = unicode_char_name(c);
-    if name.is_empty() {
+    if args.trim_start().starts_with('/') {
         return false;
     }
-    // Handle :s (sigspace) flag — replace whitespace in pattern with \s+
-    let pattern = if let Some(rest) = pattern.strip_prefix(":s ") {
-        rest.split_whitespace().collect::<Vec<_>>().join(r"\s+")
-    } else if let Some(rest) = pattern.strip_prefix(":s\t") {
-        rest.split_whitespace().collect::<Vec<_>>().join(r"\s+")
-    } else {
-        pattern.split_whitespace().collect::<Vec<_>>().join(r"\s+")
-    };
-    // Match against the name using a regex
-    if let Ok(re) = regex::Regex::new(&pattern) {
-        re.is_match(&name)
-    } else {
-        false
-    }
+    crate::builtins::unicode_name::char_name(c).is_some_and(|name| name == args)
 }
 
-/// Get the Unicode name of a character.
-fn unicode_char_name(c: char) -> String {
-    crate::builtins::unicode_name::char_name(c).unwrap_or_default()
-}
-
-/// Check BiDi class of a character (regex crate doesn't support Bidi_Class).
+/// Check BiDi class of a character (`\p{..}` has no Bidi_Class).
 fn check_bidi_class(class: &str, c: char) -> bool {
     match class {
         "L" => {

@@ -868,6 +868,7 @@ pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
 mod receiver_class;
 pub(crate) mod regex;
+mod regex_ltm_split;
 mod regex_named_caps;
 pub(crate) mod regex_parse;
 mod regex_parse_charclass;
@@ -981,6 +982,7 @@ mod plain_fn_resolve_memo;
 mod registry_gen;
 pub(crate) mod undeclared_routines;
 mod unicode;
+mod unicode_name_prop;
 mod unit_private_routines;
 mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
@@ -1010,7 +1012,7 @@ pub(crate) use utils::*;
 pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thread};
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
-use self::unicode::{check_unicode_property, check_unicode_property_with_args};
+use self::unicode::check_unicode_property;
 use crate::value::ValueMap;
 
 /// One class/role attribute declaration.

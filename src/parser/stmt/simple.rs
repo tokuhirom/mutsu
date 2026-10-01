@@ -2,8 +2,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 
-use regex::Regex;
-
 use super::super::add_parse_warning;
 use super::super::expr::expression;
 use super::super::helpers::{is_loop_label_name, skip_balanced_parens, ws, ws1};

@@ -66,12 +66,10 @@ jit = [
 # Audit 2026-10-01: each entry says what it is used for and the verdict. KEEP
 # means justified under (a)-(c); REMOVE/TRIM link the tracking issue.
 [dependencies]
-# REMOVE (#10439): runtime use is `\p{..}` property tests on one char
-# (`runtime/unicode.rs`, `builtins/uniprop/`) and a source-text scan in the
-# parser (`module_exports/export_hook.rs`). Neither needs a regex engine.
-# Range tables (or `regex-syntax` alone) replace it. The dev-only `*_gen.rs`
-# consistency tests may keep it as a dev-dependency.
-regex = "1.12.3"
+# KEEP (a): resolves a `\p{..}` Unicode property class to its codepoint
+# ranges (`builtins::unicode_prop_class`), so property tests are a binary
+# search with no regex engine (#10439). It has no dependencies of its own.
+regex-syntax = "0.8"
 # KEEP (a): Int/Rat/FatRat big-integer arithmetic.
 num-bigint = { version = "0.5", features = ["serde"] }
 # KEEP: the numeric traits num-bigint is built on. Already a transitive dep.
@@ -131,11 +129,11 @@ cranelift-native = { version = "0.136", optional = true }
 # build script pulls in phf_codegen + rand, which is why it is not a runtime
 # dependency.
 unicode_names2 = "3"
-# Used only by `builtins::unicode_gc_gen` to re-derive the committed
-# General_Category tables from the very Unicode data `regex` matches against,
-# so a `regex-syntax` bump carrying a new Unicode version fails the suite
-# instead of silently diverging. Keep it on the same minor as `regex`'s own.
-regex-syntax = "0.8"
+# Used only by tests: `builtins::unicode_gc_gen` cross-checks the committed
+# General_Category tables against the ordered `regex` probe they replaced, and
+# the scanners that replaced runtime `regex` patterns (#10439) are pinned
+# against those patterns. Keep `regex-syntax` on the same minor as `regex`'s.
+regex = "1.12.3"
 # Used only by `builtins::emoji_name_gen` to (re)generate and verify the
 # committed CLDR emoji short-name table `builtins::emoji_name_table` (#10437).
 emojis = "0.9"

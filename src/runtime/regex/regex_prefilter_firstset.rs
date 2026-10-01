@@ -15,6 +15,7 @@
 use super::super::*;
 use super::regex_eval_class::class_matches_ignorecase;
 use crate::runtime::unicode::{check_unicode_property, check_unicode_property_with_args};
+use crate::runtime::unicode_name_prop::is_name_regex_test;
 
 /// A superset of the characters that can appear at the first position of a
 /// match.
@@ -297,6 +298,12 @@ pub(super) fn class_is_ascii_only(class: &CharClass, ignore_case: bool) -> bool 
 /// Every non-ASCII character is admitted: enumerating a property's members over
 /// the whole of Unicode would cost far more than the scan it saves.
 pub(super) fn unicode_prop_first_set(name: &str, negated: bool, args: Option<&str>) -> FirstSet {
+    // A `<:name(/.../)>` regex is run by the regex engine at match time (see
+    // `Interpreter::unicode_property_holds`); the free predicate cannot answer
+    // it, so admit everything.
+    if is_name_regex_test(name, args) {
+        return FirstSet::universal();
+    }
     let mut set = FirstSet::ascii_none_rest_all();
     for cp in 0u8..128 {
         let c = cp as char;

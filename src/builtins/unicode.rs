@@ -857,10 +857,7 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
         return None;
     }
     // Only allow Unicode Decimal_Number (Nd), not No/Nl.
-    static ND_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let nd_re = ND_RE.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").expect("valid Nd regex"));
-    let mut tmp = [0u8; 4];
-    if !nd_re.is_match(c.encode_utf8(&mut tmp)) {
+    if super::unicode_gc::general_category(c) != super::unicode_gc::GeneralCategory::Nd {
         return None;
     }
     let cp = c as u32;
@@ -877,8 +874,7 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
         }
         let prev = run_start - 1;
         let is_nd = char::from_u32(prev).is_some_and(|ch| {
-            let mut b = [0u8; 4];
-            nd_re.is_match(ch.encode_utf8(&mut b))
+            super::unicode_gc::general_category(ch) == super::unicode_gc::GeneralCategory::Nd
         });
         if !is_nd {
             break;
