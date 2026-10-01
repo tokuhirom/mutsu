@@ -50,6 +50,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     let unit_names = unit_lexical_names(stmts);
+    let mut unit = nested::UnitContext {
+        is_eval,
+        strict_off: false,
+    };
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
     // The compile-time composition of the `our` types declared in each
@@ -71,7 +75,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         composed_early.push(moved.needs_prologue);
         moved_phasers.push(moved.phasers);
         let before = lifted.effects.len();
-        nested::lift_in_stmt(stmt, &unit_names, is_eval, &mut lifted);
+        nested::lift_in_stmt(stmt, &unit_names, unit, &mut lifted);
+        if let Some(off) = strict_pragma(stmt) {
+            unit.strict_off = off;
+        }
         effects.push(lifted.effects.split_off(before));
         let shells = crate::compiler::nested_type_decls(stmt);
         composes_role |= shells
@@ -146,6 +153,20 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
 /// The lexical names a unit declares at its top level, in `VarDecl` naming
 /// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
 /// in the unit's frame.
+/// What a statement does to `strict`: `Some(true)` for `no strict`,
+/// `Some(false)` for `use strict`, `None` for any other statement.
+fn strict_pragma(stmt: &Stmt) -> Option<bool> {
+    match stmt {
+        Stmt::No { module, arg: None } if module == "strict" => Some(true),
+        Stmt::Use {
+            module,
+            condition: None,
+            ..
+        } if module == "strict" => Some(false),
+        _ => None,
+    }
+}
+
 fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
     for stmt in stmts {
