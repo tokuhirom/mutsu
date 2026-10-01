@@ -2130,8 +2130,11 @@ impl Interpreter {
         let Some(parsed) = self.parse_regex(pattern) else {
             return 0;
         };
+        // A different pattern from `parsed`: its derived analyses (the compiled
+        // program among them, which bakes in the `$` anchor) are its own.
         let probe = RegexPattern {
             anchor_end: false,
+            derived: Default::default(),
             ..(*parsed).clone()
         };
         let chars: Vec<char> = text.chars().collect();
