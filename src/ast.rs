@@ -2772,6 +2772,14 @@ fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_unattached_ph_expr(target, out);
             collect_unattached_ph_expr(index, out);
         }
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
+            collect_unattached_ph_expr(target, out);
+            for d in dimensions {
+                collect_unattached_ph_expr(d, out);
+            }
+        }
         Expr::Ternary {
             cond,
             then_expr,
@@ -2856,6 +2864,14 @@ fn collect_virtual_call_expr(expr: &Expr, out: &mut Option<String>) {
         Expr::Index { target, index, .. } => {
             collect_virtual_call_expr(target, out);
             collect_virtual_call_expr(index, out);
+        }
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
+            collect_virtual_call_expr(target, out);
+            for d in dimensions {
+                collect_virtual_call_expr(d, out);
+            }
         }
         Expr::Ternary {
             cond,
@@ -3203,6 +3219,14 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Index { target, index, .. } => {
             collect_ph_expr(target, out);
             collect_ph_expr(index, out);
+        }
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
+            collect_ph_expr(target, out);
+            for d in dimensions {
+                collect_ph_expr(d, out);
+            }
         }
         // A placeholder can be the TARGET of an element assignment
         // (`{ $^x<a> = 3 }` — Text::CSV's on_in callbacks); without this arm
@@ -3878,6 +3902,14 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         Expr::Index { target, index, .. } => {
             collect_ph_expr_shallow(target, out);
             collect_ph_expr_shallow(index, out);
+        }
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
+            collect_ph_expr_shallow(target, out);
+            for d in dimensions {
+                collect_ph_expr_shallow(d, out);
+            }
         }
         // Element-assignment TARGET placeholders (`{ $^x<a> = 3 }`) — see the
         // matching arm in `collect_ph_expr`.

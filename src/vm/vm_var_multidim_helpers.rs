@@ -191,7 +191,10 @@ impl Interpreter {
         }
         let shape = crate::runtime::utils::shaped_array_shape(target);
         let depth = Self::array_depth(target);
-        if indices.len() < depth && depth > 1 {
+        // Only a *shaped* array has a fixed dimensionality to be short of; a
+        // plain Array of Arrays (`@a[0,2] = @a[2,0]` slice-swapping rows) is
+        // indexed one level at a time.
+        if shape.is_some() && indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "assign to",
                 indices.len(),
@@ -242,7 +245,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let shape = crate::runtime::utils::shaped_array_shape(target);
         let depth = Self::array_depth(target);
-        if indices.len() < depth && depth > 1 {
+        // Only a *shaped* array has a fixed dimensionality to be short of; a
+        // plain Array of Arrays (`@a[0,2] = @a[2,0]` slice-swapping rows) is
+        // indexed one level at a time.
+        if shape.is_some() && indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "delete from",
                 indices.len(),
