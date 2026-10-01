@@ -228,6 +228,16 @@ impl Interpreter {
             return;
         }
         self.set_env_with_main_alias_sym(name, name_sym, val.clone());
+        // A package-qualified name (`$GLOBAL::n++`, `$Pkg::x--`) is a package
+        // variable, and the write above reaches only the running frame's env.
+        // When the write CREATES the variable (the auto-vivifying `++` of an
+        // unset `$GLOBAL::n`) a frame or block exit that restores the env,
+        // which keeps only the keys it held on entry, drops it again -- as it
+        // would any local. `SetGlobal` persists the same write in `our_vars`
+        // for that reason; do the same here, so `++`/`--` agree with `=`.
+        if crate::runtime::utils::has_double_colon(name) {
+            self.set_our_var(name.to_string(), val.clone());
+        }
         // A compound assign / inc-dec to a package-scope free variable (`our $X`
         // or a `package { my $X }` lexical) reached from inside a named sub uses
         // the bare name; mirror the value back into the canonical package store
