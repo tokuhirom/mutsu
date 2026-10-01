@@ -821,40 +821,43 @@ impl Compiler {
                     name_expr: None,
                     body,
                     ..
-                } if !Self::is_stub_class_body(body) => {
-                    let shell_body = Self::type_decl_shell_body(body);
-                    let mut shell = self.qualify_decl_name(stmt);
-                    if let Stmt::ClassDecl {
-                        body: sbody,
-                        custom_traits,
-                        ..
-                    } = &mut shell
-                    {
-                        *sbody = shell_body;
-                        custom_traits.retain(|(t, _)| {
-                            t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
-                        });
-                        custom_traits.push(("__hoisted".to_string(), None));
-                    }
-                    let idx = self.add_class_decl_plan(&shell);
-                    self.code.emit(OpCode::RegisterDecl(idx));
-                }
-                Stmt::RoleDecl { .. } => {
-                    let mut shell = self.qualify_decl_name(stmt);
-                    if let Stmt::RoleDecl { custom_traits, .. } = &mut shell {
-                        custom_traits.retain(|(t, _)| {
-                            t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
-                        });
-                        custom_traits.push(("__hoisted".to_string(), None));
-                    }
-                    let idx = self.add_role_decl_plan(&shell);
-                    self.code.emit(OpCode::RegisterDecl(idx));
-                }
+                } if !Self::is_stub_class_body(body) => self.emit_type_decl_shell(stmt),
+                Stmt::RoleDecl { .. } => self.emit_type_decl_shell(stmt),
                 _ => {}
             }
         }
         self.current_package = original_package;
         self.in_unit_package = original_in_unit_package;
+    }
+
+    /// Emit the `__hoisted` declaration-only shell registration of one
+    /// class/role declaration, qualified against the compiler's current
+    /// package (see [`Self::hoist_type_decl_shells`]). A class keeps only the
+    /// declaration subset of its body; a role keeps its whole body, whose
+    /// statements only run when the role is composed.
+    pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt) {
+        let keep_trait =
+            |t: &str| t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED");
+        let mut shell = self.qualify_decl_name(stmt);
+        let idx = match &mut shell {
+            Stmt::ClassDecl {
+                body,
+                custom_traits,
+                ..
+            } => {
+                *body = Self::type_decl_shell_body(body);
+                custom_traits.retain(|(t, _)| keep_trait(t));
+                custom_traits.push(("__hoisted".to_string(), None));
+                self.add_class_decl_plan(&shell)
+            }
+            Stmt::RoleDecl { custom_traits, .. } => {
+                custom_traits.retain(|(t, _)| keep_trait(t));
+                custom_traits.push(("__hoisted".to_string(), None));
+                self.add_role_decl_plan(&shell)
+            }
+            _ => return,
+        };
+        self.code.emit(OpCode::RegisterDecl(idx));
     }
 
     /// The declaration-only subset of a class body used by

@@ -1134,6 +1134,7 @@ pub(crate) mod frame_lexical_inherit;
 pub(crate) mod frame_lexical_routines;
 mod helpers;
 mod helpers_ast_utils;
+mod hoist_nested_types;
 mod helpers_block_inline;
 mod helpers_call_args;
 mod helpers_control_flow;
@@ -4387,6 +4388,11 @@ impl Compiler {
         // already construct the type (Raku type declarations are compile-time;
         // see `hoist_type_decl_shells`).
         self.hoist_type_decl_shells(stmts);
+        // Install `our` classes/roles declared inside routines and blocks at
+        // compile time, before the code that declares them runs (#10470).
+        if self.is_mainline && !self.is_routine {
+            self.hoist_nested_type_decl_shells(stmts);
+        }
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).
