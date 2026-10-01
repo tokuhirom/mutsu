@@ -79,3 +79,10 @@ a separate decision when the first rewriting pass wants one.
 - **Stays hand-rolled by design**: a walk that visits only some positions *because that is the
   semantics* (the sink-context propagation in `parser/sink_warn.rs`), and code generation
   (`compile_*`, TRIR, RakuAST conversion). Mutating walkers wait for a `VisitMut` decision.
+- **EVAL-path slice**: the `EVAL` compile-time checks (`runtime/system_eval_names.rs`,
+  `system_eval_vars.rs`, `eval_check.rs`, `system.rs`; 25 → 1 walker, the one left a `use lib`
+  argument spine). The `EVAL` undeclared-routine check is now the mainline analysis in an
+  `EVAL` mode; the undeclared-variable check keeps lexical scopes on a stack; the type checks
+  keep the type captures (`::T`, role type parameters) in scope. The name, routine and type
+  checks now judge nested bodies too, as rakudo does; the variable check still judges uses only
+  in its old positions until it can see caller lexicals declared later (#10511).
