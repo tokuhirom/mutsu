@@ -26,7 +26,7 @@ PATH:
 ```bash
 mise use -g github:tokuhirom/mutsu       # latest release
 # or pin a version:
-mise use -g github:tokuhirom/mutsu@0.7.0
+mise use -g github:tokuhirom/mutsu@0.24.0
 
 mutsu -e 'say "Hello, World!"'
 mzef --version                            # the bundled Zef package manager
@@ -68,8 +68,9 @@ docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu \
     mutsu -e 'use JSON::OptIn; say "loaded"'
 ```
 
-Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.7.0`); `:latest` tracks the
-newest release and `:main` tracks the development branch.
+Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.24.0`); `:latest` tracks the
+newest release. Images are built from release tags only, so there is no
+development-branch tag.
 
 The image is a **two-stage build**: a `rust:1.98-bookworm` **builder** stage
 compiles the binaries, and the shipped `debian:bookworm-slim` **runtime** stage
@@ -100,13 +101,14 @@ For interactive use:
 
 ## Status
 
-mutsu passes **1,433 out of 1,464** official [Roast](https://github.com/Raku/roast) test files in full. Compatibility is improving daily; the [site](https://tokuhirom.github.io/mutsu/) shows the figure counted at its last deploy.
+mutsu passes **1,426 out of 1,454** official [Roast](https://github.com/Raku/roast) test files in full. Compatibility is improving daily; the [site](https://tokuhirom.github.io/mutsu/) shows the figure counted at its last deploy.
 
 Roast measures the language against its spec. The other question — *does the
 module I actually use work?* — is measured by running each zef distribution's own
-test suite under both rakudo and mutsu and comparing the two. Across all
-**1,624** distributions in the ecosystem index, **41.2%** pass every test file
-that rakudo passes (**53.6%** of test files, **62.4%** of assertions). Look up a
+test suite under both rakudo and mutsu and comparing the two. Of the
+**1,638** distributions in the ecosystem index, **1,202** can be graded against
+a rakudo baseline, and **69.1%** of those (830) pass every test file that
+rakudo passes (**77.0%** of test files, **89.3%** of assertions). Look up a
 particular distribution on the [ecosystem
 page](https://tokuhirom.github.io/mutsu/ecosystem.html); the per-distribution
 records are in [`ecosystem/`](ecosystem/), the metric over time is
@@ -284,13 +286,13 @@ missing and are not (real threads, NativeCall, `supply`/`react`, grammar actions
 ```bash
 cargo build              # Debug build
 cargo build --release    # Optimized build
-make test                # Run local tests (prove t/)
-make roast               # Run official Raku spec tests
+make test                # Cargo tests + the TAP suite under t/ (release build)
+make roast               # Whitelisted official Raku spec (Roast) tests
 ```
 
 ## Requirements
 
-- Rust 1.94.0+ (edition 2024)
+- Rust 1.98.1+ (edition 2024)
 - A C compiler (for the vendored libffi that NativeCall links)
 
 ## Architecture
@@ -299,7 +301,7 @@ make roast               # Run official Raku spec tests
 Source -> Parser (src/parser/) -> Compiler (src/compiler/) -> VM (src/vm/) -> Output
 ```
 
-mutsu uses a bytecode VM architecture. Source code is parsed into an AST, compiled to bytecode (`OpCode` instructions), and executed by the VM. See [AGENTS.md](AGENTS.md) for detailed architecture documentation.
+mutsu uses a bytecode VM architecture. Source code is parsed into an AST, compiled to bytecode (`OpCode` instructions), and executed by the VM. See [docs/architecture.md](docs/architecture.md) for the module map.
 
 ## Contributing
 
