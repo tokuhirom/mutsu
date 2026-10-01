@@ -204,12 +204,12 @@ impl Interpreter {
     /// the `our_vars` write in [`Self::store_scalar_by_name_for`], and the same
     /// fallback `GetGlobal` takes. A read-modify-write that skipped it would
     /// start from zero on every call of a routine that creates the variable.
-    // Cost: O(1) hash probe; O(|name|) for the `::` scan.
-    pub(crate) fn qualified_our_var_read(&self, name: &str) -> Option<Value> {
-        if !crate::runtime::utils::has_double_colon(name) {
+    // Cost: O(1) (the qualifier is decided once per symbol, then one hash probe).
+    pub(crate) fn qualified_our_var_read(&self, name_sym: Symbol) -> Option<Value> {
+        if !crate::qualified::is_qualified(name_sym) {
             return None;
         }
-        self.get_our_var(name).cloned()
+        self.get_our_var(name_sym.as_str()).cloned()
     }
 
     /// The by-name scalar write tail shared by the three read-modify-write ops
@@ -248,7 +248,7 @@ impl Interpreter {
         // which keeps only the keys it held on entry, drops it again -- as it
         // would any local. `SetGlobal` persists the same write in `our_vars`
         // for that reason; do the same here, so `++`/`--` agree with `=`.
-        if crate::runtime::utils::has_double_colon(name) {
+        if crate::qualified::is_qualified(name_sym.unwrap_or_else(|| Symbol::intern(name))) {
             self.set_our_var(name.to_string(), val.clone());
         }
         // A compound assign / inc-dec to a package-scope free variable (`our $X`
