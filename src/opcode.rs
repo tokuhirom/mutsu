@@ -3660,8 +3660,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -3708,8 +3706,6 @@ pub(crate) enum OpCode {
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
-        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
-        perl5: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and

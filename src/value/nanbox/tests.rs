@@ -476,7 +476,6 @@ fn every_variant_roundtrips_losslessly() {
             overlap: false,
             repeat: Some(2),
             nth: None,
-            perl5: false,
             pos: false,
             pos_value: None,
             continue_: false,

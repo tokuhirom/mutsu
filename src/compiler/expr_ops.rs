@@ -16,7 +16,6 @@ impl Compiler {
                 global,
                 nth,
                 x,
-                perl5,
                 replacement_thunk,
             } => {
                 self.compile_expr_subst(
@@ -29,7 +28,6 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    *perl5,
                     replacement_thunk.as_deref(),
                 );
             }
@@ -43,7 +41,6 @@ impl Compiler {
                 global,
                 nth,
                 x,
-                perl5,
                 replacement_thunk,
             } => {
                 self.compile_expr_nondestructive_subst(
@@ -56,7 +53,6 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    *perl5,
                     replacement_thunk.as_deref(),
                 );
             }
@@ -128,7 +124,6 @@ impl Compiler {
         global: bool,
         nth: &Option<String>,
         x: &Option<String>,
-        perl5: bool,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -141,11 +136,7 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
-        let qq_thunks = if perl5 {
-            None
-        } else {
-            self.compile_pattern_qq_thunks(pattern)
-        };
+        let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::Subst {
             pattern_idx,
             replacement_idx,
@@ -156,7 +147,6 @@ impl Compiler {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
             qq_thunks,
         });
@@ -175,7 +165,6 @@ impl Compiler {
         global: bool,
         nth: &Option<String>,
         x: &Option<String>,
-        perl5: bool,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -188,11 +177,7 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
-        let qq_thunks = if perl5 {
-            None
-        } else {
-            self.compile_pattern_qq_thunks(pattern)
-        };
+        let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,
             replacement_idx,
@@ -203,7 +188,6 @@ impl Compiler {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
             qq_thunks,
         });

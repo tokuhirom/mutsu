@@ -703,25 +703,9 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.nth.is_some() => {
                 let pattern = &a.pattern;
                 let raw_nth = a.nth.as_ref().unwrap();
-                let perl5 = &a.perl5;
                 let text = self.regex_match_text(left);
-                let pattern = if *perl5 {
-                    self.interpolate_regex_pattern(pattern)
-                } else {
-                    pattern.to_string()
-                };
-                let all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pattern, &text)
-                    }
-                } else {
-                    self.regex_match_non_overlapping(&pattern, &text)
-                };
+                let pattern = pattern.to_string();
+                let all = self.regex_match_non_overlapping(&pattern, &text);
                 let non_overlapping = self.select_non_overlapping_matches(all);
 
                 // Check if the nth argument contains junction operators
@@ -869,25 +853,9 @@ impl Interpreter {
             {
                 let pattern = &a.pattern;
                 let needed = &a.repeat.unwrap();
-                let perl5 = &a.perl5;
                 let text = self.regex_match_text(left);
-                let pattern = if *perl5 {
-                    self.interpolate_regex_pattern(pattern)
-                } else {
-                    pattern.to_string()
-                };
-                let all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pattern, &text)
-                    }
-                } else {
-                    self.regex_match_non_overlapping(&pattern, &text)
-                };
+                let pattern = pattern.to_string();
+                let all = self.regex_match_non_overlapping(&pattern, &text);
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 let Some(selected) =
                     Self::select_matches_by_repeat_bounds(non_overlapping, *needed, Some(*needed))
@@ -904,25 +872,9 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.global && !a.overlap && !a.exhaustive => {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
-                let perl5 = &a.perl5;
                 let text = self.regex_match_text(left);
-                let pattern = if *perl5 {
-                    self.interpolate_regex_pattern(pattern)
-                } else {
-                    pattern.to_string()
-                };
-                let all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pattern, &text)
-                    }
-                } else {
-                    self.regex_match_non_overlapping(&pattern, &text)
-                };
+                let pattern = pattern.to_string();
+                let all = self.regex_match_non_overlapping(&pattern, &text);
                 // Filter to non-overlapping: take longest match at each position,
                 // then skip matches that overlap with already-selected ones
                 let non_overlapping = self.select_non_overlapping_matches(all);
@@ -953,25 +905,9 @@ impl Interpreter {
             // :ov (overlap) -- find longest match at each starting position
             (_, ValueView::RegexWithAdverbs(a)) if a.overlap => {
                 let pattern = &a.pattern;
-                let perl5 = &a.perl5;
                 let text = self.regex_match_text(left);
-                let pattern = if *perl5 {
-                    self.interpolate_regex_pattern(pattern)
-                } else {
-                    pattern.to_string()
-                };
-                let all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pattern, &text)
-                    }
-                } else {
-                    self.regex_match_all_with_captures(&pattern, &text)
-                };
+                let pattern = pattern.to_string();
+                let all = self.regex_match_all_with_captures(&pattern, &text);
                 if all.is_empty() {
                     self.clear_multi_match_state();
                     return false;
@@ -996,25 +932,9 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.exhaustive => {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
-                let perl5 = &a.perl5;
                 let text = self.regex_match_text(left);
-                let pattern = if *perl5 {
-                    self.interpolate_regex_pattern(pattern)
-                } else {
-                    pattern.to_string()
-                };
-                let mut all = if *perl5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pattern, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pattern, &text)
-                    }
-                } else {
-                    self.regex_match_all_with_captures(&pattern, &text)
-                };
+                let pattern = pattern.to_string();
+                let mut all = self.regex_match_all_with_captures(&pattern, &text);
                 if all.is_empty() {
                     self.clear_multi_match_state();
                     return false;
@@ -1084,7 +1004,7 @@ impl Interpreter {
                     || matches!(
                         right.view(),
                         ValueView::RegexWithAdverbs(a)
-                            if !a.global && !a.exhaustive && !a.overlap && !a.perl5
+                            if !a.global && !a.exhaustive && !a.overlap
                     ) =>
             {
                 // The topic Value and the `&str` the matcher walks share one
@@ -1247,24 +1167,6 @@ impl Interpreter {
                     }
                     self.env
                         .insert_sym(crate::symbol::wk::match_var(), match_obj);
-                    return true;
-                }
-                self.clear_match_state();
-                false
-            }
-            // P5 regex single match
-            (_, ValueView::RegexWithAdverbs(a))
-                if !a.global && !a.exhaustive && !a.overlap && a.perl5 =>
-            {
-                let pat = &a.pattern;
-                let text = self.regex_match_text(left);
-                let pat = self.interpolate_regex_pattern(pat);
-                #[cfg(feature = "pcre2")]
-                let result = self.regex_match_with_captures_p5(&pat, &text);
-                #[cfg(not(feature = "pcre2"))]
-                let result = self.regex_match_with_captures(&pat, &text);
-                if let Some(captures) = result {
-                    self.apply_single_regex_captures(&captures);
                     return true;
                 }
                 self.clear_match_state();

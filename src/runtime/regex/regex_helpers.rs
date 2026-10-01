@@ -1109,12 +1109,6 @@ fn remap_caps_spans_mapped(
         caps.from = m(caps.from);
         caps.to = m(caps.to);
     }
-    if !caps.positional_slots().is_empty() {
-        for slot in caps.positional_slots_mut().iter_mut().flatten() {
-            slot.0 = m(slot.0);
-            slot.1 = m(slot.1);
-        }
-    }
     for sc in caps
         .named
         .values_mut()

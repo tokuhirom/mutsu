@@ -5757,7 +5757,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5773,7 +5772,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5790,7 +5788,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5806,7 +5803,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;

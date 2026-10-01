@@ -792,7 +792,7 @@ jobs:
         # `--lib` because that is all the browser package builds (see
         # scripts/build-npm-package.sh). This is the configuration where the
         # platform-gated paths (`#[cfg(unix)]` filesystem calls, the worker
-        # pool, PCRE2) compile out, and where unused locals and dead helpers
+        # pool, NativeCall) compile out, and where unused locals and dead helpers
         # pile up unseen.
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
