@@ -771,6 +771,7 @@ impl Compiler {
                 // Same block-start declaration visibility as the statement-position
                 // loop body above (`compile_body_with_implicit_try_inner`).
                 c.hoist_typed_var_decls(stmts);
+                c.hoist_require_stubs(stmts);
                 c.compile_stmts_value(stmts)
             })
         });
@@ -953,6 +954,7 @@ impl Compiler {
             }
         } else {
             self.hoist_typed_var_decls(stmts);
+            self.hoist_require_stubs(stmts);
             let last = stmts.len().wrapping_sub(1);
             for (i, s) in stmts.iter().enumerate() {
                 if tail_as_value && i == last {

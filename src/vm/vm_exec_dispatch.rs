@@ -5937,6 +5937,14 @@ impl Interpreter {
                 self.register_lexical_class(name);
                 *ip += 1;
             }
+            // Cost: O(m) plus hashed lookups, m = bytes of the name (probed, then copied and
+            // interned once). A qualified name is resolved through its parent package's stash, so
+            // it also pays O(s), s = members of that package. One-shot per scope entry.
+            OpCode::DeclareRequireStub { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.declare_require_stub(&name);
+                *ip += 1;
+            }
             // Cost: O(1) (one registry set insert of the name).
             OpCode::RegisterPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();

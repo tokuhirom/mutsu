@@ -274,9 +274,12 @@ status here.
   The initializers stay in place as assignments. Nothing after the last
   `BEGIN` moves, because no BEGIN observes it. Slice 3 removes this bound for
   `use` and `constant`.
-- A statically named `require` in that prefix adds a stub `package Foo {}`
-  to the prologue. Rakudo installs that stub at compile time, and the load
-  still happens at run time.
+- A statically named `require` declares a stub package under that name.
+  Rakudo installs that stub at compile time, in the lexical scope of the
+  statement, and the load still happens at run time. The prologue no longer
+  places it: the compiler declares it on entry to the owning scope
+  (`src/compiler/require_stubs.rs`, #9873), which also covers a unit with no
+  BEGIN-time effect, a nested block, and a `try require Foo` statement.
 - The compiler's `use Test` hoist (`hoist_test_use_decls`) no longer moves
   the module above a BEGIN that precedes it.
 - When the mainline's undeclared-routine check fails, the prologue alone runs

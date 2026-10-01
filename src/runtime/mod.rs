@@ -934,6 +934,7 @@ mod run_roast_preprocess;
 mod runtime_caller_env;
 mod runtime_class_query;
 mod runtime_container;
+mod require_stub;
 mod runtime_encoding;
 mod runtime_init;
 mod runtime_module;

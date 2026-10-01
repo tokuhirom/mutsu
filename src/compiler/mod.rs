@@ -1152,6 +1152,7 @@ mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
 mod package_runtime_body;
+mod require_stubs;
 mod type_decl_value;
 pub(crate) use hoist_nested_types::{nested_decl_composes_role, nested_type_decls};
 pub(crate) use package_runtime_body::CLASS_LEXICAL;

@@ -538,6 +538,10 @@ impl Compiler {
 
     pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt], lexical_hoist: bool) {
         self.seed_user_listop_shadows(stmts);
+        // Every scope entry that hoists its routines also declares the
+        // placeholders of its statically named `require`s (see
+        // `require_stubs`): both are compile-time declarations of the scope.
+        self.hoist_require_stubs(stmts);
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
                 let mut hoisted = stmt.clone();
