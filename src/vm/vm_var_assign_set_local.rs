@@ -2548,9 +2548,24 @@ impl Interpreter {
                 && source_in_same_scope
                 && val_is_simple_scalar
                 && !is_percall_pseudo_var;
+            // A package-qualified source (`my $r := $P::v`) that already lives
+            // in a shared cell (`DeclareOurScalar`) is bound to THAT cell, so
+            // the cell's declared constraint checks every write through the
+            // alias (ADR-0042). Without this the alias fell through to the
+            // by-name sigilless-alias write, which replaced the package entry
+            // with the raw value: `$r = "a"` slipped past `our Int $v`, and
+            // the cell (and with it the constraint) was gone for good (#10411).
+            let qualified_source_cell = !source_in_same_scope
+                && val_is_simple_scalar
+                && crate::qualified::is_qualified(Symbol::intern(&resolved_source))
+                && self
+                    .env()
+                    .get(&resolved_source)
+                    .is_some_and(Value::is_container_ref);
             if (source_in_outer_frame
                 || (is_rebind && source_in_same_scope && val_is_simple_scalar)
-                || decl_bind_same_scope_scalar)
+                || decl_bind_same_scope_scalar
+                || qualified_source_cell)
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
