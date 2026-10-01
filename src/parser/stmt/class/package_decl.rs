@@ -695,6 +695,11 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
         rest
     };
     let (rest, name) = parse_sub_name(rest)?;
+    if !is_regex_proto && !is_method {
+        // A lone `proto sub infix:<op>` (no `multi` candidates in this
+        // file) still declares the operator for the rest of the scope.
+        super::super::simple::register_user_sub(&name);
+    }
     let (rest, _) = ws(rest)?;
     let (rest, (param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
