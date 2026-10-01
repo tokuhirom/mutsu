@@ -199,6 +199,19 @@ impl Interpreter {
         true
     }
 
+    /// The persisted value of a package-qualified name (`$GLOBAL::n`,
+    /// `$Pkg::x`) that the running frame's env no longer holds: the read twin of
+    /// the `our_vars` write in [`Self::store_scalar_by_name_for`], and the same
+    /// fallback `GetGlobal` takes. A read-modify-write that skipped it would
+    /// start from zero on every call of a routine that creates the variable.
+    // Cost: O(1) (the qualifier is decided once per symbol, then one hash probe).
+    pub(crate) fn qualified_our_var_read(&self, name_sym: Symbol) -> Option<Value> {
+        if !crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        self.get_our_var(name_sym.as_str()).cloned()
+    }
+
     /// The by-name scalar write tail shared by the three read-modify-write ops
     /// (`++`, `--`, and the fused compound assignment `AtomicCompoundVar`):
     /// put `val` where the name's variable actually lives.
@@ -228,6 +241,16 @@ impl Interpreter {
             return;
         }
         self.set_env_with_main_alias_sym(name, name_sym, val.clone());
+        // A package-qualified name (`$GLOBAL::n++`, `$Pkg::x--`) is a package
+        // variable, and the write above reaches only the running frame's env.
+        // When the write CREATES the variable (the auto-vivifying `++` of an
+        // unset `$GLOBAL::n`) a frame or block exit that restores the env,
+        // which keeps only the keys it held on entry, drops it again -- as it
+        // would any local. `SetGlobal` persists the same write in `our_vars`
+        // for that reason; do the same here, so `++`/`--` agree with `=`.
+        if crate::qualified::is_qualified(name_sym.unwrap_or_else(|| Symbol::intern(name))) {
+            self.set_our_var(name.to_string(), val.clone());
+        }
         // A compound assign / inc-dec to a package-scope free variable (`our $X`
         // or a `package { my $X }` lexical) reached from inside a named sub uses
         // the bare name; mirror the value back into the canonical package store
