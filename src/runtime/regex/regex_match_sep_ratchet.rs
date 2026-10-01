@@ -30,13 +30,17 @@ impl Interpreter {
         let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
             return Vec::new();
         };
-        // Frugal (`*? %`) under ratchet commits to the minimal count; greedy
-        // extends to `max` (or as far as the input allows).
-        let limit = if token.frugal { Some(min) } else { max };
-        let can_extend = |count: usize| limit.is_none_or(|m| count < m);
+        // The chain is scanned possessively up to `max` (or as far as the input
+        // allows). Greedy commits to all of it; frugal (`*? %`) still grows on
+        // demand under ratchet, as raku does (`"a,a,ab" ~~ /:r a+? % "," b/`
+        // matches), so every length from `min` up is a candidate, the shortest
+        // preferred. Only the individual atoms and separators commit.
+        let can_extend = |count: usize| max.is_none_or(|m| count < m);
 
         let mut atom_caps: Vec<RegexCaptures> = Vec::new();
         let mut sep_caps: Vec<RegexCaptures> = Vec::new();
+        // Where each atom of the chain ended.
+        let mut atom_ends: Vec<usize> = Vec::new();
         let mut cur = start;
         // Highest-priority atom match = the LAST candidate (the atom
         // enumeration returns lowest priority first), mirroring the
@@ -69,6 +73,7 @@ impl Interpreter {
                 })
         {
             atom_caps.push(with_iteration_capture(token, start, end, caps));
+            atom_ends.push(end);
             super::regex_helpers::record_regex_farthest_position(end);
             cur = end;
             while can_extend(atom_caps.len()) {
@@ -109,6 +114,7 @@ impl Interpreter {
                     break;
                 }
                 atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
+                atom_ends.push(atom_end);
                 cur = atom_end;
             }
         }
@@ -116,18 +122,66 @@ impl Interpreter {
             // Ratchet cannot backtrack to satisfy `min`: the quantifier fails.
             return Vec::new();
         }
+        if !token.frugal {
+            return vec![self.separated_ratchet_candidate(
+                token,
+                chars,
+                start,
+                pkg,
+                current_caps,
+                &atom_caps,
+                &sep_caps,
+                cur,
+            )];
+        }
+        // Lowest priority first: the longest chain first, the shortest last.
+        (min..=atom_caps.len())
+            .rev()
+            .map(|n| {
+                self.separated_ratchet_candidate(
+                    token,
+                    chars,
+                    start,
+                    pkg,
+                    current_caps,
+                    &atom_caps[..n],
+                    &sep_caps[..n.saturating_sub(1)],
+                    n.checked_sub(1).map_or(start, |last| atom_ends[last]),
+                )
+            })
+            .collect()
+    }
+
+    /// One candidate of the ratcheted scan: the chain of `atom_caps` (and the
+    /// `sep_caps` between them) ending at `cur`, where its last atom did, plus a `%%`
+    /// trailing separator, which Rakudo consumes greedily and ratchet commits
+    /// to.
+    #[allow(clippy::too_many_arguments)]
+    fn separated_ratchet_candidate(
+        &mut self,
+        token: &RegexToken,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        current_caps: &RegexCaptures,
+        atom_caps: &[RegexCaptures],
+        sep_caps: &[RegexCaptures],
+        cur: usize,
+    ) -> (usize, RegexCaptures) {
+        let sep = token.separator.as_ref().expect("separator present");
+        let names = Self::collect_quantified_names_for_token(token);
         if atom_caps.is_empty() {
             // Zero iterations still marks the quantified names, so `$/<name>` is
             // an empty list rather than one empty Match (see the twin comment in
             // `match_separated_quantifier`).
             let mut caps = RegexCaptures::default();
-            for n in Self::collect_quantified_names_for_token(token) {
+            for n in names {
                 caps.named.slot_mut(Symbol::intern(&n)).quantified = true;
             }
-            return vec![(start, caps)];
+            return (start, caps);
         }
-        // Trailing separator for `%%`: Rakudo consumes it greedily, and
-        // ratchet commits to that single choice.
+        let atom_stride = count_capture_groups(&token.atom);
+        let sep_stride = separator_stride(&sep.pattern);
         let mut end = cur;
         let mut trailing: Option<RegexCaptures> = None;
         if sep.allow_trailing
@@ -138,7 +192,16 @@ impl Interpreter {
                     cur,
                     pkg,
                     current_caps,
-                    || fold(&atom_caps, &sep_caps),
+                    || {
+                        separated_capture_delta(
+                            &names,
+                            atom_caps,
+                            sep_caps,
+                            None,
+                            atom_stride,
+                            sep_stride,
+                        )
+                    },
                     atom_stride,
                     true,
                 )
@@ -150,12 +213,12 @@ impl Interpreter {
         }
         let caps = separated_capture_delta(
             &names,
-            &atom_caps,
-            &sep_caps,
+            atom_caps,
+            sep_caps,
             trailing.as_ref(),
             atom_stride,
             sep_stride,
         );
-        vec![(end, caps)]
+        (end, caps)
     }
 }
