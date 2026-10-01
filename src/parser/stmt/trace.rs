@@ -337,25 +337,35 @@ fn has_elsif_chain(else_branch: &[Stmt]) -> bool {
 }
 
 /// The truth value of a condition made only of constants rakudo folds, `None`
-/// for anything else (`Nil`, a type object, a variable, a call).
-fn constant_truth(expr: &Expr) -> Option<bool> {
-    match expr {
-        Expr::Literal(value) | Expr::LiteralSrc(value, _) => matches!(
-            value.view(),
-            ValueView::Int(_)
-                | ValueView::BigInt(_)
-                | ValueView::Num(_)
-                | ValueView::Rat(..)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-        )
-        .then(|| value.truthy()),
-        Expr::Grouped(inner) => constant_truth(inner),
-        Expr::Unary {
-            op: TokenKind::Bang,
-            expr,
-        } => constant_truth(expr).map(|truth| !truth),
-        _ => None,
+/// for anything else (`Nil`, a type object, a variable, a call). Parentheses
+/// and `!` are peeled in a loop: this follows one path to a leaf, it is not a
+/// walk of the tree.
+fn constant_truth(mut expr: &Expr) -> Option<bool> {
+    let mut negated = false;
+    loop {
+        match expr {
+            Expr::Grouped(inner) => expr = inner,
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: inner,
+            } => {
+                negated = !negated;
+                expr = inner;
+            }
+            Expr::Literal(value) | Expr::LiteralSrc(value, _) => {
+                return matches!(
+                    value.view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(..)
+                        | ValueView::Str(_)
+                        | ValueView::Bool(_)
+                )
+                .then(|| value.truthy() != negated);
+            }
+            _ => return None,
+        }
     }
 }
 

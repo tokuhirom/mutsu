@@ -69,5 +69,5 @@ recognise a stub body `{...}` or a proto dispatcher now look past it through
 - Constant conditions made of constant *expressions* (`if 1 + 1`, `if ?1`)
   are folded by Rakudo but not recognised by the trace rule.
 
-Tests: `t/modules/use-trace-pragma.t` (every expectation taken from `raku` and
+Tests: `t/modules/import-export/use-trace-pragma.t` (every expectation taken from `raku` and
 the file passes under it unchanged).
