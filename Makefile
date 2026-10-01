@@ -1,4 +1,4 @@
-.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers check-name-scans check-adr adr-index
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -169,8 +169,8 @@ check-dev:
 
 # docs/adr/: a new ADR is numbered by its GitHub issue (sequential numbers
 # collided between parallel PRs), and there is no hand-written index to
-# conflict on -- `make adr-index` builds it. CI's `changes` job runs the check
-# too, because a docs-only PR skips the job that runs `make checks`.
+# conflict on -- `make adr-index` builds it. CI runs the check in the
+# always-on `changes` job, because a docs-only PR skips `test-check`.
 check-adr:
 	scripts/adr.sh --self-test
 	scripts/adr.sh check

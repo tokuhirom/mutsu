@@ -102,12 +102,10 @@ jobs:
         run: scripts/ci-docs-only.sh --check-inputs
 
       - name: ADR numbering
-        # Here rather than in `make checks` alone: an ADR PR is usually
-        # docs-only, and a docs-only PR skips the job that runs `make checks`.
-        # A duplicate or new sequential ADR number must still fail it.
-        run: |
-          scripts/adr.sh --self-test
-          scripts/adr.sh check
+        # Here rather than with the other static guards in `test-check`: an
+        # ADR PR is usually docs-only, and a docs-only PR skips that job. A
+        # duplicate or new sequential ADR number must still fail it.
+        run: make check-adr
 
       - name: Detect documentation-only change
         id: detect
@@ -327,6 +325,35 @@ jobs:
         # interpreters are allowlisted debt (#10151). Per-file counts may go
         # down, never up. The script self-tests its test-code masking first.
         run: make check-interp-construction
+
+      - name: No new hand-rolled AST walker
+        # A ratchet (ADR-0137): an analysis over a Stmt/Expr subtree implements
+        # `crate::ast_visit::Visit` instead of a private recursive `match`
+        # whose `_ =>` arm silently skips forgotten variants. Per-file counts
+        # live in scripts/ast-walkers-baseline.txt and may go down, never up.
+        # Missing from this job when it was added, so main took six new
+        # walkers unchecked. Self-tests its detector first.
+        run: make check-ast-walkers
+
+      - name: Value API wall holds
+        # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
+        # outside src/value/. At 0; this keeps it there.
+        run: make check-value-wall
+
+      - name: Every `make checks` guard runs in CI
+        # Each guard above is its own step, so adding one to `make checks`
+        # without a step here left it running only on developer machines --
+        # which is how check-ast-walkers and check-value-wall went unchecked.
+        # Derived from the Makefile, so it cannot drift the same way.
+        run: |
+          missing=0
+          for t in $(sed -n 's/^checks://p' Makefile); do
+            if ! grep -qE "^[[:space:]]+run: make $t\$" .github/workflows/ci.yml; then
+              echo "::error::make checks runs $t, but no ci.yml step does ('run: make $t')"
+              missing=1
+            fi
+          done
+          exit $missing
 
       - name: No private copy of a primitive
         # A ban (ADR-0117, ADR-0118): the method, the nqp:: op, the VM opcode,
