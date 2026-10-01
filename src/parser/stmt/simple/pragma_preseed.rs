@@ -1,13 +1,20 @@
 use super::*;
 
 pub(crate) fn set_attributes_pragma(smiley: &str) {
-    ATTRIBUTES_PRAGMA.with(|v| {
-        *v.borrow_mut() = smiley.to_string();
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.attributes_pragma = smiley.to_string();
+        }
     });
 }
 
 pub(crate) fn current_attributes_pragma() -> String {
-    ATTRIBUTES_PRAGMA.with(|v| v.borrow().clone())
+    SCOPES.with(|s| {
+        s.borrow()
+            .last()
+            .map(|scope| scope.attributes_pragma.clone())
+            .unwrap_or_default()
+    })
 }
 
 /// Set operator sub names to pre-register after scope reset (for EVAL).
