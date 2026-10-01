@@ -257,10 +257,7 @@ impl OuterBackrefCaps {
             if let Some(node) = cur.named.get(name).and_then(|slot| slot.nodes.last()) {
                 return Some(node);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 
@@ -271,10 +268,7 @@ impl OuterBackrefCaps {
             if let Some(slot) = cur.positional.get(idx) {
                 return Some(slot);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 }

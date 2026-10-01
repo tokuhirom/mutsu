@@ -534,11 +534,8 @@ impl Interpreter {
                             return None;
                         }
                         // Extract bare component after the last `::`
-                        let bare = if let Some(pos) = name.rfind("::") {
-                            &name[pos + 2..]
-                        } else {
-                            return None;
-                        };
+                        let pos = name.rfind("::")?;
+                        let bare = &name[pos + 2..];
                         if bare.is_empty() {
                             return None;
                         }

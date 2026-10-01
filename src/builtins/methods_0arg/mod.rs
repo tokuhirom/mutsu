@@ -129,11 +129,10 @@ fn normalize_unicode_digits(s: &str) -> Option<String> {
         } else if ch == '\u{2212}' {
             result.push('-');
             has_unicode = true;
-        } else if let Some(d) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
+        } else {
+            let d = crate::builtins::unicode::unicode_decimal_digit_value(ch)?;
             result.push(char::from_digit(d, 10).unwrap());
             has_unicode = true;
-        } else {
-            return None;
         }
     }
     if has_unicode { Some(result) } else { None }

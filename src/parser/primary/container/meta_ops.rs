@@ -427,10 +427,9 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
         (true, false, stripped)
     } else if input.starts_with("...") && !input.starts_with("....") {
         (false, false, &input[3..])
-    } else if let Some(stripped) = input.strip_prefix('\u{2026}') {
-        (false, false, stripped)
     } else {
-        return None;
+        let stripped = input.strip_prefix('\u{2026}')?;
+        (false, false, stripped)
     };
     // Parse the endpoint expression
     let result = (|| {
