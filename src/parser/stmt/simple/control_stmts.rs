@@ -125,6 +125,10 @@ fn consume_empty_call_parens(input: &str) -> &str {
 pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
+    // `last |c` passes a slipped argument list: the expression form owns it.
+    if rest.starts_with('|') {
+        return Err(PError::expected("last statement"));
+    }
     // Check for label: last LABEL
     if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
@@ -139,6 +143,10 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
+    // `next |c` passes a slipped argument list: the expression form owns it.
+    if rest.starts_with('|') {
+        return Err(PError::expected("next statement"));
+    }
     // Check for label: next LABEL
     if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
@@ -153,6 +161,10 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
+    // `redo |c` passes a slipped argument list: the expression form owns it.
+    if rest.starts_with('|') {
+        return Err(PError::expected("redo statement"));
+    }
     // Check for label: redo LABEL
     if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
@@ -705,6 +717,19 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Special handling for proceed/succeed with no args
+    // `proceed |c` / `succeed |c`: the slipped argument list of the call form.
+    if matches!(name.as_str(), "proceed" | "succeed")
+        && rest.starts_with('|')
+        && let (after, Some(slip)) = crate::parser::primary::ident::control_flow_slip_args(rest)?
+    {
+        let flow = if name == "proceed" {
+            Stmt::Proceed
+        } else {
+            Stmt::Succeed
+        };
+        let stmt = crate::parser::primary::ident::slipped_control_stmt(&name, slip, flow);
+        return parse_statement_modifier(after, stmt);
+    }
     if name == "proceed" {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Proceed));
