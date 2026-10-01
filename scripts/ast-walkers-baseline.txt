@@ -86,7 +86,7 @@ src/runtime/registration.rs                             4
 src/runtime/registration_class_attr.rs                  2
 src/runtime/run.rs                                      4
 src/runtime/run_modules.rs                              2
-src/runtime/run_prelude.rs                              4
+src/runtime/run_prelude.rs                              2
 src/runtime/slang_declarator.rs                         1
 src/runtime/system.rs                                   2
 src/runtime/system_eval_names.rs                        8
