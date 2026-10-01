@@ -317,6 +317,10 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    s if self.compile_type_decl_value(s) => {
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     // An `if`/`unless` in block-final position should yield its
                     // taken branch's value (like `do if ...`), not Nil. This
                     // matters e.g. for `do { if $c { ... } }` and statement-form

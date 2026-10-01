@@ -1151,6 +1151,7 @@ mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
 mod package_runtime_body;
+mod type_decl_value;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
@@ -4533,6 +4534,11 @@ impl Compiler {
                             self.compile_stmt(stmt);
                             let slot = self.alloc_local(&var_name);
                             self.code.emit(OpCode::GetLocal(slot));
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
+                        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. } => {
+                            self.compile_type_decl_value(stmt);
                             self.emit_unit_tail_result();
                             continue;
                         }

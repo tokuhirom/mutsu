@@ -587,6 +587,21 @@ impl Interpreter {
         spec
     }
 
+    /// Is the right-hand side of a `<name=…>` alias an interpolation — a
+    /// scalar (`$var`, `$*dyn`) or a `{ … }` code block — rather than a rule
+    /// name? Such a target names no rule, so the alias is its only capture.
+    pub(super) fn is_interpolated_alias_target(rhs: &str) -> bool {
+        (rhs.starts_with('{') && rhs.ends_with('}'))
+            || rhs.strip_prefix('$').is_some_and(|rest| {
+                rest.strip_prefix(['*', '?'])
+                    .unwrap_or(rest)
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                    && !rest.contains(['(', ':', ' '])
+            })
+    }
+
     fn parse_named_regex_lookup_spec_uncached(name: &str) -> NamedRegexLookupSpec {
         let mut raw = name.trim();
         let mut silent = false;
@@ -616,6 +631,34 @@ impl Interpreter {
                     token_lookup = true;
                     silent = false;
                     alias_replaces_original = true;
+                } else if Self::is_interpolated_alias_target(rhs)
+                    && lhs
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+                {
+                    // <name=$var> / <name={ code }> — match the Regex the
+                    // variable holds (or the code returns) as an anonymous
+                    // subrule and file it under `name` only: there is no rule
+                    // name for a second slot. The target is kept whole (a
+                    // code block may contain `(`/`:`), so it bypasses
+                    // `parse_regex_lookup_target` below.
+                    let lookup_name = rhs.to_string();
+                    let lookup_sym = crate::symbol::Symbol::intern(&lookup_name);
+                    return NamedRegexLookupSpec {
+                        silent: false,
+                        token_lookup: false,
+                        silent_marker_sym: crate::symbol::Symbol::intern(&format!(
+                            "{}{}",
+                            crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                            lookup_name
+                        )),
+                        lookup_name,
+                        lookup_sym,
+                        capture_sym: Some(crate::symbol::Symbol::intern(lhs)),
+                        capture_name: Some(lhs.to_string()),
+                        arg_exprs: Vec::new(),
+                        alias_replaces_original: true,
+                    };
                 } else if let Some(stripped) = rhs.strip_prefix('.') {
                     // <name=.subrule> — call .subrule (non-capturing), capture under name
                     capture_name = Some(lhs.to_string());

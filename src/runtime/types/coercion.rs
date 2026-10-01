@@ -190,6 +190,19 @@ impl Interpreter {
             } else {
                 target
             };
+        // A coercion type only converts a value that is not already of its
+        // target type (Rakudo: `sub f(List() $l)` binds an Array as-is, and
+        // `Int()` keeps `True`). Look through an item container first: an
+        // itemized `$[1, 2]` IS a List, and coercing the container wrapped it
+        // in a one-element list instead.
+        if !matches!(
+            value.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) && !is_failure_value(&value)
+            && self.type_matches_value(base_target, value.descalarize())
+        {
+            return Ok(value);
+        }
         // An Instance that already satisfies the target type needs no coercion
         // (e.g. re-coercing an IO::Path for an `IO(Cool)` constraint, which the
         // declaration path can trigger on an already-coerced value). Returning it
