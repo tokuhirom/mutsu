@@ -15,7 +15,7 @@ use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_levels::Levels;
 use super::{RxOp, RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
-use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
+use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexPattern, RegexQuant};
 use crate::symbol::Symbol;
 
 /// A point to resume from on failure. Both kinds record the capture-trail
@@ -36,6 +36,15 @@ enum Choice {
         base: usize,
         lo: usize,
         hi: usize,
+        cap_mark: usize,
+        reg_mark: usize,
+    },
+    /// An `InterpEnds`' remaining candidates: `cands[left - 1]` (end and capture
+    /// delta) is next, then the ones below it. `cands` is lowest priority first.
+    Cands {
+        pc: u32,
+        cands: std::rc::Rc<Vec<(usize, RegexCaptures)>>,
+        left: usize,
         cap_mark: usize,
         reg_mark: usize,
     },
@@ -356,6 +365,43 @@ impl Interpreter {
                     pc = table.pcs[ltm_order[0].0];
                     true
                 }
+                // Cost: O(n + r) plus the code's run and the match of the pattern
+                // it yields (`regex_code_interp_ends`), then O(c) per candidate
+                // entered, c = the captures it adds.
+                RxOp::InterpEnds(i) => {
+                    let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize] else {
+                        debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
+                        break 'run None;
+                    };
+                    let cands = self.regex_code_interp_ends(
+                        code,
+                        *list,
+                        chars,
+                        pos,
+                        levels.top().caps(),
+                        pkg,
+                        program.atom_ic[i as usize],
+                    );
+                    pc += 1;
+                    if let Some((end, delta)) = cands.last().cloned() {
+                        let left = cands.len() - 1;
+                        if left > 0 {
+                            stack.push(Choice::Cands {
+                                pc,
+                                cands: std::rc::Rc::new(cands),
+                                left,
+                                cap_mark: levels.mark(),
+                                reg_mark: reg_trail.len(),
+                            });
+                        }
+                        levels.edit(|s| s.merge_delta(delta));
+                        pos = end;
+                        farthest = farthest.max(pos);
+                        true
+                    } else {
+                        false
+                    }
+                }
                 // Cost: O(1).
                 RxOp::Jmp(to) => {
                     pc = to;
@@ -416,6 +462,50 @@ impl Interpreter {
                     if n < min as usize {
                         pc = body;
                     } else if max != u32::MAX && n >= max as usize {
+                        pc = exit;
+                    } else {
+                        let (first, second) = if greedy { (body, exit) } else { (exit, body) };
+                        stack.push(Choice::At {
+                            pc: second,
+                            pos,
+                            cap_mark: levels.mark(),
+                            reg_mark: reg_trail.len(),
+                        });
+                        pc = first;
+                    }
+                    true
+                }
+                // Cost: one run of the count code (`regex_repeat_count`), then
+                // O(1) amortized.
+                RxOp::RepeatCount { tok, min, max } => {
+                    let RegexQuant::RepeatCode(code) = &program.toks[tok as usize].quant else {
+                        debug_assert!(false, "a RepeatCount op names a `** {{ … }}` token");
+                        break 'run None;
+                    };
+                    pc += 1;
+                    match self.regex_repeat_count(code, pos, levels.top().caps()) {
+                        Some((lo, hi)) => {
+                            set_reg!(min, lo);
+                            set_reg!(max, hi.unwrap_or(usize::MAX));
+                            true
+                        }
+                        None => false,
+                    }
+                }
+                // Cost: O(1) amortized.
+                RxOp::RepeatDyn {
+                    ctr,
+                    min,
+                    max,
+                    body,
+                    exit,
+                    greedy,
+                } => {
+                    let n = regs[ctr as usize];
+                    let (min, max) = (regs[min as usize], regs[max as usize]);
+                    if n < min {
+                        pc = body;
+                    } else if max != usize::MAX && n >= max {
                         pc = exit;
                     } else {
                         let (first, second) = if greedy { (body, exit) } else { (exit, body) };
@@ -492,6 +582,7 @@ impl Interpreter {
                 let Some(choice) = stack.pop() else {
                     break 'run None;
                 };
+                let mut cand_delta = None;
                 let (to_pc, to_pos, cap_mark, reg_mark) = match choice {
                     Choice::At {
                         pc,
@@ -522,8 +613,31 @@ impl Interpreter {
                         }
                         (pc, at, cap_mark, reg_mark)
                     }
+                    Choice::Cands {
+                        pc,
+                        cands,
+                        left,
+                        cap_mark,
+                        reg_mark,
+                    } => {
+                        let (end, delta) = cands[left - 1].clone();
+                        if left > 1 {
+                            stack.push(Choice::Cands {
+                                pc,
+                                cands,
+                                left: left - 1,
+                                cap_mark,
+                                reg_mark,
+                            });
+                        }
+                        cand_delta = Some(delta);
+                        (pc, end, cap_mark, reg_mark)
+                    }
                 };
                 levels.rewind(cap_mark);
+                if let Some(delta) = cand_delta {
+                    levels.edit(|s| s.merge_delta(delta));
+                }
                 while reg_trail.len() > reg_mark {
                     let (r, old) = reg_trail.pop().expect("register trail entry");
                     regs[r as usize] = old;

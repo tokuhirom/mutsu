@@ -324,6 +324,7 @@ pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
         *pattern.derived.contains_code.get_or_init(|| {
             pattern.tokens.iter().any(|tok| {
                 atom_contains_code(&tok.atom)
+                    || matches!(tok.quant, RegexQuant::RepeatCode(_))
                     || tok
                         .separator
                         .as_ref()
@@ -332,7 +333,10 @@ pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
         })
     }
     match atom {
-        RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => true,
+        RegexAtom::CodeAssertion { .. }
+        | RegexAtom::VarDecl { .. }
+        | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. } => true,
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)

@@ -86,6 +86,24 @@ pub(super) enum RxOp {
         exit: u32,
         greedy: bool,
     },
+    /// Evaluate the count code of the `** { … }` quantifier `toks[tok]` where the
+    /// walk does, when the quantifier is reached (`regex_repeat_count`, the
+    /// walk's own), and store its bounds in `regs[min]` and `regs[max]`
+    /// (`usize::MAX`: no bound). Fails when the code does.
+    RepeatCount {
+        tok: u32,
+        min: u16,
+        max: u16,
+    },
+    /// [`RxOp::Repeat`] with its bounds read from registers.
+    RepeatDyn {
+        ctr: u16,
+        min: u16,
+        max: u16,
+        body: u32,
+        exit: u32,
+        greedy: bool,
+    },
     /// The end of one iteration of a nullable loop body that began at
     /// `regs[start]`: fail when it consumed nothing and, after `regs[ctr]`
     /// iterations, such an iteration no longer counts toward `min..=max`
@@ -190,6 +208,12 @@ pub(super) enum RxOp {
     /// A call-out: run the `:my` / `:our` / `:temp` / `:let` declaration
     /// `atoms[i]` and merge the lexicals it declared (`regex_var_decl_atom`).
     VarDecl(u32),
+    /// A call-out: run the `$( … )` / `@( … )` atom `atoms[i]`, whose code
+    /// yields a pattern (or a list of them), and enter the ends it matches at
+    /// `pos` highest priority first, each with its capture delta
+    /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
+    /// on the backtrack stack as one choice point.
+    InterpEnds(u32),
     /// A complete match ending at `pos`.
     Match,
 }

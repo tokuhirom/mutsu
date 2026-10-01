@@ -987,7 +987,7 @@ impl Interpreter {
                         (*min, *max)
                     }
                     RegexQuant::RepeatCode(code) => {
-                        match self.eval_regex_repeat_code(code, store.caps()) {
+                        match self.regex_repeat_count(code, pos, store.caps()) {
                             Some((min, max)) => (min, max),
                             None => return false, // code eval failed, no match
                         }

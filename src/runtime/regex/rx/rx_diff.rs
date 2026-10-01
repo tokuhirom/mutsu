@@ -15,6 +15,70 @@ use std::cell::RefCell;
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{CapNode, PosSlot, RegexCaptures};
 
+/// What a code atom's invocation answered: a match (`{ … }`, `<?{ … }>`,
+/// `:my`, `<{ … }>`), the list of candidate ends of `$( … )` / `@( … )`, or the
+/// bounds of a `** { … }` count.
+#[derive(Clone)]
+pub(in crate::runtime::regex) enum CodeResult {
+    Match(Option<(usize, RegexCaptures)>),
+    Ends(Vec<(usize, RegexCaptures)>),
+    Count(Option<(usize, Option<usize>)>),
+}
+
+/// A value a code atom's invocation can answer with, so one record serves them
+/// all.
+pub(in crate::runtime::regex) trait CodeValue: Sized {
+    fn record(&self) -> CodeResult;
+    fn replay(result: &CodeResult) -> Option<Self>;
+    /// The answer for an invocation the compiled run never made: a failure.
+    fn failed() -> Self;
+}
+
+impl CodeValue for Option<(usize, RegexCaptures)> {
+    fn record(&self) -> CodeResult {
+        CodeResult::Match(self.clone())
+    }
+    fn replay(result: &CodeResult) -> Option<Self> {
+        match result {
+            CodeResult::Match(m) => Some(m.clone()),
+            _ => None,
+        }
+    }
+    fn failed() -> Self {
+        None
+    }
+}
+
+impl CodeValue for Vec<(usize, RegexCaptures)> {
+    fn record(&self) -> CodeResult {
+        CodeResult::Ends(self.clone())
+    }
+    fn replay(result: &CodeResult) -> Option<Self> {
+        match result {
+            CodeResult::Ends(e) => Some(e.clone()),
+            _ => None,
+        }
+    }
+    fn failed() -> Self {
+        Vec::new()
+    }
+}
+
+impl CodeValue for Option<(usize, Option<usize>)> {
+    fn record(&self) -> CodeResult {
+        CodeResult::Count(*self)
+    }
+    fn replay(result: &CodeResult) -> Option<Self> {
+        match result {
+            CodeResult::Count(c) => Some(*c),
+            _ => None,
+        }
+    }
+    fn failed() -> Self {
+        None
+    }
+}
+
 /// One code-atom invocation of the compiled run.
 #[derive(Clone)]
 struct CodeEvent {
@@ -23,7 +87,7 @@ struct CodeEvent {
     /// What the code saw: the captures visible to it (`caps_desc`) and the names
     /// of the `:my` lexicals in scope.
     view: String,
-    result: Option<(usize, RegexCaptures)>,
+    result: Option<CodeResult>,
     /// How many later events this invocation's own run produced: a code block
     /// that matches a regex of its own (itself holding code) runs those atoms
     /// inside it. A replay answers the invocation from `result` without running
@@ -111,13 +175,13 @@ impl Interpreter {
     /// `code` and `pos` identify the invocation; `caps` is what the code sees.
     // Cost: O(1) plus one call of `run`; under `MUTSU_RX_DIFF` also O(c),
     // c = the captures visible to the code (the fingerprint).
-    pub(in crate::runtime::regex) fn rx_code_call(
+    pub(in crate::runtime::regex) fn rx_code_call<R: CodeValue>(
         &mut self,
         code: &str,
         pos: usize,
         caps: &RegexCaptures,
-        run: impl FnOnce(&mut Interpreter) -> Option<(usize, RegexCaptures)>,
-    ) -> Option<(usize, RegexCaptures)> {
+        run: impl FnOnce(&mut Interpreter) -> R,
+    ) -> R {
         if !super::rx_diff_enabled() {
             return run(self);
         }
@@ -131,12 +195,21 @@ impl Interpreter {
                 replay.mismatch.get_or_insert_with(|| {
                     format!("the walk invoked `{code}` at {pos}, which the compiled run never did")
                 });
-                return Some(None);
+                return Some(R::failed());
             };
             if event.code == code && event.pos == pos && event.view == view {
-                let result = event.result.clone();
-                replay.next += 1 + event.nested;
-                return Some(result);
+                let answer = event.result.as_ref().and_then(R::replay);
+                if answer.is_some() {
+                    replay.next += 1 + event.nested;
+                    return answer;
+                }
+                replay.mismatch.get_or_insert_with(|| {
+                    format!(
+                        "invocation {}: `{code}` at {pos} answered a different kind of result",
+                        replay.next
+                    )
+                });
+                return Some(R::failed());
             }
             replay.mismatch.get_or_insert_with(|| {
                 format!(
@@ -145,10 +218,10 @@ impl Interpreter {
                     replay.next, event.code, event.pos, event.view
                 )
             });
-            Some(None)
+            Some(R::failed())
         });
-        if let Some(result) = replayed {
-            return result;
+        if let Some(answer) = replayed {
+            return answer;
         }
         // The event is reserved before the run, so the record keeps call order
         // when the run invokes code atoms of its own.
@@ -171,7 +244,7 @@ impl Interpreter {
                 let mut l = l.borrow_mut();
                 let nested = l.events.len() - slot - 1;
                 let event = &mut l.events[slot];
-                event.result = result.clone();
+                event.result = Some(result.record());
                 event.nested = nested;
             });
         }
