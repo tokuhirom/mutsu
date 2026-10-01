@@ -131,6 +131,13 @@ impl Interpreter {
                 let callee: Arc<RxProgram> = $callee;
                 let callee_pkg: Symbol = $callee_pkg;
                 let entry: usize = $entry;
+                // With no choice point left nothing can rewind, so the undo
+                // trails start over: a run of ratcheted calls stays flat.
+                if stack.is_empty() {
+                    reg_trail.clear();
+                    levels.clear_journal();
+                }
+                let (journal_base, trail_base) = (levels.mark(), reg_trail.len());
                 let new_base = regs.len();
                 regs.resize(new_base + callee.nregs, 0);
                 levels.open(entry, false);
@@ -145,6 +152,9 @@ impl Interpreter {
                     site: $atom,
                     commit: $commit,
                     stack_base: $stack_base,
+                    journal_base,
+                    trail_base,
+                    ends_base: ends.len(),
                     proto: $proto,
                     depth,
                     seen: RefCell::new(Vec::new()),
@@ -612,10 +622,24 @@ impl Interpreter {
                     Some(f) => {
                         // A second path to an end the call already returned at
                         // is not a new candidate.
-                        let fresh = !f.seen.borrow().contains(&pos);
+                        // A ratcheted call returns once, so it keeps no list.
+                        let fresh = f.commit || !f.seen.borrow().contains(&pos);
                         if fresh {
-                            f.seen.borrow_mut().push(pos);
-                            let mut inner = levels.close();
+                            if !f.commit {
+                                f.seen.borrow_mut().push(pos);
+                            }
+                            // A ratcheted call keeps only its first end; a call
+                            // that left no choice point in the callee cannot be
+                            // resumed either.
+                            if f.commit {
+                                stack.truncate(f.stack_base);
+                            }
+                            let settled = stack.len() <= f.stack_base;
+                            let mut inner = if settled {
+                                levels.close_forget(f.journal_base)
+                            } else {
+                                levels.close()
+                            };
                             // A proto candidate's Match carries its `:sym<…>`.
                             if let Some((cands, idx)) = &f.proto {
                                 inner.set_sym(cands[*idx].2.clone());
@@ -635,10 +659,6 @@ impl Interpreter {
                                 None,
                             );
                             let delta = wrapped.into_iter().next().map(|(_, delta)| delta);
-                            // A ratcheted call keeps only its first end.
-                            if f.commit {
-                                stack.truncate(f.stack_base);
-                            }
                             frame = f.parent.clone();
                             match &frame {
                                 Some(p) => {
@@ -653,6 +673,13 @@ impl Interpreter {
                                 }
                             }
                             pc = f.ret_pc;
+                            if settled {
+                                // The callee's window, undo entries and run
+                                // ends are unreachable now.
+                                reg_trail.truncate(f.trail_base);
+                                regs.truncate(f.base);
+                                ends.truncate(f.ends_base);
+                            }
                             if let Some(delta) = delta {
                                 levels.edit(|s| s.merge_delta(delta));
                             }

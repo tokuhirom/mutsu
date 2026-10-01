@@ -18,7 +18,19 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::NamedAtom;
 use crate::symbol::Symbol;
 
+thread_local! {
+    /// The verdict for a call, per (rule, caller package, caller `:i`),
+    /// stamped with the token generation it was reached under — the inline
+    /// cache of ADR-0135 D3. Kept only for a rule whose candidates the
+    /// argument-less memo holds (a fully static one); anything else is
+    /// resolved afresh at every call.
+    static TARGETS: std::cell::RefCell<
+        rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, Option<CallTarget>)>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
 /// What a `<subrule>` call runs as a frame.
+#[derive(Clone)]
 pub(super) enum CallTarget {
     /// One plain rule: its program and the package its body matches in (a rule
     /// is matched in the package that defines it).
@@ -66,6 +78,35 @@ impl Interpreter {
         if lr_name_active(spec.lookup_sym) {
             return None;
         }
+        let generation =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let key = (spec.lookup_sym, pkg, ic);
+        if let Some(hit) = TARGETS.with(|c| {
+            c.borrow()
+                .get(&key)
+                .filter(|(cached, _)| *cached == generation)
+                .map(|(_, target)| target.clone())
+        }) {
+            return hit;
+        }
+        let target = self.resolve_call_target(name, pkg, ic);
+        if Self::parsed_candidates_are_memoized(spec.lookup_sym, pkg) {
+            TARGETS.with(|c| {
+                c.borrow_mut().insert(key, (generation, target.clone()));
+            });
+        }
+        target
+    }
+
+    /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
+    /// decide the shape of the call.
+    fn resolve_call_target(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        ic: bool,
+    ) -> Option<CallTarget> {
+        let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
         if raw_empty || candidates.is_empty() {
             return None;

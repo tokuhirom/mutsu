@@ -206,6 +206,21 @@ impl Interpreter {
         parsed
     }
 
+    /// Is `name` in `pkg` resolved by the argument-less memo
+    /// ([`PARSED_TOKEN_CANDIDATES`]) under the current token generation? Only a
+    /// fully static rule is, so a caller may keep a verdict derived from the
+    /// candidates exactly when this holds.
+    // Cost: O(1) expected (one hash probe).
+    pub(super) fn parsed_candidates_are_memoized(name_sym: Symbol, pkg: Symbol) -> bool {
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        PARSED_TOKEN_CANDIDATES.with(|c| {
+            c.borrow()
+                .get(&(pkg, name_sym))
+                .is_some_and(|(cached_gen, _)| *cached_gen == tok_gen)
+        })
+    }
+
     /// Parsed candidates for a subrule reference: memoized fast path for the
     /// argument-less case, per-call resolution + parse otherwise (candidates
     /// whose pattern fails to parse are skipped, as before). The second value

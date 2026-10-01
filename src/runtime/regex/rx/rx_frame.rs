@@ -45,6 +45,12 @@ pub(super) struct Frame {
     pub(super) commit: bool,
     /// The backtrack-stack height when the call was made.
     pub(super) stack_base: usize,
+    /// Where the capture journal, the register trail and the `AtomRun` ends
+    /// stood at the call: a return that leaves no choice point in the callee
+    /// forgets everything above them, since nothing can resume there.
+    pub(super) journal_base: usize,
+    pub(super) trail_base: usize,
+    pub(super) ends_base: usize,
     /// A proto candidate's call: the candidates and which one this frame runs,
     /// whose `:sym<…>` the callee's Match carries.
     pub(super) proto: Option<(Arc<Vec<ParsedTokenCandidate>>, usize)>,
