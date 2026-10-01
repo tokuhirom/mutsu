@@ -27,16 +27,11 @@ mod walk_mut_expr;
 mod walk_mut_stmt;
 mod walk_stmt;
 
-#[allow(unused_imports)]
-pub(crate) use visit_mut::{
-    VisitMut, walk_call_arg_mut, walk_handle_spec_mut, walk_param_mut, walk_regex_node_mut,
-    walk_regex_tree_mut,
-};
+pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
+use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};
 use visit_mut::{exprs_mut, params_mut, traits_mut};
 pub(crate) use walk_expr::walk_expr;
-#[allow(unused_imports)]
 pub(crate) use walk_mut_expr::walk_expr_mut;
-#[allow(unused_imports)]
 pub(crate) use walk_mut_stmt::{walk_stmt_mut, walk_stmts_mut};
 pub(crate) use walk_stmt::{walk_stmt, walk_stmts};
 
