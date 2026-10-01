@@ -33,11 +33,16 @@ const HEADER: &str = "\
 
 ";
 
-/// Every `(codepoint, name)` the crate stores literally, plus the CJK unified
-/// ideograph ranges it names algorithmically.
-fn source() -> (Vec<(u32, String)>, Vec<(u32, u32)>) {
+/// Every `(codepoint, name)` the crate stores literally.
+type StoredNames = Vec<(u32, String)>;
+/// Inclusive codepoint ranges.
+type Ranges = Vec<(u32, u32)>;
+
+/// Every name the crate stores literally, plus the CJK unified ideograph
+/// ranges it names algorithmically.
+fn source() -> (StoredNames, Ranges) {
     let mut names = Vec::new();
-    let mut cjk: Vec<(u32, u32)> = Vec::new();
+    let mut cjk: Ranges = Vec::new();
     for c in (0..=0x10FFFFu32).filter_map(char::from_u32) {
         let Some(name) = unicode_names2::name(c) else {
             continue;
@@ -57,7 +62,7 @@ fn source() -> (Vec<(u32, String)>, Vec<(u32, u32)>) {
 }
 
 struct Tables {
-    cjk: Vec<(u32, u32)>,
+    cjk: Ranges,
     codes: Vec<u32>,
     name_start: Vec<u32>,
     tokens: Vec<u16>,
