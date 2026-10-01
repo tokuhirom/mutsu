@@ -800,6 +800,21 @@ impl Compiler {
         }
         // Slang variables ($~MAIN, $~Quote, $~Regex)
         if let Some(slang_name) = name.strip_prefix('~') {
+            // TODO: `$*LANG.define_slang` ignores its name argument today, so
+            // only the three built-in slangs exist; a module-defined slang
+            // name would need recording at parse time to be accepted here.
+            if !matches!(slang_name, "MAIN" | "Quote" | "Regex") {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("No grammar is known for slang '{slang_name}'")),
+                );
+                let err = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+                let idx = self.code.add_constant(err);
+                self.code.emit(OpCode::LoadConst(idx));
+                self.code.emit(OpCode::Die { user_throw: false });
+                return;
+            }
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));
             self.code.emit(OpCode::LoadConst(idx));
         }
