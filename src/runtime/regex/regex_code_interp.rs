@@ -179,6 +179,9 @@ impl Interpreter {
         if list {
             let alts = Self::regex_alternation_sources(&value);
             Self::push_regex_interpolated_alternation(&mut pattern, &alts);
+        } else if let ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) = value.view() {
+            // A `Regex` value is matched as a pattern, as `<$re>` does.
+            pattern.push_str(&Self::regex_alternation_sources(&value)[0]);
         } else {
             pattern.push_str(&Self::escape_regex_scalar_literal(&value.to_string_value()));
         }
