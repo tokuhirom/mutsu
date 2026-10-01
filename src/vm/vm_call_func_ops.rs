@@ -1739,13 +1739,9 @@ impl Interpreter {
         // A named routine's free `&name` is the binding visible at its
         // declaration (the unit-lexical cell), not a same-named `my &name`
         // in the CALLER's env (#10483).
-        let mut target = match name.contains("::") {
-            true => Value::NIL,
-            false => self
-                .unit_scope_lexical(&format!("&{name}"))
-                .map(Value::into_deref)
-                .unwrap_or(Value::NIL),
-        };
+        let mut target = dispatch_key::with_amp_name(&name, |amp| self.unit_scope_lexical(amp))
+            .map(Value::into_deref)
+            .unwrap_or(Value::NIL);
         if target.is_nil() {
             target = loan_env!(self, resolve_code_var(&name));
         }
