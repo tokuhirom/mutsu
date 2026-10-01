@@ -73,11 +73,17 @@ impl Interpreter {
             let mut current = pos;
             let mut count = 0usize;
             while current <= chars.len() {
-                let Some((end, inner_caps)) =
-                    self.regex_match_end_from_caps_in_pkg(&resolved, chars, current, resolved_pkg)
-                else {
+                // One rule invocation per iteration (#9803).
+                self.enter_rule_cursor();
+                let matched =
+                    self.regex_match_end_from_caps_in_pkg(&resolved, chars, current, resolved_pkg);
+                let cursor = self.leave_rule_cursor();
+                let Some((end, mut inner_caps)) = matched else {
                     break;
                 };
+                if let Some(cursor) = cursor {
+                    inner_caps.set_cursor(cursor);
+                }
                 if end == current && !zero_width_iter_counts(count, min, None) {
                     break;
                 }

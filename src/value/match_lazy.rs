@@ -222,6 +222,18 @@ impl MatchNode {
                 .collect();
             attrs.insert("capture_alias_map", Value::hash_bare_values(alias_hash));
         }
+        // The grammar attributes a method wrote on this rule invocation's
+        // cursor are the Match's own (`$<t>.inv`). The cursor's positional
+        // state (`orig`/`from`/`pos`/`to`) is the Match's, set above.
+        if let Some(cursor) = &kids.cursor
+            && let ValueView::Instance { attributes, .. } = cursor.view()
+        {
+            for (key, value) in attributes.as_map().iter() {
+                if !matches!(key.as_str(), "orig" | "from" | "pos" | "to") {
+                    attrs.insert(*key, value.clone());
+                }
+            }
+        }
         attrs
     }
 }

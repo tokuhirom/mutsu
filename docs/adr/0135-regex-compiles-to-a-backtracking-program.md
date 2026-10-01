@@ -719,12 +719,41 @@ are filed as `todo:perf` issues with their own goals rather than closed here
 [#10488](https://github.com/tokuhirom/mutsu/issues/10488) the allocations of the Match tree). On YAMLish the compiled engine changes
 nothing measurable (#7576): its cost was never the engine.
 
-What is left of Slice D: **#9803** (an attribute written in a method a token calls is lost on the Match: the cursor
-as the grammar instance, where the `Frame` is the place for it), and the walk's `drive_named_subrule_candidates` and
-eager `Named` arm, which Slice E deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*`
-parameters, wrapped tokens, a scoped `[:m …]`, which keeps `JSON::Tiny`'s string token on the walk). The survey over
-`t/grammar` and `t/regex` puts compiled patterns at 97.2% (3,594 of 3,696), with no `subrule` decline left; the
-declines are `frugal-ratchet` 20, `nullable-loop` 19, `ignoremark` 18, `isolated-group-scoped` 17 and a tail.
+What is left of Slice D after that: the walk's `drive_named_subrule_candidates` and eager `Named` arm, which Slice E
+deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*` parameters, wrapped tokens, a scoped
+`[:m …]`, which keeps `JSON::Tiny`'s string token on the walk). The survey over `t/grammar` and `t/regex` puts compiled
+patterns at 97.2% (3,594 of 3,696), with no `subrule` decline left; the declines are `frugal-ratchet` 20,
+`nullable-loop` 19, `ignoremark` 18, `isolated-group-scoped` 17 and a tail.
+
+#### The cursor is the grammar instance ([#9803](https://github.com/tokuhirom/mutsu/issues/9803))
+
+In Rakudo a rule invocation runs on a cursor that *is* an instance of the grammar. A method a rule calls as a subrule
+(`<.acc>`) writes `$!attr` of that cursor, and when the rule returns, the cursor is its Match. Measured against
+rakudo 2026.07: `G.parse("a")<t>.inv` is `True` for `token t { a <.acc> }` with `method acc { $!inv = True; self }`
+while `G.parse("a").inv` is `Any`; two matches of one token each start from the uninitialised attribute (`$!n++` gives
+1 and 1); calls from one invocation accumulate (3 for three `<.bump>`); a cursor is created, not built, so every
+declared attribute reads as its uninitialised value (`Any`, `Int`, `[]`, `{}`) and a `= default` is not applied.
+
+- **The instance lives where the invocation does.** A `Frame` (and the run's own root) holds
+  `cursor: RefCell<Option<Value>>`, filled the first time a call in that frame runs a grammar method (`rx_cursor_of`,
+  a `CREATE` of the grammar: every declared attribute present, uninitialised, because the method's write-back only
+  updates keys already on the instance). The bridged `Call` publishes it in `Interpreter::rx_cursor` for that one call,
+  `try_regex_subrule_as_method` takes it as the method's invocant, and the frame's return files it on the callee's
+  captures (`RareCaps::cursor`, then `CapChildren::cursor`). A rule that never calls a method creates nothing.
+- **The walk gets the same scope** (`Interpreter::walk_cursors`, one entry per rule invocation in flight) around every
+  place it evaluates a rule body and files the result as that rule's Match: the eager `subrule_candidate_ends`, the
+  streamed arm (lifted across the continuation, which is the caller's pattern), the ratcheted `<x>*` scan, the
+  single-candidate arm and the start rule. This is not optional while the bridge exists: a rule whose left cone the
+  call graph cannot name (a `<-crlf>` class, a method at a nullable-left position) is handed to the walk, and the
+  documented `HTTPRequest` example hits exactly that for `field`. It goes with the walk in Slice E; the
+  `MUTSU_RX_VM=off` run of `t/grammar/grammar-cursor-attributes.t` keeps it honest until then.
+- **The Match** materializes the instance's attributes next to its own (`match_lazy`), and the generated accessor of an
+  unset declared attribute on a grammar cursor answers the uninitialised value instead of `Nil`.
+
+Not covered, and filed: a method inherited from a parent grammar is not found as a subrule of a derived grammar
+([#10508](https://github.com/tokuhirom/mutsu/issues/10508): `user_method_overloads` is per declaring class, so `B2 is B1`
+fails to parse through `B1`'s `<.acc>`, before and after this change), and `self` inside a token's `{ … }` code block,
+which is the cursor in raku and dies in mutsu ([#10509](https://github.com/tokuhirom/mutsu/issues/10509)).
 
 ### Reproducing §2
 

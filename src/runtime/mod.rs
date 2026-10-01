@@ -3726,6 +3726,21 @@ pub struct Interpreter {
     /// *match* of a declaring rule its own binding on top of that, so a
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
+    /// The grammar instance (Rakudo's cursor) the compiled regex engine hands to
+    /// the grammar METHOD a `<.name>` subrule is about to call: the one the
+    /// rule invocation that makes the call owns, so what the method writes to
+    /// its attributes survives onto that rule's Match (#9803). Published by
+    /// the engine for the duration of that one call and taken by
+    /// `try_regex_subrule_as_method`; `None` everywhere else, where the method
+    /// gets a throwaway instance.
+    pub(crate) rx_cursor: Option<Value>,
+    /// The same for rule invocations the WALK evaluates (the eager and streamed
+    /// subrule arms, the ratcheted `<x>*` scan, the single-candidate arm): one
+    /// entry per invocation in flight, innermost last, created lazily by the
+    /// first grammar method the invocation calls. The walk pops its entry when
+    /// the invocation's ends are produced and files the instance on each of them
+    /// (#9803). Empty outside a walked rule body.
+    pub(crate) walk_cursors: Vec<Option<Value>>,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry
