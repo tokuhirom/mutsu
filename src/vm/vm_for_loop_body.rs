@@ -1488,7 +1488,7 @@ impl Interpreter {
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
                         }
-                        if !spec.is_rw
+                        if (!spec.is_rw || spec.param_sigilless)
                             && let Some(ref name) = param_name
                         {
                             self.unmark_readonly(name);
@@ -1505,7 +1505,7 @@ impl Interpreter {
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
                         }
-                        if !spec.is_rw
+                        if (!spec.is_rw || spec.param_sigilless)
                             && let Some(ref name) = param_name
                         {
                             self.unmark_readonly(name);
@@ -1538,7 +1538,7 @@ impl Interpreter {
             self.restore_topic_readonly(saved);
         }
         // Unmark readonly params after loop completion
-        if !spec.is_rw
+        if (!spec.is_rw || spec.param_sigilless)
             && let Some(ref name) = param_name
         {
             self.unmark_readonly(name);

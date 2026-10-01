@@ -5,7 +5,7 @@ use Test;
 # (for-immutable-list-source-readonly.t, #10349). Every expectation was
 # measured against rakudo (#10397).
 
-plan 16;
+plan 17;
 
 throws-like { $_ = 5 for (1,2).values }, X::AdHoc, 'literal .values topic is read-only';
 throws-like { $_ = 5 for (1,2).list }, X::AdHoc, 'literal .list topic is read-only';
@@ -55,3 +55,12 @@ throws-like { for (1,2).pairs -> \p { p = 5 } }, X::Assignment::RO,
     is-deeply @a, [5, 5], 'sigilless value of @a.kv writes through';
 }
 lives-ok { for (1,2).values -> $x { $x.say if False } }, 'reading the items is fine';
+
+# The read-only mark of a sigilless loop parameter must not outlive its loop.
+{
+    my @l := (1, 2);
+    for @l -> \v { my $x = v }
+    my @a = 1, 2, 3;
+    for @a -> \v { v-- }
+    is-deeply @a, [0, 1, 2], 'a later loop reusing the sigilless name is writable';
+}
