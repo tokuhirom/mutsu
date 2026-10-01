@@ -8,7 +8,7 @@ plan 6;
 # `now()` is a compile-time "Undeclared routine". A routine of the same name
 # that is imported or declared in an enclosing scope shadows the term, and the
 # call form is then an ordinary routine call (#10369). The undeclared case is
-# pinned in term-keyword-call-form-undeclared.t, away from these imports.
+# pinned in t/lang/term-keyword-call-form-undeclared.t, away from these imports.
 
 {
     use NowTimeShadowFixture;
