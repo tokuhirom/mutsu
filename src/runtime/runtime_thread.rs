@@ -777,6 +777,7 @@ impl Interpreter {
             import_target_package: None,
             nested_capture_owners: Vec::new(),
             nested_method_captures: Default::default(),
+            composed_nested_method_captures: self.composed_nested_method_captures.clone(),
             module_loading_unit_stack: Vec::new(),
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),

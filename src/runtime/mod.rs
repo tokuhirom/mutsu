@@ -3162,6 +3162,15 @@ pub struct Interpreter {
     /// hoisted method with that index is installed (a class) or composed (a
     /// role). See `vm_nested_method_capture`.
     pub(crate) nested_method_captures: HashMap<(Symbol, u32), crate::env::Env>,
+    /// The nested-block method captures each class/role composition's role
+    /// body filed, keyed by (composing class, role). A role body runs once per
+    /// composition (`Registry::composed_role_bodies`), but the class may be
+    /// registered again (the in-place registration after a nested
+    /// declaration's compile-time shell, or a redeclaration in a loop); the
+    /// re-registration rebuilds the composed methods and gives them these
+    /// captures back. See `apply_nested_method_captures`.
+    pub(crate) composed_nested_method_captures:
+        HashMap<(Symbol, Symbol), rustc_hash::FxHashMap<u32, crate::env::Env>>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every

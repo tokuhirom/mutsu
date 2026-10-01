@@ -51,25 +51,40 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     let unit_names = unit_lexical_names(stmts);
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
+    // The compile-time composition of the `our` types declared in each
+    // statement's code (#10494) is a BEGIN-time effect too. It is collected
+    // after the lift, so a type declared in a lifted BEGIN registers there
+    // alone.
+    let mut type_shells: Vec<Option<Stmt>> = Vec::with_capacity(stmts.len());
     for stmt in stmts.iter_mut() {
         let before = lifted.effects.len();
         nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
         effects.push(lifted.effects.split_off(before));
+        let shells = crate::compiler::nested_type_decls(stmt);
+        type_shells.push((!shells.is_empty()).then_some(Stmt::NestedTypeShells(shells)));
     }
     let decls = lifted.decls;
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),
     // so the prologue reaches the last of them too.
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
-    let Some(last) = last_effect.max(last_lifted) else {
+    let last_shell = type_shells.iter().rposition(Option::is_some);
+    let Some(last) = last_effect.max(last_lifted).max(last_shell) else {
         return Vec::new();
     };
     let tail = stmts.split_off(last + 1);
     let mut prologue = decls;
     let mut rest = Vec::new();
-    for (stmt, stmt_effects) in std::mem::take(stmts).into_iter().zip(effects) {
+    for ((stmt, stmt_effects), shells) in std::mem::take(stmts)
+        .into_iter()
+        .zip(effects)
+        .zip(type_shells)
+    {
         prologue.extend(stmt_effects);
         partition_stmt(stmt, &mut prologue, &mut rest);
+        // After the statement's own declaration part: a class whose methods
+        // declare the nested types is registered by then.
+        prologue.extend(shells);
     }
     rest.extend(tail);
     *stmts = rest;

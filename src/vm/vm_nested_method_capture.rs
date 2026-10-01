@@ -79,7 +79,10 @@ impl Interpreter {
     ///
     /// A role body runs again at every composition, so each composition
     /// gets its own capture (`role R[$n] { do { my $q = $n; method m { $q } } }`
-    /// answers per parameterization).
+    /// answers per parameterization). The captures are also kept for the
+    /// composition, so a re-registration of `target_class` that the
+    /// composition memo keeps from re-running the body gets them back
+    /// ([`Self::reapply_composed_nested_method_captures`]).
     // Cost: O(c + m + k), c = pending captures, m = methods of `target_class`
     // and `role`, k = the role's candidates and their methods.
     pub(crate) fn apply_nested_method_captures(&mut self, role: &str, target_class: &str) {
@@ -97,6 +100,41 @@ impl Interpreter {
         if captures.is_empty() {
             return;
         }
+        self.give_nested_method_captures(role, target_class, &captures, true);
+        self.composed_nested_method_captures
+            .insert((Symbol::intern(target_class), role_sym), captures);
+    }
+
+    /// Give `target_class`'s methods composed from `role` the captures the
+    /// role body filed when this same composition first ran. A class
+    /// registered again (the in-place registration of a nested declaration
+    /// after its compile-time shell, or a redeclaration on every pass of a
+    /// loop) rebuilds its composed methods, but the composition memo
+    /// (`Registry::composed_role_bodies`) keeps the role body from running
+    /// again, so nothing would file new captures for them.
+    // Cost: O(c + m), c = the composition's captures, m = methods of
+    // `target_class`.
+    pub(crate) fn reapply_composed_nested_method_captures(
+        &mut self,
+        role: &str,
+        target_class: &str,
+    ) {
+        let key = (Symbol::intern(target_class), Symbol::intern(role));
+        let Some(captures) = self.composed_nested_method_captures.get(&key).cloned() else {
+            return;
+        };
+        self.give_nested_method_captures(role, target_class, &captures, false);
+    }
+
+    // Cost: O(c + m + k), as `apply_nested_method_captures`; k = 0 unless
+    // `to_role` is set.
+    fn give_nested_method_captures(
+        &mut self,
+        role: &str,
+        target_class: &str,
+        captures: &rustc_hash::FxHashMap<u32, crate::env::Env>,
+        to_role: bool,
+    ) {
         let declared_by_role = |def: &crate::runtime::MethodDef| {
             def.original_role
                 .as_deref()
@@ -113,6 +151,9 @@ impl Interpreter {
                 def.captured_env = Some(env.clone());
             }
         });
+        if !to_role {
+            return;
+        }
         let give_role_def = |role_def: &mut crate::runtime::RoleDef| {
             for defs in role_def.methods.values_mut() {
                 for def in defs.iter_mut() {
