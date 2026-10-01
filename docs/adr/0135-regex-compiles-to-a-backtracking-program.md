@@ -941,6 +941,21 @@ in the env for the callee's match window (`install_subrule_dynamic_params`); a f
 backtrack into would need that binding re-installed and removed as backtracking crosses the frame,
 the same enter/exit pair `isolated-group-scoped` needs.
 
+### Slice E, seventh part: closure scopes as an undoable op pair
+
+`isolated-group-scoped` compiles. A spliced Regex value that closed over its own scope is now an
+isolated group between `ScopeEnter` and `ScopeExit` (`rx_scope`): the first installs the scope in the
+env (`install_env_scope`), the second uninstalls it, and each also pushes an entry on the register
+trail under a tag no register index reaches. Rewinding past a `ScopeEnter` uninstalls the scope;
+rewinding past a `ScopeExit` installs it again. The trail is untouched by a ratchet's cut, so a
+committed body still unwinds; whatever a run leaves installed when it ends (a failure inside a body
+whose trail entries a settled return or an empty stack had dropped) is uninstalled at the end of the
+run. The body is therefore matched lazily, as the walk matches it, and D6 agrees with the walk's code
+invocation order, which an eager all-ends op (tried first) did not.
+
+The same pair is what `args-opaque` and the `$*`-parameter blocker need: a binding installed for a
+callee's match window, kept correct as backtracking crosses the frame.
+
 ### Reproducing §2
 
 ```raku

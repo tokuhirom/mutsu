@@ -37,6 +37,7 @@ mod rx_entry;
 mod rx_frame;
 mod rx_levels;
 mod rx_ltm;
+mod rx_scope;
 mod rx_vm;
 
 use crate::runtime::regex_types::{RegexAtom, RegexToken};
@@ -262,6 +263,17 @@ pub(super) enum RxOp {
     /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
     /// on the backtrack stack as one choice point.
     InterpEnds(u32),
+    /// Install the closure scope of the spliced Regex value `atoms[atom]` (a
+    /// `CaptureIsolatedGroupScoped`) for its body, keeping the scope's handle
+    /// in register `slot` (`rx_scope`).
+    ScopeEnter {
+        atom: u32,
+        slot: u16,
+    },
+    /// Uninstall the scope `ScopeEnter` installed into register `slot`.
+    ScopeExit {
+        slot: u16,
+    },
     /// A scoped `[:m …]` group, `atoms[i]`: its ends at `pos`, matched over
     /// the mark-stripped subject and mapped back
     /// (`regex_match_ends_from_caps_in_pkg`, which runs the body's own program

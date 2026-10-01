@@ -533,10 +533,27 @@ impl Compiler {
                 }
                 self.ops.push(RxOp::DropCapture);
             }
-            // Its body runs in the closure scope the interpolated regex captured;
-            // installing that scope around a body the program can backtrack into
-            // needs an enter/exit pair of ops.
-            RegexAtom::CaptureIsolatedGroupScoped(..) => return Err("isolated-group-scoped"),
+            // A spliced Regex value that closed over its own scope: the body is
+            // an isolated group, run with that scope installed. The install is
+            // an op pair whose effects backtracking undoes and redoes
+            // (`rx_scope`), so the body is matched lazily like any other.
+            RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
+                let slot = self.reg();
+                let atom = self.push_atom(&token.atom);
+                self.ops.push(RxOp::ScopeEnter { atom, slot });
+                self.ops.push(RxOp::OpenIsolated);
+                let height = token.ratchet.then(|| self.reg());
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Height(h));
+                }
+                self.pattern(p)?;
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Cut(h));
+                }
+                self.ops.push(RxOp::DropCapture);
+                self.ops.push(RxOp::ScopeExit { slot });
+                self.has_code = true;
+            }
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
             RegexAtom::VarInterp(_) => {
                 // `$x` of an in-regex `:my` lexical (or an outer one): the
