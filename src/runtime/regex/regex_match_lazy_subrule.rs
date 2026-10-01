@@ -129,9 +129,11 @@ impl Interpreter {
         let outer_seed_read = lr_key
             .as_ref()
             .is_some_and(super::regex_lr_state::lr_begin_activation);
-        // Ends are deduplicated the way the eager arm does it: the first (=
-        // highest-priority) path to reach an end wins, later ones are dropped.
-        let mut seen_ends: Vec<usize> = Vec::new();
+        // Every path the callee takes to an end is handed to the continuation,
+        // even when an earlier path already reached the same end: Rakudo
+        // enters the caller's rest once per path, so a code block or action
+        // after the call runs once per path, and a later path's captures are
+        // what the continuation sees after an earlier one fails (#10489).
         let mut unwind = false;
         let mut seed_consulted_in_cont = false;
         {
@@ -141,10 +143,6 @@ impl Interpreter {
                             end: usize,
                             mut inner: RegexCaptures|
              -> bool {
-                if seen_ends.contains(&end) {
-                    return false;
-                }
-                seen_ends.push(end);
                 // The grammar instance a method this invocation called wrote to
                 // is its Match's own (#9803).
                 if let Some(Some(cursor)) = interp.walk_cursors.last() {

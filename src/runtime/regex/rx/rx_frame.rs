@@ -67,10 +67,6 @@ pub(super) struct Frame {
     pub(super) proto: Option<(Arc<Vec<ParsedTokenCandidate>>, usize)>,
     /// How many frames deep this call is.
     pub(super) depth: u32,
-    /// The ends this call has returned at. A second path to an end already
-    /// returned is not a new candidate: the first (highest priority) one wins,
-    /// as in the walk's streamed call and its eager end set.
-    pub(super) seen: Vec<usize>,
     /// The grammar instance this invocation owns (Rakudo's cursor), created when
     /// a call in the callee first runs a grammar method (#9803). The return files
     /// it on the callee's Match.
