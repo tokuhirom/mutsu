@@ -65,9 +65,7 @@ impl crate::runtime::Interpreter {
         pos: usize,
         pkg: crate::symbol::Symbol,
     ) {
-        for (end, _) in
-            self.regex_match_all_ends_walked(inner, chars, pos, pkg, "all-ends:ltm-lookahead-fate")
-        {
+        for (end, _) in self.regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg) {
             ltm_record_fate(end);
         }
     }
