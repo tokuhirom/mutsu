@@ -58,3 +58,66 @@ fn contains_word_matches_whole_words_only() {
     assert!(!contains_word("KT", "T"));
     assert!(!contains_word("T_x", "T"));
 }
+
+/// Renames every `$x` to `$renamed`.
+struct RenameVar;
+
+impl VisitMut for RenameVar {
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        if let Expr::Var(name) = expr
+            && name == "x"
+        {
+            *name = "renamed".to_string();
+        }
+        walk_expr_mut(self, expr);
+    }
+}
+
+fn var_count(stmts: &[Stmt], name: &str) -> usize {
+    let mut n = Names::default();
+    walk_stmts(&mut n, stmts);
+    n.0.iter()
+        .filter(|(n, k)| n == name && *k == NameKind::Var)
+        .count()
+}
+
+#[test]
+fn visit_mut_reaches_nested_positions() {
+    // A pointy default, a nested block, a `where` clause, a regex code
+    // block and an attribute default.
+    let mut stmts = parse(
+        "my $c = -> $y = $x { { f($x) } }; sub g(:$z where $x) { $x ~~ / <?{ $x }> / }; \
+         class C { has $.a = $x }",
+    );
+    let before = var_count(&stmts, "x");
+    assert!(before >= 6, "{before}");
+    walk_stmts_mut(&mut RenameVar, &mut stmts);
+    assert_eq!(var_count(&stmts, "x"), 0);
+    assert_eq!(var_count(&stmts, "renamed"), before);
+}
+
+#[test]
+fn walk_param_mut_resets_param_code() {
+    let mut stmts = parse("sub f($a = 1 + 2) { }");
+    let first_param = |stmts: &[Stmt]| {
+        stmts
+            .iter()
+            .find_map(|s| match s {
+                Stmt::SubDecl { param_defs, .. } => Some(param_defs[0].code.clone()),
+                _ => None,
+            })
+            .expect("a sub")
+    };
+    let old = first_param(&stmts);
+    old.fill(|| crate::ast::ParamChunks {
+        where_chunk: None,
+        where_inline_predicate: false,
+        default_chunk: None,
+        shape_chunks: Vec::new(),
+    });
+    assert!(first_param(&stmts).is_filled());
+    walk_stmts_mut(&mut RenameVar, &mut stmts);
+    assert!(!first_param(&stmts).is_filled());
+    // Only the rewritten node gets a fresh slot; other holders keep theirs.
+    assert!(old.is_filled());
+}
