@@ -67,6 +67,11 @@ a separate decision when the first rewriting pass wants one.
   reset, succeed barrier, topic rebind, block-local `my`, heredoc scope, `return-rw`, non-Nil
   `return`, OTF gates, native-map classifier, implicit `@_`/`%_`, LSP outline) ported, 71 → 39 in
   the cluster; the shared "own scope" boundary is `compiler/scope_scan.rs`.
+- **Runtime registration and run** (#10468): the private-method and undeclared-attribute checks,
+  the END pre-installation, the `$=pod` declarant collection, the grep `last` probe, the module
+  export/`state`-sub scans, the slang declarator facts and the static-`require` scan ported
+  (15 walkers; 10 more annotated as spines, transforms or one-scope declaration scans);
+  `$!x` is now rejected in every position rakudo rejects it, `@!x`/`%!x` too.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter

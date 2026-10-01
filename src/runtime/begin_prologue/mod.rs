@@ -37,6 +37,7 @@ mod nested;
 mod package_body;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast_visit::{Visit, walk_expr};
 use crate::value::ValueView;
 use std::collections::HashSet;
 
@@ -224,48 +225,33 @@ fn static_require_targets(stmt: &Stmt) -> Vec<String> {
     out
 }
 
+// Cost: O(n), n = size of the expression tree (closures excluded).
 fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
-    match expr {
-        Expr::Call { name, args } => {
-            if name.resolve() == "require"
-                && let Some(Expr::Literal(target)) = args.first()
-                && let ValueView::Package(module) = target.view()
-            {
-                out.push(module.resolve());
-            }
-            for arg in args {
-                collect_static_requires(arg, out);
-            }
+    let mut scan = StaticRequires(out);
+    scan.visit_expr(expr);
+}
+
+/// The walk of [`collect_static_requires`] (ADR-0137 visitor).
+struct StaticRequires<'a>(&'a mut Vec<String>);
+
+impl Visit for StaticRequires<'_> {
+    // A statement reached from an expression sits in a nested block, closure
+    // or `do`, whose `require` belongs to that scope (see
+    // [`static_require_targets`]).
+    fn visit_stmt(&mut self, _stmt: &Stmt) {}
+
+    // A parameter default belongs to its closure's scope too.
+    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Call { name, args } = expr
+            && name.resolve() == "require"
+            && let Some(Expr::Literal(target)) = args.first()
+            && let ValueView::Package(module) = target.view()
+        {
+            self.0.push(module.resolve());
         }
-        Expr::Grouped(inner)
-        | Expr::Unary { expr: inner, .. }
-        | Expr::PostfixOp { expr: inner, .. }
-        | Expr::AssignExpr { expr: inner, .. } => collect_static_requires(inner, out),
-        Expr::Binary { left, right, .. } => {
-            collect_static_requires(left, out);
-            collect_static_requires(right, out);
-        }
-        Expr::MethodCall { target, args, .. } => {
-            collect_static_requires(target, out);
-            for arg in args {
-                collect_static_requires(arg, out);
-            }
-        }
-        Expr::ArrayLiteral(items) => {
-            for item in items {
-                collect_static_requires(item, out);
-            }
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            collect_static_requires(cond, out);
-            collect_static_requires(then_expr, out);
-            collect_static_requires(else_expr, out);
-        }
-        _ => {}
+        walk_expr(self, expr);
     }
 }
 
@@ -460,4 +446,30 @@ fn if_condition_check(condition: Expr) -> Vec<Stmt> {
             with_kind: None,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn requires(src: &str) -> Vec<String> {
+        let stmts = crate::parse_dispatch::parse_source(src)
+            .map(|(stmts, _)| stmts)
+            .unwrap();
+        stmts.iter().flat_map(static_require_targets).collect()
+    }
+
+    #[test]
+    fn a_require_anywhere_in_the_statement_expression_is_found() {
+        assert_eq!(requires("my $x = (require Foo);"), vec!["Foo"]);
+        assert_eq!(requires("my %h = a => (require Foo);"), vec!["Foo"]);
+        assert_eq!(requires("f(:x(require Foo));"), vec!["Foo"]);
+    }
+
+    #[test]
+    fn a_require_in_a_nested_block_or_closure_belongs_to_that_scope() {
+        assert!(requires("my $c = { require Foo };").is_empty());
+        assert!(requires("my $c = -> $x = (require Foo) { };").is_empty());
+        assert!(requires("my $x = do { require Foo };").is_empty());
+    }
 }
