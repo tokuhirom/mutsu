@@ -5212,7 +5212,7 @@ fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
     names
 }
 
-/// Names a class body `my`/`state`-declares at its own top level (ADR-0019
+/// Names a class (or role) body `my`/`state`-declares at its own top level (ADR-0019
 /// D6-1), mirroring `persist_class_body_statics`'s `declared_statics` scan:
 /// a top-level (unflattened) `Stmt::VarDecl` that is neither `our` nor
 /// `dynamic`. Precomputed once at plan lowering instead of re-walked on
@@ -5228,6 +5228,30 @@ fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
             } => Some(Symbol::intern(name)),
             _ => None,
         })
+        .collect()
+}
+
+/// The declaring frame's lexicals a type's methods may capture, once the names
+/// the type body itself `my`/`state`-declares are taken out.
+///
+/// Such a declaration shadows a same-named lexical of the declaring frame for
+/// every method of the type: the method reads the body's static, which the
+/// class/role registration supplies on method entry. Capturing the frame's slot
+/// of that name would install the OUTER value over the static (the captured
+/// environment is applied after the statics), so the name is not an outer
+/// lexical of this type. `my $x = 1; class A { my $x = 7; method m { $x } }`
+/// answers 7, as in Raku.
+// Cost: O(s * d), s = the frame's lexical slots, d = the body's declared statics.
+fn outer_lexical_slots_unshadowed(
+    slots: Vec<(Symbol, u32)>,
+    declared_static_names: &[Symbol],
+) -> Vec<(Symbol, u32)> {
+    if declared_static_names.is_empty() {
+        return slots;
+    }
+    slots
+        .into_iter()
+        .filter(|(outer, _)| !declared_static_names.contains(outer))
         .collect()
 }
 
@@ -11580,6 +11604,8 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
+        let method_outer_lexical_slots =
+            outer_lexical_slots_unshadowed(method_outer_lexical_slots, &declared_static_names);
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk
@@ -11647,6 +11673,10 @@ impl CompiledCode {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let (own_attribute_names, body_used_modules, body_declared_types) = role_body_prescan(body);
+        let method_outer_lexical_slots = outer_lexical_slots_unshadowed(
+            method_outer_lexical_slots,
+            &class_declared_static_names(body),
+        );
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: see `add_class_decl_plan`'s identical comment.
         debug_assert_eq!(method_decls.len(), method_compiled_keys.len());
