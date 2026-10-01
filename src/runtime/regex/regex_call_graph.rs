@@ -339,12 +339,13 @@ impl Interpreter {
             // builtin assertion or character class (`<alpha>`, `<ws>` with no
             // grammar override, `<sym>`), which cannot dispatch to a user rule,
             // or a plain grammar METHOD — arbitrary user code, so unknowable.
-            return match self.registry().user_method_overloads(pkg.as_str(), name) {
-                None => Ok(std::sync::Arc::new(DirectCalls {
+            return if self.grammar_has_user_method(pkg.as_str(), name) {
+                Err(StreamDecline::CalleeIsMethod)
+            } else {
+                Ok(std::sync::Arc::new(DirectCalls {
                     callees: Vec::new(),
                     runs_user_code: false,
-                })),
-                Some(_) => Err(StreamDecline::CalleeIsMethod),
+                }))
             };
         }
         let mut out = DirectCalls {

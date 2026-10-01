@@ -177,9 +177,7 @@ impl Interpreter {
     ) -> CallVerdict {
         let target = self.rx_call_target(name, pkg, ic)?;
         if matches!(target, CallTarget::Single)
-            && self
-                .registry()
-                .method_overloads_present_sym(pkg, name.spec().lookup_sym)
+            && self.grammar_has_user_method_sym(pkg.as_str(), name.spec().lookup_sym)
         {
             return Err("grammar-method");
         }
