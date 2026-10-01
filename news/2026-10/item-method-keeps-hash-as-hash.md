@@ -22,9 +22,8 @@ how a value records its container, and an array, a hash and a slip all behave th
 
 Because the `Scalar` box is gone, the consumers that flatten a bare hash into its pairs had to
 learn to leave an itemized one whole, exactly as they already did for an itemized Array: the
-`map`/`first` listops, `Set.new`/`Bag.new`/`Mix.new` and the `.Set`/`.Bag`/`.Mix` element
-flattening, the `set`/`bag`/`mix` listops, and `Interpreter::value_to_list` (a duplicate of
-`utils::value_to_list` that lacked the arm). `map { ... }, $(%h)` and `Set.new($(%h))` therefore
+`map`/`first` listops, `Set.new`/`Bag.new`/`Mix.new`, the `set`/`bag`/`mix` listops, and
+`Interpreter::value_to_list` (a duplicate of `utils::value_to_list` that lacked the arm). `map { ... }, $(%h)` and `Set.new($(%h))` therefore
 still see ONE item, and a `$`-held hash now does too (`my $x = %h.item; Set.new($x).elems` was 3).
 Two neighbouring divergences this surfaced are filed separately:
 [#10660](https://github.com/tokuhirom/mutsu/issues/10660) and

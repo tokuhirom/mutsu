@@ -70,9 +70,7 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     quanthash_insert_set(elems, original_keys, k);
                 }
             }
-            // An itemized hash (`$(%h)`, `%h.item`, a `$`-held hash) is ONE element,
-            // exactly as an itemized Array below is.
-            ValueView::Hash(h) if flatten && !item.hash_is_itemized() => {
+            ValueView::Hash(h) if flatten => {
                 // An object hash contributes its key OBJECTS (decoded from the
                 // `.WHICH` store keys); a plain hash its string keys.
                 for (k, v) in h.iter() {
@@ -316,8 +314,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     flatten_into(counts, original_keys, item, true)?;
                 }
             }
-            // An itemized hash is one element (see `add_item` above).
-            ValueView::Hash(h) if flatten && !value.hash_is_itemized() => {
+            ValueView::Hash(h) if flatten => {
                 for (k, v) in h.iter() {
                     let weight = pair_weight(v)?;
                     if weight.is_positive() {
@@ -584,8 +581,7 @@ fn mix_add_item_with_keys(
             record_quanthash_original(original_keys, &key, &elem);
             mix_accum(weights, key, w)?;
         }
-        // An itemized hash is one element (see `add_item` above).
-        ValueView::Hash(h) if flatten && !item.hash_is_itemized() => {
+        ValueView::Hash(h) if flatten => {
             for (k, v) in h.iter() {
                 let w = mix_pair_weight_value(v)?;
                 if w.to_f64() != 0.0 {
