@@ -188,17 +188,18 @@ impl Interpreter {
         // dispatchers) are methods too; a composed role's are re-registered
         // under the composing class (`registration_class_compose_body`).
         // Cost: O(t), t = all registered token/rule keys (scans the tables).
-        let prefix = format!("{class_name}::");
+        let class_sym = Symbol::intern(class_name);
         for key in registry
             .token_defs
             .keys()
-            .map(|k| k.resolve())
-            .chain(registry.proto_tokens.iter().map(|k| k.as_str().into()))
+            .copied()
+            .chain(registry.proto_tokens.iter().map(|k| Symbol::intern(k)))
         {
-            let Some(rest) = key.strip_prefix(prefix.as_str()) else {
+            if crate::qualified::package_parent(key) != Some(class_sym) {
                 continue;
-            };
-            if rest.contains("::") || table.contains_key(rest) {
+            }
+            let rest = &key.as_str()[class_name.len() + 2..];
+            if table.contains_key(rest) {
                 continue;
             }
             table.insert(
@@ -425,7 +426,8 @@ impl Interpreter {
     /// source-level regex tree, so its spacing is normalized rather than verbatim.
     fn token_declaration_source(&self, owner: &str, name: &str) -> Option<String> {
         let registry = self.registry();
-        let key = format!("{owner}::{name}");
+        let key =
+            crate::qualified::qualified(Symbol::intern(owner), Symbol::intern(name)).resolve();
         let Some(first) = registry
             .token_defs
             .get(&Symbol::intern(&key))
