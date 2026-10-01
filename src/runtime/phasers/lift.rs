@@ -93,20 +93,13 @@ impl Lifter<'_> {
         (self.closure, self.begin_ok) = saved;
     }
 
-    /// Replace the phaser expression `expr` with a temp variable, and push the
-    /// temp's declaration and the assignment of the phaser's value to its
-    /// bucket.
-    fn lift_phaser_expr(&mut self, expr: &mut Expr) {
-        let temp_name = next_temp_name();
-        let old = std::mem::replace(expr, Expr::Var(temp_name.clone()));
-        let Expr::PhaserExpr { kind, body } = old else {
-            unreachable!("only a phaser expression is lifted")
-        };
+    /// Push the temp's declaration and the assignment of a lifted phaser's
+    /// value (`kind`, `body`) to that kind's bucket.
+    fn push_lifted(&mut self, temp_name: String, kind: PhaserKind, body: Vec<Stmt>) {
         let bucket = match kind {
             PhaserKind::Begin => &mut *self.begin,
             PhaserKind::Check => &mut *self.check,
-            PhaserKind::Init => &mut *self.init,
-            _ => unreachable!("only BEGIN/CHECK/INIT are lifted"),
+            _ => &mut *self.init,
         };
         push_temp_phaser(bucket, temp_name, phaser_value(body, kind));
     }
@@ -174,11 +167,14 @@ impl VisitMut for Lifter<'_> {
     }
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
-        if let Expr::PhaserExpr { kind, .. } = expr
+        if let Expr::PhaserExpr { kind, body } = expr
             && (matches!(kind, PhaserKind::Check | PhaserKind::Init)
                 || (self.begin_ok && *kind == PhaserKind::Begin))
         {
-            self.lift_phaser_expr(expr);
+            let (kind, body) = (kind.clone(), std::mem::take(body));
+            let temp_name = next_temp_name();
+            *expr = Expr::Var(temp_name.clone());
+            self.push_lifted(temp_name, kind, body);
             return;
         }
         match expr {
@@ -269,17 +265,15 @@ fn extract_phasers_from_stmts(stmts: &mut [Stmt], check: &mut Vec<Stmt>, init: &
     for stmt in stmts.iter_mut() {
         let Stmt::Phaser {
             kind: kind @ (PhaserKind::Check | PhaserKind::Init),
+            body,
             ..
         } = stmt
         else {
             continue;
         };
-        let kind = kind.clone();
+        let (kind, body) = (kind.clone(), std::mem::take(body));
         let temp_name = next_temp_name();
-        let old = std::mem::replace(stmt, Stmt::Expr(Expr::Var(temp_name.clone())));
-        let Stmt::Phaser { body, .. } = old else {
-            unreachable!()
-        };
+        *stmt = Stmt::Expr(Expr::Var(temp_name.clone()));
         let bucket = if kind == PhaserKind::Check {
             &mut *check
         } else {
@@ -296,20 +290,17 @@ fn extract_phasers_from_stmts(stmts: &mut [Stmt], check: &mut Vec<Stmt>, init: &
 /// BEGIN body.
 pub(super) fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
     for stmt in stmts.iter_mut() {
-        if !matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        ) {
+        let Stmt::Phaser {
+            kind: PhaserKind::Begin,
+            body,
+            ..
+        } = stmt
+        else {
             continue;
-        }
-        let temp_name = next_temp_name();
-        let old = std::mem::replace(stmt, Stmt::Expr(Expr::Var(temp_name.clone())));
-        let Stmt::Phaser { body, .. } = old else {
-            unreachable!()
         };
+        let body = std::mem::take(body);
+        let temp_name = next_temp_name();
+        *stmt = Stmt::Expr(Expr::Var(temp_name.clone()));
         push_temp_phaser(begin, temp_name, Expr::desugar_block(body));
     }
 }
