@@ -165,9 +165,18 @@ impl Interpreter {
                 crate::opcode::RoleBodyOp::Method => {
                     self.role_body_method_decl(cx)?;
                 }
-                crate::opcode::RoleBodyOp::Deferred { is_stub_marker, .. } => {
+                crate::opcode::RoleBodyOp::Deferred {
+                    is_stub_marker,
+                    raw,
+                } => {
                     if *is_stub_marker {
                         cx.role_def.is_stub_role = true;
+                    }
+                    if let Stmt::ProtoDecl {
+                        is_method: true, ..
+                    } = &**raw
+                    {
+                        self.role_body_deferred_proto_method(cx.name, raw)?;
                     }
                     // Every other statement (non-method/non-attribute/non-`does`,
                     // including `SetLine` source-line markers) is deferred to
