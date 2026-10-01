@@ -115,20 +115,15 @@ impl Mentions {
     }
 
     /// Whether some mentioned name is `declared`, or a name qualified by it
-    /// (`K::x`, `$P::v`) or qualifying it.
-    // Cost: O(n), n = total length of the mentioned names.
+    /// (`K::x`, `$P::v`) or qualifying it. A name counts wherever it occurs as
+    /// a whole word, which errs toward naming it: that only costs a repeat.
+    // Cost: O(n * m), n = total length of the mentioned names, m = `declared.len()`.
     fn names(&self, declared: &str) -> bool {
         self.symbolic
-            || self.names.iter().any(|(name, kind)| {
-                if *kind == NameKind::Source {
-                    return contains_word(name, declared);
-                }
-                let name = name.trim_start_matches(['$', '@', '%', '&', '*', '!', '.', ':']);
-                name.split("::").any(|part| part == declared)
-                    || name == declared
-                    || name.contains(&format!("{declared}::"))
-                    || name.ends_with(&format!("::{declared}"))
-            })
+            || self
+                .names
+                .iter()
+                .any(|(name, _)| contains_word(name, declared))
     }
 }
 
@@ -270,10 +265,8 @@ impl Walker<'_> {
     pub(super) fn calls_into_inner_type(&self, name: &str) -> bool {
         self.frames.iter().flat_map(|f| &f.types).any(|t| {
             t.names.iter().any(|n| {
-                name == n
-                    || name
-                        .strip_prefix(n.as_str())
-                        .is_some_and(|r| r.starts_with("::"))
+                crate::qualified::package_ancestors(crate::symbol::Symbol::intern(name))
+                    .any(|pkg| pkg.as_str() == n.as_str())
             })
         })
     }
