@@ -140,11 +140,13 @@ pub(super) enum RxOp {
     /// whose earlier iterations were collected since `regs[base]` — an atom's,
     /// or a separator's when `sep`: an inline level whose code sees the
     /// iterations folded so far, with this one's own captures folded in place
-    /// (the walk's `InlineCaptureScope`).
+    /// (the walk's `InlineCaptureScope`). `name_sets[names]` are the names under
+    /// the token.
     OpenSepIter {
         tok: u32,
         base: u16,
         sep: bool,
+        names: u32,
     },
     /// Open a capture level for a capture-isolated group (`<$rx>`): a regex of
     /// its own, so it inherits none of the enclosing level's `:my` lexicals.
@@ -172,15 +174,17 @@ pub(super) enum RxOp {
     },
     /// The empty arm of `toks[tok]`'s `?`: reserve the atom's capture slots
     /// (Nil, or an empty list under a nested list quantifier), apply the
-    /// alias where the walk does, and mark nested list-quantified names.
+    /// alias where the walk does, and mark nested list-quantified names, as
+    /// `zero_arms[plan]` says.
     ZeroArm {
         tok: u32,
         pos_base: u16,
+        plan: u32,
     },
-    /// Mark every capture name under the quantified `toks[tok]` quantified,
-    /// before its first iteration.
+    /// Mark every capture name in `name_sets[names]` (the names under a
+    /// quantified token) quantified, before its first iteration.
     QuantNames {
-        tok: u32,
+        names: u32,
     },
     /// Fold the quantified `toks[tok]`'s per-iteration capture slots, pushed
     /// since the positional count `regs[pos_base]`, into one list per slot.
@@ -196,10 +200,23 @@ pub(super) enum RxOp {
         sep: bool,
     },
     /// The end of the separated quantifier `toks[tok]`: fold the iterations
-    /// collected since `regs[base]` into its capture delta.
+    /// collected since `regs[base]` into its capture delta; `name_sets[names]`
+    /// are the names under it.
     SepEmit {
         tok: u32,
         base: u16,
+        names: u32,
+    },
+    /// `regs[r] =` the innermost level's capture-trail length (`CapStore::mark`).
+    CapMark(u16),
+    /// The end of a separated quantifier whose iterations filed their (named
+    /// only) captures straight into the enclosing level since the trail length
+    /// `regs[base]` (ADR-10488 D3): mark quantified every name in
+    /// `name_sets[names]` and every name an iteration filed under, as folding
+    /// the iterations' own levels would have.
+    SepNames {
+        base: u16,
+        names: u32,
     },
     /// The end of a `&` conjunction `toks[tok]` whose first branch ran in
     /// the capture level opened at `regs[start]`: every other branch must
@@ -301,6 +318,12 @@ pub(crate) struct RxProgram {
     pub(super) toks: Vec<RegexToken>,
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,
+    /// The capture-name sets `QuantNames`, `SepEmit` and `SepNames` mark,
+    /// interned once when the pattern compiles: they are a function of the
+    /// pattern, which the walk recomputes (as strings) at every execution.
+    pub(super) name_sets: Vec<Box<[crate::symbol::Symbol]>>,
+    /// One per `ZeroArm`: what the empty arm of a `?` writes.
+    pub(super) zero_arms: Vec<ZeroArmPlan>,
     pub(super) nregs: usize,
     /// Whether the program runs Raku code or reads an in-regex lexical (a
     /// `Code`, `VarDecl` or `<{ … }>` op, or a `$x` interpolation). The
@@ -314,6 +337,18 @@ pub(crate) struct RxProgram {
     /// Per-atom printable-ASCII acceptance sets, probed on first run (see
     /// `rx_atom`).
     pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+}
+
+/// What the empty arm of a `?` writes, computed when the pattern compiles.
+pub(super) struct ZeroArmPlan {
+    /// The atom's capture slots, each Nil or (`true`) an empty list
+    /// (`capture_group_list_flags`).
+    pub(super) flags: Box<[bool]>,
+    /// The names under a nested list quantifier, which render as empty lists
+    /// (`collect_nested_list_quantified_names`).
+    pub(super) list_names: Box<[crate::symbol::Symbol]>,
+    /// Whether the token's own alias is applied over the empty span.
+    pub(super) named_zero_capture: bool,
 }
 
 /// A compiled `|`: the alternation token (`toks[tok]`, whose atom holds the

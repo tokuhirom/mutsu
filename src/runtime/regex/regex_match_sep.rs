@@ -32,9 +32,30 @@ pub(super) fn separated_capture_delta(
     atom_stride: usize,
     sep_stride: usize,
 ) -> RegexCaptures {
+    separated_capture_delta_syms(
+        names.iter().map(|n| Symbol::intern(n)),
+        atom_caps,
+        sep_caps,
+        trailing,
+        atom_stride,
+        sep_stride,
+    )
+}
+
+/// [`separated_capture_delta`] for names already interned (the compiled
+/// engine's, interned when the pattern compiled).
+// Cost: O(n + c), n = the names, c = the captures across the chain.
+pub(super) fn separated_capture_delta_syms(
+    names: impl IntoIterator<Item = Symbol>,
+    atom_caps: &[RegexCaptures],
+    sep_caps: &[RegexCaptures],
+    trailing: Option<&RegexCaptures>,
+    atom_stride: usize,
+    sep_stride: usize,
+) -> RegexCaptures {
     let mut caps = RegexCaptures::default();
     for n in names {
-        caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+        caps.named.slot_mut(n).quantified = true;
     }
     Interpreter::append_separated_captures(
         &mut caps,
@@ -122,10 +143,7 @@ impl Interpreter {
         let zero = (min == 0).then(|| {
             let mut caps = RegexCaptures::default();
             for name in &names {
-                caps.named
-                    .entry(Symbol::intern(name))
-                    .or_default()
-                    .quantified = true;
+                caps.named.slot_mut(Symbol::intern(name)).quantified = true;
             }
             (start, caps)
         });
@@ -392,7 +410,7 @@ impl Interpreter {
         // Named captures: merge every iteration's named captures (as arrays).
         for src in atom_caps.iter().chain(all_sep.iter().copied()) {
             for (k, v) in &src.named {
-                let slot = caps.named.entry(*k).or_default();
+                let slot = caps.named.slot_mut(*k);
                 slot.merge(v.clone());
                 slot.quantified = true;
             }

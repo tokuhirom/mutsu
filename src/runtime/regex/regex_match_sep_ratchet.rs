@@ -122,7 +122,7 @@ impl Interpreter {
             // `match_separated_quantifier`).
             let mut caps = RegexCaptures::default();
             for n in Self::collect_quantified_names_for_token(token) {
-                caps.named.entry(Symbol::intern(&n)).or_default().quantified = true;
+                caps.named.slot_mut(Symbol::intern(&n)).quantified = true;
             }
             return vec![(start, caps)];
         }

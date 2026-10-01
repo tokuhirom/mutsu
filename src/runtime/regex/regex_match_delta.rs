@@ -40,7 +40,7 @@ impl GroupShape {
 pub(super) fn group_merge_delta(mut inner_caps: RegexCaptures) -> RegexCaptures {
     let mut new_caps = RegexCaptures::default();
     for (k, v) in inner_caps.named.drain() {
-        new_caps.named.entry(k).or_default().merge(v);
+        new_caps.named.slot_mut(k).merge(v);
     }
     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);
@@ -93,17 +93,10 @@ pub(super) fn alternation_branch_delta(
     }
     let mut new_caps = RegexCaptures::default();
     for (k, v) in inner_caps.named.drain() {
-        new_caps.named.entry(k).or_default().merge(v);
+        new_caps.named.slot_mut(k).merge(v);
     }
     for &name in &flags.named {
-        new_caps
-            .named
-            .entry(name)
-            .and_modify(|slot| slot.quantified = true)
-            .or_insert_with(|| NamedSlot {
-                nodes: Vec::new(),
-                quantified: true,
-            });
+        new_caps.named.slot_mut(name).quantified = true;
     }
     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);
@@ -169,13 +162,7 @@ pub(super) fn alternation_tail_delta(
         }
     }
     for &name in &flags.named {
-        caps.named.insert(
-            name,
-            NamedSlot {
-                nodes: Vec::new(),
-                quantified: true,
-            },
-        );
+        caps.named.insert(name, NamedSlot::empty_list());
     }
     Some(caps)
 }

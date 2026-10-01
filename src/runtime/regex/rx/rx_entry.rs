@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use super::rx_frame::{Choice, FMark};
+use super::rx_frame::{Choice, FMark, Frame};
 use super::rx_levels::Levels;
 use super::{RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
 use crate::runtime::Interpreter;
@@ -35,6 +35,10 @@ pub(super) struct Scratch {
     pub(super) stack: Vec<Choice>,
     /// The frame state of the choice points pushed inside a callee (`FMark`).
     pub(super) fmarks: Vec<FMark>,
+    /// The frame arena: every call frame that may still run or be resumed in.
+    pub(super) frames: Vec<Frame>,
+    /// A proto call's ranking, before it is known to need a choice point.
+    pub(super) proto_rank: Vec<usize>,
     pub(super) ends: Vec<usize>,
     pub(super) levels: Levels,
     pub(super) ltm_order: Vec<(usize, (usize, usize))>,

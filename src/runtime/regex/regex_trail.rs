@@ -16,7 +16,6 @@
 //! and goal failures persist across backtracks by design.
 
 use super::super::*;
-use std::collections::hash_map::Entry;
 
 /// Saved tail for a positional truncation (slots moved out, moved back on
 /// rewind). Boxed to keep `Undo` small.
@@ -62,7 +61,7 @@ pub(super) enum Undo {
     },
     CaptureStart(Option<usize>),
     CaptureEnd(Option<usize>),
-    Sym(Option<String>),
+    Sym(Option<crate::symbol::Symbol>),
     /// Restore the node's `make` value (None = it had none). An inline
     /// `{ make … }` runs on paths the engine later abandons, so the write is
     /// trailed like any other capture-store mutation.
@@ -83,6 +82,18 @@ impl CapStore {
         }
     }
 
+    /// A store over `init` whose undo trail reuses `trail`'s allocation (a
+    /// capture level's, recycled when it closed for good).
+    pub(super) fn with_trail(init: RegexCaptures, mut trail: Vec<Undo>) -> Self {
+        trail.clear();
+        CapStore { caps: init, trail }
+    }
+
+    /// The captures and the (spent) undo trail, consuming the store.
+    pub(super) fn into_parts(self) -> (RegexCaptures, Vec<Undo>) {
+        (self.caps, self.trail)
+    }
+
     /// Start over with no captures and a match starting at `from`, keeping
     /// the trail's allocation (the compiled engine reuses one store across
     /// start positions).
@@ -98,6 +109,7 @@ impl CapStore {
             capture_end,
             match_from,
             ast,
+            names,
             rare,
         } = &mut self.caps;
         named.clear();
@@ -108,6 +120,7 @@ impl CapStore {
         *capture_end = None;
         *match_from = from;
         *ast = None;
+        *names = Default::default();
         *rare = None;
         self.trail.clear();
     }
@@ -210,19 +223,6 @@ impl CapStore {
         self.trail.push(Undo::PosLen(self.caps.positional.len()));
     }
 
-    fn record_named_key(&mut self, key: crate::symbol::Symbol) {
-        let (len, present, quantified) = match self.caps.named.get(&key) {
-            Some(slot) => (slot.nodes.len(), true, slot.quantified),
-            None => (0, false, false),
-        };
-        self.trail.push(Undo::NamedTrunc {
-            key,
-            len,
-            present,
-            quantified,
-        });
-    }
-
     fn record_hash_cap_key(&mut self, key: &str) {
         let (len, present) = match self.caps.hash_captures().get(key) {
             Some(v) => (v.len(), true),
@@ -244,31 +244,14 @@ impl CapStore {
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
             // One probe of `named`, not two: the undo record wants exactly the
-            // slot state the `entry` below is about to hand out, so recording it
-            // through a separate `get` (what `record_named_key` does for callers
-            // that have no entry in hand) hashed and searched for the same key
-            // twice per merged capture.
-            let slot = match self.caps.named.entry(k) {
-                Entry::Occupied(occupied) => {
-                    let slot = occupied.into_mut();
-                    self.trail.push(Undo::NamedTrunc {
-                        key: k,
-                        len: slot.nodes.len(),
-                        present: true,
-                        quantified: slot.quantified,
-                    });
-                    slot
-                }
-                Entry::Vacant(vacant) => {
-                    self.trail.push(Undo::NamedTrunc {
-                        key: k,
-                        len: 0,
-                        present: false,
-                        quantified: false,
-                    });
-                    vacant.insert(NamedSlot::default())
-                }
-            };
+            // slot state the probe below hands out.
+            let (present, slot) = self.caps.named.slot_entry(k);
+            self.trail.push(Undo::NamedTrunc {
+                key: k,
+                len: slot.nodes.len(),
+                present,
+                quantified: slot.quantified,
+            });
             slot.nodes.extend(v.nodes);
             slot.quantified |= v.quantified;
         }
@@ -321,18 +304,64 @@ impl CapStore {
 
     /// Append one span-bearing entry under a capture name.
     pub(super) fn push_named_node(&mut self, key: &str, sub: Arc<CapNode>) {
-        let key = crate::symbol::Symbol::intern(key);
-        self.record_named_key(key);
-        self.caps.named.entry(key).or_default().nodes.push(sub);
+        self.push_named_node_sym(crate::symbol::Symbol::intern(key), sub);
+    }
+
+    /// [`Self::push_named_node`] for an already interned name.
+    // Cost: O(n) amortized, n = the names this level has filed.
+    pub(super) fn push_named_node_sym(&mut self, key: crate::symbol::Symbol, sub: Arc<CapNode>) {
+        let (present, slot) = self.caps.named.slot_entry(key);
+        self.trail.push(Undo::NamedTrunc {
+            key,
+            len: slot.nodes.len(),
+            present,
+            quantified: slot.quantified,
+        });
+        slot.nodes.push(sub);
+    }
+
+    /// Set the node's `make` value (last write wins, as in raku).
+    // Cost: O(1).
+    pub(super) fn set_ast(&mut self, ast: Value) {
+        self.trail.push(Undo::Ast(self.caps.ast.replace(ast)));
     }
 
     /// Mark a name as quantified (renders as an Array even for 0/1 entries).
     pub(super) fn insert_named_quantified(&mut self, name: String) {
-        let name = crate::symbol::Symbol::intern(&name);
-        let already = self.caps.named.get(&name).is_some_and(|s| s.quantified);
-        if !already {
-            self.record_named_key(name);
-            self.caps.named.entry(name).or_default().quantified = true;
+        self.insert_named_quantified_sym(crate::symbol::Symbol::intern(&name));
+    }
+
+    /// [`Self::insert_named_quantified`] for an already interned name.
+    // Cost: O(n), n = the names this level has filed.
+    pub(super) fn insert_named_quantified_sym(&mut self, name: crate::symbol::Symbol) {
+        let (present, slot) = self.caps.named.slot_entry(name);
+        if !slot.quantified {
+            let len = slot.nodes.len();
+            slot.quantified = true;
+            self.trail.push(Undo::NamedTrunc {
+                key: name,
+                len,
+                present,
+                quantified: false,
+            });
+        }
+    }
+
+    /// Mark quantified every name in `names` and every name filed under since
+    /// the trail stood at `since` — what folding those filings' own capture
+    /// levels into this one would have marked (a separated quantifier's
+    /// iterations, ADR-10488 D3).
+    // Cost: O(t + (k + m)·n), t = the trail entries since `since`, k = those
+    // that file a name, m = `names`, n = the names this level has filed.
+    pub(super) fn mark_filed_quantified(&mut self, since: usize, names: &[crate::symbol::Symbol]) {
+        for &name in names {
+            self.insert_named_quantified_sym(name);
+        }
+        let end = self.trail.len();
+        for i in since.min(end)..end {
+            if let Undo::NamedTrunc { key, .. } = self.trail[i] {
+                self.insert_named_quantified_sym(key);
+            }
         }
     }
 
@@ -435,8 +464,7 @@ mod tests {
         let mut init = RegexCaptures::default();
         init.positional.push(PosSlot::span(0, 1));
         init.named
-            .entry(Symbol::intern("x"))
-            .or_default()
+            .slot_mut(Symbol::intern("x"))
             .merge(NamedSlot::leaf(0, 1));
         CapStore::new(init)
     }
@@ -466,14 +494,13 @@ mod tests {
         delta.positional.push(PosSlot::span(1, 2));
         delta
             .named
-            .entry(Symbol::intern("x"))
-            .or_default()
+            .slot_mut(Symbol::intern("x"))
             .merge(NamedSlot::leaf(2, 3));
-        let y = delta.named.entry(Symbol::intern("y")).or_default();
+        let y = delta.named.slot_mut(Symbol::intern("y"));
         y.merge(NamedSlot::leaf(3, 4));
         y.quantified = true;
         delta.capture_start = Some(3);
-        delta.set_sym(Some("s".to_string()));
+        delta.set_sym(Some(Symbol::intern("s")));
         store.merge_delta(delta);
         assert_eq!(store.caps().positional.len(), 2);
         let x = Symbol::intern("x");
@@ -482,10 +509,10 @@ mod tests {
         assert_eq!(store.caps().named[&y].nodes.len(), 1);
         assert!(store.caps().named[&y].quantified);
         assert_eq!(store.caps().capture_start, Some(3));
-        assert_eq!(store.caps().sym().map(String::as_str), Some("s"));
+        assert_eq!(store.caps().sym(), Some(Symbol::intern("s")));
         store.rewind(m);
         assert_base(&store);
-        assert!(!store.caps().named.contains_key(&y));
+        assert!(!store.caps().named.get(&y).is_some());
     }
 
     #[test]
@@ -552,6 +579,6 @@ mod tests {
         assert_eq!(store.caps().named[&k].nodes.len(), 1);
         assert!(!store.caps().named[&k].quantified);
         store.rewind(m1);
-        assert!(!store.caps().named.contains_key(&k));
+        assert!(!store.caps().named.get(&k).is_some());
     }
 }

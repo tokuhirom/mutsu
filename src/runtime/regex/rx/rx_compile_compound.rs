@@ -11,7 +11,93 @@ use super::rx_compile::{
     Compiler, Decline, atom_captures, has_numbered_alias, min_len, pattern_captures,
     pattern_contains_backref, pattern_contains_code, pattern_reads_enclosing_state,
 };
-use crate::runtime::regex_types::{RegexPattern, RegexQuant, RegexToken};
+use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
+use crate::symbol::Symbol;
+
+/// Do the captures matching `atom` takes at its own level consist of named
+/// captures only? Then a separated quantifier's iterations need no capture
+/// level of their own: nothing positional is numbered per iteration, and no
+/// `<(` / `)>` marker or nested-run merge reaches the level.
+fn atom_files_names_only(atom: &RegexAtom) -> bool {
+    match atom {
+        RegexAtom::CaptureGroup(_)
+        | RegexAtom::CaptureStartMarker
+        | RegexAtom::CaptureEndMarker
+        | RegexAtom::Lookaround { .. }
+        | RegexAtom::Conjunction(_)
+        | RegexAtom::GoalMatch { .. } => false,
+        RegexAtom::Group(p) => pattern_files_names_only(p),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.iter().all(pattern_files_names_only)
+        }
+        _ => true,
+    }
+}
+
+fn pattern_files_names_only(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().all(|t| {
+        !t.subrule_call_capture
+            && !t
+                .named_capture
+                .as_ref()
+                .is_some_and(|n| n.parse::<usize>().is_ok())
+            && atom_files_names_only(&t.atom)
+            && t.separator
+                .as_ref()
+                .is_none_or(|sep| pattern_files_names_only(&sep.pattern))
+    })
+}
+
+/// Every capture name matching `pattern` can file under at its own level: a
+/// subrule call's capture name (the rule's own too, for an alias that keeps
+/// it), a silent call's action marker, a token's `$<x>=` aliases. A separated
+/// quantifier's iterations or a goal match's two sides may file in place only
+/// when their sets are disjoint: the fold put one side's entries of a shared
+/// name after all of the other's, which in-place filing would interleave.
+// TODO(#10574): rakudo lists a shared name's entries in match order, which is
+// what in-place filing gives; once the fold does too, a separated quantifier
+// needs no disjointness test.
+fn filed_keys(pattern: &RegexPattern, out: &mut Vec<Symbol>) {
+    for t in &pattern.tokens {
+        for name in [&t.named_capture, &t.secondary_named_capture]
+            .into_iter()
+            .flatten()
+        {
+            out.push(Symbol::intern(name));
+        }
+        atom_filed_keys(&t.atom, out);
+        if let Some(sep) = &t.separator {
+            filed_keys(&sep.pattern, out);
+        }
+    }
+}
+
+fn atom_filed_keys(atom: &RegexAtom, out: &mut Vec<Symbol>) {
+    match atom {
+        RegexAtom::Named(name) => {
+            let spec = name.spec();
+            out.extend([spec.lookup_sym, spec.silent_marker_sym]);
+            out.extend(spec.capture_sym);
+        }
+        RegexAtom::WsRule => out.extend([
+            Symbol::intern("ws"),
+            Symbol::intern(&format!(
+                "{}ws",
+                crate::runtime::SILENT_ACTION_MARKER_PREFIX
+            )),
+        ]),
+        RegexAtom::Group(p) => filed_keys(p, out),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            alts.iter().for_each(|p| filed_keys(p, out))
+        }
+        _ => {}
+    }
+}
+
+/// Can no name be filed by both `a` and `b`? (`filed_keys` output.)
+fn disjoint(a: &[Symbol], b: &[Symbol]) -> bool {
+    !a.iter().any(|k| b.contains(k))
+}
 
 impl Compiler {
     /// `a || b || c`, as `walk_seq_alternation` drives it: every way branch
@@ -155,24 +241,43 @@ impl Compiler {
         {
             return Err("goal-match-code");
         }
+        // `GoalEnd` merges the goal's captures, then the inner pattern's, into
+        // this level. When the goal files only names the inner pattern never
+        // does (`'[' ~ ']' <list>`, the grammar case, whose goal at most calls
+        // `<.ws>`), that merge is what matching both sides in place produces,
+        // so neither gets a level of its own (ADR-10488 D3).
+        let in_place = pattern_files_names_only(goal) && {
+            let (mut goal_keys, mut inner_keys) = (Vec::new(), Vec::new());
+            filed_keys(goal, &mut goal_keys);
+            filed_keys(inner, &mut inner_keys);
+            disjoint(&goal_keys, &inner_keys)
+        };
         let height = token.ratchet.then(|| self.reg());
         if let Some(h) = height {
             self.ops.push(RxOp::Height(h));
         }
-        let base = self.reg();
-        self.ops.push(RxOp::SepBase(base));
-        self.ops.push(RxOp::OpenIsolated);
+        let base = (!in_place).then(|| self.reg());
+        if let Some(base) = base {
+            self.ops.push(RxOp::SepBase(base));
+            self.ops.push(RxOp::OpenIsolated);
+        }
         self.pattern(inner)?;
-        self.ops.push(RxOp::Collect { sep: false });
+        if base.is_some() {
+            self.ops.push(RxOp::Collect { sep: false });
+        }
         // The failure handler sits below the goal's own choice points, so it is
         // reached only when the goal found nothing after this inner end.
         let handler_height = self.reg();
         self.ops.push(RxOp::Height(handler_height));
         let split = self.pc();
         self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
-        self.ops.push(RxOp::OpenIsolated);
+        if base.is_some() {
+            self.ops.push(RxOp::OpenIsolated);
+        }
         self.pattern(goal)?;
-        self.ops.push(RxOp::GoalEnd { base });
+        if let Some(base) = base {
+            self.ops.push(RxOp::GoalEnd { base });
+        }
         self.ops.push(RxOp::GoalOk {
             height: handler_height,
         });
@@ -271,8 +376,28 @@ impl Compiler {
             return Err("separator-backref");
         }
         // Each atom and separator then matches in a capture level of its own,
-        // collected for `SepEmit` to fold side by side.
-        let collect = atom_captures(&token.atom) || pattern_captures(sep);
+        // collected for `SepEmit` to fold side by side. When the only captures
+        // are names an atom files (`<pair>+ % ','`, the grammar case), there
+        // is nothing to fold side by side: the iterations file straight into
+        // this level and `SepNames` marks what they filed quantified, as the
+        // fold would have (ADR-10488 D3). Code in an iteration reads the
+        // iterations folded so far (below), which filing in place does not
+        // present, so it keeps the levels.
+        let captures = atom_captures(&token.atom) || pattern_captures(sep);
+        let code = atom_contains_code(&token.atom) || pattern_contains_code(sep);
+        let direct = captures
+            && !code
+            && atom_files_names_only(&token.atom)
+            && pattern_files_names_only(sep)
+            && {
+                // The token's own alias declines above, so the atom is all
+                // an iteration files besides the separator.
+                let (mut atom_keys, mut sep_keys) = (Vec::new(), Vec::new());
+                atom_filed_keys(&token.atom, &mut atom_keys);
+                filed_keys(sep, &mut sep_keys);
+                disjoint(&atom_keys, &sep_keys)
+            };
+        let collect = captures && !direct;
         // Code in an atom or separator reads the captures too: `$/[*-1][*-1]`
         // addresses the iterations folded so far with this one's folded in
         // place (Net::Whois's octet check; `InlineCaptureScope` in the walk).
@@ -299,6 +424,10 @@ impl Compiler {
         if let Some(b) = base {
             self.ops.push(RxOp::SepBase(b));
         }
+        let filed_from = direct.then(|| self.reg());
+        if let Some(b) = filed_from {
+            self.ops.push(RxOp::CapMark(b));
+        }
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
         let whole = ratchet.then(|| self.reg());
@@ -313,8 +442,14 @@ impl Compiler {
         });
         let tok = self.toks.len() as u32;
         self.toks.push(token.clone());
+        let names = self.quantified_names(token);
         let open = |view: bool, sep: bool| match base {
-            Some(base) if view => Some(RxOp::OpenSepIter { tok, base, sep }),
+            Some(base) if view => Some(RxOp::OpenSepIter {
+                tok,
+                base,
+                sep,
+                names,
+            }),
             _ => None,
         };
         let (atom_open, sep_open) = (open(atom_view, false), open(sep_view, true));
@@ -395,7 +530,10 @@ impl Compiler {
             };
         }
         if let Some(base) = base {
-            self.ops.push(RxOp::SepEmit { tok, base });
+            self.ops.push(RxOp::SepEmit { tok, base, names });
+        }
+        if let Some(base) = filed_from {
+            self.ops.push(RxOp::SepNames { base, names });
         }
         Ok(())
     }

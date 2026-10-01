@@ -354,16 +354,15 @@ impl Interpreter {
             if let Some(mut best) = best {
                 // Store the winning :sym<> variant name
                 if best_sym.is_some() {
-                    best.set_sym(best_sym.clone());
+                    best.set_sym(best_sym.as_deref().map(Symbol::intern));
                 }
                 // Ensure subcapture exists for the subrule so sym_variant
                 // propagates to the child Match object via make_subcap_match
                 if !spec.silent {
                     let mut subcap = best.clone();
-                    subcap.set_sym(best_sym);
+                    subcap.set_sym(best_sym.as_deref().map(Symbol::intern));
                     best.named
-                        .entry(Symbol::intern(&spec.lookup_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&spec.lookup_name))
                         .nodes
                         .push(std::sync::Arc::new(subcap.into_cap_node()));
                 }

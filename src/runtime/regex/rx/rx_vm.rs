@@ -11,8 +11,9 @@
 //! A `<subrule>` call that resolves to a plain compiled rule (`rx_call`)
 //! switches the loop to the callee's program in a new frame and capture level;
 //! the callee's `Match` is the return, which files the callee's captures as
-//! the subrule's own Match (`build_named_candidates_from_inner`, the walk's
-//! own builder) and continues the caller.
+//! the subrule's own Match straight into the caller's capture level
+//! (`file_named_candidate`, the filing the walk's delta builder makes too) and
+//! continues the caller.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,7 +22,7 @@ use std::sync::Arc;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_call::CallTarget;
 use super::rx_entry::{Goal, Scratch, program_for};
-use super::rx_frame::{Choice, FMark, Frame, MAX_FRAME_DEPTH, Mark, ProtoChoice};
+use super::rx_frame::{Choice, FMark, Frame, FrameId, MAX_FRAME_DEPTH, Mark, ProtoChoice};
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
@@ -63,6 +64,8 @@ impl Interpreter {
             reg_trail,
             stack,
             fmarks,
+            frames,
+            proto_rank,
             ends,
             levels,
             ltm_order,
@@ -72,13 +75,14 @@ impl Interpreter {
         reg_trail.clear();
         stack.clear();
         fmarks.clear();
+        frames.clear();
         ends.clear();
         levels.reset(start);
         if let Some(seed) = seed {
             levels.seed(seed);
         }
         let mut cur = Cur::Root(root);
-        let mut frame: Option<Rc<Frame>> = None;
+        let mut frame: Option<FrameId> = None;
         // The grammar instance the run's own pattern owns, as `Frame::cursor` is
         // the callee's (#9803). Filed on the result at the pattern's `Match`.
         let root_cursor: RefCell<Option<Value>> = RefCell::new(None);
@@ -125,11 +129,16 @@ impl Interpreter {
         macro_rules! push_choice {
             ($choice:expr) => {{
                 let choice = $choice;
-                if FRAMES && (frame.is_some() || regs.len() != root.nregs) {
+                // A frame that returned leaving choice points behind is still in
+                // the arena; its window may be empty (a callee with no
+                // registers), so the arena length is checked, not just the
+                // register arena's.
+                if FRAMES && (frame.is_some() || regs.len() != root.nregs || !frames.is_empty()) {
                     fmarks.push(FMark {
                         at: stack.len(),
                         regs_len: regs.len(),
-                        frame: frame.clone(),
+                        frames_len: frames.len(),
+                        frame,
                     });
                 }
                 stack.push(choice);
@@ -189,9 +198,9 @@ impl Interpreter {
                 let new_base = regs.len();
                 regs.resize(new_base + callee.nregs, 0);
                 levels.open(entry, false);
-                let depth = frame.as_ref().map_or(0, |f| f.depth) + 1;
-                frame = Some(Rc::new(Frame {
-                    parent: frame.take(),
+                let depth = frame.map_or(0, |f| frames[f as usize].depth) + 1;
+                frames.push(Frame {
+                    parent: frame,
                     program: Arc::clone(&callee),
                     pkg: callee_pkg,
                     base: new_base,
@@ -205,9 +214,10 @@ impl Interpreter {
                     ends_base: ends.len(),
                     proto: $proto,
                     depth,
-                    seen: RefCell::new(Vec::new()),
+                    seen: Vec::new(),
                     cursor: RefCell::new(None),
-                }));
+                });
+                frame = Some((frames.len() - 1) as FrameId);
                 cur = Cur::Callee(callee);
                 base = new_base;
                 pkg = callee_pkg;
@@ -371,7 +381,9 @@ impl Interpreter {
                         let ic = program.atom_ic[atom as usize];
                         match self.rx_call_target_checked(name, pkg, ic) {
                             Ok(CallTarget::Plain(callee, callee_pkg)) => {
-                                if frame.as_ref().is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) {
+                                if frame
+                                    .is_some_and(|f| frames[f as usize].depth >= MAX_FRAME_DEPTH)
+                                {
                                     false
                                 } else {
                                     let stack_base = stack.len();
@@ -389,14 +401,14 @@ impl Interpreter {
                                 }
                             }
                             Ok(CallTarget::Proto(cands)) => {
-                                let ranked = self.rx_rank_proto(&cands, chars, pos);
-                                match ranked.first().copied() {
+                                self.rx_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
+                                match proto_rank.first().copied() {
                                     // No candidate can match here.
                                     None => false,
                                     Some(_)
-                                        if frame
-                                            .as_ref()
-                                            .is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) =>
+                                        if frame.is_some_and(|f| {
+                                            frames[f as usize].depth >= MAX_FRAME_DEPTH
+                                        }) =>
                                     {
                                         false
                                     }
@@ -406,13 +418,13 @@ impl Interpreter {
                                         // end, so a cut at its return drops the
                                         // rest of the ranking too.
                                         let stack_base = stack.len();
-                                        if ranked.len() > 1 {
+                                        if proto_rank.len() > 1 {
                                             push_choice!(Choice::Proto(Box::new(ProtoChoice {
                                                 pc: pc + 1,
                                                 pos,
                                                 atom,
                                                 cands: Arc::clone(&cands),
-                                                ranked: Rc::new(ranked),
+                                                ranked: Rc::from(&proto_rank[..]),
                                                 next: 1,
                                                 mark: mark!(),
                                             })));
@@ -463,7 +475,8 @@ impl Interpreter {
                                 // what it writes to its attributes is the Match's
                                 // (#9803).
                                 if self.subrule_names_user_method(name.spec(), pkg) {
-                                    let slot = frame.as_ref().map_or(&root_cursor, |f| &f.cursor);
+                                    let slot =
+                                        frame.map_or(&root_cursor, |f| &frames[f as usize].cursor);
                                     let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
                                     self.rx_cursor = Some(cursor);
                                 }
@@ -530,6 +543,12 @@ impl Interpreter {
                     // Cost: O(1) amortized.
                     RxOp::PosBase(r) => {
                         set_reg!(r, levels.top().caps().positional.len());
+                        pc += 1;
+                        true
+                    }
+                    // Cost: O(1) amortized.
+                    RxOp::CapMark(r) => {
+                        set_reg!(r, levels.top().mark());
                         pc += 1;
                         true
                     }
@@ -682,6 +701,7 @@ impl Interpreter {
                     | RxOp::AltTail { .. }
                     | RxOp::Collect { .. }
                     | RxOp::SepEmit { .. }
+                    | RxOp::SepNames { .. }
                     | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
@@ -705,10 +725,11 @@ impl Interpreter {
                         }
                     }
                     // Cost: O(c), c = this level's captures (one snapshot); in a
-                    // callee frame also the one `build_named_candidates_from_inner`
-                    // call that files them as the subrule's Match, O(1) plus the
-                    // callee's own captures moved, not copied.
-                    RxOp::Match => match if FRAMES { frame.clone() } else { None } {
+                    // callee frame also the one `file_named_candidate` call that
+                    // files them as the subrule's Match, O(n) for the n names the
+                    // caller's level has filed, the callee's own captures moved,
+                    // not copied.
+                    RxOp::Match => match if FRAMES { frame } else { None } {
                         None => match &mut goal {
                             Goal::First => break 'run Some((pos, root_snapshot!())),
                             Goal::End(end) => {
@@ -727,22 +748,30 @@ impl Interpreter {
                                 false
                             }
                         },
-                        Some(f) => {
+                        Some(fid) => {
+                            let fi = fid as usize;
                             // A second path to an end the call already returned at
                             // is not a new candidate.
                             // A ratcheted call returns once, so it keeps no list.
-                            let fresh = f.commit || !f.seen.borrow().contains(&pos);
-                            if fresh {
-                                if !f.commit {
-                                    f.seen.borrow_mut().push(pos);
+                            let fresh = {
+                                let f = &mut frames[fi];
+                                let fresh = f.commit || !f.seen.contains(&pos);
+                                if fresh && !f.commit {
+                                    f.seen.push(pos);
                                 }
+                                fresh
+                            };
+                            if fresh {
                                 // A ratcheted call keeps only its first end; a call
                                 // that left no choice point in the callee cannot be
                                 // resumed either.
-                                if f.commit {
-                                    truncate_stack!(f.stack_base);
+                                let (commit, stack_base) =
+                                    (frames[fi].commit, frames[fi].stack_base);
+                                if commit {
+                                    truncate_stack!(stack_base);
                                 }
-                                let settled = stack.len() <= f.stack_base;
+                                let settled = stack.len() <= stack_base;
+                                let f = &frames[fi];
                                 let mut inner = if settled {
                                     levels.close_forget(f.journal_base)
                                 } else {
@@ -750,32 +779,40 @@ impl Interpreter {
                                 };
                                 // A proto candidate's Match carries its `:sym<…>`.
                                 if let Some((cands, idx)) = &f.proto {
-                                    inner.set_sym(cands[*idx].2.clone());
+                                    inner.set_sym(cands[*idx].2.as_deref().map(Symbol::intern));
                                 }
                                 // The grammar instance this invocation owned is
                                 // its Match's (#9803).
                                 if let Some(cursor) = f.cursor.borrow().as_ref() {
                                     inner.set_cursor(cursor.clone());
                                 }
-                                let caller: &RxProgram = match &f.parent {
-                                    Some(p) => &p.program,
+                                let caller: &RxProgram = match f.parent {
+                                    Some(p) => &frames[p as usize].program,
                                     None => root,
                                 };
                                 let RegexAtom::Named(name) = &caller.atoms[f.site as usize] else {
                                     debug_assert!(false, "a frame's site is a `<subrule>` atom");
                                     break 'run None;
                                 };
-                                let (_, delta) = self.build_named_candidate_from_inner(
-                                    pos,
-                                    inner,
-                                    f.entry_pos,
-                                    name.spec(),
-                                    None,
-                                );
-                                let delta = Some(delta);
-                                frame = f.parent.clone();
-                                match &frame {
+                                // Filed straight into the caller's level, which
+                                // the close above made the innermost one again.
+                                let entry_pos = f.entry_pos;
+                                levels.edit(|s| {
+                                    self.file_named_candidate(
+                                        s,
+                                        pos,
+                                        inner,
+                                        entry_pos,
+                                        name.spec(),
+                                        None,
+                                    )
+                                });
+                                let (ret_pc, trail_base, window, ends_base) =
+                                    (f.ret_pc, f.trail_base, f.base, f.ends_base);
+                                frame = f.parent;
+                                match frame {
                                     Some(p) => {
+                                        let p = &frames[p as usize];
                                         cur = Cur::Callee(Arc::clone(&p.program));
                                         base = p.base;
                                         pkg = p.pkg;
@@ -786,16 +823,15 @@ impl Interpreter {
                                         pkg = root_pkg;
                                     }
                                 }
-                                pc = f.ret_pc;
+                                pc = ret_pc;
                                 if settled {
-                                    // The callee's window, undo entries and run
-                                    // ends are unreachable now.
-                                    reg_trail.truncate(f.trail_base);
-                                    regs.truncate(f.base);
-                                    ends.truncate(f.ends_base);
-                                }
-                                if let Some(delta) = delta {
-                                    levels.edit(|s| s.merge_delta(delta));
+                                    // The callee's window, undo entries, run ends
+                                    // and frame (with every frame it called, all
+                                    // returned the same way) are unreachable now.
+                                    reg_trail.truncate(trail_base);
+                                    regs.truncate(window);
+                                    ends.truncate(ends_base);
+                                    frames.truncate(fi);
                                 }
                                 continue 'run;
                             } else {
@@ -827,7 +863,8 @@ impl Interpreter {
                                 fmarks.push(FMark {
                                     at: stack.len(),
                                     regs_len: m.regs_len,
-                                    frame: m.frame.clone(),
+                                    frames_len: m.frames_len,
+                                    frame: m.frame,
                                 });
                             }
                             stack.push($choice);
@@ -917,25 +954,23 @@ impl Interpreter {
                         let (i, old) = reg_trail.pop().expect("register trail entry");
                         regs[i] = old;
                     }
-                    // Windows opened after this choice point are dead.
+                    // Windows and frames opened after this choice point are dead.
                     if FRAMES {
                         regs.truncate(fm.as_ref().map_or(root.nregs, |m| m.regs_len));
+                        frames.truncate(fm.as_ref().map_or(0, |m| m.frames_len));
                     }
                     let target_frame = if FRAMES {
                         fm.and_then(|m| m.frame)
                     } else {
                         None
                     };
-                    let same_frame = match (&frame, &target_frame) {
-                        (None, None) => true,
-                        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
-                        _ => false,
-                    };
+                    let same_frame = frame == target_frame;
                     // A choice point of another frame: back to that frame. Every
                     // path that switches ends in `continue 'run`.
                     if !same_frame {
-                        match &target_frame {
+                        match target_frame {
                             Some(f) => {
+                                let f = &frames[f as usize];
                                 cur = Cur::Callee(Arc::clone(&f.program));
                                 base = f.base;
                                 pkg = f.pkg;
@@ -1003,6 +1038,7 @@ impl Interpreter {
             // Drop the frames the leftover choice points hold.
             stack.clear();
             fmarks.clear();
+            frames.clear();
         }
         super::super::regex_helpers::record_regex_farthest_position(farthest);
         result

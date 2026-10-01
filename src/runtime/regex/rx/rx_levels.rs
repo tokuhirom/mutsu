@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use super::super::regex_trail::CapStore;
+use super::super::regex_trail::{CapStore, Undo};
 use crate::runtime::regex_types::{OuterBackrefCaps, RegexCaptures};
 
 enum Journal {
@@ -43,7 +43,15 @@ pub(super) struct Levels {
     /// A separated quantifier's per-iteration captures, in match order:
     /// `(is_separator, captures)` (see `collect`).
     collected: Vec<(bool, RegexCaptures)>,
+    /// Undo trails of levels that closed for good (`close_forget`), reused by
+    /// the next level opened: a grammar opens one level per subrule call, and
+    /// each one's first capture allocated a trail (ADR-10488).
+    spare_trails: Vec<Vec<Undo>>,
 }
+
+/// Spare trails kept past this many are dropped, so one deep parse does not
+/// pin its trails for the rest of the run.
+const SPARE_TRAILS: usize = 64;
 
 impl Levels {
     /// Reset to a single, empty pattern level whose match starts at `from`.
@@ -106,7 +114,11 @@ impl Levels {
             let vars = self.top().caps().regex_vars_shared().cloned();
             caps.set_regex_vars_shared(vars);
         }
-        self.stack.push(CapStore::new(caps));
+        let store = match self.spare_trails.pop() {
+            Some(trail) => CapStore::with_trail(caps, trail),
+            None => CapStore::new(caps),
+        };
+        self.stack.push(store);
         self.journal.push(Journal::Opened);
     }
 
@@ -152,9 +164,17 @@ impl Levels {
     // Cost: O(1) for the captures (moved out), plus the entries dropped (each
     // once).
     pub(super) fn close_forget(&mut self, from: usize) -> RegexCaptures {
-        let caps = self.stack.pop().map(CapStore::into_caps);
+        let Some((caps, trail)) = self.stack.pop().map(CapStore::into_parts) else {
+            self.journal.truncate(from);
+            return RegexCaptures::default();
+        };
         self.journal.truncate(from);
-        caps.unwrap_or_default()
+        if trail.capacity() > 0 && self.spare_trails.len() < SPARE_TRAILS {
+            let mut trail = trail;
+            trail.clear();
+            self.spare_trails.push(trail);
+        }
+        caps
     }
 
     /// Forget the whole journal: with no choice point left, nothing can rewind.

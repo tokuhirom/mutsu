@@ -762,7 +762,9 @@ walk; a grammar's cost is per subrule: resolution, ranking, the Match tree. Thos
 are filed as `todo:perf` issues with their own goals rather than closed here
 ([#10487](https://github.com/tokuhirom/mutsu/issues/10487) one NFA run per proto call,
 [#10488](https://github.com/tokuhirom/mutsu/issues/10488) the allocations of the Match tree). On YAMLish the compiled engine changes
-nothing measurable (#7576): its cost was never the engine.
+nothing measurable (#7576): its cost was never the engine. The allocations are decided by
+[ADR-10488](10488-capture-levels-are-written-in-place.md): capture levels are written in place, not
+assembled from per-call deltas.
 
 What is left of Slice D after that: the walk's `drive_named_subrule_candidates` and eager `Named` arm, which Slice E
 deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*` parameters, wrapped tokens, a scoped

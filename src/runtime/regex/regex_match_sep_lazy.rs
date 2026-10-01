@@ -59,7 +59,7 @@ impl SepChainWalk {
     fn names_delta(&self) -> RegexCaptures {
         let mut caps = RegexCaptures::default();
         for n in self.names.iter() {
-            caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+            caps.named.slot_mut(Symbol::intern(n)).quantified = true;
         }
         caps
     }

@@ -311,7 +311,7 @@ impl Interpreter {
                     .map(|(next, mut inner_caps)| {
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().merge(v);
+                            new_caps.named.slot_mut(k).merge(v);
                         }
                         new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                         new_caps.positional.append(&mut inner_caps.positional);
@@ -726,7 +726,7 @@ impl Interpreter {
                 // action channel behave identically on both paths.
                 if let Some((inner_end, mut inner_caps)) = best {
                     if best_sym.is_some() {
-                        inner_caps.set_sym(best_sym);
+                        inner_caps.set_sym(best_sym.as_deref().map(Symbol::intern));
                     }
                     return self
                         .build_named_candidates_from_inner(
@@ -772,8 +772,7 @@ impl Interpreter {
                 if !spec.silent {
                     new_caps
                         .named
-                        .entry(Symbol::intern(&spec.lookup_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&spec.lookup_name))
                         .nodes
                         .push(std::sync::Arc::new(CapNode {
                             from: pos,
@@ -819,8 +818,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(Symbol::intern(capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(capture_name))
                         .merge(NamedSlot::leaf(pos, end));
                     // For <foo=alpha>, also capture under the original name.
                     // For <foo=.alpha>, the dot suppresses the original name.
@@ -833,8 +831,7 @@ impl Interpreter {
                             .insert(Symbol::intern(capture_name), spec.lookup_sym);
                         new_caps
                             .named
-                            .entry(Symbol::intern(&spec.lookup_name))
-                            .or_default()
+                            .slot_mut(Symbol::intern(&spec.lookup_name))
                             .merge(NamedSlot::leaf(pos, end));
                     }
                 }
@@ -869,8 +866,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(Symbol::intern(capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(capture_name))
                         .merge(NamedSlot::leaf(pos, end));
                 }
                 return Some((end, new_caps));
@@ -941,8 +937,7 @@ impl Interpreter {
                     let capture_name = spec.capture_name.clone().unwrap_or(literal);
                     new_caps
                         .named
-                        .entry(Symbol::intern(&capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&capture_name))
                         .merge(NamedSlot::leaf(pos, pos + name_chars.len()));
                     return Some((pos + name_chars.len(), new_caps));
                 }

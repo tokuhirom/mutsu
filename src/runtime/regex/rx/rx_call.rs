@@ -185,18 +185,20 @@ impl Interpreter {
     }
 
     /// The indexes of a proto's candidates in the order the call tries them:
-    /// the walk's rank-then-match dispatch (ADR-0046). Ranking measures each
-    /// candidate's declarative prefix, so it runs nothing (ADR-0009); a
-    /// candidate that cannot match here is left out, and ties keep declaration
-    /// order.
+    /// the walk's rank-then-match dispatch (ADR-0046), written to `out`.
+    /// Ranking measures each candidate's declarative prefix, so it runs nothing
+    /// (ADR-0009); a candidate that cannot match here is left out, and ties
+    /// keep declaration order. `keys` is scratch (the run's, reused per call).
     // Cost: O(c·m + c log c), c = the candidates, m = one LTM measurement.
     pub(super) fn rx_rank_proto(
         &mut self,
         candidates: &[ParsedTokenCandidate],
         chars: &[char],
         pos: usize,
-    ) -> Vec<usize> {
-        let mut ranked: Vec<(usize, (usize, usize))> = Vec::with_capacity(candidates.len());
+        keys: &mut Vec<(usize, (usize, usize))>,
+        out: &mut Vec<usize>,
+    ) {
+        keys.clear();
         for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
             let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
             let (plen, stopped) = (measured.len, measured.stopped);
@@ -207,9 +209,10 @@ impl Interpreter {
             if plen.is_none() && !stopped {
                 continue;
             }
-            ranked.push((idx, (plen.unwrap_or(0), measured.litlen)));
+            keys.push((idx, (plen.unwrap_or(0), measured.litlen)));
         }
-        ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
-        ranked.into_iter().map(|(idx, _)| idx).collect()
+        keys.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+        out.clear();
+        out.extend(keys.iter().map(|(idx, _)| *idx));
     }
 }

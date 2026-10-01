@@ -9,25 +9,14 @@
 //! those siblings keep their access (the whole set is re-exported from
 //! `runtime` via `pub(crate) use self::regex_types::*`).
 
+use super::regex_named_caps::NamedCaptureMap;
 use crate::symbol::Symbol;
 use crate::value::Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
-/// The named-capture map shape shared by [`RegexCaptures`], [`CapChildren`]
-/// and every helper that walks one.
-///
-/// Fx-hashed, not SipHash-hashed, on purpose: the key is an interned
-/// [`Symbol`] (a `u32`), these maps are probed and rebuilt several times per
-/// matched capture, and a regex capture name is never adversarial input in the
-/// sense SipHash's DoS resistance exists for. A callgrind profile of a YAML
-/// parse put `sip::Hasher::write` + `BuildHasher::hash_one` at ~8% of the whole
-/// program, with the regex-capture maps among the dominant callers
-/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-pub(crate) type NamedCaptureMap = HashMap<Symbol, NamedSlot>;
-
 /// The `:my $var = …` regex-variable map shape, Fx-hashed for the same
-/// reason as [`NamedCaptureMap`].
+/// reason as the regex capture maps.
 pub(crate) type RegexVarMap = HashMap<String, Value>;
 
 #[derive(Clone)]
@@ -177,39 +166,6 @@ impl PosSlot {
     }
 }
 
-/// One named capture's entries (ADR-0016 P4) — the collapse of the three
-/// parallel named collections (`named` text map ‖ `named_subcaps` ‖
-/// `named_quantified`). Every entry is a span-bearing capture node; the
-/// captured text derives from the node's span through the shared subject.
-#[derive(Clone, Default)]
-pub(crate) struct NamedSlot {
-    pub(crate) nodes: Vec<Arc<CapNode>>,
-    /// The name was captured under a quantifier (or `@<name>=` forced list):
-    /// the Match presents it as an Array even for zero or one entries.
-    pub(crate) quantified: bool,
-}
-
-impl NamedSlot {
-    /// A slot holding one span-only leaf entry.
-    pub(crate) fn leaf(from: usize, to: usize) -> Self {
-        NamedSlot {
-            nodes: vec![Arc::new(CapNode {
-                from,
-                to,
-                ..Default::default()
-            })],
-            quantified: false,
-        }
-    }
-
-    /// Fold another slot's entries into this one (capture-merge semantics:
-    /// entries append, the quantified flag is sticky).
-    pub(crate) fn merge(&mut self, other: NamedSlot) {
-        self.nodes.extend(other.nodes);
-        self.quantified |= other.quantified;
-    }
-}
-
 /// The enclosing pattern level's captures, as seen by a **backreference inside
 /// an inline sub-pattern**. A group / alternation / lookaround body is matched
 /// by its own nested engine walk with its own (empty) capture store, so
@@ -243,7 +199,7 @@ impl OuterBackrefCaps {
             parent.append_captures(out);
         }
         for (key, slot) in &self.named {
-            out.named.entry(*key).or_default().merge(slot.clone());
+            out.named.slot_mut(*key).merge(slot.clone());
         }
         out.positional.extend(self.positional.iter().cloned());
     }
@@ -296,9 +252,9 @@ pub(crate) struct CapNode {
     pub(crate) from: usize,
     pub(crate) to: usize,
     /// The winning :sym<> variant name, if this match was from a protoregex.
-    pub(crate) sym: Option<String>,
+    pub(crate) sym: Option<Symbol>,
     /// The original rule name when this capture was stored under an alias.
-    pub(crate) action_name: Option<String>,
+    pub(crate) action_name: Option<Symbol>,
     /// The AST value produced by this node's inline `{ make … }` code block(s),
     /// computed at reduce time. `None` when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
@@ -389,7 +345,7 @@ impl RegexCaptures {
             visible.positional.extend(self.positional.iter().cloned());
         }
         for (key, slot) in &self.named {
-            visible.named.entry(*key).or_default().merge(slot.clone());
+            visible.named.slot_mut(*key).merge(slot.clone());
         }
         visible
     }
@@ -434,14 +390,9 @@ impl RegexCaptures {
         // Take the cold payload whole: a leaf (the common case) never had one,
         // so the conversion neither allocates nor touches the fields below.
         let rare = self.rare.take().map(|rare| *rare);
-        let (capture_alias_map, regex_vars, sym, action_name, cursor) = match rare {
-            Some(rare) => (
-                rare.capture_alias_map,
-                rare.regex_vars,
-                rare.sym,
-                rare.action_name,
-                rare.cursor,
-            ),
+        let (sym, action_name) = (self.sym(), self.action_name());
+        let (capture_alias_map, regex_vars, cursor) = match rare {
+            Some(rare) => (rare.capture_alias_map, rare.regex_vars, rare.cursor),
             None => Default::default(),
         };
         let has_children = !self.named.is_empty()
@@ -511,13 +462,9 @@ pub(crate) struct RareCaps {
     /// paid only by a level that actually writes a lexical, through
     /// `Arc::make_mut`.
     pub(crate) regex_vars: Option<Arc<RegexVarMap>>,
-    /// The winning :sym<> variant name, if this match was from a protoregex.
-    pub(crate) sym: Option<String>,
     /// For aliased captures like `<str=.str_escape>`, maps capture name to
     /// original rule name for grammar action dispatch.
     pub(crate) capture_alias_map: CaptureAliasMap,
-    /// The original rule name when this capture was stored under an alias.
-    pub(crate) action_name: Option<String>,
     /// Hash captures from `%<name>=(...)` aliasing in regex.
     pub(crate) hash_captures: HashCaptureMap,
     /// The shared subject this match ran against (ADR-0016 P3). Set once by
@@ -543,9 +490,7 @@ impl RareCaps {
     /// not make every later clone copy an empty one.
     fn is_empty(&self) -> bool {
         self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
-            && self.sym.is_none()
             && self.capture_alias_map.is_empty()
-            && self.action_name.is_none()
             && self.hash_captures.is_empty()
             && self.target.is_none()
             && self.outer_backref.is_none()
@@ -575,8 +520,46 @@ pub(crate) struct RegexCaptures {
     /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
     /// when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
+    /// The winning `:sym<…>` variant and the aliased rule name (see
+    /// [`NodeNames`]).
+    pub(crate) names: NodeNames,
     /// The cold fields, allocated on first write (see [`RareCaps`]).
     pub(crate) rare: Option<Box<RareCaps>>,
+}
+
+/// A capture's two interned names, packed into one word: the winning
+/// `:sym<…>` variant, if the match was a proto candidate's, and the original
+/// rule name when it was stored under an alias (the empty name: a capture no
+/// rule produced). Inline (#10488): a proto return used to clone the variant
+/// name into a freshly allocated [`RareCaps`]; packed so the accumulator stays
+/// within its size budget (`regex_captures_size_guard`).
+#[derive(Clone, Copy)]
+pub(crate) struct NodeNames {
+    sym: u32,
+    action_name: u32,
+}
+
+impl NodeNames {
+    const NONE: u32 = u32::MAX;
+
+    #[inline]
+    fn get(raw: u32) -> Option<Symbol> {
+        (raw != Self::NONE).then(|| Symbol::from_raw(raw))
+    }
+
+    #[inline]
+    fn put(sym: Option<Symbol>) -> u32 {
+        sym.map_or(Self::NONE, Symbol::raw)
+    }
+}
+
+impl Default for NodeNames {
+    fn default() -> Self {
+        NodeNames {
+            sym: Self::NONE,
+            action_name: Self::NONE,
+        }
+    }
 }
 
 static EMPTY_REGEX_VARS: std::sync::LazyLock<RegexVarMap> =
@@ -755,35 +738,34 @@ impl RegexCaptures {
     }
 
     #[inline]
-    pub(crate) fn sym(&self) -> Option<&String> {
-        self.rare().and_then(|rare| rare.sym.as_ref())
+    pub(crate) fn sym(&self) -> Option<Symbol> {
+        NodeNames::get(self.names.sym)
     }
 
-    /// Set (or clear) the winning `:sym<>` variant name. Clearing an
-    /// accumulator that never had a payload does not allocate one.
-    pub(crate) fn set_sym(&mut self, sym: Option<String>) {
-        if sym.is_none() && self.rare.is_none() {
-            return;
-        }
-        self.rare_mut().sym = sym;
-        self.prune_rare();
+    /// Set (or clear) the winning `:sym<>` variant name.
+    #[inline]
+    pub(crate) fn set_sym(&mut self, sym: Option<Symbol>) {
+        self.names.sym = NodeNames::put(sym);
     }
 
     /// Move the `:sym<>` variant name out.
-    pub(crate) fn take_sym(&mut self) -> Option<String> {
-        let taken = self.rare.as_deref_mut().and_then(|rare| rare.sym.take());
-        self.prune_rare();
-        taken
+    #[inline]
+    pub(crate) fn take_sym(&mut self) -> Option<Symbol> {
+        let sym = self.sym();
+        self.names.sym = NodeNames::NONE;
+        sym
     }
 
-    /// Set (or clear) the aliased-capture rule name. Clearing an accumulator
-    /// that never had a payload does not allocate one.
-    pub(crate) fn set_action_name(&mut self, action_name: Option<String>) {
-        if action_name.is_none() && self.rare.is_none() {
-            return;
-        }
-        self.rare_mut().action_name = action_name;
-        self.prune_rare();
+    /// The aliased-capture rule name.
+    #[inline]
+    pub(crate) fn action_name(&self) -> Option<Symbol> {
+        NodeNames::get(self.names.action_name)
+    }
+
+    /// Set (or clear) the aliased-capture rule name.
+    #[inline]
+    pub(crate) fn set_action_name(&mut self, action_name: Option<Symbol>) {
+        self.names.action_name = NodeNames::put(action_name);
     }
 
     #[inline]
@@ -895,11 +877,6 @@ mod cap_node_tests {
             .insert("$x".to_string(), Value::int(1));
         assert!(caps.rare().is_some());
         assert_eq!(caps.take_regex_vars().len(), 1);
-        assert!(caps.rare().is_none());
-
-        caps.set_sym(Some("foo".to_string()));
-        assert_eq!(caps.sym().map(String::as_str), Some("foo"));
-        caps.set_sym(None);
         assert!(caps.rare().is_none());
     }
 }
