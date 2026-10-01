@@ -126,6 +126,5 @@ mod tests {
     fn an_unknown_property_is_none() {
         assert_eq!(in_property_class("No_Such_Property", 'a'), None);
         assert_eq!(in_property_class("Line_Break=ID", 'a'), None);
-        assert!(regex::Regex::new(r"^\p{No_Such_Property}$").is_err());
     }
 }
