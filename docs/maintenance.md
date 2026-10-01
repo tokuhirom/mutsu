@@ -21,7 +21,8 @@ or compromised release can be yanked first; security updates skip the cooldown.
 
 - **cargo** — weekly; every in-range (minor/patch) update in one grouped
   `chore(deps):` PR, each major bump in its own PR. A major PR still gets the
-  section 1c review before it merges.
+  section 1c review before it merges. The `cranelift-*` crates are the
+  exception: they move in lockstep, so all of them share one PR, major included.
 - **github-actions** — weekly, one grouped `ci(deps):` PR; the SHA pins and
   their `# vX.Y.Z` comments are updated together.
 - **docker** — monthly; only patch updates of the `rust` builder image, since

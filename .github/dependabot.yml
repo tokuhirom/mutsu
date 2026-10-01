@@ -22,8 +22,14 @@ updates:
       semver-minor-days: 7
       semver-patch-days: 3
     groups:
-      # One weekly PR for every in-range update; major bumps stay one per PR
-      # (docs/maintenance.md section 1c).
+      # The cranelift-* crates share one version and must move in lockstep
+      # (a split bump leaves two incompatible cranelift-codegen copies), so
+      # every update of them, major included, is one PR. Listed first: a
+      # dependency joins the first group that matches it.
+      cranelift:
+        patterns: ["cranelift*"]
+      # One weekly PR for every other in-range update; major bumps stay one
+      # per PR (docs/maintenance.md section 1c).
       cargo-minor-patch:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
