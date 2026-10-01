@@ -104,6 +104,10 @@ pub(crate) enum TrArg {
     /// A native reference this frame already holds — its own `is rw`
     /// parameter, handed on.
     Ref(u16),
+    /// This frame's free variable (an index into the chunk's `outers`),
+    /// passed by variable to a generic callee: an `is rw` parameter binds
+    /// the variable's store-owned cell, anything else its value (#10372).
+    Outer(u16),
 }
 
 /// Who a call inside a TRIR body reaches.

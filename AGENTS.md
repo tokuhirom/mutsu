@@ -287,7 +287,8 @@ them all in the same PR.
 
 ### ADRs
 
-Costly-to-reverse decisions are recorded as ADRs in `docs/adr/` (`NNNN-title.md`). Read the
+Costly-to-reverse decisions are recorded as ADRs in `docs/adr/` (`<issue>-title.md`, numbered by
+the GitHub issue that carries the decision; `make adr-index` lists them). Read the
 relevant ADR before touching its area. Before making a new large architectural call, write a
 `Proposed` ADR instead of baking it silently into code; supersede, never rewrite, an ADR whose
 decision changes. GC (cycle collector), NaN-boxing and the JIT are **shipped and default on**

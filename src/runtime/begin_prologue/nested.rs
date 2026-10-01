@@ -31,26 +31,33 @@
 //!
 //! A routine an enclosing inner scope declares ahead of the BEGIN does not
 //! exist in the prologue either. The body gets a copy of each one it calls (see
-//! [`routines`]).
+//! [`routines`]). It also gets the scope's imports, and a copy of each type or
+//! package of the scope it names (see [`decls`]).
 //!
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
-//! - an enclosing inner scope declares, ahead of it, a type, a package, an
-//!   import, a code variable, or a routine that is not a plain `sub` (a
-//!   `multi`, an `our sub`, an operator, an exported one), which the prologue
-//!   cannot reproduce yet;
+//! - an enclosing inner scope declares, ahead of it, a pragma, an operator code
+//!   variable, or a routine that is not a plain `sub` (a `multi`, an `our sub`,
+//!   an operator, an exported one), which the prologue cannot reproduce yet;
+//! - it names a type or package of an inner scope that cannot be declared again
+//!   unobservably (its body runs code), or reads an inner variable typed by
+//!   one;
 //! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup), or
 //!   calls a routine that is neither one of the scope's nor a core one (which
 //!   may evaluate a string where it was called from), in a scope that declares
-//!   a routine, since it cannot say which one it needs;
+//!   a routine or a type, since it cannot say which one it needs;
 //! - it sits in a package body;
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);
 //! - it reads a `state`, `constant` or group-declared inner lexical.
 
+mod cell_ast;
+mod decls;
 mod routines;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
+use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, slot_read, static_scalar};
+use decls::TypeDecl;
 use routines::{Access, FrameBlock, Routine, Scan};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -96,9 +103,15 @@ struct Walker<'a> {
 #[derive(Default)]
 struct Frame {
     bindings: Vec<Binding>,
-    /// A type, package, import, operator or other routine the prologue cannot
+    /// A type, package, pragma, operator or other routine the prologue cannot
     /// reproduce was declared in this scope ahead of the current statement.
     blocked: bool,
+    /// The imports in this scope ahead of the current statement. A lifted
+    /// BEGIN repeats them ([`decls`]).
+    imports: Vec<Stmt>,
+    /// The types and packages declared in this scope ahead of the current
+    /// statement ([`TypeDecl`]).
+    types: Vec<TypeDecl>,
     /// The plain routines declared in this scope ahead of the current
     /// statement. A lifted BEGIN that calls one gets its own copy
     /// ([`Routine`]).
@@ -300,21 +313,21 @@ impl Walker<'_> {
                 self.walk_list(body, Self::params_frame(params.iter().cloned()));
                 self.declare_routine(stmt);
             }
+            Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::EnumDecl { .. }
+            | Stmt::SubsetDecl { .. }
+            | Stmt::Package { .. }
+            | Stmt::Use { .. }
+            | Stmt::Need { .. }
+            | Stmt::Import { .. } => self.declare_type_or_import(stmt),
             Stmt::ProtoDecl { .. }
             | Stmt::MethodDecl { .. }
             | Stmt::TokenDecl { .. }
             | Stmt::RuleDecl { .. }
             | Stmt::ProtoToken { .. }
-            | Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. }
-            | Stmt::EnumDecl { .. }
-            | Stmt::SubsetDecl { .. }
-            | Stmt::Package { .. }
             | Stmt::AugmentClass { .. }
-            | Stmt::Use { .. }
-            | Stmt::No { .. }
-            | Stmt::Need { .. }
-            | Stmt::Import { .. } => self.block_current_frame(),
+            | Stmt::No { .. } => self.block_current_frame(),
             _ => {}
         }
     }
@@ -454,9 +467,10 @@ impl Walker<'_> {
             },
             _ => BindingKind::Opaque,
         };
-        // A code variable can declare an operator (`my &infix:<plus>`) and be
-        // reached by symbolic lookup, so it counts as a routine declaration.
-        if name.starts_with('&') {
+        // A code variable can declare an operator (`my &infix:<plus>`), whose
+        // syntax the parser has already registered, which no scan of the body
+        // can see. Any other code variable is an ordinary lexical.
+        if name.starts_with('&') && name.contains(':') {
             self.block_current_frame();
         }
         let name = name.clone();
@@ -509,11 +523,12 @@ impl Walker<'_> {
         } else {
             self.resolve_dependencies(body)
         };
+        let mut blocks: BTreeMap<usize, FrameBlock> = BTreeMap::new();
+        let deps = deps.filter(|deps| self.add_declarations(body, deps, &mut blocks).is_some());
         let Some(deps) = deps else {
             self.lifted.halted = true;
             return false;
         };
-        let mut blocks: BTreeMap<usize, FrameBlock> = BTreeMap::new();
         self.add_routines(&deps, &mut blocks);
         for ((frame, binding), access) in deps.bindings {
             let block = blocks.entry(frame).or_default();
@@ -596,108 +611,5 @@ impl Walker<'_> {
             target_is_sigilless: false,
         };
         (copy_in, copy_out)
-    }
-}
-
-fn sigil_of(name: &str) -> &str {
-    match name.as_bytes().first() {
-        Some(b'@') => "@",
-        Some(b'%') => "%",
-        Some(b'&') => "&",
-        _ => "",
-    }
-}
-
-/// The expression reading variable `name` (in `VarDecl` naming).
-fn read_var(name: &str) -> Expr {
-    match name.as_bytes().first() {
-        Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
-        Some(b'%') => Expr::HashVar(name[1..].to_string()),
-        Some(b'&') => Expr::CodeVar(name[1..].to_string()),
-        _ => Expr::Var(name.to_string()),
-    }
-}
-
-fn static_scalar(name: &str) -> Stmt {
-    Stmt::VarDecl {
-        name: name.to_string(),
-        expr: Expr::Literal(crate::value::Value::NIL),
-        type_constraint: None,
-        is_state: false,
-        is_our: false,
-        is_dynamic: false,
-        is_export: false,
-        export_tags: vec![],
-        custom_traits: vec![],
-        where_constraint: None,
-    }
-}
-
-/// A fresh declaration of `name` as an unbound parameter looks at BEGIN time.
-fn unbound_decl(name: &str) -> Stmt {
-    let decl = static_scalar(name);
-    crate::runtime::phasers::split_var_decl(&decl)
-        .map(|(static_decl, _)| static_decl)
-        .unwrap_or(decl)
-}
-
-fn without_initializer_markers(traits: &[(String, Option<Expr>)]) -> Vec<(String, Option<Expr>)> {
-    traits
-        .iter()
-        .filter(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-        .cloned()
-        .collect()
-}
-
-/// The cell's own static declaration: the variable's, under the cell's name.
-fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
-    let mut decl = static_decl.clone();
-    if let Stmt::VarDecl {
-        name,
-        is_export,
-        export_tags,
-        custom_traits,
-        ..
-    } = &mut decl
-    {
-        *name = cell_name.to_string();
-        *is_export = false;
-        export_tags.clear();
-        *custom_traits = without_initializer_markers(custom_traits);
-    }
-    decl
-}
-
-/// The variable's declaration, initialized from its cell.
-fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
-    let mut decl = static_decl.clone();
-    if let Stmt::VarDecl {
-        expr,
-        custom_traits,
-        ..
-    } = &mut decl
-    {
-        *expr = read_var(cell_name);
-        let mut traits = without_initializer_markers(custom_traits);
-        traits.push(("__has_initializer".to_string(), None));
-        traits.push((
-            crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),
-            None,
-        ));
-        *custom_traits = traits;
-    }
-    decl
-}
-
-/// Reads a value slot the way the BEGIN's own value would be read: the slot is
-/// a scalar, so it is decontainerized (`$slot<>`). Otherwise
-/// `my str @hex = BEGIN (^256)>>.fmt("%02x")` would assign one itemized list.
-fn slot_read(slot: String) -> Expr {
-    Expr::MethodCall {
-        target: Box::new(Expr::Var(slot)),
-        name: crate::symbol::Symbol::intern("__mutsu_zen_angle"),
-        args: vec![],
-        modifier: None,
-        quoted: false,
     }
 }

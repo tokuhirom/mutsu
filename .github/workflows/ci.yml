@@ -83,6 +83,8 @@ jobs:
           # non-cone mode would also drag in every vendored one.
           sparse-checkout: |
             /scripts/ci-docs-only.sh
+            /scripts/adr.sh
+            /docs/adr/
             /Makefile
             /.github/workflows/ci.yml
           sparse-checkout-cone-mode: false
@@ -98,6 +100,14 @@ jobs:
         # it. Separate from --self-test so an incomplete sparse-checkout above
         # fails here rather than skipping the guard.
         run: scripts/ci-docs-only.sh --check-inputs
+
+      - name: ADR numbering
+        # Here rather than in `make checks` alone: an ADR PR is usually
+        # docs-only, and a docs-only PR skips the job that runs `make checks`.
+        # A duplicate or new sequential ADR number must still fail it.
+        run: |
+          scripts/adr.sh --self-test
+          scripts/adr.sh check
 
       - name: Detect documentation-only change
         id: detect
@@ -195,7 +205,7 @@ jobs:
       # would widen the blast radius for nothing. `-fuse-ld=mold` finds
       # `/usr/local/bin/ld.mold` on PATH.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -360,7 +370,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -670,7 +680,7 @@ jobs:
       # saves under the new key.
       - name: Restore the battery source cache
         id: battery-src-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -699,7 +709,7 @@ jobs:
       # `actions/cache/save` only warns.
       - name: Save the battery source cache
         if: always() && steps.battery-src-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -1082,7 +1092,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -1423,7 +1433,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
