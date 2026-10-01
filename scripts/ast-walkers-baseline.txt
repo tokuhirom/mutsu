@@ -63,7 +63,6 @@ src/placeholder_order.rs                              4
 src/rakuast/convert.rs                                8
 src/regex_tree.rs                                     3  # 3 renderers of an expression back to regex source text
 src/runtime/begin_prologue/mod.rs                     4  # partition_stmt/partition_will_begin are transforms (they move statements into the prologue); unit_lexical_names and is_begin_time_stmt look at one scope's statement list only, descending just the transparent SyntheticBlock grouping
-src/runtime/begin_prologue/nested.rs                  2
 src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/dispatch_proto_rewrite.rs                 2
