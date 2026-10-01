@@ -1059,17 +1059,9 @@ impl Compiler {
             .collect()
     }
 
-    /// Whether an argument expression *could* be a public attribute accessor
-    /// read (`$c.v`) or a direct private/public attribute read (`$!v`/`$.v`
-    /// compiled as a bare `Expr::Var`) — the two shapes whose compiled
-    /// bytecode can answer a pending rw-container marker with the attribute's
-    /// shared container instead of a value copy (`try_fast_accessor_read`'s
-    /// `want_ref` branch for the first shape, `exec_resolve_attr_rw_candidate_op`
-    /// for the second). Keeping the test here (rather than leaving it to the
-    /// runtime) is what stops the marker being emitted, and its callee lookup
-    /// executed, for the overwhelming majority of call arguments.
-    /// `@a.AT-POS(EXPR)` / `$a.AT-POS(EXPR)`: a plain one-argument call on a
-    /// variable, which is the positional subscript `@a[EXPR]` spelled as a
+    /// `@a.AT-POS(EXPR)`: a plain one-argument call on an `@` variable (not a
+    /// scalar, which may hold a class with its own `AT-POS`), the positional
+    /// subscript `@a[EXPR]` spelled as a
     /// method.
     pub(super) fn is_array_at_pos_call(arg: &Expr) -> bool {
         matches!(
@@ -1081,7 +1073,7 @@ impl Compiler {
                 modifier: None,
                 quoted: false,
             } if args.len() == 1
-                && matches!(**target, Expr::ArrayVar(_) | Expr::Var(_))
+                && matches!(**target, Expr::ArrayVar(_))
                 && name.with_str(|n| n == "AT-POS")
         )
     }
@@ -1101,6 +1093,15 @@ impl Compiler {
         }
     }
 
+    /// Whether an argument expression *could* be a public attribute accessor
+    /// read (`$c.v`) or a direct private/public attribute read (`$!v`/`$.v`
+    /// compiled as a bare `Expr::Var`) — the two shapes whose compiled
+    /// bytecode can answer a pending rw-container marker with the attribute's
+    /// shared container instead of a value copy (`try_fast_accessor_read`'s
+    /// `want_ref` branch for the first shape, `exec_resolve_attr_rw_candidate_op`
+    /// for the second). Keeping the test here (rather than leaving it to the
+    /// runtime) is what stops the marker being emitted, and its callee lookup
+    /// executed, for the overwhelming majority of call arguments.
     pub(super) fn is_accessor_shaped_arg(arg: &Expr) -> bool {
         matches!(
             arg,
