@@ -3280,6 +3280,11 @@ impl Compiler {
                     })
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
+                // A `when` body is a block the enclosing block re-clones on every
+                // execution, so its own `state` restarts each time -- see
+                // `OpCode::ResetStateLocals`. A statement-modifier `when` has no
+                // block of its own.
+                let state_reset = self.emit_branch_state_reset(body, *is_statement_modifier);
                 // ADR-0048 D3: a `when` body is a Block raku invokes with ZERO
                 // arguments (`{ when 5 { $^c } }.arity` is 0), so any placeholder
                 // it declares is an unsatisfied parameter. Emitted INSIDE the
@@ -3299,6 +3304,7 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                 }
+                self.patch_nested_block_state_reset(state_reset);
                 self.pop_dynamic_scope_lexical(saved_scope);
                 if let Some(idx) = block_local_idx {
                     self.code.patch_block_local_body_end(idx);
@@ -3321,6 +3327,8 @@ impl Compiler {
                     })
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
+                // Like a `when` body: a re-cloned block, so its `state` restarts.
+                let state_reset = self.emit_nested_block_state_reset(body);
                 if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
@@ -3338,6 +3346,7 @@ impl Compiler {
                         }
                     }
                 }
+                self.patch_nested_block_state_reset(state_reset);
                 self.pop_dynamic_scope_lexical(saved_scope);
                 if let Some(idx) = block_local_idx {
                     self.code.patch_block_local_body_end(idx);
