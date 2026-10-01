@@ -31,14 +31,16 @@
 //!
 //! A routine an enclosing inner scope declares ahead of the BEGIN does not
 //! exist in the prologue either. The body gets a copy of each one it calls (see
-//! [`routines`]). It also gets the scope's imports, and a copy of each type or
-//! package of the scope it names (see [`decls`]).
+//! [`routines`]). It also gets the scope's imports and pragmas, a copy of each
+//! type or package of the scope it names (see [`decls`], [`pragmas`]), and
+//! every operator code variable of the scope.
 //!
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
-//! - an enclosing inner scope declares, ahead of it, a pragma, an operator code
-//!   variable, or a routine that is not a plain `sub` (a `multi`, an `our sub`,
-//!   an operator, an exported one), which the prologue cannot reproduce yet;
+//! - an enclosing inner scope declares, ahead of it, a pragma it cannot repeat
+//!   (see [`pragmas`]), or a routine that is not a plain `sub` (a `multi`, an
+//!   `our sub`, an operator, an exported one), which the prologue cannot
+//!   reproduce yet;
 //! - it names a type or package of an inner scope that cannot be declared again
 //!   unobservably (its body runs code), or reads an inner variable typed by
 //!   one;
@@ -53,6 +55,7 @@
 
 mod cell_ast;
 mod decls;
+mod pragmas;
 mod routines;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
@@ -106,9 +109,12 @@ struct Frame {
     /// A type, package, pragma, operator or other routine the prologue cannot
     /// reproduce was declared in this scope ahead of the current statement.
     blocked: bool,
-    /// The imports in this scope ahead of the current statement. A lifted
-    /// BEGIN repeats them ([`decls`]).
+    /// The imports and pragmas in this scope ahead of the current statement.
+    /// A lifted BEGIN repeats them ([`decls`], [`pragmas`]).
     imports: Vec<Stmt>,
+    /// What the repeated pragmas among `imports` must not precede in the
+    /// lifted BEGIN's block ([`pragmas::Guard`]).
+    pragma_guards: Vec<pragmas::Guard>,
     /// The types and packages declared in this scope ahead of the current
     /// statement ([`TypeDecl`]).
     types: Vec<TypeDecl>,
@@ -319,6 +325,7 @@ impl Walker<'_> {
             | Stmt::SubsetDecl { .. }
             | Stmt::Package { .. }
             | Stmt::Use { .. }
+            | Stmt::No { .. }
             | Stmt::Need { .. }
             | Stmt::Import { .. } => self.declare_type_or_import(stmt),
             Stmt::ProtoDecl { .. }
@@ -326,8 +333,7 @@ impl Walker<'_> {
             | Stmt::TokenDecl { .. }
             | Stmt::RuleDecl { .. }
             | Stmt::ProtoToken { .. }
-            | Stmt::AugmentClass { .. }
-            | Stmt::No { .. } => self.block_current_frame(),
+            | Stmt::AugmentClass { .. } => self.block_current_frame(),
             _ => {}
         }
     }
@@ -467,12 +473,6 @@ impl Walker<'_> {
             },
             _ => BindingKind::Opaque,
         };
-        // A code variable can declare an operator (`my &infix:<plus>`), whose
-        // syntax the parser has already registered, which no scan of the body
-        // can see. Any other code variable is an ordinary lexical.
-        if name.starts_with('&') && name.contains(':') {
-            self.block_current_frame();
-        }
         let name = name.clone();
         self.current_frame().bindings.push(Binding { name, kind });
     }
