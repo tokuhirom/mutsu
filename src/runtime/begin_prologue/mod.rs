@@ -46,7 +46,7 @@ use std::collections::HashSet;
 /// returned, and `stmts` is left holding the remainder. If the unit has no
 /// BEGIN-time effect, the prologue is empty and `stmts` is
 /// untouched.
-pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
+pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     let unit_names = unit_lexical_names(stmts);
@@ -71,7 +71,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
         composed_early.push(moved.needs_prologue);
         moved_phasers.push(moved.phasers);
         let before = lifted.effects.len();
-        nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
+        nested::lift_in_stmt(stmt, &unit_names, is_eval, &mut lifted);
         effects.push(lifted.effects.split_off(before));
         let shells = crate::compiler::nested_type_decls(stmt);
         composes_role |= shells
@@ -177,7 +177,7 @@ pub(crate) fn lift_nested_exports(stmts: &mut Vec<Stmt>) {
 /// part of `phasers::reorder_phasers`. Returns the prologue's length.
 pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
     lift_nested_exports(stmts);
-    let mut prologue = take_unit_prologue(stmts);
+    let mut prologue = take_unit_prologue(stmts, false);
     let prologue_len = prologue.len();
     if prologue_len > 0 {
         prologue.append(stmts);

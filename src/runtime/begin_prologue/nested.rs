@@ -93,10 +93,17 @@ pub(super) struct Lifted {
 }
 
 /// Lift every liftable BEGIN nested in `stmt`, a top-level statement of a
-/// unit whose top-level lexical names are `unit_names`.
-pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted: &mut Lifted) {
+/// unit whose top-level lexical names are `unit_names`. `is_eval` is whether
+/// the unit is an EVAL's, whose free names may be its caller's lexicals.
+pub(super) fn lift_in_stmt(
+    stmt: &mut Stmt,
+    unit_names: &HashSet<String>,
+    is_eval: bool,
+    lifted: &mut Lifted,
+) {
     let mut walker = Walker {
         unit_names,
+        is_eval,
         frames: Vec::new(),
         lifted,
     };
@@ -105,6 +112,9 @@ pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted
 
 struct Walker<'a> {
     unit_names: &'a HashSet<String>,
+    /// The unit is an EVAL's: a free name the unit does not declare may be one
+    /// of its caller's lexicals.
+    is_eval: bool,
     frames: Vec<Frame>,
     lifted: &'a mut Lifted,
 }

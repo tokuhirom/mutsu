@@ -321,12 +321,40 @@ impl Walker<'_> {
                 deps.bindings.entry((frame, binding)).or_insert(access);
             }
             None => {
-                if !self.unit_names.contains(&name) && crate::env::is_plain_user_lexical(&name) {
+                // A name nothing in the unit declares is refused: in an EVAL it
+                // may be a lexical of the EVAL's caller, which the prologue
+                // cannot supply. Outside an EVAL, with `strict` off where the
+                // BEGIN sits, it can only be an auto-declared package variable,
+                // which the lifted block (repeating `no strict`) declares the
+                // same way.
+                if !self.unit_names.contains(&name)
+                    && crate::env::is_plain_user_lexical(&name)
+                    && !(scope.is_none() && !self.is_eval && self.strict_is_off())
+                {
                     return None;
                 }
             }
         }
         Some(())
+    }
+
+    /// Whether `strict` is off where the current statement sits: the last
+    /// `use strict` / `no strict` ahead of it in the scopes around it is
+    /// `no strict`.
+    // Cost: O(i), i = the pragmas and imports in the enclosing scopes.
+    fn strict_is_off(&self) -> bool {
+        for stmt in self.frames.iter().rev().flat_map(|f| f.imports.iter().rev()) {
+            match stmt {
+                Stmt::No { module, arg: None } if module == "strict" => return true,
+                Stmt::Use {
+                    module,
+                    condition: None,
+                    ..
+                } if module == "strict" => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     /// How the lifted body reaches an inner binding, or `None` when it cannot.

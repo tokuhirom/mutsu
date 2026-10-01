@@ -34,7 +34,7 @@ fn next_temp_name() -> String {
 /// the head of `stmts`.
 pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
     crate::runtime::begin_prologue::lift_nested_exports(stmts);
-    reorder_recursive(stmts, true)
+    reorder_recursive(stmts, true, false)
 }
 
 /// EVAL-specific phaser reordering.  In addition to the standard
@@ -48,7 +48,7 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) -> usize {
 /// outermost scope), so lifting BEGIN from them is safe.
 pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
     crate::runtime::begin_prologue::lift_nested_exports(stmts);
-    reorder_recursive(stmts, true);
+    reorder_recursive(stmts, true, true);
     // Second pass: lift BEGIN from closure bodies to the top level.
     let mut extra_begin: Vec<Stmt> = Vec::new();
     for stmt in stmts.iter_mut() {
@@ -77,7 +77,7 @@ pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
             stmts.insert(insert_pos + i, s);
         }
         // Re-run reorder to properly sort the newly inserted phasers
-        reorder_recursive(stmts, true);
+        reorder_recursive(stmts, true, true);
     }
 }
 
@@ -103,7 +103,7 @@ fn lift_begin_from_eval_stmt(stmt: &mut Stmt, begin: &mut Vec<Stmt>) {
 
 /// Returns the length of the BEGIN prologue left at the head of `stmts` (zero
 /// below the top level).
-fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
+fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool, is_eval: bool) -> usize {
     // At a compilation unit's top level, the BEGIN-time effects run first, in
     // source order (ADR-0134). The prologue is taken out before the per-level
     // reordering below, which then only sees the run-time remainder, so no
@@ -111,7 +111,7 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) -> usize {
     // before the flattening, so a desugared multi-statement declaration
     // (`my ($a, $b) = f()`) reaches the partition as the one unit it is.
     let mut prologue = if is_top {
-        crate::runtime::begin_prologue::take_unit_prologue(stmts)
+        crate::runtime::begin_prologue::take_unit_prologue(stmts, is_eval)
     } else {
         Vec::new()
     };
