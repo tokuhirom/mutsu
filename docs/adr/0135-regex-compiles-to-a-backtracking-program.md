@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slices C and D in part (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slices C and D in part, Slice E begun (§8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -204,6 +204,15 @@ The walk is deleted when the D5 counter reads zero walked patterns over the roas
 `t/`. That deletion is this ADR's completion criterion, not an optional clean-up. Two engines are
 transitional debt with a defined exit; they are never the design.
 
+*Sharpened 2026-10-01 (#10255).* The pattern counter alone cannot say when the walk is deletable:
+a compiled pattern still reaches the walk's code at run time when the dynamic context keeps the
+engine out, when a `<subrule>` call bridges, when an atom is matched by the walk's single-atom arm,
+and through every entry point that has no compiled form (all ends at a position, behind `:ov`/`:ex`,
+LTM lookahead fates and cursor token methods). The criterion is therefore read off the second
+counter line, `regex-walk:` (§8, "Every use of the walk, counted"): the walk is deleted when its
+`walked=` and `bridged=` totals read zero over the roast whitelist and `t/`, and every remaining
+`leaf=` reason names a primitive that has moved out of the walk's modules.
+
 ### D8. JIT is later, and separate
 
 The flat program is the precondition for lowering hot regexes through Cranelift (ADR-0004). That
@@ -229,8 +238,12 @@ its measured result in §8 of this ADR.
   `Match` tree and action dispatch. The grammar headroom of §2.4 is measured here, on
   `bench-grammar-parse-big` and on a real module grammar (#9916 adds one).
 - **E. The residue, then deletion.** Non-ratchet callee resumption, `LrCall`, call arguments,
-  dynamic rule parameters, custom-HOW grammars. When the D5 counter reads zero: delete the walk, the
-  eager `Named` arm and the D6 mode, and close #7548.
+  dynamic rule parameters, custom-HOW grammars. Also (D7 as sharpened): a compiled goal for every
+  end at a position, so `:ov`/`:ex`, LTM lookahead fates and cursor token methods stop walking; the
+  dynamic contexts that keep the engine out (`:my` lexicals and captures of an enclosing regex, a
+  rule's dynamic declarations); and the walk's single-atom arm behind `CapAtom` and builtin calls,
+  moved to shared leaf primitives. When the `regex-walk:` counter's `walked=` and `bridged=` read
+  zero: delete the walk, the eager `Named` arm and the D6 mode, and close #7548.
 
 ## 5. Rejected alternatives
 
@@ -786,6 +799,35 @@ Not covered, and filed: a method inherited from a parent grammar is not found as
 ([#10508](https://github.com/tokuhirom/mutsu/issues/10508): `user_method_overloads` is per declaring class, so `B2 is B1`
 fails to parse through `B1`'s `<.acc>`, before and after this change), and `self` inside a token's `{ … }` code block,
 which is the cursor in raku and dies in mutsu ([#10509](https://github.com/tokuhirom/mutsu/issues/10509)).
+
+### Slice E, first part: every use of the walk, counted ([#10255](https://github.com/tokuhirom/mutsu/issues/10255))
+
+Slice E opens by making the whole residue visible. `MUTSU_VM_STATS` prints a second line next to
+`regex-vm:`, counting *events* rather than patterns:
+
+```
+[mutsu vm-stats] regex-walk: walked=N (reason=n …) bridged=M (reason=n …) leaf=L (reason=n …)
+```
+
+- **`walked`**: a whole match the walk answered. `declined` (the pattern has no program),
+  `position-only-code` (the position-only matcher meets a program that runs code), `context:*` (the
+  first condition of `rx_context_allows` that failed: `vm-off`, `ltm-declarative`,
+  `rule-dynvar-decls`, `inline-regex-vars`, `inline-capture-scope`, `inline-outer-seed`, and the two
+  D6-only ones), `ignoremark-no-target` / `ignoremark-parse`, and `all-ends:*`, the entry points
+  that ask for every end at a position and have no compiled goal (`match-all` behind `:ov`/`:ex`,
+  `ltm-lookahead-fate`, `token-method`, `grammar-probe`).
+- **`bridged`**: a compiled run handed a piece back to the walk. A `<subrule>` call's reason is the
+  first check of `rx_call_target` it failed (`args`, `lexical-regex`, `dynamic-param`, `wrapped`,
+  `custom-how`, `rule-dynvar-decls`, `left-recursion-active`, `no-candidates`, `ignoremark`,
+  `multi-candidate`, `proto-inherited-i`, `qq-thunks`, `left-reenter`, `callee-declined`,
+  `grammar-method`); besides calls, `quantified-call` (`<x>*` through the single-candidate arm),
+  `ratchet-scan` (the possessive `NamedRun` scan) and `code-interp` (an interpolated pattern's ends).
+- **`leaf`**: one atom of a compiled program that the walk's single-atom arm matched
+  (`builtin-call`, `lookaround`, `backref`, `marker`, `closure-interp`, `ws-rule`, `var-interp`,
+  `qq-interp`). These do not walk a tree, but they live in the walk's modules and must move out
+  before those are deleted.
+
+`scripts/rx-decline-survey.sh` sums the line across files as it sums `regex-vm:`.
 
 ### Reproducing §2
 

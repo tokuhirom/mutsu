@@ -27,6 +27,7 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk as walk_use};
 
 /// The program the loop is executing: the one the run started with, or the
 /// callee of the current frame.
@@ -338,6 +339,7 @@ impl Interpreter {
                             debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
                             break 'run None;
                         };
+                        walk_use(WalkUse::Bridged, "code-interp");
                         let cands = self.regex_code_interp_ends(
                             code,
                             *list,
@@ -368,7 +370,7 @@ impl Interpreter {
                         };
                         let ic = program.atom_ic[atom as usize];
                         match self.rx_call_target_checked(name, pkg, ic) {
-                            Some(CallTarget::Plain(callee, callee_pkg)) => {
+                            Ok(CallTarget::Plain(callee, callee_pkg)) => {
                                 if frame.as_ref().is_some_and(|f| f.depth >= MAX_FRAME_DEPTH) {
                                     false
                                 } else {
@@ -386,7 +388,7 @@ impl Interpreter {
                                     continue 'run;
                                 }
                             }
-                            Some(CallTarget::Proto(cands)) => {
+                            Ok(CallTarget::Proto(cands)) => {
                                 let ranked = self.rx_rank_proto(&cands, chars, pos);
                                 match ranked.first().copied() {
                                     // No candidate can match here.
@@ -434,7 +436,8 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            Some(CallTarget::Single) => {
+                            Ok(CallTarget::Single) => {
+                                walk_use(WalkUse::Leaf, "builtin-call");
                                 pc += 1;
                                 match self.regex_match_atom_with_capture_in_pkg(
                                     &program.atoms[atom as usize],
@@ -453,7 +456,8 @@ impl Interpreter {
                                     None => false,
                                 }
                             }
-                            None => {
+                            Err(why) => {
+                                walk_use(WalkUse::Bridged, why);
                                 // A grammar method the call runs gets this
                                 // invocation's own cursor, not a throwaway one:
                                 // what it writes to its attributes is the Match's
@@ -498,8 +502,12 @@ impl Interpreter {
                                 pc += 1;
                                 true
                             }
-                            Some(None) => false,
+                            Some(None) => {
+                                walk_use(WalkUse::Bridged, "ratchet-scan");
+                                false
+                            }
                             Some(Some((end, delta))) => {
+                                walk_use(WalkUse::Bridged, "ratchet-scan");
                                 levels.edit(|s| s.merge_delta(delta));
                                 pos = end;
                                 farthest = farthest.max(pos);

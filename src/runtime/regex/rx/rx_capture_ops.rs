@@ -70,6 +70,7 @@ impl Interpreter {
             // candidate start (at most the body's longest match back) for a
             // lookbehind.
             RxOp::CapAtom(i) => {
+                walk_leaf_use(&program.atoms[i as usize]);
                 let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
                     &program.atoms[i as usize],
                     chars,
@@ -290,4 +291,25 @@ impl Interpreter {
             separator_stride(sep),
         )
     }
+}
+
+/// Count a `CapAtom` on `MUTSU_VM_STATS`'s `regex-walk:` line: the walk's
+/// single-atom arm matches it. A quantified `<subrule>` is the arm running the
+/// callee, so it is a bridge; every other atom is a leaf.
+// Cost: O(1).
+#[inline]
+fn walk_leaf_use(atom: &RegexAtom) {
+    use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk};
+    let (kind, reason) = match atom {
+        RegexAtom::Named(_) => (WalkUse::Bridged, "quantified-call"),
+        RegexAtom::Lookaround { .. } => (WalkUse::Leaf, "lookaround"),
+        RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => (WalkUse::Leaf, "backref"),
+        RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => (WalkUse::Leaf, "marker"),
+        RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
+        RegexAtom::WsRule => (WalkUse::Leaf, "ws-rule"),
+        RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
+        RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
+        _ => (WalkUse::Leaf, "other"),
+    };
+    record_regex_walk(kind, reason);
 }

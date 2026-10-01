@@ -2136,7 +2136,7 @@ impl Interpreter {
         };
         let chars: Vec<char> = text.chars().collect();
         let pkg = self.current_package_sym();
-        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, pkg)
+        self.regex_match_all_ends_walked(&probe, &chars, 0, pkg, "all-ends:grammar-probe")
             .into_iter()
             .map(|(end, _)| end)
             .max()
