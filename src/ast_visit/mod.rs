@@ -404,4 +404,5 @@ pub(crate) fn contains_word(s: &str, word: &str) -> bool {
 }
 
 #[cfg(test)]
+#[path = "ast_visit_tests.rs"]
 mod tests;
