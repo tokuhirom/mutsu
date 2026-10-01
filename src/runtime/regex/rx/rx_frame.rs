@@ -3,13 +3,20 @@
 //!
 //! A `<subrule>` call that resolves to a plain rule with a compiled program
 //! pushes a [`Frame`] and runs the callee in the same loop, on the same
-//! backtrack stack. Frames are persistent (`Rc`-linked, never mutated except
-//! for the end-dedup list), and every choice point records the frame it was
-//! pushed in. So a failure after the callee has returned resumes *inside* the
-//! callee with the right chain of callers behind it: Rakudo's bstack model,
+//! backtrack stack. Frames are persistent (never mutated except for the
+//! end-dedup list and the cursor), and every choice point records the frame it
+//! was pushed in. So a failure after the callee has returned resumes *inside*
+//! the callee with the right chain of callers behind it: Rakudo's bstack model,
 //! which is what a non-ratchet callee needs. A ratcheted call (`commit`)
 //! simply drops the callee's choice points when it returns, so nothing ever
 //! resumes in it.
+//!
+//! Frames live in one arena (`Scratch::frames`) and link to their caller by
+//! index (ADR-10488 D4): a call allocated an `Rc` per frame. A frame is pushed
+//! when its call is entered, and the arena is truncated where no choice point
+//! can still name what is cut: to the length a choice point recorded when it
+//! is resumed, and to a frame's own index when it returns leaving no choice
+//! point in its callee (everything it called has returned the same way).
 //!
 //! The registers of a frame are a window of one arena (`Scratch::regs`) that
 //! starts at the frame's `base`. A window is never reused while a choice point
@@ -20,6 +27,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+/// A frame's index in the arena.
+pub(super) type FrameId = u32;
+
 use super::super::regex_token_resolve::ParsedTokenCandidate;
 use super::RxProgram;
 use crate::runtime::regex_types::RegexCaptures;
@@ -29,7 +39,7 @@ use crate::value::Value;
 /// One active `<subrule>` call.
 pub(super) struct Frame {
     /// The caller's frame; `None` is the pattern the run started from.
-    pub(super) parent: Option<Rc<Frame>>,
+    pub(super) parent: Option<FrameId>,
     /// The callee's program, and the package its body matches in (a rule is
     /// matched in the package that defines it).
     pub(super) program: Arc<RxProgram>,
@@ -60,7 +70,7 @@ pub(super) struct Frame {
     /// The ends this call has returned at. A second path to an end already
     /// returned is not a new candidate: the first (highest priority) one wins,
     /// as in the walk's streamed call and its eager end set.
-    pub(super) seen: RefCell<Vec<usize>>,
+    pub(super) seen: Vec<usize>,
     /// The grammar instance this invocation owns (Rakudo's cursor), created when
     /// a call in the callee first runs a grammar method (#9803). The return files
     /// it on the callee's Match.
@@ -91,8 +101,10 @@ pub(super) struct FMark {
     /// The register arena length: windows above it were opened after this
     /// choice point and are dead once it resumes.
     pub(super) regs_len: usize,
+    /// The frame arena length, for the same reason.
+    pub(super) frames_len: usize,
     /// The frame the choice point was pushed in.
-    pub(super) frame: Option<Rc<Frame>>,
+    pub(super) frame: Option<FrameId>,
 }
 
 /// The next candidate of a proto call, in the order the call ranked them:
@@ -104,7 +116,7 @@ pub(super) struct ProtoChoice {
     pub(super) pos: usize,
     pub(super) atom: u32,
     pub(super) cands: Arc<Vec<ParsedTokenCandidate>>,
-    pub(super) ranked: Rc<Vec<usize>>,
+    pub(super) ranked: Rc<[usize]>,
     pub(super) next: usize,
     pub(super) mark: Mark,
 }
