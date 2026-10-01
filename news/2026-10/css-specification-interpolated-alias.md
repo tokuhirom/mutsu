@@ -23,5 +23,5 @@ of interpreter gaps between a CSS stylesheet and its parsed, measured properties
   CSS::Properties' `:$units` default, so `reference-width` came out `Any`).
 - **`my @a = … with $x`** (and `without`) declares the variable unconditionally and gates only the
   initializer, as `if`/`unless` already did.
-- **A coercion type** leaves a value that already is its target alone, looking through an item
+- **A coercion type** leaves a collection that already is its target alone, looking through an item
   container: `List()` given `$[1, 2]` is that Array, not a one-element list around it.

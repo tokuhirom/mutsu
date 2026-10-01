@@ -191,15 +191,16 @@ impl Interpreter {
                 target
             };
         // A coercion type only converts a value that is not already of its
-        // target type (Rakudo: `sub f(List() $l)` binds an Array as-is, and
-        // `Int()` keeps `True`). Look through an item container first: an
-        // itemized `$[1, 2]` IS a List, and coercing the container wrapped it
-        // in a one-element list instead.
-        if !matches!(
+        // target type (Rakudo: `sub f(List() $l)` binds an itemized `$[1, 2]`
+        // as that Array). Coercing the item container instead wrapped the
+        // Array in a one-element list. Only a container or collection is
+        // checked here: a plain scalar reaches the same verdict through the
+        // `coerce_value` + `type_matches_value` pair below, and probing every
+        // `Bool(Mu)` coercion twice cost a Test assertion two interns (#7766).
+        if matches!(
             value.view(),
-            ValueView::Instance { .. } | ValueView::Package(_)
-        ) && !is_failure_value(&value)
-            && self.type_matches_value(base_target, value.descalarize())
+            ValueView::Scalar(_) | ValueView::Array(..) | ValueView::Seq(..) | ValueView::Hash(..)
+        ) && self.type_matches_value(base_target, value.descalarize())
         {
             return Ok(value);
         }
