@@ -33,8 +33,8 @@ impl Interpreter {
     /// token/regex/rule)? Only plain, argument-less identifier subrules count,
     /// dispatched against a real grammar package: `<::>` indirection, char-class
     /// specs and builtin assertions are handled elsewhere. The name must be a
-    /// user method declared directly on this grammar (not an inherited
-    /// Cursor/Grammar builtin, which the normal subrule/builtin paths already
+    /// user method of this grammar's MRO or a composed role (not an
+    /// inherited Cursor/Grammar builtin, which the normal subrule/builtin paths already
     /// cover).
     // Cost: O(1) expected: one method-table probe, which rejects every subrule that
     // is not a method before the name is looked at; O(len) more for a method,
@@ -47,9 +47,7 @@ impl Interpreter {
         !spec.token_lookup
             && spec.arg_exprs.is_empty()
             && !pkg.is_empty()
-            && self
-                .registry()
-                .method_overloads_present_sym(pkg, spec.lookup_sym)
+            && self.grammar_has_user_method_sym(pkg.as_str(), spec.lookup_sym)
             && !spec.lookup_name.is_empty()
             && !spec.lookup_name.contains("::")
             && spec

@@ -623,14 +623,6 @@ impl Registry {
             .map(|entry| entry.user_candidates.clone())
     }
 
-    /// [`Self::method_overloads_present`] for a name already interned.
-    // Cost: O(1) expected (one hash probe).
-    pub(crate) fn method_overloads_present_sym(&self, owner: Symbol, name: Symbol) -> bool {
-        self.method_entries
-            .get(&MethodEntryKey { owner, name })
-            .is_some_and(|entry| !entry.user_candidates.is_empty())
-    }
-
     /// Whether [`Self::user_method_overloads`] would answer `Some` for
     /// `(owner, name)`, without cloning the candidate list.
     pub(crate) fn method_overloads_present(&self, owner: Symbol, name: &str) -> bool {

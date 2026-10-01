@@ -159,9 +159,10 @@ impl Interpreter {
         if candidates.is_empty() {
             // A builtin assertion calls no user rule; a plain grammar METHOD
             // is arbitrary code.
-            return match self.registry().user_method_overloads(pkg.as_str(), name) {
-                None => Some(std::sync::Arc::new(Vec::new())),
-                Some(_) => None,
+            return if self.grammar_has_user_method_sym(pkg.as_str(), name_sym) {
+                None
+            } else {
+                Some(std::sync::Arc::new(Vec::new()))
             };
         }
         let mut out = Vec::new();
