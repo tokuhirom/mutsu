@@ -1,11 +1,11 @@
 //! The default recursion over the class, role, attribute and method
-//! declarations of [`Stmt`], split out of [`super::walk_stmt`]. Every field is
+//! declarations of [`Stmt`], split out of [`super::walk_stmt()`]. Every field is
 //! named, as in the rest of the walker.
 
 use super::{NameKind, Visit, exprs, names, params, traits, walk_handle_spec};
 use crate::ast::Stmt;
 
-/// The [`super::walk_stmt`] arm for `ClassDecl`, `HasDecl`, `MethodDecl` and
+/// The [`super::walk_stmt()`] arm for `ClassDecl`, `HasDecl`, `MethodDecl` and
 /// `RoleDecl`; `walk_stmt`'s own match keeps the variant list exhaustive.
 // Cost: O(n), n = size of `s`'s subtree.
 pub(super) fn walk_type_member_decl<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
