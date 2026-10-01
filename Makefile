@@ -60,7 +60,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
 # and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-bench-det check-prims check-dev
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-bench-det check-prims check-dev check-adr
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -166,6 +166,17 @@ check-bench-det:
 # verdict. Seconds, no build.
 check-dev:
 	scripts/dev self-test
+
+# docs/adr/: a new ADR is numbered by its GitHub issue (sequential numbers
+# collided between parallel PRs), and there is no hand-written index to
+# conflict on -- `make adr-index` builds it. CI's `changes` job runs the check
+# too, because a docs-only PR skips the job that runs `make checks`.
+check-adr:
+	scripts/adr.sh --self-test
+	scripts/adr.sh check
+
+adr-index:
+	@scripts/adr.sh index
 
 roast: check-pipefail
 	@mkdir -p tmp

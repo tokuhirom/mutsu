@@ -10,8 +10,15 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 
 ## Conventions
 
-- 1 decision = 1 file. `NNNN-kebab-title.md` (sequential numbering).
-- **Status**: `Proposed` (under discussion / awaiting approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated).
+- 1 decision = 1 file, named `<issue>-kebab-title.md` and headed `# ADR-<issue>: <title>`,
+  where `<issue>` is the number of the GitHub issue that carries the decision (no zero
+  padding). If there is no issue yet, file one first (usually `todo:deep`). GitHub hands out
+  that number, so two concurrent PRs cannot pick the same one — "highest number + 1" collided
+  at least six times, once only noticed after both PRs had merged. ADR-0001 … ADR-0138 keep
+  their sequential numbers; that scheme is closed.
+- **Status**: a `- **Status**: ...` line near the top — `Proposed` (under discussion / awaiting
+  approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated). That line is the only
+  place the status lives.
 - When a decision changes, **do not rewrite the existing ADR** — supersede it with a new ADR and update the old ADR's Status.
 - **Record implementation progress inside the ADR that owns the decision** — a Status suffix
   for a short state, or an "Outcome" / "Implementation status" section for a phased one.
@@ -24,142 +31,15 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 
 ## Index
 
-| # | Title | Status |
-|---|---|---|
-| [0001](0001-gc-strategy-and-phasing.md) | GC adoption — mechanism selection and phasing | Accepted (layers 3a/3b/4 shipped; outcome in §7) |
-| [0002](0002-phase-a-gate-reassessment.md) | Phase A gate reassessment — confirming the preconditions for starting GC | Accepted |
-| [0003](0003-default-on-gc-trigger.md) | Trigger policy for default-on GC (synchronous + buffer-size threshold + adaptive backoff) | Accepted |
-| [0004](0004-jit-strategy.md) | JIT — mechanism selection and phasing (Cranelift method JIT, no deopt) | Accepted |
-| [0005](0005-nanbox-representation-encoding.md) | NaN-boxing representation switch (3b-1) — encoding choice and newtype-seal integration | Accepted |
-| [0006](0006-baseline-interpreter-optimizations.md) | Baseline (classical) interpreter optimizations — adoption decisions and priorities | Accepted |
-| [0007](0007-grammar-parse-trail-matcher.md) | Grammar/regex matcher — cursor + undo-log (trail) to kill capture-threading churn | Accepted |
-| [0008](0008-push-based-supply-event-delivery.md) | Push-based supply event delivery (ReactWaker sinks) | Accepted |
-| [0009](0009-regex-code-assertion-execution-model.md) | Regex code assertions — run inline in the real interpreter, and keep LTM declarative | Accepted |
-| [0010](0010-cross-thread-lexical-sharing-scope.md) | Cross-thread lexical sharing is scoped to a spawn lineage, not the process | Accepted |
-| [0011](0011-rakuast-model-layer-and-phasing.md) | RakuAST — a reflection/model layer over the internal AST, and its phasing | Accepted (Phases 1–5 landed; Phase 6 open) |
-| [0012](0012-libffi-macos-arm64-vendored-bump.md) | libffi on macOS arm64 — bump the vendored build, do not switch to system libffi | Accepted |
-| [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Accepted (primitive landed; Miri gate outstanding — §8) |
-| [0014](0014-make-test-runs-tap-on-debug-binary.md) | `make test` runs the TAP (`t/`) suite on the debug binary, not release | Superseded by 0075 |
-| [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted (P0–P3b landed; P3c open) |
-| [0016](0016-span-based-captures-and-lazy-match.md) | Span-based regex captures and lazily materialized `Match` objects | Accepted (P1–P5 all landed) |
-| [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |
-| [0018](0018-slot-addressed-lexical-capture-and-env-sync.md) | Slot-addressed lexical capture and env synchronization | Accepted |
-| [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Accepted/Implemented (all completion gates closed 2026-08-17; non-gating residue tracked separately) |
-| [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately; §3.2 growth rule superseded by ADR-0123) |
-| [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Accepted (P1-P3a and P3 shipped; P4/P5 remain) |
-| [0022](0022-regex-alternation-ltm-ranking.md) | `\|` alternation ranks branches by declarative-prefix LTM, not by longest actual match | Accepted (all five slices implemented and merged; walker mechanism superseded by 0127) |
-| [0023](0023-binding-provenance-spawn-capture.md) | Spawn-time capture ownership is decided by binding provenance, not value type | Accepted (implemented) |
-| [0024](0024-mainline-lexicals-for-named-subs.md) | Mainline is a compunit — named subs resolve mainline free variables through unit-lexical cells | Accepted (implemented) |
-| [0025](0025-captured-scalar-cells-value-kind-blind.md) | Cell boxing of captured scalars must be value-kind-blind — retiring the Instance skip | Accepted (slice 1 implemented; slice 2 closed 2026-08-20 as already resolved by existing machinery; slice 3 planned) |
-| [0026](0026-slang-activation-architecture.md) | Slang activation — bundle Slangify + Slang::Tuxic verbatim, map recognized grammar-mixin overrides onto parser modes | Accepted (implemented — Slangify/Slang-Tuxic bundled verbatim 2026-08-11, unblocking the Text::CSV battery; see "Outcome") |
-| [0027](0027-loop-frozen-value-capture-cascade.md) | Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind | Accepted (Slice 1 implemented; Slices 2-3 planned) |
-| [0028](0028-supply-schedule-on-deferred-tap-delivery.md) | `Supply.schedule-on` genuinely defers tap delivery — callback shims at the tap-registration chokepoint, with a serialized per-tap drain | Accepted (Slice 1 implemented and Cro-verified 2026-08-13; Slice 2 audited) |
-| [0029](0029-exception-class-role-membership.md) | Built-in `X::` exception ancestry is role membership, not a single parent — register it through the existing composed-role path | Accepted (Slices 1-3 + residue R1-R4 implemented; Slice 4's real-`Test` sweep tracked separately — see "Implementation status") |
-| [0030](0030-native-array-decode-cache-interior-mutability.md) | The native `array[T]` decode cache is a read-path cache, and needs field-level interior mutability — not `gc_contents_mut` | Accepted (implemented in full) |
-| [0031](0031-supply-quit-ownership-and-cold-source-tapping.md) | A supply block's quit belongs to its own emitter, and a cold `whenever` source is tapped rather than replayed | Implemented (Slices 1-3 shipped 2026-08-19) |
-| [0032](0032-wrapvarref-container-capture-across-closure-boundaries.md) | `WrapVarRef` container capture is a property of the capture edge, not of the named-sub declaration form | Partially implemented (Slice 1+2 landed 2026-08-19; Slice 3 open) |
-| [0033](0033-whatever-priming-leaf-and-derived-scope.md) | Whatever-priming is a leaf property plus a derived scope — defer `WhateverCode` construction out of the parser | Accepted (Phase 1 shipped 2026-08-19; Phase 2 shipped 2026-08-20; Phases 3-4 not implemented) |
-| [0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md) | Reifying a `Seq` fills the Seq itself — reification and consumption are two operations, not one | Accepted (phases 1-4 implemented; phase 5 Miri probes deferred — see §7.1) |
-| [0035](0035-method-calls-observe-caller-frames.md) | Caller-frame observation from method bodies — chain-aware dynamics enumeration, plus `uses_callframe`-gated frame pushing at the two compiled-method chokepoints | Accepted (Slices 1-3 implemented; see "Implementation status") |
-| [0036](0036-element-container-pairs-from-subscripts-and-pairs.md) | A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot — retiring the `self.env` value-equality search | Partially implemented (Slices 1-2 landed 2026-08-20; Slices 3-4 open) |
-| [0037](0037-eval-context-frame-owns-the-return-target.md) | `EVAL ..., context => $frame` — the context frame owns the return target, and the routine chain must be dispatch-path-independent | Partially implemented (Slice 1 landed 2026-08-20; Slices 2-4 open) |
-| [0038](0038-seq-cache-returns-a-list-and-the-seq-list-view-is-a-property-of-the-value.md) | `.cache` returns a `List`, and the Seq/List view is a property of the value — read through one oracle | Proposed (design complete; implementation not started) |
-| [0039](0039-container-lexicals-resolve-lexically.md) | `@`/`%` lexicals must resolve lexically — retiring by-name container resolution (ADR-0024's deferred sigil follow-up) | Proposed (Slice 1 landed 2026-08-20; Slice 2 next) |
-| [0040](0040-array-hash-elements-are-itemized-at-the-store.md) | Array and Hash elements are itemized at the *store*, not compensated at the read | Proposed (design complete; implementation not started) |
-| [0041](0041-sub-hoisting-vs-compile-time-name-visibility.md) | A sub's callability is hoisted for the whole scope, but `&name` bareword-reference visibility at `constant`/`BEGIN` time must follow textual order | Proposed (investigation only) |
-| [0042](0042-type-constraints-belong-to-the-container-not-to-a-name.md) | A type constraint belongs to the container, not to a name — retiring the `var_type_constraints` side table | Implemented (all three slices; the side table and its hash-key twin were deleted 2026-09-06) |
-| [0043](0043-scheduled-delivery-hop-belongs-to-the-tapped-supply.md) | The scheduled-delivery hop belongs to the tapped Supply — every derived live operator carries `"scheduler"` forward | Accepted (Decision 1 implemented; Decision 2 deferred behind a recorded trigger, #9932) |
-| [0044](0044-listops-are-routines-not-a-syntactic-rewrite.md) | Core listops (`push`/`pop`/`splice`/…) are routines, not a syntactic rewrite — give them a callable core candidate | Proposed (design complete; implementation not started) |
-| [0045](0045-for-loop-parameters-bind-the-element-container.md) | A `for` loop parameter binds the element *container*; the per-iteration writeback is retired | Proposed (design complete; implementation not started) |
-| [0046](0046-proto-token-ltm-shares-one-ranking-mechanism.md) | Proto-token dispatch shares the one LTM ranking mechanism, and interpolation provenance covers arrays and token bodies | Implemented (all five slices landed 2026-08-20/22) |
-| [0047](0047-type-identity-is-a-declaration-site-not-a-registry-name.md) | A type's identity is its declaration site, not its current registry name — retiring `subtest`'s registry rollback | Partially adopted (P1/P2 landed, PR #6757; P3/P4 obsolete; lexical role/subset remainder #9894) |
-| [0048](0048-placeholder-scope-is-a-block-invocation-contract.md) | Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag | Accepted (P1 landed; P2-P5 not started) |
-| [0049](0049-nil-decays-to-the-container-default-at-the-element-store.md) | `Nil` decays to the *container's* default at the element store, and stops being a hole sentinel | Accepted (Slices 0-2 implemented) |
-| [0050](0050-block-routine-ness-is-a-definition-site-property.md) | A Block's routine-ness is a definition-site lexical property, not a re-derived dynamic one | Proposed (design complete; implementation not started) |
-| [0051](0051-type-ancestry-has-one-oracle-and-an-unresolved-method-throws.md) | Type ancestry has one oracle, and an unresolved method throws instead of stringifying | Accepted (P1/P3/P4 landed; P2/P5 not started) |
-| [0052](0052-a-when-clause-produces-its-value-on-the-stack.md) | A `when`/`default` clause produces its value on the stack, in both branches — retiring the succeed-signal and side-channel value paths | Accepted (Slice 1 implemented; Slices 2-4 open — see "Implementation status") |
-| [0053](0053-do-whenever-produces-a-tap-on-the-stack.md) | `do whenever` produces a `Tap` on the stack — retiring the source-variable name bridge | Proposed (design complete; implementation not started) |
-| [0054](0054-argument-list-interpolation-is-a-call-site-property.md) | Argument-list interpolation is a call-site property — retire blind Slip flattening | Accepted (Slices 1-2 implemented; Slices 3-6 remain) |
-| [0055](0055-closure-free-vars-resolve-to-their-own-binding.md) | A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores | Accepted (slice 1 implemented; slices 2-5 open) |
-| [0056](0056-nativecall-types-display-only-qualification.md) | NativeCall's `Pointer`/`CArray`/`long`/... display under `NativeCall::Types::*` — display-only, registry key stays bare | Accepted (implemented) |
-| [0057](0057-var-reflection-identity-cell-address.md) | `.VAR` reflection identity is the shared cell's address, not a per-frame cache — reusing ADR-0032's container-capture edge as the boxing trigger | Accepted (implemented) |
-| [0058](0058-map-grep-produce-a-deferred-seq.md) | `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call | Accepted — fully implemented (steps 0-4 shipped 2026-09-07) |
-| [0059](0059-is-rw-routines-return-a-container.md) | An `is rw` routine returns a container — retiring caller-side tail re-interpretation | Accepted (Slices 1-2 implemented; Slice 3 open) |
-| [0060](0060-mixin-what-is-a-composition-keyed-type-object.md) | A role-mixed value's `.WHAT` is a composition-keyed type object, not the shared base or a per-instance fork | Accepted (implemented) |
-| [0061](0061-lexical-self-has-its-own-env-key.md) | A user lexical `$self` has its own env key — `self` names only the invocant | Accepted (implemented) |
-| [0062](0062-atomic-lane-anchors-to-the-published-value.md) | A generation of the legacy atomic lane anchors to the published value, and the root store is the lane's only authority | Accepted (implemented) |
-| [0063](0063-nativecall-outbound-callback-ownership-and-reentrancy.md) | A NativeCall callback is a process-lifetime closure that re-enters the calling VM | Accepted (implemented) |
-| [0064](0064-var-descriptor-carries-the-contained-value.md) | A `.VAR` container descriptor carries the value its container holds | Accepted (implemented) |
-| [0065](0065-language-server-targets-ai-agents.md) | The language server targets AI agents, and is scoped to the protocol surface an agent actually consumes | Accepted (2026-09-02); phased — see the ADR's phasing table |
-| [0066](0066-call-dispatch-inline-cache.md) | Call dispatch resolves through a per-callsite inline cache, not a name-keyed hash map | Accepted (implemented 2026-09-03) |
-| [0067](0067-a-routine-hands-back-the-container-it-was-given.md) | A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object | Accepted (all slices implemented 2026-09-05/06) |
-| [0068](0068-cross-thread-container-writes-need-a-synchronized-store.md) | A cross-thread aliased container write needs a synchronized store, not a name-keyed lane | Accepted (2026-09-06; §4 steps 1-3 implemented) |
-| [0069](0069-a-definiteness-constrained-type-object-is-a-named-type-object.md) | A definiteness-constrained type object is a named type object, not a new value kind | Accepted (implemented) |
-| [0070](0070-native-methods-declare-the-named-arguments-they-accept.md) | A builtin method declares the named arguments it accepts, and the arity cascade drops the rest | Accepted (slices 1-3 implemented 2026-09-09; residue #9905) |
-| [0071](0071-native-operators-are-dispatch-candidates.md) | A natively implemented operator is a dispatch candidate, not a fallback — the increment operators rank against their core candidate set | Accepted (increment and infix operators both implemented) |
-| [0072](0072-a-resumable-exception-runs-its-handler-at-the-throw-point.md) | A resumable exception runs its `CATCH` handler at the throw point, not after unwinding | Accepted (Slice 1 implemented; Slices 2-3 open) |
-| [0073](0073-regex-atom-candidates-are-demand-driven.md) | Regex atom candidates are produced on demand, driven by the continuation — an embedded code block runs once per candidate ENTERED | Accepted (Slices 1-3 implemented 2026-09-07/08; the streamed path's declined cases stay on the eager arm) |
-| [0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md) | A channel-backed Supply broadcasts to its taps; the receiver is not an exclusive transfer | Accepted (implemented) |
-| [0075](0075-make-test-runs-tap-on-release-binary.md) | `make test` runs the TAP (`t/`) suite on the release binary (supersedes 0014); `gc-stress`/`jit-stress` keep the debug pass | Accepted |
-| [0076](0076-bare-block-lowering-and-block-scope-opcodes.md) | One bare-block lowering shared by both source positions; `BlockScope` and `DoBlockExpr` stay two opcodes | Accepted (shared lowering landed; opcode merge deferred — §6) |
-| [0077](0077-locals-are-a-window-into-a-contiguous-stack.md) | A call's locals are a window into one contiguous stack, not a pooled `Vec` | Accepted (Slices 0 and 2 implemented; Slice 1 withdrawn into 2; leading-parameter *fill* done, its arg-move half and Slice 3 open) |
-| [0078](0078-per-call-scope-stacks-are-windows-not-moved-vectors.md) | A call's five scope stacks are windows into shared vectors, not `mem::take`n `Vec`s | Accepted (implemented) |
-| [0079](0079-container-itemization-is-a-holder-property-tagged-on-the-containerref-word.md) | Container itemization is a property of the *holder*, tagged on the `ContainerRef` word (not on the shared cell) | Proposed |
-| [0080](0080-hash-element-containerization-is-per-value.md) | Hash element containerization is a per-value property, not a hash-wide slurpy flag | Accepted (implemented 2026-09-09) |
-| [0081](0081-compunit-scoped-module-import-aliases.md) | A unit module's imported aliases are scoped to its compilation unit | Accepted (implemented, PR #7743) |
-| [0082](0082-a-collecting-for-gathers-containers-not-snapshots.md) | A value-collecting `for` gathers containers, not snapshots | Superseded by 0083 |
-| [0083](0083-a-collected-for-retains-containers-past-the-loop.md) | A collected `for` retains lvalue containers past the loop | Accepted (implemented) |
-| [0084](0084-the-frame-env-is-not-the-programs-symbol-table.md) | The per-frame `Env` is not the program's symbol table — type/package names and internal markers move to side tables | Proposed (design complete; implementation not started) |
-| [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Accepted and fully implemented (P1-P5 landed by 2026-09-12) |
-| [0086](0086-builtin-dynamics-are-not-closure-capture-material.md) | The built-in dynamics are not closure-capture material — they belong in a per-interpreter never-copied tier | Accepted (implemented 2026-09-12) |
-| [0087](0087-runtime-export-hook-parse-time-approximation.md) | A `sub EXPORT` module's parse-time export set is approximated by its unit-scope routines | Accepted (implemented) |
-| [0088](0088-rakuast-regex-boundary-tree.md) | RakuAST and execution share a source-level regex tree | Accepted (static tree, RakuAST, lowering and provenance slices implemented 2026-09-12; dynamic contents and the full migration remain) |
-| [0089](0089-role-mixins-own-a-separate-attribute-cell.md) | A role mixin owns an attribute cell separate from its wrapped value | Accepted and implemented (2026-09-12) |
-| [0090](0090-has-embedded-cstruct-members.md) | A `HAS` member is laid out by value, and its handle points into the enclosing struct | Accepted (implemented) |
-| [0091](0091-slang-package-declarators.md) | A slang's `package_declarator:sym<...>` candidate is read as a declarator registration, not executed | Accepted (implemented) |
-| [0092](0092-closure-capture-is-a-chained-tier-not-a-merged-copy.md) | Closure capture should be a chained tier, not a per-call merged copy | Accepted (implemented 2026-09-12) |
-| [0093](0093-core-only-infix-operators-are-shadowed-not-extended.md) | A core operator rakudo does not declare is *shadowed* by a user declaration, not extended | Accepted (implemented) |
-| [0094](0094-closure-capture-kept-set-is-not-narrowed.md) | The closure capture's kept set is not narrowed — its cost is the call-time merge | Accepted |
-| [0095](0095-native-mut-publish-before-wake.md) | A mutable native instance method publishes before it wakes another thread | Accepted (implemented) |
-| [0096](0096-batteries-adoption-policy.md) | A battery is the real upstream module; the interpreter is what grows (rung-3 native provision banned; a performance measurement justifies an optimization, never a substitution) | Accepted |
-| [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
-| [0098](0098-if-pragma-actions-slang.md) | mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name (the `if` pragma) | Accepted (implemented 2026-09-13) |
-| [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 implemented; Stages 2-3 re-decided by 0135 — see §8) |
-| [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented; point 7 amended by ADR-0123) |
-| [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Accepted (implemented, #8148) |
-| [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
-| [0104](0104-compiler-version-is-a-rakudo-release-coordinate.md) | `$*RAKU.compiler.version` is a Rakudo-release coordinate, not mutsu's package version | Accepted (implemented) |
-| [0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md) | Promise resolution dispatches through the promise's scheduler, and a woken awaiter borrows the resuming worker's slot (the answer to ADR-0020 §5.1; fork (b) is not the fix) | Accepted (implemented 2026-09-26) |
-| [0106](0106-raku-level-profiler.md) | The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist | Accepted (Slices 0-5 shipped; Slice 6 optional and unstarted) |
-| [0107](0107-compilation-unit-runtime-identity.md) | A compilation unit's runtime identity is the path as invoked; `$?FILE` is its absolutified form | Accepted (implemented) |
-| [0108](0108-closure-must-pin-its-defining-blocks-routine-imports.md) | A closure must pin the routine imports live in its defining block | Proposed |
-| [0109](0109-native-is-rw-scalar-parameter-reaches-the-light-call-fast-paths.md) | A native `is rw` scalar parameter reaches the light-call fast paths by reusing the existing `WrapVarRef`/`ContainerRef` transport, restricted to plain-lexical arguments | Accepted (implemented — see "Implementation status") |
-| [0110](0110-typed-resolved-ir-for-statically-typed-routines.md) | Statically typed routines compile to a typed, resolved IR — on the existing stack machine, not a register-machine rewrite (the JSON::Fast parity plan) | Accepted (Stages 1-2 landed; module linkage fixed by #9088; Stage 3-4 plan replaced by ADR-0112) |
-| [0111](0111-ltm-stoppers-end-one-path.md) | An LTM stopper ends one path of the measurement (a fate), not the whole walk; a negated class with several alternatives and a package-qualified subrule call are fates | Accepted (implemented; §2 mechanism superseded by 0127) |
-| [0112](0112-trir-completion-plan-for-beating-rakudo.md) | Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining | Accepted (Step 1 landed; Steps 2-4 open) |
-| [0113](0113-frame-lexical-inner-subs.md) | A call-only `my sub` in a routine body is a frame lexical: its declaration registers nothing and its call sites are resolved at compile time | Accepted (slice 1 implemented) |
-| [0114](0114-routine-nested-sub-free-var-aliases.md) | A sub declared in a routine reads its free variables through per-activation aliases bound by its declaration | Accepted (implemented) |
-| [0115](0115-core-type-names-in-nqp-operands-fold-at-parse-time.md) | A CORE type name used as an `nqp::` operand folds to its type object at parse time, unless the compunit binds the name | Accepted (implemented) |
-| [0116](0116-trir-native-lowering-measured-before-building.md) | ADR-0112 Step 4 measured before it was built: native lowering of TRIR is capped at ~1/5 of the decode, so Step 4 becomes "shrink the op bodies" | Accepted (D2 op-body work first; native lowering returns under D3 — #8673's < 1.0x bar is fixed) |
-| [0117](0117-str-methods-and-nqp-ops-share-one-routine.md) | `Str` methods, `nqp::` string ops, VM string opcodes and TRIR string ops share one routine per primitive (`src/builtins/str_prim/`), grapheme-indexed; enforced by `make check-prims` | Accepted (implemented) |
-| [0118](0118-int-operators-share-one-routine.md) | Every form of an integer operator (infix, routine, `[op]`, `»op«`, `Rop`), `abs()`/`.abs` and `++`/`.succ`/`.=succ` is one routine in `src/builtins/arith/`; enforced by `make check-prims` | Accepted (implemented) |
-| [0119](0119-seq-sources-pulled-a-prefix-at-a-time.md) | A Seq whose source can be pulled a prefix at a time (`Str.comb`/`.lines`/`.words`, `IO::Handle.lines`/`.words`) serves `.head(n)`/`.first`/`[i]` by pulling a prefix, not by reifying | Accepted (implemented) |
-| [0120](0120-str-payload-may-be-a-lazily-flattened-strand-list.md) | A `Str` payload may be a lazily flattened strand list (`x`, shared-operand `~` and interpolation build strands; the first read flattens once) | Accepted (implemented) |
-| [0121](0121-instance-attributes-live-in-per-class-slots.md) | Instance attributes live in per-class slots, and each access site (`$!x`, accessors, `nqp::getattr`/`bindattr`) resolves its slot once through a layout-keyed inline cache | Accepted (partly implemented) |
-| [0122](0122-repl-compiler-object-and-eval-contexts.md) | `nqp::getcomp("Raku")` is a Raku-level compiler object, and a REPL context is a captured unit environment plus its lexical routines | Accepted (implemented) |
-| [0123](0123-bounded-user-thread-stack-reservations.md) | User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it | Accepted (implemented) |
-| [0124](0124-parse-time-export-probe-for-computed-export-stashes.md) | A module that binds its export stash under computed keys is run at parse time (fresh interpreter, fresh thread) to learn the exported names | Accepted (implemented, #9500) |
-| [0125](0125-ltm-declarative-prefix-nfa.md) | Measure an LTM declarative prefix with a compiled NFA | Accepted (implemented; completed by 0127) |
-| [0126](0126-dev-job-runner-for-long-jobs-and-gates.md) | Long jobs and the pre-publication gate run through one job runner, `scripts/dev` | Accepted (implemented) |
-| [0127](0127-every-ltm-measurement-runs-the-nfa.md) | Every LTM measurement runs the NFA; the walker's measurement mode is retired | Accepted (implemented) |
-| [0128](0128-package-scoped-enum-identity-is-qualified.md) | A package-scoped enum's identity is its qualified name; its display name is the declared one | Accepted (implemented) |
-| [0129](0129-retired-lane-bindings-follow-their-live-children.md) | A re-declared lane binding is retired into a box its live children keep | Accepted (implemented) |
-| [0130](0130-ecosystem-accepted-divergences.md) | A test file that fails only on a Rakudo artefact mutsu will not copy is graded `accepted` | Accepted (implemented) |
-| [0131](0131-imported-operator-candidates-are-scoped-to-the-importing-compunit.md) | An imported operator candidate is visible only to its declaring and importing compunits | Accepted (implemented) |
-| [0132](0132-nested-routine-exports-install-at-enclosing-routine-registration.md) | An `is export` routine nested in a routine body is exported when the enclosing routine is installed | Accepted (implemented) |
-| [0133](0133-no-per-call-ast-compile-at-runtime.md) | The runtime executes precompiled chunks — no per-call AST compile | Proposed (Slice 1, signature expressions, implemented) |
-| [0134](0134-begin-time-prologue.md) | BEGIN-time effects run once, before the unit's run time, in a compiled per-compunit prologue over static-state lexicals | Accepted (slices 1–2 implemented; slice 3 partly, #10336) |
-| [0135](0135-regex-compiles-to-a-backtracking-program.md) | A regex compiles to a flat backtracking program; the tree walk is retired | Accepted (Slice A in progress; slices #10251-#10255) |
-| [0136](0136-declarator-docs-attached-by-the-parser.md) | Declarator docs (`#\|` / `#=`) are attached by the parser, not by a source line scanner | Accepted (implemented) |
-| [0137](0137-typed-ast-visitor-for-analyses.md) | AST analyses walk the AST through one typed visitor, never its serialized form | Accepted (visitor implemented; hand-rolled walkers ported under the `check-ast-walkers` ratchet) |
-| [0138](0138-perl5-regex-adverb-removed.md) | The Perl 5 regex adverb (`:P5` / `:Perl5`) is removed, following Rakudo | Accepted (implemented) |
+There is no hand-written index: a table every new ADR appended to and every landed slice
+edited made sibling PRs conflict on this file, and its status column drifted from the ADRs'
+own Status lines. Build it from the files instead:
+
+```sh
+make adr-index        # Markdown table of number, title and Status line
+ls docs/adr/          # or just the file names
+```
+
+`make check-adr` (part of `make checks`, and also run by CI's always-on `changes` job so a
+docs-only PR is covered) rejects a duplicate number, a new sequential number, and an
+issue-numbered ADR without the `# ADR-<issue>: ` heading or the `- **Status**:` line.

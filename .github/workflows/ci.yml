@@ -83,6 +83,8 @@ jobs:
           # non-cone mode would also drag in every vendored one.
           sparse-checkout: |
             /scripts/ci-docs-only.sh
+            /scripts/adr.sh
+            /docs/adr/
             /Makefile
             /.github/workflows/ci.yml
           sparse-checkout-cone-mode: false
@@ -98,6 +100,14 @@ jobs:
         # it. Separate from --self-test so an incomplete sparse-checkout above
         # fails here rather than skipping the guard.
         run: scripts/ci-docs-only.sh --check-inputs
+
+      - name: ADR numbering
+        # Here rather than in `make checks` alone: an ADR PR is usually
+        # docs-only, and a docs-only PR skips the job that runs `make checks`.
+        # A duplicate or new sequential ADR number must still fail it.
+        run: |
+          scripts/adr.sh --self-test
+          scripts/adr.sh check
 
       - name: Detect documentation-only change
         id: detect
