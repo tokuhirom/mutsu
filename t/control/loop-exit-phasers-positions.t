@@ -1,9 +1,9 @@
 use Test;
 
 # A `next`/`last` that leaves a loop iteration runs the loop's NEXT/LEAVE
-# phasers wherever it is written in the iteration's own frame, since the
-# lowering walks the body through the exhaustive mutable visitor
-# (ADR-10499). Each expectation was checked against rakudo.
+# phasers wherever it is written in the iteration's own frame (the
+# LoopExitGuard of #10566), including the positions the retired static
+# rewrite never reached. Each expectation was checked against rakudo.
 
 plan 6;
 
