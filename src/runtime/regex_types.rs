@@ -111,8 +111,8 @@ pub(crate) struct PatternDerived {
     pub(crate) ltm_nfa: std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
     /// The pattern compiled to a flat backtracking program (ADR-0135), or
     /// `None` when it holds a construct the compiled engine does not cover
-    /// yet and keeps the tree walk. A pure function of the pattern while the
-    /// engine compiles no subrule call.
+    /// yet and keeps the tree walk. A pure function of the pattern: a subrule
+    /// call is resolved when it is reached, not when the pattern compiles.
     pub(crate) rx_program: std::sync::OnceLock<Option<Arc<crate::runtime::regex::RxProgram>>>,
 }
 

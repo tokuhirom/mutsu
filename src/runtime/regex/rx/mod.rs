@@ -12,9 +12,13 @@
 //! that run Raku code on the caller's interpreter: `{ … }`, `<?{ … }>`,
 //! `<!{ … }>` and `:my` declarations (`Code`, `VarDecl`), then the
 //! interpolation atoms: a capture-isolated group (`<$rx>`), `$x` of an in-regex
-//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). A pattern holding
-//! anything else is declined as a whole and keeps the tree walk (ADR-0135
-//! D5); the reason is reported under `MUTSU_VM_STATS`.
+//! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). Slice D (#10254) adds
+//! the `<subrule>` call (`Call`): a plain rule or a proto runs as a frame in the
+//! run's own loop (`rx_frame`, `rx_call`), any other callee goes through the
+//! walk's producer, and a ratcheted `*` / `+` over a call keeps the walk's
+//! possessive scan (`NamedRun`); `~` goal matches compile too. A pattern
+//! holding anything else is declined as a whole and keeps the tree walk
+//! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
 //! What an atom *accepts* is never restated here (ADR-0135 D4): a consuming
 //! atom is tested by `match_consuming_atom` and a zero-width assertion by
@@ -262,8 +266,9 @@ pub(super) enum RxOp {
     Match,
 }
 
-/// A compiled pattern. A pure function of the pattern (Slice A compiles no
-/// subrule call), memoized in its `PatternDerived`.
+/// A compiled pattern. A pure function of the pattern (a `<subrule>` compiles to
+/// a call carrying its atom, resolved when the call is reached, so no program is
+/// keyed by package), memoized in its `PatternDerived`.
 pub(crate) struct RxProgram {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<RegexAtom>,
