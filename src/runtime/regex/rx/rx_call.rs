@@ -18,15 +18,17 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::NamedAtom;
 use crate::symbol::Symbol;
 
+/// (rule, caller package, caller `:i`) → (token generation, the call's target).
+type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, Option<CallTarget>)>;
+
 thread_local! {
     /// The verdict for a call, per (rule, caller package, caller `:i`),
     /// stamped with the token generation it was reached under — the inline
     /// cache of ADR-0135 D3. Kept only for a rule whose candidates the
     /// argument-less memo holds (a fully static one); anything else is
     /// resolved afresh at every call.
-    static TARGETS: std::cell::RefCell<
-        rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, Option<CallTarget>)>,
-    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    static TARGETS: std::cell::RefCell<TargetCache> =
+        std::cell::RefCell::new(rustc_hash::FxHashMap::default());
 }
 
 /// What a `<subrule>` call runs as a frame.
