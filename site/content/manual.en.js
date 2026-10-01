@@ -33,7 +33,7 @@ export default {
         <code>mutsu</code> interpreter and <code>mzef</code>, the bundled package
         manager.</p>
         <pre><code>mise use -g github:tokuhirom/mutsu        # latest release
-mise use -g github:tokuhirom/mutsu@0.18.0 # or pin a version
+mise use -g github:tokuhirom/mutsu@0.24.0 # or pin a version
 
 mutsu -e 'say "Hello, World!"'
 mzef --version</code></pre>
@@ -55,7 +55,7 @@ docker run --rm -v "$PWD:/work:ro" ghcr.io/tokuhirom/mutsu mutsu hello.raku</cod
         installed modules between runs.</p>
 
         <h3>From source</h3>
-        <p>You need Rust 1.94 or newer (edition 2024) and a C compiler, which
+        <p>You need Rust 1.98.1 or newer (edition 2024) and a C compiler, which
         builds the vendored <code>libffi</code> that NativeCall links.</p>
         <pre><code>git clone https://github.com/tokuhirom/mutsu.git
 cd mutsu
@@ -306,10 +306,11 @@ mutsu --dump-bytecode -e 'say 1 + 2'   # what the compiler emitted</code></pre>
           <li>Some compile-time diagnostics are missing — most visibly, an
               undeclared variable is not rejected at compile time the way strict
               mode requires.</li>
-          <li>Not every <code>X::</code> exception type exists yet, so a
-              <code>CATCH</code> that matches on a rare one may not fire.</li>
-          <li>Feeds spanning multiple lines are not parsed yet (single-line feeds
-              are).</li>
+          <li>A few rare exception types are missing. Nearly every
+              <code>X::</code> type Rakudo ships exists; the exceptions are the
+              roles <code>X::Await::Died</code>, <code>X::HyperRace::Died</code>
+              and <code>X::Wrapper</code>, so a <code>CATCH</code> that matches
+              one of them may not fire.</li>
           <li><code>RakuAST</code> exists but is far from complete.</li>
           <li>Installing arbitrary ecosystem distributions is not yet dependable —
               see <a href="#packages">mzef</a> above.</li>
