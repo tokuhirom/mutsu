@@ -70,7 +70,7 @@ a separate decision when the first rewriting pass wants one.
 - **Runtime registration and run** (#10468): the private-method and undeclared-attribute checks,
   the END pre-installation, the `$=pod` declarant collection, the grep `last` probe, the module
   export/`state`-sub scans, the slang declarator facts and the static-`require` scan ported
-  (15 walkers; 12 more annotated as spines, transforms or one-scope declaration scans);
+  (15 walkers; 10 more annotated as spines, transforms or one-scope declaration scans);
   `$!x` is now rejected in every position rakudo rejects it, `@!x`/`%!x` too.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning

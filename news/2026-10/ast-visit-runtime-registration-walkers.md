@@ -37,8 +37,8 @@ for the `self!m` and attribute checks, a nested role) is checked against
 itself, a `try` body still defers both checks to run time, and the `require`
 scan stays out of nested blocks, closures and parameter defaults.
 
-Twelve walkers in the same files stay hand-rolled and are now annotated in
+Ten walkers in the same files stay hand-rolled and are now annotated in
 `scripts/ast-walkers-baseline.txt`: the statement-tail spine in `run.rs`, the
 `.defined` shape recognizer in `types/mod.rs`, the BEGIN-prologue transforms
-and one-scope classifiers, and the prelude's mutating marker and one-scope
-declaration prepasses.
+and one-scope classifiers, and the prelude's mutating marker and top-level
+declaration check.
