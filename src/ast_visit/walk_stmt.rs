@@ -139,9 +139,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             names(v, export_tags, NameKind::Module);
             super::walk_stmts(v, body);
         }
-        Stmt::ProtoToken { name } | Stmt::TrustsDecl { name } => {
-            v.visit_name(name.as_str(), NameKind::Decl)
-        }
+        Stmt::ProtoToken { name } => v.visit_name(name.as_str(), NameKind::Decl),
+        Stmt::TrustsDecl { name } => v.visit_name(name.as_str(), NameKind::Type),
         Stmt::Package {
             name,
             body,

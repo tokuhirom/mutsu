@@ -1,0 +1,98 @@
+# Hand-rolled recursive Stmt/Expr walkers, per file (see
+# scripts/check-ast-walkers.py, ADR-0137). Format: <path> <count>  # <note>
+# Counts may only go down: port a walker onto crate::ast_visit::Visit and
+# re-cut with
+#   scripts/check-ast-walkers.py --update
+# Adding a walker means editing this list by hand, which a reviewer sees: say
+# why the visitor cannot express it.
+
+src/analysis/symbols.rs                                 1
+src/ast.rs                                             15
+src/chain_compare.rs                                    1
+src/compiler/begin_use.rs                               2
+src/compiler/const_fold.rs                              2
+src/compiler/control_if.rs                              1
+src/compiler/decl_plan.rs                               3
+src/compiler/expr_binary.rs                             4
+src/compiler/expr_call.rs                               1
+src/compiler/expr_closure.rs                            5
+src/compiler/expr_data.rs                               1
+src/compiler/expr_helpers.rs                            4
+src/compiler/expr_ops.rs                                2
+src/compiler/helpers_ast_utils.rs                       6
+src/compiler/helpers_block_inline.rs                    2
+src/compiler/helpers_call_args.rs                       7
+src/compiler/helpers_control_flow.rs                    7
+src/compiler/helpers_do_expr.rs                         1
+src/compiler/helpers_phasers.rs                         3
+src/compiler/helpers_stmt_analysis.rs                   4
+src/compiler/helpers_sub_body.rs                        1
+src/compiler/mod.rs                                     9
+src/compiler/stmt.rs                                    6
+src/method_signature_shared.rs                          2
+src/opcode.rs                                           5
+src/param_destructure.rs                                1
+src/parser/decl_doc.rs                                  1
+src/parser/expr/mod.rs                                  1
+src/parser/expr/postfix/dot_assign.rs                   1
+src/parser/expr/precedence/assign.rs                    3
+src/parser/expr/precedence/comparison.rs                1
+src/parser/expr/precedence/feed.rs                      2
+src/parser/expr/precedence_meta_ops/arith.rs            1
+src/parser/expr/precedence_meta_ops/hyper_concat.rs     2
+src/parser/expr/whatever.rs                             2
+src/parser/expr/whatever_wrap.rs                        2
+src/parser/outer_redecl/expr.rs                         1
+src/parser/outer_redecl/mod.rs                          2
+src/parser/primary/container/meta_ops.rs                4
+src/parser/primary/ident/supply.rs                      1
+src/parser/primary/misc/colonpair.rs                    1
+src/parser/primary/misc/hash.rs                         1
+src/parser/sink_warn.rs                                 5  # sink-context propagation: visits only sink positions, by design
+src/parser/stmt/args.rs                                 2
+src/parser/stmt/assign/comma.rs                         1
+src/parser/stmt/assign/compound_expr.rs                 1
+src/parser/stmt/assign/lvalue.rs                        1
+src/parser/stmt/class/attr_checks.rs                    3
+src/parser/stmt/class/package_decl.rs                   3
+src/parser/stmt/control/for_loops.rs                    1
+src/parser/stmt/decl/enum_decl.rs                       2
+src/parser/stmt/decl/my_decl_helpers.rs                 1
+src/parser/stmt/modifier.rs                             2
+src/parser/stmt/nested_block_methods.rs                 2
+src/parser/stmt/simple.rs                               1
+src/parser/stmt/simple/lib_paths.rs                     1
+src/parser/stmt/simple/module_exports.rs                7
+src/parser/stmt/simple/module_exports/dynamic_stash.rs  1
+src/parser/stmt/simple/module_exports/enum_values.rs    1
+src/parser/stmt/simple/module_exports/export_hook.rs    5
+src/parser/stmt/simple_expr_stmt/let_temp.rs            1
+src/parser/stmt/sub/param_validate.rs                   1
+src/parser/stmt/sub_param/where_constraint.rs           2
+src/placeholder_order.rs                                4
+src/rakuast/convert.rs                                  8
+src/regex_tree.rs                                       3
+src/runtime/begin_prologue/mod.rs                       5
+src/runtime/begin_prologue/nested.rs                    2
+src/runtime/dispatch_proto_rewrite.rs                   2
+src/runtime/end_phasers.rs                              2
+src/runtime/eval_check.rs                               8
+src/runtime/methods_collection_ops/grep.rs              2
+src/runtime/phasers.rs                                  6
+src/runtime/registration.rs                             4
+src/runtime/registration_class_attr.rs                  2
+src/runtime/run.rs                                      4
+src/runtime/run_modules.rs                              2
+src/runtime/run_prelude.rs                              4
+src/runtime/slang_declarator.rs                         1
+src/runtime/system.rs                                   2
+src/runtime/system_eval_names.rs                        8
+src/runtime/system_eval_vars.rs                         7
+src/runtime/types/mod.rs                                1
+src/trir/compile/expr.rs                                3
+src/vm/vm_call_func_ops.rs                              4
+src/vm/vm_native_map.rs                                 1
+src/whatever_curry/build.rs                             4
+src/whatever_curry/mark/stmt.rs                         1
+src/whatever_curry/replace.rs                           2
+src/with_desugar.rs                                     1
