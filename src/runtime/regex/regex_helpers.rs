@@ -1125,7 +1125,8 @@ fn remap_caps_spans_mapped(
     }
     for sc in caps
         .named
-        .values_mut()
+        .iter_mut()
+        .map(|(_, v)| v)
         .flat_map(|slot| slot.nodes.iter_mut())
     {
         remap_cap_node_spans_mapped(
@@ -1190,7 +1191,8 @@ fn remap_cap_node_spans_mapped(
     };
     for sc in children
         .named
-        .values_mut()
+        .iter_mut()
+        .map(|(_, v)| v)
         .flat_map(|slot| slot.nodes.iter_mut())
     {
         remap_cap_node_spans_mapped(
@@ -1473,7 +1475,7 @@ pub(super) fn merge_regex_captures(
     mut src: RegexCaptures,
 ) -> RegexCaptures {
     for (k, v) in src.named.drain() {
-        dst.named.entry(k).or_default().merge(v);
+        dst.named.slot_mut(k).merge(v);
     }
     dst.extend_capture_alias_map(src.take_capture_alias_map());
     dst.positional.append(&mut src.positional);

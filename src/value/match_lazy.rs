@@ -518,7 +518,7 @@ mod tests {
         caps.named.insert(
             Symbol::intern("x"),
             crate::runtime::NamedSlot {
-                nodes: vec![Arc::clone(&child)],
+                nodes: crate::runtime::CapNodes::one(Arc::clone(&child)),
                 quantified: false,
             },
         );

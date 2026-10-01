@@ -9,25 +9,14 @@
 //! those siblings keep their access (the whole set is re-exported from
 //! `runtime` via `pub(crate) use self::regex_types::*`).
 
+use super::regex_named_caps::NamedCaptureMap;
 use crate::symbol::Symbol;
 use crate::value::Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
-/// The named-capture map shape shared by [`RegexCaptures`], [`CapChildren`]
-/// and every helper that walks one.
-///
-/// Fx-hashed, not SipHash-hashed, on purpose: the key is an interned
-/// [`Symbol`] (a `u32`), these maps are probed and rebuilt several times per
-/// matched capture, and a regex capture name is never adversarial input in the
-/// sense SipHash's DoS resistance exists for. A callgrind profile of a YAML
-/// parse put `sip::Hasher::write` + `BuildHasher::hash_one` at ~8% of the whole
-/// program, with the regex-capture maps among the dominant callers
-/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-pub(crate) type NamedCaptureMap = HashMap<Symbol, NamedSlot>;
-
 /// The `:my $var = …` regex-variable map shape, Fx-hashed for the same
-/// reason as [`NamedCaptureMap`].
+/// reason as the regex capture maps.
 pub(crate) type RegexVarMap = HashMap<String, Value>;
 
 #[derive(Clone)]
@@ -177,39 +166,6 @@ impl PosSlot {
     }
 }
 
-/// One named capture's entries (ADR-0016 P4) — the collapse of the three
-/// parallel named collections (`named` text map ‖ `named_subcaps` ‖
-/// `named_quantified`). Every entry is a span-bearing capture node; the
-/// captured text derives from the node's span through the shared subject.
-#[derive(Clone, Default)]
-pub(crate) struct NamedSlot {
-    pub(crate) nodes: Vec<Arc<CapNode>>,
-    /// The name was captured under a quantifier (or `@<name>=` forced list):
-    /// the Match presents it as an Array even for zero or one entries.
-    pub(crate) quantified: bool,
-}
-
-impl NamedSlot {
-    /// A slot holding one span-only leaf entry.
-    pub(crate) fn leaf(from: usize, to: usize) -> Self {
-        NamedSlot {
-            nodes: vec![Arc::new(CapNode {
-                from,
-                to,
-                ..Default::default()
-            })],
-            quantified: false,
-        }
-    }
-
-    /// Fold another slot's entries into this one (capture-merge semantics:
-    /// entries append, the quantified flag is sticky).
-    pub(crate) fn merge(&mut self, other: NamedSlot) {
-        self.nodes.extend(other.nodes);
-        self.quantified |= other.quantified;
-    }
-}
-
 /// The enclosing pattern level's captures, as seen by a **backreference inside
 /// an inline sub-pattern**. A group / alternation / lookaround body is matched
 /// by its own nested engine walk with its own (empty) capture store, so
@@ -243,7 +199,7 @@ impl OuterBackrefCaps {
             parent.append_captures(out);
         }
         for (key, slot) in &self.named {
-            out.named.entry(*key).or_default().merge(slot.clone());
+            out.named.slot_mut(*key).merge(slot.clone());
         }
         out.positional.extend(self.positional.iter().cloned());
     }
@@ -389,7 +345,7 @@ impl RegexCaptures {
             visible.positional.extend(self.positional.iter().cloned());
         }
         for (key, slot) in &self.named {
-            visible.named.entry(*key).or_default().merge(slot.clone());
+            visible.named.slot_mut(*key).merge(slot.clone());
         }
         visible
     }

@@ -34,7 +34,7 @@ pub(super) fn separated_capture_delta(
 ) -> RegexCaptures {
     let mut caps = RegexCaptures::default();
     for n in names {
-        caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+        caps.named.slot_mut(Symbol::intern(n)).quantified = true;
     }
     Interpreter::append_separated_captures(
         &mut caps,
@@ -122,10 +122,7 @@ impl Interpreter {
         let zero = (min == 0).then(|| {
             let mut caps = RegexCaptures::default();
             for name in &names {
-                caps.named
-                    .entry(Symbol::intern(name))
-                    .or_default()
-                    .quantified = true;
+                caps.named.slot_mut(Symbol::intern(name)).quantified = true;
             }
             (start, caps)
         });
@@ -305,7 +302,7 @@ impl Interpreter {
             // `match_separated_quantifier`).
             let mut caps = RegexCaptures::default();
             for n in Self::collect_quantified_names_for_token(token) {
-                caps.named.entry(Symbol::intern(&n)).or_default().quantified = true;
+                caps.named.slot_mut(Symbol::intern(&n)).quantified = true;
             }
             return vec![(start, caps)];
         }
@@ -523,7 +520,7 @@ impl Interpreter {
         // Named captures: merge every iteration's named captures (as arrays).
         for src in atom_caps.iter().chain(all_sep.iter().copied()) {
             for (k, v) in &src.named {
-                let slot = caps.named.entry(*k).or_default();
+                let slot = caps.named.slot_mut(*k);
                 slot.merge(v.clone());
                 slot.quantified = true;
             }

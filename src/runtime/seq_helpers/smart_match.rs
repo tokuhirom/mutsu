@@ -1069,9 +1069,7 @@ impl Interpreter {
                     for hash_name in captures.hash_captures().keys() {
                         // Don't overwrite existing named captures; an empty
                         // placeholder slot makes the builder create the key.
-                        named_with_hash
-                            .entry(Symbol::intern(hash_name))
-                            .or_default();
+                        named_with_hash.slot_mut(Symbol::intern(hash_name));
                     }
                     let match_obj = Value::make_match_object_full_visible(
                         captures.from as i64,

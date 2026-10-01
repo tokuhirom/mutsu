@@ -554,7 +554,7 @@ impl Interpreter {
                 {
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
+                        new_caps.named.slot_mut(k).merge(v);
                     }
                     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                     new_caps.positional.append(&mut inner_caps.positional);
@@ -1274,12 +1274,7 @@ impl Interpreter {
             // then multiplied, firing a leaf's action 2^depth times (256x
             // on `benchmarks/bench-yaml-parse.raku`).
             let shared_under_original = also_under_original.then(|| std::sync::Arc::clone(&subcap));
-            new_caps
-                .named
-                .entry(capture_sym)
-                .or_default()
-                .nodes
-                .push(subcap);
+            new_caps.named.slot_mut(capture_sym).nodes.push(subcap);
             if is_alias {
                 new_caps
                     .capture_alias_map_mut()
@@ -1288,8 +1283,7 @@ impl Interpreter {
             if let Some(orig_subcap) = shared_under_original {
                 new_caps
                     .named
-                    .entry(spec.lookup_sym)
-                    .or_default()
+                    .slot_mut(spec.lookup_sym)
                     .nodes
                     .push(orig_subcap);
             }
@@ -1332,8 +1326,7 @@ impl Interpreter {
             super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
             new_caps
                 .named
-                .entry(spec.silent_marker_sym)
-                .or_default()
+                .slot_mut(spec.silent_marker_sym)
                 .nodes
                 .push(subcap);
         } else {

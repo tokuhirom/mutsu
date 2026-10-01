@@ -362,8 +362,7 @@ impl Interpreter {
                     let mut subcap = best.clone();
                     subcap.set_sym(best_sym);
                     best.named
-                        .entry(Symbol::intern(&spec.lookup_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&spec.lookup_name))
                         .nodes
                         .push(std::sync::Arc::new(subcap.into_cap_node()));
                 }

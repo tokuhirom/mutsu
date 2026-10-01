@@ -16,7 +16,6 @@
 //! and goal failures persist across backtracks by design.
 
 use super::super::*;
-use std::collections::hash_map::Entry;
 
 /// Saved tail for a positional truncation (slots moved out, moved back on
 /// rewind). Boxed to keep `Undo` small.
@@ -244,31 +243,14 @@ impl CapStore {
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
             // One probe of `named`, not two: the undo record wants exactly the
-            // slot state the `entry` below is about to hand out, so recording it
-            // through a separate `get` (what `record_named_key` does for callers
-            // that have no entry in hand) hashed and searched for the same key
-            // twice per merged capture.
-            let slot = match self.caps.named.entry(k) {
-                Entry::Occupied(occupied) => {
-                    let slot = occupied.into_mut();
-                    self.trail.push(Undo::NamedTrunc {
-                        key: k,
-                        len: slot.nodes.len(),
-                        present: true,
-                        quantified: slot.quantified,
-                    });
-                    slot
-                }
-                Entry::Vacant(vacant) => {
-                    self.trail.push(Undo::NamedTrunc {
-                        key: k,
-                        len: 0,
-                        present: false,
-                        quantified: false,
-                    });
-                    vacant.insert(NamedSlot::default())
-                }
-            };
+            // slot state the probe below hands out.
+            let (present, slot) = self.caps.named.slot_entry(k);
+            self.trail.push(Undo::NamedTrunc {
+                key: k,
+                len: slot.nodes.len(),
+                present,
+                quantified: slot.quantified,
+            });
             slot.nodes.extend(v.nodes);
             slot.quantified |= v.quantified;
         }
@@ -323,7 +305,7 @@ impl CapStore {
     pub(super) fn push_named_node(&mut self, key: &str, sub: Arc<CapNode>) {
         let key = crate::symbol::Symbol::intern(key);
         self.record_named_key(key);
-        self.caps.named.entry(key).or_default().nodes.push(sub);
+        self.caps.named.slot_mut(key).nodes.push(sub);
     }
 
     /// Mark a name as quantified (renders as an Array even for 0/1 entries).
@@ -332,7 +314,7 @@ impl CapStore {
         let already = self.caps.named.get(&name).is_some_and(|s| s.quantified);
         if !already {
             self.record_named_key(name);
-            self.caps.named.entry(name).or_default().quantified = true;
+            self.caps.named.slot_mut(name).quantified = true;
         }
     }
 
@@ -435,8 +417,7 @@ mod tests {
         let mut init = RegexCaptures::default();
         init.positional.push(PosSlot::span(0, 1));
         init.named
-            .entry(Symbol::intern("x"))
-            .or_default()
+            .slot_mut(Symbol::intern("x"))
             .merge(NamedSlot::leaf(0, 1));
         CapStore::new(init)
     }
@@ -466,10 +447,9 @@ mod tests {
         delta.positional.push(PosSlot::span(1, 2));
         delta
             .named
-            .entry(Symbol::intern("x"))
-            .or_default()
+            .slot_mut(Symbol::intern("x"))
             .merge(NamedSlot::leaf(2, 3));
-        let y = delta.named.entry(Symbol::intern("y")).or_default();
+        let y = delta.named.slot_mut(Symbol::intern("y"));
         y.merge(NamedSlot::leaf(3, 4));
         y.quantified = true;
         delta.capture_start = Some(3);
@@ -485,7 +465,7 @@ mod tests {
         assert_eq!(store.caps().sym().map(String::as_str), Some("s"));
         store.rewind(m);
         assert_base(&store);
-        assert!(!store.caps().named.contains_key(&y));
+        assert!(!store.caps().named.get(&y).is_some());
     }
 
     #[test]
@@ -552,6 +532,6 @@ mod tests {
         assert_eq!(store.caps().named[&k].nodes.len(), 1);
         assert!(!store.caps().named[&k].quantified);
         store.rewind(m1);
-        assert!(!store.caps().named.contains_key(&k));
+        assert!(!store.caps().named.get(&k).is_some());
     }
 }
