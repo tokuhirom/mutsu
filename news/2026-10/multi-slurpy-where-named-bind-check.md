@@ -23,4 +23,4 @@ ranking (`pick_method_winner`) now both work this way:
   as `X::Multi::Ambiguous` (`multi f(:$a)` / `multi f(:$b)` for `f()` runs
   the first). Purely positional ties are still ambiguous.
 
-Pinned by `t/routines/dispatch/multi-slurpy-where-named-bind-check.t`.
+Pinned by `t/routines/dispatch/multi-variadic-where-named-bind-check.t`.
