@@ -132,7 +132,7 @@ libloading = { version = "0.9", optional = true }
 # run time (native only).
 libffi = { version = "5", optional = true }
 # KEEP (a): the Cranelift method JIT (ADR-0004), behind the `jit` feature.
-cranelift-codegen = { version = "0.133", optional = true }
+cranelift-codegen = { version = "0.134", optional = true }
 cranelift-frontend = { version = "0.133", optional = true }
 cranelift-jit = { version = "0.133", optional = true }
 cranelift-module = { version = "0.133", optional = true }
