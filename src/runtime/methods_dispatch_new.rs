@@ -408,9 +408,25 @@ impl Interpreter {
         // Resolve every named argument to its declared-attribute index ONCE (a
         // hash lookup each) instead of re-scanning `class_attrs` linearly per
         // argument below, and per `@`/`%` attribute in the seed loop.
+        // A custom BUILD takes over the named-arg -> attribute mapping for the
+        // attributes of the layer declaring it (Raku's BUILDALL runs one build
+        // step per class): `bless(:address(...))` hands the value to
+        // `submethod BUILD(:@address)`, it is not also stored into the attribute
+        // (where a typed `has Int @.address` would reject it before BUILD runs).
+        let build_owned_attrs = if plan.has_build {
+            let mro_names: Vec<String> = self
+                .class_mro(cn_resolved)
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            self.build_owning_attr_names(&mro_names)
+        } else {
+            Default::default()
+        };
         let arg_attr_idx: Vec<Option<u32>> = args
             .iter()
             .map(|a| match a.view() {
+                ValueView::Pair(key, _) if build_owned_attrs.contains(key.as_str()) => None,
                 ValueView::Pair(key, _) => plan.attr_index.get(key.as_str()).copied(),
                 _ => None,
             })
@@ -587,6 +603,9 @@ impl Interpreter {
         // passthrough in a user `new`); anything else interns as before.
         for (arg, attr_idx) in args.iter().zip(arg_attr_idx.iter()) {
             if let ValueView::Pair(key, value) = arg.view() {
+                if build_owned_attrs.contains(key.as_str()) {
+                    continue;
+                }
                 match attr_idx.map(|i| i as usize) {
                     Some(i) => {
                         // Sigil-coerce like `dispatch_new` does: a `%`-attribute
