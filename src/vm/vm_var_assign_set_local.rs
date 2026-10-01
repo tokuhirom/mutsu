@@ -2150,11 +2150,9 @@ impl Interpreter {
                     && !self.type_matches_value(constraint, check_val)
                 {
                     return Err(if binding {
-                        runtime::utils::type_check_binding_typed_error(constraint, check_val)
+                        self.type_check_binding_failure(constraint, check_val)
                     } else {
-                        runtime::utils::type_check_assignment_typed_error(
-                            name, constraint, check_val,
-                        )
+                        self.type_check_assignment_failure(name, constraint, check_val)
                     });
                 }
                 if !(val.is_nil() || binding && val.is_proxy_value()) {

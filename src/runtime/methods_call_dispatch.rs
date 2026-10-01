@@ -3590,11 +3590,7 @@ impl Interpreter {
                             })
                         && !self.type_matches_value(&constraint, value)
                     {
-                        return Err(crate::runtime::utils::type_check_element_typed_error(
-                            &var_name,
-                            &constraint,
-                            value,
-                        ));
+                        return Err(self.type_check_element_failure(&var_name, &constraint, value));
                     }
 
                     // For shaped arrays, check bounds

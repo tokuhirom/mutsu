@@ -974,6 +974,7 @@ mod system_introspect;
 mod tap_state;
 mod test_module_predicates;
 pub(crate) mod thread_compat;
+mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.

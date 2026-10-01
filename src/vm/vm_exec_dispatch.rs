@@ -2013,7 +2013,7 @@ impl Interpreter {
                             {
                                 return Err(err);
                             }
-                            return Err(runtime::utils::type_check_assignment_typed_error(
+                            return Err(self.type_check_assignment_failure(
                                 &name,
                                 &constraint,
                                 &val,

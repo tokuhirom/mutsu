@@ -2000,12 +2000,13 @@ impl Interpreter {
                             pd.is_some_and(|pd| pd.is_invocant),
                         ));
                     }
-                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                        &crate::runtime::types::param_display_name(pd.unwrap()),
-                        expected,
-                        &val,
-                    )
-                    .with_parameter_object(pd.unwrap(), Some(&*self)));
+                    return Err(self
+                        .typecheck_binding_parameter_failure(
+                            &crate::runtime::types::param_display_name(pd.unwrap()),
+                            expected,
+                            &val,
+                        )
+                        .with_parameter_object(pd.unwrap(), Some(&*self)));
                 }
                 param_values.push((binding_name, val));
                 arg_idx += 1;

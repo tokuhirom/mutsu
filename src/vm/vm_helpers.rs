@@ -90,13 +90,11 @@ impl Interpreter {
             // `@a[0] = v` store does ("Type check failed for an element of
             // @a"); a plain typed scalar's cell keeps the assignment wording.
             return Err(match c.element_of {
-                Some(owner) => {
-                    crate::runtime::utils::type_check_element_typed_error(&owner, &c.ty, val)
-                }
+                Some(owner) => self.type_check_element_failure(&owner, &c.ty, val),
                 // `assign_to` is the name the cell was promoted from, so a write
                 // arriving through an alias or from another frame still reads
                 // "in assignment to $a" like rakudo's descriptor-carried wording.
-                None => RuntimeError::typecheck_assignment(&c.ty, val, c.assign_to.as_deref()),
+                None => self.typecheck_assignment_failure(&c.ty, val, c.assign_to.as_deref()),
             });
         }
         Ok(())
@@ -192,11 +190,7 @@ impl Interpreter {
             return Ok(());
         }
         if !self.type_matches_value(&constraint, &check_val) {
-            return Err(crate::runtime::utils::type_check_assignment_typed_error(
-                target_name,
-                &constraint,
-                &check_val,
-            ));
+            return Err(self.type_check_assignment_failure(target_name, &constraint, &check_val));
         }
         Ok(())
     }

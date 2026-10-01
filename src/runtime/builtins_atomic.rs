@@ -114,11 +114,7 @@ impl Interpreter {
             if value.is_nil() {
                 value = Value::package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
-                return Err(crate::runtime::utils::type_check_assignment_typed_error(
-                    name,
-                    &constraint,
-                    &value,
-                ));
+                return Err(self.type_check_assignment_failure(name, &constraint, &value));
             }
             if !matches!(value.view(), ValueView::Nil | ValueView::Package(_)) {
                 value = self.try_coerce_value_for_constraint(&constraint, value)?;

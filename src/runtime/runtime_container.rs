@@ -33,9 +33,7 @@ impl Interpreter {
         {
             for item in &items {
                 if !self.type_matches_value(constraint, item) {
-                    return Err(crate::runtime::utils::type_check_element_typed_error(
-                        "", constraint, item,
-                    ));
+                    return Err(self.type_check_element_failure("", constraint, item));
                 }
             }
         }
@@ -454,11 +452,7 @@ impl Interpreter {
         if let Some(constraint) = self.element_constraint_for(var_name, target) {
             for val in values {
                 if !val.is_nil() && !self.type_matches_value(&constraint, val) {
-                    return Err(crate::runtime::utils::type_check_element_typed_error(
-                        var_name,
-                        &constraint,
-                        val,
-                    ));
+                    return Err(self.type_check_element_failure(var_name, &constraint, val));
                 }
             }
         }
@@ -477,9 +471,7 @@ impl Interpreter {
             if constraint != "Mu" && constraint != "Any" {
                 for val in values {
                     if !val.is_nil() && !self.type_matches_value(constraint, val) {
-                        return Err(crate::runtime::utils::type_check_element_typed_error(
-                            "@_", constraint, val,
-                        ));
+                        return Err(self.type_check_element_failure("@_", constraint, val));
                     }
                 }
             }
@@ -615,9 +607,7 @@ impl Interpreter {
                     // The freshly re-seeded element type object is type-legal.
                     && !(matches!(it.view(), ValueView::Package(p) if p.resolve() == elem_type))
                 {
-                    return Err(crate::runtime::utils::type_check_element_typed_error(
-                        &display, elem_type, it,
-                    ));
+                    return Err(self.type_check_element_failure(&display, elem_type, it));
                 }
             }
             let info = ContainerTypeInfo {

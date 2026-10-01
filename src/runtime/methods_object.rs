@@ -810,9 +810,7 @@ impl Interpreter {
             if inner.starts_with(char::is_uppercase) {
                 for it in &items {
                     if !it.is_nil() && !self.type_matches_value(&inner, it) {
-                        return Err(crate::runtime::utils::type_check_element_typed_error(
-                            "", &inner, it,
-                        ));
+                        return Err(self.type_check_element_failure("", &inner, it));
                     }
                 }
             }
