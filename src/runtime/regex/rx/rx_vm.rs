@@ -21,7 +21,7 @@ use std::sync::Arc;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_call::CallTarget;
 use super::rx_entry::{Goal, Scratch, program_for};
-use super::rx_frame::{Choice, FMark, Frame, MAX_FRAME_DEPTH, Mark};
+use super::rx_frame::{Choice, FMark, Frame, MAX_FRAME_DEPTH, Mark, ProtoChoice};
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
@@ -382,7 +382,7 @@ impl Interpreter {
                                         // rest of the ranking too.
                                         let stack_base = stack.len();
                                         if ranked.len() > 1 {
-                                            push_choice!(Choice::Proto {
+                                            push_choice!(Choice::Proto(Box::new(ProtoChoice {
                                                 pc: pc + 1,
                                                 pos,
                                                 atom,
@@ -390,7 +390,7 @@ impl Interpreter {
                                                 ranked: Rc::new(ranked),
                                                 next: 1,
                                                 mark: mark!(),
-                                            });
+                                            })));
                                         }
                                         let (parsed, sub_pkg, _) = &cands[first];
                                         let Some(callee) = program_for(parsed) else {
@@ -639,6 +639,7 @@ impl Interpreter {
                     | RxOp::AltTail { .. }
                     | RxOp::Collect { .. }
                     | RxOp::SepEmit { .. }
+                    | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
                     | RxOp::ConjTail { .. }) => {
@@ -793,20 +794,21 @@ impl Interpreter {
                             break 'run None;
                         }
                         Choice::At { pc, pos, mark } => (pc, pos, mark),
-                        Choice::Proto {
-                            pc,
-                            pos,
-                            atom,
-                            cands,
-                            ranked,
-                            next,
-                            mark,
-                        } => {
+                        Choice::Proto(proto) => {
+                            let ProtoChoice {
+                                pc,
+                                pos,
+                                atom,
+                                cands,
+                                ranked,
+                                next,
+                                mark,
+                            } = *proto;
                             // The call's own height: its entry is popped.
                             let stack_base = stack.len();
                             let idx = ranked[next];
                             if next + 1 < ranked.len() {
-                                repush!(Choice::Proto {
+                                repush!(Choice::Proto(Box::new(ProtoChoice {
                                     pc,
                                     pos,
                                     atom,
@@ -814,7 +816,7 @@ impl Interpreter {
                                     ranked: Rc::clone(&ranked),
                                     next: next + 1,
                                     mark,
-                                });
+                                })));
                             }
                             enter_proto = Some((atom, pos, pc, cands, idx, stack_base));
                             (pc, pos, mark)
@@ -949,9 +951,11 @@ impl Interpreter {
                 }
             }
         };
-        // Drop the frames the leftover choice points hold.
-        stack.clear();
-        fmarks.clear();
+        if FRAMES {
+            // Drop the frames the leftover choice points hold.
+            stack.clear();
+            fmarks.clear();
+        }
         super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }

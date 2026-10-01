@@ -106,6 +106,7 @@ impl Interpreter {
 
     /// Does the dynamic context let the compiled engine run at all?
     // Cost: O(1).
+    #[inline]
     fn rx_context_allows(&mut self) -> bool {
         use super::super::regex_helpers as h;
         rx_vm_enabled()
@@ -119,10 +120,13 @@ impl Interpreter {
             // from the compiled engine on both sides.
             && !(rx_diff_enabled() && super::rx_diff::replaying())
             // D6 can record and replay a code atom, but not user code reached
-            // through a wrapped token or a custom HOW: the walk's replay would
-            // run it a second time. Differential mode declines those matches.
+            // through a wrapped token, a custom HOW or a reduce-time action: the
+            // walk's replay would run it a second time. Differential mode
+            // declines those matches.
             && !(rx_diff_enabled()
-                && (self.has_any_wrap_chains() || !self.registry().grammar_custom_how.is_empty()))
+                && (self.has_any_wrap_chains()
+                    || !self.registry().grammar_custom_how.is_empty()
+                    || super::super::regex_helpers::dynvar_overlay_active()))
     }
 
     fn rx_try_match_in(

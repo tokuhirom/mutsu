@@ -90,6 +90,20 @@ pub(super) struct FMark {
     pub(super) frame: Option<Rc<Frame>>,
 }
 
+/// The next candidate of a proto call, in the order the call ranked them:
+/// `cands[ranked[next]]` runs as a frame, called at `pos` and returning to `pc`,
+/// once the one before it failed. A candidate that returns commits the call,
+/// which drops this entry with the rest.
+pub(super) struct ProtoChoice {
+    pub(super) pc: u32,
+    pub(super) pos: usize,
+    pub(super) atom: u32,
+    pub(super) cands: Arc<Vec<ParsedTokenCandidate>>,
+    pub(super) ranked: Rc<Vec<usize>>,
+    pub(super) next: usize,
+    pub(super) mark: Mark,
+}
+
 /// A point to resume from on failure.
 pub(super) enum Choice {
     /// A choice point that was given up (`GoalOk`): popping it fails on.
@@ -106,19 +120,9 @@ pub(super) enum Choice {
         hi: usize,
         mark: Mark,
     },
-    /// The next candidate of a proto call, in the order the call ranked them:
-    /// `cands[ranked[next]]` runs as a frame, called at `pos` and returning to
-    /// `pc`, once the one before it failed. A candidate that returns commits the
-    /// call, which drops this entry with the rest.
-    Proto {
-        pc: u32,
-        pos: usize,
-        atom: u32,
-        cands: Arc<Vec<ParsedTokenCandidate>>,
-        ranked: Rc<Vec<usize>>,
-        next: usize,
-        mark: Mark,
-    },
+    /// The next candidate of a proto call (boxed: it is the one wide variant, and
+    /// every choice point pays for the widest).
+    Proto(Box<ProtoChoice>),
     /// The remaining candidates of an `InterpEnds` or a bridged `Call`:
     /// `cands[left - 1]` (end and capture delta) is next, then the ones below
     /// it. `cands` is lowest priority first.

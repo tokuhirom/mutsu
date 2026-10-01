@@ -199,6 +199,13 @@ pub(super) enum RxOp {
     /// walk's LTM key and enter them best first, each lower-ranked one only
     /// when everything above it has failed (ADR-0135 D4).
     LtmAlt(u32),
+    /// An iteration of the `*` / `+` over the `<subrule>` `toks[tok]` committed:
+    /// run its action now when an action-driven parse reads a `$*` variable that
+    /// action may write (`maybe_run_reduce_time_dynvar_action`, the walk's own;
+    /// a no-op for every other grammar).
+    ReduceAction {
+        tok: u32,
+    },
     /// The end of one `||` branch: pad the alternation `alts[alt]`'s
     /// positional slot space past what the branch took since `regs[pos_base]`
     /// (unless `suppress_padding`), and mark its list-valued names quantified.

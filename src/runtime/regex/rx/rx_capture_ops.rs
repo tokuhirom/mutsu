@@ -174,6 +174,14 @@ impl Interpreter {
                 }
                 levels.edit(|s| s.merge_delta(merged));
             }
+            // Cost: O(1) unless an action-driven parse reads a `$*` variable;
+            // then one run of the iteration's action.
+            RxOp::ReduceAction { tok } => {
+                self.maybe_run_reduce_time_dynvar_action(
+                    &program.toks[tok as usize],
+                    levels.top().caps(),
+                );
+            }
             // Cost: O(1).
             RxOp::Collect { sep } => levels.collect(sep),
             // Cost: O(c), c = the captures of the inner pattern and the goal

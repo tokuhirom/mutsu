@@ -728,6 +728,16 @@ impl Compiler {
                 max,
             });
         }
+        // The walk runs a committed `*` / `+` iteration's subrule action here
+        // when a `$*` variable it may write is read (`grow_one_iter`); `**`
+        // does not.
+        if matches!(token.atom, RegexAtom::Named(_))
+            && matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore)
+        {
+            let tok = self.toks.len() as u32;
+            self.toks.push(token.clone());
+            self.ops.push(RxOp::ReduceAction { tok });
+        }
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));
         let exit = self.pc();
