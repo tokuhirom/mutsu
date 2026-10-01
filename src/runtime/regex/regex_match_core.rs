@@ -1301,14 +1301,22 @@ impl Interpreter {
         let prior_quantified = suppress_padding.then(|| {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.replace(true))
         });
+        // Code in the atom sees the iterations so far folded (`regex_match_plain_view`).
+        let view = super::regex_match_plain_view::arm_plain_iter_view(
+            &token.atom,
+            store.caps(),
+            pos_base,
+            count_capture_groups(&token.atom),
+        );
         let matched = self.regex_match_atom_with_capture_in_pkg(
             &token.atom,
             ctx.chars,
             current,
-            store.caps(),
+            view.as_ref().map_or(store.caps(), |(view, _)| view),
             ctx.pkg,
             ctx.pattern.ignore_case,
         );
+        drop(view);
         if let Some(prior) = prior_quantified {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));
         }
@@ -1625,16 +1633,41 @@ impl Interpreter {
                 store.rewind(mark);
                 stop
             };
-            self.for_each_atom_candidate(
+            // Code in the atom sees the iterations so far folded
+            // (`regex_match_plain_view`): the atom matches against a store
+            // holding that view, its candidates continue on the real one.
+            match super::regex_match_plain_view::arm_plain_iter_view(
                 &token.atom,
-                ctx.chars,
-                current,
-                store,
-                ctx.pkg,
-                ctx.pattern.ignore_case,
-                false,
-                &mut next,
-            );
+                store.caps(),
+                pos_base,
+                stride,
+            ) {
+                Some((view, _scope)) => {
+                    let mut view_store = CapStore::new(view);
+                    self.for_each_atom_candidate(
+                        &token.atom,
+                        ctx.chars,
+                        current,
+                        &mut view_store,
+                        ctx.pkg,
+                        ctx.pattern.ignore_case,
+                        false,
+                        &mut |interp, _view_store, end, delta| next(interp, store, end, delta),
+                    );
+                }
+                None => {
+                    self.for_each_atom_candidate(
+                        &token.atom,
+                        ctx.chars,
+                        current,
+                        store,
+                        ctx.pkg,
+                        ctx.pattern.ignore_case,
+                        false,
+                        &mut next,
+                    );
+                }
+            }
         }
         if let Some(prior) = prior_quantified {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));

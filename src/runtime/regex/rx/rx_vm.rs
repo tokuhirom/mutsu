@@ -747,6 +747,8 @@ impl Interpreter {
                     op @ (RxOp::OpenCapture
                     | RxOp::OpenInline
                     | RxOp::OpenSepIter { .. }
+                    | RxOp::OpenPlainIter { .. }
+                    | RxOp::ClosePlainIter
                     | RxOp::OpenIsolated
                     | RxOp::DropCapture
                     | RxOp::CloseCapture { .. }
