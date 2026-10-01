@@ -908,6 +908,7 @@ mod registry;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
 mod repl_compiler_prelude;
+mod require_stub;
 pub(crate) mod resolution;
 mod resolution_call_sub;
 mod resolution_deferral;

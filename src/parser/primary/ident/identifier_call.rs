@@ -386,6 +386,10 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
                 crate::parser::stmt::simple::note_type_index_incomplete();
             } else {
                 crate::parser::stmt::simple::register_module_exports(&module_name);
+                // Rakudo declares the target as a stub package while it parses
+                // the statement, so the bare name is a type from here on even
+                // when the load later fails (see `compiler/require_stubs.rs`).
+                crate::parser::stmt::simple::register_user_type(&module_name);
             }
         }
         // `require ::($computed)` names a module only at run time, so the

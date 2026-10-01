@@ -3806,6 +3806,11 @@ pub(crate) enum OpCode {
     /// Same as RegisterPackage but marks the name as block-declared
     /// so it is cleaned up when the enclosing block scope exits.
     RegisterPackageMy { name_idx: u32 },
+    /// Declare the lexical placeholder of a statically named `require Foo` on
+    /// entry to its scope (see `compiler/require_stubs.rs`). A no-op when the
+    /// name already resolves, so it never shadows a loaded module or a real
+    /// declaration.
+    DeclareRequireStub { name_idx: u32 },
     /// Register a package as a stub (body is `...`, `!!!`, or `???`).
     RegisterPackageStub { name_idx: u32 },
     /// Clear a package stub when the package is redefined with a real body.
@@ -10811,6 +10816,7 @@ impl CompiledCode {
                     | OpCode::RegisterEnum(_)
                     | OpCode::RegisterPackage { .. }
                     | OpCode::RegisterPackageMy { .. }
+                    | OpCode::DeclareRequireStub { .. }
             );
         }
         // Peephole (ADR-0006 §2.3): a `my $x = <expr>` declaration always ends in

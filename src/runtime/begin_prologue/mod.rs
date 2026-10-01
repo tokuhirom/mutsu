@@ -39,8 +39,6 @@ mod package_body;
 mod package_phasers;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::ast_visit::{Visit, walk_expr};
-use crate::value::ValueView;
 use std::collections::HashSet;
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
@@ -218,19 +216,6 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         rest.extend(runtime);
         return;
     }
-    // A `require` of a statically named module installs a stub package under
-    // that name at BEGIN time, even though the load itself happens at run time.
-    // That stub is Rakudo's `package Foo {}`, so the prologue declares one.
-    // The real load then fills it in.
-    for name in static_require_targets(&stmt) {
-        prologue.push(Stmt::Package {
-            name: crate::symbol::Symbol::intern(&name),
-            body: Vec::new(),
-            kind: crate::ast::PackageKind::Package,
-            is_unit: false,
-            is_my: false,
-        });
-    }
     if let Some((static_decl, assign)) = crate::runtime::phasers::split_var_decl(&stmt) {
         prologue.push(static_decl);
         rest.extend(assign);
@@ -258,51 +243,6 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         return;
     }
     rest.push(stmt);
-}
-
-/// The statically named targets of the `require` expressions in a run-time
-/// statement, excluding file paths. Only the statement's own expression tree
-/// is searched: a `require` inside a nested block or closure belongs to that
-/// scope, which this slice does not reorder (ADR-0134 slice 2).
-fn static_require_targets(stmt: &Stmt) -> Vec<String> {
-    let mut out = Vec::new();
-    match stmt {
-        Stmt::Expr(e) | Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => {
-            collect_static_requires(e, &mut out)
-        }
-        _ => {}
-    }
-    out
-}
-
-// Cost: O(n), n = size of the expression tree (closures excluded).
-fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
-    let mut scan = StaticRequires(out);
-    scan.visit_expr(expr);
-}
-
-/// The walk of [`collect_static_requires`] (ADR-0137 visitor).
-struct StaticRequires<'a>(&'a mut Vec<String>);
-
-impl Visit for StaticRequires<'_> {
-    // A statement reached from an expression sits in a nested block, closure
-    // or `do`, whose `require` belongs to that scope (see
-    // [`static_require_targets`]).
-    fn visit_stmt(&mut self, _stmt: &Stmt) {}
-
-    // A parameter default belongs to its closure's scope too.
-    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
-
-    fn visit_expr(&mut self, expr: &Expr) {
-        if let Expr::Call { name, args } = expr
-            && name.resolve() == "require"
-            && let Some(Expr::Literal(target)) = args.first()
-            && let ValueView::Package(module) = target.view()
-        {
-            self.0.push(module.resolve());
-        }
-        walk_expr(self, expr);
-    }
 }
 
 /// A statement that extends the prologue's bound: a `BEGIN`, a `constant`, and
@@ -536,30 +476,4 @@ fn if_condition_check(condition: Expr) -> Vec<Stmt> {
             with_kind: None,
         },
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn requires(src: &str) -> Vec<String> {
-        let stmts = crate::parse_dispatch::parse_source(src)
-            .map(|(stmts, _)| stmts)
-            .unwrap();
-        stmts.iter().flat_map(static_require_targets).collect()
-    }
-
-    #[test]
-    fn a_require_anywhere_in_the_statement_expression_is_found() {
-        assert_eq!(requires("my $x = (require Foo);"), vec!["Foo"]);
-        assert_eq!(requires("my %h = a => (require Foo);"), vec!["Foo"]);
-        assert_eq!(requires("f(:x(require Foo));"), vec!["Foo"]);
-    }
-
-    #[test]
-    fn a_require_in_a_nested_block_or_closure_belongs_to_that_scope() {
-        assert!(requires("my $c = { require Foo };").is_empty());
-        assert!(requires("my $c = -> $x = (require Foo) { };").is_empty());
-        assert!(requires("my $x = do { require Foo };").is_empty());
-    }
 }
