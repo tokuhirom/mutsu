@@ -304,6 +304,14 @@ impl Interpreter {
         if source_immutable_quant {
             rw_writeback = false;
         }
+        // An immutable `Map` yields bare values too: its elements are not
+        // containers, so an `is rw` multi-parameter bind must fail (like an
+        // immutable QuantHash's), not alias.
+        let source_immutable_map = container_binding.as_ref().is_some_and(|name| {
+            self.for_source_binding_value(name).is_some_and(|v| {
+                matches!(v.view(), ValueView::Hash(d) if d.declared_type.as_deref() == Some("Map"))
+            })
+        });
         // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
         // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
         // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
@@ -866,7 +874,10 @@ impl Interpreter {
             // above is (an unrouted producer also yields no cell, and raku
             // aliases through it).
             if !spec.multi_param_names.is_empty()
-                && (spec.source_items_are_bare || source_value_buffer)
+                && (spec.source_items_are_bare
+                    || source_value_buffer
+                    || source_immutable_quant
+                    || source_immutable_map)
                 && let ValueView::Array(chunk, ..) = item.view()
             {
                 for (i, declared) in spec.multi_param_declared_rw.iter().enumerate() {
