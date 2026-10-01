@@ -25,6 +25,7 @@ impl Interpreter {
         let mut scan = PrivateAccess {
             interp: self,
             caller_class,
+            nested: Vec::new(),
             err: None,
         };
         walk_stmts(&mut scan, stmts);
@@ -98,6 +99,10 @@ impl Interpreter {
 struct PrivateAccess<'a> {
     interp: &'a Interpreter,
     caller_class: &'a str,
+    /// Classes declared inside the walked body, with the `trusts` list written
+    /// in their own body. They are not registered yet while the enclosing
+    /// class registers, so `class_trusts` cannot answer for them.
+    nested: Vec<(String, Vec<String>)>,
     err: Option<RuntimeError>,
 }
 
@@ -108,8 +113,18 @@ impl Visit for PrivateAccess<'_> {
         }
         match stmt {
             // A nested class is its own caller: its methods' private calls are
-            // checked against it when it registers.
-            Stmt::ClassDecl { .. } => {}
+            // checked against it when it registers. Remember its `trusts`
+            // list so a call into it from this body can be decided now.
+            Stmt::ClassDecl { name, body, .. } => {
+                let trusts = body
+                    .iter()
+                    .filter_map(|s| match s {
+                        Stmt::TrustsDecl { name } => Some(name.resolve()),
+                        _ => None,
+                    })
+                    .collect();
+                self.nested.push((name.resolve(), trusts));
+            }
             _ => walk_stmt(self, stmt),
         }
     }
@@ -148,9 +163,23 @@ impl Visit for PrivateAccess<'_> {
                     // bareword type reference resolves against its enclosing
                     // package chain — otherwise a perfectly legal self-call
                     // written from inside a `module` false-positives here.
-                    let (canonical_owner, trusted) = self
-                        .interp
-                        .resolve_and_check_private_owner(Some(self.caller_class), owner_class);
+                    let (canonical_owner, trusted) =
+                        match self.nested.iter().find(|(n, _)| n == owner_class) {
+                            Some((_, trusts)) => (
+                                owner_class.to_string(),
+                                trusts.iter().any(|t| {
+                                    // `caller_class` may be a mangled `my class`
+                                    // storage name; `t` is the name as written.
+                                    let caller =
+                                        crate::value::user_facing_type_name(self.caller_class);
+                                    *t == caller || caller.rsplit("::").next() == Some(t.as_str())
+                                }),
+                            ),
+                            None => self.interp.resolve_and_check_private_owner(
+                                Some(self.caller_class),
+                                owner_class,
+                            ),
+                        };
                     if !trusted {
                         self.err = Some(make_private_permission_error(
                             method_name,
@@ -181,6 +210,45 @@ impl Visit for PrivateCallsExist<'_> {
         match stmt {
             // `self` inside a nested class or role body is that type's
             // invocant, not `class_name`'s.
+            Stmt::ClassDecl {
+                name: nested_name,
+                body,
+                does_parents,
+                ..
+            } if does_parents.is_empty() => {
+                // The nested class is not registered while the enclosing
+                // class registers, so check its methods against the private
+                // methods its own body declares.
+                let own: Vec<String> = body
+                    .iter()
+                    .filter_map(|s| match s {
+                        Stmt::MethodDecl {
+                            name,
+                            is_private: true,
+                            ..
+                        } => Some(name.resolve()),
+                        _ => None,
+                    })
+                    .collect();
+                for s in body {
+                    if let Stmt::MethodDecl { body, .. } = s {
+                        let mut scan = NestedPrivateCalls {
+                            class_name: crate::qualified::qualified(
+                                Symbol::intern(self.class_name),
+                                *nested_name,
+                            )
+                            .resolve(),
+                            own: &own,
+                            err: None,
+                        };
+                        walk_stmts(&mut scan, body);
+                        if let Some(err) = scan.err {
+                            self.err = Some(err);
+                            return;
+                        }
+                    }
+                }
+            }
             Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {}
             _ => walk_stmt(self, stmt),
         }
@@ -216,6 +284,54 @@ impl Visit for PrivateCallsExist<'_> {
                 self.err = Some(make_method_not_found_error(
                     &method_name,
                     self.class_name,
+                    true,
+                ));
+            }
+        }
+    }
+}
+
+/// The existence check for a class declared inside a method body: every
+/// unqualified `self!meth` in its methods names a private method its own body
+/// declares.
+struct NestedPrivateCalls<'a> {
+    class_name: String,
+    own: &'a [String],
+    err: Option<RuntimeError>,
+}
+
+impl Visit for NestedPrivateCalls<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.err.is_some() {
+            return;
+        }
+        match stmt {
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {}
+            _ => walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.err.is_some() {
+            return;
+        }
+        walk_expr(self, expr);
+        if self.err.is_some() {
+            return;
+        }
+        if let Expr::MethodCall {
+            target,
+            name,
+            modifier: Some('!'),
+            ..
+        } = expr
+            && matches!(target.as_ref(), Expr::BareWord(w) if w == "self")
+        {
+            let method_name = name.resolve();
+            if !crate::qualified::is_qualified(*name) && !self.own.contains(&method_name) {
+                self.err = Some(make_method_not_found_error(
+                    &method_name,
+                    &self.class_name,
                     true,
                 ));
             }
