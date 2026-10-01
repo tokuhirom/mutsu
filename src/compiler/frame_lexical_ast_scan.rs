@@ -1,14 +1,15 @@
 //! The AST half of the frame-lexical proof (ADR-0113): which mentions of a
-//! candidate routine's name a routine body makes, read off its serialized
-//! AST. See `frame_lexical_routines.rs`.
+//! candidate routine's name a routine body makes, read off its AST through
+//! the typed visitor (ADR-0137). See `frame_lexical_routines.rs`.
 
-use serde_json::Value as Json;
+use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{NameKind, Visit, contains_word, walk_expr, walk_stmt};
 use std::collections::{HashMap, HashSet};
 
-/// String leaves that make the whole body ineligible: they reach a routine
-/// by a name computed at run time, or observe the routine as a code object
-/// or through the dispatcher.
-const REJECT_ALL_STRINGS: &[&str] = &[
+/// Names that make the whole body ineligible: they reach a routine by a name
+/// computed at run time, or observe the routine as a code object or through
+/// the dispatcher.
+const REJECT_ALL_NAMES: &[&str] = &[
     "EVAL",
     "EVALFILE",
     "evalbytes",
@@ -37,29 +38,6 @@ const REJECT_ALL_PREFIXES: &[&str] = &[
     "DYNAMIC::",
 ];
 
-/// AST node kinds that make the whole body ineligible. Symbolic and
-/// indirect lookups reach a routine by a computed name; a lexical type
-/// declaration makes a parameter's type constraint resolve differently per
-/// call, which the once-per-interpreter derivation could not follow.
-const REJECT_ALL_VARIANTS: &[&str] = &[
-    "IndirectCodeLookup",
-    "IndirectTypeLookup",
-    "IndirectTypeLookupAssign",
-    "SymbolicDeref",
-    "SymbolicDerefAssign",
-    "PseudoStash",
-    "UserRoutineCall",
-    "ClassDecl",
-    "RoleDecl",
-    "EnumDecl",
-    "SubsetDecl",
-    "Package",
-    "AugmentClass",
-];
-
-/// Field names given to the elements of a tuple variant.
-const TUPLE_FIELDS: &[&str] = &["0", "1", "2", "3", "4", "5", "6", "7"];
-
 #[derive(Default)]
 pub(super) struct AstScan {
     pub(super) names: HashSet<String>,
@@ -72,85 +50,100 @@ pub(super) struct AstScan {
 }
 
 impl AstScan {
-    pub(super) fn walk(&mut self, v: &Json, variant: Option<&str>, field: Option<&str>) {
+    // Cost: O(n), n = size of `body`'s AST.
+    pub(super) fn scan(&mut self, body: &[Stmt]) {
+        for stmt in body {
+            self.visit_stmt(stmt);
+        }
+    }
+}
+
+impl Visit for AstScan {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         if self.reject_all {
             return;
         }
-        match v {
-            Json::String(s) => self.check_str(s, variant, field),
-            Json::Array(items) => {
-                for item in items {
-                    self.walk(item, None, None);
-                }
-            }
-            Json::Object(map) => {
-                if map.len() == 1
-                    && let Some((key, inner)) = map.iter().next()
-                    && key.starts_with(|c: char| c.is_ascii_uppercase())
-                {
-                    // `Package` names the package DECLARATION statement. A
-                    // literal type object (`Literal(Package(..))`, what
-                    // ADR-0115 folds `nqp::create(Uni)`'s operand to) is
-                    // serialized under the same key, and is only data.
-                    let literal_type_object = key == "Package" && variant == Some("Literal");
-                    if REJECT_ALL_VARIANTS.contains(&key.as_str()) && !literal_type_object {
-                        self.reject_all = true;
-                        return;
-                    }
-                    match inner {
-                        Json::Object(fields)
-                            if !(fields.len() == 1
-                                && fields.keys().next().is_some_and(|k| {
-                                    k.starts_with(|c: char| c.is_ascii_uppercase())
-                                })) =>
-                        {
-                            for (f, fv) in fields {
-                                self.walk(fv, Some(key), Some(f));
-                            }
-                        }
-                        // A tuple variant: its elements keep the variant, and
-                        // their position stands in for the field name.
-                        Json::Array(items) => {
-                            for (i, item) in items.iter().enumerate() {
-                                self.walk(
-                                    item,
-                                    Some(key),
-                                    Some(TUPLE_FIELDS.get(i).unwrap_or(&"")),
-                                );
-                            }
-                        }
-                        other => self.walk(other, Some(key), None),
-                    }
-                    return;
-                }
-                for (f, fv) in map {
-                    self.walk(fv, None, Some(f));
-                }
-            }
-            _ => {}
+        // A lexical type declaration makes a parameter's type constraint
+        // resolve differently per call, which the once-per-interpreter
+        // derivation could not follow.
+        if matches!(
+            stmt,
+            Stmt::ClassDecl { .. }
+                | Stmt::RoleDecl { .. }
+                | Stmt::EnumDecl { .. }
+                | Stmt::SubsetDecl { .. }
+                | Stmt::Package { .. }
+                | Stmt::AugmentClass { .. }
+        ) {
+            self.reject_all = true;
+            return;
         }
+        walk_stmt(self, stmt);
     }
 
-    fn check_str(&mut self, s: &str, variant: Option<&str>, field: Option<&str>) {
-        if REJECT_ALL_STRINGS.contains(&s) || REJECT_ALL_PREFIXES.iter().any(|p| s.contains(p)) {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.reject_all {
+            return;
+        }
+        // Symbolic and indirect lookups reach a routine by a computed name.
+        if matches!(
+            expr,
+            Expr::IndirectCodeLookup { .. }
+                | Expr::IndirectTypeLookup(..)
+                | Expr::IndirectTypeLookupAssign { .. }
+                | Expr::SymbolicDeref { .. }
+                | Expr::SymbolicDerefAssign { .. }
+                | Expr::PseudoStash(..)
+                | Expr::UserRoutineCall { .. }
+                | Expr::RoutineMagic
+        ) {
+            self.reject_all = true;
+            return;
+        }
+        walk_expr(self, expr);
+    }
+
+    fn visit_name(&mut self, s: &str, kind: NameKind) {
+        if self.reject_all {
+            return;
+        }
+        if REJECT_ALL_PREFIXES.iter().any(|p| s.contains(p)) {
+            self.reject_all = true;
+            return;
+        }
+        // Source text compiled later (a `s///` replacement, a regex code
+        // block's text) can call anything it names.
+        if kind == NameKind::Source {
+            if REJECT_ALL_NAMES.iter().any(|w| contains_word(s, w)) {
+                self.reject_all = true;
+                return;
+            }
+            for name in &self.names {
+                if contains_word(s, name) {
+                    self.rejected.insert(name.clone());
+                }
+            }
+            return;
+        }
+        if REJECT_ALL_NAMES.contains(&s) {
             self.reject_all = true;
             return;
         }
         if self.names.contains(s) {
-            match (variant, field) {
-                (Some("Call"), Some("name")) => *self.calls.entry(s.to_string()).or_default() += 1,
-                (Some("SubDecl"), Some("name")) => {
-                    *self.decls.entry(s.to_string()).or_default() += 1
-                }
-                (Some("CodeVar"), None) => {
+            match kind {
+                NameKind::Call => *self.calls.entry(s.to_string()).or_default() += 1,
+                NameKind::SubDecl => *self.decls.entry(s.to_string()).or_default() += 1,
+                NameKind::CodeVar => {
                     self.values.insert(s.to_string());
                 }
                 // A scalar or sigilless variable of the same name (`$name`
                 // is `name` in the AST): a different symbol than `&name`.
-                (Some("Var" | "MarkBoundContainer"), None)
-                | (Some("VarDecl" | "Assign" | "AssignExpr"), Some("name"))
-                | (Some("MarkReadonly"), Some("0"))
-                | (None, Some("name")) => {}
+                NameKind::Var
+                | NameKind::MarkBoundContainer
+                | NameKind::VarDecl
+                | NameKind::AssignTarget
+                | NameKind::MarkReadonly
+                | NameKind::Param => {}
                 _ => {
                     self.rejected.insert(s.to_string());
                 }
@@ -164,5 +157,91 @@ impl AstScan {
         if tail != s && self.names.contains(tail) {
             self.rejected.insert(tail.to_string());
         }
+    }
+}
+
+/// Whether `stmt` names `sym` at all — as a call, a variable, a type, a
+/// method, by a qualified name or in source text compiled later. String
+/// literals do not count.
+// Cost: O(n), n = size of `stmt`'s AST.
+pub(super) fn stmt_names(stmt: &Stmt, sym: &str) -> bool {
+    struct Find<'a> {
+        sym: &'a str,
+        found: bool,
+    }
+    impl Visit for Find<'_> {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            if !self.found {
+                walk_stmt(self, stmt);
+            }
+        }
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !self.found {
+                walk_expr(self, expr);
+            }
+        }
+        fn visit_name(&mut self, s: &str, kind: NameKind) {
+            let tail = s.rsplit("::").next().unwrap_or(s);
+            let tail = tail.strip_prefix('&').unwrap_or(tail);
+            self.found |= s == self.sym
+                || tail == self.sym
+                || (kind == NameKind::Source && contains_word(s, self.sym));
+        }
+    }
+    let mut find = Find { sym, found: false };
+    find.visit_stmt(stmt);
+    find.found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(src: &str) -> Vec<Stmt> {
+        crate::parser::parse_program(src).expect("parse").0
+    }
+
+    fn scan(src: &str, name: &str) -> AstScan {
+        let mut s = AstScan {
+            names: [name.to_string()].into_iter().collect(),
+            ..AstScan::default()
+        };
+        s.scan(&parse(src));
+        s
+    }
+
+    #[test]
+    fn string_literal_naming_a_reject_word_does_not_reject_all() {
+        let s = scan(r#"my sub f() { 1 }; say "EVAL"; say 'samewith'; f()"#, "f");
+        assert!(!s.reject_all);
+        assert_eq!(s.calls.get("f"), Some(&1));
+        assert_eq!(s.decls.get("f"), Some(&1));
+    }
+
+    #[test]
+    fn a_call_to_eval_rejects_all() {
+        assert!(scan(r#"my sub f() { 1 }; EVAL "f()""#, "f").reject_all);
+    }
+
+    #[test]
+    fn a_string_literal_with_the_routine_name_is_not_a_mention() {
+        let s = scan(r#"my sub f() { 1 }; say "f"; f()"#, "f");
+        assert!(s.rejected.is_empty());
+    }
+
+    #[test]
+    fn a_qualified_or_code_object_mention_is_recorded() {
+        let s = scan("my sub f() { 1 }; say &f; f()", "f");
+        assert!(s.values.contains("f"));
+        let s = scan("my sub f() { 1 }; say $x.f; f()", "f");
+        assert!(s.rejected.contains("f"));
+    }
+
+    #[test]
+    fn stmt_names_ignores_string_literals() {
+        let names = |src: &str| parse(src).iter().any(|s| stmt_names(s, "g"));
+        assert!(!names(r#"say "g""#));
+        assert!(names("g()"));
+        assert!(names("say &Foo::g"));
     }
 }

@@ -7,11 +7,14 @@ use Test;
 # (or even parameterizing) the role.
 use ParamRoleBodyExportedDecls;
 
-plan 6;
+plan 7;
 
 is Foo.^name, 'ParamRoleBodyExportedDecls::Foo', 'exported my class from a parameterized role body is imported';
 is X, 5, 'exported my constant from a parameterized role body is imported';
 ok Foo.new ~~ Foo, 'the imported class is usable';
+# #10441: a string literal spelling a parameter's name is data, not a mention
+# of the parameter, so the constant is still declared eagerly.
+is Y, 'K', 'exported my constant whose value spells the parameter name is imported';
 
 # A parameter-free nested class is one class shared by every parameterization,
 # as in Rakudo.
