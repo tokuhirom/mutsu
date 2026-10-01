@@ -149,14 +149,21 @@ impl Stmt {
     /// it appears in an expression position (`(my $x = 1)`, `(my \x = ...)`,
     /// `($x = 1)` lowered to a statement): a `VarDecl`'s storage name (the
     /// term key for a sigil-less `constant`), an `Assign`'s target, or the
-    /// first such statement of a lowering `SyntheticBlock`.
+    /// one such statement of a `SyntheticBlock` lowering a single declaration
+    /// (`my \x = ...` with its markers, `my $x := ...`). A `SyntheticBlock`
+    /// that declares several variables (`(my $y = 1, my $z = 2)`) is a list,
+    /// not one variable, so it has none.
     // Cost: O(s + t), s = statements of a SyntheticBlock (recursively),
     // t = custom traits on the declaration.
     pub fn declared_var_key(&self) -> Option<String> {
         match self {
             Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(self),
             Stmt::Assign { name, .. } => Some(name.clone()),
-            Stmt::SyntheticBlock(stmts) => stmts.iter().find_map(Stmt::declared_var_key),
+            Stmt::SyntheticBlock(stmts) => {
+                let mut keys = stmts.iter().filter_map(Stmt::declared_var_key);
+                let key = keys.next()?;
+                keys.next().is_none().then_some(key)
+            }
             _ => None,
         }
     }
