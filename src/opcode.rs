@@ -12683,6 +12683,20 @@ impl CompiledFunction {
                         declared.insert(name.clone());
                     }
                 }
+                // A `my package` and the stub package of a `require` bind their
+                // name lexically in the routine's own scope, so the call's
+                // return merge must not carry the binding to the caller (#10594).
+                OpCode::RegisterPackageMy { name_idx }
+                | OpCode::DeclareRequireStub { name_idx } => {
+                    if let Some(crate::value::ValueView::Str(name)) = self
+                        .code
+                        .constants
+                        .get(*name_idx as usize)
+                        .map(crate::value::Value::view)
+                    {
+                        declared.insert(name.to_string());
+                    }
+                }
                 _ => {}
             }
         }

@@ -242,11 +242,14 @@ pub(super) fn rebinds_topic(stmts: &[Stmt]) -> bool {
 }
 
 /// Finds a plain lexical `my` declared in the scanned branch's own scope — at
-/// statement level or inside an expression (`foo(my $x = 5)`). `state`, `our`
-/// and dynamic declarations are not plain lexical shadows.
+/// statement level or inside an expression (`foo(my $x = 5)`) — or a lexically
+/// scoped type (`my class`, `my package`, `my role`). `state`, `our` and
+/// dynamic declarations are not plain lexical shadows.
 #[derive(Default)]
 struct BlockLocalDeclScan {
     found: bool,
+    /// Look for the lexically scoped types only, not the `my` variables.
+    types_only: bool,
 }
 
 impl Visit for BlockLocalDeclScan {
@@ -260,7 +263,19 @@ impl Visit for BlockLocalDeclScan {
                 is_our: false,
                 is_dynamic: false,
                 ..
-            } => self.found = true,
+            } if !self.types_only => self.found = true,
+            // A lexical type name is bound in the declaring scope's env just
+            // like a `my` variable, so a branch that declares one owes the same
+            // scope exit (#10594).
+            Stmt::ClassDecl {
+                is_lexical: true, ..
+            }
+            | Stmt::Package { is_my: true, .. } => self.found = true,
+            Stmt::RoleDecl { custom_traits, .. }
+                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
+            {
+                self.found = true
+            }
             _ => walk_stmt_own_scope(self, stmt),
         }
     }
@@ -275,10 +290,23 @@ impl Visit for BlockLocalDeclScan {
     fn visit_regex_node(&mut self, _node: &RegexNode) {}
 }
 
-/// Whether a branch body declares a block-local `my` in its own scope.
+/// Whether a branch body declares a block-local `my` (or a lexically scoped
+/// type, see [`BlockLocalDeclScan`]) in its own scope.
 // Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
 pub(super) fn declares_block_local(stmts: &[Stmt]) -> bool {
     let mut scan = BlockLocalDeclScan::default();
+    walk_stmts(&mut scan, stmts);
+    scan.found
+}
+
+/// Whether a body declares a lexically scoped type (`my class`, `my package`,
+/// `my role`) in its own scope, ignoring `my` variables.
+// Cost: O(n), n = size of the part of `stmts` in the body's own scope.
+pub(super) fn declares_lexical_type(stmts: &[Stmt]) -> bool {
+    let mut scan = BlockLocalDeclScan {
+        types_only: true,
+        ..Default::default()
+    };
     walk_stmts(&mut scan, stmts);
     scan.found
 }
