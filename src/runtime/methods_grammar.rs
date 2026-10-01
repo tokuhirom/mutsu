@@ -995,9 +995,11 @@ impl Interpreter {
             self.env.insert("/".to_string(), match_obj.clone());
 
             // Invoke action methods if :actions was provided
-            if let Some(actions) = actions_obj.as_mut() {
-                self.replay_repeated_reduce_actions(actions, &text)?;
-            }
+            let deferred_repeats = if actions_obj.is_some() {
+                Some(self.replay_repeated_reduce_actions(&text))
+            } else {
+                None
+            };
             let match_obj = if let Some(ref mut actions) = actions_obj {
                 // Action methods run with `self` bound to the actions object.
                 // Restore the caller's `self` afterwards so a nested sub in the
@@ -1005,7 +1007,15 @@ impl Interpreter {
                 // doesn't see the actions object leaked in. (Same hazard the
                 // stringify path fixes for `try_compiled_method_or_interpret`.)
                 let saved_self = self.env.get("self").cloned();
-                let result = self.invoke_grammar_actions(match_obj, actions, &start_rule);
+                let result = self
+                    .invoke_grammar_actions(match_obj, actions, &start_rule)
+                    .and_then(|walked| {
+                        self.flush_all_deferred_repeats(actions)?;
+                        Ok(walked)
+                    });
+                if let Some(saved) = deferred_repeats {
+                    self.restore_deferred_repeats(saved);
+                }
                 match saved_self {
                     Some(s) => {
                         self.env.insert("self".to_string(), s);
@@ -1213,20 +1223,21 @@ impl Interpreter {
         self.replay_reduce_action_entries(entries, actions, covered, text, false)
     }
 
-    /// Replay reductions from backtracked alternatives before the successful
-    /// match tree's action walk.  Raku runs those actions as soon as each
-    /// branch reduces, so their observable effects (for example CSS parser
-    /// warnings) precede the effects from the branch that ultimately survives.
+    /// Park the reductions of backtracked alternatives that a later node
+    /// superseded, to be dispatched from inside the successful match tree's
+    /// action walk at their chronological position (see
+    /// `methods_grammar_deferred_repeats`).  Raku runs those actions as soon as
+    /// each branch reduces, so their effects interleave with the surviving
+    /// branch's own.
     pub(crate) fn replay_repeated_reduce_actions(
         &mut self,
-        actions: &mut Value,
         text: &str,
-    ) -> Result<(), RuntimeError> {
+    ) -> super::methods_grammar_deferred_repeats::DeferredSlot {
         let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries();
-        self.replay_reduce_action_entries(entries, actions, None, text, true)
+        self.defer_repeated_reduce_actions(entries, text)
     }
 
-    fn replay_reduce_action_entries(
+    pub(super) fn replay_reduce_action_entries(
         &mut self,
         entries: Vec<(String, std::sync::Arc<CapNode>)>,
         actions: &mut Value,
@@ -1726,6 +1737,11 @@ impl Interpreter {
             // `$<x> === $<rule>` means.
             let mut seen: Vec<(usize, Value)> = Vec::new();
             for (child_name, array_index, child_match) in children {
+                if let Some(child_from) = child_match.match_from() {
+                    restore_on_error!(
+                        self.flush_deferred_repeats(actions, |from, _| from as i64 <= child_from)
+                    );
+                }
                 let Some(child_name) = child_name else {
                     let dispatch_name = Self::get_action_name(&child_match).unwrap_or_default();
                     restore_on_error!(self.invoke_grammar_actions(
@@ -1856,6 +1872,12 @@ impl Interpreter {
             Some(ValueView::Hash(_))
         ) {
             restore_on_error!(self.dispatch_silent_action_caps(&attributes.as_map(), actions));
+        }
+
+        // Backtracked reductions inside this node's span ran before its own
+        // action, which fires once the whole node has reduced.
+        if let Some(node_to) = match_obj.match_to() {
+            restore_on_error!(self.flush_deferred_repeats(actions, |_, to| to as i64 <= node_to));
         }
 
         // Rebuild match_obj with updated children
