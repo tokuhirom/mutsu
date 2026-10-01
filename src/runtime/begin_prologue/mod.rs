@@ -35,6 +35,7 @@
 
 mod nested;
 mod package_body;
+mod package_phasers;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::ast_visit::{Visit, walk_expr};
@@ -58,7 +59,18 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     // alone.
     let mut type_shells: Vec<Option<Stmt>> = Vec::with_capacity(stmts.len());
     let mut composes_role = false;
+    // The INIT and CHECK phasers of each type or package declaration move out
+    // ahead of it (#10552). One that re-enters its package makes the
+    // declaration a BEGIN-time effect, so the package is composed by then.
+    let mut moved_slots = Vec::new();
+    let mut moved_phasers: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
+    let mut composed_early: Vec<bool> = Vec::with_capacity(stmts.len());
     for stmt in stmts.iter_mut() {
+        let mut moved = package_phasers::Moved::default();
+        package_phasers::move_package_phasers(stmt, &mut moved);
+        moved_slots.append(&mut moved.slots);
+        composed_early.push(moved.needs_prologue);
+        moved_phasers.push(moved.phasers);
         let before = lifted.effects.len();
         nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
         effects.push(lifted.effects.split_off(before));
@@ -83,17 +95,44 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
     let last_shell = type_shells.iter().rposition(Option::is_some);
-    let Some(last) = last_effect.max(last_lifted).max(last_shell) else {
+    let last_composed = composed_early.iter().rposition(|early| *early);
+    let Some(last) = last_effect
+        .max(last_lifted)
+        .max(last_shell)
+        .max(last_composed)
+    else {
+        // No prologue: the moved phasers still precede their declarations.
+        let mut out = moved_slots;
+        for (stmt, phasers) in std::mem::take(stmts).into_iter().zip(moved_phasers) {
+            out.extend(phasers);
+            out.push(stmt);
+        }
+        *stmts = out;
         return Vec::new();
     };
-    let tail = stmts.split_off(last + 1);
-    let mut prologue = decls;
+    let mut tail = Vec::new();
+    for (stmt, phasers) in stmts
+        .split_off(last + 1)
+        .into_iter()
+        .zip(moved_phasers.split_off(last + 1))
+    {
+        tail.extend(phasers);
+        tail.push(stmt);
+    }
+    let mut prologue = moved_slots;
+    prologue.extend(decls);
     let mut rest = Vec::new();
-    for ((stmt, stmt_effects), shells) in std::mem::take(stmts)
+    for (((stmt, stmt_effects), shells), phasers) in std::mem::take(stmts)
         .into_iter()
         .zip(effects)
         .zip(type_shells)
+        .zip(moved_phasers)
     {
+        // A moved INIT or CHECK is a run-time statement of the unit, which the
+        // unit's phaser reordering puts in place. It goes ahead of the
+        // statement's line marker, which `partition_stmt` carries along.
+        let at = rest.len() - usize::from(matches!(rest.last(), Some(Stmt::SetLine(_))));
+        rest.splice(at..at, phasers);
         prologue.extend(stmt_effects);
         partition_stmt(stmt, &mut prologue, &mut rest);
         // After the statement's own declaration part: a class whose methods
