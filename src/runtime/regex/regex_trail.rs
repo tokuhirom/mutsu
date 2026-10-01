@@ -82,6 +82,18 @@ impl CapStore {
         }
     }
 
+    /// A store over `init` whose undo trail reuses `trail`'s allocation (a
+    /// capture level's, recycled when it closed for good).
+    pub(super) fn with_trail(init: RegexCaptures, mut trail: Vec<Undo>) -> Self {
+        trail.clear();
+        CapStore { caps: init, trail }
+    }
+
+    /// The captures and the (spent) undo trail, consuming the store.
+    pub(super) fn into_parts(self) -> (RegexCaptures, Vec<Undo>) {
+        (self.caps, self.trail)
+    }
+
     /// Start over with no captures and a match starting at `from`, keeping
     /// the trail's allocation (the compiled engine reuses one store across
     /// start positions).

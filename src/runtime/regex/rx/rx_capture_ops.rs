@@ -36,15 +36,27 @@ impl Interpreter {
             // snapshot); O(1) for a group whose body captures nothing.
             RxOp::CloseCapture { start, nested } => {
                 let from = regs[start as usize];
-                let inner = if nested {
-                    levels.close()
+                if nested {
+                    let inner = levels.close();
+                    levels.edit(|s| s.merge_delta(capture_group_delta(from, pos, inner)));
                 } else {
-                    RegexCaptures {
-                        match_from: from,
+                    // A body that captured nothing is a leaf sub-Match: the slot
+                    // `capture_group_delta` builds over an empty level, pushed
+                    // without the delta around it.
+                    let leaf = crate::runtime::CapNode {
+                        from,
+                        to: pos,
                         ..Default::default()
-                    }
-                };
-                levels.edit(|s| s.merge_delta(capture_group_delta(from, pos, inner)));
+                    };
+                    levels.edit(|s| {
+                        s.push_positional(crate::runtime::PosSlot {
+                            from,
+                            to: pos,
+                            subcap: Some(std::sync::Arc::new(leaf)),
+                            ..Default::default()
+                        })
+                    });
+                }
             }
             // Cost: O(n), n = the characters a backreference compares; O(1)
             // for a marker; one run of the body for a lookahead, and one per

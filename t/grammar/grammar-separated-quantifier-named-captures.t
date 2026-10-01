@@ -3,10 +3,11 @@ use Test;
 # ADR-10488: a separated quantifier whose atom files named captures only
 # (`<item>+ % ','`) no longer matches each iteration in a capture level of
 # its own; the iterations file straight into the enclosing level and the
-# names they filed are marked list-valued at the end. Expected values are
-# rakudo 2026.07's.
+# names they filed are marked list-valued at the end. A `~` goal match whose
+# goal files no name its inner pattern files matches both sides in place too.
+# Expected values are rakudo 2026.07's.
 
-plan 19;
+plan 30;
 
 grammar G1 { token TOP { <item>+ % ',' }; token item { \w } }
 my $m = G1.parse("a");
@@ -54,3 +55,30 @@ grammar G7 { regex TOP { <r> [ x | 'ab' ] }; regex r { a* } }
 $m = G7.parse("aab");
 ok $m, 'backtracking into a returned callee with no registers';
 is ~$m<r>, 'a', 'the callee gave one iteration back';
+
+# A separator holding a `rule`'s implicit `<.ws>`.
+grammar R1 { rule TOP { <item>* % ',' }; token item { \w+ } }
+is R1.parse("a, bb, c")<item>».Str.join("|"), 'a|bb|c', 'a sigspace separator';
+
+# `~` goal matches.
+grammar Q1 { rule TOP { '[' ~ ']' <list> }; rule list { <item>* % ',' }; token item { \w+ } }
+$m = Q1.parse("[a, bb, c ]");
+is $m<list><item>».Str.join("|"), 'a|bb|c', 'a goal match around a separated list';
+grammar Q2 { token TOP { '(' ~ ')' (\d+) } }
+$m = Q2.parse("(42)");
+is ~$m[0], '42', 'a positional capture inside the inner pattern';
+is $m.list.elems, 1, 'numbered from the enclosing level';
+grammar Q3 { token TOP { '(' ~ <close> <body> }; token close { ')' }; token body { \w+ } }
+$m = Q3.parse("(xy)");
+is ~$m<body>, 'xy', 'a goal that captures: the inner capture';
+is ~$m<close>, ')', 'and the goal\'s';
+grammar Q4 { token TOP { '{' ~ '}' [ <k> ':' <k> ] }; token k { \w } }
+$m = Q4.parse(q[{a:b}]);
+is $m<k>».Str.join("|"), 'a|b', 'a name filed twice inside the inner pattern';
+is $m<k>.^name, 'Array', 'is a list';
+grammar Q5 { token TOP { <a> '(' ~ ')' <a> }; token a { \w } }
+is Q5.parse("x(y)")<a>».Str.join("|"), 'x|y', 'a name filed before and inside a goal match';
+grammar Q6 { token TOP { '(' ~ ')' \d+ } }
+nok Q6.parse("(12"), 'a missing goal fails the match';
+grammar Q7 { token TOP { '(' ~ ')' <d>+ }; token d { \d } }
+is Q7.parse("(12)")<d>».Str.join("|"), '1|2', 'a quantified name inside the inner pattern';

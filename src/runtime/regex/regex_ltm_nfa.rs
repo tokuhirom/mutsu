@@ -164,11 +164,13 @@ impl Interpreter {
                 .max()
                 .map_or(0, |end| end - pos)
         });
-        LtmMeasure {
+        let measure = LtmMeasure {
             len: furthest.map(|end| end - pos),
             stopped: run.seqalt || run.fate.is_some(),
             litlen,
-        }
+        };
+        run.recycle();
+        measure
     }
 
     /// The cached NFA of `pattern` in `pkg` (with an inherited `:i` when

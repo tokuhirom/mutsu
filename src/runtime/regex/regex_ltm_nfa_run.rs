@@ -33,14 +33,45 @@ pub(super) struct NfaRun {
     pub(super) ll_ends: Vec<usize>,
 }
 
+thread_local! {
+    /// The vectors of finished runs, for the next run to fill: a grammar
+    /// parse measures tens of thousands of proto candidates, and each run
+    /// allocated both (#10488). Refilled by [`NfaRun::recycle`].
+    static SPARE_RUNS: std::cell::RefCell<Vec<(Vec<usize>, Vec<usize>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Spare vector pairs kept past this many are dropped.
+const SPARE_RUNS_MAX: usize = 16;
+
 impl NfaRun {
     fn empty() -> Self {
+        let (ends, ll_ends) = SPARE_RUNS
+            .with(|spare| spare.borrow_mut().pop())
+            .unwrap_or_default();
         NfaRun {
-            ends: Vec::new(),
+            ends,
             fate: None,
             seqalt: false,
-            ll_ends: Vec::new(),
+            ll_ends,
         }
+    }
+
+    /// Hand this run's vectors back for the next run to reuse.
+    // Cost: O(1) (the vectors are cleared, not freed).
+    pub(super) fn recycle(self) {
+        let (mut ends, mut ll_ends) = (self.ends, self.ll_ends);
+        if ends.capacity() == 0 && ll_ends.capacity() == 0 {
+            return;
+        }
+        ends.clear();
+        ll_ends.clear();
+        SPARE_RUNS.with(|spare| {
+            let mut spare = spare.borrow_mut();
+            if spare.len() < SPARE_RUNS_MAX {
+                spare.push((ends, ll_ends));
+            }
+        });
     }
 
     fn cross_ll(&mut self, end: usize) {
