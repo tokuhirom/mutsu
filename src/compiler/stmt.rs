@@ -2638,7 +2638,7 @@ impl Compiler {
                             ArgSupply::Condition,
                         );
                     }
-                    self.compile_scope_restored_loop_body(&loop_body, body);
+                    self.compile_scope_restored_loop_body(&loop_body, body, *is_statement_modifier);
                 }
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
@@ -2771,7 +2771,7 @@ impl Compiler {
                 // Compile body. A sole `{ ... }` here is a nested bare block
                 // (C-style `loop` has no statement-modifier form), so its
                 // `state` restarts per iteration — no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body, body);
+                self.compile_scope_restored_loop_body(&loop_body, body, false);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
                 if let Some(step_expr) = step {
@@ -3389,7 +3389,7 @@ impl Compiler {
                 // statements directly into `body`, so a sole `{ ... }` here is
                 // a NESTED bare block that re-clones per iteration — its
                 // `state` restarts (raku: 1 1 1), no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body, body);
+                self.compile_scope_restored_loop_body(&loop_body, body, false);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {

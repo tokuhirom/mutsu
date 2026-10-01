@@ -39,6 +39,16 @@ impl Visit for LetScan {
             // A loop body owns a save frame per iteration
             // (`Compiler::loop_body_let_frame`); only the loop's header
             // runs in this block.
+            // A statement-modifier `for`/`while` opens no block, so its saves
+            // resolve at THIS block's exit.
+            Stmt::For {
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::While {
+                is_statement_modifier: true,
+                ..
+            } => walk_stmt(self, stmt),
             Stmt::For { .. } | Stmt::While { .. } | Stmt::Loop { .. } | Stmt::Whenever { .. } => {
                 walk_control_header(self, stmt)
             }

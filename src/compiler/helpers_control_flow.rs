@@ -692,16 +692,30 @@ impl Compiler {
         &mut self,
         stmts: &[Stmt],
         source_body: &[Stmt],
+        is_statement_modifier: bool,
     ) {
         let mark = self.loop_body_decl_reset_mark();
         // Each iteration is its own block entry, so a `use` in the body opens
         // (and closes) its import scope once per iteration.
-        self.with_import_scope_region(stmts, |c| c.compile_scope_restored_loop_body_inner(stmts));
+        self.with_import_scope_region(stmts, |c| {
+            c.compile_scope_restored_loop_body_inner(stmts, is_statement_modifier)
+        });
         self.relax_loop_body_decl_resets(mark, source_body, stmts);
     }
 
-    fn compile_scope_restored_loop_body_inner(&mut self, stmts: &[Stmt]) {
-        let Some(needs_value) = Self::loop_body_let_frame(stmts) else {
+    fn compile_scope_restored_loop_body_inner(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+    ) {
+        // A statement-modifier loop opens no block in Raku, so a `let`/`temp`
+        // in its body resolves at the ENCLOSING block's exit, not per iteration.
+        let frame = if is_statement_modifier {
+            None
+        } else {
+            Self::loop_body_let_frame(stmts)
+        };
+        let Some(needs_value) = frame else {
             self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
             return;
         };
@@ -756,16 +770,23 @@ impl Compiler {
     /// [`Self::compile_scope_restored_loop_body`] for a value-collecting loop
     /// body (the `for` expression form), which compiles through
     /// `compile_stmts_value` instead.
-    pub(super) fn compile_scope_restored_body_value(&mut self, stmts: &[Stmt]) {
+    pub(super) fn compile_scope_restored_body_value(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+    ) {
         // The collecting form already leaves the iteration's value on the stack
         // for the loop to gather, so the `let` frame (#7677) needs no lowering
         // change here — only the bracket, reading that same value.
-        let let_frame = Self::loop_body_let_frame(stmts).map(|_| {
-            self.code.emit(OpCode::LetBlock {
-                body_end: 0,
-                value_on_stack: true,
-            })
-        });
+        let let_frame = (!is_statement_modifier)
+            .then(|| Self::loop_body_let_frame(stmts))
+            .flatten()
+            .map(|_| {
+                self.code.emit(OpCode::LetBlock {
+                    body_end: 0,
+                    value_on_stack: true,
+                })
+            });
         self.with_import_scope_region(stmts, |c| {
             c.in_scope_restored_body(|c| {
                 // Same block-start declaration visibility as the statement-position
@@ -800,11 +821,11 @@ impl Compiler {
         // still a block literal the enclosing block re-clones on every run, so
         // its `state` still restarts per execution (`if 1 { state $n; ++$n }`).
         let state_reset = self.emit_branch_state_reset(stmts, is_statement_modifier);
-        self.compile_resolved_branch_body(stmts);
+        self.compile_resolved_branch_body(stmts, is_statement_modifier);
         self.patch_nested_block_state_reset(state_reset);
     }
 
-    fn compile_resolved_branch_body(&mut self, stmts: &[Stmt]) {
+    fn compile_resolved_branch_body(&mut self, stmts: &[Stmt], is_statement_modifier: bool) {
         if stmts.len() == 1 && matches!(stmts[0], Stmt::If { .. }) {
             self.compile_stmt(&stmts[0]);
         } else if Self::has_block_leave_worthy_phasers(stmts) {
@@ -819,7 +840,8 @@ impl Compiler {
             // `has_block_enter_leave_phasers` — see that function's doc.
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
         } else {
-            self.compile_if_statement_branch(stmts);
+            // A modifier body opens no `let`/`temp` frame of its own.
+            self.compile_if_statement_branch_scoped(stmts, is_statement_modifier);
         }
     }
 

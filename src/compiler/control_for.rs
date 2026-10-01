@@ -573,7 +573,7 @@ impl Compiler {
             // `push_loop_local_scope`/`pop_loop_local_scope` just like the
             // statement form, so a `my TYPE $x` here is env-restored on exit and
             // can use the env-only scoped constraint opcode.
-            self.compile_scope_restored_body_value(&loop_body);
+            self.compile_scope_restored_body_value(&loop_body, is_statement_modifier);
             // Emitted AFTER that call, so outside the body's own `let`/`temp`
             // save frame (#7677): `exec_let_block_op` jumps the ip past
             // everything inside the frame's range, and this tag has to run.
@@ -594,7 +594,7 @@ impl Compiler {
                     .emit(OpCode::TagContainerRef(name_idx, source_slot));
             }
         } else {
-            self.compile_scope_restored_loop_body(&loop_body, body);
+            self.compile_scope_restored_loop_body(&loop_body, body, is_statement_modifier);
         }
         for (name, old) in loop_param_types {
             if let Some(old) = old {
