@@ -656,7 +656,8 @@ impl Compiler {
             return false;
         };
         let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
-            !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
+            !pkg.is_empty()
+                && (pkg == "GLOBAL" || !pkg.split("::").any(crate::parser::is_pseudo_package))
         });
         if !named {
             return false;
@@ -672,6 +673,19 @@ impl Compiler {
             && let Some(key) = lit.as_str()
             && !key.starts_with('&')
         {
+            // `Pkg::<@a> = ...` / `Pkg::<%h> = ...` (assignment, not bind).
+            if key.starts_with(['@', '%'])
+                && key.len() > 1
+                && !matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("die"),
+                    args: vec![Expr::Literal(Value::str(
+                        "Cannot assign to an immutable value".to_string(),
+                    ))],
+                });
+                return true;
+            }
             let Some(bare) = key
                 .strip_prefix('$')
                 .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
