@@ -924,6 +924,17 @@ stripped pattern's program there (`rx_try_ignoremark_ends`) instead of walking. 
 runs code or holds a backreference still declines (`ignoremark-code`): those read the enclosing
 level through the walk's inline seeds, which the nested run does not arm.
 
+### Slice E, sixth part: calls with arguments run as frames
+
+A `<name(…)>` call no longer bridges for having arguments. The Call op evaluates them once, against
+the caller's captures, and resolves the callee for those values (`rx_call_target_args`, over the
+memo `parsed_subrule_candidates` keeps per rendered argument list); a plain rule or a proto whose
+candidates all have programs then runs as a frame, as an argument-less call does. Every other
+verdict still bridges, but hands the evaluated values to the producer
+(`regex_match_atom_all_with_arg_values`), so user code in an argument never runs twice. The
+blockers that apply to every call (`$*` parameters, wrapped tokens, custom HOWs, a live
+left-recursion activation) are checked before the arguments are evaluated.
+
 ### Reproducing §2
 
 ```raku

@@ -398,125 +398,142 @@ impl Interpreter {
                             break 'run None;
                         };
                         let ic = program.atom_ic[atom as usize];
-                        match self.rx_call_target_checked(name, pkg, ic) {
-                            Ok(CallTarget::Plain(callee, callee_pkg)) => {
-                                if frame
-                                    .is_some_and(|f| frames[f as usize].depth >= MAX_FRAME_DEPTH)
-                                {
-                                    false
-                                } else {
-                                    let stack_base = stack.len();
-                                    enter_frame!(
-                                        callee,
-                                        callee_pkg,
-                                        atom,
-                                        pos,
-                                        pc + 1,
-                                        commit,
-                                        stack_base,
-                                        None
-                                    );
-                                    continue 'run;
-                                }
-                            }
-                            Ok(CallTarget::Proto(cands)) => {
-                                self.rx_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
-                                match proto_rank.first().copied() {
-                                    // No candidate can match here.
-                                    None => false,
-                                    Some(_)
-                                        if frame.is_some_and(|f| {
-                                            frames[f as usize].depth >= MAX_FRAME_DEPTH
-                                        }) =>
-                                    {
+                        // A call with arguments evaluates them once, here; a
+                        // bridge then passes them on instead of re-running them.
+                        // `None`: an argument failed to evaluate, so no match.
+                        let resolved = if name.spec().arg_exprs.is_empty() {
+                            Some((self.rx_call_target_checked(name, pkg, ic), None))
+                        } else {
+                            self.rx_call_target_args(name, pkg, ic, levels.top().caps())
+                        };
+                        match resolved {
+                            None => false,
+                            Some((verdict, call_args)) => match verdict {
+                                Ok(CallTarget::Plain(callee, callee_pkg)) => {
+                                    if frame.is_some_and(|f| {
+                                        frames[f as usize].depth >= MAX_FRAME_DEPTH
+                                    }) {
                                         false
-                                    }
-                                    Some(first) => {
-                                        // The call is committed to the first ranked
-                                        // candidate that matches, and to its first
-                                        // end, so a cut at its return drops the
-                                        // rest of the ranking too.
+                                    } else {
                                         let stack_base = stack.len();
-                                        if proto_rank.len() > 1 {
-                                            push_choice!(Choice::Proto(Box::new(ProtoChoice {
-                                                pc: pc + 1,
-                                                pos,
-                                                atom,
-                                                cands: Arc::clone(&cands),
-                                                ranked: Rc::from(&proto_rank[..]),
-                                                next: 1,
-                                                mark: mark!(),
-                                            })));
-                                        }
-                                        let (parsed, sub_pkg, _) = &cands[first];
-                                        let Some(callee) = program_for(parsed) else {
-                                            debug_assert!(false, "a proto's candidates compile");
-                                            break 'run None;
-                                        };
                                         enter_frame!(
-                                            Arc::clone(callee),
-                                            *sub_pkg,
+                                            callee,
+                                            callee_pkg,
                                             atom,
                                             pos,
                                             pc + 1,
-                                            true,
+                                            commit,
                                             stack_base,
-                                            Some((Arc::clone(&cands), first))
+                                            None
                                         );
                                         continue 'run;
                                     }
                                 }
-                            }
-                            Ok(CallTarget::Single) => {
-                                walk_use(WalkUse::Leaf, "builtin-call");
-                                pc += 1;
-                                match self.regex_match_atom_with_capture_in_pkg(
-                                    &program.atoms[atom as usize],
-                                    chars,
-                                    pos,
-                                    levels.top().caps(),
-                                    pkg,
-                                    ic,
-                                ) {
-                                    Some((end, delta)) => {
-                                        levels.edit(|s| s.merge_delta(delta));
-                                        pos = end;
-                                        farthest = farthest.max(pos);
-                                        true
+                                Ok(CallTarget::Proto(cands)) => {
+                                    self.rx_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
+                                    match proto_rank.first().copied() {
+                                        // No candidate can match here.
+                                        None => false,
+                                        Some(_)
+                                            if frame.is_some_and(|f| {
+                                                frames[f as usize].depth >= MAX_FRAME_DEPTH
+                                            }) =>
+                                        {
+                                            false
+                                        }
+                                        Some(first) => {
+                                            // The call is committed to the first ranked
+                                            // candidate that matches, and to its first
+                                            // end, so a cut at its return drops the
+                                            // rest of the ranking too.
+                                            let stack_base = stack.len();
+                                            if proto_rank.len() > 1 {
+                                                push_choice!(Choice::Proto(Box::new(
+                                                    ProtoChoice {
+                                                        pc: pc + 1,
+                                                        pos,
+                                                        atom,
+                                                        cands: Arc::clone(&cands),
+                                                        ranked: Rc::from(&proto_rank[..]),
+                                                        next: 1,
+                                                        mark: mark!(),
+                                                    }
+                                                )));
+                                            }
+                                            let (parsed, sub_pkg, _) = &cands[first];
+                                            let Some(callee) = program_for(parsed) else {
+                                                debug_assert!(
+                                                    false,
+                                                    "a proto's candidates compile"
+                                                );
+                                                break 'run None;
+                                            };
+                                            enter_frame!(
+                                                Arc::clone(callee),
+                                                *sub_pkg,
+                                                atom,
+                                                pos,
+                                                pc + 1,
+                                                true,
+                                                stack_base,
+                                                Some((Arc::clone(&cands), first))
+                                            );
+                                            continue 'run;
+                                        }
                                     }
-                                    None => false,
                                 }
-                            }
-                            Err(why) => {
-                                walk_use(WalkUse::Bridged, why);
-                                // A grammar method the call runs gets this
-                                // invocation's own cursor, not a throwaway one:
-                                // what it writes to its attributes is the Match's
-                                // (#9803).
-                                if self.subrule_names_user_method(name.spec(), pkg) {
-                                    let slot =
-                                        frame.map_or(&root_cursor, |f| &frames[f as usize].cursor);
-                                    let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
-                                    self.rx_cursor = Some(cursor);
+                                Ok(CallTarget::Single) => {
+                                    walk_use(WalkUse::Leaf, "builtin-call");
+                                    pc += 1;
+                                    match self.regex_match_atom_with_capture_in_pkg(
+                                        &program.atoms[atom as usize],
+                                        chars,
+                                        pos,
+                                        levels.top().caps(),
+                                        pkg,
+                                        ic,
+                                    ) {
+                                        Some((end, delta)) => {
+                                            levels.edit(|s| s.merge_delta(delta));
+                                            pos = end;
+                                            farthest = farthest.max(pos);
+                                            true
+                                        }
+                                        None => false,
+                                    }
                                 }
-                                let mut cands = self.regex_match_atom_all_with_capture_opts(
-                                    &program.atoms[atom as usize],
-                                    chars,
-                                    pos,
-                                    levels.top().caps(),
-                                    pkg,
-                                    ic,
-                                    commit,
-                                );
-                                self.rx_cursor = None;
-                                // Ratchet commits to the highest-priority end, the
-                                // last (the producer's order is lowest first).
-                                if commit && cands.len() > 1 {
-                                    cands.drain(..cands.len() - 1);
+                                Err(why) => {
+                                    walk_use(WalkUse::Bridged, why);
+                                    // A grammar method the call runs gets this
+                                    // invocation's own cursor, not a throwaway one:
+                                    // what it writes to its attributes is the Match's
+                                    // (#9803).
+                                    if self.subrule_names_user_method(name.spec(), pkg) {
+                                        let slot = frame
+                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
+                                        let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
+                                        self.rx_cursor = Some(cursor);
+                                    }
+                                    let mut cands = self.regex_match_atom_all_with_arg_values(
+                                        &program.atoms[atom as usize],
+                                        chars,
+                                        pos,
+                                        levels.top().caps(),
+                                        pkg,
+                                        ic,
+                                        commit,
+                                        call_args,
+                                    );
+                                    self.rx_cursor = None;
+                                    // Ratchet commits to the highest-priority end, the
+                                    // last (the producer's order is lowest first).
+                                    if commit && cands.len() > 1 {
+                                        cands.drain(..cands.len() - 1);
+                                    }
+                                    pc += 1;
+                                    enter_cands!(cands)
                                 }
-                                pc += 1;
-                                enter_cands!(cands)
-                            }
+                            },
                         }
                     }
                     // Cost: O(k·m) for the k iterations the scan matches, m = one

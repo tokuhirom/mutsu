@@ -162,8 +162,37 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_atom_all_with_arg_values(
+            atom,
+            chars,
+            pos,
+            current_caps,
+            pkg,
+            ignore_case,
+            subrule_first_only,
+            None,
+        )
+    }
+
+    /// [`Self::regex_match_atom_all_with_capture_opts`] for a `<subrule(…)>`
+    /// call whose arguments the caller already evaluated (`evaluated_args`):
+    /// the compiled engine evaluates them once at the call and hands them
+    /// here when the call bridges, so user code in an argument does not run
+    /// twice. `None` evaluates them here, as every other caller wants.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn regex_match_atom_all_with_arg_values(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: Symbol,
+        ignore_case: bool,
+        subrule_first_only: bool,
+        mut evaluated_args: Option<Vec<Value>>,
+    ) -> Vec<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
-        let mut preinstalled_arg_values = None;
+        let mut dyn_installed = false;
         // A named atom is one grammar-rule invocation. Keep its declaration
         // frame around the complete resolve/match operation so a failed proto
         // candidate cannot leave a `$*` binding in the caller. LTM and failure
@@ -176,14 +205,17 @@ impl Interpreter {
                         .contains_key(&name.spec().lookup_name) =>
             {
                 let spec = name.spec();
-                let arg_values = if spec.arg_exprs.is_empty() {
+                let arg_values = if let Some(values) = evaluated_args.take() {
+                    Some(values)
+                } else if spec.arg_exprs.is_empty() {
                     Some(Vec::new())
                 } else {
                     self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
                 };
                 if let Some(arg_values) = arg_values {
                     dyn_saved = self.install_subrule_dynamic_params(spec, pkg, &arg_values);
-                    preinstalled_arg_values = Some(arg_values);
+                    dyn_installed = true;
+                    evaluated_args = Some(arg_values);
                     self.enter_grammar_rule_dynvars(&spec.lookup_name)
                 } else {
                     None
@@ -200,7 +232,8 @@ impl Interpreter {
             ignore_case,
             subrule_first_only,
             &mut dyn_saved,
-            preinstalled_arg_values,
+            evaluated_args,
+            dyn_installed,
         );
         if let Some(frame) = grammar_frame {
             let values = self.exit_grammar_rule_dynvars(frame);
@@ -280,7 +313,8 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
-        preinstalled_arg_values: Option<Vec<Value>>,
+        evaluated_args: Option<Vec<Value>>,
+        dyn_installed: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
         // (the engine iterates the vec in reverse, trying the highest-priority
@@ -594,8 +628,7 @@ impl Interpreter {
                     subrule_first_only,
                 );
             }
-            let preinstalled = preinstalled_arg_values.is_some();
-            let arg_values = if let Some(values) = preinstalled_arg_values {
+            let arg_values = if let Some(values) = evaluated_args {
                 values
             } else if spec.arg_exprs.is_empty() {
                 Vec::new()
@@ -609,7 +642,7 @@ impl Interpreter {
             // dynamic scope *before* its pattern is resolved (the pattern may
             // interpolate it) and stays there for the whole match, so nested
             // subrules and code blocks see it. The caller tears it back down.
-            if !preinstalled {
+            if !dyn_installed {
                 *dyn_saved = self.install_subrule_dynamic_params(&spec, pkg, &arg_values);
             }
             // A token/rule/regex returned by `.^find_method(...).wrap(...)`
