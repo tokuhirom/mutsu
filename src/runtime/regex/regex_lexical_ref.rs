@@ -131,17 +131,21 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         pkg: Symbol,
         arg_values: &[Value],
-    ) -> Option<std::sync::Arc<Vec<super::regex_token_resolve::ParsedTokenCandidate>>> {
+    ) -> Option<std::sync::Arc<super::regex_token_candidates::TokenCandidates>> {
         let value = self.resolve_lexical_regex(spec, pkg)?;
         let pattern = self.instantiate_regex_value_with_args(&value, arg_values);
         if pattern.is_none()
             && super::super::regex_parse::PENDING_REGEX_ERROR.with(|error| error.borrow().is_some())
         {
-            return Some(std::sync::Arc::new(Vec::new()));
+            return Some(std::sync::Arc::new(
+                super::regex_token_candidates::TokenCandidates::new(Vec::new()),
+            ));
         }
         let pattern = pattern?;
         let parsed = self.parse_candidate_in_pkg(&pattern, pkg)?;
-        Some(std::sync::Arc::new(vec![(parsed, pkg, None)]))
+        Some(std::sync::Arc::new(
+            super::regex_token_candidates::TokenCandidates::new(vec![(parsed, pkg, None)]),
+        ))
     }
 
     /// Put the defining scope of a `<&lexical>` reference's Regex value into

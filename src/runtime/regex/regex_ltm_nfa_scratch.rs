@@ -26,6 +26,12 @@ const POOLED_STACKS: usize = 1 << 12;
 /// made the same calls.
 pub(super) struct Stacks {
     pub(super) entries: Vec<(u32, u32, Symbol)>,
+    /// Parallel to `entries`: the root of a proto's NFA the stack was entered
+    /// from ([`LtmNfa::roots`]), inherited from the parent. Always 0 in an
+    /// NFA with one root.
+    origins: Vec<u32>,
+    /// The empty name, which no rule has.
+    blank: Symbol,
     index: FxHashMap<(u32, u32), u32>,
     /// Rule names already being inlined by the enclosing run, for a
     /// [`NfaNode::Sub`] or [`NfaNode::DynCall`] region's own run.
@@ -34,8 +40,11 @@ pub(super) struct Stacks {
 
 impl Stacks {
     fn new() -> Self {
+        let blank = Symbol::intern("");
         Stacks {
-            entries: vec![(0, 0, Symbol::intern(""))],
+            entries: vec![(0, 0, blank)],
+            origins: vec![0],
+            blank,
             index: FxHashMap::default(),
             outer: Vec::new(),
         }
@@ -45,6 +54,7 @@ impl Stacks {
     // Cost: O(s + o), s = stacks the previous run made, o = `outer.len()`.
     fn reset(&mut self, outer: &[Symbol]) {
         self.entries.truncate(1);
+        self.origins.truncate(1);
         self.index.clear();
         self.outer.clear();
         self.outer.extend_from_slice(outer);
@@ -74,7 +84,36 @@ impl Stacks {
         names
     }
 
+    // Cost: O(1) expected.
     pub(super) fn push(&mut self, stack: u32, ret: u32, name: Symbol) -> Option<u32> {
+        let origin = self.origins[stack as usize];
+        self.intern(stack, ret, name, origin)
+    }
+
+    /// The frame a proto NFA's `origin`th candidate runs in: it returns to
+    /// that candidate's own accept node, and every stack grown from it
+    /// remembers the candidate. The frame calls no rule (its name is empty), so
+    /// the recursion cut never sees it. Each root is pushed once, before any
+    /// thread runs, and nothing ever calls from the empty stack, so the roots
+    /// need no place in `index`.
+    // Cost: O(1).
+    pub(super) fn push_root(&mut self, origin: u32, ret: u32) -> Option<u32> {
+        if self.entries.len() >= MAX_STACKS {
+            return None;
+        }
+        let id = self.entries.len() as u32;
+        self.entries.push((0, ret, self.blank));
+        self.origins.push(origin);
+        Some(id)
+    }
+
+    /// Which root of the NFA the threads on `stack` descend from.
+    // Cost: O(1).
+    pub(super) fn origin(&self, stack: u32) -> u32 {
+        self.origins[stack as usize]
+    }
+
+    fn intern(&mut self, stack: u32, ret: u32, name: Symbol, origin: u32) -> Option<u32> {
         if let Some(&id) = self.index.get(&(stack, ret)) {
             return Some(id);
         }
@@ -83,6 +122,7 @@ impl Stacks {
         }
         let id = self.entries.len() as u32;
         self.entries.push((stack, ret, name));
+        self.origins.push(origin);
         self.index.insert((stack, ret), id);
         Some(id)
     }

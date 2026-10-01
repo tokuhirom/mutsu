@@ -453,7 +453,7 @@ impl Interpreter {
                                     }
                                 }
                                 Ok(CallTarget::Proto(cands)) => {
-                                    self.rx_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
+                                    self.ltm_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
                                     match proto_rank.first().copied() {
                                         // No candidate can match here.
                                         None => false,

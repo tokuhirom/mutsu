@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::NamedRegexLookupSpec;
+use super::regex_token_candidates::TokenCandidates;
 use crate::symbol::Symbol;
 
 /// A resolved-and-parsed subrule candidate: (parsed pattern, dispatch package,
@@ -12,7 +13,7 @@ pub(in crate::runtime::regex) type ParsedTokenCandidate =
     (std::sync::Arc<RegexPattern>, Symbol, Option<String>);
 
 /// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
-type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
+type CachedCandidates = (u64, std::sync::Arc<TokenCandidates>);
 
 /// A raw (pre-parse) candidate: pattern source text, dispatch package, and
 /// `:sym<...>` key -- the same shape [`Interpreter::resolve_token_patterns_static_in_pkg`]
@@ -110,7 +111,7 @@ impl Interpreter {
         name: &str,
         name_sym: Symbol,
         pkg: Symbol,
-    ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
+    ) -> Option<std::sync::Arc<TokenCandidates>> {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let tok_gen =
@@ -134,7 +135,7 @@ impl Interpreter {
             let parsed = self.parse_candidate_in_pkg(sub_pat, *sub_pkg)?;
             parsed_list.push((parsed, *sub_pkg, sym_key.clone()));
         }
-        let arc = std::sync::Arc::new(parsed_list);
+        let arc = std::sync::Arc::new(TokenCandidates::new(parsed_list));
         if all_static {
             PARSED_TOKEN_CANDIDATES.with(|c| {
                 c.borrow_mut()
@@ -231,7 +232,7 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         pkg: Symbol,
         arg_values: &[Value],
-    ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
+    ) -> (std::sync::Arc<TokenCandidates>, bool) {
         // `<&$re('a')>` / `<&re: 'a'>` may name a *lexical* holding a Regex
         // value rather than a registry rule. That resolution reads the
         // caller's scope, so it runs ahead of — and never enters — the memos
@@ -287,7 +288,10 @@ impl Interpreter {
                         parsed_list.push((parsed, sub_pkg, sym_key));
                     }
                 }
-                (raw_empty, std::sync::Arc::new(parsed_list))
+                (
+                    raw_empty,
+                    std::sync::Arc::new(TokenCandidates::new(parsed_list)),
+                )
             });
         if let Some(fp) = args_fp
             && !consulted_ambient
