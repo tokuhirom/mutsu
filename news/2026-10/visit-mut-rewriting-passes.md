@@ -6,7 +6,7 @@ named, no `_ =>`). Statement lists go through one extra hook, `visit_stmts_mut`,
 needs a body as a list (an ordered scope walk, a lift that edits the list) overrides just that.
 `walk_param_mut` gives a rewritten parameter a fresh `ParamCode` slot (ADR-0133).
 
-Three rewriting passes are ported (192 → 182 hand-rolled walkers). Each one used to skip whatever
+Three rewriting passes are ported (176 → 166 hand-rolled walkers). Each one used to skip whatever
 its `_ =>` arm did not list. Every position it now reaches was checked against rakudo:
 
 - **Outer-redeclaration / self-initializer check** (`parser/outer_redecl/`). It now sees reads in

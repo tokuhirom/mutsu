@@ -83,6 +83,6 @@ by field.
   "list handling" of §4 (an ordered pass keeps its list loop there; a lift edits the list).
   Ported: the outer-redeclaration scope walk (`parser/outer_redecl/`), the nested-BEGIN lift
   (`runtime/begin_prologue/nested/walk.rs`), the phaser lift and reorder recursion
-  (`runtime/phasers/lift.rs`); 192 → 182 walkers. Copies of executed code are skipped by every
+  (`runtime/phasers/lift.rs`); 176 → 166 walkers. Copies of executed code are skipped by every
   lift: the `target`/`rhs` of a `CompoundAssign` (a model-layer copy of `expanded`), and a regex
   tree (#10550).
