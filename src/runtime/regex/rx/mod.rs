@@ -137,6 +137,18 @@ pub(super) enum RxOp {
     /// conjunction's first branch), so code inside it sees the enclosing
     /// level's captures and match start as well as its own.
     OpenInline,
+    /// Open the level of one iteration of the unseparated quantifier
+    /// `toks[tok]` whose body runs code (`plain_iter_needs_view`): an inline
+    /// level whose code sees the iterations appended since `regs[pos_base]`
+    /// folded, with this one's own captures folded in place (the walk's
+    /// `regex_match_plain_view`). `ClosePlainIter` merges its captures back.
+    OpenPlainIter {
+        tok: u32,
+        pos_base: u16,
+    },
+    /// Close an `OpenPlainIter` level, merging its captures into the enclosing
+    /// level as the walk merges a `[ … ]`'s (`group_merge_delta`).
+    ClosePlainIter,
     /// Open the level of one iteration of the separated quantifier `toks[tok]`
     /// whose earlier iterations were collected since `regs[base]` — an atom's,
     /// or a separator's when `sep`: an inline level whose code sees the

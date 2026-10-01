@@ -8,8 +8,9 @@
 //! never have revisited.
 
 use super::super::regex_helpers::{
-    AlternationListFlags, atom_contains_alternation, atom_contains_backref,
+    AlternationListFlags, atom_contains_alternation, atom_contains_backref, count_capture_groups,
 };
+use super::super::regex_match_plain_view::plain_iter_needs_view;
 use super::{RxOp, RxProgram};
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
 
@@ -798,11 +799,20 @@ impl Compiler {
             self.ops.push(RxOp::Height(h));
         }
         let alt_body = atom_contains_alternation(&token.atom);
+        // Code in the body sees the iterations so far folded.
+        let iter_level =
+            fold.filter(|_| plain_iter_needs_view(&token.atom, count_capture_groups(&token.atom)));
+        if let Some((pos_base, tok)) = iter_level {
+            self.ops.push(RxOp::OpenPlainIter { tok, pos_base });
+        }
         self.quant_alt_depth += usize::from(alt_body);
         self.chain_atom = true;
         let body_result = self.atom(token);
         self.quant_alt_depth -= usize::from(alt_body);
         body_result?;
+        if iter_level.is_some() {
+            self.ops.push(RxOp::ClosePlainIter);
+        }
         if let Some(h) = iter {
             self.ops.push(RxOp::Cut(h));
         }

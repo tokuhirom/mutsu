@@ -34,6 +34,7 @@ mod regex_match_find;
 mod regex_match_lazy;
 mod regex_match_lazy_subrule;
 mod regex_match_nocap;
+mod regex_match_plain_view;
 mod regex_match_public;
 mod regex_match_public_folded;
 mod regex_match_sep;

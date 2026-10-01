@@ -78,7 +78,8 @@ impl Interpreter {
         } else {
             super::regex_helpers::InlineVarsSeed::arm(None)
         };
-        (vars, Self::arm_outer_caps_seed(atom, current_caps))
+        let outer = Self::arm_outer_caps_seed(atom, current_caps).consume_capture_scope();
+        (vars, outer)
     }
 
     /// Is this atom's sub-pattern matched *in the same capture scope* as the
@@ -93,7 +94,7 @@ impl Interpreter {
     /// arm a barrier rather than a read-through, and the barrier also hides the
     /// outer level from anything nested deeper inside them
     /// (`/ $<x>=(\w) ( [ $<x> ] ) /` fails in raku too).
-    fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
+    pub(super) fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
         matches!(
             atom,
             RegexAtom::Group(_)
@@ -124,7 +125,7 @@ impl Interpreter {
         } else {
             OuterCapsSeed::inert()
         };
-        (InlineVarsSeed::arm(None), outer)
+        (InlineVarsSeed::arm(None), outer.consume_capture_scope())
     }
 
     /// Does matching this atom start a regex of its own (a different capture

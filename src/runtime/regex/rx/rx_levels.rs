@@ -137,6 +137,27 @@ impl Levels {
         self.journal.push(Journal::Opened);
     }
 
+    /// Open the inline level of one iteration of an unseparated quantifier
+    /// whose iterations appended `stride` captures each since `pos_base`: its
+    /// code sees them folded and its own captures fold into their slots
+    /// (`regex_match_plain_view`).
+    // Cost: O(c), c = the captures visible to the enclosing level (one fold,
+    // one flattened copy).
+    pub(super) fn open_plain_iter(&mut self, pos_base: usize, stride: usize) {
+        let (mut enclosing, _) = super::super::regex_match_plain_view::plain_iter_view(
+            self.top().caps(),
+            pos_base,
+            stride,
+        );
+        let extra = RegexCaptures {
+            positional: enclosing.positional.split_off(pos_base),
+            ..Default::default()
+        };
+        let caps = inline_level_caps(&enclosing, Some(extra), Some((0, stride)));
+        self.stack.push(CapStore::new(caps));
+        self.journal.push(Journal::Opened);
+    }
+
     /// Start the pattern level from `caps` (an inline level's, as
     /// `inline_level_caps` builds it) instead of empty: a nested run that is
     /// part of the enclosing regex (a `&` conjunction's other branches).
