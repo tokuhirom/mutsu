@@ -63,10 +63,9 @@ src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out 
 src/runtime/dispatch_proto_rewrite.rs                 2
 src/runtime/phasers.rs                                1  # stmt_declares_var looks at one scope's statement list only, through the transparent SyntheticBlock grouping
 src/runtime/run.rs                                    3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
-src/runtime/run_prelude.rs                            2  # mark_prelude_subs mutates; declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
+src/runtime/run_prelude.rs                            2  # mark_prelude_subs tags the unit's top-level subs (through SyntheticBlock only; one scope, not a tree rewrite); declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
 src/runtime/types/mod.rs                              1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                              3
 src/whatever_curry/build.rs                           3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
-src/whatever_curry/mark/stmt.rs                       1
-src/whatever_curry/replace.rs                         2
+src/whatever_curry/replace.rs                         2  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
 src/with_desugar.rs                                   1  # flatten_index_source: spine of an index chain to its root
