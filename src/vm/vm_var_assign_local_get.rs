@@ -384,9 +384,7 @@ impl Interpreter {
         // (e.g., a cross-scope `:=` binding was established during a function/method
         // call and propagated back to env but not to locals), adopt the ContainerRef.
         // See `local_cell_adoption_target` for why the probe is overlay-only.
-        if let Some(container) = self.local_cell_adoption_target(code, idx) {
-            self.locals[idx] = container;
-        }
+        self.adopt_overlay_container(code, idx);
         // Phase 3 Stage 2 (scalar slice): scalar instance attributes read straight
         // from `self`'s shared cell, so a mutation made in a nested method frame
         // is visible here. Gated on a non-container slot so `$!x := outer`

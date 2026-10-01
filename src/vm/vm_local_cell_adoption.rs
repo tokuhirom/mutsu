@@ -74,4 +74,16 @@ impl Interpreter {
             _ => None,
         }
     }
+
+    /// Restore the env/slot invariant for slot `idx` after a by-name write
+    /// stored a plain value into it: if this frame's overlay still holds a
+    /// container for the slot's symbol, the slot takes that container. This
+    /// is the adoption the slow `GetLocal` chain used to perform on the next
+    /// read, moved to the (rarer) write so the fast read never needs it.
+    // Cost: O(1) — one overlay hash probe.
+    pub(crate) fn adopt_overlay_container(&mut self, code: &CompiledCode, idx: usize) {
+        if let Some(container) = self.local_cell_adoption_target(code, idx) {
+            self.locals[idx] = container;
+        }
+    }
 }
