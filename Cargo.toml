@@ -88,9 +88,6 @@ unicode-segmentation = "1.13.3"
 unicode-normalization = "0.1"
 # KEEP (b): REPL line editing (native only).
 rustyline = { version = "18", optional = true }
-# REMOVE (#10437): one call site (CLDR emoji short names for `\c[...]`),
-# which also scans all entries linearly per lookup. Generate a committed table.
-emojis = "0.9"
 # KEEP (b): POSIX calls: signals, processes, file locks, localtime, user/group
 # lookup, uname (native only).
 libc = { version = "0.2", optional = true }
@@ -137,6 +134,9 @@ cranelift-native = { version = "0.136", optional = true }
 # so a `regex-syntax` bump carrying a new Unicode version fails the suite
 # instead of silently diverging. Keep it on the same minor as `regex`'s own.
 regex-syntax = "0.8"
+# Used only by `builtins::emoji_name_gen` to (re)generate and verify the
+# committed CLDR emoji short-name table `builtins::emoji_name_table` (#10437).
+emojis = "0.9"
 
 [profile.release]
 # No debug info in release. Full debuginfo bloats the binary (~250MB vs ~27MB),
