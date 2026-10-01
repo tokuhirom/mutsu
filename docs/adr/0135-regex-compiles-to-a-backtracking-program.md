@@ -935,6 +935,12 @@ verdict still bridges, but hands the evaluated values to the producer
 blockers that apply to every call (`$*` parameters, wrapped tokens, custom HOWs, a live
 left-recursion activation) are checked before the arguments are evaluated.
 
+One more shape bridges, with its evaluated arguments: an object or closure argument
+(`args-opaque`). Baking cannot carry such a value into the callee's code blocks, so the walk binds it
+in the env for the callee's match window (`install_subrule_dynamic_params`); a frame the run can
+backtrack into would need that binding re-installed and removed as backtracking crosses the frame,
+the same enter/exit pair `isolated-group-scoped` needs.
+
 ### Reproducing §2
 
 ```raku

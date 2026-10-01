@@ -145,6 +145,15 @@ impl Interpreter {
             return Some((Err(why), None));
         }
         let args = self.eval_regex_arg_list(&spec.arg_exprs, caps)?;
+        // An object or closure argument is bound in the env for the callee's
+        // match window (`install_subrule_dynamic_params`), which a frame the
+        // run can backtrack into does not keep live: the walk's producer
+        // binds it around the callee's whole match.
+        // TODO: compile to bytecode with a binding op pair that backtracking
+        // re-installs and removes, as `isolated-group-scoped` needs too.
+        if crate::runtime::regex::regex_dynparams::regex_args_have_opaque(&args) {
+            return Some((Err("args-opaque"), Some(args)));
+        }
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &args);
         // No rule of that name: a grammar method or a builtin, which the
         // walk's producer dispatches with these arguments.

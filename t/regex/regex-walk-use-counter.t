@@ -35,9 +35,10 @@ sub walk-line(Str $code, *%extra-env) {
 
 {
     my ($out, $line) = walk-line(
-        'grammar G { token TOP { <x(1)> }; token x($n) { a } }; say ~G.parse("a")');
-    is $out, "a\n", 'a call with arguments still parses';
-    like $line, /'bridged=1 (args=1)'/, 'a call with arguments is bridged, reason args';
+        'class C { method m { "a" } }; grammar G { token TOP { <x(C.new)> }; token x($o) { a <?{ $o.m eq "a" }> } }; say ~G.parse("a")');
+    is $out, "a\n", 'a call with an object argument still parses';
+    like $line, /'bridged=1 (args-opaque=1)'/,
+        'a call whose argument must be bound for its match is bridged, reason args-opaque';
 }
 
 {
