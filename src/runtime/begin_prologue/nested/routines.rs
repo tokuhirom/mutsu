@@ -347,7 +347,12 @@ impl Walker<'_> {
     /// then in the unit's top level, is `no strict`.
     // Cost: O(i), i = the pragmas and imports in the enclosing scopes.
     fn strict_is_off(&self) -> bool {
-        for stmt in self.frames.iter().rev().flat_map(|f| f.imports.iter().rev()) {
+        for stmt in self
+            .frames
+            .iter()
+            .rev()
+            .flat_map(|f| f.imports.iter().rev())
+        {
             if let Some(off) = super::super::strict_pragma(stmt) {
                 return off;
             }
