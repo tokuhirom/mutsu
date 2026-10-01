@@ -297,7 +297,9 @@ impl crate::ast_visit::Visit for PodDeclarants<'_> {
                 let nested = if declared.contains("::") || self.package == "GLOBAL" {
                     declared
                 } else {
-                    format!("{}::{declared}", self.package)
+                    crate::qualified::qualified(crate::symbol::Symbol::intern(&self.package), *name)
+                        .as_str()
+                        .to_string()
                 };
                 let outer = std::mem::replace(&mut self.package, nested);
                 crate::ast_visit::walk_stmt(self, stmt);
