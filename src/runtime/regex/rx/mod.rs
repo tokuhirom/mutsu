@@ -107,6 +107,9 @@ pub(super) enum RxOp {
     },
     /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
     OpenCapture,
+    /// Open a capture level for a capture-isolated group (`<$rx>`): a regex of
+    /// its own, so it inherits none of the enclosing level's `:my` lexicals.
+    OpenIsolated,
     /// Close a `( … )` opened at `regs[start]`: its captures are the level
     /// `OpenCapture` opened when `nested`, else none.
     CloseCapture {

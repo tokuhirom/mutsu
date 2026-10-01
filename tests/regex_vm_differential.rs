@@ -227,6 +227,11 @@ differential_case!(
     r#"my @log; say so "ab" ~~ / a <?{ "x" ~~ / x { @log.push("inner") } /; @log.push("outer"); True }> b /; say @log.join(","); @log = (); say so "ab" ~~ / a { so "yy" ~~ / y <?{ @log.push("assert"); True }> y / } b { @log.push("tail") } /; say @log.join(",")"#
 );
 
+differential_case!(
+    lexicals_in_nested_levels,
+    r#"my @log; say so "xab" ~~ / x :my $v = 'a'; ( $v { @log.push("in:" ~ $v) } b ) /; say @log.join(","); say ("ab" ~~ / :my $v = 'a'; ( $v ) b /).gist; say ("aab" ~~ / :my $v = 'a'; [ $v ]+ b /).gist; say ("a,a" ~~ / :my $v = 'a'; ( $v )+ % ',' /).gist; say ("ab" ~~ / :my $v = 'a'; [ <?{ $v eq 'a' }> a ] b /).gist"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

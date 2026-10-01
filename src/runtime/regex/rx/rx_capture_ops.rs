@@ -27,7 +27,9 @@ impl Interpreter {
     ) -> Option<usize> {
         match op {
             // Cost: O(1).
-            RxOp::OpenCapture => levels.open(pos),
+            RxOp::OpenCapture => levels.open(pos, true),
+            // Cost: O(1).
+            RxOp::OpenIsolated => levels.open(pos, false),
             // Cost: O(1).
             RxOp::DropCapture => levels.discard(),
             // Cost: O(c) amortized, c = the closed level's captures (one

@@ -90,13 +90,21 @@ impl Levels {
         r
     }
 
-    /// Open a capture group's level, its match starting at `from`.
-    // Cost: O(1).
-    pub(super) fn open(&mut self, from: usize) {
-        self.stack.push(CapStore::new(RegexCaptures {
+    /// Open a capture group's level, its match starting at `from`. A level that
+    /// is part of the same regex (`inherit`) reads the `:my` lexicals declared
+    /// so far, as the walk's inline sub-patterns do through the vars seed; a
+    /// capture-isolated group is a regex of its own and starts with none.
+    // Cost: O(1) (the lexicals are shared, not copied).
+    pub(super) fn open(&mut self, from: usize, inherit: bool) {
+        let mut caps = RegexCaptures {
             match_from: from,
             ..Default::default()
-        }));
+        };
+        if inherit {
+            let vars = self.top().caps().regex_vars_shared().cloned();
+            caps.set_regex_vars_shared(vars);
+        }
+        self.stack.push(CapStore::new(caps));
         self.journal.push(Journal::Opened);
     }
 

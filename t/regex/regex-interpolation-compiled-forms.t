@@ -7,7 +7,7 @@ use Test;
 # engines must agree with raku on what they match, which captures they leave
 # and when the code inside them runs. Expected values are raku's.
 
-plan 19;
+plan 22;
 
 my $re = /\d+/;
 is ~("a12b" ~~ / a <$re> b /), 'a12b', '<$rx> matches the spliced regex';
@@ -44,3 +44,8 @@ is ~("abab" ~~ / :my $r = 'ab'; $r ** 2 /), 'abab', 'and counted';
 ok so "ab" ~~ / a <?{ my $hit = "x" ~~ / x { @log.push("inner") } /; @log.push("outer"); True }> b /,
     'an assertion that runs a regex with a block';
 is @log.join(','), 'inner,outer', 'the inner block runs inside the assertion';
+
+# A `:my` lexical is visible inside a nested group of the same regex.
+is ~("ab" ~~ / :my $v = 'a'; ( $v ) b /), 'ab', '$v is read inside a capturing group';
+is ~("a,a" ~~ / :my $w = 'a'; ( $w )+ % ',' /), 'a,a', 'and inside a separated quantifier\'s atom';
+ok so "ab" ~~ / :my $u = 'a'; [ <?{ $u eq 'a' }> a ] b /, 'and by code inside a non-capturing group';

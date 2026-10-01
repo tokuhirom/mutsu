@@ -540,6 +540,42 @@ remaining `code` declines are the parts of Slice C not yet landed: `<{ … }>` c
 `** {n}` (the count is evaluated when the quantifier is reached, so it needs run-time bounds on the
 loop ops), then `<$var>` / `<@var>` / `$( … )` interpolation.
 
+**Slice C, second part (#10253): the interpolation atoms landed.**
+
+- **`<$rx>` / `$rx`** (a Regex value spliced in, `CaptureIsolatedGroup`) compiles to
+  `OpenIsolated … DropCapture`: the body runs in a capture level of its own and the level's
+  captures are dropped when it closes, which is `GroupShape::Isolated`. The level inherits no
+  `:my` lexicals, as the walk's barrier for a regex of its own arms none. Under ratchet the group
+  commits to its first end, as a capturing group does. A value that closed over its own scope
+  (`CaptureIsolatedGroupScoped`) still declines (`isolated-group-scoped`): installing that scope
+  around a body the program can backtrack into needs an enter/exit pair of ops.
+- **`$x` of an in-regex `:my` lexical** (`VarInterp`) and **`<{ … }>`** (`ClosureInterpolation`)
+  compile to `CapAtom`, which calls the walk's own single-candidate arm. The closure arm moved into
+  the shared leaf (`regex_closure_interp_atom`) and goes through `rx_code_call`, so D6 records and
+  replays it. Both mark the program as one the position-only matcher must not run (`has_code`):
+  `<{ … }>` runs code, and `$x` reads lexicals that matcher does not have.
+- **Nested levels read the enclosing `:my` lexicals.** The walk publishes them to an inline
+  sub-pattern through the vars seed. A compiled capture group, separated-quantifier iteration or
+  conjunction branch opens a level that starts with the enclosing level's lexicals (shared, not
+  copied). The first part's sweeps missed it, because no `$x` was compiled yet; the 15 test files
+  that landed on `main` since then found it
+  (`t/regex/regex-lookaround-bound-param.t`: `$ni` read inside a `%` quantifier's atom). A
+  conjunction branch that reads a lexical declines with `conjunction-code`, as one that runs code does.
+- **D6's record is order-exact.** A code block can match a regex of its own, which holds code of
+  its own. The record used to push an invocation after its run, so the inner events preceded the outer
+  one and the replay saw them out of call order. An event is now reserved before the run and
+  keeps how many events the run produced, so a replay answers the invocation from the record and skips those.
+
+Survey: `isolated-group` 90 → 0 (17 scoped values decline under their own reason), `interpolation`
+55 → `code-interp` 22 + `qq-interp` 9, `code` 83 → `repeat-code` 42; compiled patterns 6,319 → 6,492.
+What is left of Slice C is `** {n}` (run-time loop bounds), `$( … )` / `@( … )`
+(`CodeInterp`, which yields several candidate ends) and `"…$x.meth()…"` (`QqInterp`), and the
+declines named above.
+
+Two walk bugs found on the way, which both engines share and D6 therefore cannot see, are filed:
+`<{ … }>` merges the interpolated pattern's captures into the caller where rakudo discards them
+(#10417), and `$/` in a `<{ … }>` body is empty where rakudo gives the match so far (#10418).
+
 ### Reproducing §2
 
 ```raku

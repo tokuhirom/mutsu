@@ -154,6 +154,29 @@ pub(super) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
     })
 }
 
+/// Does `pattern` run code or read an in-regex lexical (`$x`) at its own
+/// capture level? Either needs the enclosing level's view of the match, which a
+/// nested run of its own would not have.
+pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().any(|t| {
+        t.separator
+            .as_ref()
+            .is_some_and(|sep| pattern_reads_enclosing_state(&sep.pattern))
+            || match &t.atom {
+                RegexAtom::CodeAssertion { .. }
+                | RegexAtom::VarDecl { .. }
+                | RegexAtom::VarInterp(_) => true,
+                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => {
+                    pattern_reads_enclosing_state(p)
+                }
+                RegexAtom::Alternation(alts)
+                | RegexAtom::SequentialAlternation(alts)
+                | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_reads_enclosing_state),
+                _ => false,
+            }
+    })
+}
+
 /// Is any token under `pattern` a numbered alias (`$0=…`)? The walk matches a
 /// `||` branch in a capture scope of its own, so such an alias there numbers
 /// from the branch's start, not from the enclosing level's.
@@ -402,7 +425,7 @@ impl Compiler {
                 // a level whose captures are dropped when it closes
                 // (`GroupShape::Isolated`). Under ratchet the group commits to
                 // its first end, as a capturing group does.
-                self.ops.push(RxOp::OpenCapture);
+                self.ops.push(RxOp::OpenIsolated);
                 let height = token.ratchet.then(|| self.reg());
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
