@@ -125,6 +125,7 @@ impl Interpreter {
         if !token.frugal {
             return vec![self.separated_ratchet_candidate(
                 token,
+                sep,
                 chars,
                 start,
                 pkg,
@@ -140,6 +141,7 @@ impl Interpreter {
             .map(|n| {
                 self.separated_ratchet_candidate(
                     token,
+                    sep,
                     chars,
                     start,
                     pkg,
@@ -152,7 +154,8 @@ impl Interpreter {
             .collect()
     }
 
-    /// One candidate of the ratcheted scan: the chain of `atom_caps` (and the
+    /// One candidate of the ratcheted scan over `token`'s separator `sep`: the
+    /// chain of `atom_caps` (and the
     /// `sep_caps` between them) ending at `cur`, where its last atom did, plus a `%%`
     /// trailing separator, which Rakudo consumes greedily and ratchet commits
     /// to.
@@ -160,6 +163,7 @@ impl Interpreter {
     fn separated_ratchet_candidate(
         &mut self,
         token: &RegexToken,
+        sep: &RegexSeparatorSpec,
         chars: &[char],
         start: usize,
         pkg: Symbol,
@@ -168,7 +172,6 @@ impl Interpreter {
         sep_caps: &[RegexCaptures],
         cur: usize,
     ) -> (usize, RegexCaptures) {
-        let sep = token.separator.as_ref().expect("separator present");
         let names = Self::collect_quantified_names_for_token(token);
         if atom_caps.is_empty() {
             // Zero iterations still marks the quantified names, so `$/<name>` is
