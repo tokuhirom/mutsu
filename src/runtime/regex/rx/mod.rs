@@ -24,10 +24,13 @@
 //! produces the captures the walk would have produced.
 
 mod rx_atom;
+mod rx_call;
 mod rx_capture_ops;
 mod rx_compile;
 mod rx_compile_compound;
 mod rx_diff;
+mod rx_entry;
+mod rx_frame;
 mod rx_levels;
 mod rx_ltm;
 mod rx_vm;
@@ -214,7 +217,48 @@ pub(super) enum RxOp {
     /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
     /// on the backtrack stack as one choice point.
     InterpEnds(u32),
-    /// A complete match ending at `pos`.
+    /// A `<subrule>` call, `atoms[atom]` (ADR-0135 D3). The callee is resolved
+    /// when the call is reached: a plain rule whose program exists runs as an
+    /// [`rx_frame::Frame`] in this same loop, and its ends are entered one at a
+    /// time as it returns; any other callee (a proto, one with arguments, a
+    /// left-recursive one, a rule of the walk) is asked for its ends by the
+    /// walk's own producer (`regex_match_atom_all_with_capture_opts`) and they
+    /// are entered highest priority first. `commit` (the call's token is
+    /// ratcheted) drops every other end the moment the first one is entered.
+    Call {
+        atom: u32,
+        commit: bool,
+    },
+    /// The ratcheted `*` (`min == 0`) / `+` (`min == 1`) of the `<subrule>`
+    /// `atoms[atom]` as one possessive scan, when the walk's fast path applies
+    /// to the call (`regex_named_ratchet_run`, the walk's own): the scan's
+    /// captures are merged and the pc jumps to `skip`, past the general loop
+    /// that follows. When it does not apply, the general loop runs. Fails when
+    /// the scan matched fewer than `min` iterations.
+    NamedRun {
+        atom: u32,
+        min: u32,
+        skip: u32,
+    },
+    /// The end of a `~` goal match's goal, which ran in a capture level of its
+    /// own after the inner pattern's (`Collect`ed since `regs[base]`): close it
+    /// and merge both levels' captures into the enclosing one, the goal's first
+    /// (the order the walk's `GoalMatch` arm merges them).
+    GoalEnd {
+        base: u16,
+    },
+    /// The goal matched: the failure handler the inner pattern's end pushed at
+    /// `regs[height]` is not needed (the choice points above it, the goal's own
+    /// other ends, stay).
+    GoalOk {
+        height: u16,
+    },
+    /// The goal found no match after an end of the inner pattern: record the
+    /// failure (`record_goal_failure`) for the "expected goal" report, and fail.
+    GoalFail {
+        tok: u32,
+    },
+    /// A complete match ending at `pos`; in a callee frame, the return.
     Match,
 }
 

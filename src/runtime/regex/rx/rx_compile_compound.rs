@@ -135,6 +135,65 @@ impl Compiler {
         Ok(())
     }
 
+    /// `inner ~ goal`, as the walk's `GoalMatch` arm matches it: every end of
+    /// the inner pattern (a regex of its own, so a level of its own) is a start
+    /// for the goal (another), whose every end is a candidate; both levels'
+    /// captures merge with the goal's first. A goal that matches nowhere after
+    /// an end of the inner pattern records the failure for the "expected goal"
+    /// report. Under ratchet the atom commits to its first end.
+    pub(super) fn goal_match(
+        &mut self,
+        token: &RegexToken,
+        goal: &RegexPattern,
+        inner: &RegexPattern,
+    ) -> Result<(), Decline> {
+        // Each side is a regex of its own: code and backreferences there read
+        // that side's captures, not the enclosing level's.
+        if [goal, inner]
+            .iter()
+            .any(|p| pattern_contains_backref(p) || pattern_reads_enclosing_state(p))
+        {
+            return Err("goal-match-code");
+        }
+        let height = token.ratchet.then(|| self.reg());
+        if let Some(h) = height {
+            self.ops.push(RxOp::Height(h));
+        }
+        let base = self.reg();
+        self.ops.push(RxOp::SepBase(base));
+        self.ops.push(RxOp::OpenIsolated);
+        self.pattern(inner)?;
+        self.ops.push(RxOp::Collect { sep: false });
+        // The failure handler sits below the goal's own choice points, so it is
+        // reached only when the goal found nothing after this inner end.
+        let handler_height = self.reg();
+        self.ops.push(RxOp::Height(handler_height));
+        let split = self.pc();
+        self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
+        self.ops.push(RxOp::OpenIsolated);
+        self.pattern(goal)?;
+        self.ops.push(RxOp::GoalEnd { base });
+        self.ops.push(RxOp::GoalOk {
+            height: handler_height,
+        });
+        let join = self.pc();
+        self.ops.push(RxOp::Jmp(0)); // patched below
+        let handler = self.pc();
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        self.ops.push(RxOp::GoalFail { tok });
+        let end = self.pc();
+        self.ops[join as usize] = RxOp::Jmp(end);
+        self.ops[split as usize] = RxOp::Split {
+            prefer: split + 1,
+            alt: handler,
+        };
+        if let Some(h) = height {
+            self.ops.push(RxOp::Cut(h));
+        }
+        Ok(())
+    }
+
     /// `a & b & c`, as `drive_conjunction_candidates` drives it: every end
     /// of the first branch, in priority order, is a candidate once each
     /// other branch matches exactly the same span. The first branch runs
@@ -156,7 +215,10 @@ impl Compiler {
             // branch's own level and the other branches' nested runs hide.
             return Err("conjunction-backref");
         }
-        if rest.iter().any(|b| super::rx_vm::program_for(b).is_none()) {
+        if rest
+            .iter()
+            .any(|b| super::rx_entry::program_for(b).is_none())
+        {
             return Err("conjunction-branch");
         }
         if branches.iter().any(pattern_reads_enclosing_state) {

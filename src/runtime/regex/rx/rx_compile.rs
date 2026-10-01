@@ -44,6 +44,8 @@ pub(super) struct Compiler {
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
     pub(super) quant_alt_depth: usize,
+    /// The next [`Self::atom`] call compiles the body of a chain quantifier.
+    chain_atom: bool,
 }
 
 /// Compile `pattern`, or say why not.
@@ -60,6 +62,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         nregs: 0,
         has_code: false,
         quant_alt_depth: 0,
+        chain_atom: false,
     };
     c.pattern(pattern)?;
     c.ops.push(RxOp::Match);
@@ -126,7 +129,9 @@ pub(super) fn pattern_captures(pattern: &RegexPattern) -> bool {
 /// Does matching `atom` itself record a capture (its token's alias aside)?
 pub(super) fn atom_captures(atom: &RegexAtom) -> bool {
     match atom {
-        RegexAtom::CaptureGroup(_) => true,
+        // A subrule call files its own Match under its name (or, silent, under
+        // the hidden marker when it has nested captures or an action).
+        RegexAtom::CaptureGroup(_) | RegexAtom::Named(_) => true,
         RegexAtom::Group(p) => pattern_captures(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
@@ -356,6 +361,9 @@ impl Compiler {
     /// (the walk's ratchet only stops a capture group from trying another
     /// inner end; see `regex_match_lazy.rs`).
     pub(super) fn atom(&mut self, token: &RegexToken) -> Result<(), Decline> {
+        // Consumed here, so the atoms of a group nested under this one do not
+        // inherit it.
+        let chain = std::mem::take(&mut self.chain_atom);
         match &token.atom {
             a if is_consuming(a) => {
                 let i = self.push_atom(a);
@@ -391,7 +399,23 @@ impl Compiler {
                 }
                 self.ops.push(RxOp::CloseCapture { start, nested });
             }
-            RegexAtom::Named(_) => return Err("subrule"),
+            RegexAtom::Named(_) => {
+                let i = self.push_atom(&token.atom);
+                if chain {
+                    // The body of a chain quantifier (`<x>*`) is matched by the
+                    // walk's single-candidate arm, one first end per iteration
+                    // (`grow_one_iter`), which is what `CapAtom` calls.
+                    self.ops.push(RxOp::CapAtom(i));
+                } else {
+                    self.ops.push(RxOp::Call {
+                        atom: i,
+                        commit: token.ratchet,
+                    });
+                }
+                // The callee may run code, read lexicals or capture: the
+                // position-only matcher must not run this program.
+                self.has_code = true;
+            }
             RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
             RegexAtom::Lookaround { pattern, .. } => {
@@ -400,7 +424,7 @@ impl Compiler {
                 // which answers from the body's own compiled program. Compile
                 // the lookaround only when that program exists, so the body
                 // never drops back to the walk in mid-program (D5).
-                let Some(body) = super::rx_vm::program_for(pattern) else {
+                let Some(body) = super::rx_entry::program_for(pattern) else {
                     return Err("lookaround-body");
                 };
                 // The body runs code of its own in a nested run.
@@ -436,7 +460,12 @@ impl Compiler {
                 self.ops.push(RxOp::CapAtom(i));
                 self.has_code = true;
             }
-            RegexAtom::WsRule => return Err("ws-rule"),
+            RegexAtom::WsRule => {
+                // `<.ws>` of a `rule`: one candidate, matched by the walk's
+                // own single-candidate arm (a user `ws` token included).
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+            }
             RegexAtom::CaptureIsolatedGroup(p) => {
                 // `<$rx>` and friends: the body is a regex of its own, matched in
                 // a level whose captures are dropped when it closes
@@ -490,7 +519,8 @@ impl Compiler {
                 let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::CapAtom(i));
             }
-            RegexAtom::TildeMarker | RegexAtom::GoalMatch { .. } => return Err("goal-match"),
+            RegexAtom::GoalMatch { goal, inner, .. } => self.goal_match(token, goal, inner)?,
+            RegexAtom::TildeMarker => return Err("goal-match"),
             RegexAtom::RecurseSelf(_) => return Err("recurse-self"),
             _ => return Err("other-atom"),
         }
@@ -568,7 +598,25 @@ impl Compiler {
         else {
             return Err("too-large");
         };
-        self.repeat_bounded(token, Bounds::Fixed(min, max))
+        // A ratcheted `*` / `+` over a `<subrule>` is first offered to the
+        // walk's possessive scan (`walk_ratchet_fast_paths`). Only the unbounded
+        // quantifiers qualify, as in the walk; an alias or `:frugal` never does.
+        let scan = matches!(token.atom, RegexAtom::Named(_))
+            && token.ratchet
+            && token.named_capture.is_none()
+            && !token.frugal
+            && matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore);
+        if !scan {
+            return self.repeat_bounded(token, Bounds::Fixed(min, max));
+        }
+        let atom = self.push_atom(&token.atom);
+        let at = self.pc();
+        self.ops.push(RxOp::NamedRun { atom, min, skip: 0 }); // patched below
+        self.repeat_bounded(token, Bounds::Fixed(min, max))?;
+        let skip = self.pc();
+        self.ops[at as usize] = RxOp::NamedRun { atom, min, skip };
+        self.has_code = true;
+        Ok(())
     }
 
     /// `x ** { code }`: the walk evaluates the count where the quantifier is
@@ -652,6 +700,7 @@ impl Compiler {
         }
         let alt_body = atom_contains_alternation(&token.atom);
         self.quant_alt_depth += usize::from(alt_body);
+        self.chain_atom = true;
         let body_result = self.atom(token);
         self.quant_alt_depth -= usize::from(alt_body);
         body_result?;

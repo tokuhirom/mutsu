@@ -556,6 +556,20 @@ pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>)
     });
 }
 
+/// Run `f` with the reduce log set aside, then put it back: the walk's replay of
+/// a compiled run (`MUTSU_RX_DIFF`, ADR-0135 D6) must not log the reductions of a
+/// match the compiled run already logged, or an action would run twice.
+pub(crate) fn isolate_reduced_log<R>(f: impl FnOnce() -> R) -> R {
+    let saved = REDUCED_SUBRULES.with(|slot| slot.borrow_mut().as_mut().map(std::mem::take));
+    let out = f();
+    REDUCED_SUBRULES.with(|slot| {
+        if let (Some(log), Some(saved)) = (slot.borrow_mut().as_mut(), saved) {
+            *log = saved;
+        }
+    });
+    out
+}
+
 /// Activates the reduce log for one `Grammar.parse(:actions(...))`, restoring any
 /// enclosing parse's log on drop.
 pub(crate) struct ReducedSubruleGuard {

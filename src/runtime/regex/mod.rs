@@ -37,6 +37,7 @@ mod regex_match_public;
 mod regex_match_public_folded;
 mod regex_match_sep;
 mod regex_match_sep_lazy;
+mod regex_named_run;
 pub(crate) mod regex_prefilter;
 pub(crate) mod regex_prefilter_analysis;
 mod regex_prefilter_chain;
