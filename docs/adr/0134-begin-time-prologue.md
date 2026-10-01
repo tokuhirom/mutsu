@@ -282,9 +282,25 @@ status here.
 - When the mainline's undeclared-routine check fails, the prologue alone runs
   first (`run_begin_prologue_only`), so the BEGIN's output precedes the
   compile error, as on rakudo.
-- **Residue:** a package body moves whole, so a bare run-time statement
-  inside a class or `module Foo { ... }` body that precedes a unit-level BEGIN
-  runs with the prologue instead of in its source position.
+- **Package bodies** (#10332, closing the slice's original residue). A
+  class, grammar or brace-scoped `module`/`package` declaration the prologue
+  takes is split (`src/runtime/begin_prologue/package_body.rs`,
+  `t/control/begin-prologue-package-body.t`):
+  - the prologue keeps the declaration with its BEGIN-time part: attributes,
+    methods, subs, nested types (themselves split the same way), `use`,
+    phasers, and the static half of each `my`/`our` variable;
+  - the bare statements and the initializers (as assignments) stay at the
+    declaration's position as a `Stmt::PackageRuntimeBody`. It compiles to
+    the same `PackageScope` a `package Foo { ... }` body runs in, which
+    re-enters the package. The body's `my` lexicals are bound from the
+    package's static store (`package_lexicals`, where its methods already
+    read them) for the duration, written back on exit, and a same-named
+    outer lexical is restored. `$?CLASS` is bound to the class.
+
+  A `state`, dynamic, exported or `&` variable keeps its declaration whole,
+  and so does a group declaration with an initializer (`my ($a, $b) = ...`),
+  so those initializers still run with the prologue. A role body is not
+  split: it runs at composition.
 
 **Slice 2 — implemented** (`src/runtime/begin_prologue/nested.rs`,
 `t/control/begin-prologue-nested.t`).

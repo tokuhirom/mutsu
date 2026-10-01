@@ -276,6 +276,7 @@ mod vm_nested_export_subs;
 mod vm_nested_method_capture;
 mod vm_numeric_uninit_warn;
 mod vm_our_package_vars;
+pub(crate) mod vm_package_body_lexicals;
 pub(crate) mod vm_poll;
 mod vm_pseudo_stash_ops;
 mod vm_rakudo_internals;

@@ -1149,6 +1149,8 @@ pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod package_runtime_body;
+pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
 mod stmt;
@@ -1304,6 +1306,15 @@ pub(crate) struct Compiler {
     /// must still target the class package's static store, while an
     /// undeclared routine assignment remains readonly.
     pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// The `my` lexicals a class or package body declares at its top level,
+    /// in `VarDecl` naming (`x`, `@a`). A class-body statement compiles in a
+    /// chunk of its own, and the run-time part of a body the BEGIN prologue
+    /// split off (ADR-0134, #10332) compiles apart from its declarations, so
+    /// neither sees the declaration's slot. Such a name is still the body's
+    /// lexical, not a package variable: [`Self::qualify_variable_name`] keeps
+    /// it bare, so it resolves through the package's static store
+    /// (`package_lexicals`) as it does from the body's methods.
+    pub(crate) package_body_lexicals: HashSet<String>,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -1860,6 +1871,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
+            package_body_lexicals: HashSet::new(),
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
@@ -2079,6 +2091,7 @@ impl Compiler {
             || name.contains("::")
             || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
+            || self.package_body_lexicals.contains(name)
         {
             return name.to_string();
         }
