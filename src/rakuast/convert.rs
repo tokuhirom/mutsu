@@ -1702,8 +1702,8 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
         // so flatten a same-operator left chain into one operand list.
         Expr::Binary { left, op, right } if is_list_infix(op) => {
-            let mut operands = Vec::new();
-            flatten_list_infix(op, left, right, &mut operands);
+            let mut operands = left.flatten_binary_chain(op);
+            operands.push(right);
             let mut nodes = Vec::with_capacity(operands.len());
             for e in operands {
                 nodes.push(Value::rakuast(Box::new(convert_expr(e)?)));
@@ -3528,31 +3528,6 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
             | TokenKind::Ampersand
             | TokenKind::Caret
     ) || matches!(op, TokenKind::Ident(name) if name == "min" || name == "max")
-}
-
-/// Flatten a left-nested same-operator chain (`a op b op c` parsed as
-/// `(a op b) op c`) into a single operand list `[a, b, c]`.
-fn flatten_list_infix<'a>(
-    op: &crate::token_kind::TokenKind,
-    left: &'a Expr,
-    right: &'a Expr,
-    out: &mut Vec<&'a Expr>,
-) {
-    if let Expr::Binary {
-        left: ll,
-        op: lop,
-        right: lr,
-    } = left
-    {
-        if lop == op {
-            flatten_list_infix(op, ll, lr, out);
-        } else {
-            out.push(left);
-        }
-    } else {
-        out.push(left);
-    }
-    out.push(right);
 }
 
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).

@@ -679,8 +679,9 @@ impl Compiler {
         // operands ref-preserving so the runtime sees `ContainerRef`s.
         let is_identity_op = op == "=:=" || op == "!=:=";
         if meta == "X" || meta == "Z" {
-            let mut operands: Vec<&Expr> = Vec::new();
-            Self::collect_meta_chain(meta, op, left, right, &mut operands);
+            // `a X b X c` is `MetaOp(X, MetaOp(X, a, b), c)`: one operand list.
+            let mut operands = left.flatten_meta_chain(meta, op);
+            operands.push(right);
             if operands.len() > 2 {
                 for operand in &operands {
                     if is_identity_op {
@@ -768,32 +769,6 @@ impl Compiler {
             // path; for now such targets fall through and are not mutated.
             _ => None,
         }
-    }
-
-    /// Flatten a left-nested chain of identical (meta, op) MetaOps into a flat
-    /// operand list. `a X b X c` parses as `MetaOp(X, MetaOp(X, a, b), c)`; this
-    /// collects `[a, b, c]`.
-    fn collect_meta_chain<'a>(
-        meta: &str,
-        op: &str,
-        left: &'a Expr,
-        right: &'a Expr,
-        operands: &mut Vec<&'a Expr>,
-    ) {
-        if let Expr::MetaOp {
-            meta: lm,
-            op: lo,
-            left: ll,
-            right: lr,
-        } = left
-            && lm == meta
-            && lo == op
-        {
-            Self::collect_meta_chain(meta, op, ll, lr, operands);
-        } else {
-            operands.push(left);
-        }
-        operands.push(right);
     }
 
     /// Compile InfixFunc (atan2, sprintf, flip-flop, etc.).

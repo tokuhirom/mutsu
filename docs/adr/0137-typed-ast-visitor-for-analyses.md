@@ -97,3 +97,8 @@ a separate decision when the first rewriting pass wants one.
   keep the type captures (`::T`, role type parameters) in scope. The name, routine and type
   checks now judge nested bodies too, as rakudo does; the variable check still judges uses only
   in its old positions until it can see caller lexicals declared later (#10511).
+- **Shared shape helpers** (#10468): non-visitor duplicates folded into one implementation each
+  (−10 rows) — "a block's `}` ends the statement" now reads the position the brace parsers
+  record (`parser/stmt_ending_brace.rs`) instead of two AST classifiers, `use lib` argument
+  decoding is `use_lib_args`, and operator chains are `Expr::flatten_binary_chain` /
+  `flatten_meta_chain` (`ast/chains.rs`).

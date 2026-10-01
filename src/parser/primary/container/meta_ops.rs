@@ -268,7 +268,11 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                 && inner_meta == "Z"
                 && *inner_op == op
             {
-                let mut args = collect_zip_operands(&left, &op);
+                let mut args: Vec<Expr> = left
+                    .flatten_meta_chain("Z", &op)
+                    .into_iter()
+                    .cloned()
+                    .collect();
                 args.push(right);
                 if !op.is_empty() {
                     args.push(Expr::Binary {
@@ -292,24 +296,6 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
         }
         other => other,
     }
-}
-
-/// Collect all operands from a left-nested chain of Z MetaOps with the same op.
-fn collect_zip_operands(expr: &Expr, expected_op: &str) -> Vec<Expr> {
-    if let Expr::MetaOp {
-        meta,
-        op,
-        left,
-        right,
-    } = expr
-        && meta == "Z"
-        && op == expected_op
-    {
-        let mut operands = collect_zip_operands(left, expected_op);
-        operands.push(*right.clone());
-        return operands;
-    }
-    vec![expr.clone()]
 }
 
 fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
