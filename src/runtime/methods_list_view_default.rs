@@ -1,6 +1,7 @@
-//! `Any`'s index-view methods on an object that supplies its own `list`.
+//! `Any`'s list-derived methods on an object that supplies its own `list`.
 //!
-//! Rakudo defines `Any.kv`/`.pairs`/`.antipairs`/`.keys`/`.values` on a
+//! Rakudo defines `Any.kv`/`.pairs`/`.antipairs`/`.keys`/`.values` and
+//! `.elems`/`.Slip`/`.flat`/`.Seq`/`.Array`/`.List`/`.hash` on a
 //! defined invocant as `self.list.<method>`, so a class overriding `list`
 //! answers them from that list rather than as one opaque item. `ValueList`
 //! (`method list() { self.List }`) is the ecosystem case: `Tuple.kv` yields
@@ -22,14 +23,42 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
-        if !args.is_empty() || !matches!(method, "kv" | "pairs" | "antipairs" | "keys" | "values") {
+        if !args.is_empty()
+            || !matches!(
+                method,
+                "kv" | "pairs"
+                    | "antipairs"
+                    | "keys"
+                    | "values"
+                    | "elems"
+                    | "Slip"
+                    | "flat"
+                    | "Seq"
+                    | "Array"
+                    | "List"
+                    | "hash"
+            )
+        {
             return Ok(None);
         }
         let ValueView::Instance { class_name, .. } = target.view() else {
             return Ok(None);
         };
         let cn = class_name.resolve();
-        if !self.has_user_method(&cn, "list") || self.has_user_method(&cn, method) {
+        if self.has_user_method(&cn, method) {
+            return Ok(None);
+        }
+        if !self.has_user_method(&cn, "list") {
+            // `Any.hash` is `self.list.hash`; a plain user class's default
+            // `list` is the one-item list of itself, so `.hash` dies with
+            // the odd-number-of-elements error. Only for a class whose
+            // whole MRO is user-declared: a builtin ancestor owns its `hash`.
+            if method == "hash" && self.is_plain_user_class(&cn) {
+                let one = Value::array(vec![target.clone()]);
+                return self
+                    .call_method_with_values(one, "hash", Vec::new())
+                    .map(Some);
+            }
             return Ok(None);
         }
         let list = self.call_method_with_values(target.clone(), "list", Vec::new())?;
@@ -39,5 +68,16 @@ impl Interpreter {
         }
         self.call_method_with_values(list, method, Vec::new())
             .map(Some)
+    }
+
+    /// Whether every class in `cn`'s MRO (bar `Any`/`Mu`) is user-declared.
+    // Cost: O(d), d = MRO depth.
+    fn is_plain_user_class(&mut self, cn: &str) -> bool {
+        let mro = self.class_mro(cn);
+        let registry = self.registry();
+        mro.iter().all(|c| {
+            let name = c.resolve();
+            matches!(name.as_str(), "Any" | "Mu") || registry.classes.contains_key(name.as_str())
+        })
     }
 }
