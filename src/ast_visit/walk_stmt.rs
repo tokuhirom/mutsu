@@ -48,6 +48,15 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
         | Stmt::SetLine(_) => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) => {}
+        Stmt::LoopExitGuard {
+            label: _,
+            next_ph,
+            exit_ph,
+        } => {
+            super::walk_stmts(v, next_ph);
+            super::walk_stmts(v, exit_ph);
+        }
+        Stmt::LoopExitGuardEnd => {}
         Stmt::NestedMethodCapture {
             index: _,
             closure,

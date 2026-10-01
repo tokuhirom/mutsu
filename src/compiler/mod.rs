@@ -1168,6 +1168,9 @@ mod trir_call;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Open `Stmt::LoopExitGuard` regions: the guard op's index and the
+    /// NEXT / UNDO+LEAVE queues `Stmt::LoopExitGuardEnd` lays out after it.
+    loop_exit_guards: Vec<(usize, Vec<Stmt>, Vec<Stmt>)>,
     /// Whether `use fatal` is textually active at the point currently being
     /// compiled (#9521) — a compile-time mirror of the runtime `fatal_mode`
     /// flag `use fatal;`'s own statement sets. `use fatal` is lexical in real
@@ -1860,6 +1863,7 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
             variables_pragma: None,
             trir_routines: HashMap::new(),
