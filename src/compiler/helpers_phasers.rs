@@ -824,10 +824,10 @@ impl Compiler {
             return None;
         }
         for (var_name, phaser_body) in extracted {
-            let init = match phaser_body.as_slice() {
-                [Stmt::Expr(e)] => e.clone(),
-                _ => unreachable!("checked above"),
+            let [Stmt::Expr(init)] = phaser_body.as_slice() else {
+                continue;
             };
+            let init = init.clone();
             let body = vec![Stmt::VarDecl {
                 name: var_name,
                 expr: init,

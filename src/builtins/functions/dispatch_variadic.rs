@@ -420,9 +420,15 @@ fn sum_generic_items(args: &[Value]) -> Option<Vec<Value>> {
             ValueView::Array(items, ..) => exotic |= items.iter().any(|v| !plain(v)),
             ValueView::Seq(items) => exotic |= items.iter().any(|v| !plain(v)),
             ValueView::LazyList(ll)
-                if !ll.is_genuinely_lazy() && ll.cache.lock().unwrap().is_some() =>
+                if !ll.is_genuinely_lazy() && ll.cache.lock().is_ok_and(|c| c.is_some()) =>
             {
-                exotic |= ll.cache.lock().unwrap().iter().flatten().any(|v| !plain(v));
+                exotic |= ll
+                    .cache
+                    .lock()
+                    .ok()
+                    .into_iter()
+                    .flat_map(|c| c.clone().unwrap_or_default())
+                    .any(|v| !plain(&v));
             }
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
@@ -441,9 +447,15 @@ fn sum_generic_items(args: &[Value]) -> Option<Vec<Value>> {
             ValueView::Array(items, ..) => out.extend(items.iter().cloned()),
             ValueView::Seq(items) => out.extend(items.iter().cloned()),
             ValueView::LazyList(ll)
-                if !ll.is_genuinely_lazy() && ll.cache.lock().unwrap().is_some() =>
+                if !ll.is_genuinely_lazy() && ll.cache.lock().is_ok_and(|c| c.is_some()) =>
             {
-                out.extend(ll.cache.lock().unwrap().iter().flatten().cloned());
+                out.extend(
+                    ll.cache
+                        .lock()
+                        .ok()
+                        .into_iter()
+                        .flat_map(|c| c.clone().unwrap_or_default()),
+                );
             }
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
