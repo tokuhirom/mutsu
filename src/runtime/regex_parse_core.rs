@@ -509,6 +509,7 @@ fn try_consume_quantifier(
                 if chars.peek() == Some(&'{') {
                     chars.next();
                     let code = read_code_block_body(chars.by_ref());
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     RegexQuant::RepeatCode(code)
                 } else {
                     let mut count_str = String::new();
@@ -2306,6 +2307,7 @@ impl Interpreter {
                         chars.next();
                     }
                     runtime_value_atom = true;
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     RegexAtom::CodeInterp {
                         code: code.into(),
                         list: c == '@',
@@ -3165,6 +3167,7 @@ impl Interpreter {
                                 chars.next();
                             }
                             if is_closure_interp {
+                                super::regex::regex_helpers::note_regex_code_lowered();
                                 RegexAtom::ClosureInterpolation { code, body: None }
                             } else {
                                 super::regex::regex_helpers::note_regex_code_lowered();
@@ -4627,6 +4630,7 @@ impl Interpreter {
                                 // `** {code}` — code block quantifier
                                 chars.next(); // skip '{'
                                 let code = read_code_block_body(chars.by_ref());
+                                super::regex::regex_helpers::note_regex_code_lowered();
                                 RegexQuant::RepeatCode(code)
                             } else {
                                 // Parse the count/range: N, N..M, N..*, with

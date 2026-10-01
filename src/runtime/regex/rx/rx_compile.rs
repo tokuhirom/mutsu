@@ -17,6 +17,16 @@ use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToke
 /// `MUTSU_VM_STATS` (`regex-vm: … declined=(reason=count …)`).
 pub(in crate::runtime::regex) type Decline = &'static str;
 
+/// A quantifier's iteration bounds: known at compile time, or read from the
+/// registers a `RepeatCount` filled when the quantifier was reached.
+#[derive(Clone, Copy)]
+enum Bounds {
+    /// `min`, and `max` (`u32::MAX`: no bound).
+    Fixed(u32, u32),
+    /// The registers holding `min` and `max` (`usize::MAX`: no bound).
+    Dyn(u16, u16),
+}
+
 pub(super) struct Compiler {
     pub(super) ops: Vec<RxOp>,
     pub(super) atoms: Vec<crate::runtime::regex_types::RegexAtom>,
@@ -140,11 +150,15 @@ pub(super) fn pattern_contains_backref(pattern: &RegexPattern) -> bool {
 /// run of its own?
 pub(super) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
     pattern.tokens.iter().any(|t| {
-        t.separator
-            .as_ref()
-            .is_some_and(|sep| pattern_contains_code(&sep.pattern))
+        matches!(t.quant, RegexQuant::RepeatCode(_))
+            || t.separator
+                .as_ref()
+                .is_some_and(|sep| pattern_contains_code(&sep.pattern))
             || match &t.atom {
-                RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => true,
+                RegexAtom::CodeAssertion { .. }
+                | RegexAtom::VarDecl { .. }
+                | RegexAtom::ClosureInterpolation { .. }
+                | RegexAtom::CodeInterp { .. } => true,
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_contains_code(p),
                 RegexAtom::Alternation(alts)
                 | RegexAtom::SequentialAlternation(alts)
@@ -159,12 +173,15 @@ pub(super) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
 /// nested run of its own would not have.
 pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
     pattern.tokens.iter().any(|t| {
-        t.separator
-            .as_ref()
-            .is_some_and(|sep| pattern_reads_enclosing_state(&sep.pattern))
+        matches!(t.quant, RegexQuant::RepeatCode(_))
+            || t.separator
+                .as_ref()
+                .is_some_and(|sep| pattern_reads_enclosing_state(&sep.pattern))
             || match &t.atom {
                 RegexAtom::CodeAssertion { .. }
                 | RegexAtom::VarDecl { .. }
+                | RegexAtom::ClosureInterpolation { .. }
+                | RegexAtom::CodeInterp { .. }
                 | RegexAtom::VarInterp(_) => true,
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => {
                     pattern_reads_enclosing_state(p)
@@ -319,7 +336,7 @@ impl Compiler {
                 }
                 self.repeat(token, min, max)?
             }
-            RegexQuant::RepeatCode(_) => return Err("repeat-code"),
+            RegexQuant::RepeatCode(_) => self.repeat_code(token)?,
         }
         if let Some((pos_base, start)) = alias {
             let tok = self.toks.len() as u32;
@@ -449,8 +466,30 @@ impl Compiler {
                 self.ops.push(RxOp::CapAtom(i));
                 self.has_code = true;
             }
-            RegexAtom::CodeInterp { .. } => return Err("code-interp"),
-            RegexAtom::QqInterp { .. } => return Err("qq-interp"),
+            RegexAtom::CodeInterp { .. } => {
+                // `$( … )` / `@( … )`: the code yields a pattern (or a list of
+                // them) matched here. The walk asks for every end up front, so
+                // the op does too and enters them highest priority first; under
+                // ratchet the atom commits to the first.
+                let height = token.ratchet.then(|| self.reg());
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Height(h));
+                }
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::InterpEnds(i));
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Cut(h));
+                }
+                self.has_code = true;
+            }
+            RegexAtom::QqInterp { .. } => {
+                // A `"…"` atom whose interpolations a thunk resolved at rule
+                // entry: the result is read from the environment, so there is
+                // no code to run here; without one, the fallback pattern is
+                // matched (the walk's own single-candidate arm).
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+            }
             RegexAtom::TildeMarker | RegexAtom::GoalMatch { .. } => return Err("goal-match"),
             RegexAtom::RecurseSelf(_) => return Err("recurse-self"),
             _ => return Err("other-atom"),
@@ -525,6 +564,30 @@ impl Compiler {
         min: usize,
         max: Option<usize>,
     ) -> Result<(), Decline> {
+        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
+        else {
+            return Err("too-large");
+        };
+        self.repeat_bounded(token, Bounds::Fixed(min, max))
+    }
+
+    /// `x ** { code }`: the walk evaluates the count where the quantifier is
+    /// reached, before it marks the names under it, so `RepeatCount` comes first
+    /// and the loop reads its bounds from registers. A body that can match empty
+    /// declines: its `ZeroIter` guard is built from static bounds.
+    fn repeat_code(&mut self, token: &RegexToken) -> Result<(), Decline> {
+        if atom_min_len(&token.atom) == 0 {
+            return Err("repeat-code-nullable");
+        }
+        let (min, max) = (self.reg(), self.reg());
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        self.ops.push(RxOp::RepeatCount { tok, min, max });
+        self.has_code = true;
+        self.repeat_bounded(token, Bounds::Dyn(min, max))
+    }
+
+    fn repeat_bounded(&mut self, token: &RegexToken, bounds: Bounds) -> Result<(), Decline> {
         let nullable = atom_min_len(&token.atom) == 0;
         if nullable && !token.ratchet && !loop_body_backtracks(&token.atom) {
             // The walk's chain takes an iteration's first candidate only;
@@ -533,12 +596,11 @@ impl Compiler {
                 return Err("nullable-loop");
             }
         }
-        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
-        else {
-            return Err("too-large");
-        };
         let named = token.named_capture.is_some();
-        if !nullable && is_consuming(&token.atom) && !token.frugal && !named {
+        if let (Bounds::Fixed(min, max), true) = (
+            bounds,
+            !nullable && is_consuming(&token.atom) && !token.frugal && !named,
+        ) {
             // A single one-grapheme atom needs no loop: the iterations are
             // scanned up front and given back from a position list.
             let atom = self.push_atom(&token.atom);
@@ -603,7 +665,7 @@ impl Compiler {
                 pos_base,
             });
         }
-        if let Some(start) = iter_start.filter(|_| nullable) {
+        if let (Some(start), Bounds::Fixed(min, max)) = (iter_start.filter(|_| nullable), bounds) {
             self.ops.push(RxOp::ZeroIter {
                 ctr,
                 start,
@@ -614,13 +676,23 @@ impl Compiler {
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));
         let exit = self.pc();
-        self.ops[head as usize] = RxOp::Repeat {
-            ctr,
-            min,
-            max,
-            body,
-            exit,
-            greedy: !token.frugal,
+        self.ops[head as usize] = match bounds {
+            Bounds::Fixed(min, max) => RxOp::Repeat {
+                ctr,
+                min,
+                max,
+                body,
+                exit,
+                greedy: !token.frugal,
+            },
+            Bounds::Dyn(min, max) => RxOp::RepeatDyn {
+                ctr,
+                min,
+                max,
+                body,
+                exit,
+                greedy: !token.frugal,
+            },
         };
         if let Some(h) = whole {
             self.ops.push(RxOp::Cut(h));

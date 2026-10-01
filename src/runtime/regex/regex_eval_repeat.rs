@@ -2,6 +2,22 @@ use super::super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// The bounds of the `** {code}` quantifier reached at `pos`, as the match
+    /// engines ask for them: [`Self::eval_regex_repeat_code`], recorded and
+    /// replayed under `MUTSU_RX_DIFF` like every other call-out (ADR-0135 D6).
+    // Cost: one run of the code, plus O(c) under `MUTSU_RX_DIFF`, c = the
+    // captures visible to it.
+    pub(super) fn regex_repeat_count(
+        &mut self,
+        code: &str,
+        pos: usize,
+        caps: &RegexCaptures,
+    ) -> Option<(usize, Option<usize>)> {
+        self.rx_code_call(code, pos, caps, |interp| {
+            interp.eval_regex_repeat_code(code, caps)
+        })
+    }
+
     /// Evaluate a `** {code}` quantifier code block and return (min, max).
     /// The code should return either a numeric value (exact count) or a Range.
     /// Returns None if the code fails to evaluate or produces an invalid/infinite value;

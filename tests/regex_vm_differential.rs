@@ -232,6 +232,15 @@ differential_case!(
     r#"my @log; say so "xab" ~~ / x :my $v = 'a'; ( $v { @log.push("in:" ~ $v) } b ) /; say @log.join(","); say ("ab" ~~ / :my $v = 'a'; ( $v ) b /).gist; say ("aab" ~~ / :my $v = 'a'; [ $v ]+ b /).gist; say ("a,a" ~~ / :my $v = 'a'; ( $v )+ % ',' /).gist; say ("ab" ~~ / :my $v = 'a'; [ <?{ $v eq 'a' }> a ] b /).gist"#
 );
 
+differential_case!(
+    code_interpolation_candidates,
+    r#"my @alts = <ab a>; say ("abc" ~~ / @(@alts) c /).gist; say ("abc" ~~ / $( 'ab' ) c /).gist; say ("aab" ~~ / @( <a aa> ) b /).gist; say ("xab" ~~ / x [ @(<a ab>) ]+ /).gist; say ("xaab" ~~ / x @(<a aa>) b /).gist; say ("abab" ~~ / :r @(<a ab>) <[ab]>+ /).gist; my @log; say so "ab" ~~ / a $( @log.push("interp"); 'b' ) /; say @log.join(","); @log = (); say ("aab" ~~ / @( @log.push("pick"); <aa a> ) b /).gist; say @log.join(",")"#
+);
+differential_case!(
+    code_repeat_counts,
+    r#"my $n = 3; say ("aaaa" ~~ / a ** {$n} /).gist; say ("aaaa" ~~ / ^ a ** {$n} $ /).gist; say ("aaaa" ~~ / a ** {2..3} a /).gist; say ("abab" ~~ / [ab] ** {2} /).gist; say ("aaa" ~~ / :r a ** {1..*} a /).gist; say ("aaaa" ~~ / a **? {1..*} /).gist; say ("abcabc" ~~ / [ <alpha> ** {2} ]+ /).gist; my @log; say so "aaab" ~~ / a ** { @log.push("again"); 1..3 } b /; say @log.join(","); @log = (); say so "xaab" ~~ / x [ a ** { @log.push("it"); 1 } ]+ b /; say @log.join(",")"#
+);
+
 /// The ADR-0135 §2.3 shapes must take the compiled engine: this is Slice A's
 /// kill criterion, and a silently declined pattern would pass every
 /// differential case above while measuring nothing.

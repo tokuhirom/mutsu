@@ -576,6 +576,43 @@ Two walk bugs found on the way, which both engines share and D6 therefore cannot
 `<{ … }>` merges the interpolated pattern's captures into the caller where rakudo discards them
 (#10417), and `$/` in a `<{ … }>` body is empty where rakudo gives the match so far (#10418).
 
+**Slice C, third part (#10253): `$( … )` / `@( … )`, `** { … }` and `"…"` thunks landed.**
+
+- **`$( … )` / `@( … )`** (`CodeInterp`) compiles to `InterpEnds`. The walk asks for every end of
+  the pattern the code yields up front (`regex_code_interp_ends`, with each end's capture delta), so the
+  op does the same through the same function and enters the ends highest priority first. The rest wait
+  on the backtrack stack as one choice point, `Choice::Cands`, which holds the list and how many are
+  left and merges the next candidate's delta after the rewind. Under ratchet the atom commits to the
+  first. The position-only matcher keeps its unrecorded copy of the call, since the compiled engine
+  never stands in for it.
+- **`** { … }`** takes its count from code evaluated where the quantifier is reached, before the
+  names under it are marked. `RepeatCount` evaluates it through `regex_repeat_count`, the walk's own
+  call, and stores the bounds in two registers. `RepeatDyn` is the `Repeat` loop op reading its bounds
+  from them. A body that can match empty would need a `ZeroIter` guard built from static bounds, so it
+  would decline (`repeat-code-nullable`); no pattern in `t/` or the roast whitelist hits it.
+  A `**` with a separator (`% ','`) still declines (`repeat-code`, 4 patterns).
+- **`QqInterp`** (a `"…"` atom whose interpolations a thunk resolved at rule entry) compiles to
+  `CapAtom`: the result is read from the environment, so there is no code to run at match time.
+- **D6's record is generic over the answer.** An invocation answers with a match, a list of candidate
+  ends or a pair of bounds; `rx_code_call` takes any of them (`CodeValue`), so one record serves
+  `{ }`, `$( )` and `** { }` alike.
+- **Every code-bearing atom counts as code for scope seeding.** `$( … )`, `<{ … }>` and a `** { … }`
+  token publish the enclosing level's captures and match start to the group they sit in, as `{ … }` does.
+  The first run of the D6 sweep showed `$/` starting at the group inside `[ @(<a ab>) ]+`.
+
+Survey: `code-interp` 22 → 0, `qq-interp` 9 → 0, `repeat-code` 42 → 4; compiled patterns 6,497 → 6,592.
+D6 agreed with the walk on all 6,955 files.
+
+**What is left of Slice C** are the declines that keep the walk: `isolated-group-scoped` (17: a spliced
+Regex value that closed over its own scope), `separator-code` (7) and `conjunction-code` (2): the
+compiled form hides the enclosing captures from code in a `%` quantifier or a `&` branch, and the
+walk's `InlineCaptureScope` fold, which Net::Whois's octet check reads, has no compiled counterpart yet.
+
+Three more walk bugs, which both engines share and D6 therefore cannot see, are filed: an aliased
+atom under `** { … }` records one capture per iteration where rakudo records the whole span (#10444),
+and the scalar `$( $re )` of a Regex value matches the literal text of its source (#10445), besides
+#10417 and #10418 from the second part.
+
 ### Reproducing §2
 
 ```raku
