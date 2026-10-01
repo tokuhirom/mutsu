@@ -5968,16 +5968,21 @@ pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind 
     }
 }
 
+/// The plain lexicals a deferred role-body statement declares: a `VarDecl`,
+/// or the ones in a bind group [`role_body_plan`] keeps whole.
+// Cost: O(n), n = number of statements in `stmt`'s group.
 pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
-    match stmt {
-        Stmt::VarDecl {
-            name,
-            is_our: false,
-            is_dynamic: false,
-            ..
-        } => vec![Symbol::intern(name)],
-        _ => Vec::new(),
-    }
+    crate::ast::scope_members(std::slice::from_ref(stmt))
+        .filter_map(|s| match s {
+            Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                ..
+            } => Some(Symbol::intern(name)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
