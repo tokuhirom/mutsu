@@ -161,6 +161,7 @@ pub(crate) use arith::{
     int_shift_left, int_shift_right, value_pred, value_succ,
 };
 pub(crate) use functions::build_junction;
+pub(crate) use functions::epoch_nanos;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;

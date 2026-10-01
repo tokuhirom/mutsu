@@ -260,7 +260,8 @@ fn is_plain_sub_name(name: &str) -> bool {
 pub(super) fn normalize_language_version(version_token: &str) -> String {
     if version_token.starts_with("v6.c") {
         "6.c".to_string()
-    } else if version_token.starts_with("v6.e") {
+    } else if version_token.starts_with("v6.e") || version_token.starts_with("v6.*") {
+        // `v6.*` selects the newest language revision the compiler supports.
         "6.e".to_string()
     } else {
         // `use v6.d` and bare `use v6` both select 6.d (rakudo's default).
