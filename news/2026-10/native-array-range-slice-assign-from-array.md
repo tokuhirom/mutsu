@@ -17,4 +17,4 @@ bind guard fired first and refused it.
 
 Those list-producing operators are now treated as slices, so the RHS array is
 distributed by value exactly as rakudo does. Pinned by
-`t/collections/subscript/native-array-slice-assign-from-array.t`.
+`t/collections/subscript/int-typed-array-range-slice-assign.t`.
