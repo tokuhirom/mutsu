@@ -4803,10 +4803,13 @@ impl Interpreter {
                 && !aliased_subrule_call
                 && !matches!(atom, RegexAtom::CaptureGroup(_))
                 && hash_capture.is_none()
-                && (matches!(
+                && matches!(
                     quant,
-                    RegexQuant::ZeroOrMore | RegexQuant::OneOrMore | RegexQuant::Repeat(..)
-                ) || (token_separator.is_some() && matches!(quant, RegexQuant::RepeatCode(_))));
+                    RegexQuant::ZeroOrMore
+                        | RegexQuant::OneOrMore
+                        | RegexQuant::Repeat(..)
+                        | RegexQuant::RepeatCode(_)
+                );
             // An `@<name>=` array-sigil alias only produces a List when the
             // aliased atom is itself a *capturing* construct — a capture group
             // (`@<x>=(\w)`) or a subrule call (`@<x>=<alpha>`, `@<x>=<myrule>`),
