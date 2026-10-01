@@ -190,14 +190,16 @@ impl Value {
     /// to a plain regex value (see [`crate::value::RegexClosure::declared_source`]).
     pub(crate) fn with_regex_declared_source(&self, text: &str) -> Self {
         match self.view() {
-            ValueView::Regex(pattern) => Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
-                pattern: Arc::new(pattern.to_string()),
-                scope: None,
-                source_tree: self.regex_source_tree().cloned().map(Box::new),
-                signature: self.regex_signature(),
-                topic: None,
-                declared_source: Some(Arc::from(text)),
-            })),
+            ValueView::Regex(pattern) => {
+                Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
+                    pattern: Arc::new(pattern.to_string()),
+                    scope: None,
+                    source_tree: self.regex_source_tree().cloned().map(Box::new),
+                    signature: self.regex_signature(),
+                    topic: None,
+                    declared_source: Some(Arc::from(text)),
+                }))
+            }
             _ => self.clone(),
         }
     }

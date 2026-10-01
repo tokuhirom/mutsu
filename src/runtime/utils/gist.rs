@@ -555,7 +555,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         // A grammar `token`/`rule`/`regex` method object gists as its
         // declaration source (`token love { ... }`).
-        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_regex_source") => {
+        ValueView::Instance { attributes, .. }
+            if attributes.contains_key("__mutsu_regex_source") =>
+        {
             attributes
                 .as_map()
                 .get("__mutsu_regex_source")
