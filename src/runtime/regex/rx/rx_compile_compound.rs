@@ -420,6 +420,16 @@ impl Compiler {
             return Err("too-large");
         };
         let ratchet = token.ratchet;
+        // Under ratchet a frugal chain still grows on demand; the walk's
+        // ratcheted scan grows it eagerly and offers each length, so code in
+        // an atom or separator would run a different number of times there.
+        // TODO: compile to bytecode once the walk is gone (ADR-0135 Slice E).
+        if ratchet
+            && token.frugal
+            && (atom_contains_code(&token.atom) || pattern_contains_code(sep))
+        {
+            return Err("separator-frugal-ratchet-code");
+        }
         let base = collect.then(|| self.reg());
         if let Some(b) = base {
             self.ops.push(RxOp::SepBase(b));
@@ -430,7 +440,8 @@ impl Compiler {
         }
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
-        let whole = ratchet.then(|| self.reg());
+        // Greedy ratchet is possessive; a frugal chain stays open to growth.
+        let whole = (ratchet && !token.frugal).then(|| self.reg());
         if let Some(h) = whole {
             self.ops.push(RxOp::Height(h));
         }

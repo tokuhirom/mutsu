@@ -342,9 +342,6 @@ impl Compiler {
         if token.hash_capture.is_some() {
             return Err("hash-capture");
         }
-        if token.frugal && token.ratchet {
-            return Err("frugal-ratchet");
-        }
         if let Some(sep) = &token.separator {
             return self.separated(token, &sep.pattern, sep.allow_trailing);
         }
@@ -562,7 +559,10 @@ impl Compiler {
 
     /// `x?`: the body first (greedy), the empty arm first (frugal), or the
     /// body committed to its first candidate with the empty arm only when it
-    /// failed outright (ratchet). The matched arm applies the token's alias
+    /// failed outright (ratchet). A frugal `??` under ratchet still tries the
+    /// empty arm first, and then the body committed to its first candidate:
+    /// the cut's height is taken before the split, which the empty arm has
+    /// already consumed by then. The matched arm applies the token's alias
     /// over what it matched; the empty arm reserves the atom's capture slots
     /// and applies the alias only where the walk does
     /// (`walk_zero_or_one_zero_arm`).
@@ -731,7 +731,10 @@ impl Compiler {
         };
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
-        let whole = token.ratchet.then(|| self.reg());
+        // Ratchet makes a greedy loop possessive. A frugal one keeps growing
+        // on demand under ratchet too (raku grows `\S+?` inside a `token`):
+        // only its iterations commit.
+        let whole = (token.ratchet && !token.frugal).then(|| self.reg());
         if let Some(h) = whole {
             self.ops.push(RxOp::Height(h));
         }

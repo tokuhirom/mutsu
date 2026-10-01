@@ -847,6 +847,18 @@ The differential sweep found one bug that the change exposed: the parse-failure 
 original's compiled program, `$` included. A pattern built by struct update from another now gets
 fresh `derived` analyses there, as `regex_match_atom`'s scoped `:i` copy already did.
 
+### Slice E, third part: frugal quantifiers under ratchet
+
+`frugal-ratchet`, the most common decline left in `t/grammar` and `t/regex`, compiles. In rakudo a
+frugal quantifier keeps growing on demand under ratchet; only each iteration's atom (and separator)
+commits. So the loop keeps its choice point (no `whole` cut when frugal) and the per-iteration cut
+stays, for `*?`, `+?`, `**?`, `??` and `% sep`. Comparing with rakudo found two walk bugs, fixed in the
+walk the same way: a ratcheted `??` tried the atom before the empty arm, and a ratcheted `+? % sep`
+stopped at its minimal count (`match_separated_quantifier_ratchet` now offers every length, the
+shortest preferred). A separated one whose atom or separator runs code still declines
+(`separator-frugal-ratchet-code`): the walk grows that chain eagerly, so the code would run a
+different number of times.
+
 ### Reproducing §2
 
 ```raku

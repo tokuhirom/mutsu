@@ -892,8 +892,11 @@ impl Interpreter {
                 let named_zero_capture =
                     !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
                         && !token.subrule_call_capture;
-                if token.frugal && !token.ratchet {
-                    // Frugal: prefer zero matches — try zero first.
+                if token.frugal {
+                    // Frugal: prefer zero matches — try zero first. Ratchet
+                    // does not change that (raku: `"ab" ~~ /:r a?? ab/`
+                    // matches); it only commits the atom to its first
+                    // candidate below.
                     if self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -943,7 +946,7 @@ impl Interpreter {
                 }
                 // Greedy: the zero candidate is tried last. A ratcheted `?`
                 // takes it only when the atom did not match at all.
-                if (!token.ratchet && !token.frugal) || (token.ratchet && !any_candidate) {
+                if !token.frugal && (!token.ratchet || !any_candidate) {
                     return self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -1132,8 +1135,9 @@ impl Interpreter {
         if zero_or_one {
             Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
         }
-        // Frugal `??`: the zero-width arm is preferred, so it goes first.
-        let zero_first = zero_or_one && token.frugal && !token.ratchet;
+        // Frugal `??`: the zero-width arm is preferred, so it goes first, under
+        // ratchet too (raku: `"ab" ~~ /:r [a||x]?? ab/` matches).
+        let zero_first = zero_or_one && token.frugal;
         if zero_first
             && self.walk_seqalt_zero(
                 ctx,
