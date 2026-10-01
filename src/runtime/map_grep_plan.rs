@@ -336,7 +336,19 @@ impl Interpreter {
             let Some(v) = data.env.get_sym(c.name) else {
                 continue;
             };
-            if !c.is_temporary {
+            // A body that assigns a captured name the consuming frame holds
+            // as the very same binding (`current` identical to the capture, the
+            // creator frame consuming its own closure) must leave its write in
+            // the env: restoring `current` would drop it for a variable with no
+            // cell to carry it (an env-only pointy/for parameter, `-> $a is
+            // copy { (0..1).map({ $a += 10 }); $a }`). When the two differ the
+            // consuming frame's binding is an unrelated lexical and is restored.
+            let same_binding = c.overwrites
+                && plan.code.free_var_writes.contains(&c.name)
+                && current
+                    .as_ref()
+                    .is_some_and(|cur| crate::runtime::utils::container_identity_identical(cur, v));
+            if !c.is_temporary && !same_binding {
                 saved.push((c.name, current));
             }
             self.env.insert_sym(c.name, v.clone());
