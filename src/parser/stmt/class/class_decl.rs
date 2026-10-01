@@ -353,7 +353,7 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = package_body_block(rest)?;
     // An `is export` operator method added by the augment is importable like
     // one in the original declaration (`import Name` teaches the parser it).
-    let exported_ops = super::export_scan::extract_exported_operator_methods(&body);
+    let exported_ops = super::package_decl::extract_exported_operator_methods(&body);
     super::super::simple::register_inline_module_exports(&name, exported_ops);
     Ok((
         rest,
@@ -675,7 +675,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // Record `is export` operator methods so `import ClassName` teaches the
     // parser the new operator symbols (`method infix:<as> is export` makes `as`
     // a usable infix in code parsed after the `import`).
-    let exported_ops = super::export_scan::extract_exported_operator_methods(&body);
+    let exported_ops = super::package_decl::extract_exported_operator_methods(&body);
     if !exported_ops.is_empty() {
         super::super::simple::register_inline_module_exports(&name, exported_ops);
     }

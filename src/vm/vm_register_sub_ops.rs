@@ -368,18 +368,7 @@ impl Interpreter {
                 // stale index, which the debug-only audit in
                 // `fn_base_name_registered` turns into a located panic.
                 self.invalidate_fn_resolution_for_keys([Symbol::intern(&resolved_name)]);
-                // Record `&`-sigil parameter names so calls to a same-named routine
-                // inside this sub bypass the name-keyed light-call caches (the param
-                // can shadow a package sub of the same name).
-                for pd in param_defs {
-                    if let Some(bare) = pd.name.strip_prefix('&')
-                        && !bare.is_empty()
-                    {
-                        // Records both plain names (`foo`) and operator categories
-                        // (`infix:<@@>`); both can shadow a same-named package routine.
-                        self.amp_param_shadowed_names.insert(Symbol::intern(bare));
-                    }
-                }
+                self.note_amp_param_shadowed_names(param_defs);
                 if *is_export && !self.suppress_exports {
                     let pkg = self.current_package();
                     self.register_exported_sub(

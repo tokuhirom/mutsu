@@ -6,7 +6,6 @@
 
 mod attr_checks;
 mod class_decl;
-mod export_scan;
 mod grammar_module;
 mod package_decl;
 mod role_decl;
@@ -31,8 +30,10 @@ pub(crate) use class_decl::{
     meta_setter_stmt, parse_bracket_arg_exprs, parse_declarator_traits,
     parse_optional_bracket_suffix, reject_trailing_postfix,
 };
-pub(crate) use export_scan::{extract_exported_subs, find_export_name_clash};
-pub(crate) use package_decl::{check_pseudo_package_in_decl, export_name_clash_error};
+pub(crate) use package_decl::{
+    check_pseudo_package_in_decl, export_name_clash_error, extract_exported_subs,
+    find_export_name_clash,
+};
 
 // Public entry points — preserve each function's original visibility.
 pub(super) use class_decl::{also_trait_stmt, class_decl_body};

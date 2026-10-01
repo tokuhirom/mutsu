@@ -1,85 +1,134 @@
-use crate::ast::{Expr, RoutineDeclarator, Stmt};
-use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
+use crate::ast::{Expr, Stmt};
 use crate::parser::parse_result::PError;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-/// Whether `expr` mentions an attribute through its twigil (`$!a`, `$.a`,
-/// `@!a`, ...) somewhere a missing `self` makes that an
-/// `X::Syntax::NoSelf` error.
-// Cost: O(n), n = size of the AST of `expr`.
 pub(crate) fn expr_uses_attr_twigil(expr: &Expr) -> bool {
-    let mut scan = AttrTwigilScan::default();
-    scan.visit_expr(expr);
-    scan.found
+    match expr {
+        Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) => {
+            // A bare "!" is `$!` (the error variable, e.g. from a no-argument
+            // `die`/`fail`), not the `$!attr` private-twigil form — same
+            // `name.len() > 1` guard used by every other twigil-detection site
+            // (compiler/mod.rs, expr_unary.rs, expr_postfix.rs, expr_call.rs).
+            // Without it, a bare `die` inside a plain `sub` nested in a class
+            // body was misdiagnosed as X::Syntax::NoSelf.
+            (name.starts_with('.') && name.len() > 1) || (name.starts_with('!') && name.len() > 1)
+        }
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            expr_uses_attr_twigil(target) || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            expr_uses_attr_twigil(target)
+                || expr_uses_attr_twigil(name_expr)
+                || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::Call { args, .. }
+        | Expr::ArrayLiteral(args)
+        | Expr::BracketArray(args, _)
+        | Expr::CaptureLiteral(args)
+        | Expr::StringInterpolation(args) => args.iter().any(expr_uses_attr_twigil),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } | Expr::Reduction { expr, .. } => {
+            expr_uses_attr_twigil(expr)
+        }
+        Expr::Binary { left, right, .. }
+        | Expr::MetaOp { left, right, .. }
+        | Expr::HyperOp { left, right, .. } => {
+            expr_uses_attr_twigil(left) || expr_uses_attr_twigil(right)
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_uses_attr_twigil(cond)
+                || expr_uses_attr_twigil(then_expr)
+                || expr_uses_attr_twigil(else_expr)
+        }
+        Expr::Index { target, index, .. } => {
+            expr_uses_attr_twigil(target) || expr_uses_attr_twigil(index)
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            expr_uses_attr_twigil(target)
+                || expr_uses_attr_twigil(index)
+                || expr_uses_attr_twigil(value)
+        }
+        Expr::AssignExpr { expr, .. } => expr_uses_attr_twigil(expr),
+        Expr::DoBlock { body, .. }
+        | Expr::Block(body)
+        | Expr::Gather(body)
+        | Expr::AnonSub { body, .. }
+        | Expr::AnonSubParams { body, .. }
+        | Expr::Lambda { body, .. } => body.iter().any(stmt_uses_attr_twigil),
+        // ADR-0033: an un-expanded WhateverCurry body can still reference
+        // `$!attr` (e.g. `$!x + *`, `*.=foo` mutating an attribute).
+        Expr::WhateverCurry(inner) => expr_uses_attr_twigil(inner),
+        // `todo/tickets/chained-compare-ast-node.md`: `$!x < $!y < $!z` can
+        // reference an attribute in any operand, same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_uses_attr_twigil),
+        Expr::Try { body, catch } => {
+            body.iter().any(stmt_uses_attr_twigil)
+                || catch
+                    .as_ref()
+                    .is_some_and(|body| body.iter().any(stmt_uses_attr_twigil))
+        }
+        Expr::DoStmt(stmt) => stmt_uses_attr_twigil(stmt),
+        Expr::CallOn { target, args } => {
+            expr_uses_attr_twigil(target) || args.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            expr_uses_attr_twigil(left) || right.iter().any(expr_uses_attr_twigil)
+        }
+        Expr::Exists { target, arg, .. } => {
+            expr_uses_attr_twigil(target)
+                || arg
+                    .as_ref()
+                    .is_some_and(|arg_expr| expr_uses_attr_twigil(arg_expr))
+        }
+        Expr::ZenSlice(inner) => expr_uses_attr_twigil(inner),
+        _ => false,
+    }
 }
 
-/// [`expr_uses_attr_twigil`] over a statement.
-// Cost: O(n), n = size of the AST of `stmt`.
 pub(crate) fn stmt_uses_attr_twigil(stmt: &Stmt) -> bool {
-    let mut scan = AttrTwigilScan::default();
-    scan.visit_stmt(stmt);
-    scan.found
-}
-
-/// The walk of [`expr_uses_attr_twigil`] (ADR-0137): every position of a
-/// `self`-less body, except the nested declarations that bring a `self` of
-/// their own.
-#[derive(Default)]
-struct AttrTwigilScan {
-    found: bool,
-}
-
-impl Visit for AttrTwigilScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
-        match stmt {
-            _ if self.found => {}
-            // A nested method has its own `self` (rakudo accepts
-            // `sub f { my method m { $!a } }`); a nested type declares and
-            // checks its own attributes; a regex body is diagnosed by the regex
-            // compiler ("Attribute '$!a' not available inside of a regex").
-            Stmt::MethodDecl { .. }
-            | Stmt::TokenDecl { .. }
-            | Stmt::RuleDecl { .. }
-            | Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. } => {}
-            Stmt::ProtoDecl {
-                is_method: true, ..
-            } => {}
-            _ => walk_stmt(self, stmt),
+    match stmt {
+        Stmt::Expr(expr)
+        | Stmt::Return(expr)
+        | Stmt::Take(expr, _)
+        | Stmt::Die(expr)
+        | Stmt::Fail(expr) => expr_uses_attr_twigil(expr),
+        Stmt::VarDecl {
+            expr,
+            where_constraint,
+            ..
+        } => {
+            expr_uses_attr_twigil(expr)
+                || where_constraint
+                    .as_ref()
+                    .is_some_and(|wc| expr_uses_attr_twigil(wc))
         }
-    }
-
-    fn visit_expr(&mut self, expr: &Expr) {
-        match expr {
-            _ if self.found => {}
-            // A method literal (`method { $!a }`, `anon method m { }`) has its
-            // own `self` too.
-            Expr::AnonSubParams {
-                declarator: RoutineDeclarator::Method | RoutineDeclarator::Submethod,
-                ..
-            } => {}
-            _ => walk_expr(self, expr),
-        }
-    }
-
-    fn visit_name(&mut self, name: &str, kind: NameKind) {
-        // A `$` variable is spelled without its sigil, an `@`/`%` one too,
-        // and an assignment target with it (`@!a = ...`).
-        let name = match kind {
-            NameKind::Var | NameKind::ArrayVar | NameKind::HashVar => name,
-            NameKind::AssignTarget => name.strip_prefix(['@', '%']).unwrap_or(name),
-            _ => return,
-        };
-        // A bare "!" is `$!` (the error variable, e.g. from a no-argument
-        // `die`/`fail`), not the `$!attr` private-twigil form — same
-        // `name.len() > 1` guard used by every other twigil-detection site.
-        // Without it, a bare `die` inside a plain `sub` nested in a class body
-        // was misdiagnosed as X::Syntax::NoSelf.
-        if name.len() > 1 && name.starts_with(['.', '!']) {
-            self.found = true;
-        }
+        Stmt::Assign { expr, .. } => expr_uses_attr_twigil(expr),
+        Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Package { body, .. }
+        | Stmt::Catch(body)
+        | Stmt::Control(body) => body.iter().any(stmt_uses_attr_twigil),
+        Stmt::SubDecl { body, .. }
+        | Stmt::MethodDecl { body, .. }
+        | Stmt::TokenDecl { body, .. }
+        | Stmt::RuleDecl { body, .. } => body.iter().any(stmt_uses_attr_twigil),
+        Stmt::Label { stmt, .. } => stmt_uses_attr_twigil(stmt),
+        _ => false,
     }
 }
 
@@ -182,9 +231,9 @@ pub(crate) fn push_also_is_parent(
 
 pub(crate) fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
     for stmt in body {
-        // The whole declaration: a parameter default is evaluated without a
-        // `self` too (`sub f(:$x = $!a) { }`).
-        if matches!(stmt, Stmt::SubDecl { .. }) && stmt_uses_attr_twigil(stmt) {
+        if let Stmt::SubDecl { body: sub_body, .. } = stmt
+            && sub_body.iter().any(stmt_uses_attr_twigil)
+        {
             return Err(no_self_error());
         }
     }
@@ -226,61 +275,57 @@ pub(crate) fn collect_no_twigil_attr_names(body: &[Stmt]) -> Vec<String> {
     names
 }
 
-/// The walk of [`stmt_uses_var_name_at_body_level`] (ADR-0137): does a
-/// statement read one of the no-twigil attribute aliases `names` (`has $x`
-/// declares `$!x` with the alias `$x`)?
-struct VarNameScan<'a> {
-    names: &'a [String],
-    found: bool,
-}
-
-impl Visit for VarNameScan<'_> {
-    // A statement reached from the scanned expression or statement sits in a
-    // nested block, which may declare a lexical of the same name
-    // (`my $y = { my $x = 1; $x }` is accepted by rakudo), so it is not
-    // searched.
-    fn visit_stmt(&mut self, _stmt: &Stmt) {}
-
-    fn visit_expr(&mut self, expr: &Expr) {
-        if !self.found {
-            walk_expr(self, expr);
+/// Check if an expression references a variable matching one of the given names.
+pub(crate) fn expr_uses_var_name(expr: &Expr, names: &[String]) -> bool {
+    match expr {
+        Expr::Var(name) => names.iter().any(|n| n == name),
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            expr_uses_var_name(target, names) || args.iter().any(|a| expr_uses_var_name(a, names))
         }
-    }
-
-    fn visit_name(&mut self, name: &str, kind: NameKind) {
-        if matches!(kind, NameKind::Var | NameKind::AssignTarget)
-            && self.names.iter().any(|n| n == name)
-        {
-            self.found = true;
+        Expr::Call { args, .. }
+        | Expr::ArrayLiteral(args)
+        | Expr::BracketArray(args, _)
+        | Expr::CaptureLiteral(args)
+        | Expr::StringInterpolation(args) => args.iter().any(|a| expr_uses_var_name(a, names)),
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } | Expr::Reduction { expr, .. } => {
+            expr_uses_var_name(expr, names)
         }
+        Expr::Binary { left, right, .. } => {
+            expr_uses_var_name(left, names) || expr_uses_var_name(right, names)
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            expr_uses_var_name(left, names) || right.iter().any(|a| expr_uses_var_name(a, names))
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            expr_uses_var_name(cond, names)
+                || expr_uses_var_name(then_expr, names)
+                || expr_uses_var_name(else_expr, names)
+        }
+        Expr::AssignExpr { expr, .. } => expr_uses_var_name(expr, names),
+        _ => false,
     }
 }
 
 /// Check if a statement at class body level uses a no-twigil attribute variable.
-// Cost: O(n * k), n = size of the statement's own expressions, k = `names.len()`.
 pub(crate) fn stmt_uses_var_name_at_body_level(stmt: &Stmt, names: &[String]) -> bool {
     match stmt {
         // Skip method/sub/token/rule declarations — they have `self`
         Stmt::MethodDecl { .. }
         | Stmt::SubDecl { .. }
         | Stmt::TokenDecl { .. }
-        | Stmt::RuleDecl { .. }
-        | Stmt::ProtoDecl { .. }
-        // A nested type has attributes of its own.
-        | Stmt::ClassDecl { .. }
-        | Stmt::RoleDecl { .. }
-        | Stmt::Package { .. } => false,
-        // Skip HasDecl — declaring the attr is fine, and its default runs with
-        // `self`.
+        | Stmt::RuleDecl { .. } => false,
+        // Skip HasDecl — declaring the attr is fine
         Stmt::HasDecl { .. } => false,
-        _ => {
-            let mut scan = VarNameScan {
-                names,
-                found: false,
-            };
-            walk_stmt(&mut scan, stmt);
-            scan.found
+        Stmt::Expr(expr) | Stmt::Return(expr) | Stmt::Fail(expr) => expr_uses_var_name(expr, names),
+        Stmt::Say(args) | Stmt::Print(args) | Stmt::Note(args) | Stmt::Put(args) => {
+            args.iter().any(|a| expr_uses_var_name(a, names))
         }
+        _ => false,
     }
 }
 

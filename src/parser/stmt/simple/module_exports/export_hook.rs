@@ -126,7 +126,7 @@ pub(super) fn source_declares_export_sub(source: &str) -> bool {
 
 /// The unit-scope `sub EXPORT`'s own body, if this module declares one —
 /// same descent through a `unit module Foo;` wrapper as [`declares_export_sub`].
-fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
+pub(super) fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
     stmts.iter().find_map(|stmt| match stmt {
         Stmt::SubDecl { name, body, .. } if name.resolve() == "EXPORT" => Some(body.as_slice()),
         Stmt::Package {
