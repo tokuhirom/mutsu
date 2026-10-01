@@ -642,7 +642,7 @@ impl Interpreter {
             && args.is_empty()
             && let ValueView::LazyList(ll) = target.view()
             && ll.coroutine.is_some()
-            && ll.cache.lock().unwrap().is_none()
+            && ll.cache.lock().is_ok_and(|cache| cache.is_none())
         {
             return Some(self.force_lazy_list_vm(&ll).map(Value::slip));
         }
