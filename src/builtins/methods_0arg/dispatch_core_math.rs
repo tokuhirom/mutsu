@@ -674,23 +674,27 @@ pub(super) fn dispatch(
             ValueView::LazyList(_) => None,
             _ => Some(Ok(Value::NIL)),
         }),
+        // Cost: O(1) -- flips a tag/flag over the shared payload, or boxes the
+        // value in a `Scalar`; never copies the aggregate.
         "item" => Some(match target.view() {
-            ValueView::Array(items, kind) => {
-                Some(Ok(Value::array_with_kind(items.clone(), kind.itemize())))
-            }
             ValueView::LazyList(_) => None, // fall through to runtime to force
-            // A Slip records the `$` container as a flag on the value and NOT
-            // as a `Scalar` wrapper, because a `$`-held Slip still flattens:
-            // `(1, slip(5, 6).item, 2).elems` is 4 and `my @a = 1, $(slip(5,
-            // 6)), 2` splices, while a `Scalar` wrapper would make it one
-            // opaque element. `.raku` still shows the container.
-            ValueView::Slip(_) => Some(Ok(target.clone().with_slip_itemized(true))),
-            // A Hash (and any other aggregate) is wrapped in a `Scalar`
-            // container so it behaves as a single non-flattening element in
-            // list context (e.g. passed to `map`). `.raku`/`.perl` on the
-            // `Scalar` still shows the `$` itemization sigil — see the
-            // `Scalar` interception in `call_method_with_values`.
-            _ => Some(Ok(Value::scalar(target.clone()))),
+            // `Value::item` is the one place that decides HOW a value records
+            // its `$` container, and this arm is the method form of it:
+            //
+            // - an Array/List flips its `ArrayKind` over the shared `Gc`;
+            // - a Hash sets its itemized flag over the SAME `HashData` `Gc`, so
+            //   it stays a plain `Hash` value that every consumer (and every
+            //   element store, `$h<k> = v` included) sees as the hash itself.
+            //   Wrapping it in a `Scalar` instead hid the hash from the
+            //   subscript-assign lanes, which then replaced the whole variable
+            //   with a fresh `{k => v}` -- `my $h = %hh.item; $h<a> = 1` lost
+            //   the write (#10601);
+            // - a Slip records the `$` as a flag too, NOT a `Scalar` wrapper,
+            //   because a `$`-held Slip still flattens (`(1, slip(5, 6).item,
+            //   2).elems` is 4);
+            // - any other aggregate is wrapped in a `Scalar` so it is a single
+            //   non-flattening element in list context.
+            _ => Some(Ok(target.clone().item())),
         }),
         "race" | "hyper" => {
             if matches!(target.view(), ValueView::LazyList(_)) {

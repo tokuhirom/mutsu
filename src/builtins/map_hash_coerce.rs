@@ -263,7 +263,11 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 });
                 Ok(result)
             } else {
-                Ok(target.clone())
+                // Identity over the SAME `HashData` `Gc`, but not the holder's
+                // `$`: a method call decontainerizes its invocant, so
+                // `(my $h = %hh).Hash` is the hash itself (`{...}`, not
+                // `${...}`) -- the same rule `.hash` applies.
+                Ok(target.clone().with_hash_itemized(false))
             }
         }
         ValueView::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
