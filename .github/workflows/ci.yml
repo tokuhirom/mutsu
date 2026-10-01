@@ -80,10 +80,12 @@ jobs:
           # reads: they name every path the build consumes, and no such path
           # may be on the classifier's documentation allowlist. Leading slashes
           # anchor each pattern to the repository root -- a bare `Makefile` in
-          # non-cone mode would also drag in every vendored one.
+          # non-cone mode would also drag in every vendored one. All of
+          # scripts/, not just the classifier: `--check-inputs` has to see the
+          # scripts the build names to tell whether they are allowlisted, and
+          # with only the classifier checked out it silently checked nothing.
           sparse-checkout: |
-            /scripts/ci-docs-only.sh
-            /scripts/adr.sh
+            /scripts/
             /docs/adr/
             /Makefile
             /.github/workflows/ci.yml
