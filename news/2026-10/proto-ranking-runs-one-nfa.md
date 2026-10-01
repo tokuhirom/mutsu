@@ -35,5 +35,5 @@ second run, same box, both sides rebuilt from the same `main`):
 one NFA run per branch by `rx_ltm_order` — the issue counted them as proto candidates. They are the same
 shape of problem and are filed as [#10648](https://github.com/tokuhirom/mutsu/issues/10648).
 
-`t/grammar/proto-ranking-one-nfa.t` pins that one candidate's fate, `_LL` literal or shared-rule walk
+`t/routines/dispatch/proto-ranking-one-nfa.t` pins that one candidate's fate, `_LL` literal or shared-rule walk
 never leaks into another's.
