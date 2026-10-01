@@ -3,7 +3,7 @@
 use super::*;
 
 impl Compiler {
-    /// Compile a type declaration (`class`/`role`/`package`, `my` or `our`)
+    /// Compile a class or role declaration (`my` or `our`)
     /// in value position: register it, then leave its type object on the
     /// stack — a declaration is an expression whose value is the type
     /// (`sub f { my class B { } }` returns `B`). Returns `false`, compiling
@@ -49,12 +49,6 @@ impl Compiler {
                 self.compile_stmt(stmt);
                 self.code.emit(OpCode::PushLastRegisteredRole);
                 self.code.emit(OpCode::RoleGroupToCandidate);
-            }
-            Stmt::Package { name, .. } => {
-                // Register the package and return the type object.
-                self.compile_stmt(stmt);
-                let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                self.code.emit(OpCode::GetBareWord(name_idx));
             }
             _ => return false,
         }

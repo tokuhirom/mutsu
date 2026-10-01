@@ -4537,7 +4537,7 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
-                        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. } => {
+                        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {
                             self.compile_type_decl_value(stmt);
                             self.emit_unit_tail_result();
                             continue;

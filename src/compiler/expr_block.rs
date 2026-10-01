@@ -1047,8 +1047,14 @@ impl Compiler {
             } if !*repeat => {
                 self.compile_do_loop_expr(init, cond, step, body, label, *is_until);
             }
-            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. } => {
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {
                 self.compile_type_decl_value(stmt);
+            }
+            Stmt::Package { name, .. } => {
+                // Register the package and return the type object.
+                self.compile_stmt(stmt);
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                self.code.emit(OpCode::GetBareWord(name_idx));
             }
             Stmt::EnumDecl { .. } => {
                 // Both the anonymous (`enum <a b c>`) and named (`enum Foo <a b c>`)
