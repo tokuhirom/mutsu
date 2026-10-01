@@ -37,7 +37,7 @@ export default {
         '<code>mzef install &lt;dist&gt;</code> works with no further setup.',
       docker: 'The image carries both binaries. Mount a named volume at ' +
         '<code>$HOME</code> to keep modules installed by <code>mzef</code> across runs.',
-      source: 'Needs Rust 1.92+ and a C compiler. <code>make test</code> runs the local ' +
+      source: 'Needs Rust 1.98.1+ and a C compiler. <code>make test</code> runs the local ' +
         'suite, <code>make roast</code> the official spec tests.',
     },
   },

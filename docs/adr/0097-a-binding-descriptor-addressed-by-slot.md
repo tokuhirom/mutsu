@@ -360,6 +360,10 @@ seven properties join `shaped_array_dims` behind the runtime half, whose
 closure-capture story (§11.5, generalized by §13.2) is now the thing to
 design before any of them can move.
 
+**The §11 spoiler latch has a plan but no implementation** (§15, #9914): the
+data-only slice (§11.4) is merged; the env/slot invariant that replaces the
+process-global cell/`Proxy` latch is not started.
+
 ## 10. Slice 2 is five properties of different shapes, not one fold (2026-09-15)
 
 Investigating slice 2 before writing any code (`type`, `hash_key_type`,
@@ -569,6 +573,10 @@ roast/`t/` corpus. ADR-0097 §1.5 records two prior instances of exactly this
 failure mode, both caught only by a pre-existing test, not by review.
 
 ### 11.5 What is still open before wiring this in
+
+> §15 (2026-10-01) replaces the plan below: the latch guards an env/slot
+> divergence, so the fix is an invariant on the write sites, not a per-slot
+> bind classification. The list is kept as the record of what was open.
 
 - **Closure capture is not covered at all.** A nested `sub`/closure that
   captures an outer lexical and later binds or mutates it through a shared
@@ -820,3 +828,120 @@ one turns up, the same binding cell is the place to extend.
   bind that returns early and the general path. The frame and every sibling
   closure share the cell, so they see the new binding, and the call-return
   writeback carries the same cell back to the frame's slot.
+
+## 15. The spoiler latch guards an env/slot divergence, not a bind site (#9914, 2026-10-01)
+
+This section replaces §11.5's plan for wiring a per-slot answer into the
+`GetLocal` fast path. §11.5's three open questions are answered below by
+changing the question they were asked about, not by closing each one as
+written. §11.1-§11.4 stand as the record of what was found and landed.
+
+### 15.1 The slot word is already checked per slot
+
+Both fast paths already refuse a slot that *itself* holds a cell or a `Proxy`:
+
+- the interpreter's `exec_get_local_op_inner` takes the fast path only when
+  `val.is_plain_local_read()` holds for `self.locals[idx]` (condition 3 of
+  #8332), which excludes `ContainerRef`, `Proxy`, `HashEntryRef`, `LazyThunk`
+  and `Nil`;
+- the JIT's `emit_get_local` (`vm_jit_tier_b.rs`) loads the slot word and
+  range-tests it for a refcount-free scalar before the inline push.
+
+So the `CONTAINER_CELLS`/`note_proxy_value` half of `LOCAL_READ_SPOILERS` does
+not protect against a cell *in the slot*. It protects against the
+**cell-adoption probe** further down the slow chain
+(`vm_var_assign_local_get.rs`, "Lazy sync"; its write-side twin is in
+`vm_var_assign_set_local.rs`): a slot that holds a plain value while this
+frame's env overlay holds a `ContainerRef` or `Proxy` under the same symbol,
+which the probe copies into the slot on the next read. The comments at both
+sites name the producers they were written for: a cross-scope `:=` made
+during a call and propagated back to the env but not to the slot, and
+`Stash.BIND-KEY`.
+
+The question the latch actually answers is therefore not "is this slot ever
+the target of a `:=`" (what `rebind_target_slots` records) but **"can this
+frame's env overlay hold a cell for this slot's symbol that the slot itself
+does not hold?"** The first question ranges over every Raku construct that can
+bind, and §11.3 already showed that enumerating those is unreliable. The
+second ranges over the Rust code that writes a cell into an env overlay
+without writing the slot, which is a finite set of call sites.
+
+### 15.2 Decision
+
+**Divergence is an invariant violation, not a state to probe for.** The
+invariant: *if this frame's env overlay maps a slot's symbol to a
+`ContainerRef` or `Proxy`, the slot holds that same value* (`Gc::ptr_eq` for a
+cell). Every site that installs a cell into an overlay for a name that has a
+live slot in the executing frame also installs it into the slot, at the same
+time. Under the invariant the adoption probe never finds anything that
+condition 3 has not already refused, so a cell or `Proxy` anywhere in the
+process no longer spoils plain reads of other slots.
+
+This is the slot-is-authoritative direction of ADR-0018 and ADR-0084, applied
+to one more probe. It is preferred over a static per-slot classification
+because a missed case under the static scheme serves a stale value silently
+in release, while a missed case under the invariant trips an assertion in
+debug builds (§15.4).
+
+### 15.3 §11.5's three questions, answered
+
+1. **Closure capture.** No new compile-time analysis is added. Since §14 and
+   §14.1, celling for capture puts the binding cell `B` into the frame slot,
+   its env entry and every capturing closure, and the call-return writeback
+   carries the same cell back to the slot. A captured-and-celled local is
+   therefore refused by condition 3, not by the latch. Whether every capture
+   path really keeps the slot in step is checked by the assertion in §15.4,
+   which needs no separate closure audit.
+2. **Completeness of the audit.** The audit target moves from Raku bind
+   constructs to Rust write sites that leave an overlay cell without the slot.
+   Completeness is established empirically and then kept by a debug check, not
+   by an argument (§15.4).
+3. **The residual latch.** `LOCAL_READ_SPOILERS` is split by source and each
+   part moves to the narrowest scope that is sound:
+
+   | Source | Scope after this change |
+   | --- | --- |
+   | `CONTAINER_CELLS`, `note_proxy_value` | Removed from the latch once §15.4 step 3 is clean. `CONTAINER_CELLS` stays as a statistic (`MUTSU_VM_STATS`). |
+   | `atomic_var_seen`, `sigilless_attrs_active` | Already per-interpreter fields. The JIT reads them at a fixed offset from its `interp` pointer instead of through the process-global word. |
+   | `CALLER_VAR_BINDS` | Stays process-global for now. `$CALLER::x :=` is rare and no measured workload pays for it. Narrowing it by name is a separate issue. |
+
+   The per-interpreter flags are folded into one word on the interpreter, so
+   the emitted guard stays a single load and test. That keeps the #7737
+   finding (four loads and three `or`s cost 12 of 48 instructions per inline
+   read) from coming back.
+
+`rebind_target_slots` is no longer on the path to the fast read. It stays a
+compile-time record that diagnostics may use; if nothing reads it once this
+lands, it is removed rather than kept as write-only data.
+
+### 15.4 Verification
+
+1. **Assertion.** Extend the `debug_assert!` block in
+   `exec_get_local_op_inner`: on every fast-path hit, this frame's overlay
+   entry for the slot's symbol is not a `ContainerRef` or `Proxy` (the slot
+   is plain there, so any cell in the overlay is a divergence). The JIT's
+   inline read has no assertion of its own; it shares the invariant, and
+   `jit-stress-tap` exercises it through the interpreter fallback.
+2. **Discovery.** In a debug build, drop the cell and `Proxy` contributions
+   from the latch with the assertion in place, then run `make test`, the
+   `gc-stress-tap` and `jit-stress-tap` suites, and `make roast`. Each
+   assertion names a producer; fix it at its write site so it updates the
+   slot too.
+3. **Fallback for a producer that cannot reach the slot.** If a producer runs
+   where the target frame's slots are not addressable (the slot base is not
+   known at that point), it sets a per-frame divergence flag. The fast path
+   tests that flag instead of the process-global word. That is still sound,
+   and the cost stays inside that frame.
+4. **Close condition (#9914).** A program with one unrelated `:=` has the same
+   JIT-on Ir on a hot `GetLocal` loop as one without it, within noise, under
+   callgrind (the #8748 repro).
+
+### 15.5 What this does not claim
+
+- That the producers named in the probe comments are the only ones. §15.4
+  step 2 is how the rest are found.
+- That the adoption probe can be deleted. It stays on the slow path for
+  frames and slots that are not fast-path eligible, and as a backstop while
+  step 2 runs. Removing it is a separate step after the invariant has held in
+  CI for a while.
+- Any change to `CALLER_VAR_BINDS` semantics.
