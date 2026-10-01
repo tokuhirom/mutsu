@@ -348,8 +348,29 @@ impl Compiler {
     /// copy of it (`if %cache{$k} -> @avail` must see all the elements).
     pub(super) fn compile_if_binding_container_decl(&mut self, decl: &Option<(String, Expr)>) {
         let Some((name, source)) = decl else { return };
+        // An `@` parameter binds a Seq through `.cache` (as a routine's `@`
+        // parameter does), so `if $s.split(..) -> @parts` sees the List.
+        let source = if name.starts_with('@') {
+            Expr::Ternary {
+                cond: Box::new(Expr::Binary {
+                    left: Box::new(source.clone()),
+                    op: crate::token_kind::TokenKind::SmartMatch,
+                    right: Box::new(Expr::BareWord("Seq".to_string())),
+                }),
+                then_expr: Box::new(Expr::MethodCall {
+                    target: Box::new(source.clone()),
+                    name: crate::symbol::Symbol::intern("cache"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                else_expr: Box::new(source.clone()),
+            }
+        } else {
+            source.clone()
+        };
         self.bind_vardecl = true;
-        self.compile_stmt(&Self::plain_var_decl(name.clone(), source.clone()));
+        self.compile_stmt(&Self::plain_var_decl(name.clone(), source));
         self.bind_vardecl = false;
     }
 

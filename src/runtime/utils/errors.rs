@@ -480,6 +480,18 @@ pub(crate) fn value_which_key(value: &Value) -> String {
                     cn,
                     attributes.as_map().objat_which().unwrap_or_default()
                 ),
+                // A user subclass of Version keeps its built Version in
+                // `__mutsu_version_value`; like Version itself (`Version|1.0`)
+                // its identity is the class plus the canonical string.
+                _ if attributes.as_map().contains_key("__mutsu_version_value") => format!(
+                    "{}|{}",
+                    class_name.resolve(),
+                    attributes
+                        .as_map()
+                        .get("__mutsu_version_value")
+                        .map(Value::to_string_value)
+                        .unwrap_or_default()
+                ),
                 _ => format!("{}|{}", value_type_name(value), id),
             },
         },
