@@ -799,7 +799,8 @@ impl Interpreter {
                 attributes,
                 id: target_id,
             } = target.view()
-            && let Some((qualifier, actual_method)) = method.split_once("::")
+            && let Some((qualifier, actual_method)) =
+                super::methods_qualified::split_method_qualifier_last(method)
         {
             // First try explicit method resolution
             if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args) {
@@ -849,11 +850,11 @@ impl Interpreter {
                         &attr_name,
                         assigned_value.clone(),
                     );
+                    // Commit into the instance's shared cell even with no
+                    // caller variable to rebind (`D.^lookup('x')($e) = 5`).
+                    let written = Value::write_back_sharing(&attributes, cn, updated, target_id);
                     if let Some(var_name) = target_var {
-                        self.env.insert_through(
-                            var_name.to_string(),
-                            Value::write_back_sharing(&attributes, cn, updated, target_id),
-                        );
+                        self.env.insert_through(var_name.to_string(), written);
                     }
                     return Ok(assigned_value);
                 }
@@ -931,11 +932,11 @@ impl Interpreter {
                         actual_method,
                         assigned_value.clone(),
                     );
+                    // Commit into the instance's shared cell even with no
+                    // caller variable to rebind (`D.^lookup('x')($e) = 5`).
+                    let written = Value::write_back_sharing(&attributes, cn, updated, target_id);
                     if let Some(var_name) = target_var {
-                        self.env.insert_through(
-                            var_name.to_string(),
-                            Value::write_back_sharing(&attributes, cn, updated, target_id),
-                        );
+                        self.env.insert_through(var_name.to_string(), written);
                     }
                     return Ok(assigned_value);
                 }

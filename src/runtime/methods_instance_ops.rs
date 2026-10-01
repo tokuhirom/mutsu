@@ -3214,7 +3214,27 @@ impl Interpreter {
                             self.pop_method_class();
                             return result;
                         }
+                        // The entry is its owner's candidate, not whatever
+                        // the invocant's class overrides it with (#10344).
+                        if !is_private
+                            && let Some(ValueView::Str(owner)) =
+                                am.get("__mutsu_lookup_class").map(Value::view)
+                            && let Some(qualified) = self.owner_bound_method_name(
+                                Symbol::intern(&owner),
+                                Symbol::intern(&method_name),
+                                &invocant,
+                            )
+                        {
+                            return self.call_method_with_values(
+                                invocant,
+                                qualified.as_str(),
+                                args,
+                            );
+                        }
                         return self.call_method_with_values(invocant, &method_name, args);
+                    }
+                    if let Some(result) = self.try_call_bound_method_object(&target, &args) {
+                        return result;
                     }
                     if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
                         return self.call_sub_value(callable, args, false);

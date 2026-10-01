@@ -39,7 +39,7 @@ fn extended_name_adverb_start(method: &str) -> usize {
 /// Split a method name into `(package qualifier, method)` at the LAST `::` that
 /// is a package separator — one outside any extended-name adverb (see
 /// [`extended_name_adverb_start`]).
-fn split_method_qualifier_last(method: &str) -> Option<(&str, &str)> {
+pub(super) fn split_method_qualifier_last(method: &str) -> Option<(&str, &str)> {
     let cut = extended_name_adverb_start(method);
     let at = method[..cut].rfind("::")?;
     Some((&method[..at], &method[at + 2..]))
@@ -322,6 +322,25 @@ impl Interpreter {
             let class_attrs = self.collect_class_attributes(qualifier);
             for attr in &class_attrs {
                 if attr.is_public && attr.name == actual_method {
+                    // A `.wrap` on the accessor's Method object wraps the
+                    // qualified call too: share ordinary dispatch's chain
+                    // lookup (#10344).
+                    if let Some(owner) = self.attribute_accessor_owner(qualifier, actual_method)
+                        && let Some(chain) =
+                            self.get_method_wrap_chain(owner.resolve().as_str(), actual_method, 0)
+                    {
+                        return Some(self.dispatch_wrapped_attribute_accessor(
+                            target.clone(),
+                            &inst_cn_str,
+                            args,
+                            chain,
+                            super::DeferralEntry::Accessor {
+                                owner,
+                                name: actual_method.to_string(),
+                                want_container: false,
+                            },
+                        ));
+                    }
                     return Some(Ok(attributes
                         .as_map()
                         .get(actual_method)

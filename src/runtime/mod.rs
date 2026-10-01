@@ -724,6 +724,7 @@ mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
 mod method_dispatch_lazy;
+mod method_object_bound;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
