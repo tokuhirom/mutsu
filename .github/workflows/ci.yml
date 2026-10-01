@@ -195,7 +195,7 @@ jobs:
       # would widen the blast radius for nothing. `-fuse-ld=mold` finds
       # `/usr/local/bin/ld.mold` on PATH.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -360,7 +360,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -670,7 +670,7 @@ jobs:
       # saves under the new key.
       - name: Restore the battery source cache
         id: battery-src-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -699,7 +699,7 @@ jobs:
       # `actions/cache/save` only warns.
       - name: Save the battery source cache
         if: always() && steps.battery-src-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -842,7 +842,7 @@ jobs:
       # model) under the job, which would turn a toolchain update into what
       # looks like a soundness regression — on a required check. Bump this
       # deliberately, in its own PR, and read the diff in Miri's behaviour.
-      - uses: dtolnay/rust-toolchain@be39649afda95dbf70f87cce95f68b8d5797b296 # nightly
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # nightly
         with:
           toolchain: nightly-2026-08-01
           components: miri, rust-src
@@ -1075,7 +1075,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -1416,7 +1416,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
