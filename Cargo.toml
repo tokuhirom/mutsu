@@ -45,7 +45,7 @@ jit = [
 
 [dependencies]
 regex = "1.12.3"
-fancy-regex = "0.18"
+fancy-regex = "0.19"
 pcre2 = { version = "0.2", optional = true }
 unicode_names2 = "3"
 num-bigint = { version = "0.5", features = ["serde"] }
