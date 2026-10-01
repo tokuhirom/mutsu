@@ -630,7 +630,7 @@ impl Interpreter {
                             .entry(parent)
                             .or_default()
                             .entry(short)
-                            .or_insert_with(|| storage_name.clone());
+                            .insert_entry(storage_name.clone());
                     }
                 }
             }
@@ -1153,7 +1153,7 @@ impl Interpreter {
                         .entry(parent)
                         .or_default()
                         .entry(short)
-                        .or_insert_with(|| qualified_name.clone());
+                        .insert_entry(qualified_name.clone());
                 }
             }
             // A role's non-declaration body statements are NOT run here. Rakudo
