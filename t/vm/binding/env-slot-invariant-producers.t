@@ -9,7 +9,7 @@ use lib 't/lib';
 # right value. Debug builds assert the invariant on every fast read, so a
 # regression here shows up as a panic in addition to a wrong value.
 
-plan 12;
+plan 13;
 
 # A `for` over a scalar aliases the scalar's container; the topic write
 # goes through it.
@@ -83,6 +83,14 @@ plan 12;
     my \x := $v;
     x = 1;
     is $v, 1, 'a bind reaches the visible declaration, not a shadowed one';
+}
+
+# A `when` block's value carries its variable's container out through the
+# succeed signal; the loop over it aliases that variable's slot.
+{
+    my $a = 41;
+    .++ for do given 1 { when True { $a } };
+    is $a, 42, 'a when-block container reaches the for loop over it';
 }
 
 # An unrelated `:=` elsewhere does not change what a plain local reads.

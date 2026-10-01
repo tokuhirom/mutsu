@@ -126,6 +126,7 @@ impl Interpreter {
         code: &CompiledCode,
         spec: &ForLoopSpec,
         container_binding: Option<&str>,
+        container_source_slot: Option<u32>,
         container_reversed: bool,
         arity: usize,
         param_name: Option<&str>,
@@ -134,6 +135,12 @@ impl Interpreter {
         hash_keys: Option<&[String]>,
         items: &[Value],
     ) -> ForElementAlias {
+        // The compiler names the source's slot on the loop spec for a plain
+        // `for $a`; for a source that reaches the loop through an expression
+        // (`for do given 1 { when True { $a } }`) only the `TagContainerRef`
+        // carries it. Either way the alias must update that slot along with
+        // the env entry (ADR-0097 §15 env/slot invariant).
+        let source_slot = spec.source_container_local.or(container_source_slot);
         // A `@`/`%`/`&`-sigil parameter binds the element's *container*, not a
         // scalar slot: `for @m -> @row { @row.push(9) }` mutates `@m` through
         // the shared `Gc` with no cell involved (rows 32/33). Promoting such an
@@ -178,16 +185,12 @@ impl Interpreter {
             // positional, so it must continue down the array-only path.
             if source.starts_with('$') && spec.scalar_list_source && items.len() == 1 {
                 let bare = source.strip_prefix('$').unwrap_or(source);
-                let current = spec
-                    .source_container_local
+                let current = source_slot
                     .and_then(|slot| self.locals.get(slot as usize).cloned())
                     .filter(|v| !v.is_nil())
                     .or_else(|| self.get_env_with_main_alias(bare));
                 if current.is_some_and(|v| Self::loop_var_unchanged(&items[0], &v)) {
-                    return ForElementAlias::ScalarVar(
-                        source.to_string(),
-                        spec.source_container_local,
-                    );
+                    return ForElementAlias::ScalarVar(source.to_string(), source_slot);
                 }
                 return ForElementAlias::None;
             }
@@ -225,14 +228,13 @@ impl Interpreter {
             // aliasing the variable there replaced the whole `Pair` with it
             // (`roast/S04-blocks-and-statements/pointy-rw.t`). The item-is-the-
             // source test is the scalar twin of `items_are_source_elements`.
-            let current = spec
-                .source_container_local
+            let current = source_slot
                 .and_then(|slot| self.locals.get(slot as usize))
                 .map(|v| v.deref_container())
                 .filter(|v| !v.is_nil())
                 .or_else(|| self.get_env_with_main_alias(source));
             if current.is_some_and(|v| Self::loop_var_unchanged(&items[0], &v)) {
-                return ForElementAlias::ScalarVar(source.to_string(), spec.source_container_local);
+                return ForElementAlias::ScalarVar(source.to_string(), source_slot);
             }
             return ForElementAlias::None;
         }

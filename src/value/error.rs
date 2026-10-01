@@ -159,6 +159,9 @@ pub struct RuntimeErrorCold {
     pub from_method_return: bool,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
+    /// The compile-time slot of [`Self::container_name`] in the frame that
+    /// raised the signal, when the compiler resolved one.
+    pub container_slot: Option<u32>,
     /// Formatted backtrace string from the call stack at the point of error,
     /// possibly still to be rendered (see [`BacktraceText`]).
     pub backtrace: Option<BacktraceText>,
@@ -335,9 +338,12 @@ impl RuntimeError {
         self.cold.as_ref().and_then(|c| c.source_text.as_deref())
     }
 
-    /// Move the container name out of the error, leaving it `None`.
-    pub(crate) fn take_container_name(&mut self) -> Option<String> {
-        self.cold.as_mut().and_then(|c| c.container_name.take())
+    /// Move the container name and its slot out of the error, leaving both
+    /// `None`.
+    pub(crate) fn take_container_ref(&mut self) -> Option<(String, Option<u32>)> {
+        let cold = self.cold.as_mut()?;
+        let slot = cold.container_slot.take();
+        cold.container_name.take().map(|name| (name, slot))
     }
     /// Move the hint out of the error, leaving it `None`.
     pub(crate) fn take_hint(&mut self) -> Option<String> {
@@ -382,8 +388,12 @@ impl RuntimeError {
     pub(crate) fn set_from_method_return(&mut self) {
         self.cold_mut().from_method_return = true;
     }
-    pub(crate) fn set_container_name(&mut self, v: Option<String>) {
-        self.cold_mut().container_name = v;
+    pub(crate) fn set_container_ref(&mut self, v: Option<(String, Option<u32>)>) {
+        let cold = self.cold_mut();
+        (cold.container_name, cold.container_slot) = match v {
+            Some((name, slot)) => (Some(name), slot),
+            None => (None, None),
+        };
     }
     /// Attach a backtrace that is rendered only when first read.
     pub(crate) fn set_backtrace_lazy(&mut self, source: std::sync::Arc<dyn LazyBacktraceText>) {
