@@ -157,6 +157,33 @@ impl PosSlot {
         }
     }
 
+    /// How many leading slots of `slots` a Match exposes: a trailing unmatched
+    /// optional capture (`(x)?` / `[ (x) ]?` that took its zero branch) is
+    /// dropped, an interior one kept. Its reserved slot only keeps a *later*
+    /// capture's index stable (`(a)? (b)` on "b": `$0` Nil, `$1` ｢b｣); raku's
+    /// capture list extends only as far as the last bound slot, so
+    /// `"1" ~~ / (\d) (y)? /` has one element. Alternation padding is kept --
+    /// the engine resolves static `$N` numbers through it -- see
+    /// [`Self::visible_len`] for the user-facing cut that drops it too.
+    // Cost: O(t), t = the trailing unbound slots.
+    pub(crate) fn bound_len(slots: &[PosSlot]) -> usize {
+        slots
+            .iter()
+            .rposition(|slot| !slot.nil || slot.alternation_padding)
+            .map_or(0, |idx| idx + 1)
+    }
+
+    /// [`Self::bound_len`] that also drops trailing alternation padding: the
+    /// slots a user-visible Match lists (`/ [ (a) | (b) (c) ] (d)? /` on "a"
+    /// has one element).
+    // Cost: O(t), t = the trailing unbound slots.
+    pub(crate) fn visible_len(slots: &[PosSlot]) -> usize {
+        slots
+            .iter()
+            .rposition(|slot| !slot.nil)
+            .map_or(0, |idx| idx + 1)
+    }
+
     pub(crate) fn alternation_padding() -> Self {
         PosSlot {
             nil: true,
@@ -380,6 +407,8 @@ impl RegexCaptures {
         // Take the cold payload whole: a leaf (the common case) never had one,
         // so the conversion neither allocates nor touches the fields below.
         let rare = self.rare.take().map(|rare| *rare);
+        self.positional
+            .truncate(PosSlot::bound_len(&self.positional));
         let (sym, action_name) = (self.sym(), self.action_name());
         let (capture_alias_map, regex_vars, cursor) = match rare {
             Some(rare) => (rare.capture_alias_map, rare.regex_vars, rare.cursor),

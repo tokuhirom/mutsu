@@ -1127,11 +1127,8 @@ impl Interpreter {
                     // captures still use the materialized map because their
                     // values are rewritten above from the capture payload.
                     if captures.hash_captures().is_empty() {
-                        let visible_len = captures
-                            .positional
-                            .iter()
-                            .rposition(|slot| !slot.alternation_padding)
-                            .map_or(0, |idx| idx + 1);
+                        let visible_len =
+                            crate::runtime::PosSlot::visible_len(&captures.positional);
                         for (i, slot) in captures.positional[..visible_len].iter().enumerate() {
                             self.env.insert_sym(
                                 crate::symbol::wk::capture_index(i),
