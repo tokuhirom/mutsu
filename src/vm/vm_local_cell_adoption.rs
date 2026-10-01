@@ -75,6 +75,24 @@ impl Interpreter {
         }
     }
 
+    /// The slot a `:=` source named `name` lives in. The compiler's own
+    /// resolution (`varref_slot`, `u32::MAX` meaning "not a local here") wins
+    /// whenever it names a slot called `name`: under shadow slots two slots
+    /// share a name, and the by-name fallback (the last such slot) can be a
+    /// sibling block's dead variable rather than the visible one, which left
+    /// the visible slot without the cell its env entry names.
+    // Cost: O(1) with a compiler slot, else O(l), l = the chunk's locals.
+    pub(super) fn bind_source_local_slot(
+        code: &CompiledCode,
+        compiled_slot: Option<u32>,
+        name: &str,
+    ) -> Option<usize> {
+        compiled_slot
+            .map(|s| s as usize)
+            .filter(|&s| code.locals.get(s).is_some_and(|n| n == name))
+            .or_else(|| code.locals.iter().rposition(|n| n == name))
+    }
+
     /// Restore the env/slot invariant for slot `idx` after a by-name write
     /// stored a plain value into it: if this frame's overlay still holds a
     /// container for the slot's symbol, the slot takes that container. This

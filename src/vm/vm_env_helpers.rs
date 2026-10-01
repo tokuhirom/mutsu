@@ -2631,10 +2631,17 @@ impl Interpreter {
             if let Some(idx) = code.locals.iter().rposition(|n| n == &name) {
                 self.locals[idx] = container.clone();
             }
+            let mut spliced = false;
             for frame in self.call_frames.iter_mut().rev() {
                 if frame.saved_env.contains_key_own_tier(&name) {
                     frame.saved_env.insert(name.clone(), container.clone());
+                    spliced = true;
                 }
+            }
+            // The owning frame's slot is out of reach here; have its call site
+            // drain the cell into it (ADR-0097 §15 env/slot invariant).
+            if spliced {
+                self.record_caller_var_writeback(&name);
             }
             if self.shared_vars_active {
                 loan_env!(self, set_shared_var(&name, container.clone()));
