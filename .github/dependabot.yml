@@ -24,14 +24,17 @@ updates:
     groups:
       # The cranelift-* crates share one version and must move in lockstep
       # (a split bump leaves two incompatible cranelift-codegen copies), so
-      # every update of them, major included, is one PR. Listed first: a
-      # dependency joins the first group that matches it.
+      # every update of them, major included, is one PR. Dependabot does not
+      # pick the first matching group but the one it rates "more specific",
+      # and it rated cargo-minor-patch above this one (leaving this group
+      # empty), so cargo-minor-patch must exclude the crates explicitly.
       cranelift:
         patterns: ["cranelift*"]
       # One weekly PR for every other in-range update; major bumps stay one
       # per PR (docs/maintenance.md section 1c).
       cargo-minor-patch:
         update-types: [minor, patch]
+        exclude-patterns: ["cranelift*"]
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
