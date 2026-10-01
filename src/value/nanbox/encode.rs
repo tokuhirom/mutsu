@@ -225,10 +225,9 @@ impl NanBox {
             ValueRepr::CustomTypeInstance(d) => pack_arc(Kind::CustomTypeInstance, Arc::new(*d)),
             ValueRepr::Scalar(inner) => pack_arc(Kind::Scalar, Arc::new(*inner)),
             ValueRepr::ContainerRef(cell, itemized) => {
-                // Latch for the Tier B inline GetLocal fast path: this is the
-                // single point every ContainerRef word passes through, so a
-                // zero counter proves no cell exists anywhere (see
-                // `vm_jit::CONTAINER_CELLS`).
+                // The single point every ContainerRef word passes through, so
+                // this counts every cell ever made (`vm_jit::CONTAINER_CELLS`,
+                // a `MUTSU_VM_STATS` statistic).
                 crate::vm::vm_jit::note_container_cell();
                 pack_gc(
                     if itemized {

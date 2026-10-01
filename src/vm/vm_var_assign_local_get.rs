@@ -182,9 +182,10 @@ impl Interpreter {
         // 2. `local_read_unspoiled` — nothing the arm looks for *at runtime*
         //    has ever been created anywhere in the process: no `$CALLER::x :=`
         //    alias for `resolve_binding` to answer, no atomic variable, no
-        //    shared cell or `Proxy` for the env cell-adoption probe to adopt,
-        //    no sigilless attribute alias. Monotonic and never cleared, so it
-        //    can only ever turn pessimistic.
+        //    sigilless attribute alias. Monotonic and never cleared, so it can
+        //    only ever turn pessimistic. A cell or `Proxy` is not on this list
+        //    (ADR-0097 §15): the env cell-adoption probe only finds a container
+        //    the slot does not hold, and the env/slot invariant rules that out.
         // 3. `is_plain_local_read` — the slot's own word is none of the kinds
         //    the arm's TAIL still inspects after cloning (`ContainerRef`,
         //    `Proxy`, `HashEntryRef`, `LazyThunk`, `Nil`). A pure tag probe, so
@@ -200,21 +201,20 @@ impl Interpreter {
         //
         // Ordered cheapest-refusal-first: the latch is one relaxed load of a
         // static, `local_read_plain` a `OnceLock` acquire and an indexed load,
-        // so a program that has spoiled the latch (any `:=` cell will do) pays
-        // only the load before falling through to the chain below.
+        // so a program that has spoiled the latch pays only the load before
+        // falling through to the chain below.
         if crate::vm::vm_jit::local_read_unspoiled()
             && code.local_read_plain(idx)
             && let Some(val) = self.locals.get(idx)
             && val.is_plain_local_read()
         {
-            // The latch is one counter shared by four sources, so a NEW spoiler
+            // The latch is one counter shared by three sources, so a NEW spoiler
             // mechanism added without bumping it would silently break this path
-            // instead of failing. These restate its contract for the three
-            // sources that are readable from here (the fourth, a packed
-            // `ContainerRef`/`Proxy` word, is what condition 3 excludes), so a
-            // missing bump surfaces as a debug-build assertion in the
-            // `gc-stress-tap` / `jit-stress-tap` suite runs rather than as a
-            // wrong answer in release.
+            // instead of failing. These restate its contract for those sources,
+            // and the env/slot invariant that replaced the cell/`Proxy` sources
+            // (ADR-0097 §15), so a missing bump or a new divergence surfaces as
+            // a debug-build assertion in the `gc-stress-tap` / `jit-stress-tap`
+            // suite runs rather than as a wrong answer in release.
             debug_assert!(
                 !self.atomic_var_seen(),
                 "GetLocal fast path taken with an atomic variable registered"
