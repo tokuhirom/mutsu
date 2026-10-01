@@ -592,6 +592,21 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // nano — current epoch time in nanoseconds as Int (term, language 6.e+)
+    if input.starts_with("nano")
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        && !input[4..].starts_with('(')
+        && !input[4..].trim_start().starts_with("=>")
+        && crate::parser::current_language_version().starts_with("6.e")
+    {
+        return Ok((
+            &input[4..],
+            Expr::Call {
+                name: Symbol::intern("nano"),
+                args: vec![],
+            },
+        ));
+    }
     // BEGIN/INIT/CHECK/END/ENTER/LEAVE as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [
         ("BEGIN", 5, crate::ast::PhaserKind::Begin),
