@@ -86,6 +86,19 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
 /// inherits it. Plain data — numbers, strings, type objects, and containers
 /// of those — round-trips through its literal form and stays baked.
 // Cost: O(n), n = elements reachable through nested containers of the value.
+/// Does any argument (or a named argument's value) need binding for the
+/// callee's match window, because baking cannot carry it into the callee's
+/// code blocks ([`regex_param_value_is_opaque`])?
+// Cost: O(a), a = the arguments.
+pub(crate) fn regex_args_have_opaque(arg_values: &[Value]) -> bool {
+    arg_values.iter().any(|value| match value.view() {
+        ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+            regex_param_value_is_opaque(value)
+        }
+        _ => regex_param_value_is_opaque(value),
+    })
+}
+
 pub(crate) fn regex_param_value_is_opaque(value: &Value) -> bool {
     match value.view() {
         ValueView::Sub(_)
@@ -198,12 +211,7 @@ impl Interpreter {
         // The rule's `"..."` atoms' qq thunks run in the same window, so the
         // pre-pass sees their results while the rule's pattern is parsed.
         let prior = self.install_subrule_qq_thunks(name, pkg, prior);
-        let has_opaque_arg = arg_values.iter().any(|value| match value.view() {
-            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
-                regex_param_value_is_opaque(value)
-            }
-            _ => regex_param_value_is_opaque(value),
-        });
+        let has_opaque_arg = regex_args_have_opaque(arg_values);
         if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) && !has_opaque_arg {
             return prior;
         }

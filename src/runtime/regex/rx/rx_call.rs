@@ -63,10 +63,37 @@ impl Interpreter {
         ic: bool,
     ) -> CallVerdict {
         let spec = name.spec();
-        // Shapes that resolve per call, never to a fixed body.
+        // A call with arguments resolves per call (`rx_call_target_args`).
         if !spec.arg_exprs.is_empty() {
             return Err("args");
         }
+        self.rx_call_blockers(name)?;
+        let generation =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let key = (spec.lookup_sym, pkg, ic);
+        if let Some(hit) = TARGETS.with(|c| {
+            c.borrow()
+                .get(&key)
+                .filter(|(cached, _)| *cached == generation)
+                .map(|(_, target)| target.clone())
+        }) {
+            return hit;
+        }
+        let target = self.resolve_call_target(name, pkg, ic);
+        if Self::parsed_candidates_are_memoized(spec.lookup_sym, pkg) {
+            TARGETS.with(|c| {
+                c.borrow_mut().insert(key, (generation, target.clone()));
+            });
+        }
+        target
+    }
+
+    /// What keeps any call of `<name>` off the compiled engine, whatever its
+    /// arguments: a name resolved per call, or dispatch the engine does not
+    /// model.
+    // Cost: O(1).
+    fn rx_call_blockers(&self, name: &NamedAtom) -> Result<(), &'static str> {
+        let spec = name.spec();
         if spec.lookup_name == "::" || Self::may_name_lexical_regex(spec) {
             return Err("lexical-regex");
         }
@@ -93,24 +120,49 @@ impl Interpreter {
         if lr_name_active(spec.lookup_sym) {
             return Err("left-recursion-active");
         }
-        let generation =
-            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let key = (spec.lookup_sym, pkg, ic);
-        if let Some(hit) = TARGETS.with(|c| {
-            c.borrow()
-                .get(&key)
-                .filter(|(cached, _)| *cached == generation)
-                .map(|(_, target)| target.clone())
-        }) {
-            return hit;
+        Ok(())
+    }
+
+    /// The frame a `<name(…)>` call with arguments runs as. The arguments are
+    /// evaluated here, once, against the caller's captures `caps`, and handed
+    /// back with the verdict: a frame's callee was parsed for those values
+    /// (`parsed_subrule_candidates`, memoized per rendered argument list), and
+    /// a bridged call passes them to the walk's producer so user code in an
+    /// argument never runs twice. `None` when an argument fails to evaluate:
+    /// the call does not match, as in the walk.
+    // Cost: the arguments' evaluation, then the candidate resolution
+    // (memoized per argument list) and O(c) program probes for c candidates.
+    pub(super) fn rx_call_target_args(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        ic: bool,
+        caps: &crate::runtime::regex_types::RegexCaptures,
+    ) -> Option<(CallVerdict, Option<Vec<crate::value::Value>>)> {
+        let spec = name.spec();
+        if let Err(why) = self.rx_call_blockers(name) {
+            // Bridged without evaluating: the producer evaluates them itself.
+            return Some((Err(why), None));
         }
-        let target = self.resolve_call_target(name, pkg, ic);
-        if Self::parsed_candidates_are_memoized(spec.lookup_sym, pkg) {
-            TARGETS.with(|c| {
-                c.borrow_mut().insert(key, (generation, target.clone()));
-            });
+        let args = self.eval_regex_arg_list(&spec.arg_exprs, caps)?;
+        // An object or closure argument is bound in the env for the callee's
+        // match window (`install_subrule_dynamic_params`), which a frame the
+        // run can backtrack into does not keep live: the walk's producer
+        // binds it around the callee's whole match.
+        // TODO: compile to bytecode with a binding op pair that backtracking
+        // re-installs and removes, as `isolated-group-scoped` needs too.
+        if crate::runtime::regex::regex_dynparams::regex_args_have_opaque(&args) {
+            return Some((Err("args-opaque"), Some(args)));
         }
-        target
+        let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &args);
+        // No rule of that name: a grammar method or a builtin, which the
+        // walk's producer dispatches with these arguments.
+        let verdict = if raw_empty {
+            Err("args-method")
+        } else {
+            self.call_target_from_candidates(name, pkg, ic, candidates)
+        };
+        Some((verdict, Some(args)))
     }
 
     /// [`Self::rx_call_target`] with the one verdict a method definition can
@@ -142,6 +194,19 @@ impl Interpreter {
         if raw_empty {
             return Ok(CallTarget::Single);
         }
+        self.call_target_from_candidates(name, pkg, ic, candidates)
+    }
+
+    /// The shape of a call to the resolved `candidates`: a plain rule, a proto,
+    /// or why it bridges.
+    fn call_target_from_candidates(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        ic: bool,
+        candidates: Arc<Vec<ParsedTokenCandidate>>,
+    ) -> CallVerdict {
+        let spec = name.spec();
         if candidates.is_empty() {
             return Err("no-candidates");
         }
