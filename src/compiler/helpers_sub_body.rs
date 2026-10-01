@@ -247,6 +247,8 @@ impl Compiler {
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
         self.attach_param_chunks(param_defs, name);
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -1213,6 +1215,8 @@ impl Compiler {
         promoted_decls: &[String],
     ) -> CompiledCode {
         self.attach_param_chunks(param_defs, "<anon>");
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
