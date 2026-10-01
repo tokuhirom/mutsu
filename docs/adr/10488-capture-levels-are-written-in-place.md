@@ -164,5 +164,7 @@ debug and release counts agree to within 30 allocations on `main`: 192,865 and 1
 
 The release build of the last step: **60,340** allocations (the issue's goal is at most 100,000),
 of which the parse's own are ~32,100, from ~164,600: about 3.9 per subrule Match instead of 20.
-Instructions fell from 180.4M to 120.7M. `tests/grammar_parse_alloc_budget.rs` pins the
-per-element slope of the same grammar.
+Instructions fell from 180.4M to 120.7M. The benchmark's warm parse section, release, seven
+interleaved runs of each binary on one box: 24.3-28.9 ms (median 25.7) on `main`, 14.2-21.1 ms
+(median 14.8) with this change. `tests/grammar_parse_alloc_budget.rs` pins the per-element slope
+of the same grammar: 490.9 allocations per document pair before, 76.8 after, budget 120.

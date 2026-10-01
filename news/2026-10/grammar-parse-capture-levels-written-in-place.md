@@ -27,8 +27,10 @@ place instead:
 
 `scripts/bench-det.sh benchmarks/bench-grammar-parse-big.raku` (release): allocations
 192,837 → 60,340, of which the parse's own fell from ~164,600 to ~32,100 (5.1x); instructions
-180.4M → 120.7M (-33%). The step-by-step figures are in the ADR.
-`tests/grammar_parse_alloc_budget.rs` pins the per-element slope of the same grammar.
+180.4M → 120.7M (-33%). The warm parse section took a median 25.7 ms on `main` and 14.8 ms
+with the change (seven interleaved runs each, one box; bench CI has the series of record). The
+step-by-step figures are in the ADR. `tests/grammar_parse_alloc_budget.rs` pins the per-element
+slope of the same grammar (490.9 allocations per document pair before, 76.8 after).
 
 Three differences from rakudo turned up while checking these shapes against it, all older than
 this change and shared by both regex engines: a `rule`'s separated quantifier accepts whitespace

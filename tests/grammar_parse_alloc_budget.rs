@@ -125,10 +125,11 @@ fn a_grammar_parse_allocates_a_few_times_per_match_node() {
     eprintln!("grammar parse: {per_pair:.1} allocations per pair ({lo} at {LO}, {hi} at {HI})");
     // A pair is `"kN":[[1,1],[2,2],[3,3],[4,4]]`: 26 subrule Matches, about
     // 32 characters, and the document-building code's own allocations for
-    // it. Measured on this program: PER_PAIR_BEFORE allocations per pair
-    // before ADR-10488, PER_PAIR_AFTER after. The budget trips if per-call
-    // deltas, per-iteration levels or per-call frames come back.
-    let limit = 1e9;
+    // it. Measured on this program (release): 490.9 allocations per pair
+    // before ADR-10488, 76.8 after. The budget trips if a per-call delta
+    // (about two allocations per Match) or the per-iteration levels of a
+    // separated quantifier or goal match come back.
+    let limit = 120.0;
     assert!(
         per_pair <= limit,
         "a grammar parse allocates {per_pair:.1} times per pair (budget {limit}); \
