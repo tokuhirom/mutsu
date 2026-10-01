@@ -36,8 +36,8 @@ pub(super) use sub_name::{
 
 // Sub declaration parsing (sub_decl.rs).
 pub(super) use sub_decl::{
-    anon_multi_check, parse_indirect_decl_name, sub_decl, sub_decl_body,
-    sub_decl_with_semicolon_mode, top_level_main_semicolon_decl,
+    anon_multi_check, parse_indirect_decl_name, register_parse_affecting_traits, sub_decl,
+    sub_decl_body, sub_decl_with_semicolon_mode, top_level_main_semicolon_decl,
 };
 
 // Trait parsing (traits.rs).

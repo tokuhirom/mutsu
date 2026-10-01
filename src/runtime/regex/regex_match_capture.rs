@@ -699,15 +699,20 @@ impl Interpreter {
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 let mut best_sym: Option<String> = None;
                 for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                    if let Some((inner_end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, *sub_pkg)
-                    {
+                    // One rule invocation per candidate (#9803).
+                    self.enter_rule_cursor();
+                    let matched =
+                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, *sub_pkg);
+                    let cursor = self.leave_rule_cursor();
+                    if let Some((inner_end, mut inner_caps)) = matched {
+                        if let Some(cursor) = cursor {
+                            inner_caps.set_cursor(cursor);
+                        }
                         let better = best
                             .as_ref()
                             .map(|(best_end, _)| inner_end > *best_end)
                             .unwrap_or(true);
                         if better {
-                            let mut inner_caps = inner_caps;
                             inner_caps.from = pos;
                             inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));

@@ -326,6 +326,12 @@ pub(crate) struct CapChildren {
     /// What this rule's own `:my $*x` declarations held at this match's reduce
     /// (see `Interpreter::record_rule_dynvars`).
     pub(crate) regex_vars: HashMap<String, Value>,
+    /// The grammar instance this rule invocation owned while it ran -- Rakudo's
+    /// cursor -- when a method the rule called wrote to it (#9803): its
+    /// attributes are the Match's own, so `$<t>.inv` reads what `method acc {
+    /// $!inv = True }` stored. `None` for the (overwhelming) invocation that
+    /// never touched one.
+    pub(crate) cursor: Option<Value>,
 }
 
 impl CapNode {
@@ -428,18 +434,20 @@ impl RegexCaptures {
         // Take the cold payload whole: a leaf (the common case) never had one,
         // so the conversion neither allocates nor touches the fields below.
         let rare = self.rare.take().map(|rare| *rare);
-        let (capture_alias_map, regex_vars, sym, action_name) = match rare {
+        let (capture_alias_map, regex_vars, sym, action_name, cursor) = match rare {
             Some(rare) => (
                 rare.capture_alias_map,
                 rare.regex_vars,
                 rare.sym,
                 rare.action_name,
+                rare.cursor,
             ),
             None => Default::default(),
         };
         let has_children = !self.named.is_empty()
             || !capture_alias_map.is_empty()
             || !self.positional.is_empty()
+            || cursor.is_some()
             || regex_vars.as_ref().is_some_and(|vars| !vars.is_empty());
         let children = has_children.then(|| {
             Box::new(CapChildren {
@@ -447,6 +455,7 @@ impl RegexCaptures {
                 capture_alias_map,
                 positional: self.positional,
                 regex_vars: regex_vars.map(Arc::unwrap_or_clone).unwrap_or_default(),
+                cursor,
             })
         });
         CapNode {
@@ -521,6 +530,11 @@ pub(crate) struct RareCaps {
     /// never merged, propagated, or published — it is a read-through link to
     /// the parent walk, not a capture of this level.
     pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
+    /// The grammar instance the rule invocation that produced this match owned
+    /// (see [`CapChildren::cursor`]). Set where a rule invocation returns, from
+    /// the compiled engine's frame; carried onto the stored node by
+    /// [`RegexCaptures::into_cap_node`].
+    pub(crate) cursor: Option<Value>,
 }
 
 impl RareCaps {
@@ -535,6 +549,7 @@ impl RareCaps {
             && self.hash_captures.is_empty()
             && self.target.is_none()
             && self.outer_backref.is_none()
+            && self.cursor.is_none()
     }
 }
 
@@ -660,6 +675,20 @@ impl RegexCaptures {
         let dst = self.regex_vars_mut();
         dst.insert(first.0, first.1);
         dst.extend(it);
+    }
+
+    /// File the grammar instance the rule invocation that produced this match
+    /// owned (see [`CapChildren::cursor`]). The payload is allocated only for
+    /// an invocation that has one.
+    pub(crate) fn set_cursor(&mut self, cursor: Value) {
+        self.rare_mut().cursor = Some(cursor);
+    }
+
+    /// Take the grammar instance filed by [`Self::set_cursor`], leaving none.
+    pub(crate) fn take_cursor(&mut self) -> Option<Value> {
+        let taken = self.rare.as_deref_mut().and_then(|rare| rare.cursor.take());
+        self.prune_rare();
+        taken
     }
 
     #[inline]

@@ -268,7 +268,13 @@ impl Interpreter {
         if let Some(found) = self.rx_try_ends_until_full(pattern, chars, start, pkg) {
             return found;
         }
-        self.regex_walk_ends_until_full_for_diff(pattern, chars, start, pkg)
+        // The start rule is itself a rule invocation: a grammar method it calls
+        // writes to its cursor, which is the parse's own Match (#9803).
+        self.enter_rule_cursor();
+        let mut ends = self.regex_walk_ends_until_full_for_diff(pattern, chars, start, pkg);
+        let cursor = self.leave_rule_cursor();
+        Self::file_rule_cursor(cursor, &mut ends);
+        ends
     }
 
     /// The tree walk's ends up to the first full match — the answer the

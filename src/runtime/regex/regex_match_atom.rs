@@ -411,12 +411,19 @@ impl Interpreter {
             let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
             // first-branch candidates: HIGHEST-priority-first from ends fn.
             // Build the output LOWEST-priority-first by reversing.
+            let outer = super::regex_backref_scope::current_outer_caps_seed();
             let mut first_ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
             first_ends.reverse();
             for (end, first_caps) in first_ends {
                 let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
                 let mut ok = true;
                 for branch in rest {
+                    // Later branches see the earlier ones' captures, as the
+                    // streamed driver's do (`arm_conjunction_branch_seed`).
+                    let _seed = super::regex_backref_scope::arm_conjunction_branch_seed(
+                        outer.as_ref(),
+                        &merged,
+                    );
                     if let Some(bcaps) =
                         self.regex_match_branch_ending_at(branch, chars, pos, end, pkg)
                     {
@@ -994,13 +1001,19 @@ impl Interpreter {
             None
         };
         let parsed = scoped.as_ref().map_or(parsed, |pattern| pattern);
-        if first_only {
-            return self
-                .regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+        // One rule invocation: a grammar method its body calls writes to the
+        // invocation's own cursor, which is filed on each end it produces (#9803).
+        self.enter_rule_cursor();
+        let mut ends = if first_only {
+            self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
                 .into_iter()
-                .collect();
-        }
-        self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+                .collect()
+        } else {
+            self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+        };
+        let cursor = self.leave_rule_cursor();
+        Self::file_rule_cursor(cursor, &mut ends);
+        ends
     }
 
     /// Keep named grammar-rule frames visible while a rule's pattern is
@@ -1068,31 +1081,14 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        // Only plain, argument-less identifier subrules dispatched against a real
-        // grammar package. `<::>` indirection, char-class specs, and builtin
-        // assertions are handled elsewhere.
-        if spec.token_lookup
-            || !spec.arg_exprs.is_empty()
-            || pkg.is_empty()
-            || spec.lookup_name.is_empty()
-            || spec.lookup_name.contains("::")
-            || !spec
-                .lookup_name
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-        {
+        // The cursor the engine published for this one call, if any: taken at
+        // once so a call nested inside the method never sees it.
+        let published = self.rx_cursor.take();
+        if !self.subrule_names_user_method(spec, pkg) {
             return None;
         }
-        // The name must be a user method declared directly on this grammar (not an
-        // inherited Cursor/Grammar builtin, which the normal subrule/builtin paths
-        // already cover).
-        let is_user_method = self
-            .registry()
-            .user_method_overloads(pkg.as_str(), &spec.lookup_name)
-            .is_some();
-        if !is_user_method {
-            return None;
-        }
+        // Else the walked rule invocation this call is in the body of.
+        let published = published.or_else(|| self.walk_rule_cursor(chars, pos, pkg));
         // Run the method in the grammar's package over an isolated copy of the
         // env (`run_regex_sub_eval_here`).
         //
@@ -1105,13 +1101,22 @@ impl Interpreter {
         // as "no match", which failed the whole parse. Method resolution still
         // finds the grammar's own method because the instance's class IS the
         // grammar.
-        let mut cursor_attrs = crate::value::AttrMap::new();
-        let orig: String = chars.iter().collect();
-        cursor_attrs.insert("orig", Value::str(orig));
-        cursor_attrs.insert("from", Value::int(pos as i64));
-        cursor_attrs.insert("pos", Value::int(pos as i64));
-        cursor_attrs.insert("to", Value::int(pos as i64));
-        let invocant = Value::make_instance(pkg, cursor_attrs);
+        //
+        // When the compiled engine published the calling rule invocation's own
+        // cursor, that instance IS the invocant (Rakudo's cursor is the grammar
+        // instance): the method's attribute writes land on it and travel onto
+        // the rule's Match (#9803). Its positional state moves to this call.
+        let invocant = match published {
+            Some(cursor) => {
+                if let ValueView::Instance { attributes, .. } = cursor.view() {
+                    attributes.insert("from", Value::int(pos as i64));
+                    attributes.insert("pos", Value::int(pos as i64));
+                    attributes.insert("to", Value::int(pos as i64));
+                }
+                cursor
+            }
+            None => self.new_grammar_cursor(chars, pos, pkg),
+        };
         let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
             interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
         });

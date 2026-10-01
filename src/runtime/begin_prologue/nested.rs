@@ -35,6 +35,11 @@
 //! type or package of the scope it names (see [`decls`], [`pragmas`]), and
 //! every operator code variable of the scope.
 //!
+//! A nested `use lib` is a BEGIN-time effect too, and is lifted the same way:
+//! it moves from its position into the prologue, so it extends the repository
+//! chain even when its scope never runs (#10481). One that cannot be lifted
+//! stays in position and blocks its scope ([`pragmas`]).
+//!
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
 //! - an enclosing inner scope declares, ahead of it, a pragma it cannot repeat
@@ -319,6 +324,12 @@ impl Walker<'_> {
                 self.walk_list(body, Self::params_frame(params.iter().cloned()));
                 self.declare_routine(stmt);
             }
+            Stmt::Use {
+                module,
+                arg: Some(_),
+                condition: None,
+                ..
+            } if module == "lib" && !self.frames.is_empty() => self.lift_use_lib(stmt, loc),
             Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
             | Stmt::EnumDecl { .. }

@@ -507,34 +507,49 @@ impl Compiler {
     /// the expression: literals and plain variable reads, plus groupings,
     /// operator combinations and list/pair composites of those. Anything
     /// call-like, block-like, or mutating falls out to the thunk path.
+    // Cost: O(n), n = size of `expr`'s subtree.
     fn xx_lhs_is_pure_value(expr: &Expr) -> bool {
-        match expr {
-            Expr::Literal(_)
-            | Expr::Var(_)
-            | Expr::ArrayVar(_)
-            | Expr::HashVar(_)
-            | Expr::BareWord(_)
-            | Expr::Whatever => true,
-            Expr::Grouped(inner) => Self::xx_lhs_is_pure_value(inner),
-            Expr::ArrayLiteral(items) => items.iter().all(Self::xx_lhs_is_pure_value),
-            Expr::PositionalPair(value) => Self::xx_lhs_is_pure_value(value),
-            // An operator over pure operands repeats its value too — this
-            // also keeps a placeholder lhs (`$^n + 1 xx $^n + 1`, constant
-            // within one call of the enclosing block) OUT of the thunk path,
-            // where wrapping it in a synthetic block would steal the
-            // placeholder from the enclosing block's signature.
-            Expr::Binary { left, right, .. } => {
-                Self::xx_lhs_is_pure_value(left) && Self::xx_lhs_is_pure_value(right)
-            }
-            // A non-mutating prefix over a pure operand (`|()`, `-$n`) —
-            // roast's `(|() xx *)[^5]` relies on the value-repeat path's Slip
-            // handling. Increment/decrement mutate and must re-evaluate.
-            Expr::Unary { op, expr } => {
-                !matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
-                    && Self::xx_lhs_is_pure_value(expr)
-            }
-            _ => false,
+        struct PureValueScan {
+            pure: bool,
         }
+        impl crate::ast_visit::Visit for PureValueScan {
+            fn visit_expr(&mut self, expr: &Expr) {
+                if !self.pure {
+                    return;
+                }
+                match expr {
+                    Expr::Literal(_)
+                    | Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::BareWord(_)
+                    | Expr::Whatever => {}
+                    // An operator over pure operands repeats its value too —
+                    // this also keeps a placeholder lhs (`$^n + 1 xx $^n + 1`,
+                    // constant within one call of the enclosing block) OUT of
+                    // the thunk path, where wrapping it in a synthetic block
+                    // would steal the placeholder from the enclosing block's
+                    // signature.
+                    Expr::Grouped(_)
+                    | Expr::ArrayLiteral(_)
+                    | Expr::PositionalPair(_)
+                    | Expr::Binary { .. } => crate::ast_visit::walk_expr(self, expr),
+                    // A non-mutating prefix over a pure operand (`|()`, `-$n`)
+                    // — roast's `(|() xx *)[^5]` relies on the value-repeat
+                    // path's Slip handling. Increment/decrement mutate and
+                    // must re-evaluate.
+                    Expr::Unary { op, .. }
+                        if !matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) =>
+                    {
+                        crate::ast_visit::walk_expr(self, expr)
+                    }
+                    _ => self.pure = false,
+                }
+            }
+        }
+        let mut scan = PureValueScan { pure: true };
+        crate::ast_visit::Visit::visit_expr(&mut scan, expr);
+        scan.pure
     }
 
     pub(super) fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {

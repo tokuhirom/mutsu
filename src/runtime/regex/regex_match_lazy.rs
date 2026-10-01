@@ -287,14 +287,21 @@ impl Interpreter {
             return on(self, store, pos, RegexCaptures::default());
         };
         let mut unwind = false;
+        // The seed this conjunction published: the first branch's walk reads
+        // it, and the later branches read it too, past the code atoms the
+        // first branch's continuation runs inside (each arms a barrier).
+        let outer = super::regex_backref_scope::current_outer_caps_seed();
         {
             let unwind = &mut unwind;
+            let outer = outer.as_ref();
             let mut cont =
                 |interp: &mut Interpreter, end: usize, first_caps: RegexCaptures| -> bool {
                     // Raku keeps the captures from EVERY side of `&`, in written
                     // order -- same merge the eager arm performs.
                     let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
                     for branch in rest {
+                        let _seed =
+                            super::regex_backref_scope::arm_conjunction_branch_seed(outer, &merged);
                         match interp.regex_match_branch_ending_at(branch, chars, pos, end, pkg) {
                             Some(bcaps) => merged = merge_regex_captures(merged, bcaps),
                             // This end is not a candidate at all, so a ratchet has

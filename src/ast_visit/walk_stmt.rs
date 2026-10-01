@@ -46,6 +46,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
         | Stmt::SetLine(_) => {}
+        // A copy of declarations that stay in the tree, where they are walked.
+        Stmt::NestedTypeShells(_) => {}
         Stmt::NestedMethodCapture {
             index: _,
             closure,

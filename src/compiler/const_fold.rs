@@ -360,24 +360,38 @@ impl Compiler {
 /// (a declaration, an embedded block that could hold one, a phaser), so a
 /// constant-false branch containing it can simply not be emitted. Deliberately
 /// a small whitelist: an expression form not listed here keeps the branch.
+// Cost: O(n), n = size of `expr`'s subtree.
 fn expr_is_droppable(expr: &Expr) -> bool {
-    match expr {
-        Expr::Literal(_)
-        | Expr::LiteralSrc(..)
-        | Expr::RegexLiteral { .. }
-        | Expr::Var(_)
-        | Expr::ArrayVar(_)
-        | Expr::HashVar(_)
-        | Expr::BareWord(_) => true,
-        Expr::Grouped(inner) => expr_is_droppable(inner),
-        Expr::StringInterpolation(parts) => parts.iter().all(expr_is_droppable),
-        Expr::Unary { expr, .. } => expr_is_droppable(expr),
-        Expr::Binary { left, right, .. } => expr_is_droppable(left) && expr_is_droppable(right),
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            args.iter().all(expr_is_droppable)
-        }
-        _ => false,
+    struct DroppableScan {
+        droppable: bool,
     }
+    impl crate::ast_visit::Visit for DroppableScan {
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !self.droppable {
+                return;
+            }
+            match expr {
+                // Leaves: nothing below them is compiled on its own.
+                Expr::Literal(_)
+                | Expr::LiteralSrc(..)
+                | Expr::RegexLiteral { .. }
+                | Expr::Var(_)
+                | Expr::ArrayVar(_)
+                | Expr::HashVar(_)
+                | Expr::BareWord(_) => {}
+                Expr::Grouped(_)
+                | Expr::StringInterpolation(_)
+                | Expr::Unary { .. }
+                | Expr::Binary { .. }
+                | Expr::Call { .. }
+                | Expr::UserRoutineCall { .. } => crate::ast_visit::walk_expr(self, expr),
+                _ => self.droppable = false,
+            }
+        }
+    }
+    let mut scan = DroppableScan { droppable: true };
+    crate::ast_visit::Visit::visit_expr(&mut scan, expr);
+    scan.droppable
 }
 
 /// Scalar whose value is fully determined at compile time and whose identity is

@@ -179,7 +179,7 @@ jobs:
           {
             echo "## Benchmark results ($(git rev-parse --short HEAD))"
             echo ""
-            echo "| benchmark | mutsu median (s) | mutsu min (s) | raku median (s) | ratio | rakupp median (s) | ratio vs rakupp | prev mutsu (s) | change |"
+            echo "| benchmark | mutsu median (s) | mutsu min (s) | rakudo median (s) | ratio vs rakudo | rakupp median (s) | ratio vs rakupp | prev mutsu (s) | change |"
             echo "|---|---|---|---|---|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio; do

@@ -3,41 +3,36 @@ use super::*;
 /// Find expression-position declarations inside a synthesized WhateverCode.
 /// The generated callable is transparent for lexical scoping, while explicit
 /// source closures/blocks remain boundaries of their own.
+// Cost: O(n), n = size of `body` outside nested scopes.
 fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSet<String>) {
-    fn expr(node: &Expr, out: &mut std::collections::HashSet<String>) {
-        match node {
-            Expr::DoStmt(stmt) => {
-                if let Stmt::VarDecl { name, is_our, .. } = stmt.as_ref()
-                    && !*is_our
-                {
-                    out.insert(name.clone());
-                }
+    struct DeclScan<'a> {
+        out: &'a mut std::collections::HashSet<String>,
+    }
+    impl crate::ast_visit::Visit for DeclScan<'_> {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            if let Stmt::VarDecl { name, is_our, .. } = stmt
+                && !*is_our
+            {
+                self.out.insert(name.clone());
             }
-            Expr::Unary { expr: inner, .. }
-            | Expr::PostfixOp { expr: inner, .. }
-            | Expr::Grouped(inner) => expr(inner, out),
-            Expr::Binary { left, right, .. } => {
-                expr(left, out);
-                expr(right, out);
+            super::scope_scan::walk_stmt_own_scope(self, stmt);
+        }
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !super::scope_scan::opens_own_scope(expr) {
+                crate::ast_visit::walk_expr(self, expr);
             }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                expr(cond, out);
-                expr(then_expr, out);
-                expr(else_expr, out);
-            }
-            _ => {}
         }
     }
+    let mut scan = DeclScan { out };
+    // A WhateverCode body is the curried expression; its statements are only
+    // that expression and line markers.
     for stmt in body {
         if let Stmt::Expr(e) = stmt {
-            expr(e, out);
+            crate::ast_visit::Visit::visit_expr(&mut scan, e);
         }
     }
 }
+
 use crate::symbol::Symbol;
 
 impl Compiler {
@@ -661,7 +656,8 @@ impl Compiler {
             return false;
         };
         let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
-            !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
+            !pkg.is_empty()
+                && (pkg == "GLOBAL" || !pkg.split("::").any(crate::parser::is_pseudo_package))
         });
         if !named {
             return false;
@@ -677,6 +673,19 @@ impl Compiler {
             && let Some(key) = lit.as_str()
             && !key.starts_with('&')
         {
+            // `Pkg::<@a> = ...` / `Pkg::<%h> = ...` (assignment, not bind).
+            if key.starts_with(['@', '%'])
+                && key.len() > 1
+                && !matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("die"),
+                    args: vec![Expr::Literal(Value::str(
+                        "Cannot assign to an immutable value".to_string(),
+                    ))],
+                });
+                return true;
+            }
             let Some(bare) = key
                 .strip_prefix('$')
                 .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
@@ -690,6 +699,19 @@ impl Compiler {
                 ),
                 other => (false, other.clone()),
             };
+            // `GLOBAL::<$x> = v` (plain assign): the statement form's store, so
+            // a never-declared `$GLOBAL::x` lands where the GLOBAL stash reads
+            // it back (the expression-form `AssignExpr` op does not register it).
+            if !is_bind && stash_name == "GLOBAL::" {
+                self.with_escape(true, |c| c.compile_expr(&rhs));
+                let qualified = format!("GLOBAL::{bare}");
+                self.emit_set_named_var(&qualified);
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(self.qualify_variable_name(&qualified)));
+                self.code.emit(OpCode::GetGlobal(name_idx));
+                return true;
+            }
             // `$Pkg::v` compiles to AssignExpr name "Pkg::v" (sigil dropped).
             self.compile_expr(&Expr::AssignExpr {
                 name: format!("{stash_name}{bare}"),
@@ -1458,20 +1480,67 @@ impl Compiler {
     }
 }
 
+/// Finds a mutation of the WhateverCode's placeholder (`$_` after lowering)
+/// anywhere in its body, or a use that depends on its container identity.
+/// A nested code object has a `$_` of its own and is not entered.
+#[derive(Default)]
+struct TopicMutationScan {
+    found: bool,
+}
+
+impl crate::ast_visit::Visit for TopicMutationScan {
+    fn visit_expr(&mut self, e: &Expr) {
+        if self.found || super::scope_scan::is_code_object(e) {
+            return;
+        }
+        self.found = match e {
+            // `*++` / `*--` / `++*` / `--*`
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+                expr,
+            }
+            | Expr::Unary {
+                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+                expr,
+            } => expr_refs_topic(expr),
+            // `* =:= $x` — container identity needs the same container.
+            Expr::Binary {
+                op: TokenKind::Ident(name),
+                left,
+                right,
+            } if name == "=:=" => expr_refs_topic(left) || expr_refs_topic(right),
+            // `*.=foo` — mutating method-assign on the placeholder.
+            Expr::MethodCall {
+                target,
+                modifier: Some('='),
+                ..
+            } => expr_refs_topic(target),
+            _ => false,
+        };
+        if !self.found {
+            crate::ast_visit::walk_expr(self, e);
+        }
+    }
+}
+
 /// Whether a single-`*` WhateverCode body (the `*` already lowered to `Var("_")`)
 /// *mutates* its placeholder or depends on its container identity, requiring the
 /// `_` parameter to bind `is raw`: `*++`/`*--`/`++*`/`--*`, `* =:= $x`, `*.=foo`.
+// Cost: O(n), n = size of `body` outside nested code objects.
 fn whatever_lambda_body_mutates_topic(body: &[Stmt]) -> bool {
-    body.iter().any(|stmt| match stmt {
-        Stmt::Expr(e) => expr_mutates_topic(e),
-        _ => false,
-    })
+    let mut scan = TopicMutationScan::default();
+    crate::ast_visit::walk_stmts(&mut scan, body);
+    scan.found
 }
 
 fn is_topic_var(e: &Expr) -> bool {
     matches!(e, Expr::Var(name) if name == "_")
 }
 
+/// Whether `e` denotes the topic itself, seen through the operator chain that
+/// carries it (a prefix/postfix, an infix operand, a method-call invocant).
+/// A value-path spine, not a subtree search: an argument mentioning `$_` does
+/// not make the expression the topic.
 fn expr_refs_topic(e: &Expr) -> bool {
     if is_topic_var(e) {
         return true;
@@ -1480,45 +1549,6 @@ fn expr_refs_topic(e: &Expr) -> bool {
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_refs_topic(expr),
         Expr::Binary { left, right, .. } => expr_refs_topic(left) || expr_refs_topic(right),
         Expr::MethodCall { target, .. } => expr_refs_topic(target),
-        _ => false,
-    }
-}
-
-fn expr_mutates_topic(e: &Expr) -> bool {
-    match e {
-        // `*++` / `*--`
-        Expr::PostfixOp {
-            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-            expr,
-        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
-        // `++*` / `--*`
-        Expr::Unary {
-            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-            expr,
-        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
-        Expr::Unary { expr, .. } => expr_mutates_topic(expr),
-        Expr::PostfixOp { expr, .. } => expr_mutates_topic(expr),
-        // `* =:= $x` — container identity needs the same container.
-        Expr::Binary {
-            op: TokenKind::Ident(name),
-            left,
-            right,
-        } if name == "=:=" => {
-            expr_refs_topic(left)
-                || expr_refs_topic(right)
-                || expr_mutates_topic(left)
-                || expr_mutates_topic(right)
-        }
-        Expr::Binary { left, right, .. } => expr_mutates_topic(left) || expr_mutates_topic(right),
-        // `*.=foo` — mutating method-assign on the placeholder.
-        Expr::MethodCall {
-            target,
-            modifier: Some('='),
-            ..
-        } if expr_refs_topic(target) => true,
-        Expr::MethodCall { target, args, .. } => {
-            expr_mutates_topic(target) || args.iter().any(expr_mutates_topic)
-        }
         _ => false,
     }
 }

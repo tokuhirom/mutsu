@@ -238,12 +238,17 @@ impl Interpreter {
                     .map(|pd| pd.name.clone())
                     .collect::<Vec<_>>();
                 let ok = if self.role_candidate_arity_ok(&arg_values, &candidate.type_param_defs) {
+                    // The trial binding is the role's own scope: neither its
+                    // bindings nor the readonly marks of its parameters may
+                    // stay on the resolving scope's same-named lexicals.
                     let saved_env = self.env.clone();
+                    let readonly_mark = self.enter_readonly_frame();
                     let bound = self.bind_function_args_values(
                         &candidate.type_param_defs,
                         &candidate_param_names,
                         &arg_values,
                     );
+                    self.exit_readonly_frame(readonly_mark);
                     self.env = saved_env;
                     match bound {
                         Ok(_) => true,
@@ -293,6 +298,7 @@ impl Interpreter {
         // resolved values per param name, instead of using raw positional zip.
         let resolved_values = if !selected.type_param_defs.is_empty() {
             let saved_env = self.env.clone();
+            let readonly_mark = self.enter_readonly_frame();
             let candidate_param_names: Vec<String> = selected
                 .type_param_defs
                 .iter()
@@ -326,6 +332,7 @@ impl Interpreter {
                     .unwrap_or(Value::NIL);
                 resolved.push(value);
             }
+            self.exit_readonly_frame(readonly_mark);
             self.env = saved_env;
             resolved
         } else {

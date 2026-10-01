@@ -414,23 +414,7 @@ impl Compiler {
     /// it to the unit level would be wrong. Direct (depth-0) children are left
     /// to `hoist_sub_decls`, which already registers them.
     pub(super) fn hoist_nested_our_subs(&mut self, stmts: &[Stmt]) {
-        fn collect(stmts: &[Stmt], depth: usize, out: &mut Vec<Stmt>) {
-            for stmt in stmts {
-                match stmt {
-                    Stmt::SubDecl { custom_traits, .. }
-                        if depth > 0 && custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
-                    {
-                        out.push(stmt.clone());
-                    }
-                    Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                        collect(body, depth + 1, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let mut nested = Vec::new();
-        collect(stmts, 0, &mut nested);
+        let nested = super::body_scans::nested_our_subs(stmts);
         for mut hoisted in nested {
             let name = match &mut hoisted {
                 Stmt::SubDecl {
@@ -455,7 +439,7 @@ impl Compiler {
                     }
                     *name
                 }
-                _ => unreachable!("collect() only pushes SubDecl statements"),
+                _ => unreachable!("nested_our_subs() only collects SubDecl statements"),
             };
             let idx = self.add_sub_decl_plan(&hoisted);
             self.code.emit(OpCode::RegisterDecl(idx));
@@ -841,8 +825,8 @@ impl Compiler {
     /// package (see [`Self::hoist_type_decl_shells`]). A class keeps only the
     /// declaration subset of its body; a role keeps its whole body, whose
     /// statements only run when the role is composed. A `nested` shell (one
-    /// of a declaration nested in code, `hoist_nested_type_decl_shells`) is
-    /// also marked `__hoisted_nested`: it runs no role body, see
+    /// of a declaration nested in code, `Stmt::NestedTypeShells`) is also
+    /// marked `__hoisted_nested`: it is the compile-time composition, see
     /// `HoistedShell::Nested`.
     pub(super) fn emit_type_decl_shell(&mut self, stmt: &Stmt, nested: bool) {
         let keep_trait =

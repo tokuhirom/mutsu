@@ -21,8 +21,9 @@
 //!   ahead of the copied declarations, though, so a copy would come under a
 //!   pragma that its original precedes. A [`Guard`] records what the scope
 //!   held at the pragma, and a BEGIN that would copy any of it is not lifted.
-//! - **Anything else** keeps the scope blocked. `use lib` and `use if` act
-//!   beyond the block; `use attributes` is not restored on block exit; and a
+//! - **Anything else** keeps the scope blocked. `use if` acts beyond the
+//!   block, as does a `use lib` the walker could not lift into the prologue
+//!   itself (a lifted one is already in effect when a later BEGIN runs); `use attributes` is not restored on block exit; and a
 //!   pragma mutsu does not implement (`use worries`, `use trace`) fails at
 //!   run time, which repeating it would move to startup.
 
@@ -75,6 +76,25 @@ pub(super) fn repeat_of(stmt: &Stmt) -> Option<Repeat> {
         )
         .then_some(Repeat::Anywhere),
         _ => None,
+    }
+}
+
+impl super::Walker<'_> {
+    /// A nested `use lib` extends the process-wide repository chain at BEGIN
+    /// time, whether or not its scope ever runs (#10481). It is lifted like a
+    /// BEGIN body and leaves its position: running it again there would
+    /// re-promote its path over a later one. One that cannot be lifted stays
+    /// in position and blocks its scope, as above.
+    pub(super) fn lift_use_lib(&mut self, stmt: &Stmt, loc: Option<(usize, bool)>) {
+        let body = [stmt.clone()];
+        match loc {
+            Some((index, _)) if self.lift(&body, None) => {
+                self.current_frame()
+                    .edits
+                    .push((index, super::Edit::Remove));
+            }
+            _ => self.declare_type_or_import(stmt),
+        }
     }
 }
 

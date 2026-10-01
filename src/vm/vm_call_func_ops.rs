@@ -309,9 +309,32 @@ impl Interpreter {
         candidate.filter(|v| {
             matches!(
                 v.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Mixin(..)
+                ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
+                    | ValueView::Mixin(..)
             )
         })
+    }
+
+    /// Record the `&`-sigil parameter names of a routine or role signature, so a
+    /// call to a same-named routine or operator inside its body bypasses the
+    /// name-keyed light-call caches and checks the lexical binding first.
+    /// Records both plain names (`foo`) and operator categories (`infix:<@@>`,
+    /// as in `role BinaryHeap[&infix:<precedes>]`, #10516); either can shadow a
+    /// same-named package routine.
+    // Cost: O(p), p = number of parameters (including sub-signatures).
+    pub(crate) fn note_amp_param_shadowed_names(&mut self, param_defs: &[crate::ast::ParamDef]) {
+        for pd in param_defs {
+            if let Some(bare) = pd.name.strip_prefix('&')
+                && !bare.is_empty()
+            {
+                self.amp_param_shadowed_names.insert(Symbol::intern(bare));
+            }
+            if let Some(sub) = &pd.sub_signature {
+                self.note_amp_param_shadowed_names(sub);
+            }
+        }
     }
 
     /// `CallFuncNamed`: a call site whose literal named args travel out-of-band
@@ -2999,34 +3022,9 @@ impl Interpreter {
     ///     multi/proto shapes the gate was protecting (fib, fan-out, a `Str`
     ///     param read after an `await`) produce raku-identical results on the
     ///     compiled path — pinned by t/start-multi-candidate-compiled.t.
+    // Cost: O(n), n = size of the body's expression statements.
     pub(crate) fn function_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
-        use crate::ast::Stmt;
-        for stmt in body {
-            match stmt {
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => return true,
-                Stmt::Expr(expr) if Self::expr_needs_interpreter(expr) => return true,
-                _ => {}
-            }
-        }
-        false
-    }
-
-    /// Recurse into expression positions that can *host statements* (a `do`
-    /// statement, a bare block, or either as a call/method-call argument), so a
-    /// `class`/`role` declaration nested there is still seen. No expression is
-    /// itself interpreter-coupled any more.
-    fn expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
-        use crate::ast::Expr;
-        match expr {
-            Expr::DoStmt(stmt) => Self::function_body_needs_interpreter(std::slice::from_ref(stmt)),
-            Expr::Block(body) => Self::function_body_needs_interpreter(body),
-            Expr::MethodCall { target, args, .. } => {
-                Self::expr_needs_interpreter(target)
-                    || args.iter().any(Self::expr_needs_interpreter)
-            }
-            Expr::Call { args, .. } => args.iter().any(Self::expr_needs_interpreter),
-            _ => false,
-        }
+        crate::compiler::routine_scans::declares_type_at_top(body)
     }
 
     /// Whether a *non-builtin* single module/dynamic sub (reached via the
@@ -3228,44 +3226,10 @@ impl Interpreter {
     }
 
     /// True if the body declares a `state` variable anywhere (recursing through
-    /// nested blocks).
+    /// nested blocks, but not into nested routines or closures, which own
+    /// their `state`).
+    // Cost: O(n), n = size of `body` outside nested closures and routines.
     pub(crate) fn function_body_declares_state(body: &[crate::ast::Stmt]) -> bool {
-        body.iter().any(Self::stmt_declares_state)
-    }
-
-    fn stmt_declares_state(stmt: &crate::ast::Stmt) -> bool {
-        use crate::ast::Stmt;
-        match stmt {
-            Stmt::VarDecl { is_state, .. } => *is_state,
-            Stmt::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::function_body_declares_state(then_branch)
-                    || Self::function_body_declares_state(else_branch)
-            }
-            Stmt::While { body, .. }
-            | Stmt::For { body, .. }
-            | Stmt::Loop { body, .. }
-            | Stmt::Given { body, .. }
-            | Stmt::When { body, .. }
-            | Stmt::Whenever { body, .. }
-            | Stmt::React { body, .. } => Self::function_body_declares_state(body),
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Default(body) => {
-                Self::function_body_declares_state(body)
-            }
-            Stmt::Expr(e) => Self::expr_declares_state(e),
-            _ => false,
-        }
-    }
-
-    fn expr_declares_state(expr: &crate::ast::Expr) -> bool {
-        use crate::ast::Expr;
-        match expr {
-            Expr::Block(body) => Self::function_body_declares_state(body),
-            Expr::DoStmt(stmt) => Self::stmt_declares_state(stmt),
-            _ => false,
-        }
+        crate::compiler::routine_scans::declares_state(body)
     }
 }

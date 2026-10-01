@@ -26,6 +26,7 @@ use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
 use crate::symbol::Symbol;
+use crate::value::Value;
 
 /// The program the loop is executing: the one the run started with, or the
 /// callee of the current frame.
@@ -45,6 +46,7 @@ impl Cur<'_> {
 }
 
 impl Interpreter {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_run_in<const FRAMES: bool>(
         &mut self,
         root: &RxProgram,
@@ -52,6 +54,7 @@ impl Interpreter {
         start: usize,
         root_pkg: Symbol,
         mut goal: Goal<'_>,
+        seed: Option<RegexCaptures>,
         scratch: &mut Scratch,
     ) -> Option<(usize, RegexCaptures)> {
         let Scratch {
@@ -70,8 +73,14 @@ impl Interpreter {
         fmarks.clear();
         ends.clear();
         levels.reset(start);
+        if let Some(seed) = seed {
+            levels.seed(seed);
+        }
         let mut cur = Cur::Root(root);
         let mut frame: Option<Rc<Frame>> = None;
+        // The grammar instance the run's own pattern owns, as `Frame::cursor` is
+        // the callee's (#9803). Filed on the result at the pattern's `Match`.
+        let root_cursor: RefCell<Option<Value>> = RefCell::new(None);
         // The register window and package of the frame being run.
         let mut base = 0usize;
         let mut pkg = root_pkg;
@@ -88,6 +97,17 @@ impl Interpreter {
                 let i = base + $r as usize;
                 reg_trail.push((i, regs[i]));
                 regs[i] = $v;
+            }};
+        }
+        // The run's own pattern matched: its captures, with the grammar instance
+        // it owns when a method it called wrote to one.
+        macro_rules! root_snapshot {
+            () => {{
+                let mut snap = levels.top().snapshot();
+                if FRAMES && let Some(cursor) = root_cursor.borrow().as_ref() {
+                    snap.set_cursor(cursor.clone());
+                }
+                snap
             }};
         }
         // What a choice point pushed now rewinds to.
@@ -185,6 +205,7 @@ impl Interpreter {
                     proto: $proto,
                     depth,
                     seen: RefCell::new(Vec::new()),
+                    cursor: RefCell::new(None),
                 }));
                 cur = Cur::Callee(callee);
                 base = new_base;
@@ -332,7 +353,9 @@ impl Interpreter {
                     // Cost: O(1) expected to resolve the callee, then O(1) to enter
                     // its frame; a bridged call is the walk's producer, which
                     // computes the callee's ends (`regex_match_atom_all_with_capture_opts`)
-                    // and costs O(c) per candidate entered, c = the captures it adds.
+                    // and costs O(c) per candidate entered, c = the captures it adds;
+                    // the first call in a frame that runs a grammar method also creates
+                    // the frame's cursor, O(a), a = the grammar's attributes.
                     // The callee's own ops state their costs.
                     RxOp::Call { atom, commit } => {
                         if !FRAMES {
@@ -431,6 +454,15 @@ impl Interpreter {
                                 }
                             }
                             None => {
+                                // A grammar method the call runs gets this
+                                // invocation's own cursor, not a throwaway one:
+                                // what it writes to its attributes is the Match's
+                                // (#9803).
+                                if self.subrule_names_user_method(name.spec(), pkg) {
+                                    let slot = frame.as_ref().map_or(&root_cursor, |f| &f.cursor);
+                                    let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
+                                    self.rx_cursor = Some(cursor);
+                                }
                                 let mut cands = self.regex_match_atom_all_with_capture_opts(
                                     &program.atoms[atom as usize],
                                     chars,
@@ -440,6 +472,7 @@ impl Interpreter {
                                     ic,
                                     commit,
                                 );
+                                self.rx_cursor = None;
                                 // Ratchet commits to the highest-priority end, the
                                 // last (the producer's order is lowest first).
                                 if commit && cands.len() > 1 {
@@ -626,6 +659,8 @@ impl Interpreter {
                     }
                     // Cost: see `rx_capture_op`.
                     op @ (RxOp::OpenCapture
+                    | RxOp::OpenInline
+                    | RxOp::OpenSepIter { .. }
                     | RxOp::OpenIsolated
                     | RxOp::DropCapture
                     | RxOp::CloseCapture { .. }
@@ -667,17 +702,17 @@ impl Interpreter {
                     // callee's own captures moved, not copied.
                     RxOp::Match => match if FRAMES { frame.clone() } else { None } {
                         None => match &mut goal {
-                            Goal::First => break 'run Some((pos, levels.top().snapshot())),
+                            Goal::First => break 'run Some((pos, root_snapshot!())),
                             Goal::End(end) => {
                                 if pos == *end {
-                                    break 'run Some((pos, levels.top().snapshot()));
+                                    break 'run Some((pos, root_snapshot!()));
                                 }
                                 false
                             }
                             // Every end up to the first that covers the subject: the
                             // match is kept and the run backtracks for the next one.
                             Goal::UntilFull(out) => {
-                                out.push((pos, levels.top().snapshot()));
+                                out.push((pos, root_snapshot!()));
                                 if pos == chars.len() {
                                     break 'run None;
                                 }
@@ -708,6 +743,11 @@ impl Interpreter {
                                 // A proto candidate's Match carries its `:sym<…>`.
                                 if let Some((cands, idx)) = &f.proto {
                                     inner.set_sym(cands[*idx].2.clone());
+                                }
+                                // The grammar instance this invocation owned is
+                                // its Match's (#9803).
+                                if let Some(cursor) = f.cursor.borrow().as_ref() {
+                                    inner.set_cursor(cursor.clone());
                                 }
                                 let caller: &RxProgram = match &f.parent {
                                     Some(p) => &p.program,

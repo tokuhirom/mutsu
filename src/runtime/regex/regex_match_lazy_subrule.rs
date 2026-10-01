@@ -137,11 +137,19 @@ impl Interpreter {
         {
             let unwind = &mut unwind;
             let seed_consulted_in_cont = &mut seed_consulted_in_cont;
-            let mut cont = |interp: &mut Interpreter, end: usize, inner: RegexCaptures| -> bool {
+            let mut cont = |interp: &mut Interpreter,
+                            end: usize,
+                            mut inner: RegexCaptures|
+             -> bool {
                 if seen_ends.contains(&end) {
                     return false;
                 }
                 seen_ends.push(end);
+                // The grammar instance a method this invocation called wrote to
+                // is its Match's own (#9803).
+                if let Some(Some(cursor)) = interp.walk_cursors.last() {
+                    inner.set_cursor(cursor.clone());
+                }
                 let wrapped =
                     interp.build_named_candidates_from_inner(vec![(end, inner)], pos, spec, None);
                 let Some((end, delta)) = wrapped.into_iter().next() else {
@@ -164,7 +172,12 @@ impl Interpreter {
                     *seed_consulted_in_cont |=
                         super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read);
                 }
+                // The continuation is the CALLER's remaining pattern: this
+                // invocation's cursor scope must not be open while it runs, or a
+                // method the caller calls would write to the callee's cursor.
+                let scope = interp.walk_cursors.pop();
                 let stop = on(interp, store, end, delta);
+                interp.walk_cursors.extend(scope);
                 if let Some(lr_key) = &lr_key {
                     super::regex_lr_state::lr_begin_activation(lr_key);
                 }
@@ -177,6 +190,7 @@ impl Interpreter {
                 // it, so there is no second candidate to compute.
                 ratchet
             };
+            self.enter_rule_cursor();
             self.regex_walk_ends_in_pkg(
                 &parsed,
                 chars,
@@ -186,6 +200,7 @@ impl Interpreter {
                 false,
                 &mut MatchSink::Cont(&mut cont),
             );
+            self.leave_rule_cursor();
         }
         let seed_consulted = lr_key.as_ref().is_some_and(|lr_key| {
             super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read)

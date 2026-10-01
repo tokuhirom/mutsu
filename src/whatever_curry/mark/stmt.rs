@@ -184,6 +184,8 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
         | Stmt::TrustsDecl { .. }
+        // Built after marking, from declarations already marked in place.
+        | Stmt::NestedTypeShells(_)
         | Stmt::SetLine(_) => {}
     }
 }

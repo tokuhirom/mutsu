@@ -2028,11 +2028,24 @@ impl Interpreter {
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            let val = attributes
-                                .as_map()
-                                .get(method)
-                                .cloned()
-                                .unwrap_or(Value::NIL);
+                            let stored = attributes.as_map().get(method).cloned();
+                            let val = match stored {
+                                Some(val) => val,
+                                // A grammar cursor is minted without BUILD
+                                // (raku: `nqp::create`), so a declared attribute
+                                // no rule wrote reads as its uninitialised value
+                                // -- the type object, an empty `@` / `%` -- not
+                                // as `Nil`, and a declared `= default` is not
+                                // applied (#9803).
+                                None if attributes.contains_key(
+                                    crate::value::match_view::cursor_match_marker(),
+                                ) =>
+                                {
+                                    let constraints = self.collect_attribute_type_constraints(&cn);
+                                    self.seed_attr_value(&cn, method, attr.sigil, &constraints)
+                                }
+                                None => Value::NIL,
+                            };
                             // The generated accessor decontainerizes: `self.a`
                             // is not itemized even when the store itemized the
                             // attribute's Scalar (`$!a` / `$.a` preserve it) --
@@ -2527,12 +2540,12 @@ impl Interpreter {
                         if let Some(regex_idx) = attr_var.find(":regex:") {
                             let real_attr = &attr_var[..regex_idx];
                             let pattern = &attr_var[regex_idx + ":regex:".len()..];
-                            // Check if method name matches the regex pattern first
+                            // Check if method name matches the Raku regex pattern first
                             // (cheap, no re-entrant call) before resolving the
                             // delegate.
-                            let matches = fancy_regex::Regex::new(pattern)
-                                .map(|re| re.is_match(method).unwrap_or(false))
-                                .unwrap_or(false);
+                            // `parse_regex` caches the compiled pattern, so this
+                            // compiles once per distinct pattern.
+                            let matches = self.regex_find_first(pattern, method).is_some();
                             if !matches {
                                 continue;
                             }

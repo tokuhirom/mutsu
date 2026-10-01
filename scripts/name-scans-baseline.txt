@@ -1,3 +1,3 @@
-qualify 162
-global-cmp 87
+qualify 160
+global-cmp 86
 scan 339

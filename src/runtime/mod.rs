@@ -675,7 +675,11 @@ mod dispatch_proto_rewrite;
 pub(crate) mod dispatch_resolve;
 mod end_phasers;
 mod eval_check;
+mod eval_decl_scans;
+mod eval_name_scans;
 mod eval_routine_magicals;
+mod eval_type_scans;
+mod eval_var_scan;
 mod exception_message;
 pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;
@@ -689,6 +693,7 @@ mod handle_read_chars;
 mod handle_seq_reader;
 pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
+mod inline_package_subs;
 mod io;
 mod io_doc;
 mod io_env;
@@ -889,6 +894,7 @@ mod registration_class_deferred_parents;
 mod registration_class_parents;
 pub(crate) mod registration_class_validate;
 mod registration_method_traits;
+mod registration_private_access;
 mod registration_role;
 mod registration_role_body;
 mod registration_role_body_lexical;
@@ -917,6 +923,8 @@ mod run_dist;
 mod run_main;
 mod run_modules;
 mod run_modules_bundled_repo;
+mod run_modules_scans;
+mod run_pod_declarants;
 mod run_prelude;
 mod run_prelude_iterator;
 mod run_prelude_trait_export;
@@ -3162,6 +3170,15 @@ pub struct Interpreter {
     /// hoisted method with that index is installed (a class) or composed (a
     /// role). See `vm_nested_method_capture`.
     pub(crate) nested_method_captures: HashMap<(Symbol, u32), crate::env::Env>,
+    /// The nested-block method captures each class/role composition's role
+    /// body filed, keyed by (composing class, role). A role body runs once per
+    /// composition (`Registry::composed_role_bodies`), but the class may be
+    /// registered again (the in-place registration after a nested
+    /// declaration's compile-time shell, or a redeclaration in a loop); the
+    /// re-registration rebuilds the composed methods and gives them these
+    /// captures back. See `apply_nested_method_captures`.
+    pub(crate) composed_nested_method_captures:
+        HashMap<(Symbol, Symbol), rustc_hash::FxHashMap<u32, crate::env::Env>>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every
@@ -3726,6 +3743,21 @@ pub struct Interpreter {
     /// *match* of a declaring rule its own binding on top of that, so a
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
+    /// The grammar instance (Rakudo's cursor) the compiled regex engine hands to
+    /// the grammar METHOD a `<.name>` subrule is about to call: the one the
+    /// rule invocation that makes the call owns, so what the method writes to
+    /// its attributes survives onto that rule's Match (#9803). Published by
+    /// the engine for the duration of that one call and taken by
+    /// `try_regex_subrule_as_method`; `None` everywhere else, where the method
+    /// gets a throwaway instance.
+    pub(crate) rx_cursor: Option<Value>,
+    /// The same for rule invocations the WALK evaluates (the eager and streamed
+    /// subrule arms, the ratcheted `<x>*` scan, the single-candidate arm): one
+    /// entry per invocation in flight, innermost last, created lazily by the
+    /// first grammar method the invocation calls. The walk pops its entry when
+    /// the invocation's ends are produced and files the instance on each of them
+    /// (#9803). Empty outside a walked rule body.
+    pub(crate) walk_cursors: Vec<Option<Value>>,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry

@@ -72,9 +72,6 @@ jit = [
 # Range tables (or `regex-syntax` alone) replace it. The dev-only `*_gen.rs`
 # consistency tests may keep it as a dev-dependency.
 regex = "1.12.3"
-# REMOVE (#10436): one call site, matching `handles /re/` delegation with
-# PCRE syntax instead of Raku regex semantics.
-fancy-regex = "0.19"
 # REMOVE (#10438): char <-> Unicode name at 3 call sites, but its build
 # script pulls in phf_codegen + rand (15 crates). Generate a committed table.
 unicode_names2 = "3"
@@ -116,7 +113,7 @@ serde_json = "1"
 # KEEP (a), TRIM (#10440): the precomp/scan-cache binary format, used only
 # through its serde bridge. The default `derive` feature (a proc-macro)
 # is unused.
-bincode = { version = "2", features = ["serde"] }
+bincode = { version = "2", default-features = false, features = ["std", "serde"] }
 # KEEP (a): Unicode Collation Algorithm for `coll` and `collate`. It is
 # the largest subtree (~32 crates), but UCA is not something to own.
 icu_collator = "2.1"
@@ -128,11 +125,11 @@ libloading = { version = "0.9", optional = true }
 # run time (native only).
 libffi = { version = "5", optional = true }
 # KEEP (a): the Cranelift method JIT (ADR-0004), behind the `jit` feature.
-cranelift-codegen = { version = "0.134", optional = true }
-cranelift-frontend = { version = "0.134", optional = true }
-cranelift-jit = { version = "0.134", optional = true }
-cranelift-module = { version = "0.134", optional = true }
-cranelift-native = { version = "0.134", optional = true }
+cranelift-codegen = { version = "0.136", optional = true }
+cranelift-frontend = { version = "0.136", optional = true }
+cranelift-jit = { version = "0.136", optional = true }
+cranelift-module = { version = "0.136", optional = true }
+cranelift-native = { version = "0.136", optional = true }
 
 [dev-dependencies]
 # Used only by `builtins::unicode_gc_gen` to re-derive the committed

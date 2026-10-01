@@ -37,6 +37,7 @@ mod nested;
 mod package_body;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast_visit::{Visit, walk_expr};
 use crate::value::ValueView;
 use std::collections::HashSet;
 
@@ -51,25 +52,53 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>) -> Vec<Stmt> {
     let unit_names = unit_lexical_names(stmts);
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
+    // The compile-time composition of the `our` types declared in each
+    // statement's code (#10494) is a BEGIN-time effect too. It is collected
+    // after the lift, so a type declared in a lifted BEGIN registers there
+    // alone.
+    let mut type_shells: Vec<Option<Stmt>> = Vec::with_capacity(stmts.len());
+    let mut composes_role = false;
     for stmt in stmts.iter_mut() {
         let before = lifted.effects.len();
         nested::lift_in_stmt(stmt, &unit_names, &mut lifted);
         effects.push(lifted.effects.split_off(before));
+        let shells = crate::compiler::nested_type_decls(stmt);
+        composes_role |= shells
+            .iter()
+            .any(|shell| crate::compiler::nested_decl_composes_role(&shell.decl));
+        type_shells.push((!shells.is_empty()).then_some(Stmt::NestedTypeShells(shells)));
+    }
+    // Only a composition runs user code (a role body), so only then does it
+    // matter where among the unit's statements the shells run.
+    // TODO: place every unit's shells here and drop the compiler's head-of-
+    // unit fallback (`hoist_nested_type_decl_shells`). Extending the
+    // prologue's bound over every unit with a nested type exposes partition
+    // bugs that make that unsafe for now (#10524).
+    if !composes_role {
+        type_shells.iter_mut().for_each(|shells| *shells = None);
     }
     let decls = lifted.decls;
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),
     // so the prologue reaches the last of them too.
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
     let last_lifted = effects.iter().rposition(|e| !e.is_empty());
-    let Some(last) = last_effect.max(last_lifted) else {
+    let last_shell = type_shells.iter().rposition(Option::is_some);
+    let Some(last) = last_effect.max(last_lifted).max(last_shell) else {
         return Vec::new();
     };
     let tail = stmts.split_off(last + 1);
     let mut prologue = decls;
     let mut rest = Vec::new();
-    for (stmt, stmt_effects) in std::mem::take(stmts).into_iter().zip(effects) {
+    for ((stmt, stmt_effects), shells) in std::mem::take(stmts)
+        .into_iter()
+        .zip(effects)
+        .zip(type_shells)
+    {
         prologue.extend(stmt_effects);
         partition_stmt(stmt, &mut prologue, &mut rest);
+        // After the statement's own declaration part: a class whose methods
+        // declare the nested types is registered by then.
+        prologue.extend(shells);
     }
     rest.extend(tail);
     *stmts = rest;
@@ -196,48 +225,33 @@ fn static_require_targets(stmt: &Stmt) -> Vec<String> {
     out
 }
 
+// Cost: O(n), n = size of the expression tree (closures excluded).
 fn collect_static_requires(expr: &Expr, out: &mut Vec<String>) {
-    match expr {
-        Expr::Call { name, args } => {
-            if name.resolve() == "require"
-                && let Some(Expr::Literal(target)) = args.first()
-                && let ValueView::Package(module) = target.view()
-            {
-                out.push(module.resolve());
-            }
-            for arg in args {
-                collect_static_requires(arg, out);
-            }
+    let mut scan = StaticRequires(out);
+    scan.visit_expr(expr);
+}
+
+/// The walk of [`collect_static_requires`] (ADR-0137 visitor).
+struct StaticRequires<'a>(&'a mut Vec<String>);
+
+impl Visit for StaticRequires<'_> {
+    // A statement reached from an expression sits in a nested block, closure
+    // or `do`, whose `require` belongs to that scope (see
+    // [`static_require_targets`]).
+    fn visit_stmt(&mut self, _stmt: &Stmt) {}
+
+    // A parameter default belongs to its closure's scope too.
+    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Call { name, args } = expr
+            && name.resolve() == "require"
+            && let Some(Expr::Literal(target)) = args.first()
+            && let ValueView::Package(module) = target.view()
+        {
+            self.0.push(module.resolve());
         }
-        Expr::Grouped(inner)
-        | Expr::Unary { expr: inner, .. }
-        | Expr::PostfixOp { expr: inner, .. }
-        | Expr::AssignExpr { expr: inner, .. } => collect_static_requires(inner, out),
-        Expr::Binary { left, right, .. } => {
-            collect_static_requires(left, out);
-            collect_static_requires(right, out);
-        }
-        Expr::MethodCall { target, args, .. } => {
-            collect_static_requires(target, out);
-            for arg in args {
-                collect_static_requires(arg, out);
-            }
-        }
-        Expr::ArrayLiteral(items) => {
-            for item in items {
-                collect_static_requires(item, out);
-            }
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            collect_static_requires(cond, out);
-            collect_static_requires(then_expr, out);
-            collect_static_requires(else_expr, out);
-        }
-        _ => {}
+        walk_expr(self, expr);
     }
 }
 
@@ -258,16 +272,51 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
 /// A lexical pragma that mutsu applies as run-time state at the statement's
 /// own position (`use strict`, `no strict`, `use fatal`, `use soft`, ...). It
 /// stays where it is: moving it into the prologue would switch the mode on for
-/// the run-time statements that precede it. Every lowercase pragma counts,
-/// except the ones a later BEGIN-time effect depends on: `use lib` extends the
-/// search path the prologue's loads resolve against, and `use if` enables the
-/// `:if` adverb of a later conditional `use`.
+/// the run-time statements that precede it. Only the pragmas of
+/// [`is_known_pragma_name`] count, so `use lib` (which extends the search path
+/// the prologue's loads resolve against) and `use if` (which enables the `:if`
+/// adverb of a later conditional `use`) stay BEGIN-time effects, as does a
+/// lowercase-named real module such as `vars`.
 fn is_positional_pragma(stmt: &Stmt) -> bool {
     let module = match stmt {
         Stmt::Use { module, .. } | Stmt::No { module, .. } | Stmt::Need { module } => module,
         _ => return false,
     };
-    module.starts_with(|c: char| c.is_ascii_lowercase()) && !matches!(module.as_str(), "lib" | "if")
+    is_known_pragma_name(module)
+}
+
+/// The lowercase names mutsu applies as positional run-time state, plus a
+/// language version (`v6.d`, `v6.*`). Any other lowercase name is an ordinary
+/// module that happens to be spelled like a pragma (`use vars <$x @y>`, whose
+/// `sub EXPORT` a later BEGIN observes), so it is a BEGIN-time load.
+// Cost: O(1), a fixed set of names compared against one string.
+fn is_known_pragma_name(module: &str) -> bool {
+    if let Some(rest) = module.strip_prefix('v')
+        && rest.starts_with(|c: char| c.is_ascii_digit())
+    {
+        return true;
+    }
+    matches!(
+        module,
+        "strict"
+            | "fatal"
+            | "soft"
+            | "nqp"
+            | "isms"
+            | "oo"
+            | "class"
+            | "experimental"
+            | "customtrait"
+            | "warnings"
+            | "worries"
+            | "precompilation"
+            | "trace"
+            | "internals"
+            | "variables"
+            | "attributes"
+            | "dynamic-scope"
+            | "newline"
+    )
 }
 
 /// `my $x will begin { ... }` parses to a `SyntheticBlock` of the declaration
@@ -357,13 +406,18 @@ fn is_begin_time_stmt(stmt: &Stmt) -> bool {
         | Stmt::AugmentClass { .. } => true,
         // An exported type declaration (`class C is export { }`) arrives as the
         // declaration followed by its `__MUTSU_EXPORT_TYPE__` marker; the pair is
-        // one declaration.
+        // one declaration. A versioned/authored one (`class C:ver<1>`) is
+        // preceded by its `__MUTSU_SET_META__` call, so a BEGIN block sees the
+        // class just as it does an unversioned one.
         Stmt::SyntheticBlock(inner) => {
             !inner.is_empty()
                 && inner.iter().all(|s| {
                     is_begin_time_stmt(s)
                         || matches!(s, Stmt::Expr(Expr::Call { name, .. })
-                            if name.resolve() == "__MUTSU_EXPORT_TYPE__")
+                        if matches!(
+                            name.resolve().as_str(),
+                            "__MUTSU_EXPORT_TYPE__" | "__MUTSU_SET_META__"
+                        ))
                 })
                 && inner.iter().any(is_begin_time_stmt)
         }
@@ -432,4 +486,30 @@ fn if_condition_check(condition: Expr) -> Vec<Stmt> {
             with_kind: None,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn requires(src: &str) -> Vec<String> {
+        let stmts = crate::parse_dispatch::parse_source(src)
+            .map(|(stmts, _)| stmts)
+            .unwrap();
+        stmts.iter().flat_map(static_require_targets).collect()
+    }
+
+    #[test]
+    fn a_require_anywhere_in_the_statement_expression_is_found() {
+        assert_eq!(requires("my $x = (require Foo);"), vec!["Foo"]);
+        assert_eq!(requires("my %h = a => (require Foo);"), vec!["Foo"]);
+        assert_eq!(requires("f(:x(require Foo));"), vec!["Foo"]);
+    }
+
+    #[test]
+    fn a_require_in_a_nested_block_or_closure_belongs_to_that_scope() {
+        assert!(requires("my $c = { require Foo };").is_empty());
+        assert!(requires("my $c = -> $x = (require Foo) { };").is_empty());
+        assert!(requires("my $x = do { require Foo };").is_empty());
+    }
 }

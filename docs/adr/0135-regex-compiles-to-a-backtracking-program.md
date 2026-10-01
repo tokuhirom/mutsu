@@ -613,6 +613,38 @@ atom under `** { … }` records one capture per iteration where rakudo records t
 and the scalar `$( $re )` of a Regex value matches the literal text of its source (#10445), besides
 #10417 and #10418 from the second part.
 
+**Slice C, fourth part (#10456): code in a `%` quantifier and in a `&` branch landed.** An
+iteration of a separated quantifier and a conjunction branch still match in a level of their own,
+but when they hold code that level is an *inline* one (`OpenSepIter`, `OpenInline`;
+`rx_levels::inline_level_caps`). It starts with the enclosing level's whole view
+(`inline_capture_view`, flattened) linked as its outer captures, and with the enclosing match
+start and `:my` lexicals. A separated quantifier's iteration also gets the iterations collected so
+far, folded (`rx_sep_fold`, the walk's `SepChainWalk::assemble`), with its own captures folded into
+the atom slots, or into the separator slots for a separator (`merge_positional`). A conjunction's
+later branches run in nested runs seeded with the same view plus the earlier branches' captures
+(`ConjTail { seeded }`, `rx_run_seeded`). The levels close as before. The outer link is stripped,
+so nothing of the view travels out with the captures.
+
+The values are rakudo's (`t/regex/syntax/regex-separated-and-conjunction-code-view.t`). Comparing
+the engines found four walk bugs, fixed in the walk the same way (`regex_match_sep_view.rs`,
+`arm_conjunction_branch_seed`):
+
+- The fold start was relative to the walk level's own captures, so a quantifier in a `[ … ]` after
+  a capture folded into the earlier capture's slot (`inline_visible_positional_len`).
+- An atom did not see the separator just before it.
+- A separator's code saw nothing of the chain, in either the backtracking or the ratcheted scan
+  (`regex_match_sep_ratchet.rs`, split out of `regex_match_sep.rs`).
+- A conjunction's later branch ran under the barrier the first branch's last code atom armed, so it
+  saw neither the enclosing captures nor the earlier branches'.
+
+Two differences from rakudo that both engines share are filed: zero iterations drop the quantifier's
+positional slot (#10534), and a nested separated quantifier's fold sits beside the outer slot
+instead of in it (#10535).
+
+Survey (`scripts/rx-decline-survey.sh`, all of `t/` and the roast whitelist): `separator-code` 7 → 0
+and `conjunction-code` 2 → 0, with 9,900 patterns compiled and 113 declined. D6 agreed with the
+walk on every file of `t/regex/`, `t/grammar/` and the whitelisted `roast/S05-*` (611 files).
+
 **Slice D, first part (#10254): subrule calls landed.**
 
 A `<subrule>` call compiles to one `Call` op carrying its `NamedAtom`; the program stays a pure
@@ -719,12 +751,41 @@ are filed as `todo:perf` issues with their own goals rather than closed here
 [#10488](https://github.com/tokuhirom/mutsu/issues/10488) the allocations of the Match tree). On YAMLish the compiled engine changes
 nothing measurable (#7576): its cost was never the engine.
 
-What is left of Slice D: **#9803** (an attribute written in a method a token calls is lost on the Match: the cursor
-as the grammar instance, where the `Frame` is the place for it), and the walk's `drive_named_subrule_candidates` and
-eager `Named` arm, which Slice E deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*`
-parameters, wrapped tokens, a scoped `[:m …]`, which keeps `JSON::Tiny`'s string token on the walk). The survey over
-`t/grammar` and `t/regex` puts compiled patterns at 97.2% (3,594 of 3,696), with no `subrule` decline left; the
-declines are `frugal-ratchet` 20, `nullable-loop` 19, `ignoremark` 18, `isolated-group-scoped` 17 and a tail.
+What is left of Slice D after that: the walk's `drive_named_subrule_candidates` and eager `Named` arm, which Slice E
+deletes once the bridge's shapes are compiled (`LrCall`, call arguments, `$*` parameters, wrapped tokens, a scoped
+`[:m …]`, which keeps `JSON::Tiny`'s string token on the walk). The survey over `t/grammar` and `t/regex` puts compiled
+patterns at 97.2% (3,594 of 3,696), with no `subrule` decline left; the declines are `frugal-ratchet` 20,
+`nullable-loop` 19, `ignoremark` 18, `isolated-group-scoped` 17 and a tail.
+
+#### The cursor is the grammar instance ([#9803](https://github.com/tokuhirom/mutsu/issues/9803))
+
+In Rakudo a rule invocation runs on a cursor that *is* an instance of the grammar. A method a rule calls as a subrule
+(`<.acc>`) writes `$!attr` of that cursor, and when the rule returns, the cursor is its Match. Measured against
+rakudo 2026.07: `G.parse("a")<t>.inv` is `True` for `token t { a <.acc> }` with `method acc { $!inv = True; self }`
+while `G.parse("a").inv` is `Any`; two matches of one token each start from the uninitialised attribute (`$!n++` gives
+1 and 1); calls from one invocation accumulate (3 for three `<.bump>`); a cursor is created, not built, so every
+declared attribute reads as its uninitialised value (`Any`, `Int`, `[]`, `{}`) and a `= default` is not applied.
+
+- **The instance lives where the invocation does.** A `Frame` (and the run's own root) holds
+  `cursor: RefCell<Option<Value>>`, filled the first time a call in that frame runs a grammar method (`rx_cursor_of`,
+  a `CREATE` of the grammar: every declared attribute present, uninitialised, because the method's write-back only
+  updates keys already on the instance). The bridged `Call` publishes it in `Interpreter::rx_cursor` for that one call,
+  `try_regex_subrule_as_method` takes it as the method's invocant, and the frame's return files it on the callee's
+  captures (`RareCaps::cursor`, then `CapChildren::cursor`). A rule that never calls a method creates nothing.
+- **The walk gets the same scope** (`Interpreter::walk_cursors`, one entry per rule invocation in flight) around every
+  place it evaluates a rule body and files the result as that rule's Match: the eager `subrule_candidate_ends`, the
+  streamed arm (lifted across the continuation, which is the caller's pattern), the ratcheted `<x>*` scan, the
+  single-candidate arm and the start rule. This is not optional while the bridge exists: a rule whose left cone the
+  call graph cannot name (a `<-crlf>` class, a method at a nullable-left position) is handed to the walk, and the
+  documented `HTTPRequest` example hits exactly that for `field`. It goes with the walk in Slice E; the
+  `MUTSU_RX_VM=off` run of `t/grammar/grammar-cursor-attributes.t` keeps it honest until then.
+- **The Match** materializes the instance's attributes next to its own (`match_lazy`), and the generated accessor of an
+  unset declared attribute on a grammar cursor answers the uninitialised value instead of `Nil`.
+
+Not covered, and filed: a method inherited from a parent grammar is not found as a subrule of a derived grammar
+([#10508](https://github.com/tokuhirom/mutsu/issues/10508): `user_method_overloads` is per declaring class, so `B2 is B1`
+fails to parse through `B1`'s `<.acc>`, before and after this change), and `self` inside a token's `{ … }` code block,
+which is the cursor in raku and dies in mutsu ([#10509](https://github.com/tokuhirom/mutsu/issues/10509)).
 
 ### Reproducing §2
 

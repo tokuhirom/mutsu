@@ -1824,54 +1824,6 @@ impl Interpreter {
         names
     }
 
-    /// The bare type names a compunit declared `is export`.
-    ///
-    /// `class C is export` / `grammar G is export` desugars to the declaration
-    /// followed by a `__MUTSU_EXPORT_TYPE__("C", <tags>)` marker call (see
-    /// `parser::stmt::class::class_decl::export_type_stmt`), so reading the
-    /// markers back out of the parsed compunit is the same answer the runtime
-    /// export table gets — without having to guess which package the runtime
-    /// filed it under. Only unqualified names are returned: a `class A::B is
-    /// export` publishes the compound name `A::B`, which the bare-short-name
-    /// alias table this feeds cannot express.
-    fn collect_exported_type_names(stmts: &[crate::ast::Stmt]) -> HashSet<String> {
-        fn walk(stmts: &[crate::ast::Stmt], out: &mut HashSet<String>) {
-            for s in stmts {
-                match s {
-                    crate::ast::Stmt::ClassDecl {
-                        name,
-                        custom_traits,
-                        ..
-                    } if custom_traits
-                        .iter()
-                        .any(|(trait_name, _)| trait_name == "__mutsu_export_type") =>
-                    {
-                        out.insert(name.resolve());
-                    }
-                    // The parser wraps a type declaration and its export marker
-                    // in one `Block`, so the markers are never at file level.
-                    crate::ast::Stmt::Block(inner) | crate::ast::Stmt::SyntheticBlock(inner) => {
-                        walk(inner, out)
-                    }
-                    crate::ast::Stmt::Expr(crate::ast::Expr::Call { name, args })
-                        if name.resolve() == "__MUTSU_EXPORT_TYPE__" =>
-                    {
-                        if let Some(crate::ast::Expr::Literal(value)) = args.first() {
-                            let name = value.to_string_value();
-                            if !name.is_empty() && !name.contains("::") {
-                                out.insert(name);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let mut out = HashSet::new();
-        walk(stmts, &mut out);
-        out
-    }
-
     /// The file-scope `constant` and `enum`-value names a `unit` compunit
     /// declares. Like [`Interpreter::collect_unit_lexical_names`] these must not
     /// stay visible under a plain `env` key once the load finishes — the module
@@ -2067,21 +2019,5 @@ impl Interpreter {
                 .entry(cf.fingerprint)
                 .or_insert_with(|| cf);
         }
-    }
-
-    /// True if `stmts` declares at least one `sub`/`proto`/`multi` whose body
-    /// declares a `state` variable (recursing through nested package blocks). Used
-    /// to skip the shared-body capture compile for modules that cannot benefit.
-    fn module_has_state_sub(stmts: &[crate::ast::Stmt]) -> bool {
-        use crate::ast::Stmt;
-        stmts.iter().any(|stmt| match stmt {
-            Stmt::SubDecl { body, .. } | Stmt::ProtoDecl { body, .. } => {
-                crate::runtime::Interpreter::function_body_declares_state(body)
-            }
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                Self::module_has_state_sub(body)
-            }
-            _ => false,
-        })
     }
 }

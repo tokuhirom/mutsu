@@ -2688,6 +2688,15 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // freshly resolved callable was overwritten by its caller's and calling
         // it re-entered the wrong closure until the stack overflowed (#7729).
         (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        // A mixin (`$attr does Role`, `$x but Role`) is an immutable wrapper
+        // over `Arc<Value>` + `Gc<MixinOverrides>`, so the same pair of
+        // pointers proves the callee did not rebind the captured variable.
+        // Without this arm a captured mixin was always "changed" and a nested
+        // call of a same-shaped closure leaked its own capture back into the
+        // caller (AttrX::Lazy's accessors read each other's `$attr`).
+        (ValueView::Mixin(ai, ao), ValueView::Mixin(bi, bo)) => {
+            Arc::ptr_eq(ai, bi) && crate::gc::Gc::ptr_eq(ao, bo)
+        }
         _ => false,
     }
 }

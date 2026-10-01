@@ -24,6 +24,7 @@ use super::super::regex_token_resolve::ParsedTokenCandidate;
 use super::RxProgram;
 use crate::runtime::regex_types::RegexCaptures;
 use crate::symbol::Symbol;
+use crate::value::Value;
 
 /// One active `<subrule>` call.
 pub(super) struct Frame {
@@ -60,6 +61,10 @@ pub(super) struct Frame {
     /// returned is not a new candidate: the first (highest priority) one wins,
     /// as in the walk's streamed call and its eager end set.
     pub(super) seen: RefCell<Vec<usize>>,
+    /// The grammar instance this invocation owns (Rakudo's cursor), created when
+    /// a call in the callee first runs a grammar method (#9803). The return files
+    /// it on the callee's Match.
+    pub(super) cursor: RefCell<Option<Value>>,
 }
 
 /// Calls nested deeper than this fail: a rule that re-enters itself without

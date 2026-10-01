@@ -221,24 +221,26 @@ impl Compiler {
         {
             return Err("conjunction-branch");
         }
-        if branches.iter().any(pattern_reads_enclosing_state) {
-            // Every branch shares the enclosing regex's scope, which a level of
-            // its own (the first branch) and a nested run (the others) hide
-            // from code and from a `$x` lexical: they would see their own
-            // branch's state only.
-            return Err("conjunction-code");
-        }
+        // Every branch shares the enclosing regex's scope, so code and a `$x`
+        // lexical in one see the enclosing level's captures and match start
+        // (the walk's outer-captures seed): the first branch's level is an
+        // inline one, and the others' nested runs are seeded with the same view.
+        let seeded = rest.iter().any(pattern_reads_enclosing_state);
         let start = self.reg();
         self.ops.push(RxOp::Mark(start));
         let height = token.ratchet.then(|| self.reg());
         if let Some(h) = height {
             self.ops.push(RxOp::Height(h));
         }
-        self.ops.push(RxOp::OpenCapture);
+        self.ops.push(if pattern_reads_enclosing_state(first) {
+            RxOp::OpenInline
+        } else {
+            RxOp::OpenCapture
+        });
         self.pattern(first)?;
         let tok = self.toks.len() as u32;
         self.toks.push(token.clone());
-        self.ops.push(RxOp::ConjTail { tok, start });
+        self.ops.push(RxOp::ConjTail { tok, start, seeded });
         if let Some(h) = height {
             self.ops.push(RxOp::Cut(h));
         }
@@ -268,16 +270,16 @@ impl Compiler {
             // far (`InlineCaptureScope`); a level of its own would hide them.
             return Err("separator-backref");
         }
-        if atom_contains_code(&token.atom) || pattern_contains_code(sep) {
-            // Code is a reader of the captures too: inside a separated
-            // quantifier `$/[*-1][*-1]` addresses the iterations folded so far
-            // (Net::Whois's octet check, `InlineCaptureScope` in the walk), and
-            // a level of its own would show only the current iteration.
-            return Err("separator-code");
-        }
         // Each atom and separator then matches in a capture level of its own,
         // collected for `SepEmit` to fold side by side.
         let collect = atom_captures(&token.atom) || pattern_captures(sep);
+        // Code in an atom or separator reads the captures too: `$/[*-1][*-1]`
+        // addresses the iterations folded so far with this one's folded in
+        // place (Net::Whois's octet check; `InlineCaptureScope` in the walk).
+        // Without captures to collect there is no level, and the code reads
+        // the enclosing one.
+        let atom_view = collect && atom_contains_code(&token.atom);
+        let sep_view = collect && pattern_contains_code(sep);
         let (min, max) = match token.quant {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
@@ -309,15 +311,28 @@ impl Compiler {
             self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
             self.pc() - 1
         });
-        self.collected(collect, false, |c| c.committed(ratchet, |c| c.atom(token)))?;
+        let tok = self.toks.len() as u32;
+        self.toks.push(token.clone());
+        let open = |view: bool, sep: bool| match base {
+            Some(base) if view => Some(RxOp::OpenSepIter { tok, base, sep }),
+            _ => None,
+        };
+        let (atom_open, sep_open) = (open(atom_view, false), open(sep_view, true));
+        self.collected(collect, atom_open, false, |c| {
+            c.committed(ratchet, |c| c.atom(token))
+        })?;
         self.ops.push(RxOp::CtrInc(ctr));
         let head = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let ext = self.pc();
         let step = self.reg();
         self.ops.push(RxOp::Mark(step));
-        self.collected(collect, true, |c| c.committed(ratchet, |c| c.pattern(sep)))?;
-        self.collected(collect, false, |c| c.committed(ratchet, |c| c.atom(token)))?;
+        self.collected(collect, sep_open, true, |c| {
+            c.committed(ratchet, |c| c.pattern(sep))
+        })?;
+        self.collected(collect, atom_open, false, |c| {
+            c.committed(ratchet, |c| c.atom(token))
+        })?;
         self.ops.push(RxOp::Advanced { start: step });
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));
@@ -342,7 +357,7 @@ impl Compiler {
             }
             let split = self.pc();
             self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
-            self.collected(collect, true, |c| c.pattern(sep))?;
+            self.collected(collect, sep_open, true, |c| c.pattern(sep))?;
             if let Some(h) = h {
                 self.ops.push(RxOp::Cut(h));
             }
@@ -380,23 +395,23 @@ impl Compiler {
             };
         }
         if let Some(base) = base {
-            let tok = self.toks.len() as u32;
-            self.toks.push(token.clone());
             self.ops.push(RxOp::SepEmit { tok, base });
         }
         Ok(())
     }
 
     /// Emit `body`, in a capture level collected as one separated-quantifier
-    /// iteration (a separator's when `sep`) when `collect`.
+    /// iteration (a separator's when `sep`) when `collect`: the level `open`
+    /// (an iteration's `OpenSepIter`) when given, else a plain `OpenCapture`.
     fn collected(
         &mut self,
         collect: bool,
+        open: Option<RxOp>,
         sep: bool,
         body: impl FnOnce(&mut Self) -> Result<(), Decline>,
     ) -> Result<(), Decline> {
         if collect {
-            self.ops.push(RxOp::OpenCapture);
+            self.ops.push(open.unwrap_or(RxOp::OpenCapture));
         }
         body(self)?;
         if collect {

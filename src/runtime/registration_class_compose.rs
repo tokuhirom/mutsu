@@ -595,13 +595,13 @@ impl Interpreter {
         // runtime statement is; see `hoist_type_decl_shells`'s doc comment)
         // — `t/role-body-composition-timing.t`'s class-header cases live in
         // their own file for exactly this reason.
-        if cx.is_hoisted_shell == super::registration_class::HoistedShell::Nested {
-            // A nested-declaration shell runs no role body: it registers at
-            // the head of the unit, whose frame is not the role body's
-            // declaring scope, so a method a body block declares would close
-            // over the wrong lexicals. The in-place registration runs it, once,
-            // through the memo below (`HoistedShell::Nested`).
-        } else if cx.is_hoisted_shell == super::registration_class::HoistedShell::Forward {
+        //
+        // A nested declaration's shell (`HoistedShell::Nested`) is the
+        // compile-time composition itself, so it goes through the memo like a
+        // real declaration: its run is the one that counts, and the in-place
+        // registration, repeated on every entry of the enclosing code, runs
+        // the body no more.
+        if cx.is_hoisted_shell == super::registration_class::HoistedShell::Forward {
             self.run_composed_role_deferred_body(
                 cx,
                 base_role_name,
@@ -653,6 +653,14 @@ impl Interpreter {
                         .remove(&compose_key);
                 }
                 run?;
+            } else {
+                // Composed before (a shell, or an earlier pass of a loop
+                // redeclaring the class): the body does not run again, but
+                // the rebuilt methods still close over its one run.
+                self.reapply_composed_nested_method_captures(base_role_name, cx.name);
+                for ancestor in self.role_ancestor_names(base_role_name) {
+                    self.reapply_composed_nested_method_captures(&ancestor, cx.name);
+                }
             }
         }
         // #8083: re-validate every param-type check deferred at role
