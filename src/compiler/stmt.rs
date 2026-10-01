@@ -3712,6 +3712,7 @@ impl Compiler {
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
                         name_idx,
                         body_end: 0,
+                        lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
@@ -3745,6 +3746,15 @@ impl Compiler {
                     self.current_package_kind = saved_package_kind;
                     self.code.patch_body_end(pkg_idx);
                 }
+            }
+
+            Stmt::PackageRuntimeBody {
+                name,
+                body,
+                lexicals,
+                decl,
+            } => {
+                self.compile_package_runtime_body(*name, body, lexicals, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku

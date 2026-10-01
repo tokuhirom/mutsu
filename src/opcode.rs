@@ -850,6 +850,10 @@ pub(crate) enum DoBlockIsolation {
 }
 
 /// Bytecode operations for the VM.
+/// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
+/// re-bind.
+pub(crate) const NO_PACKAGE_LEXICALS: u32 = u32::MAX;
+
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
     // -- Typed IR (TRIR) calls --
@@ -3770,7 +3774,18 @@ pub(crate) enum OpCode {
     /// block's new plain lexicals are recorded in `package_lexicals` so the
     /// package's subs can still read them. The declaration ops
     /// (`RegisterPackage`, `SetPackageKind`, ...) are emitted before this op.
-    PackageScope { name_idx: u32, body_end: u32 },
+    ///
+    /// `lexicals_idx` is [`NO_PACKAGE_LEXICALS`] for a declaration's own body.
+    /// For the run-time part of a body the BEGIN prologue split off (ADR-0134,
+    /// `Stmt::PackageRuntimeBody`) it is the constant-pool index of the
+    /// body's `my` lexicals, newline-joined: they are bound from the
+    /// package's static store for the body, written back to it on exit, and
+    /// a same-named outer binding is restored.
+    PackageScope {
+        name_idx: u32,
+        body_end: u32,
+        lexicals_idx: u32,
+    },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
     /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare

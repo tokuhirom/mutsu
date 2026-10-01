@@ -151,6 +151,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
             v.visit_name(name.as_str(), NameKind::Decl);
             super::walk_stmts(v, body);
         }
+        // The declaration itself is visited where the prologue keeps it.
+        Stmt::PackageRuntimeBody { body, .. } => super::walk_stmts(v, body),
         Stmt::Return(e)
         | Stmt::Die(e)
         | Stmt::Fail(e)
