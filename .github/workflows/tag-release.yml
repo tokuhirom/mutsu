@@ -50,7 +50,7 @@ jobs:
           fetch-depth: 0
 
       # Needed only to sync Cargo.lock's `mutsu` entry to the new version.
-      - uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       - name: Bump version in Cargo.toml + Cargo.lock
         run: |
