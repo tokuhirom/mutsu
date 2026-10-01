@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Sum the compiled regex engine's `MUTSU_VM_STATS` line across many scripts:
-# how many patterns compiled, how many declined to the tree walk, and why.
+# Sum the compiled regex engine's `MUTSU_VM_STATS` lines across many scripts:
+# how many patterns compiled, how many declined to the tree walk, and why; and
+# every run-time use of the walk's code (`regex-walk:`), by group and reason.
 #
 # The per-reason counts are ADR-0135 D5's migration ratchet
 # (docs/adr/0135-regex-compiles-to-a-backtracking-program.md): each slice PR
@@ -48,7 +49,7 @@ run_one() {
     esac
     MUTSU_VM_STATS=1 MUTSU_FUDGE="$fudge" timeout "$TIMEOUT" "$BIN" "$file" \
         2>&1 >/dev/null </dev/null |
-        grep -oE 'regex-vm: compiled=[0-9]+ declined=[0-9]+ runs=[0-9]+ reasons=\([^)]*\)'
+        grep -oE 'regex-vm: compiled=[0-9]+ declined=[0-9]+ runs=[0-9]+ reasons=\([^)]*\)|regex-walk: .*'
 }
 export -f run_one
 export BIN TIMEOUT
@@ -58,8 +59,10 @@ xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} < "$work/files" > "$work/lines
 echo "files: $(wc -l < "$work/files"), stats lines: $(wc -l < "$work/lines")"
 
 # Header totals: compiled / declined / runs.
+grep '^regex-vm:' "$work/lines" > "$work/vm"
+grep '^regex-walk:' "$work/lines" > "$work/walk"
 sed -n 's/^regex-vm: compiled=\([0-9]*\) declined=\([0-9]*\) runs=\([0-9]*\).*/\1 \2 \3/p' \
-    "$work/lines" |
+    "$work/vm" |
     awk '{ c += $1; d += $2; r += $3 }
          END {
              t = c + d
@@ -69,7 +72,7 @@ sed -n 's/^regex-vm: compiled=\([0-9]*\) declined=\([0-9]*\) runs=\([0-9]*\).*/\
 echo
 
 # Per-reason body: everything inside `reasons=( … )`.
-sed -n 's/^.*reasons=(\([^)]*\))$/\1/p' "$work/lines" |
+sed -n 's/^.*reasons=(\([^)]*\))$/\1/p' "$work/vm" |
     tr ' ' '\n' |
     grep -E '^[A-Za-z0-9_-]+=[0-9]+$' |
     awk -F= '{ n[$1] += $2; total += $2 }
@@ -77,3 +80,24 @@ sed -n 's/^.*reasons=(\([^)]*\))$/\1/p' "$work/lines" |
                  for (r in n) printf "%-26s %8d  %6.2f%%\n", r, n[r], 100 * n[r] / total
              }' |
     sort -k2 -nr
+
+# Every use of the walk's code (ADR-0135 §8, Slice E): the `regex-walk:` line,
+# `walked=N (reason=n …) bridged=M (…) leaf=L (…)`, summed per group and reason.
+echo
+walk_fields() {
+    awk '{
+             for (i = 2; i <= NF; i++) {
+                 f = $i
+                 gsub(/[()]/, "", f)
+                 if (f !~ /^[A-Za-z0-9_:-]+=[0-9]+$/) continue
+                 split(f, kv, "=")
+                 if ($i ~ /^(walked|bridged|leaf)=/) { group = kv[1]; print "total", group, kv[2] }
+                 else print group, kv[1], kv[2]
+             }
+         }' "$work/walk"
+}
+walk_fields | awk '$1 == "total" { t[$2] += $3 }
+                   END { printf "walk uses: walked=%d bridged=%d leaf=%d\n", t["walked"], t["bridged"], t["leaf"] }'
+walk_fields | awk '$1 != "total" { n[$1 " " $2] += $3 }
+                   END { for (k in n) { split(k, g, " "); printf "%-8s %-30s %10d\n", g[1], g[2], n[k] } }' |
+    sort -k1,1 -k3nr

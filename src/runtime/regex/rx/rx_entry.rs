@@ -65,9 +65,26 @@ pub(super) fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
 }
 
 /// `pattern`'s program, unless it runs code and the caller cannot allow that.
-fn rx_program_for_run(pattern: &RegexPattern, allow_code: bool) -> Option<Arc<RxProgram>> {
-    let program = program_for(pattern)?;
-    (allow_code || !program.has_code).then(|| Arc::clone(program))
+/// `Err` names why the match takes the walk.
+fn rx_program_for_run(
+    pattern: &RegexPattern,
+    allow_code: bool,
+) -> Result<Arc<RxProgram>, &'static str> {
+    let program = program_for(pattern).ok_or("declined")?;
+    if !allow_code && program.has_code {
+        return Err("position-only-code");
+    }
+    Ok(Arc::clone(program))
+}
+
+/// Count one match the walk answers instead of the compiled engine.
+#[inline]
+fn walked<T>(reason: &'static str) -> Option<T> {
+    crate::vm::vm_stats_regex_vm::record_regex_walk(
+        crate::vm::vm_stats_regex_vm::WalkUse::Walked,
+        reason,
+    );
+    None
 }
 
 impl Interpreter {
@@ -104,29 +121,49 @@ impl Interpreter {
         self.rx_try_match_in(pattern, chars, start, pkg, false)
     }
 
-    /// Does the dynamic context let the compiled engine run at all?
+    /// Does the dynamic context let the compiled engine run at all? `Err`
+    /// names what keeps it out (`MUTSU_VM_STATS`'s `regex-walk:` line).
     // Cost: O(1).
     #[inline]
-    fn rx_context_allows(&mut self) -> bool {
+    fn rx_context_allows(&mut self) -> Result<(), &'static str> {
         use super::super::regex_helpers as h;
-        rx_vm_enabled()
-            && !h::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
-            && self.grammar_rule_dynvar_decls.is_empty()
-            && !h::inline_regex_vars_active()
-            && h::INLINE_CAPTURE_SCOPE.with(std::cell::Cell::get).is_none()
-            && h::take_inline_outer_caps_seed().is_none()
+        if !rx_vm_enabled() {
+            return Err("context:vm-off");
+        }
+        if h::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            return Err("context:ltm-declarative");
+        }
+        if !self.grammar_rule_dynvar_decls.is_empty() {
+            return Err("context:rule-dynvar-decls");
+        }
+        if h::inline_regex_vars_active() {
+            return Err("context:inline-regex-vars");
+        }
+        if h::INLINE_CAPTURE_SCOPE.with(std::cell::Cell::get).is_some() {
+            return Err("context:inline-capture-scope");
+        }
+        if h::take_inline_outer_caps_seed().is_some() {
+            return Err("context:inline-outer-seed");
+        }
+        if rx_diff_enabled() {
             // D6: the walk's replay of a compiled run is the walk alone, so a
             // nested pattern it matches is compared too instead of answering
             // from the compiled engine on both sides.
-            && !(rx_diff_enabled() && super::rx_diff::replaying())
+            if super::rx_diff::replaying() {
+                return Err("context:diff-replay");
+            }
             // D6 can record and replay a code atom, but not user code reached
-            // through a wrapped token, a custom HOW or a reduce-time action: the
-            // walk's replay would run it a second time. Differential mode
+            // through a wrapped token, a custom HOW or a reduce-time action:
+            // the walk's replay would run it a second time. Differential mode
             // declines those matches.
-            && !(rx_diff_enabled()
-                && (self.has_any_wrap_chains()
-                    || !self.registry().grammar_custom_how.is_empty()
-                    || super::super::regex_helpers::dynvar_overlay_active()))
+            if self.has_any_wrap_chains()
+                || !self.registry().grammar_custom_how.is_empty()
+                || super::super::regex_helpers::dynvar_overlay_active()
+            {
+                return Err("context:diff-user-code");
+            }
+        }
+        Ok(())
     }
 
     fn rx_try_match_in(
@@ -137,13 +174,16 @@ impl Interpreter {
         pkg: Symbol,
         allow_code: bool,
     ) -> Option<Option<(usize, RegexCaptures)>> {
-        if !self.rx_context_allows() {
-            return None;
+        if let Err(why) = self.rx_context_allows() {
+            return walked(why);
         }
         if pattern.ignore_mark {
             return self.rx_try_ignoremark(pattern, start, pkg, allow_code);
         }
-        let program = rx_program_for_run(pattern, allow_code)?;
+        let program = match rx_program_for_run(pattern, allow_code) {
+            Ok(program) => program,
+            Err(why) => return walked(why),
+        };
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
         // D6: the compiled run records the code atoms it invokes and the walk
         // replays them (`rx_diff`).
@@ -180,12 +220,13 @@ impl Interpreter {
         pkg: Symbol,
         allow_code: bool,
     ) -> Option<Option<(usize, RegexCaptures)>> {
-        let target = super::super::regex_helpers::current_match_target()?;
+        let Some(target) = super::super::regex_helpers::current_match_target() else {
+            return walked("ignoremark-no-target");
+        };
         let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
-        if !allow_code && program_for(&stripped)?.has_code {
-            return None;
+        if let Err(why) = rx_program_for_run(&stripped, allow_code) {
+            return walked(why);
         }
-        program_for(&stripped)?;
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
             interp
                 .rx_try_match_in(stripped, chars, 0, pkg, allow_code)
@@ -278,10 +319,16 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        if pattern.ignore_mark || !self.rx_context_allows() {
-            return None;
+        if let Err(why) = self.rx_context_allows() {
+            return walked(why);
         }
-        let program = rx_program_for_run(pattern, true)?;
+        if pattern.ignore_mark {
+            return walked("ignoremark-parse");
+        }
+        let program = match rx_program_for_run(pattern, true) {
+            Ok(program) => program,
+            Err(why) => return walked(why),
+        };
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
         let diffing = rx_diff_enabled();
         let mark = diffing.then(super::rx_diff::begin_record);

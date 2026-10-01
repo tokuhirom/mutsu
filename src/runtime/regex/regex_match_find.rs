@@ -275,11 +275,12 @@ impl Interpreter {
                     .into_iter()
                     .collect()
                 } else {
-                    self.regex_match_ends_from_caps_in_pkg(
+                    self.regex_match_all_ends_walked(
                         &stripped_parsed,
                         stripped_chars,
                         start,
                         pkg,
+                        "all-ends:match-all",
                     )
                 };
                 for (end, mut caps) in ends {
@@ -326,7 +327,13 @@ impl Interpreter {
                     .into_iter()
                     .collect()
             } else {
-                self.regex_match_ends_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
+                self.regex_match_all_ends_walked(
+                    &parsed,
+                    orig_chars,
+                    start,
+                    pkg,
+                    "all-ends:match-all",
+                )
             };
             for (end, mut caps) in ends {
                 caps.from = caps.capture_start.unwrap_or(start);
