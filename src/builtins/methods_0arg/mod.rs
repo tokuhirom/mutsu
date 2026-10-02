@@ -381,6 +381,9 @@ pub(crate) fn native_method_0arg(
             }
             "ast" | "made" => return Some(Ok(target.match_ast().unwrap_or(Value::NIL))),
             "Capture" | "clone" => return Some(Ok(target.clone())),
+            // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
+            // Cost: O(1).
+            "__mutsu_zen_angle" => return Some(Ok(target.clone())),
             _ => {}
         }
     }
