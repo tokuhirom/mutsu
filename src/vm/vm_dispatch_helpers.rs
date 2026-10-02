@@ -252,6 +252,22 @@ impl Interpreter {
         {
             return Ok(failure);
         }
+        // A reduction or meta-op reaches the pure arithmetic table without
+        // passing through the plain infix opcode's strict operand bridge.
+        // Values without a Numeric candidate (Code and Whatever) must fail
+        // here too, after a user infix candidate has had a chance to accept
+        // them. Otherwise their fallback numeric conversion silently gives 0.
+        if Interpreter::reduction_op_is_numeric(normalized_op)
+            && let Some(err) = crate::runtime::require_numeric_candidate(left)
+                .err()
+                .or_else(|| crate::runtime::require_numeric_candidate(right).err())
+        {
+            let infix_name = format!("infix:<{normalized_op}>");
+            if let Some(value) = self.try_user_infix(&infix_name, left, right)? {
+                return Ok(value);
+            }
+            return Err(err);
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
