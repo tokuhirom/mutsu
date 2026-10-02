@@ -67,6 +67,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "buf64"
             | "Junction"
             | "Match"
+            | "Cursor"
             | "Regex"
             | "Block"
             | "Callable"

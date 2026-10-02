@@ -279,10 +279,27 @@ impl Interpreter {
         Ok(Value::truth(result))
     }
 
-    /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.
-    pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
+    /// Pop the two operands of a set operator, reifying a not-yet-read `Seq`
+    /// source (`.map` / `.grep` run lazily) so the set coercion sees its
+    /// elements instead of the empty prefix. Non-consuming, like `.cache`.
+    // Cost: O(e) once per pending Seq operand, e = its elements; O(1) otherwise.
+    pub(super) fn pop_set_operands(&mut self) -> Result<(Value, Value), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        for v in [&left, &right] {
+            if let ValueView::Seq(body) = v.view()
+                && body.needs_touch()
+            {
+                let body = std::sync::Arc::clone(&body);
+                self.reify_seq_body(&body)?;
+            }
+        }
+        Ok((left, right))
+    }
+
+    /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.
+    pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
+        let (left, right) = self.pop_set_operands()?;
         let result = self.eval_binary_with_junctions(left, right, Self::eval_set_elem_values)?;
         self.stack.push(result);
         Ok(())
@@ -290,8 +307,7 @@ impl Interpreter {
 
     /// Cost: see `set_contains` -- O(e) on a list LHS, O(1) on a Set/Bag/Mix/Hash.
     pub(super) fn exec_set_cont_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let (left, right) = self.pop_set_operands()?;
         let result = self.eval_binary_with_junctions(left, right, Self::eval_set_cont_values)?;
         self.stack.push(result);
         Ok(())
@@ -303,8 +319,7 @@ impl Interpreter {
     /// operator shares, `runtime::set_op_values`.
     // Cost: O(l + r), l/r = elements of the operands.
     pub(super) fn exec_set_binary_op(&mut self, op: runtime::SetOp) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let (left, right) = self.pop_set_operands()?;
         for name in op.routine_names() {
             if let Some(result) = self.try_user_infix(name, &left, &right)? {
                 self.stack.push(result);
