@@ -1,5 +1,20 @@
 use super::*;
 
+fn insert_export_alias(
+    interp: &mut Interpreter,
+    key: String,
+    def: &Arc<FunctionDef>,
+    touched: &mut Vec<Symbol>,
+) {
+    let key = Symbol::intern(&key);
+    interp
+        .registry_mut()
+        .functions_mut()
+        .entry(key)
+        .or_insert_with(|| def.clone());
+    touched.push(key);
+}
+
 impl Interpreter {
     /// Record a trait-modified routine value for an exported sub, so that
     /// `import_module` can restore the `&name` env binding with the role mixed in.
@@ -610,108 +625,65 @@ impl Interpreter {
         } else {
             Vec::new()
         };
+        let owner = self
+            .module_load_stack
+            .last()
+            .filter(|owner| owner.as_str() != package)
+            .cloned();
+        let mut alias_keys = Vec::new();
         if let Some(def) = def {
             for tag in &tags {
                 // Bare EXPORT::TAG::name (accessible from the same package)
                 let bare_export = format!("EXPORT::{}::{}", tag, name);
-                self.registry_mut()
-                    .functions_mut()
-                    .entry(crate::symbol::Symbol::intern(&bare_export))
-                    .or_insert_with(|| def.clone());
+                insert_export_alias(self, bare_export, &def, &mut alias_keys);
                 // Fully-qualified Package::EXPORT::TAG::name
                 let pkg_export = format!("{}::EXPORT::{}::{}", package, tag, name);
-                self.registry_mut()
-                    .functions_mut()
-                    .entry(crate::symbol::Symbol::intern(&pkg_export))
-                    .or_insert_with(|| def.clone());
-                if let Some(owner) = self
-                    .module_load_stack
-                    .last()
-                    .filter(|owner| owner.as_str() != package)
-                {
+                insert_export_alias(self, pkg_export, &def, &mut alias_keys);
+                if let Some(owner) = &owner {
                     let owner_export = format!("{}::EXPORT::{}::{}", owner, tag, name);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&owner_export))
-                        .or_insert_with(|| def.clone());
+                    insert_export_alias(self, owner_export, &def, &mut alias_keys);
                 }
             }
             // Always register under EXPORT::ALL::name
             if !tags.contains(&"ALL".to_string()) {
                 let bare_all = format!("EXPORT::ALL::{}", name);
-                self.registry_mut()
-                    .functions_mut()
-                    .entry(crate::symbol::Symbol::intern(&bare_all))
-                    .or_insert_with(|| def.clone());
+                insert_export_alias(self, bare_all, &def, &mut alias_keys);
                 let pkg_all = format!("{}::EXPORT::ALL::{}", package, name);
-                self.registry_mut()
-                    .functions_mut()
-                    .entry(crate::symbol::Symbol::intern(&pkg_all))
-                    .or_insert_with(|| def.clone());
-                if let Some(owner) = self
-                    .module_load_stack
-                    .last()
-                    .filter(|owner| owner.as_str() != package)
-                {
+                insert_export_alias(self, pkg_all, &def, &mut alias_keys);
+                if let Some(owner) = &owner {
                     let owner_all = format!("{}::EXPORT::ALL::{}", owner, name);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&owner_all))
-                        .or_insert_with(|| def.clone());
+                    insert_export_alias(self, owner_all, &def, &mut alias_keys);
                 }
             }
         } else if !candidate_defs.is_empty() {
             for tag in &tags {
                 for (suffix, candidate) in &candidate_defs {
                     let bare_export = format!("EXPORT::{}::{}/{}", tag, name, suffix);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&bare_export))
-                        .or_insert_with(|| candidate.clone());
+                    insert_export_alias(self, bare_export, candidate, &mut alias_keys);
                     let pkg_export = format!("{}::EXPORT::{}::{}/{}", package, tag, name, suffix);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&pkg_export))
-                        .or_insert_with(|| candidate.clone());
-                    if let Some(owner) = self
-                        .module_load_stack
-                        .last()
-                        .filter(|owner| owner.as_str() != package)
-                    {
+                    insert_export_alias(self, pkg_export, candidate, &mut alias_keys);
+                    if let Some(owner) = &owner {
                         let owner_export =
                             format!("{}::EXPORT::{}::{}/{}", owner, tag, name, suffix);
-                        self.registry_mut()
-                            .functions_mut()
-                            .entry(crate::symbol::Symbol::intern(&owner_export))
-                            .or_insert_with(|| candidate.clone());
+                        insert_export_alias(self, owner_export, candidate, &mut alias_keys);
                     }
                 }
             }
             if !tags.contains(&"ALL".to_string()) {
                 for (suffix, candidate) in &candidate_defs {
                     let bare_all = format!("EXPORT::ALL::{}/{}", name, suffix);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&bare_all))
-                        .or_insert_with(|| candidate.clone());
+                    insert_export_alias(self, bare_all, candidate, &mut alias_keys);
                     let pkg_all = format!("{}::EXPORT::ALL::{}/{}", package, name, suffix);
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(crate::symbol::Symbol::intern(&pkg_all))
-                        .or_insert_with(|| candidate.clone());
-                    if let Some(owner) = self
-                        .module_load_stack
-                        .last()
-                        .filter(|owner| owner.as_str() != package)
-                    {
+                    insert_export_alias(self, pkg_all, candidate, &mut alias_keys);
+                    if let Some(owner) = &owner {
                         let owner_all = format!("{}::EXPORT::ALL::{}/{}", owner, name, suffix);
-                        self.registry_mut()
-                            .functions_mut()
-                            .entry(crate::symbol::Symbol::intern(&owner_all))
-                            .or_insert_with(|| candidate.clone());
+                        insert_export_alias(self, owner_all, candidate, &mut alias_keys);
                     }
                 }
             }
+        }
+        if !alias_keys.is_empty() {
+            self.invalidate_fn_resolution_for_keys(alias_keys);
         }
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
