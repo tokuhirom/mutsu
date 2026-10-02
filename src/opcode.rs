@@ -855,17 +855,16 @@ pub(crate) enum DoBlockIsolation {
 /// kind of pad the stash names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LexicalStashRoutines {
-    /// A compunit or routine root: every routine visible here by name.
-    // TODO: a routine's own pad does not hold the routines it merely sees
-    // from outer scopes (rakudo's `sub r { MY::<&foo> }` is Nil); narrowing
-    // this needs the compiler to keep a per-unit routine table -- see #10849.
+    /// A compunit's own root, a frame of an enclosing compilation, or a
+    /// `LEXICAL::` view: every routine visible here by name.
     All,
-    /// A nested block that imports nothing itself: no routine beyond the
-    /// `&name` entries its own declarations put in the baked frame.
+    /// A nested block, or a routine/closure body's top-level pad, that imports
+    /// nothing itself: no routine beyond the `&name` entries its own
+    /// declarations put in the baked frame.
     None,
-    /// A nested block with a `use`/`import` of its own: the routines that
-    /// block imported, read from its run-time import scope, which sits `skip`
-    /// import scopes below the innermost one.
+    /// A nested block or routine/closure body with a `use`/`import` of its
+    /// own: the routines that block imported, read from its run-time import
+    /// scope, which sits `skip` import scopes below the innermost one.
     OwnImports { skip: u32 },
 }
 

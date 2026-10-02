@@ -562,6 +562,16 @@ impl Compiler {
                 }
                 let idx = self.add_sub_decl_plan(&hoisted);
                 self.code.emit(OpCode::RegisterDecl(idx));
+                // A hoisted routine is in its scope's pad from the scope's
+                // entry, so a `MY::` read before the declaration lists it.
+                if let Stmt::SubDecl {
+                    name,
+                    name_expr: None,
+                    ..
+                } = stmt
+                {
+                    self.note_scope_routine(*name);
+                }
                 // Remember the hoisted plan so the source-order compile of the
                 // same declaration can hand it the bytecode it compiles (see
                 // `Compiler::hoisted_sub_plans`).

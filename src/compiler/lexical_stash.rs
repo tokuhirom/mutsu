@@ -87,7 +87,13 @@ impl Compiler {
             }
         }
         let spec_idx = self.code.add_constant(Value::array(entries));
-        let routines = self.lexical_stash_routines(target_index);
+        // `LEXICAL::` is every lexical visible from the frame, so its routines
+        // are all the visible ones; only `MY::` is narrowed to the frame's own.
+        let routines = if remaining == "LEXICAL" {
+            crate::opcode::LexicalStashRoutines::All
+        } else {
+            self.lexical_stash_routines(target_index)
+        };
         self.code
             .emit(OpCode::GetLexicalStash { spec_idx, routines });
         true
@@ -111,13 +117,16 @@ impl Compiler {
     }
 
     /// Which routines the pad at `target_index` of the full scope chain holds
-    /// besides its baked entries. A compunit or routine root (or a scope of an
-    /// enclosing compilation) sees every visible routine; a nested block of
-    /// this compilation holds only its own declarations, which are baked
-    /// `&name` entries already, and the imports of its own `use`s.
+    /// besides its baked entries. A compunit's own root (or a scope of an
+    /// enclosing compilation) sees every visible routine. Any other frame of
+    /// this compilation — a nested block, or the top-level pad of a routine or
+    /// closure body ([`Self::in_lexical_scope`], #10849) — holds only its own
+    /// declarations, which are baked `&name` entries already, and the imports
+    /// of its own `use`s (a body with a `use` runs inside an `ImportScope`).
     fn lexical_stash_routines(&self, target_index: usize) -> crate::opcode::LexicalStashRoutines {
         use crate::opcode::LexicalStashRoutines;
-        if target_index <= self.unit_root_index() {
+        let unit_root = self.unit_root_index();
+        if target_index < unit_root || (target_index == unit_root && !self.in_lexical_scope) {
             return LexicalStashRoutines::All;
         }
         let level = target_index - self.enclosing_scopes.len() + 1;
