@@ -3013,7 +3013,9 @@ pub(crate) struct ScanSpec {
     pub(crate) source: Value,
     /// The accumulator state after the last computed element.
     pub(crate) accumulator: Option<Value>,
-    /// The number of elements already computed (matches cache length).
+    /// The number of source elements already scanned. Starts out equal to the
+    /// cache length; a front mutation of a lazy `@`-array changes the cache
+    /// but not this count (#10861).
     pub(crate) computed_count: usize,
 }
 

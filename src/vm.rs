@@ -247,6 +247,7 @@ mod vm_jit_tier_b_flow;
 mod vm_jit_tier_b_metaop;
 mod vm_lazy_front_mutate;
 mod vm_lazy_index_prefix;
+mod vm_lazy_strict_force;
 mod vm_let_save_elem;
 mod vm_local_cell_adoption;
 mod vm_loop_cstyle_repeat;
