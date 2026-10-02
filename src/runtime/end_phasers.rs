@@ -43,6 +43,7 @@
 //! them a given `END` goes through.
 
 use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::env::Env;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
@@ -380,7 +381,7 @@ impl EndWalker<'_> {
         for s in stmts {
             // Walk first, then record: a `my $x` is visible to what FOLLOWS it,
             // which is the only place an `END` could legally mention it.
-            self.stmt(s);
+            self.visit_stmt(s);
             self.declare(s);
         }
         self.depth -= 1;
@@ -600,8 +601,18 @@ impl EndWalker<'_> {
             self.package_path.join("::")
         }
     }
+}
 
-    fn stmt(&mut self, stmt: &Stmt) {
+/// The walk itself (ADR-0137 visitor). The constructs that open a lexical
+/// scope go through [`EndWalker::stmts`] / [`EndWalker::param_scope`], which
+/// track the declarations a nested `END` closes over; every other node takes
+/// the visitor's default recursion, so an `END` anywhere in the compunit is
+/// found. One reached only through that default recursion (a nested body the
+/// arms below do not list) is still pre-installed, just without the seed of
+/// that body's own lexicals -- it then resolves them against the live
+/// exit-time env, as every `END` did before this pass existed.
+impl Visit for EndWalker<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Phaser {
                 kind: PhaserKind::End,
@@ -639,11 +650,46 @@ impl EndWalker<'_> {
             | Stmt::Default(body)
             | Stmt::Catch(body)
             | Stmt::Control(body)
-            | Stmt::React { body }
-            | Stmt::Loop { body, .. } => self.stmts(body),
-            Stmt::SubDecl { params, body, .. }
-            | Stmt::MethodDecl { params, body, .. }
-            | Stmt::ProtoDecl { params, body, .. } => {
+            | Stmt::React { body } => self.stmts(body),
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                // `loop (my $i = 0; ...)` declares `$i` in the enclosing scope.
+                if let Some(init) = init {
+                    walk_stmts(self, std::slice::from_ref(init.as_ref()));
+                    self.declare(init);
+                }
+                for e in [cond, step].into_iter().flatten() {
+                    self.visit_expr(e);
+                }
+                self.stmts(body);
+            }
+            Stmt::SubDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            }
+            | Stmt::MethodDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            }
+            | Stmt::ProtoDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } => {
+                // A parameter default is code of the routine too.
+                for p in param_defs {
+                    self.visit_param(p);
+                }
                 let params: Vec<&str> = params.iter().map(String::as_str).collect();
                 self.param_scope(&params, body);
             }
@@ -657,12 +703,12 @@ impl EndWalker<'_> {
                 else_branch,
                 ..
             } => {
-                self.expr(cond);
+                self.visit_expr(cond);
                 self.stmts(then_branch);
                 self.stmts(else_branch);
             }
             Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
-                self.expr(cond);
+                self.visit_expr(cond);
                 self.stmts(body);
             }
             Stmt::For {
@@ -672,7 +718,7 @@ impl EndWalker<'_> {
                 body,
                 ..
             } => {
-                self.expr(iterable);
+                self.visit_expr(iterable);
                 let mut names: Vec<&str> = params.iter().map(String::as_str).collect();
                 if let Some(p) = param {
                     names.push(p.as_str());
@@ -680,54 +726,18 @@ impl EndWalker<'_> {
                 self.param_scope(&names, body);
             }
             Stmt::Given { topic, body, .. } => {
-                self.expr(topic);
+                self.visit_expr(topic);
                 self.stmts(body);
             }
             Stmt::Whenever { supply, body, .. } => {
-                self.expr(supply);
+                self.visit_expr(supply);
                 self.stmts(body);
             }
-            Stmt::Label { stmt, .. } => self.stmt(stmt),
-            Stmt::Expr(e)
-            | Stmt::Return(e)
-            | Stmt::Die(e)
-            | Stmt::Fail(e)
-            | Stmt::Goto(e)
-            | Stmt::Take(e, _) => self.expr(e),
-            Stmt::VarDecl { expr: e, .. } | Stmt::Assign { expr: e, .. } => self.expr(e),
-            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-                for e in es {
-                    self.expr(e);
-                }
-            }
-            Stmt::Call { args, .. } => {
-                for a in args {
-                    self.call_arg(a);
-                }
-            }
-            Stmt::Let { value, index, .. } => {
-                if let Some(e) = value {
-                    self.expr(e);
-                }
-                if let Some(e) = index {
-                    self.expr(e);
-                }
-            }
-            _ => {}
+            _ => walk_stmt(self, stmt),
         }
     }
 
-    fn call_arg(&mut self, arg: &crate::ast::CallArg) {
-        match arg {
-            crate::ast::CallArg::Positional(e)
-            | crate::ast::CallArg::Slip(e)
-            | crate::ast::CallArg::Invocant(e) => self.expr(e),
-            crate::ast::CallArg::Named { value: Some(e), .. } => self.expr(e),
-            crate::ast::CallArg::Named { value: None, .. } => {}
-        }
-    }
-
-    fn expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Block(body)
             | Expr::AnonSub { body, .. }
@@ -746,89 +756,11 @@ impl EndWalker<'_> {
                     self.stmts(c);
                 }
             }
-            Expr::DoStmt(inner) => self.stmt(inner),
-            Expr::WhateverCurry(inner)
-            | Expr::Eager(inner)
-            | Expr::Itemize(inner)
-            | Expr::ZenSlice(inner)
-            | Expr::Grouped(inner)
-            | Expr::PositionalPair(inner)
-            | Expr::DeitemizeForBind(inner)
-            | Expr::AssignExpr { expr: inner, .. } => self.expr(inner),
-            Expr::Index { target, index, .. } => {
-                self.expr(target);
-                self.expr(index);
-            }
-            Expr::IndexAssign {
-                target,
-                index,
-                value,
-                ..
-            } => {
-                self.expr(target);
-                self.expr(index);
-                self.expr(value);
-            }
             // Only the expansion is executed; the preserved source halves are a
-            // RakuAST-facing marker and hold the same nodes.
-            Expr::CompoundAssign { expanded, .. } => self.expr(expanded),
-            Expr::Feed { source, sink, .. } => {
-                self.expr(source);
-                self.expr(sink);
-            }
-            Expr::Binary { left, right, .. }
-            | Expr::HyperOp { left, right, .. }
-            | Expr::MetaOp { left, right, .. } => {
-                self.expr(left);
-                self.expr(right);
-            }
-            Expr::ChainedCompare { operands, .. } => {
-                for o in operands {
-                    self.expr(o);
-                }
-            }
-            Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
-                self.expr(inner)
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                self.expr(target);
-                for a in args {
-                    self.expr(a);
-                }
-            }
-            Expr::CallOn { target, args } => {
-                self.expr(target);
-                for a in args {
-                    self.expr(a);
-                }
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                for a in args {
-                    self.expr(a);
-                }
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                self.expr(cond);
-                self.expr(then_expr);
-                self.expr(else_expr);
-            }
-            Expr::ArrayLiteral(items)
-            | Expr::BracketArray(items, _)
-            | Expr::CaptureLiteral(items) => {
-                for e in items {
-                    self.expr(e);
-                }
-            }
-            Expr::Hash(pairs) => {
-                for e in pairs.iter().filter_map(|(_, v)| v.as_ref()) {
-                    self.expr(e);
-                }
-            }
-            _ => {}
+            // RakuAST-facing marker and hold the same nodes. The expansion
+            // itself is an assignment, never one of the scope arms above.
+            Expr::CompoundAssign { expanded, .. } => walk_expr(self, expanded),
+            _ => walk_expr(self, expr),
         }
     }
 }

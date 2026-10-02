@@ -6,7 +6,7 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
-use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
@@ -103,6 +103,28 @@ fn declared_kind(name: &str) -> Option<DeclaredKind> {
     DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
 }
 
+/// Whether a `::`-qualified package name resolves at parse time: a run of
+/// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
+/// declares (including the stub `A` a `class A::B { }` creates).
+fn package_resolves(stem: &str) -> bool {
+    name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
+        || is_known_type_constraint(stem)
+        || declared_kind(stem) == Some(DeclaredKind::Type)
+}
+
+/// Record a declared type name, together with the stub packages a qualified
+/// name implies: `class A::B { }` makes `A` resolve too, and raku renders a
+/// later bareword `A` as a `Type::Simple` (measured on 2026.09).
+fn insert_declared_type(
+    name: crate::symbol::Symbol,
+    out: &mut std::collections::HashMap<String, DeclaredKind>,
+) {
+    out.insert(name.resolve(), DeclaredKind::Type);
+    for stub in crate::qualified::package_ancestors(name).skip(1) {
+        out.entry(stub.resolve()).or_insert(DeclaredKind::Type);
+    }
+}
+
 /// Walk a statement list for the names it declares. Nested blocks count: raku
 /// resolves a name declared anywhere the reference can see it, and a bareword
 /// that reaches conversion at all was already accepted by the parser.
@@ -113,15 +135,15 @@ fn collect_declared_names(
     for stmt in stmts {
         match stmt {
             Stmt::ClassDecl { name, body, .. } => {
-                out.insert(name.resolve(), DeclaredKind::Type);
+                insert_declared_type(*name, out);
                 collect_declared_names(body, out);
             }
             Stmt::RoleDecl { name, body, .. } => {
-                out.insert(name.resolve(), DeclaredKind::Type);
+                insert_declared_type(*name, out);
                 collect_declared_names(body, out);
             }
             Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
-                out.insert(name.resolve(), DeclaredKind::Type);
+                insert_declared_type(*name, out);
             }
             Stmt::VarDecl {
                 name,
@@ -134,7 +156,7 @@ fn collect_declared_names(
             // like a class one: raku renders a later bareword `M` as a
             // `Type::Simple` (measured on `module M { }; M.HOW`).
             Stmt::Package { name, body, .. } => {
-                out.insert(name.resolve(), DeclaredKind::Type);
+                insert_declared_type(*name, out);
                 collect_declared_names(body, out);
             }
             Stmt::Block(body)
@@ -1292,21 +1314,20 @@ fn name_from_identifier(s: &str) -> RakuAstNode {
 /// `Name.from-identifier-parts(...)`, so retaining one opaque `G::foo` string
 /// would lose observable RakuAST structure.
 fn name_from_identifier_parts(s: &str) -> RakuAstNode {
-    let parts = s
-        .split("::")
-        .map(|part| {
-            Value::rakuast(Box::new(RakuAstNode {
-                class: RakuAstClass::NamePartSimple,
-                fields: vec![leaf_field(None, Value::str(part.to_string()))],
-            }))
-        })
-        .collect();
-    RakuAstNode {
-        class: RakuAstClass::Name,
-        fields: vec![RakuAstField {
-            name: Some("parts"),
-            value: RakuAstFieldValue::List(parts),
-        }],
+    name_parts::name_from_parts(
+        name_parts::identifier_segments(s)
+            .map(name_parts::simple_part)
+            .collect(),
+    )
+}
+
+/// The `Name` for a possibly qualified identifier: `from-identifier` for a
+/// plain one, the segmented parts for a `::`-qualified one.
+fn name_from_possibly_qualified(name: &str) -> RakuAstNode {
+    if name_parts::identifier_segments(name).nth(1).is_some() {
+        name_from_identifier_parts(name)
+    } else {
+        name_from_identifier(name)
     }
 }
 
@@ -1316,7 +1337,7 @@ fn name_from_identifier_parts(s: &str) -> RakuAstNode {
 /// `::`-separated segment must be a bare identifier.
 fn is_simple_type(t: &str) -> bool {
     !t.is_empty()
-        && t.split("::").all(|seg| {
+        && name_parts::identifier_segments(t).all(|seg| {
             !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         })
 }
@@ -1437,8 +1458,10 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Ok(var_lexical("$", name))
         }
-        // `::("x")` / `::($name)` -> `Term::Name(Name(Part::Expression(EXPR)))`.
-        // The parser keeps this as an IndirectTypeLookup, so preserving the
+        // `::("x")` / `::($name)` ->
+        // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
+        // leading `::` being an empty name edge (measured on 2026.09). The
+        // parser keeps this as an IndirectTypeLookup, so preserving the
         // expression part is necessary for `.AST` and for a later EVAL round
         // trip; rendering it as a static Name would change the lookup mode.
         Expr::IndirectTypeLookup(inner) => {
@@ -1446,14 +1469,35 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 class: RakuAstClass::NamePartExpression,
                 fields: vec![node_field(None, convert_expr(inner)?)],
             };
-            let name = RakuAstNode {
-                class: RakuAstClass::Name,
-                fields: vec![node_field(None, part)],
-            };
+            let name = name_parts::name_from_parts(vec![
+                name_parts::leading_empty(),
+                Value::rakuast(Box::new(part)),
+            ]);
             Ok(RakuAstNode {
                 class: RakuAstClass::TermName,
                 fields: vec![node_field(None, name)],
             })
+        }
+        // A stash lookup `Foo::` / `MY::` / `::` -> a `Name` ending in the
+        // `Part::Empty` type object. Rakudo wraps it in a `Term::Name` when the
+        // package resolves at parse time and in an argument-less `Call::Name`
+        // otherwise (measured: `class F {}; F::` vs. an undeclared `F::`).
+        Expr::PseudoStash(stash) => {
+            let stem = name_parts::stash_stem(stash)
+                .ok_or_else(|| unsupported("stash lookup without its trailing `::`"))?;
+            let name = name_parts::stash_name(stem)
+                .ok_or_else(|| unsupported("stash lookup with an empty name segment"))?;
+            if stem.is_empty() || package_resolves(stem) {
+                Ok(RakuAstNode {
+                    class: RakuAstClass::TermName,
+                    fields: vec![node_field(None, name)],
+                })
+            } else {
+                Ok(RakuAstNode {
+                    class: RakuAstClass::CallName,
+                    fields: vec![node_field(Some("name"), name)],
+                })
+            }
         }
         // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
         Expr::CallOn { target, args } => {
@@ -1702,8 +1746,8 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
         // so flatten a same-operator left chain into one operand list.
         Expr::Binary { left, op, right } if is_list_infix(op) => {
-            let mut operands = Vec::new();
-            flatten_list_infix(op, left, right, &mut operands);
+            let mut operands = left.flatten_binary_chain(op);
+            operands.push(right);
             let mut nodes = Vec::with_capacity(operands.len());
             for e in operands {
                 nodes.push(Value::rakuast(Box::new(convert_expr(e)?)));
@@ -2441,11 +2485,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             args,
             ..
         } => {
-            let name_node = if name.contains("::") {
-                name_from_identifier_parts(name)
-            } else {
-                name_from_identifier(name)
-            };
+            let name_node = name_from_possibly_qualified(name);
             let mut fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
@@ -2470,11 +2510,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             capturing,
             args,
         } => {
-            let name_node = if name.contains("::") {
-                name_from_identifier_parts(name)
-            } else {
-                name_from_identifier(name)
-            };
+            let name_node = name_from_possibly_qualified(name);
             let mut assertion_fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
@@ -3528,31 +3564,6 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
             | TokenKind::Ampersand
             | TokenKind::Caret
     ) || matches!(op, TokenKind::Ident(name) if name == "min" || name == "max")
-}
-
-/// Flatten a left-nested same-operator chain (`a op b op c` parsed as
-/// `(a op b) op c`) into a single operand list `[a, b, c]`.
-fn flatten_list_infix<'a>(
-    op: &crate::token_kind::TokenKind,
-    left: &'a Expr,
-    right: &'a Expr,
-    out: &mut Vec<&'a Expr>,
-) {
-    if let Expr::Binary {
-        left: ll,
-        op: lop,
-        right: lr,
-    } = left
-    {
-        if lop == op {
-            flatten_list_infix(op, ll, lr, out);
-        } else {
-            out.push(left);
-        }
-    } else {
-        out.push(left);
-    }
-    out.push(right);
 }
 
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).

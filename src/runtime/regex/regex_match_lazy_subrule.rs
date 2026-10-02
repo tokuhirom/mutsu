@@ -123,23 +123,31 @@ impl Interpreter {
         }
         let parsed = std::sync::Arc::clone(parsed);
         let sub_pkg = *sub_pkg;
+        // The body walk below is a different regex from the caller's.
+        let _barrier = Self::arm_subrule_barrier();
 
         let outer_seed_read = lr_key
             .as_ref()
             .is_some_and(super::regex_lr_state::lr_begin_activation);
-        // Ends are deduplicated the way the eager arm does it: the first (=
-        // highest-priority) path to reach an end wins, later ones are dropped.
-        let mut seen_ends: Vec<usize> = Vec::new();
+        // Every path the callee takes to an end is handed to the continuation,
+        // even when an earlier path already reached the same end: Rakudo
+        // enters the caller's rest once per path, so a code block or action
+        // after the call runs once per path, and a later path's captures are
+        // what the continuation sees after an earlier one fails (#10489).
         let mut unwind = false;
         let mut seed_consulted_in_cont = false;
         {
             let unwind = &mut unwind;
             let seed_consulted_in_cont = &mut seed_consulted_in_cont;
-            let mut cont = |interp: &mut Interpreter, end: usize, inner: RegexCaptures| -> bool {
-                if seen_ends.contains(&end) {
-                    return false;
+            let mut cont = |interp: &mut Interpreter,
+                            end: usize,
+                            mut inner: RegexCaptures|
+             -> bool {
+                // The grammar instance a method this invocation called wrote to
+                // is its Match's own (#9803).
+                if let Some(Some(cursor)) = interp.walk_cursors.last() {
+                    inner.set_cursor(cursor.clone());
                 }
-                seen_ends.push(end);
                 let wrapped =
                     interp.build_named_candidates_from_inner(vec![(end, inner)], pos, spec, None);
                 let Some((end, delta)) = wrapped.into_iter().next() else {
@@ -162,7 +170,12 @@ impl Interpreter {
                     *seed_consulted_in_cont |=
                         super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read);
                 }
+                // The continuation is the CALLER's remaining pattern: this
+                // invocation's cursor scope must not be open while it runs, or a
+                // method the caller calls would write to the callee's cursor.
+                let scope = interp.walk_cursors.pop();
                 let stop = on(interp, store, end, delta);
+                interp.walk_cursors.extend(scope);
                 if let Some(lr_key) = &lr_key {
                     super::regex_lr_state::lr_begin_activation(lr_key);
                 }
@@ -175,6 +188,7 @@ impl Interpreter {
                 // it, so there is no second candidate to compute.
                 ratchet
             };
+            self.enter_rule_cursor();
             self.regex_walk_ends_in_pkg(
                 &parsed,
                 chars,
@@ -184,6 +198,7 @@ impl Interpreter {
                 false,
                 &mut MatchSink::Cont(&mut cont),
             );
+            self.leave_rule_cursor();
         }
         let seed_consulted = lr_key.as_ref().is_some_and(|lr_key| {
             super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read)

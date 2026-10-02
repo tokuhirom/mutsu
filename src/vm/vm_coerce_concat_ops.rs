@@ -34,6 +34,21 @@ impl Interpreter {
         // `|$_` where the topic is an itemized Seq element must expand the Seq's
         // values (`($seq,).map(|*)`), not wrap the Seq as a single slip item.
         let val = val.into_deref().into_descalarized();
+        // `|$obj` is `$obj.Slip`, which `Any` derives from `self.list`: an
+        // instance whose class supplies `list` (and no `Slip` of its own)
+        // slips that list's elements, not itself as one item.
+        // TODO: compile to bytecode -- this reaches the user `list` through
+        // `call_method_with_values`, like `try_any_list_view_method`.
+        if let ValueView::Instance { class_name, .. } = val.view() {
+            let cn = class_name.resolve();
+            if self.has_user_method(&cn, "list") && !self.has_user_method(&cn, "Slip") {
+                let list = self.call_method_with_values(val.clone(), "list", Vec::new())?;
+                if !matches!(list.view(), ValueView::Instance { .. }) {
+                    self.stack.push(list);
+                    return self.exec_make_slip_op();
+                }
+            }
+        }
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) must first
         // pull all elements from its source (ADR-0034), else `|$seq` yields
         // nothing. `|EXPR` steals the source like `.iterator`/`.list` (a

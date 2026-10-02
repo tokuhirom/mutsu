@@ -137,8 +137,9 @@ impl Interpreter {
         Some(inner.split_at(head))
     }
 
-    /// Split a code assertion (`<?{ … }>`, `<!{ … }>`, `<{ … }>`) into its
-    /// `?`/`!` marker and the `{ … }` block itself.
+    /// Split a code assertion (`<?{ … }>`, `<!{ … }>`, `<{ … }>`,
+    /// `<name={ … }>`) into its `?`/`!`/`name=` head and the `{ … }` block
+    /// itself.
     ///
     /// Such a body is Raku code that runs at match time, in the *caller's*
     /// env — so a rule's parameters have to be baked into it exactly like a
@@ -150,7 +151,23 @@ impl Interpreter {
         let head = match inner.as_bytes().first() {
             Some(b'{') => 0,
             Some(b'?') | Some(b'!') if inner.as_bytes().get(1) == Some(&b'{') => 1,
-            _ => return None,
+            // `<name={ … }>`: the aliased form of `<{ … }>`, whose block runs
+            // at match time too.
+            _ => {
+                let eq = inner.find("={")?;
+                let lhs = &inner[..eq];
+                let is_ident = lhs
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                    && lhs
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'');
+                if !is_ident {
+                    return None;
+                }
+                eq + 1
+            }
         };
         Some(inner.split_at(head))
     }

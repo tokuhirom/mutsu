@@ -1,190 +1,121 @@
 //! Statement-level recursion for the `*` leaf classifier (see `super`'s module
-//! doc). Most of this file exists to reach every `Expr` a statement can embed;
-//! the interesting classification table lives in `expr.rs`.
+//! doc), on the mutable AST visitor (ADR-10499). The statement hooks only pick
+//! which of a statement's expressions are *value* positions; every other
+//! expression is classified by `expr.rs`, where the interesting table lives.
 
-use super::{mark_opt_box_expr, mark_opt_expr, mark_opt_value_leaf, mark_stmts, mark_value_leaf};
-use crate::ast::{CallArg, Stmt};
+use super::{mark_opt_expr, mark_opt_value_leaf, mark_value_leaf};
+use crate::ast::{CallArg, Expr, HandleSpec, ParamDef, Stmt};
+use crate::ast_visit::{VisitMut, walk_param_mut, walk_stmt_mut};
+use crate::regex_tree::RegexNode;
 
+// Cost: O(n), n = size of `stmt`'s subtree.
 pub(super) fn mark_stmt(stmt: &mut Stmt) {
-    match stmt {
-        // A bare `*` standing alone as a whole statement (`*;`, a proto's
-        // `{*}` body) stays a value; anything else recurses as normal.
-        Stmt::Expr(e) => mark_value_leaf(e),
-        Stmt::VarDecl {
-            expr,
-            custom_traits,
-            where_constraint,
-            ..
-        } => {
-            // `my $x = *` / `my $x := *` — assignment/bind RHS.
-            mark_value_leaf(expr);
-            for (_, arg) in custom_traits {
-                mark_opt_expr(arg);
-            }
-            mark_opt_box_expr(where_constraint);
-        }
-        Stmt::Assign { expr, .. } => mark_value_leaf(expr),
-        Stmt::NestedMethodCapture { closure, .. } => super::expr::mark_expr(closure),
-        Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) | Stmt::Goto(e) => {
-            super::expr::mark_expr(e);
-        }
-        Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
-            for a in args {
-                mark_value_leaf(a);
-            }
-        }
-        Stmt::Call { args, name } => {
-            // ADR-0115's CORE type fold; see `parser::core_type_fold`.
-            crate::parser::core_type_fold::fold_nqp_call_args(*name, args);
-            for a in args {
-                mark_call_arg(a);
-            }
-        }
-        Stmt::For { iterable, body, .. } => {
-            super::expr::mark_expr(iterable);
-            mark_stmts(body);
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            super::expr::mark_expr(cond);
-            mark_stmts(then_branch);
-            mark_stmts(else_branch);
-        }
-        Stmt::While { cond, body, .. } => {
-            super::expr::mark_expr(cond);
-            mark_stmts(body);
-        }
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            if let Some(init) = init {
-                mark_stmt(init);
-            }
-            mark_opt_expr(cond);
-            mark_opt_expr(step);
-            mark_stmts(body);
-        }
-        Stmt::Given { topic, body, .. } => {
-            super::expr::mark_expr(topic);
-            mark_stmts(body);
-        }
-        Stmt::When { cond, body, .. } => {
-            super::expr::mark_expr(cond);
-            mark_stmts(body);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            super::expr::mark_expr(supply);
-            mark_stmts(body);
-        }
-        Stmt::Label { stmt, .. } => mark_stmt(stmt),
-        Stmt::Let { index, value, .. } => {
-            if let Some(index) = index {
-                super::expr::mark_expr(index);
-            }
-            if let Some(value) = value {
-                mark_value_leaf(value);
-            }
-        }
-        Stmt::TempMethodAssign {
-            method_args, value, ..
-        } => {
-            for a in method_args {
-                mark_value_leaf(a);
-            }
-            mark_value_leaf(value);
-        }
-        Stmt::HasDecl {
-            default,
-            is_default,
-            where_constraint,
-            unknown_traits,
-            ..
-        } => {
-            mark_opt_value_leaf(default);
-            mark_opt_value_leaf(is_default);
-            mark_opt_box_expr(where_constraint);
-            for (_, _, arg) in unknown_traits {
-                mark_opt_expr(arg);
-            }
-        }
-        Stmt::SubsetDecl { predicate, .. } => mark_opt_expr(predicate),
-        Stmt::DoesDecl { args, .. } => {
-            if let Some(args) = args {
-                for a in args {
-                    super::expr::mark_expr(a);
+    Marker.visit_stmt_mut(stmt);
+}
+
+/// A routine's or block's parameter (see [`Marker::visit_param_mut`]).
+// Cost: O(n), n = size of the parameter's subtree.
+pub(super) fn mark_param(param: &mut ParamDef) {
+    Marker.visit_param_mut(param);
+}
+
+struct Marker;
+
+impl VisitMut for Marker {
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        match stmt {
+            // A bare `*` standing alone as a whole statement (`*;`, a proto's
+            // `{*}` body) stays a value, as does an assignment's RHS.
+            Stmt::Expr(e) | Stmt::Assign { expr: e, .. } => mark_value_leaf(e),
+            Stmt::VarDecl {
+                expr,
+                custom_traits,
+                where_constraint,
+                ..
+            } => {
+                // `my $x = *` / `my $x := *` — assignment/bind RHS.
+                mark_value_leaf(expr);
+                for (_, arg) in custom_traits {
+                    mark_opt_expr(arg);
+                }
+                if let Some(e) = where_constraint {
+                    self.visit_expr_mut(e);
                 }
             }
-        }
-        Stmt::EnumDecl { variants, .. } => {
-            for (_, value) in variants {
-                mark_opt_expr(value);
+            Stmt::Say(args) | Stmt::Put(args) | Stmt::Print(args) | Stmt::Note(args) => {
+                for a in args {
+                    mark_value_leaf(a);
+                }
             }
+            Stmt::Call { args, name } => {
+                // ADR-0115's CORE type fold; see `parser::core_type_fold`.
+                crate::parser::core_type_fold::fold_nqp_call_args(*name, args);
+                for a in args {
+                    mark_call_arg(a);
+                }
+            }
+            Stmt::Let { index, value, .. } => {
+                if let Some(index) = index {
+                    self.visit_expr_mut(index);
+                }
+                if let Some(value) = value {
+                    mark_value_leaf(value);
+                }
+            }
+            Stmt::TempMethodAssign {
+                method_args, value, ..
+            } => {
+                for a in method_args {
+                    mark_value_leaf(a);
+                }
+                mark_value_leaf(value);
+            }
+            Stmt::HasDecl {
+                default,
+                is_default,
+                where_constraint,
+                unknown_traits,
+                handles,
+                ..
+            } => {
+                mark_opt_value_leaf(default);
+                mark_opt_value_leaf(is_default);
+                if let Some(e) = where_constraint {
+                    self.visit_expr_mut(e);
+                }
+                for (_, _, arg) in unknown_traits {
+                    mark_opt_expr(arg);
+                }
+                for h in handles {
+                    if let HandleSpec::Expr(e) = h {
+                        self.visit_expr_mut(e);
+                    }
+                }
+            }
+            // Everything else marks its expressions as arguments.
+            _ => walk_stmt_mut(self, stmt),
         }
-        Stmt::Use { arg, condition, .. } => {
-            mark_opt_expr(arg);
-            mark_opt_box_expr(condition);
-        }
-        Stmt::No { arg, .. } => mark_opt_expr(arg),
-        Stmt::DocPhaser(inner) => mark_stmt(inner),
-        // Body-only statements: recurse into the block, nothing else to mark.
-        Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::React { body }
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::Phaser { body, .. }
-        | Stmt::Package { body, .. }
-        | Stmt::TokenDecl { body, .. }
-        | Stmt::RuleDecl { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::ClassDecl { body, .. }
-        | Stmt::AugmentClass { body, .. } => mark_stmts(body),
-        // A routine also carries expressions in its *signature* — a parameter
-        // default and a `where` constraint — so those are marked alongside the
-        // body.
-        Stmt::SubDecl {
-            body, param_defs, ..
-        }
-        | Stmt::MethodDecl {
-            body, param_defs, ..
-        }
-        | Stmt::ProtoDecl {
-            body, param_defs, ..
-        } => {
-            super::mark_param_defs(param_defs);
-            mark_stmts(body);
-        }
-        // Declarations/markers/control-flow with no expression payload
-        // relevant to Whatever-priming (or genuinely rare enough that a
-        // missed leaf here is only a cosmetic `.AST` gap, never a runtime
-        // behaviour change — see the module doc's safety invariant).
-        Stmt::MarkReadonly(..)
-        | Stmt::MarkBoundContainer(_)
-        | Stmt::MarkBind
-        | Stmt::MarkSigillessReadonly(_)
-        | Stmt::MarkSigilless(_)
-        | Stmt::ProtoToken { .. }
-        | Stmt::Need { .. }
-        | Stmt::Import { .. }
-        | Stmt::Last(_)
-        | Stmt::Next(_)
-        | Stmt::Redo(_)
-        | Stmt::Proceed
-        | Stmt::Succeed
-        | Stmt::ReactDone
-        | Stmt::SupplyBodyDone
-        | Stmt::TrustsDecl { .. }
-        | Stmt::SetLine(_) => {}
     }
+
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        super::expr::mark_expr(expr);
+    }
+
+    /// A parameter default is a value position (`$x = *`); every other
+    /// expression of a parameter (a `where` constraint, a sub-signature's) is
+    /// an argument. `walk_param_mut` also gives the parameter a fresh
+    /// `ParamCode`: the compiled chunks (ADR-0133) describe the expressions as
+    /// they were.
+    fn visit_param_mut(&mut self, param: &mut ParamDef) {
+        let default = param.default.take();
+        walk_param_mut(self, param);
+        param.default = default;
+        mark_opt_value_leaf(&mut param.default);
+    }
+
+    // A regex's code blocks are not classified: `expr.rs` stops at regex
+    // literals too, whose pattern the runtime also keeps as source text.
+    fn visit_regex_node_mut(&mut self, _node: &mut RegexNode) {}
 }
 
 fn mark_call_arg(arg: &mut CallArg) {

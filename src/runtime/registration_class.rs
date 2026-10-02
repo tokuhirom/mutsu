@@ -297,7 +297,37 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// count as. `t/run-nested-role-body.t`'s `$side = @outer.elems * 100`
     /// caught a regression here: memoising the shell's run left the real
     /// declaration's run skipped, so `$side` never got set.
-    pub(crate) is_hoisted_shell: bool,
+    pub(crate) is_hoisted_shell: HoistedShell,
+}
+
+/// Which kind of `__hoisted` declaration-only shell a class registration is,
+/// if any (see [`ClassDeclModifiers::is_hoisted_shell`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HoistedShell {
+    /// The real, source-position declaration.
+    No,
+    /// A unit-level forward-reference shell (`hoist_type_decl_shells`). It
+    /// runs composed role bodies outside the composition memo, because the
+    /// real declaration runs later in the same scope and its run is the one
+    /// that counts.
+    Forward,
+    /// A shell of a declaration nested in code (`Stmt::NestedTypeShells`,
+    /// #10470). It is the compile-time composition Rakudo performs: it runs
+    /// at BEGIN time, at the declaration's place among the unit's BEGIN-time
+    /// effects, and runs the composed roles' bodies through the composition
+    /// memo (#10494), so the in-place registration, which repeats on every
+    /// entry of the enclosing code, runs them no more. That registration
+    /// rebuilds the composed methods and gives them back the captures the
+    /// shell's body run filed
+    /// (`Interpreter::reapply_composed_nested_method_captures`).
+    Nested,
+}
+
+impl HoistedShell {
+    // Cost: O(1).
+    pub(crate) fn is_shell(self) -> bool {
+        self != HoistedShell::No
+    }
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

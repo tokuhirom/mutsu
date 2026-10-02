@@ -36,7 +36,7 @@ impl TierB {
         let slow = b.create_block();
         let fall = b.create_block();
 
-        let is_true = b.ins().icmp_imm(IntCC::Equal, wt, w::TRUE_BITS as i64);
+        let is_true = b.ins().icmp_imm_s(IntCC::Equal, wt, w::TRUE_BITS as i64);
         b.ins().brif(is_true, pop_fall, &[], chk_false, &[]);
 
         b.switch_to_block(pop_fall);
@@ -44,7 +44,7 @@ impl TierB {
         b.ins().jump(fall, &[]);
 
         b.switch_to_block(chk_false);
-        let is_false = b.ins().icmp_imm(IntCC::Equal, wt, w::FALSE_BITS as i64);
+        let is_false = b.ins().icmp_imm_s(IntCC::Equal, wt, w::FALSE_BITS as i64);
         b.ins().brif(is_false, pop_take, &[], slow, &[]);
 
         b.switch_to_block(pop_take);
@@ -96,7 +96,7 @@ impl TierB {
         let slow = b.create_block();
         let fall = b.create_block();
 
-        let is_true = b.ins().icmp_imm(IntCC::Equal, wt, w::TRUE_BITS as i64);
+        let is_true = b.ins().icmp_imm_s(IntCC::Equal, wt, w::TRUE_BITS as i64);
         b.ins().brif(is_true, take, &[], chk_false, &[]);
 
         b.switch_to_block(take);
@@ -106,7 +106,7 @@ impl TierB {
         b.ins().jump(target, &[]);
 
         b.switch_to_block(chk_false);
-        let is_false = b.ins().icmp_imm(IntCC::Equal, wt, w::FALSE_BITS as i64);
+        let is_false = b.ins().icmp_imm_s(IntCC::Equal, wt, w::FALSE_BITS as i64);
         b.ins().brif(is_false, fall, &[], slow, &[]);
 
         b.switch_to_block(slow);

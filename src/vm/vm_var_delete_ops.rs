@@ -150,10 +150,7 @@ impl Interpreter {
                     return None;
                 }
                 let local_slot = if strong_count == 2 {
-                    match self.resolve_local_slot(code, slot, var_name) {
-                        Some(slot) => Some(slot),
-                        None => return None,
-                    }
+                    Some(self.resolve_local_slot(code, slot, var_name)?)
                 } else {
                     None
                 };

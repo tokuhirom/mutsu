@@ -597,17 +597,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // Mark Seq as consumed (single-use semantics), reifying a deferred
-        // source first if needed.
-        if let ValueView::Seq(body) = target.view() {
-            let body = std::sync::Arc::clone(&body);
-            let (items, _) = self.take_seq_body(&body)?;
-            // ADR-0058: `hyper_source_items` below reads THIS body back
-            // through `Deref`, but `take` hands a genuinely deferred source's
-            // elements to the caller instead of storing them — see
-            // `SeqBody::store_taken_elements`.
-            body.store_taken_elements(items);
-        }
+        self.consume_hyper_seq_target(&target)?;
         // A not-yet-forced lazy list (`gather { take 1 }`, a finite `.map` pipe,
         // or an explicitly `lazy`-marked but finite list) carries an EMPTY
         // cache, and `hyper_source_items` below is a static reader that cannot
@@ -1429,6 +1419,21 @@ impl Interpreter {
         })
     }
 
+    // Cost: O(n), n = elements of a deferred Seq source (reified once).
+    /// Mark a Seq hyper target as consumed (single-use semantics), reifying a
+    /// deferred source first if needed, so the static `hyper_source_items`
+    /// reader sees its elements (ADR-0058: `take` hands a genuinely deferred
+    /// source's elements to the caller instead of storing them, see
+    /// `SeqBody::store_taken_elements`).
+    fn consume_hyper_seq_target(&mut self, target: &Value) -> Result<(), RuntimeError> {
+        if let ValueView::Seq(body) = target.view() {
+            let body = std::sync::Arc::clone(&body);
+            let (items, _) = self.take_seq_body(&body)?;
+            body.store_taken_elements(items);
+        }
+        Ok(())
+    }
+
     /// `OpCode::HyperMethodCallDynamic` (`@a>>."$name"()`, `@a>>.&f`). Owns
     /// only the name resolution: a method name dispatches through the
     /// `HyperMethodCall` body with the run-time spelling (as a quoted name --
@@ -1508,6 +1513,7 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic target")
         })?;
         let (target, _target_was_itemized) = Self::hyper_target(target);
+        self.consume_hyper_seq_target(&target)?;
         // Force a not-yet-cached lazy list before reading its items (mirrors
         // the non-dynamic `exec_hyper_method_call_op`; see its comment).
         let target = match target.view() {

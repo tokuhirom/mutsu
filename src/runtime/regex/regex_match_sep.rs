@@ -7,15 +7,14 @@
 //! capture store and rewinds on backtrack.
 
 use super::super::*;
-use super::regex_helpers::count_capture_groups;
+use super::regex_helpers::{count_capture_groups, count_pattern_capture_groups};
+use super::regex_trail::CapStore;
 use std::collections::HashSet;
 
 /// How many positional slots one match of a separator pattern takes.
+// Cost: O(1) once the pattern's count is memoized.
 pub(super) fn separator_stride(sep: &RegexPattern) -> usize {
-    sep.tokens
-        .iter()
-        .map(|t| count_capture_groups(&t.atom))
-        .sum()
+    count_pattern_capture_groups(sep)
 }
 
 /// A separated quantifier's capture delta for one chain: every name under the
@@ -31,9 +30,30 @@ pub(super) fn separated_capture_delta(
     atom_stride: usize,
     sep_stride: usize,
 ) -> RegexCaptures {
+    separated_capture_delta_syms(
+        names.iter().map(|n| Symbol::intern(n)),
+        atom_caps,
+        sep_caps,
+        trailing,
+        atom_stride,
+        sep_stride,
+    )
+}
+
+/// [`separated_capture_delta`] for names already interned (the compiled
+/// engine's, interned when the pattern compiled).
+// Cost: O(n + c), n = the names, c = the captures across the chain.
+pub(super) fn separated_capture_delta_syms(
+    names: impl IntoIterator<Item = Symbol>,
+    atom_caps: &[RegexCaptures],
+    sep_caps: &[RegexCaptures],
+    trailing: Option<&RegexCaptures>,
+    atom_stride: usize,
+    sep_stride: usize,
+) -> RegexCaptures {
     let mut caps = RegexCaptures::default();
     for n in names {
-        caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
+        caps.named.slot_mut(n).quantified = true;
     }
     Interpreter::append_separated_captures(
         &mut caps,
@@ -44,6 +64,28 @@ pub(super) fn separated_capture_delta(
         sep_stride,
     );
     caps
+}
+
+/// Apply a separated token's own capture name to ONE iteration's atom match
+/// (`from..to`, captures `caps`). A capture name left on a separated token
+/// (a builtin subrule `<digit>+ % ','`, an angle alias, an aliased capture
+/// group or subrule call) names each item, so `$<digit>` is a List with one
+/// Match per item, exactly like the unseparated `<digit>+`. A sigil alias of
+/// the whole quantified span (`$<x>=\d+ % ','`) is wrapped in a group by the
+/// parser and never reaches here.
+// Cost: O(c), c = the iteration's captures.
+pub(super) fn with_iteration_capture(
+    token: &RegexToken,
+    from: usize,
+    to: usize,
+    caps: RegexCaptures,
+) -> RegexCaptures {
+    if token.named_capture.is_none() {
+        return caps;
+    }
+    let mut store = CapStore::new(caps);
+    Interpreter::store_apply_named_capture(&mut store, token, from, to, 0);
+    store.into_caps()
 }
 
 impl Interpreter {
@@ -99,10 +141,7 @@ impl Interpreter {
         let zero = (min == 0).then(|| {
             let mut caps = RegexCaptures::default();
             for name in &names {
-                caps.named
-                    .entry(Symbol::intern(name))
-                    .or_default()
-                    .quantified = true;
+                caps.named.slot_mut(Symbol::intern(name)).quantified = true;
             }
             (start, caps)
         });
@@ -181,137 +220,6 @@ impl Interpreter {
         out
     }
 
-    /// Ratcheted (`token`/`rule`) separated quantifier: possessive linear scan.
-    /// Ratchet forbids backtracking into the quantifier, so each step commits
-    /// to the separator's and the atom's single highest-priority match and the
-    /// whole quantifier yields at most one candidate. This matches Rakudo:
-    /// `my token T { <[ab]>+ % ',' ',b' }` does NOT match "a,b" (the chain
-    /// possessively consumes all of it) while the backtracking `regex` variant
-    /// does. It is also what keeps grammar rules linear: the general DFS in
-    /// `enumerate_separated_chains` goes exponential when sigspace turns the
-    /// atom/separator into groups with several same-end candidates (a 6-pair
-    /// JSON object under `rule pairlist { <pair> * % \, }` took ~8s to parse;
-    /// this scan parses it in microseconds).
-    pub(super) fn match_separated_quantifier_ratchet(
-        &mut self,
-        token: &RegexToken,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-        pattern: &RegexPattern,
-        current_caps: &RegexCaptures,
-    ) -> Vec<(usize, RegexCaptures)> {
-        let sep = token.separator.as_ref().expect("separator present");
-        let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
-            return Vec::new();
-        };
-        // Frugal (`*? %`) under ratchet commits to the minimal count; greedy
-        // extends to `max` (or as far as the input allows).
-        let limit = if token.frugal { Some(min) } else { max };
-        let can_extend = |count: usize| limit.is_none_or(|m| count < m);
-
-        let mut atom_caps: Vec<RegexCaptures> = Vec::new();
-        let mut sep_caps: Vec<RegexCaptures> = Vec::new();
-        let mut cur = start;
-        // Highest-priority atom match = the LAST candidate (the atom
-        // enumeration returns lowest priority first), mirroring the
-        // `RegexQuant::One` ratchet case. Deliberately the `_all_` enumeration
-        // and NOT the singular `regex_match_atom_with_capture_in_pkg`: the
-        // singular matcher's Named-atom path spawns a scratch sub-interpreter
-        // (plus a tail-text copy) per candidate per call, which is ~300x
-        // slower on nested grammar rules like `rule arraylist { <value> * %
-        // [\,] }` over `[[1,2,3],[4,5,6],[7,8,9]]`.
-        //
-        // A zero-width FIRST atom is a genuine empty element (Rakudo:
-        // `<-[;]>* % ';'` on ";b" is `("", "b")`, not zero iterations), so it
-        // is accepted here. The infinite-loop risk lives only in the extension
-        // loop below, which is bounded by its own `atom_end <= cur`
-        // no-progress guard: after a zero-width atom, the separator must
-        // advance `cur` or the loop breaks.
-        if can_extend(0)
-            && let Some((end, caps)) = self
-                .regex_match_atom_all_with_capture_in_pkg(
-                    &token.atom,
-                    chars,
-                    start,
-                    current_caps,
-                    pkg,
-                    pattern.ignore_case,
-                )
-                .pop()
-        {
-            atom_caps.push(caps);
-            super::regex_helpers::record_regex_farthest_position(end);
-            cur = end;
-            while can_extend(atom_caps.len()) {
-                let Some((sep_end, scaps)) =
-                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
-                else {
-                    break;
-                };
-                super::regex_helpers::record_regex_farthest_position(sep_end);
-                let Some((atom_end, acaps)) = self
-                    .regex_match_atom_all_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        sep_end,
-                        current_caps,
-                        pkg,
-                        pattern.ignore_case,
-                    )
-                    .pop()
-                else {
-                    break;
-                };
-                super::regex_helpers::record_regex_farthest_position(atom_end);
-                if atom_end <= cur {
-                    break;
-                }
-                sep_caps.push(scaps);
-                atom_caps.push(acaps);
-                cur = atom_end;
-            }
-        }
-        if atom_caps.len() < min {
-            // Ratchet cannot backtrack to satisfy `min`: the quantifier fails.
-            return Vec::new();
-        }
-        if atom_caps.is_empty() {
-            // Zero iterations still marks the quantified names, so `$/<name>` is
-            // an empty list rather than one empty Match (see the twin comment in
-            // `match_separated_quantifier`).
-            let mut caps = RegexCaptures::default();
-            for n in Self::collect_quantified_names_for_token(token) {
-                caps.named.entry(Symbol::intern(&n)).or_default().quantified = true;
-            }
-            return vec![(start, caps)];
-        }
-        let atom_stride = count_capture_groups(&token.atom);
-        let sep_stride = separator_stride(&sep.pattern);
-        let names = Self::collect_quantified_names_for_token(token);
-        // Trailing separator for `%%`: Rakudo consumes it greedily, and
-        // ratchet commits to that single choice.
-        let mut end = cur;
-        let mut trailing: Option<RegexCaptures> = None;
-        if sep.allow_trailing
-            && let Some((ts_end, ts_caps)) =
-                self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
-            && ts_end >= cur
-        {
-            end = ts_end;
-            trailing = Some(ts_caps);
-        }
-        let caps = separated_capture_delta(
-            &names,
-            &atom_caps,
-            &sep_caps,
-            trailing.as_ref(),
-            atom_stride,
-            sep_stride,
-        );
-        vec![(end, caps)]
-    }
-
     /// Enumerate every `atom (sep atom)*` chain rooted at `start`, backtracking
     /// the separator at each step. Each chain is `(atom_caps, sep_caps, end)`
     /// with `sep_caps.len() == atom_caps.len() - 1`. Chains are returned
@@ -357,7 +265,7 @@ impl Interpreter {
         // the 20_000 chain cap), so a zero-width atom cannot loop forever.
         for (end, caps) in first_matches.into_iter().rev() {
             super::regex_helpers::record_regex_farthest_position(end);
-            let mut atom_caps = vec![caps];
+            let mut atom_caps = vec![with_iteration_capture(token, start, end, caps)];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
                 token,
@@ -427,7 +335,7 @@ impl Interpreter {
                     if atom_end <= cur {
                         continue;
                     }
-                    atom_caps.push(acaps);
+                    atom_caps.push(with_iteration_capture(token, sep_end, atom_end, acaps));
                     sep_caps.push(scaps.clone());
                     self.extend_separated_chain(
                         token,
@@ -464,25 +372,17 @@ impl Interpreter {
         // Positional captures: atom groups occupy the first `atom_stride` slots,
         // separator groups the next `sep_stride`. The folded slot keeps the
         // last iteration's span/subcap as its representative values.
+        // An iteration's slot that an inner quantifier already folded
+        // (`[ [ (\d) ] +% '.' ] +% ';'`) contributes all its entries: raku has
+        // one flat list for a capture group under nested quantifiers.
         let fold_group = |sources: &[&RegexCaptures], g: usize| -> PosSlot {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             for src in sources {
                 if let Some(slot) = src.positional.get(g) {
-                    list.push((slot.from, slot.to, slot.subcap.clone()));
+                    slot.push_entries_to(&mut list);
                 }
             }
-            let (from, to, subcap) = list
-                .last()
-                .map(|(a, b, sc)| (*a, *b, sc.clone()))
-                .unwrap_or((0, 0, None));
-            PosSlot {
-                from,
-                to,
-                subcap,
-                quantified: Some(list),
-                nil: false,
-                alternation_padding: false,
-            }
+            PosSlot::folded(list)
         };
         let atom_refs: Vec<&RegexCaptures> = atom_caps.iter().collect();
         for g in 0..atom_stride {
@@ -500,7 +400,7 @@ impl Interpreter {
         // Named captures: merge every iteration's named captures (as arrays).
         for src in atom_caps.iter().chain(all_sep.iter().copied()) {
             for (k, v) in &src.named {
-                let slot = caps.named.entry(*k).or_default();
+                let slot = caps.named.slot_mut(*k);
                 slot.merge(v.clone());
                 slot.quantified = true;
             }

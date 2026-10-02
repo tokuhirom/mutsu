@@ -15,7 +15,7 @@
 
 use super::super::*;
 use super::regex_helpers::LTM_DECLARATIVE_MODE;
-use super::regex_ltm_fate::{ltm_fate_frame_close, ltm_fate_frame_open};
+use super::regex_ltm_fate::{ltm_fate_frame_close, ltm_fate_frame_open, ltm_fate_frame_take};
 use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode, SubKind};
 use super::regex_ltm_nfa_scratch::{Scratch, Thread};
 use std::cmp::Reverse;
@@ -31,21 +31,144 @@ pub(super) struct NfaRun {
     /// Where each `_LL` literal a path crossed ended (see
     /// `LtmMeasure::litlen`), without repeating the previous entry.
     pub(super) ll_ends: Vec<usize>,
+    /// What each root of a proto's NFA found, by root. Empty for any other NFA.
+    /// The fields above then hold what all the roots found together, which no
+    /// caller reads.
+    pub(super) origins: Vec<OriginRun>,
+    /// The `_LL` literals of a proto's roots: (root, where it ended).
+    pub(super) origin_ll: Vec<(u32, usize)>,
 }
 
+/// What the paths of one root of a proto's NFA found.
+#[derive(Clone, Copy, Default)]
+pub(super) struct OriginRun {
+    /// The furthest accept.
+    pub(super) end: Option<usize>,
+    /// The furthest fate.
+    pub(super) fate: Option<usize>,
+    /// Some path went through a `||`.
+    pub(super) seqalt: bool,
+}
+
+impl OriginRun {
+    /// The furthest place any of the root's paths got, an accept or a fate.
+    // Cost: O(1).
+    pub(super) fn furthest(&self) -> Option<usize> {
+        self.end.max(self.fate)
+    }
+
+    /// Whether the root's measurement was cut short (`LtmMeasure::stopped`).
+    // Cost: O(1).
+    pub(super) fn stopped(&self) -> bool {
+        self.seqalt || self.fate.is_some()
+    }
+}
+
+thread_local! {
+    /// Finished runs, emptied, for the next run to fill: a grammar parse
+    /// measures tens of thousands of proto candidates, and each run
+    /// allocated its vectors (#10488). Refilled by [`NfaRun::recycle`].
+    static SPARE_RUNS: std::cell::RefCell<Vec<NfaRun>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Spare runs kept past this many are dropped.
+const SPARE_RUNS_MAX: usize = 16;
+
 impl NfaRun {
-    fn empty() -> Self {
-        NfaRun {
-            ends: Vec::new(),
-            fate: None,
-            seqalt: false,
-            ll_ends: Vec::new(),
+    /// A run with nothing found, for an NFA of `roots` roots (0 for an NFA
+    /// that is not a proto's).
+    fn empty(roots: usize) -> Self {
+        let mut run = SPARE_RUNS
+            .with(|spare| spare.borrow_mut().pop())
+            .unwrap_or(NfaRun {
+                ends: Vec::new(),
+                fate: None,
+                seqalt: false,
+                ll_ends: Vec::new(),
+                origins: Vec::new(),
+                origin_ll: Vec::new(),
+            });
+        run.origins.resize(roots, OriginRun::default());
+        run
+    }
+
+    /// Hand this run's vectors back for the next run to reuse.
+    // Cost: O(1) (the vectors are cleared, not freed).
+    pub(super) fn recycle(mut self) {
+        if self.ends.capacity() == 0
+            && self.ll_ends.capacity() == 0
+            && self.origins.capacity() == 0
+            && self.origin_ll.capacity() == 0
+        {
+            return;
+        }
+        self.ends.clear();
+        self.ll_ends.clear();
+        self.origins.clear();
+        self.origin_ll.clear();
+        self.fate = None;
+        self.seqalt = false;
+        SPARE_RUNS.with(|spare| {
+            let mut spare = spare.borrow_mut();
+            if spare.len() < SPARE_RUNS_MAX {
+                spare.push(self);
+            }
+        });
+    }
+
+    /// An `_LL` literal ended at `end` on a path from root `origin`.
+    fn cross_ll(&mut self, origin: u32, end: usize) {
+        if self.origins.is_empty() {
+            if self.ll_ends.last() != Some(&end) {
+                self.ll_ends.push(end);
+            }
+        } else if self.origin_ll.last() != Some(&(origin, end)) {
+            self.origin_ll.push((origin, end));
         }
     }
 
-    fn cross_ll(&mut self, end: usize) {
-        if self.ll_ends.last() != Some(&end) {
-            self.ll_ends.push(end);
+    /// A path from root `origin` ended in a fate at `pos`.
+    fn fate_at(&mut self, origin: u32, pos: usize) {
+        self.fate = self.fate.max(Some(pos));
+        if let Some(found) = self.origins.get_mut(origin as usize) {
+            found.fate = found.fate.max(Some(pos));
+        }
+    }
+
+    /// A fate no root can be named for: it cuts the paths of all of them.
+    fn fate_in_every_root(&mut self, pos: usize) {
+        self.fate = self.fate.max(Some(pos));
+        for found in &mut self.origins {
+            found.fate = found.fate.max(Some(pos));
+        }
+    }
+
+    /// A path from root `origin` went through a `||`.
+    fn seqalt_at(&mut self, origin: u32) {
+        self.seqalt = true;
+        if let Some(found) = self.origins.get_mut(origin as usize) {
+            found.seqalt = true;
+        }
+    }
+
+    /// What a nested region run (a `Sub`, a `DynCall`'s callee) found, as far as
+    /// it ends or cuts paths of root `origin`.
+    fn absorb_region(&mut self, origin: u32, region: &NfaRun) {
+        if region.seqalt {
+            self.seqalt_at(origin);
+        }
+        if let Some(fate) = region.fate {
+            self.fate_at(origin, fate);
+        }
+    }
+
+    /// A path from root `origin` reached an accept at `pos`.
+    fn end_at(&mut self, origin: u32, pos: usize) {
+        if let Some(found) = self.origins.get_mut(origin as usize) {
+            found.end = found.end.max(Some(pos));
+        } else {
+            self.ends.push(pos);
         }
     }
 }
@@ -67,7 +190,9 @@ impl LtmNfa {
         let mut run = self.walk(interp, chars, start, outer);
         let leaf_fate = ltm_fate_frame_close(enclosing_fate);
         LTM_DECLARATIVE_MODE.with(|f| f.set(saved_mode));
-        run.fate = run.fate.max(leaf_fate);
+        if let Some(fate) = leaf_fate {
+            run.fate_in_every_root(fate);
+        }
         run
     }
 
@@ -78,7 +203,8 @@ impl LtmNfa {
         start: usize,
         outer: &[Symbol],
     ) -> NfaRun {
-        let mut out = NfaRun::empty();
+        let mut out = NfaRun::empty(self.roots.len());
+        let proto = !self.roots.is_empty();
         let mut scratch = Scratch::take(self.nodes.len(), outer);
         let Scratch {
             stacks,
@@ -87,7 +213,15 @@ impl LtmNfa {
             step,
             far,
         } = &mut scratch;
-        work.push((self.start, 0));
+        if proto {
+            for (origin, root) in self.roots.iter().enumerate() {
+                if let Some(stack) = stacks.push_root(origin as u32, root.accept) {
+                    work.push((root.entry, stack));
+                }
+            }
+        } else {
+            work.push((self.start, 0));
+        }
         let mut pos = start;
         loop {
             while let Some((node, stack)) = work.pop() {
@@ -108,7 +242,7 @@ impl LtmNfa {
                         work.extend(targets.iter().map(|&target| (target, stack)));
                     }
                     NfaNode::SeqAlt(targets) => {
-                        out.seqalt = true;
+                        out.seqalt_at(stacks.origin(stack));
                         work.extend(targets.iter().map(|&target| (target, stack)));
                     }
                     NfaNode::Leaf {
@@ -124,7 +258,7 @@ impl LtmNfa {
                                 interp.match_consuming_atom(atom, chars, pos, *pkg, *ic)
                             {
                                 if *ll {
-                                    out.cross_ll(end);
+                                    out.cross_ll(stacks.origin(stack), end);
                                 }
                                 reach(end, *next, stack, work);
                             }
@@ -149,7 +283,7 @@ impl LtmNfa {
                         next,
                     } => {
                         if pos != 0 {
-                            out.fate = out.fate.max(Some(pos));
+                            out.fate_at(stacks.origin(stack), pos);
                         } else if matches!(**atom, RegexAtom::WsRule) {
                             if let Some(end) =
                                 interp.regex_match_atom_in_pkg(atom, chars, pos, *pkg, *ic)
@@ -174,7 +308,7 @@ impl LtmNfa {
                     }
                     NfaNode::Call { name, body, ret } => {
                         if stacks.calls(stack, *name) {
-                            out.fate = out.fate.max(Some(pos));
+                            out.fate_at(stacks.origin(stack), pos);
                         } else if let Some(seed) =
                             super::regex_lr_state::lr_read_live_seed(*name, chars.len() - pos)
                         {
@@ -184,7 +318,7 @@ impl LtmNfa {
                         } else if let Some(called) = stacks.push(stack, *ret, *name) {
                             work.push((*body, called));
                         } else {
-                            out.fate = out.fate.max(Some(pos));
+                            out.fate_at(stacks.origin(stack), pos);
                         }
                     }
                     NfaNode::Return => {
@@ -199,12 +333,12 @@ impl LtmNfa {
                     } => {
                         let names = stacks.names(stack);
                         let region = dyn_call(interp, atom, chars, pos, *pkg, *ic, &names);
-                        out.seqalt |= region.seqalt;
-                        out.fate = out.fate.max(region.fate);
+                        let origin = stacks.origin(stack);
+                        out.absorb_region(origin, &region);
                         // A subrule's own `_LL` literals count, as they do
                         // for a call compiled into this NFA.
                         for end in region.ll_ends {
-                            out.cross_ll(end);
+                            out.cross_ll(origin, end);
                         }
                         for end in region.ends {
                             reach(end, *next, stack, work);
@@ -213,14 +347,27 @@ impl LtmNfa {
                     NfaNode::Sub { nfa, kind, next } => {
                         let names = stacks.names(stack);
                         let region = run_sub(nfa, kind, interp, chars, pos, &names);
-                        out.seqalt |= region.seqalt;
-                        out.fate = out.fate.max(region.fate);
+                        out.absorb_region(stacks.origin(stack), &region);
                         for end in region.ends {
                             reach(end, *next, stack, work);
                         }
                     }
-                    NfaNode::Fate => out.fate = out.fate.max(Some(pos)),
+                    NfaNode::Fate => out.fate_at(stacks.origin(stack), pos),
                     NfaNode::Accept => out.ends.push(pos),
+                    NfaNode::AcceptAt(origin) => out.end_at(*origin, pos),
+                }
+                // A leaf's matcher records the fates of the user code it
+                // refused to run into the frame of the run; in a proto's run
+                // the frame is shared by every root, so it is read after each
+                // leaf, while the root it belongs to is known.
+                if proto
+                    && matches!(
+                        &self.nodes[node as usize],
+                        NfaNode::Leaf { .. } | NfaNode::WsLead { .. } | NfaNode::DynCall { .. }
+                    )
+                    && let Some(fate) = ltm_fate_frame_take()
+                {
+                    out.fate_at(stacks.origin(stack), fate);
                 }
             }
             // Advance to the nearest position anything reached.
@@ -269,7 +416,7 @@ fn run_sub(
             let Some(target) = target else {
                 return NfaRun {
                     fate: Some(pos),
-                    ..NfaRun::empty()
+                    ..NfaRun::empty(0)
                 };
             };
             let stripped = target.stripped();
@@ -282,7 +429,7 @@ fn run_sub(
                 ends: run.ends.into_iter().map(back).collect(),
                 fate: run.fate.map(back),
                 seqalt: run.seqalt,
-                ll_ends: Vec::new(),
+                ..NfaRun::empty(0)
             }
         }
     }
@@ -299,7 +446,7 @@ fn dyn_call(
     ic: bool,
     names: &[Symbol],
 ) -> NfaRun {
-    let mut out = NfaRun::empty();
+    let mut out = NfaRun::empty(0);
     let RegexAtom::Named(name) = atom else {
         return out;
     };
@@ -308,7 +455,25 @@ fn dyn_call(
         out.fate = Some(pos);
         return out;
     }
+    // ADR-0127 §2.2: a call's arguments are ignored here, so a body that
+    // reads its own parameters at parse time (`token v($x) { <$x> }`) cannot
+    // be resolved — the unbound parameter is an artifact of the measurement,
+    // not an error of the program. Such a call is a fate, as Rakudo's `<$x>`
+    // is; the real match binds the arguments and reports any genuine error.
+    let ignores_args = !spec.arg_exprs.is_empty();
+    let prior_error = ignores_args
+        .then(|| crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take()))
+        .flatten();
     let (candidates, raw_empty) = interp.parsed_subrule_candidates(spec, pkg, &[]);
+    if ignores_args {
+        let failed = crate::runtime::regex_parse::PENDING_REGEX_ERROR
+            .with(|e| std::mem::replace(&mut *e.borrow_mut(), prior_error))
+            .is_some();
+        if failed {
+            out.fate = Some(pos);
+            return out;
+        }
+    }
     if candidates.is_empty() {
         if raw_empty
             && interp

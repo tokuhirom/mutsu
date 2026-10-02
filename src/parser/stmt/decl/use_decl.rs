@@ -53,6 +53,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_use_attributes_pragma(rest);
     }
 
+    // `use worries` re-enables the compiler's "Potential difficulties"
+    // warnings that an enclosing `no worries` turned off, for the rest of the
+    // current scope (and the scopes nested in it).
+    if module == "worries" {
+        super::super::simple::restore_worries();
+    }
+
     // `use newline :lf|:cr|:crlf` uses a colonpair argument and must be preserved.
     if module == "newline" && rest.starts_with(':') && !rest.starts_with("::") {
         let (rest, arg) = super::super::super::primary::colonpair_expr(rest)?;
@@ -243,13 +250,8 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     if module == "lib"
         && let Some(ref expr) = arg
     {
-        match expr {
-            Expr::ArrayLiteral(items) => {
-                for item in items {
-                    super::super::simple::try_add_parse_time_lib_path(item);
-                }
-            }
-            other => super::super::simple::try_add_parse_time_lib_path(other),
+        for path in crate::parser::use_lib_args(expr) {
+            super::super::simple::try_add_parse_time_lib_path(path);
         }
     }
     // `use Module Empty` and `use Module ()` load the module without importing

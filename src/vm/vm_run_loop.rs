@@ -55,7 +55,9 @@ impl Interpreter {
                 crate::value::attr_twigil_sigil(attr_name).unwrap_or('$'),
             )
         } else {
-            (attr_name, '$')
+            // A plain lexical (`my $day`) is not the attribute `$!day`, even
+            // when a method of the class that declares one is on the stack.
+            return None;
         };
         self.class_attr_where_constraint(class_name, bare, sigil)
     }
@@ -112,9 +114,7 @@ impl Interpreter {
         if self.check_attribute_where_constraint(&pred, val, scope) {
             return Ok(());
         }
-        Err(crate::runtime::utils::type_check_assignment_typed_error(
-            name, "<anon>", val,
-        ))
+        Err(self.type_check_assignment_failure(name, "<anon>", val))
     }
 
     fn wrap_in_begin_time(inner: RuntimeError, phaser: &str) -> RuntimeError {

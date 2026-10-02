@@ -201,6 +201,7 @@ impl Compiler {
                         }
                     }
                     Stmt::SyntheticBlock(inner) => self.compile_synthetic_block_inline(inner),
+                    s if self.compile_type_decl_value(s) => {}
                     Stmt::VarDecl { .. } => {
                         self.compile_stmt(stmt);
                         // VarDecl returns the variable value (like Raku)
@@ -348,8 +349,29 @@ impl Compiler {
     /// copy of it (`if %cache{$k} -> @avail` must see all the elements).
     pub(super) fn compile_if_binding_container_decl(&mut self, decl: &Option<(String, Expr)>) {
         let Some((name, source)) = decl else { return };
+        // An `@` parameter binds a Seq through `.cache` (as a routine's `@`
+        // parameter does), so `if $s.split(..) -> @parts` sees the List.
+        let source = if name.starts_with('@') {
+            Expr::Ternary {
+                cond: Box::new(Expr::Binary {
+                    left: Box::new(source.clone()),
+                    op: crate::token_kind::TokenKind::SmartMatch,
+                    right: Box::new(Expr::BareWord("Seq".to_string())),
+                }),
+                then_expr: Box::new(Expr::MethodCall {
+                    target: Box::new(source.clone()),
+                    name: crate::symbol::Symbol::intern("cache"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                else_expr: Box::new(source.clone()),
+            }
+        } else {
+            source.clone()
+        };
         self.bind_vardecl = true;
-        self.compile_stmt(&Self::plain_var_decl(name.clone(), source.clone()));
+        self.compile_stmt(&Self::plain_var_decl(name.clone(), source));
         self.bind_vardecl = false;
     }
 
@@ -531,10 +553,7 @@ impl Compiler {
     pub(super) fn container_var_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) if name == "?RESOURCES" => None,
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::Var(name) => Some(name.clone()),
-            _ => None,
+            other => other.container_var_key(),
         }
     }
 
@@ -554,78 +573,39 @@ impl Compiler {
     /// `while` loop to decide whether to wrap the body in a `Stmt::Block` so
     /// that the rebind is lexically scoped per iteration, without clobbering
     /// the outer topic. Unlike `body_mutates_topic`, plain `$_ =` (assignment)
-    /// does NOT trigger Block wrapping for while loops.
+    /// does NOT trigger Block wrapping for while loops. Nested blocks are
+    /// searched; closures and routines, which bind their own `$_`, are not
+    /// (`body_scans::rebinds_topic`).
+    // Cost: O(n), n = size of `stmts` outside nested code objects.
     pub(super) fn body_rebinds_topic(stmts: &[Stmt]) -> bool {
-        fn expr_rebinds_topic(expr: &Expr) -> bool {
-            match expr {
-                Expr::AssignExpr { name, is_bind, .. } => name == "_" && *is_bind,
-                Expr::Unary { expr, .. } => expr_rebinds_topic(expr),
-                Expr::Binary { left, right, .. } => {
-                    expr_rebinds_topic(left) || expr_rebinds_topic(right)
-                }
-                Expr::MethodCall { target, args, .. } => {
-                    expr_rebinds_topic(target) || args.iter().any(expr_rebinds_topic)
-                }
-                Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                    args.iter().any(expr_rebinds_topic)
-                }
-                _ => false,
-            }
-        }
-
-        fn stmt_rebinds_topic(stmt: &Stmt) -> bool {
-            match stmt {
-                Stmt::Assign { name, op, .. } => {
-                    name == "_" && matches!(op, crate::ast::AssignOp::Bind)
-                }
-                Stmt::Expr(expr) => expr_rebinds_topic(expr),
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    super::Compiler::body_rebinds_topic(then_branch)
-                        || super::Compiler::body_rebinds_topic(else_branch)
-                }
-                Stmt::While { body, .. }
-                | Stmt::Block(body)
-                | Stmt::SyntheticBlock(body)
-                | Stmt::Catch(body)
-                | Stmt::Control(body)
-                | Stmt::When { body, .. }
-                | Stmt::Given { body, .. }
-                | Stmt::Default(body) => super::Compiler::body_rebinds_topic(body),
-                Stmt::For { body, .. } => super::Compiler::body_rebinds_topic(body),
-                _ => false,
-            }
-        }
-
-        stmts.iter().any(stmt_rebinds_topic)
+        super::body_scans::rebinds_topic(stmts)
     }
 
-    /// Returns true if a branch body declares a block-local `my` variable
-    /// directly in its top-level statement list. Such a declaration shadows an
-    /// enclosing same-named binding and, without scoping, would *clobber* it
-    /// (`my $x=99; if c { my $x=5 }; say $x` would wrongly print `5`). When true,
-    /// the `if`/`unless`/`else` branch is wrapped in a `BlockLocalScope` so the
+    /// Returns true if a branch body declares a block-local `my` variable in
+    /// its own scope. Such a declaration shadows an enclosing same-named
+    /// binding and, without scoping, would *clobber* it (`my $x=99; if c { my
+    /// $x=5 }; say $x` would wrongly print `5`). When true, the
+    /// `if`/`unless`/`else` branch is wrapped in a `BlockLocalScope` so the
     /// loop bodies' shadow-only restore re-exposes the outer binding on exit.
     ///
-    /// Descends into `SyntheticBlock` (the parser's inlined wrapper for
-    /// destructuring `my ($a, $b) = ...`, which is NOT a separate scope) but not
-    /// into nested `Block`/`if`/loops/subs, which introduce their own scopes.
+    /// Sees a declaration at statement level, inside an expression (`foo(my
+    /// $x = 5)`) and inside `SyntheticBlock` (the parser's inlined wrapper for
+    /// destructuring `my ($a, $b) = ...`, which is NOT a separate scope), but
+    /// not inside nested blocks, loop bodies, closures or subs, which
+    /// introduce their own scopes (`body_scans::declares_block_local`).
     /// `state`/`our`/dynamic declarations are excluded: they are not plain
     /// lexical shadows and have their own scoping/restore rules.
+    ///
+    /// A lexically scoped type (`my class`, `my package`, `my role`) and the
+    /// stub package a statically named `require` declares count too: they are
+    /// bound in the branch's env like a `my` variable and must not outlive it
+    /// (#10594).
+    // Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
     pub(super) fn branch_declares_block_local(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| match s {
-            Stmt::VarDecl {
-                is_state,
-                is_our,
-                is_dynamic,
-                ..
-            } => !*is_state && !*is_our && !*is_dynamic,
-            Stmt::SyntheticBlock(inner) => Self::branch_declares_block_local(inner),
-            _ => false,
-        })
+        super::body_scans::declares_block_local(stmts)
+            // A statically named `require` binds a lexical stub package (see
+            // `require_stubs.rs`), which the branch must take away again.
+            || !super::require_stubs::static_require_targets(stmts).is_empty()
     }
 
     /// Compile an `if`/`unless`/`else` branch body wrapped in a `BlockLocalScope`
@@ -717,16 +697,30 @@ impl Compiler {
         &mut self,
         stmts: &[Stmt],
         source_body: &[Stmt],
+        is_statement_modifier: bool,
     ) {
         let mark = self.loop_body_decl_reset_mark();
         // Each iteration is its own block entry, so a `use` in the body opens
         // (and closes) its import scope once per iteration.
-        self.with_import_scope_region(stmts, |c| c.compile_scope_restored_loop_body_inner(stmts));
+        self.with_import_scope_region(stmts, |c| {
+            c.compile_scope_restored_loop_body_inner(stmts, is_statement_modifier)
+        });
         self.relax_loop_body_decl_resets(mark, source_body, stmts);
     }
 
-    fn compile_scope_restored_loop_body_inner(&mut self, stmts: &[Stmt]) {
-        let Some(needs_value) = Self::loop_body_let_frame(stmts) else {
+    fn compile_scope_restored_loop_body_inner(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+    ) {
+        // A statement-modifier loop opens no block in Raku, so a `let`/`temp`
+        // in its body resolves at the ENCLOSING block's exit, not per iteration.
+        let frame = if is_statement_modifier {
+            None
+        } else {
+            Self::loop_body_let_frame(stmts)
+        };
+        let Some(needs_value) = frame else {
             self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
             return;
         };
@@ -781,21 +775,29 @@ impl Compiler {
     /// [`Self::compile_scope_restored_loop_body`] for a value-collecting loop
     /// body (the `for` expression form), which compiles through
     /// `compile_stmts_value` instead.
-    pub(super) fn compile_scope_restored_body_value(&mut self, stmts: &[Stmt]) {
+    pub(super) fn compile_scope_restored_body_value(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+    ) {
         // The collecting form already leaves the iteration's value on the stack
         // for the loop to gather, so the `let` frame (#7677) needs no lowering
         // change here — only the bracket, reading that same value.
-        let let_frame = Self::loop_body_let_frame(stmts).map(|_| {
-            self.code.emit(OpCode::LetBlock {
-                body_end: 0,
-                value_on_stack: true,
-            })
-        });
+        let let_frame = (!is_statement_modifier)
+            .then(|| Self::loop_body_let_frame(stmts))
+            .flatten()
+            .map(|_| {
+                self.code.emit(OpCode::LetBlock {
+                    body_end: 0,
+                    value_on_stack: true,
+                })
+            });
         self.with_import_scope_region(stmts, |c| {
             c.in_scope_restored_body(|c| {
                 // Same block-start declaration visibility as the statement-position
                 // loop body above (`compile_body_with_implicit_try_inner`).
                 c.hoist_typed_var_decls(stmts);
+                c.hoist_require_stubs(stmts);
                 c.compile_stmts_value(stmts)
             })
         });
@@ -824,11 +826,11 @@ impl Compiler {
         // still a block literal the enclosing block re-clones on every run, so
         // its `state` still restarts per execution (`if 1 { state $n; ++$n }`).
         let state_reset = self.emit_branch_state_reset(stmts, is_statement_modifier);
-        self.compile_resolved_branch_body(stmts);
+        self.compile_resolved_branch_body(stmts, is_statement_modifier);
         self.patch_nested_block_state_reset(state_reset);
     }
 
-    fn compile_resolved_branch_body(&mut self, stmts: &[Stmt]) {
+    fn compile_resolved_branch_body(&mut self, stmts: &[Stmt], is_statement_modifier: bool) {
         if stmts.len() == 1 && matches!(stmts[0], Stmt::If { .. }) {
             self.compile_stmt(&stmts[0]);
         } else if Self::has_block_leave_worthy_phasers(stmts) {
@@ -843,7 +845,8 @@ impl Compiler {
             // `has_block_enter_leave_phasers` — see that function's doc.
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
         } else {
-            self.compile_if_statement_branch(stmts);
+            // A modifier body opens no `let`/`temp` frame of its own.
+            self.compile_if_statement_branch_scoped(stmts, is_statement_modifier);
         }
     }
 
@@ -873,9 +876,11 @@ impl Compiler {
     /// succeed, which showed up as extra JIT bailouts for perfectly ordinary
     /// code (`tests/jit_diff.rs`'s `unsupported_opcode_bails_out_cleanly`)
     /// when this was tried unconditionally — so the scan earns its keep by
-    /// staying narrow rather than by being skipped.
+    /// staying narrow rather than by being skipped. The walk is
+    /// `body_scans::reaches_when` (ADR-0137).
+    // Cost: O(n), n = size of the part of `stmts` in the block's own scope.
     pub(super) fn body_has_toplevel_when(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(Self::stmt_reaches_when)
+        super::body_scans::reaches_when(stmts)
     }
 
     /// ADR-0052: a `given`/`when`/`default` statement nets exactly one value on
@@ -915,112 +920,6 @@ impl Compiler {
             }
             Expr::BareWord(_) => WhenMatcherKind::BareName,
             _ => WhenMatcherKind::Computed,
-        }
-    }
-
-    fn stmt_reaches_when(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::When { .. } | Stmt::Default(_) => true,
-            Stmt::SyntheticBlock(inner) => inner.iter().any(Self::stmt_reaches_when),
-            Stmt::Expr(e)
-            | Stmt::Return(e)
-            | Stmt::Die(e)
-            | Stmt::Fail(e)
-            | Stmt::Take(e, _)
-            | Stmt::Goto(e) => Self::expr_reaches_when(e),
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => Self::expr_reaches_when(expr),
-            Stmt::Call { args, .. } => args.iter().any(|a| match a {
-                CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
-                    Self::expr_reaches_when(e)
-                }
-                CallArg::Named { value: Some(e), .. } => Self::expr_reaches_when(e),
-                CallArg::Named { value: None, .. } => false,
-            }),
-            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-                es.iter().any(Self::expr_reaches_when)
-            }
-            _ => false,
-        }
-    }
-
-    /// The expression-level half of [`Self::stmt_reaches_when`]: recurses
-    /// through ordinary compound expressions looking for a `do when`/`do
-    /// default` term, stopping at anything that introduces its own scope or
-    /// already absorbs a succeed unconditionally (a closure/sub literal,
-    /// `do {}`, `gather`, `try`, `do given`, ...) — see that function's doc
-    /// comment for why those are excluded rather than an oversight.
-    fn expr_reaches_when(expr: &Expr) -> bool {
-        match expr {
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::When { .. } | Stmt::Default(_) => true,
-                Stmt::SyntheticBlock(inner) => inner.iter().any(Self::stmt_reaches_when),
-                // `do {}` / `do given` already absorb a succeed
-                // unconditionally at the VM level (see the doc comment on
-                // `Self::stmt_reaches_when`); no need to see through them.
-                _ => false,
-            },
-            Expr::Grouped(e)
-            | Expr::PositionalPair(e)
-            | Expr::ZenSlice(e)
-            | Expr::Itemize(e)
-            | Expr::Eager(e)
-            | Expr::Unary { expr: e, .. }
-            | Expr::PostfixOp { expr: e, .. }
-            | Expr::AssignExpr { expr: e, .. }
-            | Expr::Reduction { expr: e, .. }
-            | Expr::IndirectTypeLookup(e)
-            | Expr::SymbolicDeref { expr: e, .. } => Self::expr_reaches_when(e),
-            // A compound-assignment marker (`$x += 1`, `$x .= meth`) is
-            // transparent: only its expansion is executed.
-            Expr::CompoundAssign { expanded, .. } => Self::expr_reaches_when(expanded),
-            Expr::Binary { left, right, .. }
-            | Expr::HyperOp { left, right, .. }
-            | Expr::HyperFuncOp { left, right, .. }
-            | Expr::MetaOp { left, right, .. } => {
-                Self::expr_reaches_when(left) || Self::expr_reaches_when(right)
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::expr_reaches_when(cond)
-                    || Self::expr_reaches_when(then_expr)
-                    || Self::expr_reaches_when(else_expr)
-            }
-            Expr::Index { target, index, .. } => {
-                Self::expr_reaches_when(target) || Self::expr_reaches_when(index)
-            }
-            Expr::IndexAssign {
-                target,
-                index,
-                value,
-                ..
-            } => {
-                Self::expr_reaches_when(target)
-                    || Self::expr_reaches_when(index)
-                    || Self::expr_reaches_when(value)
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                Self::expr_reaches_when(target) || args.iter().any(Self::expr_reaches_when)
-            }
-            Expr::CallOn { target, args } => {
-                Self::expr_reaches_when(target) || args.iter().any(Self::expr_reaches_when)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                args.iter().any(Self::expr_reaches_when)
-            }
-            Expr::ArrayLiteral(es)
-            | Expr::BracketArray(es, _)
-            | Expr::CaptureLiteral(es)
-            | Expr::StringInterpolation(es) => es.iter().any(Self::expr_reaches_when),
-            Expr::Hash(pairs) => pairs
-                .iter()
-                .any(|(_, v)| v.as_ref().is_some_and(Self::expr_reaches_when)),
-            Expr::InfixFunc { left, right, .. } => {
-                Self::expr_reaches_when(left) || right.iter().any(Self::expr_reaches_when)
-            }
-            _ => false,
         }
     }
 
@@ -1082,6 +981,7 @@ impl Compiler {
             }
         } else {
             self.hoist_typed_var_decls(stmts);
+            self.hoist_require_stubs(stmts);
             let last = stmts.len().wrapping_sub(1);
             for (i, s) in stmts.iter().enumerate() {
                 if tail_as_value && i == last {
@@ -1265,6 +1165,19 @@ impl Compiler {
             //   sub f { CATCH { default { } }; 42 }; say f();   # 42  (phaser before)
             // So the sink applies only when `phaser_is_last_in_body` is true.
             let discards_tail_value = phaser_is_last_in_body;
+            // A braced `try { ... }` is a scope, but it only owns the lexical
+            // type names it binds if something takes them away on exit: the
+            // stub package of a `require` (declared at the head of the body, as
+            // a branch's would be) and a `my class`/`my package`/`my role`
+            // (#10594). The ordinary `my` variables of the body need no help.
+            let own_scope = (traps && Self::try_body_binds_lexical_types(body)).then(|| {
+                let idx = self.code.emit(OpCode::BlockLocalScope {
+                    body_end: 0,
+                    succeed_boundary: false,
+                });
+                self.hoist_require_stubs(&main_stmts);
+                idx
+            });
             for (i, stmt) in main_stmts.iter().enumerate() {
                 let is_last = i == main_stmts.len() - 1 && !discards_tail_value;
                 // Keep the final expression's value on the stack so the try
@@ -1309,6 +1222,9 @@ impl Compiler {
                 if Self::stmt_nets_a_stack_value(stmt) {
                     self.code.emit(OpCode::Pop);
                 }
+            }
+            if let Some(idx) = own_scope {
+                self.code.patch_block_local_body_end(idx);
             }
         }
         if !main_leaves_value {

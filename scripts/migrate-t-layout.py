@@ -89,7 +89,7 @@ RULES = [
     ("routines", r"^destructure-|^subsig-|^named-array-destructure|^nested-pair-subsignature|^where-|^is-default|^is-rw-traits|^whatevercode|^invocant-marker|^lastcall|^too-(?:many|few)-positionals|^missing-block-sub|^named-sub-literal|^keyword-|^standalone-str-funcs|^more-functions|^more-methods|^misc-builtins|^conversion-functions|^os-functions|^special-form-override|^overloading-fallbacks|^known-call-ternary|^statement-call-sinks|^sleep-listop|^deferred-map"),
     ("types", r"^typecheck-|^format|^instance-gist|^objat-gist|^say-gist|^succ-pred|^temporal-|^titlecase|^samecase|^samemark|^fc-|^contains-ignoremark|^spaceship|^float-num|^decimal-|^big|^divisible-|^divide-by-zero|^empty-string-numifies|^concat-|^raku-string-escape|^definite-|^dd-instance|^nominalize|^object-type-reprs|^builtin-subclass|^user-which-identity|^qualified-mu-new|^cyclic-instance|^roots-are-complex|^geometric-sequence|^windows-125|^streaming-decoder|^encoding-decoder|^source-literals|^rat$|^sequence$|^set$|^trans$|^map$|^indent$"),
     ("exceptions", r"^comp-group-|^did-you-mean|^no-such-symbol|^undeclared-|^weird-errors|^vcs-conflict-marker|^obsolete-|^duplicated-prefix|^malformed-|^two-terms-in-a-row|^p5-foreach|^perl5var|^trusts-undeclared|^suppressed-type|^extension-null|^get-out|^bug-coverage|^doesnt-warn|^control(-|$)|^resumable-control"),
-    ("io", r"^iopath-|^iospec-|^kernel-cpu-cores|^platform-library-name|^custom-out-print"),
+    ("io", r"^iopath-|^iospec-|^kernel-|^platform-library-name|^custom-out-print"),
     ("control", r"^keep-undo|^named-alias-and-loop|^modifier-cond|^double-statement-modifier|^line-ending-block|^stmt-terminator|^trailing-comma-before-statement|^statement-level-begin|^emit-done-controlflow|^orwith|^done-paren"),
     ("oo", r"^namespaced-class|^nested-class-short-name|^nested-instance-raku|^roles-|^route-block-dsl|^methods-instance|^user-class-shadows|^user-type-shadows|^unmarshal-mop|^ctor-|^qualified-name|^user-group-dynamic|^variable-custom-traits|^variable-traits|^forward-declaration|^abstract|^issue-777|^issue-778"),
     ("lang", r"^amp-|^andthen|^bareword-|^colon-|^compound-assign|^computed-declarator|^dot|^eval-|^interp-|^parser-|^slang-|^exec-call|^fat-arrow|^negated-pair|^nonassoc|^ordered-alternation|^short-circuit-compound|^word-compound-assign|^xx-|^zprintf|^user-infix|^user-postcircumfix|^diffy-assign|^elem-index-meta|^embedded-qqw|^exists-delete-adverb|^value-dynamic-adverb|^long-dot|^digit-var|^code-var|^code-line|^concat|^item-deref|^deref-bind|^hyphenated-|^issue-77|^tolerance-dynamic|^skip|^fatal-mode|^uri-query|^http-deps"),
@@ -106,6 +106,9 @@ OVERRIDES: dict[str, str] = {
     "nested-class-return-type": "oo/class",
     # `class B { class B { } }` declares B::B: a class-declaration question.
     "nested-class-named-like-enclosing": "oo/class",
+    # An `our` class declared inside a routine is installed at compile time:
+    # a class-declaration question.
+    "nested-our-class-installed-at-compile-time": "oo/class",
     # Type-matching against a core type name that a lexical shadows: the
     # question is which type the matcher resolves, not the shadowing itself.
     "core-type-not-shadowed-in-typematch": "types",

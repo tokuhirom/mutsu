@@ -434,7 +434,8 @@ impl Interpreter {
         // `t/oo/method/class-body-use-import-visible-in-method.t` pins
         // (#8883, no inheritance involved there either).
         let saved_package = self.current_package();
-        if self.has_class_scoped_subs(owner_class) {
+        if self.has_class_scoped_subs(owner_class) || self.class_has_method_type_decls(owner_class)
+        {
             self.set_current_package(owner_class.to_string());
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
@@ -1772,7 +1773,9 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class) {
+        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class)
+            || self.class_has_method_type_decls(owner_class)
+        {
             let saved = self.current_package();
             self.set_current_package(owner_class.to_string());
             Some(saved)
@@ -1890,7 +1893,7 @@ impl Interpreter {
                 // shared cell (the single-key cell write `bind_param_value`
                 // performs) BEFORE the locals-init loop below reads attribute
                 // slots off the cell.
-                if let Some((attr_name, _)) = crate::value::attr_twigil_base(&pd.name)
+                if let Some((attr_name, is_private)) = crate::value::attr_twigil_base(&pd.name)
                     && let Some(cell) = &attrs_cell
                 {
                     // Inside a BUILD phase this bind counts as "BUILD set it",
@@ -1902,7 +1905,19 @@ impl Interpreter {
                     // fast path records it here. No-op outside BUILD.
                     // One intern for both uses: the symbol-keyed insert also
                     // saves the `String` allocation the name-keyed one paid.
-                    let attr_sym = crate::symbol::Symbol::intern(attr_name);
+                    let bare_sym = crate::symbol::Symbol::intern(attr_name);
+                    // A scalar and a container attribute may share a bare name
+                    // (`has %!c; has $!c`); resolve the storage key by sigil so
+                    // `:$!c` does not overwrite the `%!c` slot.
+                    let sigil = crate::value::attr_twigil_sigil(&pd.name).unwrap_or('$');
+                    let attr_sym = Self::attr_key_in_map(
+                        Some(crate::symbol::Symbol::intern(owner_class)),
+                        bare_sym,
+                        is_private,
+                        sigil,
+                        &cell.as_map(),
+                    )
+                    .unwrap_or(bare_sym);
                     self.record_build_attr_write(cell, attr_sym);
                     cell.insert(attr_sym, val.clone());
                 }
@@ -1988,12 +2003,13 @@ impl Interpreter {
                             pd.is_some_and(|pd| pd.is_invocant),
                         ));
                     }
-                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                        &crate::runtime::types::param_display_name(pd.unwrap()),
-                        expected,
-                        &val,
-                    )
-                    .with_parameter_object(pd.unwrap(), Some(&*self)));
+                    return Err(self
+                        .typecheck_binding_parameter_failure(
+                            &crate::runtime::types::param_display_name(pd.unwrap()),
+                            expected,
+                            &val,
+                        )
+                        .with_parameter_object(pd.unwrap(), Some(&*self)));
                 }
                 param_values.push((binding_name, val));
                 arg_idx += 1;
@@ -2676,6 +2692,15 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // freshly resolved callable was overwritten by its caller's and calling
         // it re-entered the wrong closure until the stack overflowed (#7729).
         (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        // A mixin (`$attr does Role`, `$x but Role`) is an immutable wrapper
+        // over `Arc<Value>` + `Gc<MixinOverrides>`, so the same pair of
+        // pointers proves the callee did not rebind the captured variable.
+        // Without this arm a captured mixin was always "changed" and a nested
+        // call of a same-shaped closure leaked its own capture back into the
+        // caller (AttrX::Lazy's accessors read each other's `$attr`).
+        (ValueView::Mixin(ai, ao), ValueView::Mixin(bi, bo)) => {
+            Arc::ptr_eq(ai, bi) && crate::gc::Gc::ptr_eq(ao, bo)
+        }
         _ => false,
     }
 }

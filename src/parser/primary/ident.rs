@@ -4,11 +4,11 @@ mod identifier_call;
 mod listop;
 pub(crate) mod predicates;
 mod supply;
-mod supply_emit_expr;
 mod term_literals;
 
 pub(super) use circumfix::declared_circumfix_op;
 pub(super) use identifier_call::identifier_or_call;
+pub(in crate::parser) use identifier_call::{control_flow_slip_args, slipped_control_stmt};
 pub(in crate::parser) use listop::{
     colon_starts_colonpair, export_term_or_call, expr_is_colonpair, parse_expr_listop_args,
     try_adjacent_colonpair_arg, try_parse_no_paren_invocant_colon_call,

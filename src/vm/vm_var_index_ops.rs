@@ -1639,6 +1639,10 @@ impl Interpreter {
                         Value::hash_with_data(items.clone())
                             .hash_autovivify(&key)
                             .unwrap_or(Value::NIL)
+                    } else if items.declared_type.as_deref() == Some("PseudoStash") {
+                        // A symbol absent from `MY::`/`CALLER::` reads as `Nil`
+                        // (not the Any type object of an ordinary hash miss).
+                        Value::NIL
                     } else {
                         self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }

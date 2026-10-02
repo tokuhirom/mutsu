@@ -694,7 +694,8 @@ impl Interpreter {
             let mut updated_attrs = attributes.to_map();
             set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
-            self.env.insert(target_var.to_string(), updated.clone());
+            self.env
+                .insert_through(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
 
@@ -793,7 +794,8 @@ impl Interpreter {
             let mut updated_attrs = attributes.to_map();
             set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
-            self.env.insert(target_var.to_string(), updated.clone());
+            self.env
+                .insert_through(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
 
@@ -1660,9 +1662,7 @@ impl Interpreter {
                                 && !matches!(kc.as_str(), "" | "Any" | "Mu")
                                 && !self.type_matches_value(kc, k)
                             {
-                                return Err(crate::runtime::utils::type_check_element_typed_error(
-                                    &key, kc, k,
-                                ));
+                                return Err(self.type_check_element_failure(&key, kc, k));
                             }
                             if let Some(vc) = &value_constraint
                                 && !matches!(vc.as_str(), "" | "Any" | "Mu")
@@ -1670,11 +1670,7 @@ impl Interpreter {
                                 if !matches!(v.view(), ValueView::Nil)
                                     && !self.type_matches_value(vc, v)
                                 {
-                                    return Err(
-                                        crate::runtime::utils::type_check_element_typed_error(
-                                            &key, vc, v,
-                                        ),
-                                    );
+                                    return Err(self.type_check_element_failure(&key, vc, v));
                                 }
                                 // A typed Hash-valued append merges two nested
                                 // hashes, so it does not turn the value into an
@@ -1698,9 +1694,7 @@ impl Interpreter {
                                     };
                                     if !self.type_matches_value(vc, &resulting) {
                                         return Err(
-                                            crate::runtime::utils::type_check_element_typed_error(
-                                                &key, vc, &resulting,
-                                            ),
+                                            self.type_check_element_failure(&key, vc, &resulting)
                                         );
                                     }
                                 }

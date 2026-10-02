@@ -5,7 +5,7 @@ use Test;
 # variables with postcircumfixes, embedded { ... } code blocks (including ones
 # glued directly onto literal text), and the full backslash-escape set.
 
-plan 48;
+plan 46;
 
 # --- positional captures -----------------------------------------------------
 {
@@ -246,18 +246,6 @@ plan 48;
     my $s = 'aaaa';
     $s ~~ s:x(2)/(a)/<$0>/;
     is $s, '<a><a>aa', ':x(2) interpolates each of its matches';
-}
-
-# --- :P5 replacements are qq quotes as well ---------------------------------
-{
-    my $s = 'ab';
-    $s ~~ s:P5/(a)/[$0]/;
-    is $s, '[a]b', 'a :P5 pattern still numbers its captures the Raku way';
-}
-{
-    my $s = 'ab';
-    $s ~~ s:P5/a/{1}/;
-    is $s, '1b', 'a :P5 replacement evaluates code blocks';
 }
 
 # --- a replacement that throws propagates -----------------------------------

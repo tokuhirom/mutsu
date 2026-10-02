@@ -1,93 +1,18 @@
 use super::registration_class::{AttrValidationCtx, language_revision_letter};
 use super::*;
+use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 
 impl Interpreter {
+    /// Reject a `$!attr` read or assignment in `stmts` (a method body) that
+    /// names no attribute the package declares (`X::Attribute::Undeclared`).
+    // Cost: O(n), n = size of the AST of `stmts`.
     pub(crate) fn validate_attr_declared_in_class(
         ctx: &AttrValidationCtx<'_>,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        for stmt in stmts {
-            Self::validate_attr_in_stmt(ctx, stmt)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn validate_attr_in_stmt(
-        ctx: &AttrValidationCtx<'_>,
-        stmt: &Stmt,
-    ) -> Result<(), RuntimeError> {
-        match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
-                Self::validate_attr_in_expr(ctx, e)?;
-            }
-            Stmt::VarDecl { expr, .. } => {
-                Self::validate_attr_in_expr(ctx, expr)?;
-            }
-            Stmt::Assign { name, expr, .. } => {
-                // Check if assigning to an undeclared private attribute ($!attr = ...)
-                if let Some(attr_name) = name.strip_prefix('!')
-                    && !attr_name.is_empty()
-                    && !ctx.attrs.contains(attr_name)
-                {
-                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
-                }
-                Self::validate_attr_in_expr(ctx, expr)?;
-            }
-            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-                for e in exprs {
-                    Self::validate_attr_in_expr(ctx, e)?;
-                }
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::validate_attr_in_expr(ctx, cond)?;
-                Self::validate_attr_declared_in_class(ctx, then_branch)?;
-                Self::validate_attr_declared_in_class(ctx, else_branch)?;
-            }
-            Stmt::While { cond, body, .. } => {
-                Self::validate_attr_in_expr(ctx, cond)?;
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            Stmt::For { iterable, body, .. } => {
-                Self::validate_attr_in_expr(ctx, iterable)?;
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            Stmt::Loop {
-                init,
-                cond,
-                step,
-                body,
-                ..
-            } => {
-                if let Some(init) = init.as_ref() {
-                    Self::validate_attr_in_stmt(ctx, init)?;
-                }
-                if let Some(cond) = cond.as_ref() {
-                    Self::validate_attr_in_expr(ctx, cond)?;
-                }
-                if let Some(step) = step.as_ref() {
-                    Self::validate_attr_in_expr(ctx, step)?;
-                }
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            Stmt::Given { topic, body, .. } => {
-                Self::validate_attr_in_expr(ctx, topic)?;
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            Stmt::When { cond, body, .. } => {
-                Self::validate_attr_in_expr(ctx, cond)?;
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            Stmt::Default(body) => {
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            _ => {}
-        }
-        Ok(())
+        let mut scan = AttrScan { ctx, err: None };
+        walk_stmts(&mut scan, stmts);
+        scan.err.map_or(Ok(()), Err)
     }
 
     pub(crate) fn undeclared_attr_error(
@@ -95,13 +20,18 @@ impl Interpreter {
         attr_name: &str,
         twigil: &str,
     ) -> RuntimeError {
+        Self::undeclared_attr_symbol_error(ctx, format!("${twigil}{attr_name}"))
+    }
+
+    /// [`Self::undeclared_attr_error`] for an attribute spelled `symbol`
+    /// (`$!x`, `@!a`, `%!h`).
+    fn undeclared_attr_symbol_error(ctx: &AttrValidationCtx<'_>, symbol: String) -> RuntimeError {
         // `ctx.pkg_name` is the class's REGISTRY storage name, which for a
         // `my`-scoped declaration is mangled (ADR-0047 P1: `Foo\u{0}<id>`).
         // The exception's `.package-name` and message must show the
         // user-facing bare name, like every other class-name-in-a-message
         // site.
         let pkg_name = crate::value::user_facing_type_name(ctx.pkg_name);
-        let symbol = format!("${}{}", twigil, attr_name);
         let message = format!(
             "Attribute {} not declared in {} {}",
             symbol, ctx.pkg_kind, pkg_name
@@ -121,117 +51,6 @@ impl Interpreter {
         err
     }
 
-    pub(crate) fn validate_attr_in_expr(
-        ctx: &AttrValidationCtx<'_>,
-        expr: &Expr,
-    ) -> Result<(), RuntimeError> {
-        match expr {
-            Expr::Var(name) => {
-                // $! by itself is the error variable, not an attribute
-                if let Some(attr_name) = name.strip_prefix('!')
-                    && !attr_name.is_empty()
-                    && !ctx.attrs.contains(attr_name)
-                {
-                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
-                }
-                // $.attr is compiled as self.attr() — undeclared attributes will
-                // fail at runtime with "No such method", no compile-time check needed.
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                Self::validate_attr_in_expr(ctx, target)?;
-                for arg in args {
-                    Self::validate_attr_in_expr(ctx, arg)?;
-                }
-            }
-            Expr::Call { args, .. }
-            | Expr::UserRoutineCall { args, .. }
-            | Expr::ArrayLiteral(args)
-            | Expr::BracketArray(args, _)
-            | Expr::StringInterpolation(args) => {
-                for arg in args {
-                    Self::validate_attr_in_expr(ctx, arg)?;
-                }
-            }
-            Expr::Unary { expr, .. }
-            | Expr::PostfixOp { expr, .. }
-            | Expr::Reduction { expr, .. } => {
-                Self::validate_attr_in_expr(ctx, expr)?;
-            }
-            Expr::Binary { left, right, .. }
-            | Expr::MetaOp { left, right, .. }
-            | Expr::HyperOp { left, right, .. } => {
-                Self::validate_attr_in_expr(ctx, left)?;
-                Self::validate_attr_in_expr(ctx, right)?;
-            }
-            // `todo/tickets/chained-compare-ast-node.md`: `$!x < $!y < $!z`
-            // can reference an attribute in any operand.
-            Expr::ChainedCompare { operands, .. } => {
-                for o in operands {
-                    Self::validate_attr_in_expr(ctx, o)?;
-                }
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::validate_attr_in_expr(ctx, cond)?;
-                Self::validate_attr_in_expr(ctx, then_expr)?;
-                Self::validate_attr_in_expr(ctx, else_expr)?;
-            }
-            Expr::Index { target, index, .. } => {
-                Self::validate_attr_in_expr(ctx, target)?;
-                Self::validate_attr_in_expr(ctx, index)?;
-            }
-            Expr::IndexAssign {
-                target,
-                index,
-                value,
-                ..
-            } => {
-                Self::validate_attr_in_expr(ctx, target)?;
-                Self::validate_attr_in_expr(ctx, index)?;
-                Self::validate_attr_in_expr(ctx, value)?;
-            }
-            Expr::AssignExpr { name, expr, .. } => {
-                // Check if assigning to an undeclared private attribute ($!attr = ...)
-                if let Some(attr_name) = name.strip_prefix('!')
-                    && !attr_name.is_empty()
-                    && !ctx.attrs.contains(attr_name)
-                {
-                    return Err(Self::undeclared_attr_error(ctx, attr_name, "!"));
-                }
-                // $.attr assignment is compiled as self.attr = ... — undeclared
-                // attributes will fail at runtime, no compile-time check needed.
-                Self::validate_attr_in_expr(ctx, expr)?;
-            }
-            Expr::DoBlock { body, .. }
-            | Expr::Block(body)
-            | Expr::Gather(body)
-            | Expr::AnonSub { body, .. }
-            | Expr::AnonSubParams { body, .. }
-            | Expr::Lambda { body, .. } => {
-                Self::validate_attr_declared_in_class(ctx, body)?;
-            }
-            // ADR-0033: an un-expanded WhateverCurry body can still reference
-            // an attribute (`$!x + *`).
-            Expr::WhateverCurry(inner) => Self::validate_attr_in_expr(ctx, inner)?,
-            Expr::Try { body: _, catch } => {
-                // Skip attribute validation inside try blocks — accessing an
-                // undeclared attribute will produce a runtime error that the
-                // try block can catch.
-                if let Some(catch) = catch.as_ref() {
-                    Self::validate_attr_declared_in_class(ctx, catch)?;
-                }
-            }
-            Expr::DoStmt(stmt) => {
-                Self::validate_attr_in_stmt(ctx, stmt)?;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
     /// Store a specific language version as type metadata for ^language-revision.
     pub(crate) fn store_language_revision_from_version(&mut self, name: &str, version: &str) {
         let revision = language_revision_letter(version);
@@ -239,5 +58,73 @@ impl Interpreter {
             .entry(name.to_string())
             .or_default();
         meta.insert("language-revision".to_string(), Value::str(revision));
+    }
+}
+
+/// The walk of [`Interpreter::validate_attr_declared_in_class`] (ADR-0137).
+struct AttrScan<'a, 'c> {
+    ctx: &'a AttrValidationCtx<'c>,
+    err: Option<RuntimeError>,
+}
+
+impl Visit for AttrScan<'_, '_> {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.err.is_none() {
+            match stmt {
+                // A nested type declares its own attributes, and its methods
+                // are validated against them when it registers.
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {}
+                _ => walk_stmt(self, stmt),
+            }
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.err.is_none() {
+            match expr {
+                // Not checked inside a `try` body: the undeclared attribute is
+                // left to fail at run time, where the `try` catches it (the
+                // `$!an_A` subtests of roast/S12-attributes/trusts.t). Its
+                // `catch` half is still checked.
+                Expr::Try { body: _, catch } => {
+                    if let Some(catch) = catch {
+                        walk_stmts(self, catch);
+                    }
+                }
+                _ => walk_expr(self, expr),
+            }
+        }
+    }
+
+    fn visit_name(&mut self, name: &str, kind: NameKind) {
+        // A `$!attr` / `@!attr` / `%!attr` / `&!attr` read, or an assignment to one. The
+        // AST spells a `$` variable without its sigil and an `@`/`%` one
+        // without it as a variable but with it as an assignment target.
+        // `$!` by itself is the error variable, not an attribute. `$.attr`
+        // compiles to `self.attr`, which an undeclared attribute fails at run
+        // time ("No such method"), so it needs no check here.
+        if self.err.is_some() {
+            return;
+        }
+        let (sigil, rest) = match kind {
+            NameKind::Var => ('$', name),
+            NameKind::ArrayVar => ('@', name),
+            NameKind::HashVar => ('%', name),
+            NameKind::CodeVar => ('&', name),
+            NameKind::AssignTarget => match name.strip_prefix(['@', '%']) {
+                Some(rest) => (name.chars().next().unwrap_or('$'), rest),
+                None => ('$', name),
+            },
+            _ => return,
+        };
+        if let Some(attr_name) = rest.strip_prefix('!')
+            && !attr_name.is_empty()
+            && !self.ctx.attrs.contains(attr_name)
+        {
+            self.err = Some(Interpreter::undeclared_attr_symbol_error(
+                self.ctx,
+                format!("{sigil}!{attr_name}"),
+            ));
+        }
     }
 }

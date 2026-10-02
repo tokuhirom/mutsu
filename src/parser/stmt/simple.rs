@@ -2,8 +2,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 
-use regex::Regex;
-
 use super::super::add_parse_warning;
 use super::super::expr::expression;
 use super::super::helpers::{is_loop_label_name, skip_balanced_parens, ws, ws1};
@@ -43,7 +41,7 @@ pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
     set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file};
+pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file, use_lib_args};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -75,8 +73,8 @@ pub(in crate::parser) use compile_consts::{
     current_scope_anon_state_names_from, finish_block_anon_states, is_test_assertion_callable,
     lookup_compile_time_constant, mark_current_scope_routine_body,
     mark_current_scope_self_available, pop_scope, prepend_anon_state_decls, push_scope,
-    record_anon_state_name, register_compile_time_constant, self_available, suppress_worries,
-    worries_suppressed,
+    record_anon_state_name, register_compile_time_constant, restore_worries, self_available,
+    suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
@@ -187,6 +185,10 @@ pub(in crate::parser) struct LexicalScope {
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).
     worries_suppressed: bool,
+    /// `use attributes :D/:U/:_` smiley for unsmileyed attribute types; empty
+    /// when no pragma is active. Lexical: a nested scope inherits it and its
+    /// own `use attributes` ends with the block.
+    attributes_pragma: String,
     /// Whether this scope is the body of a NAMED routine declaration
     /// (`sub`/`method`/`submethod`, incl. `multi`/`proto`, and the anonymous
     /// `sub (...) {...}` / `method {...}` forms — which clone like routines).
@@ -300,9 +302,6 @@ thread_local! {
     /// EVAL 'sprintf("%#x", -256)'` yields `-0x100`), and a `use vX` inside the
     /// EVAL'd string still overrides it.
     static EVAL_LANGUAGE_VERSION_PRESEED: RefCell<Option<String>> = const { RefCell::new(None) };
-    /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
-    /// Empty string means no pragma active.
-    static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };
     /// Inline module exports: module name → list of exported sub names.
     /// Populated when parsing `module Foo { sub bar() is export { ... } }` blocks.
     /// Used by `import` to register exported operators at parse time.
@@ -358,20 +357,8 @@ pub(in crate::parser) const PREC_MULTIPLICATIVE: i32 = 50;
 pub(in crate::parser) const PREC_POWER: i32 = 60;
 pub(in crate::parser) const PREC_PREFIX: i32 = 70;
 
-fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
-    if let Expr::Binary { left, op, right } = expr
-        && *op == TokenKind::XorXor
-    {
-        flatten_xor_chain_terms(left, out);
-        flatten_xor_chain_terms(right, out);
-        return;
-    }
-    out.push(expr);
-}
-
 pub(super) fn add_xor_sink_warnings(expr: &Expr, line: i64) {
-    let mut terms = Vec::new();
-    flatten_xor_chain_terms(expr, &mut terms);
+    let terms = expr.flatten_binary_chain(&TokenKind::XorXor);
     if terms.len() < 2 {
         return;
     }

@@ -5,7 +5,8 @@
 //! anything runs: `say 42; nosuchsub()` prints nothing and exits with
 //! `===SORRY!=== ... Undeclared routine:\n    nosuchsub used at line 1`.
 //!
-//! The walker is deliberately conservative in the safe direction: declarations
+//! The walk is the typed AST visitor (ADR-0137). It is deliberately
+//! conservative in the safe direction: declarations
 //! are collected *scope-blind* from the whole unit (a sub declared inside any
 //! nested block/class/sub suppresses the error even where raku's lexical
 //! scoping would not), and the check bails out entirely when the unit imports
@@ -15,7 +16,8 @@
 //! call-walker descends into also has its declarations collected — both are
 //! gathered in the same traversal to keep them symmetric.
 
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
+use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast_visit::{NameKind, Visit, walk_call_arg, walk_stmt, walk_stmts};
 use crate::value::{RuntimeError, RuntimeErrorCode};
 use std::collections::HashSet;
 
@@ -103,6 +105,23 @@ struct Scan {
     /// The unit imports names the walker cannot see (use/require/...): skip
     /// the whole check rather than risk a false positive.
     bail: bool,
+    /// The `EVAL` flavour of the check (`ScanMode::Eval`).
+    eval: bool,
+}
+
+/// Which compilation unit the scan judges.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanMode {
+    /// A program, module or `require`d file.
+    Mainline,
+    /// An `EVAL`'d snippet. Its `use` statements do not end the check: the
+    /// parser has already harvested the names they import
+    /// (`parser::is_imported_function`), and the caller's own routines are in
+    /// scope, so a still-unknown name is reported as rakudo does
+    /// (`EVAL 'use Test; zork()'`). A capitalised callee (`Zork(1)`) is judged
+    /// too: rakudo rejects an undeclared one at compile time
+    /// ("Undeclared name"), and a type of that name suppresses it.
+    Eval,
 }
 
 /// A declared name with its sigil and twigil removed.
@@ -156,501 +175,72 @@ impl Scan {
         // type coercions (a different error class with many more legitimate
         // sources), qualified/adverbed names carry `:`/`::`, and `__`-names
         // are compiler-synthesized.
-        if !first.is_ascii_lowercase() || name.contains(':') || name.starts_with("__") {
+        if !(first.is_ascii_lowercase() || self.eval && first.is_ascii_uppercase())
+            || name.contains(':')
+            || name.starts_with("__")
+        {
             return;
         }
         self.calls.push((name.to_string(), self.line));
     }
 }
 
-fn walk_params(params: &[String], defs: &[ParamDef], scan: &mut Scan) {
-    for p in params {
-        scan.declare(p);
-    }
-    for d in defs {
-        walk_param_def(d, scan);
-    }
-}
-
-fn walk_param_def(def: &ParamDef, scan: &mut Scan) {
-    scan.declare(&def.name);
-    if let Some(e) = &def.default {
-        walk_expr(e, scan);
-    }
-    if let Some(e) = &def.where_constraint {
-        walk_expr(e, scan);
-    }
-    for nested in def
-        .sub_signature
-        .iter()
-        .chain(def.outer_sub_signature.iter())
-    {
-        for d in nested {
-            walk_param_def(d, scan);
-        }
-    }
-    if let Some((defs, _)) = &def.code_signature {
-        for d in defs {
-            walk_param_def(d, scan);
-        }
-    }
-}
-
-fn walk_stmts(stmts: &[Stmt], scan: &mut Scan) {
-    for s in stmts {
-        if scan.bail {
+impl Visit for Scan {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        // The `EVAL` scan keeps walking after a bail: its declarations also
+        // feed the undeclared-name check (`scope_blind_declared_names`).
+        if self.bail && !self.eval {
             return;
         }
-        walk_stmt(s, scan);
-    }
-}
-
-fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
-    match stmt {
-        Stmt::SetLine(n) => scan.line = *n,
-        Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
-            scan.bail = true;
-        }
-        Stmt::VarDecl {
-            name,
-            expr,
-            where_constraint,
-            custom_traits,
-            ..
-        } => {
-            scan.declare(name);
-            walk_expr(expr, scan);
-            if let Some(e) = where_constraint {
-                walk_expr(e, scan);
+        match stmt {
+            Stmt::SetLine(n) => self.line = *n,
+            Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. }
+                if !self.eval =>
+            {
+                self.bail = true;
             }
-            for (_, arg) in custom_traits {
-                if let Some(e) = arg {
-                    walk_expr(e, scan);
-                }
-            }
-        }
-        Stmt::Assign { name, expr, .. } => {
-            // Not a declaration, but suppressing calls to an assigned name is
-            // the safe (false-negative) direction.
-            scan.declare(name);
-            walk_expr(expr, scan);
-        }
-        Stmt::SubDecl {
-            name,
-            name_expr,
-            params,
-            param_defs,
-            signature_alternates,
-            body,
-            ..
-        } => {
-            if name_expr.is_some() {
-                // Dynamically-named sub: the declared name is unknowable.
-                scan.bail = true;
-                return;
-            }
-            scan.declare_routine(&name.resolve());
-            walk_params(params, param_defs, scan);
-            for (alt_params, alt_defs) in signature_alternates {
-                walk_params(alt_params, alt_defs, scan);
-            }
-            walk_stmts(body, scan);
-        }
-        Stmt::MethodDecl {
-            name,
-            params,
-            param_defs,
-            body,
-            ..
-        } => {
-            scan.declare(&name.resolve());
-            walk_params(params, param_defs, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::TokenDecl {
-            name,
-            params,
-            param_defs,
-            body,
-            ..
-        }
-        | Stmt::RuleDecl {
-            name,
-            params,
-            param_defs,
-            body,
-            ..
-        }
-        | Stmt::ProtoDecl {
-            name,
-            params,
-            param_defs,
-            body,
-            ..
-        } => {
-            scan.declare(&name.resolve());
-            walk_params(params, param_defs, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::ProtoToken { name } => scan.declare(&name.resolve()),
-        Stmt::Package { name, body, .. } => {
-            scan.declare(&name.resolve());
-            walk_stmts(body, scan);
-        }
-        Stmt::EnumDecl { name, variants, .. } => {
-            scan.declare(&name.resolve());
-            for (vname, vexpr) in variants {
-                scan.declare(vname);
-                if let Some(e) = vexpr {
-                    walk_expr(e, scan);
-                }
-            }
-        }
-        Stmt::ClassDecl { name, body, .. } | Stmt::AugmentClass { name, body, .. } => {
-            scan.declare(&name.resolve());
-            walk_stmts(body, scan);
-        }
-        Stmt::RoleDecl {
-            name,
-            type_params,
-            type_param_defs,
-            body,
-            ..
-        } => {
-            scan.declare(&name.resolve());
-            // A callable role type parameter (`role R[&f]`) is in scope in the
-            // body as the bare routine `f`, so seed it before scanning the body
-            // (otherwise `method m { f() }` is flagged as an undeclared routine).
-            walk_params(type_params, type_param_defs, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::SubsetDecl {
-            name, predicate, ..
-        } => {
-            scan.declare(&name.resolve());
-            if let Some(e) = predicate {
-                walk_expr(e, scan);
-            }
-        }
-        Stmt::HasDecl {
-            default: Some(e), ..
-        } => walk_expr(e, scan),
-        Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Goto(e) | Stmt::Take(e, _) => {
-            walk_expr(e, scan)
-        }
-        // A bare lowercase identifier standing alone as a whole statement
-        // (`dead;`) is, syntactically, the exact same "no-args routine
-        // reference" `record_call` already recognizes for `Stmt::Call` --
-        // rakudo's parser resolves an unrecognized bare lowercase term this
-        // way and reports the same "Undeclared routine" error for it
-        // (verified against `raku`: a `unit class Foo; dead` body dies with
-        // "Undeclared routine:\n    dead used at line N"), where mutsu
-        // previously fell through the runtime's bareword resolution to a
-        // plain Str. `self` is the one common legitimate bare statement this
-        // parses to (a method's own bare `self` statement) and is excluded
-        // explicitly: it is never a registered name any of the tables below
-        // would recognize.
-        Stmt::Expr(Expr::BareWord(name)) if name != "self" => scan.record_call(name),
-        Stmt::Expr(e) => walk_expr(e, scan),
-        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-            for e in es {
-                walk_expr(e, scan);
-            }
-        }
-        Stmt::Call { name, args } => {
+            // Dynamically-named sub: the declared name is unknowable.
+            Stmt::SubDecl {
+                name_expr: Some(_), ..
+            } => self.bail = true,
+            // A bare lowercase identifier standing alone as a whole statement
+            // (`dead;`) is, syntactically, the exact same "no-args routine
+            // reference" `record_call` already recognizes for `Stmt::Call` --
+            // rakudo's parser resolves an unrecognized bare lowercase term this
+            // way and reports the same "Undeclared routine" error for it
+            // (verified against `raku`: a `unit class Foo; dead` body dies with
+            // "Undeclared routine:\n    dead used at line N"), where mutsu
+            // previously fell through the runtime's bareword resolution to a
+            // plain Str. `self` is the one common legitimate bare statement
+            // this parses to (a method's own bare `self` statement) and is
+            // excluded explicitly.
+            Stmt::Expr(Expr::BareWord(name)) if name != "self" => self.record_call(name),
             // An explicit-invocant call (`foo($obj: ...)`) is a method call.
-            if !args.iter().any(|a| matches!(a, CallArg::Invocant(_))) {
-                scan.record_call(&name.resolve());
-            }
-            for a in args {
-                walk_call_arg(a, scan);
-            }
-        }
-        Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::React { body } => walk_stmts(body, scan),
-        Stmt::Phaser { body, .. } => walk_stmts(body, scan),
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            binding_var,
-            ..
-        } => {
-            walk_expr(cond, scan);
-            if let Some(v) = binding_var {
-                scan.declare(v);
-            }
-            walk_stmts(then_branch, scan);
-            walk_stmts(else_branch, scan);
-        }
-        Stmt::While { cond, body, .. } => {
-            walk_expr(cond, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            if let Some(init) = init {
-                walk_stmt(init, scan);
-            }
-            if let Some(c) = cond {
-                walk_expr(c, scan);
-            }
-            if let Some(s) = step {
-                walk_expr(s, scan);
-            }
-            walk_stmts(body, scan);
-        }
-        Stmt::For {
-            iterable,
-            param,
-            param_def,
-            params,
-            params_def,
-            body,
-            ..
-        } => {
-            walk_expr(iterable, scan);
-            if let Some(p) = param {
-                scan.declare(p);
-            }
-            if let Some(d) = param_def.as_ref().as_ref() {
-                walk_param_def(d, scan);
-            }
-            walk_params(params, params_def, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::Given { topic, body, .. } => {
-            walk_expr(topic, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::When { cond, body, .. } => {
-            walk_expr(cond, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::Whenever {
-            supply,
-            params,
-            param_defs,
-            body,
-        } => {
-            walk_expr(supply, scan);
-            walk_params(params, param_defs, scan);
-            walk_stmts(body, scan);
-        }
-        Stmt::Label { stmt, .. } => walk_stmt(stmt, scan),
-        Stmt::Let { index, value, .. } => {
-            if let Some(e) = index {
-                walk_expr(e, scan);
-            }
-            if let Some(e) = value {
-                walk_expr(e, scan);
-            }
-        }
-        Stmt::TempMethodAssign {
-            method_args, value, ..
-        } => {
-            for e in method_args {
-                walk_expr(e, scan);
-            }
-            walk_expr(value, scan);
-        }
-        _ => {}
-    }
-}
-
-fn walk_call_arg(arg: &CallArg, scan: &mut Scan) {
-    match arg {
-        CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => walk_expr(e, scan),
-        CallArg::Named { value, .. } => {
-            if let Some(v) = value {
-                walk_expr(v, scan);
-            }
-        }
-    }
-}
-
-fn walk_expr(expr: &Expr, scan: &mut Scan) {
-    match expr {
-        Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
-            scan.record_call(&name.resolve());
-            for a in args {
-                walk_expr(a, scan);
-            }
-        }
-        Expr::AssignExpr { name, expr, .. } => {
-            scan.declare(name);
-            walk_expr(expr, scan);
-        }
-        Expr::Grouped(e)
-        | Expr::ZenSlice(e)
-        | Expr::Eager(e)
-        | Expr::Itemize(e)
-        | Expr::DeitemizeForBind(e)
-        | Expr::PositionalPair(e)
-        | Expr::IndirectTypeLookup(e) => walk_expr(e, scan),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => walk_expr(expr, scan),
-        Expr::Reduction { expr, .. } => walk_expr(expr, scan),
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::HyperFuncOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            walk_expr(left, scan);
-            walk_expr(right, scan);
-        }
-        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands {
-                walk_expr(o, scan);
-            }
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            walk_expr(left, scan);
-            for r in right {
-                walk_expr(r, scan);
-            }
-        }
-        Expr::Feed { source, sink, .. } => {
-            walk_expr(source, scan);
-            walk_expr(sink, scan);
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            walk_expr(cond, scan);
-            walk_expr(then_expr, scan);
-            walk_expr(else_expr, scan);
-        }
-        Expr::MethodCall { target, args, .. }
-        | Expr::HyperMethodCall { target, args, .. }
-        | Expr::CallOn { target, args } => {
-            walk_expr(target, scan);
-            for a in args {
-                walk_expr(a, scan);
-            }
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            ..
-        }
-        | Expr::HyperMethodCallDynamic {
-            target,
-            name_expr,
-            args,
-            ..
-        } => {
-            walk_expr(target, scan);
-            walk_expr(name_expr, scan);
-            for a in args {
-                walk_expr(a, scan);
-            }
-        }
-        Expr::Index { target, index, .. } => {
-            walk_expr(target, scan);
-            walk_expr(index, scan);
-        }
-        Expr::MultiDimIndex {
-            target, dimensions, ..
-        } => {
-            walk_expr(target, scan);
-            for d in dimensions {
-                walk_expr(d, scan);
-            }
-        }
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-            ..
-        } => {
-            walk_expr(target, scan);
-            for d in dimensions {
-                walk_expr(d, scan);
-            }
-            walk_expr(value, scan);
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            ..
-        } => {
-            walk_expr(target, scan);
-            walk_expr(index, scan);
-            walk_expr(value, scan);
-        }
-        Expr::Exists { target, arg, .. } => {
-            walk_expr(target, scan);
-            if let Some(a) = arg {
-                walk_expr(a, scan);
-            }
-        }
-        Expr::SymbolicDeref { expr, .. } => walk_expr(expr, scan),
-        Expr::SymbolicDerefAssign { expr, value, .. }
-        | Expr::IndirectTypeLookupAssign { expr, value } => {
-            walk_expr(expr, scan);
-            walk_expr(value, scan);
-        }
-        Expr::IndirectCodeLookup { package, .. } => walk_expr(package, scan),
-        Expr::HyperSlice { target, .. } => walk_expr(target, scan),
-        Expr::ArrayLiteral(items)
-        | Expr::BracketArray(items, _)
-        | Expr::CaptureLiteral(items)
-        | Expr::StringInterpolation(items) => {
-            for it in items {
-                walk_expr(it, scan);
-            }
-        }
-        Expr::Hash(pairs) => {
-            for (_, v) in pairs {
-                if let Some(v) = v {
-                    walk_expr(v, scan);
+            Stmt::Call { args, .. } if args.iter().any(|a| matches!(a, CallArg::Invocant(_))) => {
+                for a in args {
+                    walk_call_arg(self, a);
                 }
             }
+            _ => walk_stmt(self, stmt),
         }
-        Expr::Block(body)
-        | Expr::Gather(body)
-        | Expr::DoBlock { body, .. }
-        | Expr::Once { body }
-        | Expr::PhaserExpr { body, .. }
-        | Expr::AnonSub { body, .. } => walk_stmts(body, scan),
-        Expr::AnonSubParams {
-            params,
-            param_defs,
-            body,
-            ..
-        } => {
-            walk_params(params, param_defs, scan);
-            walk_stmts(body, scan);
+    }
+
+    fn visit_name(&mut self, name: &str, kind: NameKind) {
+        match kind {
+            NameKind::Call | NameKind::UserRoutineCall => self.record_call(name),
+            NameKind::SubDecl => self.declare_routine(name),
+            // Declarations are collected scope-blind. Assignment targets are
+            // not declarations, but suppressing calls to an assigned name is
+            // the safe (false-negative) direction. A callable parameter
+            // (`&f`, also a role's `role R[&f]`) is in scope as the routine
+            // `f`.
+            NameKind::Decl
+            | NameKind::VarDecl
+            | NameKind::AssignTarget
+            | NameKind::Param
+            | NameKind::BlockParam => self.declare(name),
+            _ => {}
         }
-        Expr::Lambda { param, body, .. } => {
-            scan.declare(param);
-            walk_stmts(body, scan);
-        }
-        // ADR-0033: an un-expanded WhateverCurry body has no named params of
-        // its own yet (still literal `*` placeholders), so just descend into
-        // it to still catch an undeclared routine call inside it.
-        Expr::WhateverCurry(inner) => walk_expr(inner, scan),
-        Expr::Try { body, catch } => {
-            walk_stmts(body, scan);
-            if let Some(c) = catch {
-                walk_stmts(c, scan);
-            }
-        }
-        Expr::DoStmt(s) => walk_stmt(s, scan),
-        _ => {}
     }
 }
 
@@ -685,12 +275,19 @@ struct Unexplained {
     declared_routines: HashSet<String>,
 }
 
-fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
+fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
     let mut scan = Scan {
         line: 1,
+        eval: mode == ScanMode::Eval,
         ..Default::default()
     };
-    walk_stmts(stmts, &mut scan);
+    walk_stmts(&mut scan, stmts);
+    scan
+}
+
+// Cost: O(n), n = size of the unit's AST.
+fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
+    let scan = scan_unit(stmts, mode);
     if scan.bail {
         return None;
     }
@@ -703,6 +300,15 @@ fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
         calls,
         declared_routines: scan.declared_routines,
     })
+}
+
+/// Every name the unit declares anywhere — routines, variables (without
+/// their sigil), parameters, types, enum keys, terms — collected scope-blind,
+/// the same set the undeclared-routine check suppresses with. Reused by the
+/// `EVAL` undeclared-name check so the two agree on what "declared" means.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn scope_blind_declared_names(stmts: &[Stmt]) -> HashSet<String> {
+    scan_unit(stmts, ScanMode::Eval).declared
 }
 
 /// The CHECK-time undeclared-routine analysis, without constructing an
@@ -718,7 +324,7 @@ fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
 pub(crate) fn check_undeclared_routines_without_interpreter(
     stmts: &[Stmt],
 ) -> Result<(), RuntimeError> {
-    let Some(found) = unexplained_calls(stmts) else {
+    let Some(found) = unexplained_calls(stmts, ScanMode::Mainline) else {
         return Ok(());
     };
     let Some((name, line)) = found.calls.first() else {
@@ -763,7 +369,19 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let Some(found) = unexplained_calls(stmts) else {
+        self.check_undeclared_routines(stmts, ScanMode::Mainline)
+    }
+
+    /// The undeclared-routine check for a unit of kind `mode`; see
+    /// [`ScanMode`] for how an `EVAL`'d snippet differs.
+    // Cost: O(n + c * r), n = size of the unit's AST, c = unexplained calls,
+    // r = cost of one registry/env lookup.
+    pub(crate) fn check_undeclared_routines(
+        &self,
+        stmts: &[Stmt],
+        mode: ScanMode,
+    ) -> Result<(), RuntimeError> {
+        let Some(found) = unexplained_calls(stmts, mode) else {
             return Ok(());
         };
         for (name, line) in &found.calls {
@@ -775,10 +393,21 @@ impl Interpreter {
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())
                 || self.get_our_var(name).is_some()
+                // A sigilless constant in scope: an `EVAL` of a bare term
+                // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
+                || self.term_binding(name).is_some()
                 || self.registry().classes.contains_key(name)
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)
                 || self.registry().enum_types.contains_key(name)
+                // A capitalised callee (only judged in `EVAL`) is a coercion
+                // when a type of that name exists, and a core term (`IterationEnd`)
+                // is not a routine call at all.
+                || (name.starts_with(|c: char| c.is_ascii_uppercase())
+                    && (self.has_type(name)
+                        || self.has_class(name)
+                        || Self::is_builtin_type(name)
+                        || super::eval_name_scans::is_core_term(name)))
             {
                 continue;
             }
@@ -791,5 +420,26 @@ impl Interpreter {
             return Err(Self::undeclared_routine_error(name, *line, suggestions));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_undeclared_routines_without_interpreter as check;
+
+    fn parse(src: &str) -> Vec<crate::ast::Stmt> {
+        crate::parser::parse_program(src).expect("parse").0
+    }
+
+    #[test]
+    fn an_attribute_does_not_declare_a_routine() {
+        assert!(check(&parse("class C { has $.foo; method m { foo() } }")).is_err());
+        assert!(check(&parse("class C { has $.foo; method m { $.foo } }")).is_ok());
+    }
+
+    #[test]
+    fn a_call_in_a_compound_assignment_is_found() {
+        assert!(check(&parse("my $x = 1; $x += nosuch()")).is_err());
+        assert!(check(&parse("sub there { 1 }; my $x = 1; $x += there()")).is_ok());
     }
 }

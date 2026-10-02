@@ -13,22 +13,22 @@
 /// crate's `Grapheme_Cluster_Break=<value>` enumeration is generated from a
 /// current Unicode Character Database, so it can't go stale the same way.
 const GCB_VALUES: &[(&str, &str)] = &[
-    ("CR", r"^\p{Grapheme_Cluster_Break=CR}$"),
-    ("LF", r"^\p{Grapheme_Cluster_Break=LF}$"),
-    ("Control", r"^\p{Grapheme_Cluster_Break=Control}$"),
-    ("Extend", r"^\p{Grapheme_Cluster_Break=Extend}$"),
-    ("ZWJ", r"^\p{Grapheme_Cluster_Break=ZWJ}$"),
+    ("CR", "Grapheme_Cluster_Break=CR"),
+    ("LF", "Grapheme_Cluster_Break=LF"),
+    ("Control", "Grapheme_Cluster_Break=Control"),
+    ("Extend", "Grapheme_Cluster_Break=Extend"),
+    ("ZWJ", "Grapheme_Cluster_Break=ZWJ"),
     (
         "Regional_Indicator",
-        r"^\p{Grapheme_Cluster_Break=Regional_Indicator}$",
+        "Grapheme_Cluster_Break=Regional_Indicator",
     ),
-    ("Prepend", r"^\p{Grapheme_Cluster_Break=Prepend}$"),
-    ("SpacingMark", r"^\p{Grapheme_Cluster_Break=SpacingMark}$"),
-    ("L", r"^\p{Grapheme_Cluster_Break=L}$"),
-    ("V", r"^\p{Grapheme_Cluster_Break=V}$"),
-    ("T", r"^\p{Grapheme_Cluster_Break=T}$"),
-    ("LV", r"^\p{Grapheme_Cluster_Break=LV}$"),
-    ("LVT", r"^\p{Grapheme_Cluster_Break=LVT}$"),
+    ("Prepend", "Grapheme_Cluster_Break=Prepend"),
+    ("SpacingMark", "Grapheme_Cluster_Break=SpacingMark"),
+    ("L", "Grapheme_Cluster_Break=L"),
+    ("V", "Grapheme_Cluster_Break=V"),
+    ("T", "Grapheme_Cluster_Break=T"),
+    ("LV", "Grapheme_Cluster_Break=LV"),
+    ("LVT", "Grapheme_Cluster_Break=LVT"),
 ];
 
 /// Grapheme_Cluster_Break property (UAX #29 GraphemeBreakProperty).
@@ -297,14 +297,14 @@ pub(crate) fn unicode_sentence_break(ch: char) -> &'static str {
     // Extend: grapheme-extending marks, spacing marks, and ZWJ.
     if gc == "Mc"
         || cp == 0x200D
-        || super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$")
+        || super::binary_props::check_binary_property(ch, "Grapheme_Extend")
     {
         return "Extend";
     }
     if gc == "Cf" {
         return "Format";
     }
-    if super::binary_props::check_binary_property(ch, r"^\p{White_Space}$") {
+    if super::binary_props::check_binary_property(ch, "White_Space") {
         return "Sp";
     }
     if gc == "Nd" {
@@ -313,7 +313,7 @@ pub(crate) fn unicode_sentence_break(ch: char) -> &'static str {
     if cp == 0x002E || cp == 0x2024 || cp == 0xFF0E {
         return "ATerm";
     }
-    if super::binary_props::check_binary_property(ch, r"^\p{Sentence_Terminal}$") {
+    if super::binary_props::check_binary_property(ch, "Sentence_Terminal") {
         return "STerm";
     }
     // Close: open/close/quotation punctuation plus straight quotes.
@@ -323,13 +323,13 @@ pub(crate) fn unicode_sentence_break(ch: char) -> &'static str {
     if is_sb_scontinue(cp) {
         return "SContinue";
     }
-    if gc == "Lt" || super::binary_props::check_binary_property(ch, r"^\p{Uppercase}$") {
+    if gc == "Lt" || super::binary_props::check_binary_property(ch, "Uppercase") {
         return "Upper";
     }
-    if super::binary_props::check_binary_property(ch, r"^\p{Lowercase}$") {
+    if super::binary_props::check_binary_property(ch, "Lowercase") {
         return "Lower";
     }
-    if super::binary_props::check_binary_property(ch, r"^\p{Alphabetic}$") {
+    if super::binary_props::check_binary_property(ch, "Alphabetic") {
         return "OLetter";
     }
     "Other"
@@ -380,7 +380,7 @@ pub(crate) fn unicode_word_break(ch: char) -> &'static str {
     }
     // Extend: queried from the `regex` crate's own `Word_Break=Extend` table
     // (covers emoji modifiers and spacing marks that `Grapheme_Extend` misses).
-    if super::binary_props::check_binary_property(ch, r"^\p{Word_Break=Extend}$") {
+    if super::binary_props::check_binary_property(ch, "Word_Break=Extend") {
         return "Extend";
     }
     // Format controls (joiners and ZWSP already handled above).
@@ -396,7 +396,7 @@ pub(crate) fn unicode_word_break(ch: char) -> &'static str {
             }
             // ALetter excludes ideographs, Hiragana, and Complex_Context
             // (Line_Break=SA: Thai/Lao/Myanmar/Khmer/...) letters.
-            if super::binary_props::check_binary_property(ch, r"^\p{Ideographic}$")
+            if super::binary_props::check_binary_property(ch, "Ideographic")
                 || script == "Hiragana"
                 || unicode_line_break(ch) == "SA"
             {

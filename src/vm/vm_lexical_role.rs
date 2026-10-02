@@ -62,6 +62,9 @@ impl Interpreter {
             .to_string();
         let value = Value::package(Symbol::intern(storage));
         for bound in [qualified, name, short.as_str()] {
+            // Hand an enclosing same-named binding back when a branch/loop body
+            // that declared this role exits (#10594).
+            self.save_lexical_type_binding_for_scope_exit(bound);
             self.env_mut().insert(bound.to_string(), value.clone());
         }
         self.register_lexical_class(short.clone());

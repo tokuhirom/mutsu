@@ -16,13 +16,10 @@
 # The final image contains NONE of the build toolchain or source tree.
 
 # ---- builder (build stage) --------------------------------------------------
-FROM rust:1.96-bookworm AS builder
+FROM rust:1.98-bookworm AS builder
 
-# pcre2 links the system libpcre2 (the pcre2 feature); libffi is built vendored
-# and statically linked into the binary, so it needs no runtime package.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpcre2-dev \
-    && rm -rf /var/lib/apt/lists/*
+# libffi is built vendored and statically linked into the binary, so the build
+# needs no extra system package and the image no runtime one.
 
 WORKDIR /src
 COPY . .
@@ -34,14 +31,12 @@ RUN cargo build --release --bin mutsu --bin mzef
 FROM debian:bookworm-slim AS runtime
 
 # Runtime deps:
-#   libpcre2-8-0            - dynamically linked by mutsu (pcre2 feature)
 #   libssl3                 - dlopen'd by the bundled OpenSSL battery for HTTPS/TLS
 #                            (the crypto rides the OS so its CVEs are patched by
 #                            apt, independent of a mutsu release)
 #   curl / git / tar / unzip / ca-certificates
 #                          - zef's fetch/extract backends shell out to these
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpcre2-8-0 \
         libssl3 \
         curl \
         git \

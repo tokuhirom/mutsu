@@ -147,10 +147,9 @@ impl Interpreter {
         let caret_alias_sym = param_name.as_ref().and_then(|name| {
             let alias = if let Some(bare) = name.strip_prefix("&^") {
                 format!("&{}", bare)
-            } else if let Some(bare) = name.strip_prefix('^') {
-                bare.to_string()
             } else {
-                return None;
+                let bare = name.strip_prefix('^')?;
+                bare.to_string()
             };
             crate::env::note_env_key(&alias);
             Some(crate::symbol::Symbol::intern(&alias))

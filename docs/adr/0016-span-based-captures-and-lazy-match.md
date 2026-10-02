@@ -13,7 +13,10 @@
   "is it an X?" probe is an anti-pattern anywhere a lazy `Match` can flow — use a tag probe,
   or the value is materialized and the laziness is lost. This invariant is guarded by the
   `match_materializations` counter in `MUTSU_VM_STATS=1` output: accessor/tag-only workloads
-  keep it at zero, while every first forcing `view()` increments it.
+  keep it at zero, while every first forcing `view()` increments it. **Decision 4's named axis
+  (a hash map of node vectors) is superseded in part by
+  [ADR-10488](10488-capture-levels-are-written-in-place.md)**: a small map in filing order, one
+  node held inline.
 - **Context**: ADR-0001 Phase A (single-thread speed catch-up, before GC/JIT).
   Direct follow-on to ADR-0007, which removed the *accumulated-state* clone from the
   matcher and explicitly deferred the remaining "**per-subrule ceremony**" — captured-text

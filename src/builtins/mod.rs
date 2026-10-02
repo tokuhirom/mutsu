@@ -11,6 +11,10 @@ pub(crate) mod cclass;
 pub(crate) mod collation;
 pub(crate) mod comb;
 pub(crate) mod cross_product;
+#[cfg(test)]
+#[path = "emoji_name_gen.rs"]
+mod emoji_name_gen;
+pub(crate) mod emoji_name_table;
 pub(crate) mod exception_message;
 pub(crate) mod fast_0arg;
 mod functions;
@@ -50,9 +54,15 @@ mod unicode_gc_data;
 #[cfg(test)]
 #[path = "unicode_gc_gen.rs"]
 mod unicode_gc_gen;
+pub(crate) mod unicode_name;
 pub(crate) mod unicode_name_alias_table;
+mod unicode_name_data;
+#[cfg(test)]
+#[path = "unicode_name_gen.rs"]
+mod unicode_name_gen;
 pub(crate) mod unicode_named_sequence_table;
 pub(crate) mod unicode_numval_table;
+pub(crate) mod unicode_prop_class;
 pub(crate) mod unicode_script;
 mod unicode_script_data;
 #[cfg(test)]
@@ -152,6 +162,7 @@ pub(crate) use arith::{
     int_shift_left, int_shift_right, value_pred, value_succ,
 };
 pub(crate) use functions::build_junction;
+pub(crate) use functions::epoch_nanos;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;
@@ -339,12 +350,14 @@ fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeE
         ));
     }
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|chunk| {
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&chunk| {
             if big_endian {
-                u16::from_be_bytes([chunk[0], chunk[1]])
+                u16::from_be_bytes(chunk)
             } else {
-                u16::from_le_bytes([chunk[0], chunk[1]])
+                u16::from_le_bytes(chunk)
             }
         })
         .collect();

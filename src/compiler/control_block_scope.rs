@@ -138,6 +138,8 @@ impl Compiler {
         // lost its declared types just because a statement followed
         // it (`t/typed-decl-hoist-block-forms.t`).
         self.hoist_typed_var_decls(stmts);
+        // A statically named `require` declares its placeholder at block entry.
+        self.hoist_require_stubs(stmts);
         self.emit_body_let_frame(stmts, let_frame);
         self.code.patch_block_body_end(idx);
         self.code.patch_block_keep_start(idx);

@@ -543,6 +543,10 @@ impl Interpreter {
                 true
             } else if let ValueView::Seq(body) = value.view() {
                 let body = std::sync::Arc::clone(&body);
+                // Rakudo binds an `@` parameter through `.cache`: the Seq is
+                // reified once and kept, so the callee may read it any number
+                // of times instead of the first consuming method stealing it.
+                body.mark_cache_requested();
                 value = Value::seq_list_view(&body);
                 true
             } else {
@@ -633,12 +637,13 @@ impl Interpreter {
                     && !self.type_matches_value(src, &value)
                     && !self.type_matches_value(target, &value)
                 {
-                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                        &param_display_name(pd),
-                        &resolved_constraint,
-                        &value,
-                    )
-                    .with_parameter_object(pd, Some(&*self)));
+                    return Err(self
+                        .typecheck_binding_parameter_failure(
+                            &param_display_name(pd),
+                            &resolved_constraint,
+                            &value,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                 }
                 let original = value.clone();
                 value = self
@@ -763,12 +768,13 @@ impl Interpreter {
                 // Verified against `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'`
                 // and its anonymous-parameter twin.
                 let param_display = param_display_name(pd);
-                return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                    &param_display,
-                    &resolved_constraint,
-                    &value,
-                )
-                .with_parameter_object(pd, Some(&*self)));
+                return Err(self
+                    .typecheck_binding_parameter_failure(
+                        &param_display,
+                        &resolved_constraint,
+                        &value,
+                    )
+                    .with_parameter_object(pd, Some(&*self)));
             } else {
                 value = self
                     .try_coerce_value_for_constraint(&resolved_constraint, value)

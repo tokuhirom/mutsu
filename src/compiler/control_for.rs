@@ -446,6 +446,25 @@ impl Compiler {
                             .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
                     })
                     .collect(),
+                multi_param_declared_rw: {
+                    // The parser folds "some parameter says `is rw`" into
+                    // `rw_block`, so `<->` is only recognisable as a block that
+                    // is rw with NO per-parameter trait. (`<-> $a, $b is rw`
+                    // therefore reads `$a` as plain: a rare mix, and the lax
+                    // side of the rejection.)
+                    let has_rw_trait =
+                        |d: &crate::ast::ParamDef| d.traits.iter().any(|t| t == "rw");
+                    let arrow_rw_block = rw_block && !params_def.iter().any(has_rw_trait);
+                    (0..params.len())
+                        .map(|i| {
+                            params_def.get(i).is_some_and(|d| {
+                                !d.sigilless
+                                    && !d.is_variadic()
+                                    && (arrow_rw_block || has_rw_trait(d))
+                            })
+                        })
+                        .collect()
+                },
                 multi_param_locals,
                 param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
                 multi_param_type_constraints: (0..params.len())
@@ -554,7 +573,7 @@ impl Compiler {
             // `push_loop_local_scope`/`pop_loop_local_scope` just like the
             // statement form, so a `my TYPE $x` here is env-restored on exit and
             // can use the env-only scoped constraint opcode.
-            self.compile_scope_restored_body_value(&loop_body);
+            self.compile_scope_restored_body_value(&loop_body, is_statement_modifier);
             // Emitted AFTER that call, so outside the body's own `let`/`temp`
             // save frame (#7677): `exec_let_block_op` jumps the ip past
             // everything inside the frame's range, and this tag has to run.
@@ -575,7 +594,7 @@ impl Compiler {
                     .emit(OpCode::TagContainerRef(name_idx, source_slot));
             }
         } else {
-            self.compile_scope_restored_loop_body(&loop_body, body);
+            self.compile_scope_restored_loop_body(&loop_body, body, is_statement_modifier);
         }
         for (name, old) in loop_param_types {
             if let Some(old) = old {

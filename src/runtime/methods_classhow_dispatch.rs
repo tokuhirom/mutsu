@@ -1166,6 +1166,33 @@ impl Interpreter {
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return Ok(Value::NIL);
                 }
+                // A regex value (`EVAL 'regex { a | b }'`, `token { ... }`)
+                // becomes the type's grammar rule `method_name`, exactly as a
+                // `regex x { ... }` declared in its body would: `.parse` and a
+                // `<x>` subrule resolve it through `token_defs`. A declarator
+                // term's signature becomes the rule's.
+                // Cost: O(p), p = the regex's parameters.
+                if matches!(
+                    method_value.view(),
+                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                ) {
+                    let param_defs: Vec<crate::ast::ParamDef> = method_value
+                        .regex_signature()
+                        .map(|sig| (*sig).clone())
+                        .unwrap_or_default();
+                    let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
+                    let body = vec![Stmt::Expr(Expr::Literal(method_value.clone()))];
+                    self.register_token_decl_in(
+                        &class_name,
+                        &method_name,
+                        &params,
+                        &param_defs,
+                        &body,
+                        false,
+                        None,
+                    );
+                    return Ok(Value::NIL);
+                }
                 // A builtin/operator code value is a name-only Routine rather
                 // than a Sub with an AST body. Materialize it as a plain
                 // forwarding block once, so the existing add_method path can
@@ -1178,14 +1205,24 @@ impl Interpreter {
                     ..
                 } = method_value.view()
                 {
-                    let (params, param_defs) = self.callable_signature(&method_value);
+                    // Only the arity is taken: the forwarder dispatches by name
+                    // across the whole family, so keeping one user candidate's
+                    // typed `param_defs` (`multi infix:<==>(Foo:D, Foo:D)`
+                    // declared elsewhere) would reject the builtin's operands.
+                    let (declared, _) = self.callable_signature(&method_value);
+                    let params: Vec<String> =
+                        (0..declared.len()).map(|i| format!("arg{i}")).collect();
+                    let param_defs = Vec::new();
                     let call_name = if crate::qualified::is_global_package(package) {
                         name
                     } else {
                         crate::qualified::qualified(package, name)
                     };
-                    let body = vec![Stmt::Expr(Expr::Call {
-                        name: call_name,
+                    // Call through the code value (`&infix:<==>(..)`), which
+                    // dispatches the whole family -- builtin operands included --
+                    // exactly like calling the `&[==]` value itself.
+                    let body = vec![Stmt::Expr(Expr::CallOn {
+                        target: Box::new(Expr::CodeVar(call_name.resolve())),
                         args: params.iter().cloned().map(Expr::Var).collect(),
                     })];
                     Value::make_sub(package, name, params, param_defs, body, false, Env::new())
@@ -1562,6 +1599,21 @@ impl Interpreter {
                     ValueView::Str(name) => name.to_string(),
                     _ => return Ok(Value::NIL),
                 };
+                // A `Metamodel::GrammarHOW.new_type` type given no parent
+                // composes as a `Grammar` (rakudo's GrammarHOW default parent
+                // type), so `.parse` and `~~ Grammar` work on it.
+                let is_grammar_how = self
+                    .registry()
+                    .declared_native_how
+                    .get(&class_name)
+                    .is_some_and(|how| how == "Perl6::Metamodel::GrammarHOW");
+                if is_grammar_how
+                    && let Some(class_def) = self.registry_mut().classes.get_mut(&class_name)
+                    && class_def.parents.is_empty()
+                {
+                    class_def.parents.push("Grammar".to_string());
+                    class_def.mro = [].into();
+                }
                 let mro = self.class_mro(&class_name);
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.mro = mro;

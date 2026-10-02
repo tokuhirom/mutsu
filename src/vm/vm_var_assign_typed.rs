@@ -150,6 +150,15 @@ impl Interpreter {
         }
     }
 
+    /// Follow the `__mutsu_sigilless_alias::` chain from `source_name` to the
+    /// variable that owns the binding.
+    ///
+    /// The walk stops BEFORE a `__mutsu_bind_index_ref_N` hop: that per-site
+    /// temporary (`my $q := @a[2]`) denotes nothing of its own — the bound
+    /// name already holds the element's cell — so the last real variable on
+    /// the chain is the source. Resolving through it made `my $n := $q` see a
+    /// source that is no local of this frame, skip the shared-cell promotion
+    /// and detach both names from the array slot (#10530).
     pub(crate) fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
         let mut resolved = source_name.to_string();
         let mut seen = std::collections::HashSet::new();
@@ -158,6 +167,9 @@ impl Interpreter {
             let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
                 break;
             };
+            if next.starts_with("__mutsu_bind_index_ref_") {
+                break;
+            }
             resolved = next.to_string();
         }
         resolved
@@ -315,7 +327,7 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or_else(|| Self::try_reconstruct_typed_key(key, &target_type));
                     if !loan_env!(self, type_matches_value(&target_type, &key_as_typed_value)) {
-                        return Err(runtime::utils::type_check_element_typed_error(
+                        return Err(self.type_check_element_failure(
                             var_name,
                             constraint,
                             &Value::str(key.clone()),
@@ -333,9 +345,7 @@ impl Interpreter {
                         if let Some(default) = self.var_default(var_name) {
                             default.clone()
                         } else if explicit_initializer && self.is_definite_constraint(constraint) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                var_name, constraint, val,
-                            ));
+                            return Err(self.type_check_element_failure(var_name, constraint, val));
                         } else {
                             val.clone()
                         }
@@ -351,9 +361,7 @@ impl Interpreter {
                             )?
                         };
                         if !self.type_matches_value(&target_type, &coerced) {
-                            return Err(runtime::utils::type_check_element_typed_error(
-                                var_name, constraint, val,
-                            ));
+                            return Err(self.type_check_element_failure(var_name, constraint, val));
                         }
                         coerced
                     }
@@ -436,9 +444,7 @@ impl Interpreter {
                 if let Some(default) = self.var_default(var_name) {
                     coerced_items.push(default.clone());
                 } else if explicit_initializer && self.is_definite_constraint(constraint) {
-                    return Err(runtime::utils::type_check_element_typed_error(
-                        var_name, constraint, item,
-                    ));
+                    return Err(self.type_check_element_failure(var_name, constraint, item));
                 } else if native_constraint {
                     // A native element type has no type object; Nil reverts to the
                     // array's numeric/string zero.
@@ -515,9 +521,7 @@ impl Interpreter {
                 )?
             };
             if !self.type_matches_value(&target_type, &coerced) {
-                return Err(runtime::utils::type_check_element_typed_error(
-                    var_name, constraint, item,
-                ));
+                return Err(self.type_check_element_failure(var_name, constraint, item));
             }
             // Wrap/check native integer overflow for native typed arrays
             let coerced = Self::wrap_native_int_by_constraint(&target_type, coerced)?;
@@ -895,11 +899,7 @@ impl Interpreter {
                 } else {
                     format!("${}", name)
                 };
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    &display,
-                    &constraint,
-                    new_val,
-                ));
+                return Err(self.type_check_assignment_failure(&display, &constraint, new_val));
             }
         }
         Ok(())
@@ -942,11 +942,7 @@ impl Interpreter {
             && !new_val.is_nil()
             && !self.type_matches_value(&constraint, &new_val)
         {
-            return Err(RuntimeError::typecheck_assignment(
-                &constraint,
-                &new_val,
-                None,
-            ));
+            return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
         }
         *guard = new_val.clone();
         drop(guard);

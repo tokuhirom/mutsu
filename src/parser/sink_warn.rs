@@ -12,7 +12,8 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmts as walk_ast_stmts};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use crate::value::ValueView;
@@ -34,7 +35,7 @@ pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
 /// only for the `42`. Trailing `SetLine` markers are skipped when locating
 /// the final real statement.
 pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
-    let last_real = stmts.iter().rposition(|s| !matches!(s, Stmt::SetLine(_)));
+    let last_real = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers);
     let line = std::cell::Cell::new(1i64);
     for (i, stmt) in stmts.iter().enumerate() {
         if Some(i) == last_real {
@@ -46,205 +47,34 @@ pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
 }
 
 /// Walk the entire program looking for `gather` blocks. For each one, emit sink
-/// warnings for its body. Only `Gather` nodes trigger a warning; every other
-/// node is traversed purely to reach nested gathers, so an unhandled variant can
-/// at worst miss a warning (a false negative), never produce a spurious one.
+/// warnings for its body. The search is the typed AST visitor (ADR-0137), so
+/// a `gather` anywhere outside a signature — an argument, an initializer, an
+/// attribute default, a regex code block, a routine body — is found.
+// Cost: O(n), n = size of the AST (plus the sink walk of each gather body).
 fn scan_gathers_stmts(stmts: &[Stmt]) {
-    for stmt in stmts {
-        scan_gathers_stmt(stmt);
-    }
+    walk_ast_stmts(&mut GatherScan, stmts);
 }
 
-fn scan_gathers_stmt(stmt: &Stmt) {
-    match stmt {
-        Stmt::Expr(e)
-        | Stmt::Return(e)
-        | Stmt::Die(e)
-        | Stmt::Fail(e)
-        | Stmt::Take(e, _)
-        | Stmt::Goto(e) => scan_gathers_expr(e),
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => scan_gathers_expr(expr),
-        Stmt::Call { args, .. } => {
-            for arg in args {
-                match arg {
-                    CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
-                        scan_gathers_expr(e)
-                    }
-                    CallArg::Named { value: Some(e), .. } => scan_gathers_expr(e),
-                    CallArg::Named { value: None, .. } => {}
-                }
-            }
-        }
-        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-            for e in es {
-                scan_gathers_expr(e);
-            }
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            scan_gathers_expr(cond);
-            scan_gathers_stmts(then_branch);
-            scan_gathers_stmts(else_branch);
-        }
-        Stmt::While { cond, body, .. } => {
-            scan_gathers_expr(cond);
-            scan_gathers_stmts(body);
-        }
-        Stmt::For { iterable, body, .. } => {
-            scan_gathers_expr(iterable);
-            scan_gathers_stmts(body);
-        }
-        Stmt::Given { topic, body, .. } => {
-            scan_gathers_expr(topic);
-            scan_gathers_stmts(body);
-        }
-        Stmt::When { cond, body, .. } => {
-            scan_gathers_expr(cond);
-            scan_gathers_stmts(body);
-        }
-        Stmt::Whenever { supply, body, .. } => {
-            scan_gathers_expr(supply);
-            scan_gathers_stmts(body);
-        }
-        Stmt::Loop { body, .. }
-        | Stmt::React { body }
-        | Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::Phaser { body, .. }
-        | Stmt::SubDecl { body, .. }
-        | Stmt::MethodDecl { body, .. }
-        | Stmt::ClassDecl { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::Package { body, .. } => scan_gathers_stmts(body),
-        Stmt::Label { stmt, .. } => scan_gathers_stmt(stmt),
-        _ => {}
-    }
-}
+struct GatherScan;
 
-fn scan_gathers_expr(expr: &Expr) {
-    match expr {
-        Expr::Gather(body) => {
-            // The gather body is in sink context. Warn its useless statements,
-            // then keep scanning for gathers nested inside it. This is a
-            // separate top-level scan (not fed a `line` from an enclosing
-            // walk), so it starts its own tracker -- corrected immediately
-            // by the body's own leading `SetLine` marker.
+impl Visit for GatherScan {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Gather(body) = expr {
+            // The gather body is in sink context. This is a separate
+            // top-level scan (not fed a `line` from an enclosing walk), so it
+            // starts its own tracker -- corrected immediately by the body's
+            // own leading `SetLine` marker.
             let line = std::cell::Cell::new(1i64);
             walk_stmts(body, false, &line);
-            scan_gathers_stmts(body);
         }
-        Expr::Grouped(e)
-        | Expr::PositionalPair(e)
-        | Expr::ZenSlice(e)
-        | Expr::Itemize(e)
-        | Expr::Eager(e)
-        | Expr::Unary { expr: e, .. }
-        | Expr::PostfixOp { expr: e, .. }
-        | Expr::AssignExpr { expr: e, .. }
-        | Expr::Reduction { expr: e, .. }
-        | Expr::IndirectTypeLookup(e)
-        | Expr::SymbolicDeref { expr: e, .. } => scan_gathers_expr(e),
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::HyperFuncOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            scan_gathers_expr(left);
-            scan_gathers_expr(right);
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            scan_gathers_expr(cond);
-            scan_gathers_expr(then_expr);
-            scan_gathers_expr(else_expr);
-        }
-        Expr::Index { target, index, .. } => {
-            scan_gathers_expr(target);
-            scan_gathers_expr(index);
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            ..
-        } => {
-            scan_gathers_expr(target);
-            scan_gathers_expr(index);
-            scan_gathers_expr(value);
-        }
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            scan_gathers_expr(target);
-            for a in args {
-                scan_gathers_expr(a);
-            }
-        }
-        Expr::CallOn { target, args } => {
-            scan_gathers_expr(target);
-            for a in args {
-                scan_gathers_expr(a);
-            }
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args {
-                scan_gathers_expr(a);
-            }
-        }
-        Expr::ArrayLiteral(es)
-        | Expr::BracketArray(es, _)
-        | Expr::CaptureLiteral(es)
-        | Expr::StringInterpolation(es) => {
-            for e in es {
-                scan_gathers_expr(e);
-            }
-        }
-        Expr::Hash(pairs) => {
-            for (_, v) in pairs {
-                if let Some(e) = v {
-                    scan_gathers_expr(e);
-                }
-            }
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            scan_gathers_expr(left);
-            for e in right {
-                scan_gathers_expr(e);
-            }
-        }
-        Expr::Block(body)
-        | Expr::AnonSub { body, .. }
-        | Expr::AnonSubParams { body, .. }
-        | Expr::Lambda { body, .. }
-        | Expr::DoBlock { body, .. }
-        | Expr::PhaserExpr { body, .. }
-        | Expr::Once { body } => scan_gathers_stmts(body),
-        Expr::Try { body, catch } => {
-            scan_gathers_stmts(body);
-            if let Some(c) = catch {
-                scan_gathers_stmts(c);
-            }
-        }
-        Expr::DoStmt(stmt) => scan_gathers_stmt(stmt),
-        // ADR-0033: descend into an un-expanded WhateverCurry body the same
-        // way as the closure kinds above.
-        Expr::WhateverCurry(inner) => scan_gathers_expr(inner),
-        // `todo/tickets/chained-compare-ast-node.md`: each operand can hold a
-        // nested `gather`, same as any other compound expression's operands.
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands {
-                scan_gathers_expr(o);
-            }
-        }
-        _ => {}
+        // Keep scanning for gathers nested inside, a gather body included.
+        walk_expr(self, expr);
     }
+
+    // Rakudo does not sink-check a gather inside a signature (a parameter
+    // default or `where` clause): measured, `sub f($x = gather { 42; take 1
+    // }) { }` warns nothing.
+    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
 }
 
 /// Walk a sink-context statement list. `nil_hint` is true when these statements
@@ -352,7 +182,7 @@ pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
 /// real statement. Trailing bookkeeping markers (`SetLine`) are not statements
 /// and are kept out of the reckoning.
 fn sunk_prefix(body: &[Stmt]) -> &[Stmt] {
-    match body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) {
+    match crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers) {
         Some(last) => &body[..last],
         None => body,
     }
@@ -425,9 +255,7 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // so it must be reported before the generic sigiled-name skip below.
         Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
-        Expr::Var(n) => Some(format!("${}", n)),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
         Expr::BareWord(s) if is_type_name(s) => Some(format!("constant value {}", s)),
         Expr::Binary { left, op, right } => {
@@ -498,9 +326,7 @@ fn render_source(expr: &Expr) -> Option<String> {
             _ => Some(lit.to_string_value()),
         },
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
-        Expr::Var(n) => Some(crate::env::sigiled_scalar_name(n)),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::BareWord(s) => Some(s.clone()),
         Expr::Unary { op, expr: inner } => {
             let sym = pure_prefix_symbol(op)?;

@@ -2,6 +2,41 @@ use super::super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// The bounds of the `** {code}` quantifier reached at `pos`, as the match
+    /// engines ask for them: [`Self::eval_regex_repeat_code`], recorded and
+    /// replayed under `MUTSU_RX_DIFF` like every other call-out (ADR-0135 D6).
+    // Cost: one run of the code, plus O(c) under `MUTSU_RX_DIFF`, c = the
+    // captures visible to it.
+    pub(super) fn regex_repeat_count(
+        &mut self,
+        code: &str,
+        pos: usize,
+        caps: &RegexCaptures,
+    ) -> Option<(usize, Option<usize>)> {
+        self.rx_code_call(code, pos, caps, |interp| {
+            interp.eval_regex_repeat_code(code, caps)
+        })
+    }
+
+    /// The environment a `** {code}` count runs in. Like a `{ ... }` block, the
+    /// count sees the enclosing level's captures when it sits in a same-scope
+    /// sub-pattern (`[ $<x>=a ** {$<n>} ]`, which is also the shape a
+    /// `$<x>=a ** {$<n>}` alias is wrapped into): `$<n>` was captured by the
+    /// level above, not by this one. The view carries captures only, so the
+    /// regex's `:my` lexicals are laid over it from `caps` itself.
+    // Cost: O(c), c = the captures visible to the code; O(1) extra without an
+    // enclosing level.
+    fn repeat_count_env(&self, caps: &RegexCaptures) -> Env {
+        if caps.outer_backref().is_none() {
+            return self.make_regex_eval_env(caps);
+        }
+        let mut env = self.make_regex_eval_env(&caps.inline_capture_view());
+        for (k, v) in caps.regex_vars() {
+            env.insert(k.clone(), v.clone());
+        }
+        env
+    }
+
     /// Evaluate a `** {code}` quantifier code block and return (min, max).
     /// The code should return either a numeric value (exact count) or a Range.
     /// Returns None if the code fails to evaluate or produces an invalid/infinite value;
@@ -12,7 +47,7 @@ impl Interpreter {
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
         let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;
-        let env = self.make_regex_eval_env(caps);
+        let env = self.repeat_count_env(caps);
         let val = match self.run_regex_sub_eval(env, None, |interp| {
             interp.eval_block_value_cached(&stmts, id)
         }) {
@@ -368,7 +403,9 @@ impl Interpreter {
             for sc in slot.nodes.iter_mut() {
                 crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
                 let sc = Arc::make_mut(sc);
-                let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
+                let child_rule = sc
+                    .action_name
+                    .map_or_else(|| child_rule.clone(), |name| name.resolve());
                 self.reduce_cap_node_for_rule(sc, target, Some(&child_rule));
             }
         }

@@ -1,5 +1,4 @@
 use crate::value::{Value, ValueView};
-use std::sync::OnceLock;
 
 /// Unicode Block lookup — delegates to the tables module.
 pub(crate) fn unicode_block(ch: char) -> String {
@@ -40,12 +39,10 @@ fn is_numeric_type_digit(cp: u32) -> bool {
 }
 
 pub(crate) fn unicode_numeric_type(ch: char) -> String {
+    use crate::builtins::unicode_gc::{GeneralCategory, general_category};
+    let gc = general_category(ch);
     // Check Nd (Decimal)
-    static ND_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let nd_re = ND_RE.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").unwrap());
-    let mut buf = [0u8; 4];
-    let s = ch.encode_utf8(&mut buf);
-    if nd_re.is_match(s) {
+    if gc == GeneralCategory::Nd {
         return "Decimal".to_string();
     }
     // Digit type: single-digit (0..9) presentation forms that are not Nd —
@@ -55,16 +52,9 @@ pub(crate) fn unicode_numeric_type(ch: char) -> String {
     if is_numeric_type_digit(cp) {
         return "Digit".to_string();
     }
-    // Check No (Numeric — includes fractions and other numeric chars)
-    static NO_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let no_re = NO_RE.get_or_init(|| regex::Regex::new(r"^\p{No}$").unwrap());
-    if no_re.is_match(s) {
-        return "Numeric".to_string();
-    }
-    // Check Nl (Letter number)
-    static NL_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let nl_re = NL_RE.get_or_init(|| regex::Regex::new(r"^\p{Nl}$").unwrap());
-    if nl_re.is_match(s) {
+    // Check No (Numeric — includes fractions and other numeric chars) and
+    // Nl (Letter number)
+    if matches!(gc, GeneralCategory::No | GeneralCategory::Nl) {
         return "Numeric".to_string();
     }
     // Ideographs and other letters that carry a numeric value (e.g. the CJK

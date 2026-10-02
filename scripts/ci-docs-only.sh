@@ -107,6 +107,11 @@ is_doc_path() {
     # ci.yml's wasm-e2e job runs it to generate the Internals pages' data
     # before the site e2e test reads it.
     scripts/gen-internals-manifest.py) return 1 ;;
+    # `make check-ast-walkers` and `make check-interp-construction` (`make
+    # checks` ratchets) run these. Both sat on the allowlist unnoticed because
+    # the CI checkout this guard ran in did not contain scripts/ at all.
+    scripts/check-ast-walkers.py) return 1 ;;
+    scripts/check-interp-construction.py) return 1 ;;
     scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
@@ -132,7 +137,12 @@ is_doc_path() {
 # (`docs/flaky-test-policy.md`, `docs/adr/0075-...`), and a citation is not an
 # input. Paths that do not exist are dropped -- the scan also picks up runner
 # paths (`/etc/apt/sources.list`) and `target/<profile>/mutsu` fragments, which
-# are noise, not repository files.
+# are noise, not repository files. Except under scripts/: every scripts/ path
+# the two files name is a real file, so a missing one means this checkout is
+# incomplete (ci.yml's `changes` job is a sparse checkout), and dropping it
+# would turn the guard into a silent no-op. That is exactly what happened: the
+# job checked out only this script, so every `scripts/*.py` input was dropped
+# and two ratchet scripts sat on the allowlist for weeks.
 #
 # Only ONE hop is scanned. A path reached *through* a shell script that CI runs
 # is not covered (scanning those too drowns the signal: run-roast-test.sh and
@@ -154,7 +164,14 @@ check_inputs() {
   local failures=0 path
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    [ -f "$path" ] || continue
+    if [ ! -f "$path" ]; then
+      case "$path" in
+        scripts/*)
+          echo "not ok - $path is named as a build input but is not in this checkout" >&2
+          failures=$((failures + 1)) ;;
+      esac
+      continue
+    fi
     if is_doc_path "$path"; then
       echo "not ok - $path is read by the build but is on the documentation allowlist" >&2
       failures=$((failures + 1))
@@ -166,8 +183,9 @@ $(sed -E 's/^[[:space:]]*#.*$//' $CI_INPUT_SOURCES \
 EOF
 
   if [ "$failures" -ne 0 ]; then
-    echo "ci-docs-only --check-inputs: $failures build input(s) classified as documentation" >&2
-    echo "Either deny the path in is_doc_path, or stop reading it from the build." >&2
+    echo "ci-docs-only --check-inputs: $failures problem(s) with the build inputs above" >&2
+    echo "Classified as documentation: deny the path in is_doc_path, or stop reading it from the build." >&2
+    echo "Not in this checkout: widen the \`changes\` job's sparse-checkout in ci.yml." >&2
     return 1
   fi
   echo "ci-docs-only --check-inputs: no build input is on the documentation allowlist"
@@ -354,6 +372,8 @@ self_test() {
   check false 'a python make test runs' scripts/migrate-t-layout.py
   check false 'the panic ratchet'       scripts/check-panic-surface.py
   check false 'internals site data'     scripts/gen-internals-manifest.py
+  check false 'the AST-walker ratchet'  scripts/check-ast-walkers.py
+  check false 'the interp ratchet'      scripts/check-interp-construction.py
   check false 'shell script'            scripts/run-t-test.sh
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv

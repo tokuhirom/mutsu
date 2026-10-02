@@ -137,6 +137,10 @@ fn positive_first_set(an: &mut Analyzer, positive: &[ClassItem], ctx: Ctx) -> Op
 /// The characters one positive item can match, or `None` when it may dispatch
 /// a grammar token whose body this analysis does not walk.
 fn positive_item_first_set(an: &mut Analyzer, item: &ClassItem, ctx: Ctx) -> Option<FirstSet> {
+    // A `<+:name(/.../)>` item runs a regex at match time; admit everything.
+    if is_name_regex_item(item) {
+        return Some(FirstSet::universal());
+    }
     if let ClassItem::NamedBuiltin(name) = item {
         let interp = an.interp.as_deref_mut()?;
         // Recorded before the answer is known, exactly as `analyze_subrule`
@@ -174,6 +178,10 @@ fn narrow_by_negatives(an: &mut Analyzer, set: &mut FirstSet, negative: &[ClassI
     // built-in predicate, so it proves nothing here: leave it out.
     let mut provable: Vec<&ClassItem> = Vec::new();
     for item in negative {
+        // Decided by the regex engine at match time, so it proves nothing.
+        if is_name_regex_item(item) {
+            continue;
+        }
         if let ClassItem::NamedBuiltin(name) = item {
             let Some(interp) = an.interp.as_deref_mut() else {
                 continue;
@@ -198,6 +206,12 @@ fn narrow_by_negatives(an: &mut Analyzer, set: &mut FirstSet, negative: &[ClassI
             set.remove_ascii(c);
         }
     }
+}
+
+/// A `<:name(/.../)>` property item, which only the regex engine can decide.
+fn is_name_regex_item(item: &ClassItem) -> bool {
+    matches!(item, ClassItem::UnicodePropItem { name, .. }
+        if crate::runtime::unicode_name_prop::is_name_regex_test(name, None))
 }
 
 /// Whether an item provably matches no non-ASCII character, which is what lets

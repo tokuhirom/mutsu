@@ -12,7 +12,7 @@
 //! implementation to call instead of two independently-drifting copies —
 //! the same pattern D2b established for `CompiledAttrDecl`.
 
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -220,242 +220,36 @@ pub(crate) fn needs_direct_positional_placeholder_die_from_flag(
 /// Scan a signature-less routine body for a bare `@_`/`%_` read, returning
 /// `(uses_positional, uses_named)`. Used to decide whether to synthesize the
 /// implicit `*@_`/`*%_` slurpies a signature-less sub/method body needs.
+///
+/// The walk (ADR-0137 visitor) reaches every position of the body, blocks
+/// and closures included, but not a nested routine or package declaration,
+/// which has `@_`/`%_` of its own.
+// Cost: O(n), n = size of `stmts` outside nested routine declarations.
 pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
-    fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
-        match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
-                scan_expr(e, positional, named);
+    #[derive(Default)]
+    struct ImplicitArgsScan {
+        positional: bool,
+        named: bool,
+    }
+    impl crate::ast_visit::Visit for ImplicitArgsScan {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            // A nested routine, package or captured nested method binds its
+            // own `@_`/`%_`.
+            if !crate::compiler::scope_scan::is_scope_declaration(stmt)
+                && !matches!(stmt, Stmt::NestedMethodCapture { .. })
+            {
+                crate::ast_visit::walk_stmt(self, stmt);
             }
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-                scan_expr(expr, positional, named);
+        }
+        fn visit_name(&mut self, name: &str, kind: crate::ast_visit::NameKind) {
+            match kind {
+                crate::ast_visit::NameKind::ArrayVar if name == "_" => self.positional = true,
+                crate::ast_visit::NameKind::HashVar if name == "_" => self.named = true,
+                _ => {}
             }
-            Stmt::Call { args, .. } => {
-                for arg in args {
-                    match arg {
-                        CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
-                            scan_expr(e, positional, named)
-                        }
-                        CallArg::Named { value: Some(e), .. } => scan_expr(e, positional, named),
-                        CallArg::Named { value: None, .. } => {}
-                    }
-                }
-            }
-            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-                for e in es {
-                    scan_expr(e, positional, named);
-                }
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                scan_expr(cond, positional, named);
-                for s in then_branch {
-                    scan_stmt(s, positional, named);
-                }
-                for s in else_branch {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::While { cond, body, .. } => {
-                scan_expr(cond, positional, named);
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::For { iterable, body, .. } => {
-                scan_expr(iterable, positional, named);
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::Loop { body, .. }
-            | Stmt::React { body }
-            | Stmt::Block(body)
-            | Stmt::SyntheticBlock(body)
-            | Stmt::Default(body)
-            | Stmt::Catch(body)
-            | Stmt::Control(body)
-            | Stmt::RoleDecl { body, .. }
-            | Stmt::Phaser { body, .. } => {
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::Whenever { supply, body, .. } => {
-                scan_expr(supply, positional, named);
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::Given { topic, body, .. } => {
-                scan_expr(topic, positional, named);
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::When { cond, body, .. } => {
-                scan_expr(cond, positional, named);
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Stmt::Let { value, index, .. } => {
-                if let Some(v) = value {
-                    scan_expr(v, positional, named);
-                }
-                if let Some(i) = index {
-                    scan_expr(i, positional, named);
-                }
-            }
-            Stmt::TempMethodAssign {
-                method_args, value, ..
-            } => {
-                for a in method_args {
-                    scan_expr(a, positional, named);
-                }
-                scan_expr(value, positional, named);
-            }
-            Stmt::SubsetDecl {
-                predicate: Some(p), ..
-            } => {
-                scan_expr(p, positional, named);
-            }
-            _ => {}
         }
     }
-
-    fn scan_expr(expr: &Expr, positional: &mut bool, named: &mut bool) {
-        match expr {
-            Expr::ArrayVar(name) if name == "_" => *positional = true,
-            Expr::HashVar(name) if name == "_" => *named = true,
-            Expr::Binary { left, right, .. }
-            | Expr::HyperOp { left, right, .. }
-            | Expr::MetaOp { left, right, .. } => {
-                scan_expr(left, positional, named);
-                scan_expr(right, positional, named);
-            }
-            Expr::Unary { expr, .. }
-            | Expr::PostfixOp { expr, .. }
-            | Expr::AssignExpr { expr, .. }
-            | Expr::ZenSlice(expr)
-            | Expr::Reduction { expr, .. } => scan_expr(expr, positional, named),
-            Expr::Exists { target, arg, .. } => {
-                scan_expr(target, positional, named);
-                if let Some(a) = arg {
-                    scan_expr(a, positional, named);
-                }
-            }
-            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-                scan_expr(target, positional, named);
-                for a in args {
-                    scan_expr(a, positional, named);
-                }
-            }
-            Expr::DynamicMethodCall {
-                target,
-                name_expr,
-                args,
-                ..
-            }
-            | Expr::HyperMethodCallDynamic {
-                target,
-                name_expr,
-                args,
-                ..
-            } => {
-                scan_expr(target, positional, named);
-                scan_expr(name_expr, positional, named);
-                for a in args {
-                    scan_expr(a, positional, named);
-                }
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                for a in args {
-                    scan_expr(a, positional, named);
-                }
-            }
-            Expr::CallOn { target, args } => {
-                scan_expr(target, positional, named);
-                for a in args {
-                    scan_expr(a, positional, named);
-                }
-            }
-            Expr::Index { target, index, .. } => {
-                scan_expr(target, positional, named);
-                scan_expr(index, positional, named);
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                scan_expr(cond, positional, named);
-                scan_expr(then_expr, positional, named);
-                scan_expr(else_expr, positional, named);
-            }
-            Expr::ArrayLiteral(es)
-            | Expr::BracketArray(es, _)
-            | Expr::StringInterpolation(es)
-            | Expr::CaptureLiteral(es) => {
-                for e in es {
-                    scan_expr(e, positional, named);
-                }
-            }
-            Expr::InfixFunc { left, right, .. } => {
-                scan_expr(left, positional, named);
-                for e in right {
-                    scan_expr(e, positional, named);
-                }
-            }
-            Expr::Block(stmts)
-            | Expr::AnonSub { body: stmts, .. }
-            | Expr::AnonSubParams { body: stmts, .. }
-            | Expr::Gather(stmts) => {
-                for s in stmts {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Expr::DoBlock { body, .. } => {
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Expr::DoStmt(stmt) => scan_stmt(stmt, positional, named),
-            Expr::Lambda { body, .. } => {
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-            }
-            Expr::Try { body, catch } => {
-                for s in body {
-                    scan_stmt(s, positional, named);
-                }
-                if let Some(c) = catch {
-                    for s in c {
-                        scan_stmt(s, positional, named);
-                    }
-                }
-            }
-            Expr::IndirectCodeLookup { package, .. } => scan_expr(package, positional, named),
-            Expr::SymbolicDeref { expr, .. } => scan_expr(expr, positional, named),
-            Expr::Hash(pairs) => {
-                for (_, value) in pairs {
-                    if let Some(v) = value {
-                        scan_expr(v, positional, named);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let mut positional = false;
-    let mut named = false;
-    for stmt in stmts {
-        scan_stmt(stmt, &mut positional, &mut named);
-    }
-    (positional, named)
+    let mut scan = ImplicitArgsScan::default();
+    crate::ast_visit::walk_stmts(&mut scan, stmts);
+    (scan.positional, scan.named)
 }

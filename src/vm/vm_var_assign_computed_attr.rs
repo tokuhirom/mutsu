@@ -188,7 +188,7 @@ impl Interpreter {
     /// attribute does not exist in the cell. `owner` is the running method's
     /// owner (the top of the method-class stack).
     // Cost: O(1): at most four hash probes of the attribute map.
-    fn attr_key_in_map(
+    pub(crate) fn attr_key_in_map(
         owner: Option<crate::symbol::Symbol>,
         bare: crate::symbol::Symbol,
         is_private: bool,

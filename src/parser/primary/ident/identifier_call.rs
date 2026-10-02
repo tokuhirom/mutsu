@@ -386,6 +386,10 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
                 crate::parser::stmt::simple::note_type_index_incomplete();
             } else {
                 crate::parser::stmt::simple::register_module_exports(&module_name);
+                // Rakudo declares the target as a stub package while it parses
+                // the statement, so the bare name is a type from here on even
+                // when the load later fails (see `compiler/require_stubs.rs`).
+                crate::parser::stmt::simple::register_user_type(&module_name);
             }
         }
         // `require ::($computed)` names a module only at run time, so the
@@ -1367,7 +1371,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if r.starts_with('{') {
                 let (r, pat) = parse_raw_braced_regex_body(r)?;
                 let pat = finalize_anon_regex_pattern(&pat, kind);
-                return Ok((r, Expr::Literal(Value::regex(pat))));
+                return Ok((r, Expr::Literal(Value::anon_regex_code(pat, None))));
             }
             if r.starts_with('(')
                 && let Ok((r, param_defs)) = parse_anon_regex_signature(r)
@@ -1377,7 +1381,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let pat = finalize_anon_regex_pattern(&pat, kind);
                 return Ok((
                     r,
-                    Expr::Literal(Value::regex_with_signature(pat, param_defs)),
+                    Expr::Literal(Value::anon_regex_code(pat, Some(param_defs))),
                 ));
             }
         }
@@ -1517,6 +1521,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Last,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("last", slip, flow)));
+            }
             let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
@@ -1530,6 +1541,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Next,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("next", slip, flow)));
+            }
             let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
@@ -1542,6 +1560,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "redo" => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
+            }
+            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
+                let flow = Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Redo,
+                    label: None,
+                };
+                return Ok((rest, slipped_control_flow("redo", slip, flow)));
             }
             let (rest, label) = control_flow_label(rest);
             return Ok((
@@ -1609,7 +1634,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &after_bracket[end + 1..],
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                            index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
                         },
                     ));
@@ -1625,7 +1650,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         &after_bracket[end + 1..],
                         Expr::Index {
                             target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
+                            index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
                         },
                     ));
@@ -2433,7 +2458,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // in statement position (e.g., `make-temp-dir;`).
     if (crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name))
-        && is_terminator
+        // A comma ends a no-arg call too (`:$user = generate-key, :$host`): left
+        // as a BareWord it would resolve at run time in the *caller's* scope, which
+        // cannot see a module's lexical sub (Email::MessageID). A capitalised name is a type object.
+        && (is_terminator
+            || (rest_trimmed.starts_with(',')
+                && !name.starts_with(char::is_uppercase)))
     {
         let args = vec![Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(
@@ -2504,7 +2534,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // argument follows) — is X::Obsolete, matching Rakudo's "Unsupported use of
     // bare ..." (e.g. `ord.Cool`). A real call (`ord $x` / `ord('A')`) parses as
     // a listop/call before reaching this fallback, so it is unaffected.
-    if is_terminator_or_dot && matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs") {
+    let is_perl5_unary = matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs");
+    // …but `lc .contains('x')` (whitespace, then a topic method call) is a real
+    // call: the `.method` term is the argument, i.e. `lc($_.contains('x'))`.
+    if is_perl5_unary
+        && rest.starts_with(char::is_whitespace)
+        && rest_trimmed.starts_with('.')
+        && rest_trimmed[1..].starts_with(crate::parser::helpers::is_raku_identifier_start)
+        && let Ok((r2, arg)) = parse_listop_arg(rest_trimmed)
+    {
+        return Ok((r2, make_call_expr(name, input, vec![arg])));
+    }
+    if is_terminator_or_dot && is_perl5_unary {
         return Err(PError::obsolete(
             &format!("bare \"{name}\""),
             &format!(
@@ -2549,6 +2590,60 @@ fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKin
 /// label rule the statement forms (`next_stmt` and friends) apply. Without it
 /// the label was left behind as a stray bareword and the enclosing labeled
 /// loop failed to parse.
+/// `last |c` / `next |c` / `redo |c`: the loop-control term applied to a slipped
+/// argument list (Rakudo resolves it as `last(|c)`). Returns the slipped term.
+pub(in crate::parser) fn control_flow_slip_args(input: &str) -> PResult<'_, Option<Expr>> {
+    let (after_ws, _) = ws(input)?;
+    if !after_ws.starts_with('|') {
+        return Ok((input, None));
+    }
+    let (rest, slip) = term_expr(after_ws)?;
+    Ok((rest, Some(slip)))
+}
+
+/// Build `last(|args)`: with an empty argument list this is the plain loop
+/// control. A non-empty list would carry a `Label` value, which mutsu does not
+/// model (labels are static names in `OpCode::Last`), so it is rejected rather
+/// than silently dropped.
+// TODO: compile dynamic `Label` arguments once labels are first-class values.
+pub(in crate::parser) fn slipped_control_flow(name: &str, slip: Expr, flow: Expr) -> Expr {
+    Expr::Ternary {
+        cond: Box::new(slip_arg_count(slip)),
+        then_expr: Box::new(Expr::DoStmt(Box::new(reject_slipped_label(name)))),
+        else_expr: Box::new(flow),
+    }
+}
+
+/// Statement form of [`slipped_control_flow`], for `proceed |c` / `succeed |c`
+/// whose control transfer must stay a statement of the enclosing block.
+pub(in crate::parser) fn slipped_control_stmt(name: &str, slip: Expr, flow: Stmt) -> Stmt {
+    Stmt::If {
+        cond: slip_arg_count(slip),
+        then_branch: vec![reject_slipped_label(name)],
+        else_branch: vec![flow],
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless: false,
+        with_kind: None,
+    }
+}
+
+fn slip_arg_count(slip: Expr) -> Expr {
+    Expr::MethodCall {
+        target: Box::new(Expr::ArrayLiteral(vec![slip])),
+        name: Symbol::intern("elems"),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    }
+}
+
+fn reject_slipped_label(name: &str) -> Stmt {
+    Stmt::Die(Expr::Literal(Value::str(format!(
+        "Cannot resolve caller {name}: a Label argument is not supported"
+    ))))
+}
+
 fn control_flow_label(input: &str) -> (&str, Option<String>) {
     let Ok((after_ws, _)) = ws(input) else {
         return (input, None);
@@ -2560,4 +2655,21 @@ fn control_flow_label(input: &str) -> (&str, Option<String>) {
         return (r, Some(label));
     }
     (input, None)
+}
+
+/// The index expression for `MY::<...>`-style angle subscripts: several
+/// whitespace-separated words form a slice (`MY::<$x $y>`), a single word (or
+/// text containing a nested `<`, e.g. `&infix:<+>`) stays one literal key.
+fn stash_angle_index(symbol: &str) -> Expr {
+    let words: Vec<&str> = symbol.split_whitespace().collect();
+    if words.len() > 1 && !symbol.contains('<') {
+        Expr::ArrayLiteral(
+            words
+                .into_iter()
+                .map(|w| Expr::Literal(Value::str(w.to_string())))
+                .collect(),
+        )
+    } else {
+        Expr::Literal(Value::str(symbol.to_string()))
+    }
 }

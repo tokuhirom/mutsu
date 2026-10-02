@@ -328,13 +328,8 @@ impl Interpreter {
         })
     }
 
-    /// Wall clock in nanoseconds since the Unix epoch, saturating rather than
-    /// wrapping (an `i64` of nanoseconds runs out in the year 2262).
     fn epoch_nanos() -> i64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
-            .unwrap_or(0)
+        crate::builtins::epoch_nanos()
     }
 
     /// The process-level handle for one of the standard streams: the handle

@@ -1,4 +1,3 @@
-use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_casefold::casefold_eq;
 use super::regex_eval_class::{composite_item_matches, composite_probe_chars};
@@ -338,7 +337,7 @@ impl Interpreter {
             }
             RegexAtom::CodeInterp { code, list } => {
                 return self
-                    .regex_code_interp_ends(
+                    .regex_code_interp_ends_unrecorded(
                         code,
                         *list,
                         chars,
@@ -391,7 +390,7 @@ impl Interpreter {
                     return None;
                 }
                 let c = chars[pos];
-                let prop_match = check_unicode_property(name, c);
+                let prop_match = self.unicode_property_holds(name, None, c);
                 let result = if *negated { !prop_match } else { prop_match };
                 return if result { Some(pos) } else { None };
             }
@@ -508,7 +507,7 @@ impl Interpreter {
             };
             if let Some(prop_name) = uni_prop {
                 if pos < chars.len() {
-                    let matches = check_unicode_property(prop_name, chars[pos]);
+                    let matches = self.unicode_property_holds(prop_name, None, chars[pos]);
                     let matches = if uni_negated { !matches } else { matches };
                     if matches {
                         return Some(pos + 1);
@@ -710,11 +709,7 @@ impl Interpreter {
                 if !is_grapheme_boundary(chars, pos) {
                     return None;
                 }
-                let prop_match = if let Some(arg_str) = args {
-                    check_unicode_property_with_args(name, arg_str, c)
-                } else {
-                    check_unicode_property(name, c)
-                };
+                let prop_match = self.unicode_property_holds(name, args.as_deref(), c);
                 if *negated { !prop_match } else { prop_match }
             }
             RegexAtom::CompositeClass { positive, negative } => {
@@ -740,6 +735,15 @@ impl Interpreter {
                     // The character half of that built-in test is shared with
                     // the ADR-0099 Stage 1 prefilter, which must not hold a
                     // second definition of it (constraint 1).
+                    // A `<+:name(/.../)>` item runs its regex on this engine;
+                    // like every property it tests the subject's own char.
+                    if let ClassItem::UnicodePropItem { name, negated } = item
+                        && super::super::unicode_name_prop::is_name_regex_test(name, None)
+                    {
+                        return chars_to_check.first().is_some_and(|&c| {
+                            self.unicode_property_holds(name, None, c) != *negated
+                        });
+                    }
                     let ClassItem::NamedBuiltin(n) = item else {
                         return composite_item_matches(item, chars_to_check);
                     };

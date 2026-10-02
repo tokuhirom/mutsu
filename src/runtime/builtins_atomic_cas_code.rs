@@ -54,11 +54,7 @@ impl Interpreter {
             }
         }
         if !self.type_matches_value(&constraint, new_val) {
-            return Err(RuntimeError::typecheck_assignment(
-                &constraint,
-                new_val,
-                Some(name),
-            ));
+            return Err(self.typecheck_assignment_failure(&constraint, new_val, Some(name)));
         }
         Ok(())
     }

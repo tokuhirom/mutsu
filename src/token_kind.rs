@@ -262,21 +262,21 @@ impl Hash for TokenKind {
 }
 
 pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
-    if let Some(c) = unicode_names2::character(name) {
+    if let Some(c) = crate::builtins::unicode_name::char_by_name(name) {
         return Some(c);
     }
     let upper = name.to_uppercase();
     // The UCD `NameAliases.txt` list: corrected spellings (`LATIN CAPITAL
     // LETTER GHA`), control names and abbreviations, the `BYTE ORDER MARK`
-    // alternate and the `VS1`..`VS256` variation selectors. `unicode_names2`
-    // only indexes the immutable `Name` property, so none of these resolve
+    // alternate and the `VS1`..`VS256` variation selectors. The `unicode_name`
+    // table only indexes the immutable `Name` property, so none of these resolve
     // through it.
     if let Some(c) = crate::builtins::unicode_name_alias_table::lookup_name_alias(&upper) {
         return Some(c);
     }
     // Algorithmically-derived names (`TANGUT IDEOGRAPH-17000`), the inverse of
-    // `unicode::derived_char_name`. `unicode_names2::character` resolves the
-    // subset of these its name table enumerates, so without this the two
+    // `unicode::derived_char_name`. The `unicode_name` table resolves the
+    // subset of these it enumerates, so without this the two
     // directions disagreed: `uniparse('CJK UNIFIED IDEOGRAPH-4E00')` worked
     // while `uniparse('TANGUT IDEOGRAPH-17000')` — a name `.uniname` itself
     // produces — raised "Unrecognized character name".
@@ -329,21 +329,8 @@ pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
 /// Look up an emoji sequence by its CLDR name (e.g., "woman gesturing OK").
 /// Returns the emoji string (which may contain multiple codepoints for ZWJ sequences).
 pub(crate) fn lookup_emoji_sequence(name: &str) -> Option<String> {
-    // A CLDR short name for a multi-person ZWJ sequence separates its parts
-    // with commas ("family: man, woman, girl, boy"), but `\c[...]` / `uniparse`
-    // split their input on commas before this point, so the name that arrives
-    // here has already lost them ("family: man woman girl boy" — which is
-    // exactly the spelling Rakudo accepts). Compare with commas removed on both
-    // sides so those compound names still resolve.
-    let lower = name.to_lowercase();
-    let normalized = lower.replace(',', "");
-    for emoji in emojis::iter() {
-        let emoji_lower = emoji.name().to_lowercase();
-        if emoji_lower == lower || emoji_lower.replace(',', "") == normalized {
-            return Some(emoji.as_str().to_string());
-        }
-    }
-    None
+    use crate::builtins::emoji_name_table as t;
+    t::lookup_emoji_by_normalized_name(&t::normalize_emoji_name(name)).map(str::to_string)
 }
 
 /// Resolve a `\c[NAME]` / `uniparse` name that may denote more than one

@@ -1095,7 +1095,7 @@ impl Interpreter {
             parent_pre_args: &parent_pre_args,
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
-            is_hoisted_shell: false,
+            is_hoisted_shell: crate::runtime::HoistedShell::No,
         };
         self.register_class_decl(&pun_name, &parents, modifiers)?;
         self.store_language_revision_from_version(&pun_name, &language_version);
@@ -1463,6 +1463,7 @@ impl Interpreter {
                 .composed_role_bodies
                 .insert(compose_key.clone())
             {
+                self.reapply_composed_nested_method_captures(&ancestor, regex_owner);
                 continue;
             }
             let (ops, decl_file) = self
@@ -1578,6 +1579,13 @@ impl Interpreter {
                     if matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. }) =>
                 {
                     Some(type_owner)
+                }
+                // A `proto token name {*}` is keyed under the grammar that
+                // owns its `:sym<>` candidates, like the tokens above.
+                crate::opcode::DeferredBodyOpKind::Plain
+                    if matches!(op.raw, Stmt::ProtoToken { .. }) =>
+                {
+                    Some(regex_owner)
                 }
                 crate::opcode::DeferredBodyOpKind::Plain => None,
             };

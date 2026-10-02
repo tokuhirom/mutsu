@@ -1,7 +1,6 @@
 use super::regex_parse::*;
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
-use ::regex::Regex;
 
 impl Interpreter {
     /// Try to parse an inline scope modifier from the remaining source after ':'.
@@ -906,9 +905,7 @@ impl Interpreter {
             }
         }
         // Check for named rule with parens containing code: <alpha(...)>
-        static NAMED_RULE_RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new(r"<\w+\(.*\)>").expect("valid regex"));
-        if NAMED_RULE_RE.find(s).is_some() {
+        if super::regex_ltm_split::contains_named_rule_call_with_args(s) {
             return true;
         }
         // Check for :my variable declaration

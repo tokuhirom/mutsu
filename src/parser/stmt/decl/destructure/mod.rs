@@ -170,13 +170,6 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     is_our: bool,
     type_constraint: Option<String>,
 ) -> PResult<'_, Stmt> {
-    // `our Int ($a, $b)` is refused at compile time, like every other
-    // `our TYPE` spelling -- see `our_type_constraint_error`. Raised here
-    // rather than in the compiler because the `VarDecl`s this lowers to do not
-    // carry the `our` down with them.
-    if is_our && type_constraint.is_some() {
-        return Err(super::helpers::our_type_constraint_error());
-    }
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
@@ -550,9 +543,6 @@ fn parse_destructuring_with_rhs(
     // optional trailing `;` when there is no such block.
     let (rest_ws, _) = ws(rest)?;
     let has_following_block = rest_ws.starts_with('{');
-    let rhs_ends_with_block = matches!(raw_rhs, Expr::DoBlock { .. } | Expr::DoStmt(_));
-    let block_rhs_ends_at_newline =
-        rhs_ends_with_block && rest[..rest.len() - rest_ws.len()].contains('\n');
     let rest = if has_following_block { rest } else { rest_ws };
 
     // List-assignment iterates the RHS with one level of decont (Rakudo
@@ -912,7 +902,7 @@ fn parse_destructuring_with_rhs(
     };
     stmts.push(Stmt::Expr(result));
     let block = Stmt::SyntheticBlock(stmts);
-    if has_following_block || block_rhs_ends_at_newline {
+    if has_following_block {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
         // surrounding conditional, not to this declaration's modifier parser.
         Ok((rest, block))

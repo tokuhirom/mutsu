@@ -3,27 +3,6 @@ use crate::compiler::helpers_dynamic::OuterStash;
 use crate::value::ValueView;
 
 impl Compiler {
-    /// Collect a chained subscript's index expressions in source order and
-    /// return its root expression. Used by `with`/`without` so a nested lvalue
-    /// can be evaluated once while retaining the complete writeback path.
-    fn collect_index_path<'a>(
-        target: &'a Expr,
-        index: &'a Expr,
-        is_positional: bool,
-        path: &mut Vec<(&'a Expr, bool)>,
-    ) -> &'a Expr {
-        let root = match target {
-            Expr::Index {
-                target,
-                index,
-                is_positional,
-            } => Self::collect_index_path(target, index, *is_positional, path),
-            _ => target,
-        };
-        path.push((index, is_positional));
-        root
-    }
-
     /// A `$.attr` twigil naming a SCALAR attribute -- the only sigil whose
     /// public non-`rw` accessor hands back a bare value rather than a container,
     /// and therefore the only one whose read-modify-write raku sends to a
@@ -350,8 +329,9 @@ impl Compiler {
         // `@a[i]:delete:exists` reports the slot as missing even though
         // the slot still holds a type-object hole after deletion.
         let array_var_name = match target {
-            Expr::Index { target: t, .. } => Self::postfix_index_name(t)
-                .and_then(|n| if n.starts_with('@') { Some(n) } else { None }),
+            Expr::Index { target: t, .. } => {
+                self.postfix_index_name(t).filter(|n| n.starts_with('@'))
+            }
             _ => None,
         };
         if let Some(name) = array_var_name {
@@ -381,7 +361,7 @@ impl Compiler {
             _ => None,
         };
         if delete && let Some((delete_target, delete_index)) = delete_parts {
-            if let Some(var_name) = Self::postfix_index_name(delete_target) {
+            if let Some(var_name) = self.postfix_index_name(delete_target) {
                 if Self::index_assign_target_requires_eval(delete_target) {
                     self.compile_expr(delete_target);
                     self.code.emit(OpCode::Pop);
@@ -570,15 +550,9 @@ impl Compiler {
         // target/index/read sequence here would run an effectful index twice.
         if let Some((container, positionals)) = self.with_element_source_capture.take() {
             let mut path = Vec::new();
-            let root = Self::collect_index_path(target, index, is_positional, &mut path);
-            let root_name = match root {
-                Expr::Var(name) if !name.starts_with(['!', '.']) => Some(name.clone()),
-                Expr::ArrayVar(name) if !name.starts_with(['!', '.']) => Some(format!("@{name}")),
-                Expr::HashVar(name) if !name.starts_with(['!', '.', '?']) => {
-                    Some(format!("%{name}"))
-                }
-                _ => None,
-            };
+            let root = target.index_path(&mut path);
+            path.push((index, is_positional));
+            let root_name = crate::with_desugar::element_source_root_key(root);
             let path_matches = root_name.as_deref() == Some(container.as_str())
                 && path
                     .iter()

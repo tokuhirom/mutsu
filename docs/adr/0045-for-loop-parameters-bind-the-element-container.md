@@ -878,6 +878,37 @@ its missing `Pair` arm cost so much.
   freeze (`news/2026-09/multi-param-rw-closure-reads-through-the-element.md`). The read half of
   rows 11/20 for the multi-parameter shapes now matches raku.
 
+### Slice 7 — an immutable List source is read-only, 2026-09-30 (#10349)
+
+The sweep of slice 6 measured sources that are mutable `Array`s; it left one whole class alone. A
+`List` has no element containers, yet both mechanisms of this ADR could still reach into one:
+`array_is_aliasable` / `aliasable_source_array` were *denial lists* that accepted `List`/`ItemList`
+(so the alias promoted the List's slots to cells in place), and the retained writeback rebuilt the
+source `ArrayData` whatever its kind. `$_ = 42 for $l.list` and `for @l.kv -> \k, \v { v = 42 }`
+therefore rewrote an immutable List (raku: `X::AdHoc` / `X::Assignment::RO`).
+
+**The gate is the source's runtime value, not its spelling.** Slice 5 gated the bind-time rejection on
+the compiler's syntactic `source_items_are_bare` and recorded that it cannot see a variable holding a
+List. `for_source_is_value_sequence` (introduced for `is repr('VMArray')` objects in #10261) now
+answers for any `List`/`ItemList` the tagged source resolves to, so `for @l`, `@l.list`, `$l.list`,
+`@$l`, `@l.kv`, `@l.values`, `@l.reverse` and a `@`-parameter bound to a List all take the same path.
+It is decided **per item**: a List built from variables (`($a, $b)`) holds their containers and keeps
+aliasing them, a bare item does not. That is also why this is not the "key the rejection off
+promotion" mistake §8's slice 5 warns about — the test is "the source IS a List", never "this item
+was not promoted".
+
+What a bare item of such a source now does: promotion is refused; the implicit topic and a sigilless
+parameter are read-only (`X::AdHoc`, and `X::Assignment::RO` via `ReadonlyKind::ImmutableValue` for
+`\v`); an `is rw` / `<->` parameter fails the bind with `X::Parameter::RW`, for a single parameter
+and — through `ForLoopSpec::multi_param_declared_rw` — per chunk slot of a multi-parameter loop; an
+`is copy` parameter is untouched. The writeback family is not edited: nothing it could write is left
+assignable, and a `@`-parameter bound to an Array item still propagates through the shared `Gc`.
+
+Measured against rakudo in one file per statement; pinned by
+`t/control/for-immutable-list-source-readonly.t`. Out of scope and filed: a list-valued expression
+as source (#10397), `List.values` decontainerizing a List of variables (#10396), an immutable `Map`'s
+`.kv` with an `is rw` parameter (#10398).
+
 ### What slices 5-6 owned, as recorded before the sweep
 
 Nothing from §1.3: rows 16, 19, 28 and 30 all landed 2026-09-01, and

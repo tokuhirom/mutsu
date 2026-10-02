@@ -1,4 +1,5 @@
 mod dispatch_0arg;
+pub(crate) use dispatch_0arg::epoch_nanos;
 mod dispatch_1arg;
 mod dispatch_2arg;
 mod dispatch_3arg;

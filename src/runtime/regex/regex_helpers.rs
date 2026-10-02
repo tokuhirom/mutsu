@@ -184,22 +184,28 @@ pub(crate) fn grammar_dynvar_scope_active(name: &str) -> bool {
         .with(|stack| stack.borrow().iter().rev().any(|keys| keys.contains(name)))
 }
 
-/// Set the first time the regex parser lowers a `$0` / `$<name>` backreference
-/// atom anywhere in the process. Until then, none of the outer-capture seeding
-/// below can matter, so the whole mechanism (including the per-atom sub-pattern
-/// scan) is skipped with a single relaxed load. Process-global rather than
-/// thread-local on purpose: a grammar is often parsed on one thread and matched
-/// on another.
-pub(crate) static REGEX_BACKREF_LOWERED: std::sync::atomic::AtomicBool =
+/// Set the first time the regex parser lowers an atom that READS the enclosing
+/// captures — a `$0` / `$<name>` backreference, or a code atom (`{ … }`,
+/// `<?{ … }>`, `:my …;`), whose body sees `$/` and `$0…`. Until then, none of
+/// the outer-capture seeding below can matter, so the whole mechanism
+/// (including the per-atom sub-pattern scan) is skipped with a single relaxed
+/// load. Process-global rather than thread-local on purpose: a grammar is often
+/// parsed on one thread and matched on another.
+pub(crate) static REGEX_CAPTURE_READER_LOWERED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Called by the regex parser when it emits a backreference atom.
 pub(crate) fn note_regex_backref_lowered() {
-    REGEX_BACKREF_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+    REGEX_CAPTURE_READER_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-pub(crate) fn any_regex_backref_lowered() -> bool {
-    REGEX_BACKREF_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
+/// Called by the regex parser when it emits a code atom.
+pub(crate) fn note_regex_code_lowered() {
+    REGEX_CAPTURE_READER_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn any_regex_capture_reader_lowered() -> bool {
+    REGEX_CAPTURE_READER_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Arms [`INLINE_OUTER_CAPS_SEED`] for the duration of one atom match,
@@ -207,6 +213,9 @@ pub(crate) fn any_regex_backref_lowered() -> bool {
 pub(crate) struct OuterCapsSeed {
     prev: Option<std::sync::Arc<OuterBackrefCaps>>,
     armed: bool,
+    /// The quantifier fold this atom consumed (`consume_capture_scope`),
+    /// restored when the atom's match is done.
+    _scope: Option<InlineCaptureScope>,
 }
 
 impl OuterCapsSeed {
@@ -214,7 +223,23 @@ impl OuterCapsSeed {
     /// level) for the nested stores this atom's match is about to build.
     pub(crate) fn arm(next: Option<std::sync::Arc<OuterBackrefCaps>>) -> Self {
         let prev = INLINE_OUTER_CAPS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
-        OuterCapsSeed { prev, armed: true }
+        OuterCapsSeed {
+            prev,
+            armed: true,
+            _scope: None,
+        }
+    }
+
+    /// Withdraw the [`INLINE_CAPTURE_SCOPE`] fold for as long as this atom
+    /// matches. The fold names the slots of the one atom an iteration of a
+    /// quantifier is matching, and that atom's seed (built before this call)
+    /// already carries it as `merge_positional`; a sub-pattern nested deeper
+    /// in the atom, or the rest of the pattern a lazily driven candidate
+    /// continues into, is not that atom and must not fold into those slots.
+    // Cost: O(1).
+    pub(crate) fn consume_capture_scope(mut self) -> Self {
+        self._scope = InlineCaptureScope::suspend();
+        self
     }
 
     /// Leave the enclosing atom's seed in place untouched.
@@ -223,6 +248,7 @@ impl OuterCapsSeed {
         OuterCapsSeed {
             prev: None,
             armed: false,
+            _scope: None,
         }
     }
 }
@@ -242,7 +268,7 @@ impl Drop for OuterCapsSeed {
 /// backreferences through (see [`INLINE_OUTER_CAPS_SEED`]).
 pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
     let scope = INLINE_CAPTURE_SCOPE.with(Cell::get);
-    if !any_regex_backref_lowered() && scope.is_none() {
+    if !any_regex_capture_reader_lowered() && scope.is_none() {
         return None;
     }
     INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
@@ -258,6 +284,16 @@ impl InlineCaptureScope {
     pub(crate) fn enter(start: usize, stride: usize) -> Self {
         let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.replace(Some((start, stride))));
         Self { previous }
+    }
+
+    /// Clear the fold until the guard drops; `None` (nothing to restore) when
+    /// no fold is armed.
+    // Cost: O(1).
+    pub(crate) fn suspend() -> Option<Self> {
+        let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.take())?;
+        Some(Self {
+            previous: Some(previous),
+        })
     }
 }
 
@@ -292,6 +328,49 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
         | RegexAtom::CaptureIsolatedGroup(p)
         | RegexAtom::CaptureIsolatedGroupScoped(p, _)
         | RegexAtom::Lookaround { pattern: p, .. } => pattern_has(p),
+        RegexAtom::Alternation(alts)
+        | RegexAtom::SequentialAlternation(alts)
+        | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has),
+        RegexAtom::GoalMatch { goal, inner, .. } => pattern_has(goal) || pattern_has(inner),
+        _ => false,
+    }
+}
+
+/// Is an enclosing same-scope sub-pattern publishing its level's captures right
+/// now (see [`INLINE_OUTER_CAPS_SEED`])? The continuation after that sub-pattern
+/// runs inside its dynamic extent, so an atom that starts a regex of its own
+/// must check before it builds a capture store.
+#[inline]
+pub(crate) fn outer_caps_seed_published() -> bool {
+    INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().is_some())
+}
+
+/// [`atom_contains_code`] for a whole pattern (memoized on the pattern).
+pub(crate) fn pattern_contains_code(pattern: &RegexPattern) -> bool {
+    *pattern.derived.contains_code.get_or_init(|| {
+        pattern.tokens.iter().any(|tok| {
+            atom_contains_code(&tok.atom)
+                || matches!(tok.quant, RegexQuant::RepeatCode(_))
+                || tok
+                    .separator
+                    .as_ref()
+                    .is_some_and(|sep| pattern_contains_code(&sep.pattern))
+        })
+    })
+}
+
+/// Does this atom's sub-pattern contain a code atom (`{ … }`, `<?{ … }>`,
+/// `:my …;`) anywhere inside it, at its own capture level? Only such an atom
+/// needs the enclosing level's captures published for the code to see (`$/`
+/// and `$0` inside a `[ … ]` block are the enclosing regex's, as in raku).
+pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
+    let pattern_has = pattern_contains_code;
+    match atom {
+        RegexAtom::CodeAssertion { .. }
+        | RegexAtom::VarDecl { .. }
+        | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. } => true,
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
         | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has),
@@ -508,6 +587,20 @@ pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>)
             log.entries.push((rule.to_string(), caps.clone()));
         }
     });
+}
+
+/// Run `f` with the reduce log set aside, then put it back: the walk's replay of
+/// a compiled run (`MUTSU_RX_DIFF`, ADR-0135 D6) must not log the reductions of a
+/// match the compiled run already logged, or an action would run twice.
+pub(crate) fn isolate_reduced_log<R>(f: impl FnOnce() -> R) -> R {
+    let saved = REDUCED_SUBRULES.with(|slot| slot.borrow_mut().as_mut().map(std::mem::take));
+    let out = f();
+    REDUCED_SUBRULES.with(|slot| {
+        if let (Some(log), Some(saved)) = (slot.borrow_mut().as_mut(), saved) {
+            *log = saved;
+        }
+    });
+    out
 }
 
 /// Activates the reduce log for one `Grammar.parse(:actions(...))`, restoring any
@@ -1063,15 +1156,10 @@ fn remap_caps_spans_mapped(
         caps.from = m(caps.from);
         caps.to = m(caps.to);
     }
-    if !caps.positional_slots().is_empty() {
-        for slot in caps.positional_slots_mut().iter_mut().flatten() {
-            slot.0 = m(slot.0);
-            slot.1 = m(slot.1);
-        }
-    }
     for sc in caps
         .named
-        .values_mut()
+        .iter_mut()
+        .map(|(_, v)| v)
         .flat_map(|slot| slot.nodes.iter_mut())
     {
         remap_cap_node_spans_mapped(
@@ -1136,7 +1224,8 @@ fn remap_cap_node_spans_mapped(
     };
     for sc in children
         .named
-        .values_mut()
+        .iter_mut()
+        .map(|(_, v)| v)
         .flat_map(|slot| slot.nodes.iter_mut())
     {
         remap_cap_node_spans_mapped(
@@ -1419,7 +1508,7 @@ pub(super) fn merge_regex_captures(
     mut src: RegexCaptures,
 ) -> RegexCaptures {
     for (k, v) in src.named.drain() {
-        dst.named.entry(k).or_default().merge(v);
+        dst.named.slot_mut(k).merge(v);
     }
     dst.extend_capture_alias_map(src.take_capture_alias_map());
     dst.positional.append(&mut src.positional);
@@ -1508,6 +1597,10 @@ fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> V
             )
             || token.separator.is_some();
         out.extend(capture_group_list_flags(&token.atom, token_is_list));
+        // A separator's slots follow the atom's (see `count_pattern_capture_groups`).
+        if let Some(sep) = token.separator.as_ref() {
+            out.extend(pattern_capture_group_list_flags(&sep.pattern, true));
+        }
     }
     out
 }
@@ -1740,11 +1833,18 @@ fn pattern_contains_alternation(pat: &RegexPattern) -> bool {
 }
 
 /// Count positional capture groups in a pattern (non-recursive into nested groups).
-fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
+///
+/// A separated token (`atom +% sep`) takes the atom's slots and then the
+/// separator's (`append_separated_captures`), so a separator's capture groups
+/// count here too: `[ [ (\d) ] +% (',') ]` takes two slots, not one.
+pub(super) fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
     *pat.derived.capture_group_count.get_or_init(|| {
         let mut count = 0;
         for token in &pat.tokens {
             count += count_capture_groups(&token.atom);
+            if let Some(sep) = token.separator.as_ref() {
+                count += count_pattern_capture_groups(&sep.pattern);
+            }
         }
         count
     })
@@ -1795,24 +1895,17 @@ pub(super) fn fold_quantified_captures(
     }
 
     // Collect entries per group; the last iteration's span/subcap become the
-    // folded slot's "representative" values for backref purposes.
+    // folded slot's "representative" values for backref purposes. An
+    // iteration's slot that an inner quantifier already folded contributes all
+    // its entries (`PosSlot::push_entries_to`).
     let mut folded: Vec<PosSlot> = Vec::with_capacity(stride);
     for group in 0..stride {
         let mut list: Vec<QuantifiedCaptureEntry> = Vec::with_capacity(iterations);
         for iter in 0..iterations {
             let idx = base_len + iter * stride + group;
-            let slot = &caps.positional[idx];
-            list.push((slot.from, slot.to, slot.subcap.clone()));
+            caps.positional[idx].push_entries_to(&mut list);
         }
-        let last = list.last().unwrap();
-        folded.push(PosSlot {
-            from: last.0,
-            to: last.1,
-            subcap: last.2.clone(),
-            quantified: Some(list),
-            nil: false,
-            alternation_padding: false,
-        });
+        folded.push(PosSlot::folded(list));
     }
 
     // Replace entries from base_len onward

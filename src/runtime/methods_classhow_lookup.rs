@@ -658,6 +658,12 @@ impl Interpreter {
         invocant: &Value,
         method_name: &str,
     ) -> Option<Value> {
+        // `false`: `.^find_method` (and `.can` on a Package receiver, which
+        // routes through this function) is stricter than `.^lookup` about
+        // ancestor submethods -- see `classhow_lookup_impl`'s doc comment.
+        if let Some(value) = self.classhow_lookup_impl(invocant, method_name, false) {
+            return Some(value);
+        }
         if matches!(
             method_name,
             "name"
@@ -694,13 +700,13 @@ impl Interpreter {
                 | "private_method_table"
                 | "submethod_table"
         ) {
-            return Some(Value::str(method_name.to_string()));
-        }
-        // `false`: `.^find_method` (and `.can` on a Package receiver, which
-        // routes through this function) is stricter than `.^lookup` about
-        // ancestor submethods -- see `classhow_lookup_impl`'s doc comment.
-        if let Some(value) = self.classhow_lookup_impl(invocant, method_name, false) {
-            return Some(value);
+            // A real `Method` object in Rakudo (`Routine`-typed parameters, e.g.
+            // JSON::RPC's `!validate_params(Routine $method, ...)`, accept it).
+            return Some(Value::routine_parts(
+                Symbol::intern("Mu"),
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         // CREATE is a built-in method on all types
         if method_name == "CREATE" {

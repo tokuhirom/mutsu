@@ -1,0 +1,69 @@
+# Dependabot version updates. See docs/maintenance.md for what stays manual
+# (major-bump audits, MSRV/toolchain bumps, vendored upstream trees).
+#
+# `cooldown` holds back a release for N days after it is published, so a
+# broken or compromised release has time to be yanked before we pick it up.
+# It does not delay security updates.
+#
+# Commit prefixes carry the `(deps)` scope so label-pr.yml files the PRs
+# under the `dependencies` label.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      # The cranelift-* crates share one version and must move in lockstep
+      # (a split bump leaves two incompatible cranelift-codegen copies), so
+      # every update of them, major included, is one PR. Dependabot does not
+      # pick the first matching group but the one it rates "more specific",
+      # and it rated cargo-minor-patch above this one (leaving this group
+      # empty), so cargo-minor-patch must exclude the crates explicitly.
+      cranelift:
+        patterns: ["cranelift*"]
+      # One weekly PR for every other in-range update; major bumps stay one
+      # per PR (docs/maintenance.md section 1c).
+      cargo-minor-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["cranelift*"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    ignore:
+      # The rust image tag is the toolchain version; it moves together with
+      # the workflow toolchain pins in an MSRV PR (docs/maintenance.md 1d).
+      - dependency-name: rust
+        update-types: [version-update:semver-minor, version-update:semver-major]
+    commit-message:
+      prefix: "build(deps)"

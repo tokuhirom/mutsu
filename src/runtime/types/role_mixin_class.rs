@@ -73,7 +73,7 @@ impl Interpreter {
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
-            is_hoisted_shell: false,
+            is_hoisted_shell: crate::runtime::HoistedShell::No,
         };
         self.register_class_decl(&name, &parents, modifiers)?;
         self.compose_mixin_role_submethods(&name, &fresh);

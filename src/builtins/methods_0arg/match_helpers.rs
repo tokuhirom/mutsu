@@ -94,7 +94,7 @@ pub(super) fn match_caps(attributes: &AttrMap) -> Value {
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
-        for (_key, val) in named.iter() {
+        for val in named.values() {
             for item in &expand_capture_items(val) {
                 named_positions.push((match_value_from(item), match_value_to(item)));
             }
@@ -160,7 +160,7 @@ pub(super) fn match_chunks(attributes: &AttrMap) -> Value {
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
-        for (_key, val) in named.iter() {
+        for val in named.values() {
             for item in &expand_capture_items(val) {
                 named_positions.push((match_value_from(item), match_value_to(item)));
             }

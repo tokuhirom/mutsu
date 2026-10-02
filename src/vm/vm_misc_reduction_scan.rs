@@ -287,6 +287,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         body_end: u32,
+        lexicals_idx: u32,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -296,7 +297,16 @@ impl Interpreter {
         let saved_env = self.env().clone();
         let saved_locals = self.locals.to_vec();
         self.set_current_package(name.clone());
-        self.run_range(code, *ip + 1, body_end, compiled_fns)?;
+        let lexicals = (lexicals_idx != crate::opcode::NO_PACKAGE_LEXICALS)
+            .then(|| Self::const_str(code, lexicals_idx));
+        if let Some(lexicals) = lexicals {
+            self.bind_package_body_lexicals(&name, lexicals);
+        }
+        let result = self.run_range(code, *ip + 1, body_end, compiled_fns);
+        if let Some(lexicals) = lexicals {
+            self.unbind_package_body_lexicals(&name, lexicals, &saved_env);
+        }
+        result?;
         self.set_current_package(saved);
         let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();

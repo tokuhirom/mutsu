@@ -302,6 +302,13 @@ impl Interpreter {
                 "X::AdHoc.new(payload => {payload_raku})"
             ))));
         }
+        // A grammar `token`/`rule`/`regex` method object (`.^lookup`,
+        // `.^method_table`) gists as its declaration source.
+        if method == "gist"
+            && let Some(src) = attributes.as_map().get("__mutsu_regex_source")
+        {
+            return Some(Ok(src.clone()));
+        }
         if method == "gist"
             && class_name.resolve() != "Pod::Block::Declarator"
             && self.is_pod_block_instance(target)
@@ -572,6 +579,12 @@ impl Interpreter {
                 && let Some(result) = self.dispatch_callable_method(callable, method, &args)
             {
                 return result;
+            }
+            if method == "cando"
+                && args.len() == 1
+                && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+            {
+                return Ok(self.method_object_cando(&target, &args[0]));
             }
             // A multi Method dispatcher has no single callable payload. Its
             // candidates do, however, so preserve `.assuming`'s bound
@@ -2028,11 +2041,24 @@ impl Interpreter {
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            let val = attributes
-                                .as_map()
-                                .get(method)
-                                .cloned()
-                                .unwrap_or(Value::NIL);
+                            let stored = attributes.as_map().get(method).cloned();
+                            let val = match stored {
+                                Some(val) => val,
+                                // A grammar cursor is minted without BUILD
+                                // (raku: `nqp::create`), so a declared attribute
+                                // no rule wrote reads as its uninitialised value
+                                // -- the type object, an empty `@` / `%` -- not
+                                // as `Nil`, and a declared `= default` is not
+                                // applied (#9803).
+                                None if attributes.contains_key(
+                                    crate::value::match_view::cursor_match_marker(),
+                                ) =>
+                                {
+                                    let constraints = self.collect_attribute_type_constraints(&cn);
+                                    self.seed_attr_value(&cn, method, attr.sigil, &constraints)
+                                }
+                                None => Value::NIL,
+                            };
                             // The generated accessor decontainerizes: `self.a`
                             // is not itemized even when the store itemized the
                             // attribute's Scalar (`$!a` / `$.a` preserve it) --
@@ -2527,12 +2553,12 @@ impl Interpreter {
                         if let Some(regex_idx) = attr_var.find(":regex:") {
                             let real_attr = &attr_var[..regex_idx];
                             let pattern = &attr_var[regex_idx + ":regex:".len()..];
-                            // Check if method name matches the regex pattern first
+                            // Check if method name matches the Raku regex pattern first
                             // (cheap, no re-entrant call) before resolving the
                             // delegate.
-                            let matches = fancy_regex::Regex::new(pattern)
-                                .map(|re| re.is_match(method).unwrap_or(false))
-                                .unwrap_or(false);
+                            // `parse_regex` caches the compiled pattern, so this
+                            // compiles once per distinct pattern.
+                            let matches = self.regex_find_first(pattern, method).is_some();
                             if !matches {
                                 continue;
                             }
@@ -2684,6 +2710,29 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
+            // `Code.set_name` on a regex: rename the code object in place, so
+            // every alias of it reports the new `.name`. Answers the name, as
+            // rakudo's `set_name` does.
+            // Cost: O(n), n = chars of the new name (interned).
+            "set_name"
+                if args.len() == 1
+                    && matches!(
+                        target.view(),
+                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                    ) =>
+            {
+                let name = args[0].to_string_value();
+                if target.set_regex_name(Symbol::intern(&name)) {
+                    Ok(Value::str(name))
+                } else {
+                    // TODO: a synthesized regex (no closure payload) or one
+                    // carrying adverbs has no shared cell to hold a name; give
+                    // every regex value the code-object payload.
+                    Err(RuntimeError::new(
+                        "Cannot set_name on a regex value without a code-object payload",
+                    ))
+                }
+            }
             "name"
                 if args.is_empty()
                     && !matches!(
@@ -2720,10 +2769,14 @@ impl Interpreter {
                     ValueView::Array(..) if crate::runtime::value_type_name(&target) == "Array" => {
                         Ok(Value::NIL)
                     }
-                    // A regex is a `Code`, and an anonymous one's name is "".
-                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => {
-                        Ok(Value::str(String::new()))
-                    }
+                    // A regex is a `Code`, and an anonymous one's name is ""
+                    // until `set_name` gives it one.
+                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Ok(Value::str(
+                        target
+                            .regex_name()
+                            .map(|name| name.resolve())
+                            .unwrap_or_default(),
+                    )),
                     // `Code`'s `name` reads an attribute, which a `Code` type
                     // object does not have.
                     ValueView::Package(name)
@@ -3168,7 +3221,14 @@ impl Interpreter {
                         am.get("__mutsu_method_table_entry").map(Value::view),
                         Some(ValueView::Bool(true))
                     );
-                    if is_method_table_entry
+                    if (is_method_table_entry
+                        || (matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                            && matches!(
+                                am.get("__mutsu_lookup_class").map(Value::view),
+                                Some(ValueView::Str(owner))
+                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. })
+                                        && self.type_matches_value(owner.as_str(), inv))
+                            )))
                         && !is_multi_candidate
                         && let Some(ValueView::Str(method_name)) =
                             am.get("__mutsu_lookup_method").map(Value::view)
@@ -3201,7 +3261,27 @@ impl Interpreter {
                             self.pop_method_class();
                             return result;
                         }
+                        // The entry is its owner's candidate, not whatever
+                        // the invocant's class overrides it with (#10344).
+                        if !is_private
+                            && let Some(ValueView::Str(owner)) =
+                                am.get("__mutsu_lookup_class").map(Value::view)
+                            && let Some(qualified) = self.owner_bound_method_name(
+                                Symbol::intern(&owner),
+                                Symbol::intern(&method_name),
+                                &invocant,
+                            )
+                        {
+                            return self.call_method_with_values(
+                                invocant,
+                                qualified.as_str(),
+                                args,
+                            );
+                        }
                         return self.call_method_with_values(invocant, &method_name, args);
+                    }
+                    if let Some(result) = self.try_call_bound_method_object(&target, &args) {
+                        return result;
                     }
                     if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
                         return self.call_sub_value(callable, args, false);

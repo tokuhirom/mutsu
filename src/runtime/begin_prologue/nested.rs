@@ -29,18 +29,48 @@
 //! An `our` variable is re-declared in the body's block, which binds the same
 //! package variable.
 //!
+//! A routine an enclosing inner scope declares ahead of the BEGIN does not
+//! exist in the prologue either. The body gets a copy of each one it calls (see
+//! [`routines`]). It also gets the scope's imports and pragmas, a copy of each
+//! type or package of the scope it names (see [`decls`], [`pragmas`]), and
+//! every operator code variable of the scope.
+//!
+//! A nested `use lib` is a BEGIN-time effect too, and is lifted the same way:
+//! it moves from its position into the prologue, so it extends the repository
+//! chain even when its scope never runs (#10481). One that cannot be lifted
+//! stays in position and blocks its scope ([`pragmas`]).
+//!
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
-//! - an enclosing inner scope declares, ahead of it, a routine, a type, a
-//!   package or an import, which the prologue cannot reproduce yet;
+//! - an enclosing inner scope declares, ahead of it, a pragma it cannot repeat
+//!   (see [`pragmas`]), or a routine that is not a plain `sub` (a `multi`, an
+//!   `our sub`, an operator, an exported one), which the prologue cannot
+//!   reproduce yet;
+//! - it names a type or package of an inner scope that cannot be declared again
+//!   unobservably (its body runs code), or reads an inner variable typed by
+//!   one;
+//! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup), or
+//!   calls a routine that is neither one of the scope's nor a core one (which
+//!   may evaluate a string where it was called from), in a scope that declares
+//!   a routine or a type, since it cannot say which one it needs;
 //! - it sits in a package body;
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);
 //! - it reads a `state`, `constant` or group-declared inner lexical.
 
+mod cell_ast;
+mod decls;
+mod phasers;
+mod pragmas;
+mod routines;
+mod walk;
+
+use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::opcode::CompiledCode;
-use std::collections::HashSet;
+use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, slot_read, static_scalar};
+use decls::TypeDecl;
+use routines::{Access, Dependencies, FrameBlock, Routine, Scan};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SLOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -57,6 +87,13 @@ pub(super) struct Lifted {
     pub(super) decls: Vec<Stmt>,
     /// One statement-form `BEGIN` per lifted effect, in source order.
     pub(super) effects: Vec<Stmt>,
+    /// One top-level `INIT` or `CHECK` per phaser lifted out of the statement
+    /// being walked ([`phasers`]). They precede the statement; the caller
+    /// takes them after each statement.
+    pub(super) phasers: Vec<Stmt>,
+    /// A lifted phaser re-enters a package, so the statement that declares it
+    /// must be composed in the prologue.
+    pub(super) needs_prologue: bool,
     /// A BEGIN-time effect could not be lifted. It keeps its pre-ADR handling,
     /// which runs it later than the prologue, so no later effect is lifted
     /// either: that would run it ahead of an effect that precedes it in the
@@ -64,11 +101,30 @@ pub(super) struct Lifted {
     halted: bool,
 }
 
+/// What a unit's top level tells the walk about one of its statements.
+#[derive(Clone, Copy)]
+pub(super) struct UnitContext<'a> {
+    /// The unit is an EVAL's: a free name it does not declare may be one of its
+    /// caller's lexicals.
+    pub(super) is_eval: bool,
+    /// `strict` is off where the statement sits, by a `no strict` among the
+    /// unit's top-level statements ahead of it.
+    pub(super) strict_off: bool,
+    /// The variable names the unit mentions outside its BEGIN bodies.
+    pub(super) outside_begin: &'a HashSet<String>,
+}
+
 /// Lift every liftable BEGIN nested in `stmt`, a top-level statement of a
 /// unit whose top-level lexical names are `unit_names`.
-pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted: &mut Lifted) {
+pub(super) fn lift_in_stmt<'a>(
+    stmt: &mut Stmt,
+    unit_names: &'a HashSet<String>,
+    unit: UnitContext<'a>,
+    lifted: &'a mut Lifted,
+) {
     let mut walker = Walker {
         unit_names,
+        unit,
         frames: Vec::new(),
         lifted,
     };
@@ -77,6 +133,7 @@ pub(super) fn lift_in_stmt(stmt: &mut Stmt, unit_names: &HashSet<String>, lifted
 
 struct Walker<'a> {
     unit_names: &'a HashSet<String>,
+    unit: UnitContext<'a>,
     frames: Vec<Frame>,
     lifted: &'a mut Lifted,
 }
@@ -84,11 +141,29 @@ struct Walker<'a> {
 #[derive(Default)]
 struct Frame {
     bindings: Vec<Binding>,
-    /// A routine, type, package or import was declared in this scope ahead of
-    /// the current statement.
+    /// A type, package, pragma, operator or other routine the prologue cannot
+    /// reproduce was declared in this scope ahead of the current statement.
     blocked: bool,
+    /// The imports and pragmas in this scope ahead of the current statement.
+    /// A lifted BEGIN repeats them ([`decls`], [`pragmas`]).
+    imports: Vec<Stmt>,
+    /// What the repeated pragmas among `imports` must not precede in the
+    /// lifted BEGIN's block ([`pragmas::Guard`]).
+    pragma_guards: Vec<pragmas::Guard>,
+    /// The types and packages declared in this scope ahead of the current
+    /// statement ([`TypeDecl`]).
+    types: Vec<TypeDecl>,
+    /// The plain routines declared in this scope ahead of the current
+    /// statement. A lifted BEGIN that calls one gets its own copy
+    /// ([`Routine`]).
+    routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
+    /// The package this scope is the body of, when a lifted `INIT` or `CHECK`
+    /// has to re-enter it ([`phasers`]).
+    package: Option<Enclosing>,
+    /// The scope is the body of a role, with the names of its type parameters.
+    role: Option<Vec<String>>,
 }
 
 struct Binding {
@@ -107,6 +182,9 @@ enum BindingKind {
         cell: Option<String>,
     },
     Opaque,
+    /// A `my` variable of a package body. The package's static store holds it,
+    /// and a phaser run inside the package reaches it there ([`phasers`]).
+    PackageLexical,
 }
 
 enum Edit {
@@ -120,284 +198,7 @@ enum Edit {
     },
 }
 
-/// How the lifted body reaches one inner name.
-enum Access {
-    CopyIn(Box<Stmt>),
-    Cell { frame: usize, binding: usize },
-}
-
 impl Walker<'_> {
-    fn walk_list(&mut self, list: &mut Vec<Stmt>, frame: Frame) {
-        self.frames.push(frame);
-        let len = list.len();
-        for (i, stmt) in list.iter_mut().enumerate() {
-            self.walk_stmt(stmt, Some((i, i + 1 == len)));
-        }
-        let frame = self.frames.pop().expect("frame pushed above");
-        if frame.edits.is_empty() {
-            return;
-        }
-        let mut edits: Vec<Option<Edit>> = (0..len).map(|_| None).collect();
-        for (i, edit) in frame.edits {
-            edits[i] = Some(edit);
-        }
-        let mut head = Vec::new();
-        let mut out = Vec::with_capacity(len);
-        for (stmt, edit) in std::mem::take(list).into_iter().zip(edits) {
-            match edit {
-                None => out.push(stmt),
-                Some(Edit::Remove) => {}
-                Some(Edit::Replace(replacement)) => out.push(*replacement),
-                Some(Edit::Split { head: decl, assign }) => {
-                    head.push(*decl);
-                    out.extend(assign.map(|a| *a));
-                }
-            }
-        }
-        head.append(&mut out);
-        *list = head;
-    }
-
-    fn params_frame(names: impl IntoIterator<Item = String>) -> Frame {
-        Frame {
-            bindings: names
-                .into_iter()
-                .map(|name| Binding {
-                    name,
-                    kind: BindingKind::Param,
-                })
-                .collect(),
-            ..Frame::default()
-        }
-    }
-
-    /// `loc` is the statement's index in the list being walked and whether it
-    /// is that list's last statement, or `None` for a statement embedded in an
-    /// expression.
-    fn walk_stmt(&mut self, stmt: &mut Stmt, loc: Option<(usize, bool)>) {
-        match stmt {
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                body,
-                ..
-            } => {
-                let (Some((index, is_tail)), false) = (loc, self.frames.is_empty()) else {
-                    return;
-                };
-                // A BEGIN that ends its block is the block's value.
-                let slot = is_tail.then(|| next_slot("__begin_value_"));
-                if self.lift(body, slot.as_deref()) {
-                    let edit = match slot {
-                        Some(slot) => Edit::Replace(Box::new(Stmt::Expr(slot_read(slot)))),
-                        None => Edit::Remove,
-                    };
-                    self.current_frame().edits.push((index, edit));
-                }
-            }
-            Stmt::VarDecl {
-                expr,
-                custom_traits,
-                ..
-            } => {
-                if custom_traits.iter().any(|(t, _)| t == "__constant") {
-                    self.lift_constant_initializer(expr);
-                } else {
-                    self.walk_expr(expr);
-                }
-                self.bind_decl(stmt, loc.map(|(i, _)| i));
-            }
-            Stmt::SyntheticBlock(inner) => {
-                for member in inner.iter() {
-                    match member {
-                        Stmt::VarDecl { name, .. } => self.bind_opaque(name.clone()),
-                        // A `will begin` trait is a BEGIN-time effect this
-                        // slice does not lift.
-                        Stmt::Phaser {
-                            kind: PhaserKind::Begin,
-                            ..
-                        } => self.lifted.halted = true,
-                        _ => {}
-                    }
-                }
-            }
-            Stmt::Assign { expr, .. }
-            | Stmt::Expr(expr)
-            | Stmt::Return(expr)
-            | Stmt::Die(expr)
-            | Stmt::Fail(expr)
-            | Stmt::Take(expr, _) => self.walk_expr(expr),
-            Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-                for e in exprs.iter_mut() {
-                    self.walk_expr(e);
-                }
-            }
-            Stmt::Call { args, .. } => {
-                for arg in args.iter_mut() {
-                    match arg {
-                        crate::ast::CallArg::Positional(e)
-                        | crate::ast::CallArg::Slip(e)
-                        | crate::ast::CallArg::Invocant(e) => self.walk_expr(e),
-                        crate::ast::CallArg::Named { value, .. } => {
-                            if let Some(e) = value {
-                                self.walk_expr(e);
-                            }
-                        }
-                    }
-                }
-            }
-            Stmt::Block(body)
-            | Stmt::Default(body)
-            | Stmt::Catch(body)
-            | Stmt::Control(body)
-            | Stmt::React { body } => self.walk_list(body, Frame::default()),
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                self.walk_expr(cond);
-                self.walk_list(then_branch, Frame::default());
-                self.walk_list(else_branch, Frame::default());
-            }
-            Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
-                self.walk_expr(cond);
-                self.walk_list(body, Frame::default());
-            }
-            Stmt::Loop { body, .. } => self.walk_list(body, Frame::default()),
-            Stmt::For {
-                iterable,
-                param,
-                params,
-                body,
-                ..
-            } => {
-                self.walk_expr(iterable);
-                let names = param.iter().chain(params.iter()).cloned();
-                self.walk_list(body, Self::params_frame(names));
-            }
-            Stmt::Given { topic, body, .. } => {
-                self.walk_expr(topic);
-                self.walk_list(body, Frame::default());
-            }
-            Stmt::Whenever { supply, body, .. } => {
-                self.walk_expr(supply);
-                self.walk_list(body, Frame::default());
-            }
-            Stmt::Label { stmt: inner, .. } => self.walk_stmt(inner, loc),
-            Stmt::SubDecl { params, body, .. } => {
-                self.walk_list(body, Self::params_frame(params.iter().cloned()));
-                self.block_current_frame();
-            }
-            Stmt::ProtoDecl { .. }
-            | Stmt::MethodDecl { .. }
-            | Stmt::TokenDecl { .. }
-            | Stmt::RuleDecl { .. }
-            | Stmt::ProtoToken { .. }
-            | Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. }
-            | Stmt::EnumDecl { .. }
-            | Stmt::SubsetDecl { .. }
-            | Stmt::Package { .. }
-            | Stmt::AugmentClass { .. }
-            | Stmt::Use { .. }
-            | Stmt::No { .. }
-            | Stmt::Need { .. }
-            | Stmt::Import { .. } => self.block_current_frame(),
-            _ => {}
-        }
-    }
-
-    fn walk_expr(&mut self, expr: &mut Expr) {
-        match expr {
-            Expr::PhaserExpr {
-                kind: PhaserKind::Begin,
-                body,
-            } => {
-                let slot = next_slot("__begin_value_");
-                if self.lift(body, Some(&slot)) {
-                    *expr = slot_read(slot);
-                }
-            }
-            Expr::Block(stmts) | Expr::Gather(stmts) | Expr::DoBlock { body: stmts, .. } => {
-                self.walk_list(stmts, Frame::default())
-            }
-            Expr::AnonSub { body, .. } => self.walk_list(body, Frame::default()),
-            Expr::AnonSubParams { params, body, .. } => {
-                self.walk_list(body, Self::params_frame(params.iter().cloned()))
-            }
-            Expr::Lambda { param, body, .. } => {
-                self.walk_list(body, Self::params_frame([param.clone()]))
-            }
-            Expr::Try { body, catch } => {
-                self.walk_list(body, Frame::default());
-                if let Some(c) = catch {
-                    self.walk_list(c, Frame::default());
-                }
-            }
-            Expr::DoStmt(inner) => self.walk_stmt(inner, None),
-            Expr::WhateverCurry(inner)
-            | Expr::Grouped(inner)
-            | Expr::Unary { expr: inner, .. }
-            | Expr::PostfixOp { expr: inner, .. }
-            | Expr::AssignExpr { expr: inner, .. }
-            | Expr::PositionalPair(inner)
-            | Expr::ZenSlice(inner)
-            | Expr::Eager(inner)
-            | Expr::Itemize(inner) => self.walk_expr(inner),
-            Expr::Binary { left, right, .. } => {
-                self.walk_expr(left);
-                self.walk_expr(right);
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                self.walk_expr(cond);
-                self.walk_expr(then_expr);
-                self.walk_expr(else_expr);
-            }
-            Expr::MethodCall { target, args, .. } => {
-                self.walk_expr(target);
-                for a in args.iter_mut() {
-                    self.walk_expr(a);
-                }
-            }
-            Expr::CallOn { target, args } => {
-                self.walk_expr(target);
-                for a in args.iter_mut() {
-                    self.walk_expr(a);
-                }
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                for a in args.iter_mut() {
-                    self.walk_expr(a);
-                }
-            }
-            Expr::Index { target, index, .. } => {
-                self.walk_expr(target);
-                self.walk_expr(index);
-            }
-            Expr::ArrayLiteral(es)
-            | Expr::BracketArray(es, _)
-            | Expr::StringInterpolation(es)
-            | Expr::CaptureLiteral(es) => {
-                for e in es.iter_mut() {
-                    self.walk_expr(e);
-                }
-            }
-            Expr::Hash(pairs) => {
-                for (_, v) in pairs.iter_mut() {
-                    if let Some(e) = v {
-                        self.walk_expr(e);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     fn current_frame(&mut self) -> &mut Frame {
         self.frames
             .last_mut()
@@ -443,11 +244,6 @@ impl Walker<'_> {
             },
             _ => BindingKind::Opaque,
         };
-        // A code variable can declare an operator (`my &infix:<plus>`) and be
-        // reached by symbolic lookup, so it counts as a routine declaration.
-        if name.starts_with('&') {
-            self.block_current_frame();
-        }
         let name = name.clone();
         self.current_frame().bindings.push(Binding { name, kind });
     }
@@ -461,28 +257,36 @@ impl Walker<'_> {
             return;
         }
         let body = [Stmt::Expr(expr.clone())];
-        let reads_cell = free_names(&body).iter().any(|sym| {
-            self.find_binding(&sym.resolve()).is_some_and(|(f, b)| {
-                matches!(
-                    self.frames[f].bindings[b].kind,
-                    BindingKind::Local { cell: Some(_), .. }
-                )
-            })
+        let reads_cell = Scan::of(&body).free().iter().any(|sym| {
+            self.find_binding(&sym.resolve(), None)
+                .is_some_and(|(f, b)| {
+                    matches!(
+                        self.frames[f].bindings[b].kind,
+                        BindingKind::Local { cell: Some(_), .. }
+                    )
+                })
         });
         if !reads_cell {
             return;
         }
         let slot = next_slot("__begin_value_");
-        if self.lift(&body, Some(&slot)) {
+        if self.lift(&body, Some(&slot), &PhaserKind::Begin) {
             *expr = slot_read(slot);
         }
     }
 
-    /// Lift `body` into the prologue when every name it reads can be supplied
-    /// there. With `slot`, the body's value is stored in that unit-level slot.
-    /// Returns whether the body was lifted.
-    fn lift(&mut self, body: &[Stmt], slot: Option<&str>) -> bool {
-        if self.lifted.halted {
+    /// Lift `body`, the body of a phaser of `kind`, out of the scopes around it
+    /// when every name it reads can be supplied outside them. A `BEGIN` goes
+    /// into the prologue. An `INIT` or `CHECK` goes into the unit's own
+    /// sequence of those, and only when it reads something of an inner scope
+    /// ([`phasers`]). With `slot`, the body's value is stored in that
+    /// unit-level slot. Returns whether the body was lifted.
+    fn lift(&mut self, body: &[Stmt], slot: Option<&str>, kind: &PhaserKind) -> bool {
+        let begin = *kind == PhaserKind::Begin;
+        if begin && self.lifted.halted {
+            return false;
+        }
+        if !begin && !self.may_lift_phaser(body) {
             return false;
         }
         // A blockless `BEGIN my %h = ...` declares into the enclosing scope,
@@ -492,94 +296,75 @@ impl Walker<'_> {
         // A placeholder makes the body an error (`X::Placeholder::Block`), which
         // the in-place path reports and the lifted body would not.
         let has_placeholder = !crate::ast::collect_unattached_placeholders(body).is_empty();
-        let accesses = if declares || has_placeholder || self.frames.iter().any(|f| f.blocked) {
+        let deps = if declares || has_placeholder || self.frames.iter().any(|f| f.blocked) {
             None
         } else {
-            self.resolve_free_names(body)
+            self.resolve_dependencies(body)
         };
-        let Some(accesses) = accesses else {
-            self.lifted.halted = true;
+        let mut blocks: BTreeMap<usize, FrameBlock> = BTreeMap::new();
+        let deps = deps.filter(|deps| self.add_declarations(body, deps, &mut blocks).is_some());
+        let Some(deps) = deps else {
+            // A BEGIN that stays behind keeps every later one behind it. An
+            // INIT or CHECK that does is independent of the rest.
+            self.lifted.halted |= begin;
             return false;
         };
-        let mut copy_in = Vec::new();
-        let mut copy_out = Vec::new();
-        for access in accesses {
-            match access {
-                Access::CopyIn(decl) => copy_in.push(*decl),
-                Access::Cell { frame, binding } => {
-                    let (decl, back) = self.cell_access(frame, binding);
-                    copy_in.push(decl);
-                    copy_out.push(back);
-                }
-            }
+        if !begin && !phasers::needs_scope(&deps, &blocks) {
+            return false;
         }
-        let mut block = copy_in;
+        self.add_routines(&deps, &mut blocks);
+        self.add_bindings(deps, &mut blocks);
+        let mut inner = Vec::new();
         match slot {
             Some(slot) => {
                 self.lifted.decls.push(static_scalar(slot));
-                block.push(Stmt::Assign {
+                inner.push(Stmt::Assign {
                     name: slot.to_string(),
                     expr: Expr::DoBlock {
                         body: body.to_vec(),
-                        label: None,
+                        label: phasers::check_label(kind),
                         origin: crate::ast::DoBlockOrigin::Desugar,
                     },
                     op: crate::ast::AssignOp::Assign,
                     target_is_sigilless: false,
                 });
             }
-            None => block.extend_from_slice(body),
+            None => inner.extend_from_slice(body),
         }
-        block.extend(copy_out);
-        self.lifted.effects.push(Stmt::Phaser {
-            kind: PhaserKind::Begin,
-            body: vec![Stmt::Block(block)],
-            condition: None,
-            end_index: None,
-        });
+        let inner = vec![Stmt::Block(FrameBlock::nest(blocks, inner))];
+        if begin {
+            self.lifted.effects.push(Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body: inner,
+                condition: None,
+                end_index: None,
+            });
+        } else {
+            let body = self.run_in_packages(inner);
+            self.lifted.phasers.push(Stmt::Phaser {
+                kind: kind.clone(),
+                body,
+                condition: None,
+                end_index: None,
+            });
+        }
         true
     }
 
-    /// How the lifted body reaches each free name it reads, or `None` when one
-    /// of them cannot be supplied in the prologue.
-    fn resolve_free_names(&self, body: &[Stmt]) -> Option<Vec<Access>> {
-        let mut accesses = Vec::new();
-        for sym in free_names(body) {
-            if crate::qualified::is_qualified(sym) {
-                continue;
-            }
-            let name = sym.resolve();
-            if CompiledCode::is_non_lexical_name(&name) {
-                continue;
-            }
-            match self.find_binding(&name) {
-                Some((frame, binding)) => match &self.frames[frame].bindings[binding].kind {
-                    BindingKind::Param => {
-                        accesses.push(Access::CopyIn(Box::new(unbound_decl(&name))))
-                    }
-                    BindingKind::Our(decl) => accesses.push(Access::CopyIn(decl.clone())),
-                    BindingKind::Local { .. } => accesses.push(Access::Cell { frame, binding }),
-                    BindingKind::Opaque => return None,
-                },
-                None => {
-                    if !self.unit_names.contains(&name) && crate::env::is_plain_user_lexical(&name)
-                    {
-                        return None;
-                    }
+    /// Give the lifted body each inner binding it reads: a copy of the
+    /// parameter or `our` variable, or the lexical's static cell.
+    fn add_bindings(&mut self, deps: Dependencies, blocks: &mut BTreeMap<usize, FrameBlock>) {
+        for ((frame, binding), access) in deps.bindings {
+            let block = blocks.entry(frame).or_default();
+            match access {
+                Access::CopyIn(decl) => block.copy_in.push(*decl),
+                Access::Cell => {
+                    let (decl, back) = self.cell_access(frame, binding);
+                    block.copy_in.push(decl);
+                    block.copy_out.push(back);
                 }
             }
         }
-        Some(accesses)
-    }
-
-    fn find_binding(&self, name: &str) -> Option<(usize, usize)> {
-        self.frames.iter().enumerate().rev().find_map(|(f, frame)| {
-            frame
-                .bindings
-                .iter()
-                .rposition(|b| b.name == name)
-                .map(|b| (f, b))
-        })
     }
 
     /// The copy-in declaration and copy-out assignment for an inner lexical,
@@ -625,114 +410,5 @@ impl Walker<'_> {
             target_is_sigilless: false,
         };
         (copy_in, copy_out)
-    }
-}
-
-/// The free names `body` reads or writes, as the compiler resolves them.
-fn free_names(body: &[Stmt]) -> Vec<crate::symbol::Symbol> {
-    let (code, _fns) = crate::compiler::Compiler::new().compile(body);
-    code.free_var_syms
-}
-
-fn sigil_of(name: &str) -> &str {
-    match name.as_bytes().first() {
-        Some(b'@') => "@",
-        Some(b'%') => "%",
-        Some(b'&') => "&",
-        _ => "",
-    }
-}
-
-/// The expression reading variable `name` (in `VarDecl` naming).
-fn read_var(name: &str) -> Expr {
-    match name.as_bytes().first() {
-        Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
-        Some(b'%') => Expr::HashVar(name[1..].to_string()),
-        Some(b'&') => Expr::CodeVar(name[1..].to_string()),
-        _ => Expr::Var(name.to_string()),
-    }
-}
-
-fn static_scalar(name: &str) -> Stmt {
-    Stmt::VarDecl {
-        name: name.to_string(),
-        expr: Expr::Literal(crate::value::Value::NIL),
-        type_constraint: None,
-        is_state: false,
-        is_our: false,
-        is_dynamic: false,
-        is_export: false,
-        export_tags: vec![],
-        custom_traits: vec![],
-        where_constraint: None,
-    }
-}
-
-/// A fresh declaration of `name` as an unbound parameter looks at BEGIN time.
-fn unbound_decl(name: &str) -> Stmt {
-    let decl = static_scalar(name);
-    crate::runtime::phasers::split_var_decl(&decl)
-        .map(|(static_decl, _)| static_decl)
-        .unwrap_or(decl)
-}
-
-fn without_initializer_markers(traits: &[(String, Option<Expr>)]) -> Vec<(String, Option<Expr>)> {
-    traits
-        .iter()
-        .filter(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-        .cloned()
-        .collect()
-}
-
-/// The cell's own static declaration: the variable's, under the cell's name.
-fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
-    let mut decl = static_decl.clone();
-    if let Stmt::VarDecl {
-        name,
-        is_export,
-        export_tags,
-        custom_traits,
-        ..
-    } = &mut decl
-    {
-        *name = cell_name.to_string();
-        *is_export = false;
-        export_tags.clear();
-        *custom_traits = without_initializer_markers(custom_traits);
-    }
-    decl
-}
-
-/// The variable's declaration, initialized from its cell.
-fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
-    let mut decl = static_decl.clone();
-    if let Stmt::VarDecl {
-        expr,
-        custom_traits,
-        ..
-    } = &mut decl
-    {
-        *expr = read_var(cell_name);
-        let mut traits = without_initializer_markers(custom_traits);
-        traits.push(("__has_initializer".to_string(), None));
-        traits.push((
-            crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),
-            None,
-        ));
-        *custom_traits = traits;
-    }
-    decl
-}
-
-/// Reads a value slot the way the BEGIN's own value would be read: the slot is
-/// a scalar, so it is decontainerized (`$slot<>`). Otherwise
-/// `my str @hex = BEGIN (^256)>>.fmt("%02x")` would assign one itemized list.
-fn slot_read(slot: String) -> Expr {
-    Expr::MethodCall {
-        target: Box::new(Expr::Var(slot)),
-        name: crate::symbol::Symbol::intern("__mutsu_zen_angle"),
-        args: vec![],
-        modifier: None,
-        quoted: false,
     }
 }

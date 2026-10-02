@@ -35,10 +35,9 @@ impl Compiler {
 
     pub(super) fn atomic_target_name(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_) => {
+                expr.var_key()
+            }
             Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(_)) =>
             {
@@ -415,30 +414,6 @@ impl Compiler {
         }
     }
 
-    /// Encode an Index expression as a source name for container identity
-    /// checking.  Returns `Some("@a\0idx\01")` for `@a[1]`, etc.
-    pub(super) fn encode_index_source(expr: &Expr) -> Option<String> {
-        if let Expr::Index { target, index, .. } = expr {
-            let target_name = match target.as_ref() {
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                Expr::Var(name) => Some(name.clone()),
-                _ => None,
-            }?;
-            let idx_str = match index.as_ref() {
-                Expr::Literal(lit) => match lit.view() {
-                    ValueView::Int(n) => n.to_string(),
-                    ValueView::Str(s) => s.to_string(),
-                    _ => return None,
-                },
-                _ => return None,
-            };
-            Some(format!("{}\x00idx\x00{}", target_name, idx_str))
-        } else {
-            None
-        }
-    }
-
     /// If `expr` is a Var with a known local slot, return the slot index.
     /// Used by `=:=` to emit GetLocalRaw for container identity checks.
     pub(super) fn container_eq_var_slot(&self, expr: &Expr) -> Option<u32> {
@@ -507,51 +482,54 @@ impl Compiler {
     /// the expression: literals and plain variable reads, plus groupings,
     /// operator combinations and list/pair composites of those. Anything
     /// call-like, block-like, or mutating falls out to the thunk path.
+    // Cost: O(n), n = size of `expr`'s subtree.
     fn xx_lhs_is_pure_value(expr: &Expr) -> bool {
-        match expr {
-            Expr::Literal(_)
-            | Expr::Var(_)
-            | Expr::ArrayVar(_)
-            | Expr::HashVar(_)
-            | Expr::BareWord(_)
-            | Expr::Whatever => true,
-            Expr::Grouped(inner) => Self::xx_lhs_is_pure_value(inner),
-            Expr::ArrayLiteral(items) => items.iter().all(Self::xx_lhs_is_pure_value),
-            Expr::PositionalPair(value) => Self::xx_lhs_is_pure_value(value),
-            // An operator over pure operands repeats its value too — this
-            // also keeps a placeholder lhs (`$^n + 1 xx $^n + 1`, constant
-            // within one call of the enclosing block) OUT of the thunk path,
-            // where wrapping it in a synthetic block would steal the
-            // placeholder from the enclosing block's signature.
-            Expr::Binary { left, right, .. } => {
-                Self::xx_lhs_is_pure_value(left) && Self::xx_lhs_is_pure_value(right)
-            }
-            // A non-mutating prefix over a pure operand (`|()`, `-$n`) —
-            // roast's `(|() xx *)[^5]` relies on the value-repeat path's Slip
-            // handling. Increment/decrement mutate and must re-evaluate.
-            Expr::Unary { op, expr } => {
-                !matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
-                    && Self::xx_lhs_is_pure_value(expr)
-            }
-            _ => false,
+        struct PureValueScan {
+            pure: bool,
         }
-    }
-
-    pub(super) fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
-        if let Expr::Binary { left, op, right } = expr
-            && *op == TokenKind::XorXor
-        {
-            Self::flatten_xor_terms(left, out);
-            Self::flatten_xor_terms(right, out);
-            return;
+        impl crate::ast_visit::Visit for PureValueScan {
+            fn visit_expr(&mut self, expr: &Expr) {
+                if !self.pure {
+                    return;
+                }
+                match expr {
+                    Expr::Literal(_)
+                    | Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::BareWord(_)
+                    | Expr::Whatever => {}
+                    // An operator over pure operands repeats its value too —
+                    // this also keeps a placeholder lhs (`$^n + 1 xx $^n + 1`,
+                    // constant within one call of the enclosing block) OUT of
+                    // the thunk path, where wrapping it in a synthetic block
+                    // would steal the placeholder from the enclosing block's
+                    // signature.
+                    Expr::Grouped(_)
+                    | Expr::ArrayLiteral(_)
+                    | Expr::PositionalPair(_)
+                    | Expr::Binary { .. } => crate::ast_visit::walk_expr(self, expr),
+                    // A non-mutating prefix over a pure operand (`|()`, `-$n`)
+                    // — roast's `(|() xx *)[^5]` relies on the value-repeat
+                    // path's Slip handling. Increment/decrement mutate and
+                    // must re-evaluate.
+                    Expr::Unary { op, .. }
+                        if !matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) =>
+                    {
+                        crate::ast_visit::walk_expr(self, expr)
+                    }
+                    _ => self.pure = false,
+                }
+            }
         }
-        out.push(expr);
+        let mut scan = PureValueScan { pure: true };
+        crate::ast_visit::Visit::visit_expr(&mut scan, expr);
+        scan.pure
     }
 
     pub(super) fn compile_xor_chain(&mut self, left: &Expr, right: &Expr) {
-        let mut terms = Vec::new();
-        Self::flatten_xor_terms(left, &mut terms);
-        Self::flatten_xor_terms(right, &mut terms);
+        let mut terms = left.flatten_binary_chain(&TokenKind::XorXor);
+        terms.extend(right.flatten_binary_chain(&TokenKind::XorXor));
         if terms.len() == 2 {
             self.compile_expr(terms[0]);
             self.compile_expr(terms[1]);
@@ -795,8 +773,23 @@ impl Compiler {
         if name.starts_with('*') && !self.local_map.contains_key(name) {
             self.accessed_dynamic_vars.insert(name.to_string());
         }
-        // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
+        // Slang variables ($~MAIN, $~Quote, $~Regex)
         if let Some(slang_name) = name.strip_prefix('~') {
+            // TODO: `$*LANG.define_slang` ignores its name argument today, so
+            // only the three built-in slangs exist; a module-defined slang
+            // name would need recording at parse time to be accepted here.
+            if !matches!(slang_name, "MAIN" | "Quote" | "Regex") {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("No grammar is known for slang '{slang_name}'")),
+                );
+                let err = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+                let idx = self.code.add_constant(err);
+                self.code.emit(OpCode::LoadConst(idx));
+                self.code.emit(OpCode::Die { user_throw: false });
+                return;
+            }
             let idx = self.code.add_constant(Value::str(slang_name.to_string()));
             self.code.emit(OpCode::LoadConst(idx));
         }

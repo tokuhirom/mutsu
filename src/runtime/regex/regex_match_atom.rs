@@ -162,8 +162,37 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_atom_all_with_arg_values(
+            atom,
+            chars,
+            pos,
+            current_caps,
+            pkg,
+            ignore_case,
+            subrule_first_only,
+            None,
+        )
+    }
+
+    /// [`Self::regex_match_atom_all_with_capture_opts`] for a `<subrule(…)>`
+    /// call whose arguments the caller already evaluated (`evaluated_args`):
+    /// the compiled engine evaluates them once at the call and hands them
+    /// here when the call bridges, so user code in an argument does not run
+    /// twice. `None` evaluates them here, as every other caller wants.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn regex_match_atom_all_with_arg_values(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: Symbol,
+        ignore_case: bool,
+        subrule_first_only: bool,
+        mut evaluated_args: Option<Vec<Value>>,
+    ) -> Vec<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
-        let mut preinstalled_arg_values = None;
+        let mut dyn_installed = false;
         // A named atom is one grammar-rule invocation. Keep its declaration
         // frame around the complete resolve/match operation so a failed proto
         // candidate cannot leave a `$*` binding in the caller. LTM and failure
@@ -176,14 +205,17 @@ impl Interpreter {
                         .contains_key(&name.spec().lookup_name) =>
             {
                 let spec = name.spec();
-                let arg_values = if spec.arg_exprs.is_empty() {
+                let arg_values = if let Some(values) = evaluated_args.take() {
+                    Some(values)
+                } else if spec.arg_exprs.is_empty() {
                     Some(Vec::new())
                 } else {
                     self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
                 };
                 if let Some(arg_values) = arg_values {
                     dyn_saved = self.install_subrule_dynamic_params(spec, pkg, &arg_values);
-                    preinstalled_arg_values = Some(arg_values);
+                    dyn_installed = true;
+                    evaluated_args = Some(arg_values);
                     self.enter_grammar_rule_dynvars(&spec.lookup_name)
                 } else {
                     None
@@ -200,7 +232,8 @@ impl Interpreter {
             ignore_case,
             subrule_first_only,
             &mut dyn_saved,
-            preinstalled_arg_values,
+            evaluated_args,
+            dyn_installed,
         );
         if let Some(frame) = grammar_frame {
             let values = self.exit_grammar_rule_dynvars(frame);
@@ -280,7 +313,8 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
-        preinstalled_arg_values: Option<Vec<Value>>,
+        evaluated_args: Option<Vec<Value>>,
+        dyn_installed: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
         // (the engine iterates the vec in reverse, trying the highest-priority
@@ -411,12 +445,19 @@ impl Interpreter {
             let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
             // first-branch candidates: HIGHEST-priority-first from ends fn.
             // Build the output LOWEST-priority-first by reversing.
+            let outer = super::regex_backref_scope::current_outer_caps_seed();
             let mut first_ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
             first_ends.reverse();
             for (end, first_caps) in first_ends {
                 let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
                 let mut ok = true;
                 for branch in rest {
+                    // Later branches see the earlier ones' captures, as the
+                    // streamed driver's do (`arm_conjunction_branch_seed`).
+                    let _seed = super::regex_backref_scope::arm_conjunction_branch_seed(
+                        outer.as_ref(),
+                        &merged,
+                    );
                     if let Some(bcaps) =
                         self.regex_match_branch_ending_at(branch, chars, pos, end, pkg)
                     {
@@ -554,7 +595,7 @@ impl Interpreter {
                 {
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
+                        new_caps.named.slot_mut(k).merge(v);
                     }
                     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                     new_caps.positional.append(&mut inner_caps.positional);
@@ -587,8 +628,7 @@ impl Interpreter {
                     subrule_first_only,
                 );
             }
-            let preinstalled = preinstalled_arg_values.is_some();
-            let arg_values = if let Some(values) = preinstalled_arg_values {
+            let arg_values = if let Some(values) = evaluated_args {
                 values
             } else if spec.arg_exprs.is_empty() {
                 Vec::new()
@@ -602,7 +642,7 @@ impl Interpreter {
             // dynamic scope *before* its pattern is resolved (the pattern may
             // interpolate it) and stays there for the whole match, so nested
             // subrules and code blocks see it. The caller tears it back down.
-            if !preinstalled {
+            if !dyn_installed {
                 *dyn_saved = self.install_subrule_dynamic_params(&spec, pkg, &arg_values);
             }
             // A token/rule/regex returned by `.^find_method(...).wrap(...)`
@@ -753,26 +793,14 @@ impl Interpreter {
                         // proto entry point rank by; declaration order comes free
                         // from a stable sort over `candidates`, which is already
                         // in declaration order.
-                        let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
-                        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
-                            let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
-                            let (plen, stopped) = (measured.len, measured.stopped);
-                            // ADR-0022 §4.1's contract: `(None, false)` is a sound
-                            // "this candidate cannot match here" verdict and may
-                            // filter; `(None, true)` only means the measurement was
-                            // cut short, so the candidate is kept, ranked at 0.
-                            if plen.is_none() && !stopped {
-                                continue;
-                            }
-                            ranked.push((idx, (plen.unwrap_or(0), measured.litlen)));
-                        }
-                        ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+                        let (mut keys, mut ranked) = (Vec::new(), Vec::new());
+                        self.ltm_rank_proto(&candidates, chars, pos, &mut keys, &mut ranked);
                         // Attempt the ranked candidates in order and stop at the
                         // first that actually matches — Rakudo tries the NFA's
                         // fates in order and commits to the first that succeeds,
                         // without backtracking into a later fate when what FOLLOWS
                         // the subrule call fails (verified against `raku`).
-                        for (idx, _) in ranked {
+                        for idx in ranked {
                             let (parsed, sub_pkg, sym_key) = &candidates[idx];
                             let sym_key = sym_key.clone();
                             let all_matches = self.subrule_candidate_ends_with_frame(
@@ -798,7 +826,7 @@ impl Interpreter {
                             };
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.set_sym(sym_key.clone());
+                                    caps.set_sym(sym_key.as_deref().map(Symbol::intern));
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -827,7 +855,7 @@ impl Interpreter {
                             // can set subcap.sym correctly for action method dispatch.
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.set_sym(sym_key.clone());
+                                    caps.set_sym(sym_key.as_deref().map(Symbol::intern));
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -855,16 +883,11 @@ impl Interpreter {
                         tmp.reverse(); // HIGHEST (longest) FIRST
                         tmp
                     } else {
-                        // Non-LTM: raw_out is already HIGHEST FIRST (from regex_match_ends_from_caps_in_pkg).
-                        // Dedup: keep first occurrence for each end (first = highest priority).
-                        let mut tmp: Vec<(usize, RegexCaptures)> = Vec::new();
-                        let mut seen_ends = std::collections::HashSet::new();
-                        for item in raw_out {
-                            if seen_ends.insert(item.0) {
-                                tmp.push(item);
-                            }
-                        }
-                        tmp
+                        // Non-LTM: raw_out is already HIGHEST FIRST (from
+                        // regex_match_ends_from_caps_in_pkg). Every path is
+                        // kept, a repeated end included: Rakudo runs the
+                        // caller's continuation once per path (#10489).
+                        raw_out
                     };
 
                     let new_max: Option<usize> = deduped_raw.iter().map(|(e, _)| *e).max();
@@ -994,13 +1017,19 @@ impl Interpreter {
             None
         };
         let parsed = scoped.as_ref().map_or(parsed, |pattern| pattern);
-        if first_only {
-            return self
-                .regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+        // One rule invocation: a grammar method its body calls writes to the
+        // invocation's own cursor, which is filed on each end it produces (#9803).
+        self.enter_rule_cursor();
+        let mut ends = if first_only {
+            self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
                 .into_iter()
-                .collect();
-        }
-        self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+                .collect()
+        } else {
+            self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+        };
+        let cursor = self.leave_rule_cursor();
+        Self::file_rule_cursor(cursor, &mut ends);
+        ends
     }
 
     /// Keep named grammar-rule frames visible while a rule's pattern is
@@ -1068,31 +1097,14 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        // Only plain, argument-less identifier subrules dispatched against a real
-        // grammar package. `<::>` indirection, char-class specs, and builtin
-        // assertions are handled elsewhere.
-        if spec.token_lookup
-            || !spec.arg_exprs.is_empty()
-            || pkg.is_empty()
-            || spec.lookup_name.is_empty()
-            || spec.lookup_name.contains("::")
-            || !spec
-                .lookup_name
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-        {
+        // The cursor the engine published for this one call, if any: taken at
+        // once so a call nested inside the method never sees it.
+        let published = self.rx_cursor.take();
+        if !self.subrule_names_user_method(spec, pkg) {
             return None;
         }
-        // The name must be a user method declared directly on this grammar (not an
-        // inherited Cursor/Grammar builtin, which the normal subrule/builtin paths
-        // already cover).
-        let is_user_method = self
-            .registry()
-            .user_method_overloads(pkg.as_str(), &spec.lookup_name)
-            .is_some();
-        if !is_user_method {
-            return None;
-        }
+        // Else the walked rule invocation this call is in the body of.
+        let published = published.or_else(|| self.walk_rule_cursor(chars, pos, pkg));
         // Run the method in the grammar's package over an isolated copy of the
         // env (`run_regex_sub_eval_here`).
         //
@@ -1105,13 +1117,22 @@ impl Interpreter {
         // as "no match", which failed the whole parse. Method resolution still
         // finds the grammar's own method because the instance's class IS the
         // grammar.
-        let mut cursor_attrs = crate::value::AttrMap::new();
-        let orig: String = chars.iter().collect();
-        cursor_attrs.insert("orig", Value::str(orig));
-        cursor_attrs.insert("from", Value::int(pos as i64));
-        cursor_attrs.insert("pos", Value::int(pos as i64));
-        cursor_attrs.insert("to", Value::int(pos as i64));
-        let invocant = Value::make_instance(pkg, cursor_attrs);
+        //
+        // When the compiled engine published the calling rule invocation's own
+        // cursor, that instance IS the invocant (Rakudo's cursor is the grammar
+        // instance): the method's attribute writes land on it and travel onto
+        // the rule's Match (#9803). Its positional state moves to this call.
+        let invocant = match published {
+            Some(cursor) => {
+                if let ValueView::Instance { attributes, .. } = cursor.view() {
+                    attributes.insert("from", Value::int(pos as i64));
+                    attributes.insert("pos", Value::int(pos as i64));
+                    attributes.insert("to", Value::int(pos as i64));
+                }
+                cursor
+            }
+            None => self.new_grammar_cursor(chars, pos, pkg),
+        };
         let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
             interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
         });
@@ -1178,163 +1199,5 @@ impl Interpreter {
                 Some(Vec::new())
             }
         }
-    }
-
-    /// Build named regex candidates from inner match results. Inner positions are
-    /// already absolute (ADR-0016 P1: the subrule body was matched against the whole
-    /// subject starting at `pos`, not a re-slice), so nothing is rebased here.
-    /// Wraps each inner match in the appropriate capture structure for the named regex call.
-    /// `pos` is the position of the named atom in `chars`. Each candidate is a
-    /// capture DELTA relative to an empty baseline (ADR-0007).
-    pub(super) fn build_named_candidates_from_inner(
-        &mut self,
-        inner_matches: Vec<(usize, RegexCaptures)>,
-        pos: usize,
-        spec: &NamedRegexLookupSpec,
-        sym_key: Option<&String>,
-    ) -> Vec<(usize, RegexCaptures)> {
-        let mut out = Vec::new();
-        for (end, inner_caps) in inner_matches {
-            let mut new_caps = RegexCaptures::default();
-            // The name this subrule's match is filed under, with its interned
-            // twin. Both come from the (memoized) spec, so filing a capture
-            // costs no intern -- see `NamedRegexLookupSpec::capture_sym`.
-            let capture = match (spec.capture_name.as_deref(), spec.capture_sym) {
-                (Some(name), Some(sym)) => Some((name, sym)),
-                _ if !spec.silent => Some((spec.lookup_name.as_str(), spec.lookup_sym)),
-                _ => None,
-            };
-            if let Some((capture_name, capture_sym)) = capture {
-                // Apply the subrule's own capture markers (`<(` / `)>`): a token
-                // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
-                // submatch to `67890`. They are already absolute, and `None` when
-                // the subrule used no markers, so this is a no-op otherwise.
-                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
-                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let mut subcap = inner_caps;
-                subcap.from = cs;
-                subcap.to = ce;
-                // sym is already set on subcap from raw_out collection loop.
-                // Fall back to sym_key parameter for the is_active (seed) path.
-                if subcap.sym().is_none() && sym_key.is_some() {
-                    subcap.set_sym(sym_key.cloned());
-                }
-                // The subrule's own inline `{ … }` code blocks stay ON the subcap
-                // (a queryable Match node) rather than bubbling into the parent, so
-                // the reduce-time walk (`reduce_regex_captures_made`) can run them
-                // once at this node — with `$/` bound to this subrule's Match — and
-                // commit the produced `make` value to `subcap.ast`. Bubbling them up
-                // (the old behaviour) ran them at the top level with the wrong `$/`
-                // and dropped the per-node `.made`.
-                // A non-suppressing alias `<name=subrule>` (NOT `<name=.subrule>` /
-                // `<name=&subrule>`) installs the capture under BOTH the alias name
-                // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
-                // `$<x>` and `$<num>`; repeated `<num>`/`<offset=count>` aggregate
-                // into a list under the rule name). Both slots share ONE node
-                // (see the `shared_under_original` push below).
-                let also_under_original = spec.capture_name.is_some()
-                    && !spec.alias_replaces_original
-                    && capture_name != spec.lookup_name;
-                // For an aliased capture (`<x=rule>`), record the original rule
-                // name for grammar action dispatch BEFORE the node is wrapped in
-                // an Arc and shared (`record_reduced_subrule` clones the handle):
-                // writing it afterwards through `Arc::make_mut` deep-copied the
-                // whole descendant subtree for every aliased subrule capture.
-                let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
-                let mut subcap = subcap;
-                if is_alias {
-                    subcap.set_action_name(Some(spec.lookup_name.clone()));
-                }
-                let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                // This subrule has just REDUCED. Log it so a parse that fails
-                // overall can still run its action, the way Rakudo (which
-                // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
-                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                // Both slots reference the SAME node, the way Rakudo stores the
-                // same cursor under both names (`$<x> === $<num>` is `True`).
-                // Cloning the node here instead — as this did until the
-                // exponential-action fix — deep-copied the whole matched
-                // subtree per aliased capture AND made the grammar action walk
-                // dispatch that subtree twice, once per slot; nested aliases
-                // then multiplied, firing a leaf's action 2^depth times (256x
-                // on `benchmarks/bench-yaml-parse.raku`).
-                let shared_under_original =
-                    also_under_original.then(|| std::sync::Arc::clone(&subcap));
-                new_caps
-                    .named
-                    .entry(capture_sym)
-                    .or_default()
-                    .nodes
-                    .push(subcap);
-                if is_alias {
-                    new_caps
-                        .capture_alias_map_mut()
-                        .insert(capture_sym, spec.lookup_sym);
-                }
-                if let Some(orig_subcap) = shared_under_original {
-                    new_caps
-                        .named
-                        .entry(spec.lookup_sym)
-                        .or_default()
-                        .nodes
-                        .push(orig_subcap);
-                }
-            } else if !inner_caps.named.is_empty()
-                || self.silent_subrule_has_action(
-                    spec,
-                    inner_caps
-                        .sym()
-                        .map(String::as_str)
-                        .or(sym_key.map(String::as_str)),
-                )
-            {
-                // Silent subrule (`<.foo>`) that contains nested captures, or
-                // whose OWN action method exists. The subrule is hidden from
-                // `.hash`, but its action method must still fire (Rakudo
-                // dispatches actions at reduce time regardless of capture), and
-                // its nested rules' actions must fire too — with their `.made`
-                // set on the SAME nodes the parent action reads
-                // (`method header-field { ...$/<field-name>.made... }`). Store the
-                // whole subrule match under a HIDDEN MARKER key in `named_subcaps`
-                // (the prefix can never be a real capture name). The Match builder
-                // routes marker entries into a `silent_caps` attribute instead of
-                // `.hash`; the grammar action walk recurses into them. This replaces
-                // the older "flatten direct children into the parent" hack, which
-                // lost the rule's own action and over-exposed children in `.hash`.
-                // A childless one needs the node only for its action: a zero-width
-                // `<.end-block>` whose action reports a recovery warning.
-                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
-                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let mut subcap = inner_caps;
-                subcap.from = cs;
-                subcap.to = ce;
-                if subcap.sym().is_none() && sym_key.is_some() {
-                    subcap.set_sym(sym_key.cloned());
-                }
-                subcap.set_action_name(Some(spec.lookup_name.clone()));
-                // Keep the silent subrule's inline blocks on its own (marker) node
-                // for the reduce-time walk to run once — see the non-silent branch.
-                let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                new_caps
-                    .named
-                    .entry(spec.silent_marker_sym)
-                    .or_default()
-                    .nodes
-                    .push(subcap);
-            } else {
-                // Childless silent subrule with no action to run (`<.ws>`,
-                // `<.CRLF>`, ...): keep the cheap path — just carry its code
-                // blocks up. A marker node here would be built, logged for the
-                // reduce replay and copied through every backtracking path for
-                // nothing; doing it for every `<.ws>` made a 60-row YAMLish parse
-                // cost 2.7x the instructions
-                // ([#9286](https://github.com/tokuhirom/mutsu/issues/9286)).
-                let mut inner_caps = inner_caps;
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-            }
-            out.push((end, new_caps));
-        }
-        out
     }
 }

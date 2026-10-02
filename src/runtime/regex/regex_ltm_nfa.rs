@@ -82,6 +82,8 @@ pub(super) enum NfaNode {
     Fate,
     /// The end of the measured pattern.
     Accept,
+    /// The end of the `usize`th candidate of a proto's NFA ([`LtmNfa::roots`]).
+    AcceptAt(u32),
 }
 
 /// Which existing matcher answers a leaf.
@@ -111,6 +113,19 @@ pub(super) enum SubKind {
 pub(crate) struct LtmNfa {
     pub(super) nodes: Vec<NfaNode>,
     pub(super) start: u32,
+    /// A proto's NFA has no single start: each candidate is entered through a
+    /// root of its own and ends at its own [`NfaNode::AcceptAt`], so the one
+    /// run measures every candidate at once and keeps their results apart
+    /// (`NfaRun::origins`). Empty for any other NFA.
+    pub(super) roots: Vec<NfaRoot>,
+}
+
+/// One candidate of a proto's NFA.
+pub(super) struct NfaRoot {
+    /// The candidate's body.
+    pub(super) entry: u32,
+    /// The candidate's [`NfaNode::AcceptAt`].
+    pub(super) accept: u32,
 }
 
 /// One entry of `PatternDerived::ltm_nfa`.
@@ -139,6 +154,32 @@ pub(crate) struct LtmMeasure {
     pub(crate) litlen: usize,
 }
 
+impl LtmMeasure {
+    /// What a path set that got as far as `furthest` (an accept or a fate)
+    /// from `pos` measures: `ll_ends` are the places the `_LL` literals it
+    /// crossed ended. The one definition of a measurement, whether one NFA
+    /// measures one pattern or a proto's NFA measures all its candidates.
+    // Cost: O(l), l = `ll_ends`.
+    pub(super) fn of(
+        pos: usize,
+        furthest: Option<usize>,
+        stopped: bool,
+        ll_ends: impl Iterator<Item = usize>,
+    ) -> LtmMeasure {
+        let litlen = furthest.map_or(0, |furthest| {
+            ll_ends
+                .filter(|&end| end <= furthest)
+                .max()
+                .map_or(0, |end| end - pos)
+        });
+        LtmMeasure {
+            len: furthest.map(|end| end - pos),
+            stopped,
+            litlen,
+        }
+    }
+}
+
 impl Interpreter {
     /// The declarative prefix of `pattern` at `pos`, walked in `pkg` from a
     /// real match (no inherited `:i`, nothing on the call stack).
@@ -156,19 +197,14 @@ impl Interpreter {
         let nfa = self.ltm_nfa_for(pattern, pkg, false);
         let run = nfa.run(self, chars, pos, &[]);
         let furthest = run.ends.iter().copied().max().max(run.fate);
-        let litlen = furthest.map_or(0, |furthest| {
-            run.ll_ends
-                .iter()
-                .copied()
-                .filter(|&end| end <= furthest)
-                .max()
-                .map_or(0, |end| end - pos)
-        });
-        LtmMeasure {
-            len: furthest.map(|end| end - pos),
-            stopped: run.seqalt || run.fate.is_some(),
-            litlen,
-        }
+        let measure = LtmMeasure::of(
+            pos,
+            furthest,
+            run.seqalt || run.fate.is_some(),
+            run.ll_ends.iter().copied(),
+        );
+        run.recycle();
+        measure
     }
 
     /// The cached NFA of `pattern` in `pkg` (with an inherited `:i` when

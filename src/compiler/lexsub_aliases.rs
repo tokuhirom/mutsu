@@ -28,6 +28,25 @@ const LEXSUB_ALIAS_PREFIX: &str = "__mutsu_lexsub_";
 static LEXSUB_ALIAS_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Compiler {
+    /// Whether a sub declared here binds its free variables per activation of
+    /// the declaring scope: inside a routine body (mutsu#9111), or inside a
+    /// block of a package body (mutsu#10559).
+    ///
+    /// The package-block case is the shape whose sub escapes the block through
+    /// the package's interface — `is export`, imported by an inline module's
+    /// importer at BEGIN time, before the block ran. The importer's alias and
+    /// the in-sequence registration are the same routine identity (name,
+    /// package, file), so the latest activation's cells answer the import
+    /// alias's call as they answer every other one. A mainline block of
+    /// `GLOBAL` keeps ADR-0024's per-block bucket.
+    // Cost: O(1).
+    pub(super) fn binds_lexsub_free_vars(&self) -> bool {
+        self.is_routine
+            || self.lexically_in_routine
+            || (self.lexically_in_block
+                && !crate::qualified::is_global_package(Symbol::intern(&self.current_package)))
+    }
+
     /// Allocate the hidden alias locals for the sub `name` whose bodies were
     /// compiled under `keys`, and add them to the sub's
     /// [`Compiler::lexical_sub_free_vars`] entry. Empty unless this scope is a
@@ -38,7 +57,7 @@ impl Compiler {
         fingerprint: Option<u64>,
         keys: &[Symbol],
     ) -> Vec<LexSubFreeAlias> {
-        if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
+        if !self.binds_lexsub_free_vars() || name.contains("::") {
             return Vec::new();
         }
         let mut vars: Vec<Symbol> = Vec::new();
@@ -65,10 +84,9 @@ impl Compiler {
         for var in vars {
             let var_name = var.resolve();
             // Plain `my` lexicals only: dynamic, attribute, special and
-            // `__mutsu_*` names resolve through their own stores, and the `&`
-            // lane has its own registries (ADR-0025).
+            // `__mutsu_*` names resolve through their own stores. A `&` code
+            // variable is aliased like any other lexical (mutsu#10483).
             if !crate::env::is_plain_user_lexical(&var_name)
-                || var_name.starts_with('&')
                 || self.constant_vars.contains(&var_name)
                 || self.sigilless_locals.contains(&var_name)
                 || self.enclosing_sigilless.contains(&var_name)
@@ -76,7 +94,10 @@ impl Compiler {
                 continue;
             }
             let var_slot = self.local_map.get(&var_name).copied();
-            if var_slot.is_none() && !self.enclosing_local_names.contains(&var_name) {
+            // A single `for ... -> $i` parameter has no slot: the `ForLoop`
+            // opcode binds it by name in this frame's env (mutsu#10512).
+            let env_param = var_slot.is_none() && self.for_param_names.contains(&var_name);
+            if var_slot.is_none() && !env_param && !self.enclosing_local_names.contains(&var_name) {
                 continue;
             }
             let alias_name = format!("{LEXSUB_ALIAS_PREFIX}{tag:x}_{serial}_{name}_{var_name}");
@@ -84,6 +105,7 @@ impl Compiler {
             out.push(LexSubFreeAlias {
                 var,
                 var_slot,
+                env_param,
                 alias: Symbol::intern(&alias_name),
                 alias_slot,
             });

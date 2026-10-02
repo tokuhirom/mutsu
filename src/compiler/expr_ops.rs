@@ -16,7 +16,6 @@ impl Compiler {
                 global,
                 nth,
                 x,
-                perl5,
                 replacement_thunk,
             } => {
                 self.compile_expr_subst(
@@ -29,7 +28,6 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    *perl5,
                     replacement_thunk.as_deref(),
                 );
             }
@@ -43,7 +41,6 @@ impl Compiler {
                 global,
                 nth,
                 x,
-                perl5,
                 replacement_thunk,
             } => {
                 self.compile_expr_nondestructive_subst(
@@ -56,7 +53,6 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    *perl5,
                     replacement_thunk.as_deref(),
                 );
             }
@@ -128,7 +124,6 @@ impl Compiler {
         global: bool,
         nth: &Option<String>,
         x: &Option<String>,
-        perl5: bool,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -141,11 +136,7 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
-        let qq_thunks = if perl5 {
-            None
-        } else {
-            self.compile_pattern_qq_thunks(pattern)
-        };
+        let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::Subst {
             pattern_idx,
             replacement_idx,
@@ -156,7 +147,6 @@ impl Compiler {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
             qq_thunks,
         });
@@ -175,7 +165,6 @@ impl Compiler {
         global: bool,
         nth: &Option<String>,
         x: &Option<String>,
-        perl5: bool,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -188,11 +177,7 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
-        let qq_thunks = if perl5 {
-            None
-        } else {
-            self.compile_pattern_qq_thunks(pattern)
-        };
+        let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,
             replacement_idx,
@@ -203,7 +188,6 @@ impl Compiler {
             global,
             nth_idx,
             x_idx,
-            perl5,
             replacement_thunk,
             qq_thunks,
         });
@@ -318,7 +302,7 @@ impl Compiler {
                 } => {
                     // For slice hyper-assign like @a[0..2] >>~=>> "x",
                     // compile an IndexAssign to write the hyper result back.
-                    if let Some(name) = Self::index_assign_target_name(target) {
+                    if let Some(name) = self.index_assign_target_name(target) {
                         let target_slot = self.local_map.get(&name).copied();
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -695,8 +679,9 @@ impl Compiler {
         // operands ref-preserving so the runtime sees `ContainerRef`s.
         let is_identity_op = op == "=:=" || op == "!=:=";
         if meta == "X" || meta == "Z" {
-            let mut operands: Vec<&Expr> = Vec::new();
-            Self::collect_meta_chain(meta, op, left, right, &mut operands);
+            // `a X b X c` is `MetaOp(X, MetaOp(X, a, b), c)`: one operand list.
+            let mut operands = left.flatten_meta_chain(meta, op);
+            operands.push(right);
             if operands.len() > 2 {
                 for operand in &operands {
                     if is_identity_op {
@@ -786,32 +771,6 @@ impl Compiler {
         }
     }
 
-    /// Flatten a left-nested chain of identical (meta, op) MetaOps into a flat
-    /// operand list. `a X b X c` parses as `MetaOp(X, MetaOp(X, a, b), c)`; this
-    /// collects `[a, b, c]`.
-    fn collect_meta_chain<'a>(
-        meta: &str,
-        op: &str,
-        left: &'a Expr,
-        right: &'a Expr,
-        operands: &mut Vec<&'a Expr>,
-    ) {
-        if let Expr::MetaOp {
-            meta: lm,
-            op: lo,
-            left: ll,
-            right: lr,
-        } = left
-            && lm == meta
-            && lo == op
-        {
-            Self::collect_meta_chain(meta, op, ll, lr, operands);
-        } else {
-            operands.push(left);
-        }
-        operands.push(right);
-    }
-
     /// Compile InfixFunc (atan2, sprintf, flip-flop, etc.).
     pub(super) fn compile_expr_infix_func(
         &mut self,
@@ -856,7 +815,7 @@ impl Compiler {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             name.hash(&mut hasher);
             format!("{:?}", left).hash(&mut hasher);
-            format!("{:?}", &right[0]).hash(&mut hasher);
+            format!("{:?}", right[0]).hash(&mut hasher);
             let ff_idx = self.code.emit(OpCode::FlipFlopExpr {
                 lhs_end: 0,
                 rhs_end: 0,

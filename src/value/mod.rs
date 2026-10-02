@@ -1436,7 +1436,25 @@ pub struct SubData {
     /// id as dead when the last copy is dropped, so the store can release the
     /// clone's entries instead of keeping one per clone forever (#9504).
     pub(crate) state_scope_guard: Option<Arc<crate::runtime::state_scope_reaper::StateScopeGuard>>,
+    /// The readonly state, at creation, of the scalar free variables this code
+    /// object WRITES: `Some` holds exactly those marked readonly then (a
+    /// non-`is rw` parameter of the creating routine, a `:=`-bound alias) with
+    /// their [`crate::ast::ReadonlyKind`]; every other written free variable
+    /// was writable. `None` means the creation site recorded nothing (a
+    /// hand-built code object, a routine with no written free variable) and
+    /// the call leaves the registry alone.
+    ///
+    /// `Interpreter::readonly_vars` is keyed by bare name and follows the
+    /// *dynamic* call stack, so a readonly parameter of whoever happens to be
+    /// calling this code object would otherwise decide whether the captured
+    /// variable of the same name may be assigned (#10389). Entering the code
+    /// object reconciles the registry against this record instead
+    /// (`Interpreter::reconcile_captured_readonly`).
+    pub(crate) captured_readonly: Option<CapturedReadonly>,
 }
+
+/// See [`SubData::captured_readonly`].
+pub(crate) type CapturedReadonly = Arc<[(Symbol, crate::ast::ReadonlyKind)]>;
 
 /// A code object's parameter names, interned once.
 ///
@@ -2763,7 +2781,6 @@ pub struct RegexAdverbs {
     pub overlap: bool,
     pub repeat: Option<usize>,
     pub nth: Option<Arc<String>>,
-    pub perl5: bool,
     pub pos: bool,
     /// Literal position argument of `:pos(N)` (anchor the match to start
     /// exactly at character offset N). `None` means `:pos` without an explicit
@@ -2828,6 +2845,64 @@ pub struct RegexClosure {
     /// (#9396); a `$_` held in a local slot is captured by value.
     /// `None` means "use the `$_` visible where the regex is boolified".
     pub topic: Option<Value>,
+    /// The verbatim declaration text (`token foo { ... }`) of a grammar
+    /// `token`/`rule`/`regex` declaration -- what `Regex.gist` prints.
+    pub declared_source: Option<Arc<str>>,
+    /// The name `Code.set_name` gave this regex (`Regex.name`). A Raku regex
+    /// is a code object with identity, so renaming it is seen through every
+    /// alias of the value: the cell lives in the shared `Arc` payload.
+    pub name: RegexName,
+}
+
+/// The mutable name of a [`RegexClosure`] (`$regex.set_name('x')`).
+///
+/// Stored as an interned [`Symbol`] id so a rename is one atomic store into
+/// the shared payload; cloning the payload snapshots the current name.
+pub struct RegexName(std::sync::atomic::AtomicU32);
+
+impl Default for RegexName {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl RegexName {
+    const UNSET: u32 = u32::MAX;
+
+    /// A cell holding `name` (or no name).
+    pub fn new(name: Option<Symbol>) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(
+            name.map_or(Self::UNSET, |s| s.id()),
+        ))
+    }
+
+    /// The name set by `set_name`, if any.
+    // Cost: O(1).
+    pub fn get(&self) -> Option<Symbol> {
+        match self.0.load(std::sync::atomic::Ordering::Relaxed) {
+            Self::UNSET => None,
+            id => Some(Symbol::from_id(id)),
+        }
+    }
+
+    /// Rename the regex.
+    // Cost: O(1).
+    pub fn set(&self, name: Symbol) {
+        self.0
+            .store(name.id(), std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl Clone for RegexName {
+    fn clone(&self) -> Self {
+        Self::new(self.get())
+    }
+}
+
+impl std::fmt::Debug for RegexName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RegexName").field(&self.get()).finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

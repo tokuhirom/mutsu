@@ -320,6 +320,28 @@ fn shadowable_term(expr: Expr, kw: &'static str) -> Expr {
     }
 }
 
+/// The call form `now(...)` / `time(...)` of a CORE term keyword.
+///
+/// The keyword is a term, not a routine, so with nothing else in scope the
+/// call form is rakudo's compile-time "Undeclared routine". A sub of the same
+/// name declared in an enclosing scope or imported by `use` shadows the term,
+/// though (#10369): the call is then an ordinary routine call, so decline and
+/// let `identifier_or_call` parse `name(...)` as one call expression.
+fn term_call_form<'a>(kw: &str, input: &'a str) -> PResult<'a, Expr> {
+    if crate::parser::stmt::simple::is_user_declared_sub(kw)
+        || crate::parser::stmt::simple::is_imported_function(kw)
+    {
+        return Err(PError::expected("call to a declared routine"));
+    }
+    Err(PError::fatal_at(
+        format!(
+            "X::Undeclared::Symbols: Undeclared routine:\n    {kw} used at line {}",
+            current_line_number(input)
+        ),
+        input,
+    ))
+}
+
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
 pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
@@ -495,14 +517,8 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // now — returns current time as Instant (term)
     if let Some(rest) = crate::parser::stmt::simple::l10n_match_keyword("now", input).flatten() {
         let after = rest.trim_start();
-        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now") {
-            return Err(PError::fatal_at(
-                format!(
-                    "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
-                    current_line_number(input)
-                ),
-                input,
-            ));
+        if after.starts_with('(') {
+            return term_call_form("now", input);
         }
         if !after.starts_with("=>") || after.starts_with("==>") {
             return Ok((
@@ -523,15 +539,8 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         // is that call form — after whitespace the parenthesis belongs to the
         // operator position (`now (-) $set` is set-difference, `now (1)` is
         // rakudo's "two terms in a row"), so it must not be claimed here.
-        if input[3..].starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now")
-        {
-            return Err(PError::fatal_at(
-                format!(
-                    "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
-                    current_line_number(input)
-                ),
-                input,
-            ));
+        if input[3..].starts_with('(') {
+            return term_call_form("now", input);
         }
         // Don't treat as a call if followed by => (fat arrow creates a Pair)
         if !after.starts_with("=>") || after.starts_with("==>") {
@@ -547,14 +556,8 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // time — returns current epoch time as Int (term)
     if let Some(rest) = crate::parser::stmt::simple::l10n_match_keyword("time", input).flatten() {
         let after = rest.trim_start();
-        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time") {
-            return Err(PError::fatal_at(
-                format!(
-                    "X::Undeclared::Symbols: Undeclared routine:\n    time used at line {}",
-                    current_line_number(input)
-                ),
-                input,
-            ));
+        if after.starts_with('(') {
+            return term_call_form("time", input);
         }
         if !after.starts_with("=>") || after.starts_with("==>") {
             return Ok((
@@ -575,15 +578,8 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         // is that call form — after whitespace the parenthesis belongs to the
         // operator position (`time (-) $set` is set-difference, `time (1)` is
         // rakudo's "two terms in a row"), so it must not be claimed here.
-        if input[4..].starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time")
-        {
-            return Err(PError::fatal_at(
-                format!(
-                    "X::Undeclared::Symbols: Undeclared routine:\n    time used at line {}",
-                    current_line_number(input)
-                ),
-                input,
-            ));
+        if input[4..].starts_with('(') {
+            return term_call_form("time", input);
         }
         // Don't treat as a call if followed by => (fat arrow creates a Pair)
         if !after.starts_with("=>") || after.starts_with("==>") {
@@ -595,6 +591,21 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+    }
+    // nano — current epoch time in nanoseconds as Int (term, language 6.e+)
+    if input.starts_with("nano")
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        && !input[4..].starts_with('(')
+        && !input[4..].trim_start().starts_with("=>")
+        && crate::parser::current_language_version().starts_with("6.e")
+    {
+        return Ok((
+            &input[4..],
+            Expr::Call {
+                name: Symbol::intern("nano"),
+                args: vec![],
+            },
+        ));
     }
     // BEGIN/INIT/CHECK/END/ENTER/LEAVE as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [

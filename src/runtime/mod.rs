@@ -675,7 +675,11 @@ mod dispatch_proto_rewrite;
 pub(crate) mod dispatch_resolve;
 mod end_phasers;
 mod eval_check;
+mod eval_decl_scans;
+mod eval_name_scans;
 mod eval_routine_magicals;
+mod eval_type_scans;
+mod eval_var_scan;
 mod exception_message;
 pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;
@@ -689,6 +693,7 @@ mod handle_read_chars;
 mod handle_seq_reader;
 pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
+mod inline_package_subs;
 mod io;
 mod io_doc;
 mod io_env;
@@ -702,7 +707,7 @@ mod io_pod_heredoc;
 mod io_pod_table;
 mod io_spec_rel2abs;
 mod io_sysinfo;
-mod io_sysinfo_host;
+pub(crate) mod io_sysinfo_host;
 mod io_sysinfo_kernel;
 mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
@@ -723,6 +728,7 @@ mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
 mod method_dispatch_lazy;
+mod method_object_bound;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
@@ -755,6 +761,7 @@ mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
 mod methods_grammar_action_env;
+mod methods_grammar_deferred_repeats;
 mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
@@ -828,6 +835,7 @@ mod dispatcher_wrap;
 mod enum_type_key;
 mod export_hook_routines;
 pub(crate) mod map_grep_plan;
+mod method_type_decls;
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
@@ -862,6 +870,8 @@ pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
 mod receiver_class;
 pub(crate) mod regex;
+mod regex_ltm_split;
+mod regex_named_caps;
 pub(crate) mod regex_parse;
 mod regex_parse_charclass;
 mod regex_parse_charclass_alts;
@@ -888,6 +898,8 @@ mod registration_class_decl;
 mod registration_class_deferred_parents;
 mod registration_class_parents;
 pub(crate) mod registration_class_validate;
+mod registration_method_traits;
+mod registration_private_access;
 mod registration_role;
 mod registration_role_body;
 mod registration_role_body_lexical;
@@ -899,6 +911,7 @@ mod registry;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
 mod repl_compiler_prelude;
+mod require_stub;
 pub(crate) mod resolution;
 mod resolution_call_sub;
 mod resolution_deferral;
@@ -916,6 +929,8 @@ mod run_dist;
 mod run_main;
 mod run_modules;
 mod run_modules_bundled_repo;
+mod run_modules_scans;
+mod run_pod_declarants;
 mod run_prelude;
 mod run_prelude_iterator;
 mod run_prelude_trait_export;
@@ -961,6 +976,7 @@ mod system_introspect;
 mod tap_state;
 mod test_module_predicates;
 pub(crate) mod thread_compat;
+mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
@@ -970,6 +986,7 @@ mod plain_fn_resolve_memo;
 mod registry_gen;
 pub(crate) mod undeclared_routines;
 mod unicode;
+mod unicode_name_prop;
 mod unit_private_routines;
 mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
@@ -986,8 +1003,9 @@ pub(crate) use self::locals::Locals;
 pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
+pub(crate) use self::regex_named_caps::*;
 pub(crate) use self::regex_types::*;
-pub(crate) use self::registration_class::ClassDeclModifiers;
+pub(crate) use self::registration_class::{ClassDeclModifiers, HoistedShell};
 pub(crate) use self::registry::Registry;
 pub(crate) use self::scope_stack::ScopeStack;
 pub(crate) use self::tap_state::TapState;
@@ -998,7 +1016,7 @@ pub(crate) use utils::*;
 pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thread};
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
-use self::unicode::{check_unicode_property, check_unicode_property_with_args};
+use self::unicode::check_unicode_property;
 use crate::value::ValueMap;
 
 /// One class/role attribute declaration.
@@ -3161,6 +3179,15 @@ pub struct Interpreter {
     /// hoisted method with that index is installed (a class) or composed (a
     /// role). See `vm_nested_method_capture`.
     pub(crate) nested_method_captures: HashMap<(Symbol, u32), crate::env::Env>,
+    /// The nested-block method captures each class/role composition's role
+    /// body filed, keyed by (composing class, role). A role body runs once per
+    /// composition (`Registry::composed_role_bodies`), but the class may be
+    /// registered again (the in-place registration after a nested
+    /// declaration's compile-time shell, or a redeclaration in a loop); the
+    /// re-registration rebuilds the composed methods and gives them these
+    /// captures back. See `apply_nested_method_captures`.
+    pub(crate) composed_nested_method_captures:
+        HashMap<(Symbol, Symbol), rustc_hash::FxHashMap<u32, crate::env::Env>>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every
@@ -3725,6 +3752,21 @@ pub struct Interpreter {
     /// *match* of a declaring rule its own binding on top of that, so a
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
+    /// The grammar instance (Rakudo's cursor) the compiled regex engine hands to
+    /// the grammar METHOD a `<.name>` subrule is about to call: the one the
+    /// rule invocation that makes the call owns, so what the method writes to
+    /// its attributes survives onto that rule's Match (#9803). Published by
+    /// the engine for the duration of that one call and taken by
+    /// `try_regex_subrule_as_method`; `None` everywhere else, where the method
+    /// gets a throwaway instance.
+    pub(crate) rx_cursor: Option<Value>,
+    /// The same for rule invocations the WALK evaluates (the eager and streamed
+    /// subrule arms, the ratcheted `<x>*` scan, the single-candidate arm): one
+    /// entry per invocation in flight, innermost last, created lazily by the
+    /// first grammar method the invocation calls. The walk pops its entry when
+    /// the invocation's ends are produced and files the instance on each of them
+    /// (#9803). Empty outside a walked rule body.
+    pub(crate) walk_cursors: Vec<Option<Value>>,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry
@@ -5689,6 +5731,7 @@ mod tests {
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
+            captured_readonly: None,
         });
 
         let mut interp = Interpreter::new();

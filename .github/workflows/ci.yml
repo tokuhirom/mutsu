@@ -80,9 +80,13 @@ jobs:
           # reads: they name every path the build consumes, and no such path
           # may be on the classifier's documentation allowlist. Leading slashes
           # anchor each pattern to the repository root -- a bare `Makefile` in
-          # non-cone mode would also drag in every vendored one.
+          # non-cone mode would also drag in every vendored one. All of
+          # scripts/, not just the classifier: `--check-inputs` has to see the
+          # scripts the build names to tell whether they are allowlisted, and
+          # with only the classifier checked out it silently checked nothing.
           sparse-checkout: |
-            /scripts/ci-docs-only.sh
+            /scripts/
+            /docs/adr/
             /Makefile
             /.github/workflows/ci.yml
           sparse-checkout-cone-mode: false
@@ -98,6 +102,12 @@ jobs:
         # it. Separate from --self-test so an incomplete sparse-checkout above
         # fails here rather than skipping the guard.
         run: scripts/ci-docs-only.sh --check-inputs
+
+      - name: ADR numbering
+        # Here rather than with the other static guards in `test-check`: an
+        # ADR PR is usually docs-only, and a docs-only PR skips that job. A
+        # duplicate or new sequential ADR number must still fail it.
+        run: make check-adr
 
       - name: Detect documentation-only change
         id: detect
@@ -146,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
       # registry and the built dependencies (pruning the workspace crate so the
@@ -195,7 +205,7 @@ jobs:
       # would widen the blast radius for nothing. `-fuse-ld=mold` finds
       # `/usr/local/bin/ld.mold` on PATH.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -318,6 +328,35 @@ jobs:
         # down, never up. The script self-tests its test-code masking first.
         run: make check-interp-construction
 
+      - name: No new hand-rolled AST walker
+        # A ratchet (ADR-0137): an analysis over a Stmt/Expr subtree implements
+        # `crate::ast_visit::Visit` instead of a private recursive `match`
+        # whose `_ =>` arm silently skips forgotten variants. Per-file counts
+        # live in scripts/ast-walkers-baseline.txt and may go down, never up.
+        # Missing from this job when it was added, so main took six new
+        # walkers unchecked. Self-tests its detector first.
+        run: make check-ast-walkers
+
+      - name: Value API wall holds
+        # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
+        # outside src/value/. At 0; this keeps it there.
+        run: make check-value-wall
+
+      - name: Every `make checks` guard runs in CI
+        # Each guard above is its own step, so adding one to `make checks`
+        # without a step here left it running only on developer machines --
+        # which is how check-ast-walkers and check-value-wall went unchecked.
+        # Derived from the Makefile, so it cannot drift the same way.
+        run: |
+          missing=0
+          for t in $(sed -n 's/^checks://p' Makefile); do
+            if ! grep -qE "^[[:space:]]+run: make $t\$" .github/workflows/ci.yml; then
+              echo "::error::make checks runs $t, but no ci.yml step does ('run: make $t')"
+              missing=1
+            fi
+          done
+          exit $missing
+
       - name: No private copy of a primitive
         # A ban (ADR-0117, ADR-0118): the method, the nqp:: op, the VM opcode,
         # the reduction fold and the TRIR op must all call the one routine in
@@ -344,7 +383,7 @@ jobs:
         # through. Stdlib Python, no build, seconds.
         run: make check-dev
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           components: clippy, rustfmt
 
@@ -360,7 +399,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -670,7 +709,7 @@ jobs:
       # saves under the new key.
       - name: Restore the battery source cache
         id: battery-src-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -699,7 +738,7 @@ jobs:
       # `actions/cache/save` only warns.
       - name: Save the battery source cache
         if: always() && steps.battery-src-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -769,7 +808,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           components: clippy
           targets: wasm32-unknown-unknown
@@ -792,7 +831,7 @@ jobs:
         # `--lib` because that is all the browser package builds (see
         # scripts/build-npm-package.sh). This is the configuration where the
         # platform-gated paths (`#[cfg(unix)]` filesystem calls, the worker
-        # pool, PCRE2) compile out, and where unused locals and dead helpers
+        # pool, NativeCall) compile out, and where unused locals and dead helpers
         # pile up unseen.
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
@@ -842,10 +881,17 @@ jobs:
       # model) under the job, which would turn a toolchain update into what
       # looks like a soundness regression — on a required check. Bump this
       # deliberately, in its own PR, and read the diff in Miri's behaviour.
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          toolchain: nightly-2026-08-01
-          components: miri, rust-src
+      #
+      # Installed with rustup directly rather than dtolnay/rust-toolchain:
+      # Dependabot re-pins that action to the SHA of its newest *version*
+      # branch (e.g. `1.98.1`), and a version branch ignores the `toolchain:`
+      # input and installs that stable release, which ships no Miri (the grouped
+      # actions bump PR #10433 failed exactly so).
+      - name: Install pinned nightly with Miri
+        run: |
+          rustup toolchain install nightly-2026-08-01 --profile minimal \
+            --component miri --component rust-src --no-self-update
+          rustup default nightly-2026-08-01
 
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -946,7 +992,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           targets: wasm32-unknown-unknown
 
@@ -1061,7 +1107,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build
@@ -1075,7 +1121,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -1402,7 +1448,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       # The "ci-linux" dependency cache, shared with the other two jobs that
       # compile a debug build — see the `build` job for why the release build
@@ -1416,7 +1462,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           mold-version: '2.42.0'
           make-default: false

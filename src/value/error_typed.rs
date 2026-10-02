@@ -498,10 +498,16 @@ impl RuntimeError {
     /// X::TypeCheck::Assignment - Type check failed in assignment (with optional symbol).
     /// raku exposes `.expected` as the expected type OBJECT and `.got` as the
     /// offending VALUE; the message still names the value's type.
-    pub(crate) fn typecheck_assignment(
+    ///
+    /// `repr` is the `(repr)` tail of the message (`""` for none). An object's
+    /// repr is its `.raku`, a method call, so the caller supplies it:
+    /// `Interpreter::typecheck_assignment_failure` renders it, and
+    /// `runtime::utils::value_short_repr` answers for every other value.
+    pub(crate) fn typecheck_assignment_with_repr(
         expected: &str,
         got_value: &Value,
         symbol: Option<&str>,
+        repr: &str,
     ) -> Self {
         let got_type = crate::value::types::what_type_name(got_value);
         // A package-scoped enum constraint names its qualified identity; the
@@ -520,7 +526,6 @@ impl RuntimeError {
         // is present for any value with a short representation. Kept identical
         // to `runtime::utils::type_check_assignment_error`, which builds the
         // same message on the other assignment paths.
-        let repr = crate::runtime::utils::value_short_repr(got_value);
         let got = if repr.is_empty() {
             got_type
         } else {
@@ -784,13 +789,17 @@ but got '{}' ({}) as a value without a container.",
     /// used throughout `runtime/types/binding_signature.rs` for real routine
     /// parameter binding; factored out here so a second call site (`for`-loop
     /// parameter binding, which never goes through that binder) can share it.
+    ///
+    /// `repr` is the `(repr)` tail (`""` for none). An object's repr is its
+    /// `.raku`, a method call, so `Interpreter::typecheck_binding_parameter_failure`
+    /// supplies it; `runtime::utils::value_short_repr` answers for every other value.
     pub(crate) fn typecheck_binding_parameter_with_repr(
         param: &str,
         expected: &str,
         value: &Value,
+        repr: &str,
     ) -> Self {
         let got_type = crate::runtime::utils::got_type_name(value);
-        let repr = crate::runtime::utils::value_short_repr(value);
         // Unlike several sibling constructors in this file, the class name is
         // NOT baked into this message: `Self::typed` copies it verbatim into
         // both the top-level uncaught display AND the exception's own

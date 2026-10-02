@@ -9,25 +9,14 @@
 //! those siblings keep their access (the whole set is re-exported from
 //! `runtime` via `pub(crate) use self::regex_types::*`).
 
+use super::regex_named_caps::NamedCaptureMap;
 use crate::symbol::Symbol;
 use crate::value::Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::Arc;
 
-/// The named-capture map shape shared by [`RegexCaptures`], [`CapChildren`]
-/// and every helper that walks one.
-///
-/// Fx-hashed, not SipHash-hashed, on purpose: the key is an interned
-/// [`Symbol`] (a `u32`), these maps are probed and rebuilt several times per
-/// matched capture, and a regex capture name is never adversarial input in the
-/// sense SipHash's DoS resistance exists for. A callgrind profile of a YAML
-/// parse put `sip::Hasher::write` + `BuildHasher::hash_one` at ~8% of the whole
-/// program, with the regex-capture maps among the dominant callers
-/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-pub(crate) type NamedCaptureMap = HashMap<Symbol, NamedSlot>;
-
 /// The `:my $var = …` regex-variable map shape, Fx-hashed for the same
-/// reason as [`NamedCaptureMap`].
+/// reason as the regex capture maps.
 pub(crate) type RegexVarMap = HashMap<String, Value>;
 
 #[derive(Clone)]
@@ -86,6 +75,9 @@ pub(crate) struct PatternDerived {
     /// backtrack retry in #8510's shape), so a full re-walk per call is pure
     /// waste once this pattern's own answer is known.
     pub(crate) contains_backref: std::sync::OnceLock<bool>,
+    /// Whether this pattern's subtree contains a code atom at its own capture
+    /// level (`atom_contains_code`'s per-pattern memo).
+    pub(crate) contains_code: std::sync::OnceLock<bool>,
     /// This pattern's own positional-capture-group count (`count_capture_groups`'s
     /// per-pattern memo). Also a pure function of the pattern shape, re-walked
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
@@ -108,8 +100,8 @@ pub(crate) struct PatternDerived {
     pub(crate) ltm_nfa: std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
     /// The pattern compiled to a flat backtracking program (ADR-0135), or
     /// `None` when it holds a construct the compiled engine does not cover
-    /// yet and keeps the tree walk. A pure function of the pattern while the
-    /// engine compiles no subrule call.
+    /// yet and keeps the tree walk. A pure function of the pattern: a subrule
+    /// call is resolved when it is reached, not when the pattern compiles.
     pub(crate) rx_program: std::sync::OnceLock<Option<Arc<crate::runtime::regex::RxProgram>>>,
 }
 
@@ -172,38 +164,40 @@ impl PosSlot {
             ..Default::default()
         }
     }
-}
 
-/// One named capture's entries (ADR-0016 P4) — the collapse of the three
-/// parallel named collections (`named` text map ‖ `named_subcaps` ‖
-/// `named_quantified`). Every entry is a span-bearing capture node; the
-/// captured text derives from the node's span through the shared subject.
-#[derive(Clone, Default)]
-pub(crate) struct NamedSlot {
-    pub(crate) nodes: Vec<Arc<CapNode>>,
-    /// The name was captured under a quantifier (or `@<name>=` forced list):
-    /// the Match presents it as an Array even for zero or one entries.
-    pub(crate) quantified: bool,
-}
-
-impl NamedSlot {
-    /// A slot holding one span-only leaf entry.
-    pub(crate) fn leaf(from: usize, to: usize) -> Self {
-        NamedSlot {
-            nodes: vec![Arc::new(CapNode {
-                from,
-                to,
-                ..Default::default()
-            })],
-            quantified: false,
+    /// Add what this slot holds to `list`, the entries of a slot that folds
+    /// several iterations. A slot an inner quantifier already folded
+    /// (`[ [ (\d) ]+ ]+`) contributes each of its entries, not one entry for
+    /// itself: a capture group under nested quantifiers is one flat list in
+    /// raku, because the groups around it do not capture.
+    /// An iteration whose `(x)?` did not match (a Nil slot) contributes
+    /// nothing: raku's list holds only the matches (`[ (\d)? x ]+` on "x1xx"
+    /// binds `$0` to the one digit).
+    // Cost: O(e), e = the entries the slot already holds (one when it holds none).
+    pub(crate) fn push_entries_to(&self, list: &mut Vec<QuantifiedCaptureEntry>) {
+        match &self.quantified {
+            Some(inner) => list.extend(inner.iter().cloned()),
+            None if self.nil => {}
+            None => list.push((self.from, self.to, self.subcap.clone())),
         }
     }
 
-    /// Fold another slot's entries into this one (capture-merge semantics:
-    /// entries append, the quantified flag is sticky).
-    pub(crate) fn merge(&mut self, other: NamedSlot) {
-        self.nodes.extend(other.nodes);
-        self.quantified |= other.quantified;
+    /// The slot that holds `list`: its span and sub-Match are the last entry's,
+    /// the representative a backreference reads.
+    // Cost: O(1) beyond the list.
+    pub(crate) fn folded(list: Vec<QuantifiedCaptureEntry>) -> Self {
+        let (from, to, subcap) = list
+            .last()
+            .map(|(from, to, subcap)| (*from, *to, subcap.clone()))
+            .unwrap_or((0, 0, None));
+        PosSlot {
+            from,
+            to,
+            subcap,
+            quantified: Some(list),
+            nil: false,
+            alternation_padding: false,
+        }
     }
 }
 
@@ -222,23 +216,24 @@ pub(crate) struct OuterBackrefCaps {
     pub(crate) parent: Option<Arc<OuterBackrefCaps>>,
     /// When a separated quantifier is matching its next atom, the atom's
     /// captures belong in the quantifier's folded positional slots rather
-    /// than after them. The range is absolute in the visible positional list.
+    /// than after them. The range is a slot range of the view the level reads
+    /// (`RegexCaptures::inline_capture_view`): every enclosing link's captures
+    /// with this link's own folded in, counted after each enclosing fold, so
+    /// it points into the outer iteration's slots when the quantifier is
+    /// nested in another one. It also says how *this link's* `positional`
+    /// folds into its `parent`'s view, since those are the enclosing level's
+    /// own captures (`ViewFold`).
     pub(crate) merge_positional: Option<(usize, usize)>,
+    /// Where the enclosing level's match began. A same-scope sub-pattern (a
+    /// `[ … ]` group, an alternative) is part of the same regex, so `$/` in a
+    /// code block inside it spans from the *enclosing* start, not from the
+    /// sub-pattern's own.
+    pub(crate) match_from: usize,
 }
 
 impl OuterBackrefCaps {
-    /// Append captures from the outermost scope through this level in source
-    /// order. This is the `$ /` view for inline code; backreference lookup
-    /// below intentionally keeps its innermost-slot semantics instead.
-    pub(crate) fn append_captures(&self, out: &mut RegexCaptures) {
-        if let Some(parent) = self.parent.as_ref() {
-            parent.append_captures(out);
-        }
-        for (key, slot) in &self.named {
-            out.named.entry(*key).or_default().merge(slot.clone());
-        }
-        out.positional.extend(self.positional.iter().cloned());
-    }
+    // `append_captures`, the `$/` view of inline code, lives with the rest of
+    // the view in `regex_backref_scope`.
 
     /// The most recent entry recorded for `name` at this level or any enclosing
     /// one (innermost wins, matching the accumulate-then-read order the flat
@@ -249,10 +244,7 @@ impl OuterBackrefCaps {
             if let Some(node) = cur.named.get(name).and_then(|slot| slot.nodes.last()) {
                 return Some(node);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 
@@ -263,10 +255,7 @@ impl OuterBackrefCaps {
             if let Some(slot) = cur.positional.get(idx) {
                 return Some(slot);
             }
-            match cur.parent.as_ref() {
-                Some(p) => cur = p,
-                None => return None,
-            }
+            cur = cur.parent.as_ref()?;
         }
     }
 }
@@ -294,9 +283,9 @@ pub(crate) struct CapNode {
     pub(crate) from: usize,
     pub(crate) to: usize,
     /// The winning :sym<> variant name, if this match was from a protoregex.
-    pub(crate) sym: Option<String>,
+    pub(crate) sym: Option<Symbol>,
     /// The original rule name when this capture was stored under an alias.
-    pub(crate) action_name: Option<String>,
+    pub(crate) action_name: Option<Symbol>,
     /// The AST value produced by this node's inline `{ make … }` code block(s),
     /// computed at reduce time. `None` when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
@@ -324,6 +313,12 @@ pub(crate) struct CapChildren {
     /// What this rule's own `:my $*x` declarations held at this match's reduce
     /// (see `Interpreter::record_rule_dynvars`).
     pub(crate) regex_vars: HashMap<String, Value>,
+    /// The grammar instance this rule invocation owned while it ran -- Rakudo's
+    /// cursor -- when a method the rule called wrote to it (#9803): its
+    /// attributes are the Match's own, so `$<t>.inv` reads what `method acc {
+    /// $!inv = True }` stored. `None` for the (overwhelming) invocation that
+    /// never touched one.
+    pub(crate) cursor: Option<Value>,
 }
 
 impl CapNode {
@@ -342,49 +337,8 @@ impl CapNode {
 }
 
 impl RegexCaptures {
-    /// Build the capture state visible to inline regex code. An inline walk
-    /// has its own local accumulator, but code in a same-scope group sees the
-    /// captures already taken by the enclosing regex as well.
-    pub(crate) fn inline_capture_view(&self) -> RegexCaptures {
-        let Some(outer) = self.outer_backref() else {
-            return self.clone();
-        };
-
-        let mut visible = RegexCaptures {
-            // Capture lookup crosses the inline-walk boundary, but the
-            // in-progress `$/` span remains that walk's own span.  Code such
-            // as XML's `{ make ~$/ }` must see the current attribute value,
-            // not the whole enclosing element.
-            match_from: self.match_from,
-            ..Default::default()
-        };
-        outer.append_captures(&mut visible);
-
-        if let Some((start, stride)) = outer.merge_positional {
-            let merge_count = stride.min(self.positional.len());
-            for (offset, slot) in self.positional.iter().take(merge_count).enumerate() {
-                let Some(target) = visible.positional.get_mut(start + offset) else {
-                    break;
-                };
-                let entry = (slot.from, slot.to, slot.subcap.clone());
-                let list = target.quantified.get_or_insert_with(Vec::new);
-                list.push(entry);
-                target.from = slot.from;
-                target.to = slot.to;
-                target.subcap = slot.subcap.clone();
-                target.nil = false;
-            }
-            visible
-                .positional
-                .extend(self.positional.iter().skip(merge_count).cloned());
-        } else {
-            visible.positional.extend(self.positional.iter().cloned());
-        }
-        for (key, slot) in &self.named {
-            visible.named.entry(*key).or_default().merge(slot.clone());
-        }
-        visible
-    }
+    // `inline_capture_view`, the capture state visible to inline regex code,
+    // lives with the rest of the view in `regex_backref_scope`.
 
     pub(crate) fn inline_match_from(&self) -> usize {
         self.match_from
@@ -420,24 +374,21 @@ impl RegexCaptures {
     /// Convert this accumulator into the immutable stored node it describes
     /// (ADR-0016 P2). Consumes the accumulator; drops the accumulator-only
     /// fields nothing reads through a stored node (`hash_captures`,
-    /// `positional_slots`, `capture_start`/`capture_end`, `match_from`). The
+    /// `capture_start`/`capture_end`, `match_from`). The
     /// child payload is allocated only when something would go in it.
     pub(crate) fn into_cap_node(mut self) -> CapNode {
         // Take the cold payload whole: a leaf (the common case) never had one,
         // so the conversion neither allocates nor touches the fields below.
         let rare = self.rare.take().map(|rare| *rare);
-        let (capture_alias_map, regex_vars, sym, action_name) = match rare {
-            Some(rare) => (
-                rare.capture_alias_map,
-                rare.regex_vars,
-                rare.sym,
-                rare.action_name,
-            ),
+        let (sym, action_name) = (self.sym(), self.action_name());
+        let (capture_alias_map, regex_vars, cursor) = match rare {
+            Some(rare) => (rare.capture_alias_map, rare.regex_vars, rare.cursor),
             None => Default::default(),
         };
         let has_children = !self.named.is_empty()
             || !capture_alias_map.is_empty()
             || !self.positional.is_empty()
+            || cursor.is_some()
             || regex_vars.as_ref().is_some_and(|vars| !vars.is_empty());
         let children = has_children.then(|| {
             Box::new(CapChildren {
@@ -445,6 +396,7 @@ impl RegexCaptures {
                 capture_alias_map,
                 positional: self.positional,
                 regex_vars: regex_vars.map(Arc::unwrap_or_clone).unwrap_or_default(),
+                cursor,
             })
         });
         CapNode {
@@ -475,7 +427,7 @@ pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 /// The engine constructs, moves, clones and drops a `RegexCaptures` **per
 /// match candidate** — millions of times over one grammar parse — while every
 /// field in here is written by a minority of patterns: `:my` declarators,
-/// capture aliases, `%<name>=` hash captures, the pcre2/`:P5` slot axis, a
+/// capture aliases, `%<name>=` hash captures, a
 /// protoregex `:sym<>` win, and the two engine-entry-point links (`target`,
 /// `outer_backref`). Keeping them inline made the accumulator 336 bytes, so
 /// the per-candidate `memcpy` traffic and three `HashMap` drops were paid by
@@ -489,12 +441,6 @@ pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 /// when it was never allocated.
 #[derive(Clone, Default)]
 pub(crate) struct RareCaps {
-    /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
-    /// spans, where `None` represents an unmatched capture. A separate
-    /// numbering axis from `positional` (it has `None` holes where
-    /// `positional` has no entry at all); written only by the pcre2/`:P5`
-    /// path.
-    pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
     /// Variables declared via `:my $var = expr;` inside regex.
     /// These are made available to `<{ code }>` closures.
     ///
@@ -506,13 +452,9 @@ pub(crate) struct RareCaps {
     /// paid only by a level that actually writes a lexical, through
     /// `Arc::make_mut`.
     pub(crate) regex_vars: Option<Arc<RegexVarMap>>,
-    /// The winning :sym<> variant name, if this match was from a protoregex.
-    pub(crate) sym: Option<String>,
     /// For aliased captures like `<str=.str_escape>`, maps capture name to
     /// original rule name for grammar action dispatch.
     pub(crate) capture_alias_map: CaptureAliasMap,
-    /// The original rule name when this capture was stored under an alias.
-    pub(crate) action_name: Option<String>,
     /// Hash captures from `%<name>=(...)` aliasing in regex.
     pub(crate) hash_captures: HashCaptureMap,
     /// The shared subject this match ran against (ADR-0016 P3). Set once by
@@ -525,6 +467,11 @@ pub(crate) struct RareCaps {
     /// never merged, propagated, or published — it is a read-through link to
     /// the parent walk, not a capture of this level.
     pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
+    /// The grammar instance the rule invocation that produced this match owned
+    /// (see [`CapChildren::cursor`]). Set where a rule invocation returns, from
+    /// the compiled engine's frame; carried onto the stored node by
+    /// [`RegexCaptures::into_cap_node`].
+    pub(crate) cursor: Option<Value>,
 }
 
 impl RareCaps {
@@ -532,14 +479,12 @@ impl RareCaps {
     /// after a drain/take so a payload that has been emptied out again does
     /// not make every later clone copy an empty one.
     fn is_empty(&self) -> bool {
-        self.positional_slots.is_empty()
-            && self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
-            && self.sym.is_none()
+        self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
             && self.capture_alias_map.is_empty()
-            && self.action_name.is_none()
             && self.hash_captures.is_empty()
             && self.target.is_none()
             && self.outer_backref.is_none()
+            && self.cursor.is_none()
     }
 }
 
@@ -565,8 +510,46 @@ pub(crate) struct RegexCaptures {
     /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
     /// when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
+    /// The winning `:sym<…>` variant and the aliased rule name (see
+    /// [`NodeNames`]).
+    pub(crate) names: NodeNames,
     /// The cold fields, allocated on first write (see [`RareCaps`]).
     pub(crate) rare: Option<Box<RareCaps>>,
+}
+
+/// A capture's two interned names, packed into one word: the winning
+/// `:sym<…>` variant, if the match was a proto candidate's, and the original
+/// rule name when it was stored under an alias (the empty name: a capture no
+/// rule produced). Inline (#10488): a proto return used to clone the variant
+/// name into a freshly allocated [`RareCaps`]; packed so the accumulator stays
+/// within its size budget (`regex_captures_size_guard`).
+#[derive(Clone, Copy)]
+pub(crate) struct NodeNames {
+    sym: u32,
+    action_name: u32,
+}
+
+impl NodeNames {
+    const NONE: u32 = u32::MAX;
+
+    #[inline]
+    fn get(raw: u32) -> Option<Symbol> {
+        (raw != Self::NONE).then(|| Symbol::from_raw(raw))
+    }
+
+    #[inline]
+    fn put(sym: Option<Symbol>) -> u32 {
+        sym.map_or(Self::NONE, Symbol::raw)
+    }
+}
+
+impl Default for NodeNames {
+    fn default() -> Self {
+        NodeNames {
+            sym: Self::NONE,
+            action_name: Self::NONE,
+        }
+    }
 }
 
 static EMPTY_REGEX_VARS: std::sync::LazyLock<RegexVarMap> =
@@ -667,6 +650,20 @@ impl RegexCaptures {
         dst.extend(it);
     }
 
+    /// File the grammar instance the rule invocation that produced this match
+    /// owned (see [`CapChildren::cursor`]). The payload is allocated only for
+    /// an invocation that has one.
+    pub(crate) fn set_cursor(&mut self, cursor: Value) {
+        self.rare_mut().cursor = Some(cursor);
+    }
+
+    /// Take the grammar instance filed by [`Self::set_cursor`], leaving none.
+    pub(crate) fn take_cursor(&mut self) -> Option<Value> {
+        let taken = self.rare.as_deref_mut().and_then(|rare| rare.cursor.take());
+        self.prune_rare();
+        taken
+    }
+
     #[inline]
     pub(crate) fn capture_alias_map_mut(&mut self) -> &mut CaptureAliasMap {
         &mut self.rare_mut().capture_alias_map
@@ -731,45 +728,34 @@ impl RegexCaptures {
     }
 
     #[inline]
-    pub(crate) fn positional_slots(&self) -> &[Option<(usize, usize)>] {
-        self.rare().map_or(&[], |rare| &rare.positional_slots)
+    pub(crate) fn sym(&self) -> Option<Symbol> {
+        NodeNames::get(self.names.sym)
     }
 
+    /// Set (or clear) the winning `:sym<>` variant name.
     #[inline]
-    pub(crate) fn positional_slots_mut(&mut self) -> &mut Vec<Option<(usize, usize)>> {
-        &mut self.rare_mut().positional_slots
-    }
-
-    #[inline]
-    pub(crate) fn sym(&self) -> Option<&String> {
-        self.rare().and_then(|rare| rare.sym.as_ref())
-    }
-
-    /// Set (or clear) the winning `:sym<>` variant name. Clearing an
-    /// accumulator that never had a payload does not allocate one.
-    pub(crate) fn set_sym(&mut self, sym: Option<String>) {
-        if sym.is_none() && self.rare.is_none() {
-            return;
-        }
-        self.rare_mut().sym = sym;
-        self.prune_rare();
+    pub(crate) fn set_sym(&mut self, sym: Option<Symbol>) {
+        self.names.sym = NodeNames::put(sym);
     }
 
     /// Move the `:sym<>` variant name out.
-    pub(crate) fn take_sym(&mut self) -> Option<String> {
-        let taken = self.rare.as_deref_mut().and_then(|rare| rare.sym.take());
-        self.prune_rare();
-        taken
+    #[inline]
+    pub(crate) fn take_sym(&mut self) -> Option<Symbol> {
+        let sym = self.sym();
+        self.names.sym = NodeNames::NONE;
+        sym
     }
 
-    /// Set (or clear) the aliased-capture rule name. Clearing an accumulator
-    /// that never had a payload does not allocate one.
-    pub(crate) fn set_action_name(&mut self, action_name: Option<String>) {
-        if action_name.is_none() && self.rare.is_none() {
-            return;
-        }
-        self.rare_mut().action_name = action_name;
-        self.prune_rare();
+    /// The aliased-capture rule name.
+    #[inline]
+    pub(crate) fn action_name(&self) -> Option<Symbol> {
+        NodeNames::get(self.names.action_name)
+    }
+
+    /// Set (or clear) the aliased-capture rule name.
+    #[inline]
+    pub(crate) fn set_action_name(&mut self, action_name: Option<Symbol>) {
+        self.names.action_name = NodeNames::put(action_name);
     }
 
     #[inline]
@@ -857,7 +843,6 @@ mod cap_node_tests {
         assert!(caps.rare().is_none());
         assert!(caps.regex_vars().is_empty());
         assert!(caps.hash_captures().is_empty());
-        assert!(caps.positional_slots().is_empty());
         assert!(caps.sym().is_none());
         assert!(caps.target().is_none());
         assert!(caps.outer_backref().is_none());
@@ -882,11 +867,6 @@ mod cap_node_tests {
             .insert("$x".to_string(), Value::int(1));
         assert!(caps.rare().is_some());
         assert_eq!(caps.take_regex_vars().len(), 1);
-        assert!(caps.rare().is_none());
-
-        caps.set_sym(Some("foo".to_string()));
-        assert_eq!(caps.sym().map(String::as_str), Some("foo"));
-        caps.set_sym(None);
         assert!(caps.rare().is_none());
     }
 }

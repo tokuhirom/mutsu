@@ -295,6 +295,11 @@ impl Interpreter {
         // had for `.map` anyway.
         self.reify_map_grep_seq_args(&args)?;
         let func = Self::unwrap_callable_mixin(func);
+        // A native/accessor Method object runs its own candidate, not
+        // whatever the invocant's class overrides it with (#10344).
+        if let Some(result) = self.try_call_bound_method_object(&func, &args) {
+            return result;
+        }
         // A `Method`/`Submethod` object (`.^find_method`, `.^method_table`)
         // used as a plain callable -- e.g. as a `.wrap` wrapper, which the
         // wrap chain invokes through here -- runs the callable it carries,
@@ -885,6 +890,7 @@ impl Interpreter {
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
                 state_scope_guard: data.state_scope_guard.clone(),
+                captured_readonly: data.captured_readonly.clone(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

@@ -66,6 +66,28 @@ pub fn clear_parser_lib_paths() {
     });
 }
 
+/// The individual path arguments of a `use lib` argument expression, in source
+/// order: a single path, a comma list (`'a', 'b'`, `<a b>`) or a parenthesised
+/// one (`('a', 'b')`, `(('a'), 'b')`) — lists and parentheses are looked
+/// through, everything else is a leaf. The one decoder for every consumer of
+/// `use lib` (the parser's BEGIN-time search path, the compiler's nested-`use`
+/// prologue, the runtime's pre-execution type scan); each applies its own
+/// rule to the leaves (literal-only, or folded by [`fold_use_lib_path`]).
+// Cost: O(n), n = number of list/paren nodes in the argument's spine.
+pub(crate) fn use_lib_args(expr: &Expr) -> impl Iterator<Item = &Expr> {
+    let mut stack = vec![expr];
+    std::iter::from_fn(move || {
+        while let Some(e) = stack.pop() {
+            match e {
+                Expr::ArrayLiteral(items) => stack.extend(items.iter().rev()),
+                Expr::Grouped(inner) => stack.push(inner),
+                leaf => return Some(leaf),
+            }
+        }
+        None
+    })
+}
+
 /// Try to extract a library path from a `use lib` expression at parse time.
 /// Handles string literals and `$*PROGRAM.parent(N).add("path")` patterns.
 pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
@@ -114,6 +136,8 @@ fn static_path(expr: &Expr, file: Option<&str>, program: Option<&str>) -> Option
         Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
         Expr::Var(v) if v == "*PROGRAM" => program.map(str::to_string),
         Expr::Var(v) if v == "?FILE" => file.or(program).map(str::to_string),
+        // A parenthesised chain link: `($?FILE.IO.parent).add('lib')`.
+        Expr::Grouped(inner) => static_path(inner, file, program),
         Expr::MethodCall {
             target, name, args, ..
         } => {

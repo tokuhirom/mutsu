@@ -368,18 +368,7 @@ impl Interpreter {
                 // stale index, which the debug-only audit in
                 // `fn_base_name_registered` turns into a located panic.
                 self.invalidate_fn_resolution_for_keys([Symbol::intern(&resolved_name)]);
-                // Record `&`-sigil parameter names so calls to a same-named routine
-                // inside this sub bypass the name-keyed light-call caches (the param
-                // can shadow a package sub of the same name).
-                for pd in param_defs {
-                    if let Some(bare) = pd.name.strip_prefix('&')
-                        && !bare.is_empty()
-                    {
-                        // Records both plain names (`foo`) and operator categories
-                        // (`infix:<@@>`); both can shadow a same-named package routine.
-                        self.amp_param_shadowed_names.insert(Symbol::intern(bare));
-                    }
-                }
+                self.note_amp_param_shadowed_names(param_defs);
                 if *is_export && !self.suppress_exports {
                     let pkg = self.current_package();
                     self.register_exported_sub(
@@ -598,8 +587,8 @@ impl Interpreter {
                     let name = sym.resolve();
                     // ADR-0039 slice 1: `@`/`%` are captured the same way as
                     // scalars now (the "Known limitations" follow-up ADR-0024
-                    // named). `&` stays excluded — the code/sub lane has its
-                    // own registries (ADR-0025). `is_user_variable_key`
+                    // named). A `&` code variable is captured too (#10483),
+                    // read back by `CallOnCodeVar`. `is_user_variable_key`
                     // already excludes the anonymous-container slot names
                     // (`@__ANON_ARRAY__`/`%__ANON_HASH__`: the char after the
                     // sigil is `_`, not a letter), so no extra guard is
@@ -608,7 +597,7 @@ impl Interpreter {
                     // slot checks below already establish that the key is a
                     // variable rather than a type, which is all the lowercase
                     // rule of `is_plain_user_lexical` was guessing at.
-                    if !crate::env::is_user_variable_key(&name) || name.starts_with('&') {
+                    if !crate::env::is_user_variable_key(&name) {
                         continue;
                     }
                     // `our`/`state`/`dynamic`-declared names are excluded —
@@ -1417,6 +1406,13 @@ impl Interpreter {
             // multi family into an export stash this way. A no-op unless
             // `current_package()` actually names such a stash.
             self.export_implicit_stash_proto(&name_str);
+        }
+        // A method proto's traits are `trait_mod:<is>(Method ...)` applications
+        // made once, at declaration (`class_body_proto_method_decl`,
+        // `role_body_deferred_proto_method`); this op also re-runs for every
+        // composition of a role, and passing a `Sub` would never match.
+        if *is_method {
+            return Ok(());
         }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
         if !custom_traits.is_empty() {

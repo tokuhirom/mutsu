@@ -208,72 +208,20 @@ impl Compiler {
     /// safely skip evaluation of a state variable's RHS initializer, and
     /// whether an inline nested block needs a `ResetStateLocals`.
     ///
-    /// The walk descends through operator/call/subscript shapes but stops at
-    /// anything that introduces a block of its own (`Block`, `Lambda`,
-    /// `AnonSub`, `Gather`, ...): a `state` in there belongs to *that* clone
-    /// and is reset at its entry, so descending would only make this block emit
-    /// a redundant reset.
+    /// The walk (`body_scans::expr_declares_state`) descends through every
+    /// expression but stops at anything that introduces a block of its own
+    /// (`Block`, `Lambda`, `AnonSub`, `Gather`, `do {}`, ...): a `state` in
+    /// there belongs to *that* clone and is reset at its entry, so descending
+    /// would only make this block emit a redundant reset.
     ///
     /// Descending at all matters because a `state` declaration is usually not
     /// the whole expression: `++state $n` parses as a `Unary` around the decl,
     /// so a shallow test missed it and an `if` branch holding one never emitted
     /// its reset — `sub f { if 1 { ++state $n } }` counted 1, 2, 3 across calls
     /// where raku restarts at 1 each time.
+    // Cost: O(n), n = size of the part of `expr` in the block's own scope.
     pub(super) fn expr_has_state_decl(expr: &Expr) -> bool {
-        let any = |es: &[Expr]| es.iter().any(Self::expr_has_state_decl);
-        match expr {
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { is_state: true, .. } => true,
-                Stmt::VarDecl { expr, .. } | Stmt::Expr(expr) => Self::expr_has_state_decl(expr),
-                _ => false,
-            },
-            Expr::Grouped(e)
-            | Expr::Unary { expr: e, .. }
-            | Expr::PostfixOp { expr: e, .. }
-            | Expr::AssignExpr { expr: e, .. }
-            | Expr::Itemize(e)
-            | Expr::DeitemizeForBind(e)
-            | Expr::Eager(e)
-            | Expr::PositionalPair(e)
-            | Expr::ZenSlice(e) => Self::expr_has_state_decl(e),
-            // A compound-assignment marker (`$x += 1`, `$x .= meth`) is
-            // transparent: only its expansion is executed.
-            Expr::CompoundAssign { expanded, .. } => Self::expr_has_state_decl(expanded),
-            Expr::Binary { left, right, .. } => {
-                Self::expr_has_state_decl(left) || Self::expr_has_state_decl(right)
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::expr_has_state_decl(cond)
-                    || Self::expr_has_state_decl(then_expr)
-                    || Self::expr_has_state_decl(else_expr)
-            }
-            Expr::Index { target, index, .. } => {
-                Self::expr_has_state_decl(target) || Self::expr_has_state_decl(index)
-            }
-            Expr::IndexAssign {
-                target,
-                index,
-                value,
-                ..
-            } => {
-                Self::expr_has_state_decl(target)
-                    || Self::expr_has_state_decl(index)
-                    || Self::expr_has_state_decl(value)
-            }
-            Expr::MethodCall { target, args, .. } | Expr::CallOn { target, args } => {
-                Self::expr_has_state_decl(target) || any(args)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => any(args),
-            Expr::ArrayLiteral(es)
-            | Expr::BracketArray(es, _)
-            | Expr::CaptureLiteral(es)
-            | Expr::StringInterpolation(es) => any(es),
-            _ => false,
-        }
+        super::body_scans::expr_declares_state(expr)
     }
 
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): `$scalar = @arr` / `$scalar
@@ -288,13 +236,11 @@ impl Compiler {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return false;
         }
-        let source = match expr {
-            Expr::ArrayVar(n) => format!("@{}", n),
-            Expr::HashVar(n) => format!("%{}", n),
-            // Chained share: `$r = $q` where `$q` may hold a container. The
-            // runtime no-ops when `$q` is a plain scalar, so this stays a copy.
-            Expr::Var(n) => n.clone(),
-            _ => return false,
+        // A chained share (`$r = $q` where `$q` may hold a container) is
+        // included: the runtime no-ops when `$q` is a plain scalar, so this
+        // stays a copy.
+        let Some(source) = expr.container_var_key() else {
+            return false;
         };
         self.with_escape(true, |c| c.compile_expr(expr));
         let name_idx = self.code.add_constant(Value::str(source));
@@ -435,12 +381,12 @@ impl Compiler {
     /// assignable lvalue (e.g. `%h<k>`, `@a[i]`, `%h<a><b>`)? Function-call and
     /// other non-lvalue roots are excluded so we never synthesize a writeback
     /// assignment into a temporary (which would error where Raku is silent).
+    // Cost: O(d), d = subscript depth.
     fn for_element_container_is_lvalue(expr: &Expr) -> bool {
-        match expr {
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_) => true,
-            Expr::Index { target, .. } => Self::for_element_container_is_lvalue(target),
-            _ => false,
-        }
+        matches!(
+            expr.index_root(),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_)
+        )
     }
 
     /// Rewrite `for <ELEM>.values { ... }`, where `<ELEM>` is a var-rooted
@@ -847,14 +793,12 @@ impl Compiler {
     /// bare form do not — verified against raku 2026-08-09).
     fn stmt_value_is_assignment(expr: &Expr) -> bool {
         fn tail_is_assignment(stmts: &[Stmt]) -> bool {
-            stmts
-                .iter()
-                .rev()
-                .find(|s| !matches!(s, Stmt::SetLine(_)))
-                .is_some_and(|s| match s {
+            crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers).is_some_and(|s| {
+                match s {
                     Stmt::Expr(e) => Compiler::stmt_value_is_assignment(e),
                     _ => false,
-                })
+                }
+            })
         }
         match expr {
             Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
@@ -924,6 +868,11 @@ impl Compiler {
         }
         self.note_construct_body_block(stmt);
         match stmt {
+            Stmt::NestedTypeShells(shells) => {
+                for shell in shells {
+                    self.emit_nested_type_shell(shell);
+                }
+            }
             Stmt::NestedMethodCapture {
                 index,
                 closure,
@@ -1001,6 +950,39 @@ impl Compiler {
                     &None,
                     crate::compiler::control_block::BlockPosition::Statement,
                 );
+            }
+            Stmt::LoopExitGuard {
+                label,
+                next_ph,
+                exit_ph,
+            } => {
+                let idx = self.code.emit(OpCode::LoopExitGuard {
+                    body_end: 0,
+                    exit_start: 0,
+                    end: 0,
+                    label: label.clone(),
+                });
+                self.loop_exit_guards
+                    .push((idx, next_ph.clone(), exit_ph.clone()));
+            }
+            Stmt::LoopExitGuardEnd => {
+                use crate::opcode::LoopExitGuardField;
+                let (idx, next_ph, exit_ph) = self
+                    .loop_exit_guards
+                    .pop()
+                    .expect("LoopExitGuardEnd without an open LoopExitGuard");
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::BodyEnd);
+                for s in &next_ph {
+                    self.compile_stmt(s);
+                }
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::ExitStart);
+                for s in &exit_ph {
+                    self.compile_stmt(s);
+                }
+                self.code
+                    .patch_loop_exit_guard(idx, LoopExitGuardField::End);
             }
             Stmt::SyntheticBlock(stmts) => {
                 // Detect `:=` bind context for `@` variables: the parser wraps
@@ -1153,42 +1135,6 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
-                // `our TYPE $x` does not compile in rakudo: a package variable
-                // is reachable by its qualified name from anywhere, so there is
-                // nowhere to enforce a lexical constraint. Rejected HERE rather
-                // than in the parser because rakudo still *parses* it — `Q[our
-                // Int $x].AST` builds a `RakuAST::VarDeclaration::Simple` with
-                // both `scope => "our"` and its `type` (pinned by
-                // `t/rakuast-vardecl-scoped.t`) — and only refuses to compile
-                // it. `our TYPE sub f() {…}` is legal and never reaches this
-                // arm (the parser takes the typed-routine path, where the
-                // constraint is the return type); `our TYPE constant K = …` is
-                // legal too and DOES reach it, so it is excluded below.
-                //
-                // Two `our TYPE` spellings are still accepted, both because the
-                // AST does not carry the `our` down to where the constraint is:
-                // a destructuring list (`our Int ($a, $b)` lowers to VarDecls
-                // with `is_our: false`) and a class attribute (`our Int $.x` is
-                // a `HasDecl`, compiled through the class-body planner rather
-                // than here). See
-                // `todo/tickets/our-typed-destructuring-and-attribute-declarations-are-accepted.md`.
-                if *is_our
-                    && type_constraint.is_some()
-                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
-                {
-                    const MSG: &str = "Cannot put a type constraint on an 'our'-scoped variable";
-                    let err = Value::make_exception(
-                        "X::Comp::AdHoc",
-                        &[
-                            ("message", Value::str(MSG.to_string())),
-                            ("payload", Value::str(MSG.to_string())),
-                        ],
-                    );
-                    let idx = self.code.add_constant(err);
-                    self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die { user_throw: false });
-                    return;
-                }
                 // `use variables :D/:U` adds its implicit smiley to the
                 // declared type before anything below reads it (#9990).
                 let pragma_type_constraint = self
@@ -1896,23 +1842,28 @@ impl Compiler {
                     }
                 } else {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
-                    // A plain untyped scalar `our $x = <expr>` (no `:=` bind, no
-                    // type constraint, no container sigil, no `constant`, no
-                    // trait besides the internal "has an initializer" marker):
-                    // install ONE shared `ContainerRef` cell under the lexical
-                    // local slot AND the package-qualified name instead of the
+                    // A plain scalar `our $x = <expr>` (no `:=` bind, no native
+                    // type, no container sigil, no `constant`, no trait besides
+                    // the internal "has an initializer" marker): install ONE
+                    // shared `ContainerRef` cell under the lexical local slot
+                    // AND the package-qualified name instead of the
                     // two-independent-stores sequence below. `our $x` and
                     // `$Pkg::x` (`$GLOBAL::x` at file scope) then name the SAME
                     // container — see `OpCode::DeclareOurScalar` and
                     // `docs/adr/README.md`-style rationale in
-                    // news/2026-08/our-var-shared-cell.md. Every other `our`
-                    // shape keeps the old two-store sequence below unchanged.
+                    // news/2026-08/our-var-shared-cell.md. A declared type
+                    // constraint rides on that cell, so it is enforced whichever
+                    // name the variable is reached through (`$Pkg::x = "a"`).
+                    // A native type (`our int $x`) keeps the old sequence: its
+                    // store is a slot-typed one, not a Scalar-cell check. Every
+                    // other `our` shape keeps the old two-store sequence below
+                    // unchanged.
                     let use_our_cell = *is_our
                         && !shadows_outer_constant
                         && !is_constant
                         && !is_scalar_colon_bind
                         && !bind_vardecl
-                        && type_constraint.is_none()
+                        && !is_native_type
                         && !name.starts_with('@')
                         && !name.starts_with('%')
                         && !name.starts_with('&')
@@ -1920,6 +1871,14 @@ impl Compiler {
                         && !has_default_trait
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                    // A typed `our @a` / `our %h` publishes the typed container
+                    // `SetLocal` just built, not a second copy of the raw
+                    // initializer: the global store would coerce that copy to a
+                    // plain `Array`/`Hash`, and the package-qualified name
+                    // (`@Pkg::a`, `%Pkg::h`) would lose its `Array[Int]`/`Hash[Int]`
+                    // identity and with it the element constraint.
+                    let our_typed_aggregate =
+                        *is_our && type_constraint.is_some() && name.starts_with(['@', '%']);
                     if use_our_cell {
                         let qualified = self.qualify_our_storage_name(spelled, name);
                         self.code
@@ -1942,7 +1901,11 @@ impl Compiler {
                         // instead (below): the global must hold the container the
                         // default-aware store filled, not a second copy of the raw
                         // initializer list.
-                        if *is_our && !is_constant && !preapply_container_default {
+                        if *is_our
+                            && !is_constant
+                            && !preapply_container_default
+                            && !our_typed_aggregate
+                        {
                             self.code.emit(OpCode::Dup);
                         }
                         // A sigilless bind (`my \x := EXPR`) settles its
@@ -2044,7 +2007,7 @@ impl Compiler {
                             // Constants should not have their values coerced by the
                             // @/% container rules: `constant @x` stores a List,
                             // `constant %x` stores a Map (not Array/Hash).
-                            if is_constant || preapply_container_default {
+                            if is_constant || preapply_container_default || our_typed_aggregate {
                                 // Re-read the value `SetLocal` already coerced (and
                                 // cached in the slot) so `SetGlobalRaw` does not run
                                 // the coercion — and its side effects — a second time.
@@ -2671,7 +2634,7 @@ impl Compiler {
                             ArgSupply::Condition,
                         );
                     }
-                    self.compile_scope_restored_loop_body(&loop_body, body);
+                    self.compile_scope_restored_loop_body(&loop_body, body, *is_statement_modifier);
                 }
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
@@ -2804,7 +2767,7 @@ impl Compiler {
                 // Compile body. A sole `{ ... }` here is a nested bare block
                 // (C-style `loop` has no statement-modifier form), so its
                 // `state` restarts per iteration — no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body, body);
+                self.compile_scope_restored_loop_body(&loop_body, body, false);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
                 if let Some(step_expr) = step {
@@ -3101,12 +3064,9 @@ impl Compiler {
                     let source_name = if is_copy_topic {
                         None
                     } else {
-                        match topic {
-                            Expr::Var(name) => Some(name.clone()),
-                            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                            Expr::HashVar(name) => Some(format!("%{}", name)),
-                            _ => topic_decl_scalar.clone(),
-                        }
+                        topic
+                            .container_var_key()
+                            .or_else(|| topic_decl_scalar.clone())
                     };
                     if let Some(source_name) = source_name {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();
@@ -3313,6 +3273,11 @@ impl Compiler {
                     })
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
+                // A `when` body is a block the enclosing block re-clones on every
+                // execution, so its own `state` restarts each time -- see
+                // `OpCode::ResetStateLocals`. A statement-modifier `when` has no
+                // block of its own.
+                let state_reset = self.emit_branch_state_reset(body, *is_statement_modifier);
                 // ADR-0048 D3: a `when` body is a Block raku invokes with ZERO
                 // arguments (`{ when 5 { $^c } }.arity` is 0), so any placeholder
                 // it declares is an unsatisfied parameter. Emitted INSIDE the
@@ -3332,6 +3297,7 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                 }
+                self.patch_nested_block_state_reset(state_reset);
                 self.pop_dynamic_scope_lexical(saved_scope);
                 if let Some(idx) = block_local_idx {
                     self.code.patch_block_local_body_end(idx);
@@ -3354,6 +3320,8 @@ impl Compiler {
                     })
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
+                // Like a `when` body: a re-cloned block, so its `state` restarts.
+                let state_reset = self.emit_nested_block_state_reset(body);
                 if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
@@ -3371,6 +3339,7 @@ impl Compiler {
                         }
                     }
                 }
+                self.patch_nested_block_state_reset(state_reset);
                 self.pop_dynamic_scope_lexical(saved_scope);
                 if let Some(idx) = block_local_idx {
                     self.code.patch_block_local_body_end(idx);
@@ -3422,7 +3391,7 @@ impl Compiler {
                 // statements directly into `body`, so a sole `{ ... }` here is
                 // a NESTED bare block that re-clones per iteration — its
                 // `state` restarts (raku: 1 1 1), no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body, body);
+                self.compile_scope_restored_loop_body(&loop_body, body, false);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {
@@ -3731,6 +3700,7 @@ impl Compiler {
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
                         name_idx,
                         body_end: 0,
+                        lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
@@ -3764,6 +3734,15 @@ impl Compiler {
                     self.current_package_kind = saved_package_kind;
                     self.code.patch_body_end(pkg_idx);
                 }
+            }
+
+            Stmt::PackageRuntimeBody {
+                name,
+                body,
+                lexicals,
+                decl,
+            } => {
+                self.compile_package_runtime_body(*name, body, lexicals, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku
@@ -4334,6 +4313,9 @@ impl Compiler {
                     || module == "isms"
                     || module == "nqp"
                     || module == "soft"
+                    // `use worries` only toggles parse-time warnings, which
+                    // the parser already applied.
+                    || module == "worries"
                     || module == "oo"
                     || module == "class"
                     // `use experimental :pack/:cached/:macros/...` enables
@@ -4890,6 +4872,7 @@ impl Compiler {
             Stmt::Block(body) => {
                 self.compile_block_inline(body);
             }
+            s if self.compile_type_decl_value(s) => {}
             Stmt::SyntheticBlock(body) => {
                 // A parser wrapper (e.g. a tail `my $*x := ...` bind used as
                 // the last statement of a phaser-carrying block or a `let`

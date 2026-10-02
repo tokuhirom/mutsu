@@ -15,8 +15,10 @@
 //! so that at the quantifier's end they fold side by side, as the walk's
 //! chain does (`separated_capture_delta`).
 
-use super::super::regex_trail::CapStore;
-use crate::runtime::regex_types::RegexCaptures;
+use std::sync::Arc;
+
+use super::super::regex_trail::{CapStore, Undo};
+use crate::runtime::regex_types::{OuterBackrefCaps, RegexCaptures};
 
 enum Journal {
     /// `stack[level]` was mutated from trail mark `mark`.
@@ -41,7 +43,15 @@ pub(super) struct Levels {
     /// A separated quantifier's per-iteration captures, in match order:
     /// `(is_separator, captures)` (see `collect`).
     collected: Vec<(bool, RegexCaptures)>,
+    /// Undo trails of levels that closed for good (`close_forget`), reused by
+    /// the next level opened: a grammar opens one level per subrule call, and
+    /// each one's first capture allocated a trail (ADR-10488).
+    spare_trails: Vec<Vec<Undo>>,
 }
+
+/// Spare trails kept past this many are dropped, so one deep parse does not
+/// pin its trails for the rest of the run.
+const SPARE_TRAILS: usize = 64;
 
 impl Levels {
     /// Reset to a single, empty pattern level whose match starts at `from`.
@@ -90,14 +100,70 @@ impl Levels {
         r
     }
 
-    /// Open a capture group's level, its match starting at `from`.
-    // Cost: O(1).
-    pub(super) fn open(&mut self, from: usize) {
-        self.stack.push(CapStore::new(RegexCaptures {
+    /// Open a capture group's level, its match starting at `from`. A level that
+    /// is part of the same regex (`inherit`) reads the `:my` lexicals declared
+    /// so far, as the walk's inline sub-patterns do through the vars seed; a
+    /// capture-isolated group is a regex of its own and starts with none.
+    // Cost: O(1) (the lexicals are shared, not copied).
+    pub(super) fn open(&mut self, from: usize, inherit: bool) {
+        let mut caps = RegexCaptures {
             match_from: from,
             ..Default::default()
-        }));
+        };
+        if inherit {
+            let vars = self.top().caps().regex_vars_shared().cloned();
+            caps.set_regex_vars_shared(vars);
+        }
+        let store = match self.spare_trails.pop() {
+            Some(trail) => CapStore::with_trail(caps, trail),
+            None => CapStore::new(caps),
+        };
+        self.stack.push(store);
         self.journal.push(Journal::Opened);
+    }
+
+    /// Open an inline level (`inline_level_caps`): one that is part of the
+    /// enclosing level's regex, so code inside it reads the enclosing view
+    /// (and `extra`, with the level's own captures folded in by `fold`).
+    // Cost: O(c), c = the captures visible to the enclosing level plus the
+    // folded iterations (one flattened copy, as the walk's seed takes).
+    pub(super) fn open_inline(
+        &mut self,
+        extra: Option<RegexCaptures>,
+        fold: Option<(usize, usize)>,
+    ) {
+        let caps = inline_level_caps(self.top().caps(), extra, fold);
+        self.stack.push(CapStore::new(caps));
+        self.journal.push(Journal::Opened);
+    }
+
+    /// Open the inline level of one iteration of an unseparated quantifier
+    /// whose iterations appended `stride` captures each since `pos_base`: its
+    /// code sees them folded and its own captures fold into their slots
+    /// (`regex_match_plain_view`).
+    // Cost: O(c), c = the captures visible to the enclosing level (one fold,
+    // one flattened copy).
+    pub(super) fn open_plain_iter(&mut self, pos_base: usize, stride: usize) {
+        let (mut enclosing, _) = super::super::regex_match_plain_view::plain_iter_view(
+            self.top().caps(),
+            pos_base,
+            stride,
+        );
+        let extra = RegexCaptures {
+            positional: enclosing.positional.split_off(pos_base),
+            ..Default::default()
+        };
+        let caps = inline_level_caps(&enclosing, Some(extra), Some((0, stride)));
+        self.stack.push(CapStore::new(caps));
+        self.journal.push(Journal::Opened);
+    }
+
+    /// Start the pattern level from `caps` (an inline level's, as
+    /// `inline_level_caps` builds it) instead of empty: a nested run that is
+    /// part of the enclosing regex (a `&` conjunction's other branches).
+    // Cost: O(1).
+    pub(super) fn seed(&mut self, caps: RegexCaptures) {
+        self.stack[0] = CapStore::new(caps);
     }
 
     /// Close the innermost level and hand back its captures.
@@ -105,9 +171,46 @@ impl Levels {
     // kept for a backtrack into the group).
     pub(super) fn close(&mut self) -> RegexCaptures {
         let store = self.stack.pop().expect("an open capture level");
-        let caps = store.snapshot();
+        let mut caps = store.snapshot();
+        // An inline level's view of the enclosing level is read-only and never
+        // travels out with its captures.
+        caps.set_outer_backref(None);
         self.journal.push(Journal::Closed(store));
         caps
+    }
+
+    /// [`Self::close`] for a level nothing can resume in: the journal back to
+    /// `from` (where it stood when the level opened) is forgotten along with the
+    /// level's own store, so the caller's `Edit` is the only entry it leaves.
+    // Cost: O(1) for the captures (moved out), plus the entries dropped (each
+    // once).
+    pub(super) fn close_forget(&mut self, from: usize) -> RegexCaptures {
+        let Some((caps, trail)) = self.stack.pop().map(CapStore::into_parts) else {
+            self.journal.truncate(from);
+            return RegexCaptures::default();
+        };
+        self.journal.truncate(from);
+        if trail.capacity() > 0 && self.spare_trails.len() < SPARE_TRAILS {
+            let mut trail = trail;
+            trail.clear();
+            self.spare_trails.push(trail);
+        }
+        caps
+    }
+
+    /// Forget the whole journal: with no choice point left, nothing can rewind.
+    // Cost: O(j), j = the entries dropped (each once).
+    pub(super) fn clear_journal(&mut self) {
+        self.journal.clear();
+    }
+
+    /// Close the innermost level and drop its captures (a capture-isolated
+    /// group's: `<$rx>` is a match of its own that the caller never sees).
+    // Cost: O(1) (the store itself is kept for a backtrack into the group).
+    pub(super) fn discard(&mut self) {
+        if let Some(store) = self.stack.pop() {
+            self.journal.push(Journal::Closed(store));
+        }
     }
 
     /// Close the innermost level and keep its captures as one iteration of a
@@ -123,6 +226,12 @@ impl Levels {
     #[inline]
     pub(super) fn collected_len(&self) -> usize {
         self.collected.len()
+    }
+
+    /// The iterations collected since `at`, left in place.
+    #[inline]
+    pub(super) fn collected_since(&self, at: usize) -> &[(bool, RegexCaptures)] {
+        &self.collected[at.min(self.collected.len())..]
     }
 
     /// Take the iterations collected since `at`.
@@ -156,4 +265,54 @@ impl Levels {
             }
         }
     }
+}
+
+/// The captures an inline level starts with. Inline code reads them through
+/// `RegexCaptures::inline_capture_view`, as it reads a walk sub-pattern's
+/// outer-captures seed: the enclosing level's whole view (its captures and
+/// whatever it sees itself), then `extra` (a separated quantifier's iterations
+/// folded so far, or the captures of a `&` conjunction's earlier branches).
+/// With `fold = (offset, stride)`, the level's own first `stride` positional
+/// captures fold into the slots `extra` adds from `offset` on
+/// (`merge_positional`), as one more iteration: an atom's at offset 0, a
+/// separator's after the atom's slots. `extra`'s slots are the enclosing
+/// level's own captures from there on, so when the enclosing level is itself
+/// an iteration of an outer separated quantifier they fold into the outer
+/// iteration's slots instead of sitting after them (rakudo has one slot for a
+/// capture group under nested quantifiers). The level shares the enclosing
+/// `:my` lexicals and match start: `$/` in its code spans from where the
+/// enclosing regex's match began.
+// Cost: O(c), c = the captures visible to `enclosing` plus `extra`'s.
+pub(super) fn inline_level_caps(
+    enclosing: &RegexCaptures,
+    extra: Option<RegexCaptures>,
+    fold: Option<(usize, usize)>,
+) -> RegexCaptures {
+    let mut view = enclosing.inline_capture_view();
+    let own = enclosing.positional.len();
+    let place = enclosing.inline_view_fold();
+    let merge_positional = fold.map(|(offset, stride)| (place.slot(own + offset), stride));
+    if let Some(mut extra) = extra {
+        let slots = std::mem::take(&mut extra.positional);
+        let mut store = CapStore::new(view);
+        store.merge_delta(extra);
+        view = store.into_caps();
+        for (j, slot) in slots.iter().enumerate() {
+            place.place(&mut view.positional, own + j, slot);
+        }
+    }
+    let outer = OuterBackrefCaps {
+        named: view.named,
+        positional: view.positional,
+        parent: None,
+        merge_positional,
+        match_from: enclosing.match_from,
+    };
+    let mut caps = RegexCaptures {
+        match_from: enclosing.match_from,
+        ..Default::default()
+    };
+    caps.set_regex_vars_shared(enclosing.regex_vars_shared().cloned());
+    caps.set_outer_backref(Some(Arc::new(outer)));
+    caps
 }

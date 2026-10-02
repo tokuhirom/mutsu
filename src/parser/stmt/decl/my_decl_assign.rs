@@ -671,10 +671,20 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
 /// Handle method-call-assign `.=` in declaration: `my Type $var .= method(args)`
 fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
-    // Parse method name
-    let (rest, method_name) =
-        super::take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
-    let method_name = method_name.to_string();
+    // Indirect form `my $x .= $callable` (`.$callable`: the method name is a
+    // Callable or type object held in a variable).
+    let (rest, dynamic_name, method_name) = if let Some(after_sigil) = rest.strip_prefix('$')
+        && after_sigil.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        let (r, var) = super::take_while1(after_sigil, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        (r, Some(Expr::Var(var.to_string())), String::new())
+    } else {
+        let (r, name) =
+            super::take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        (r, None, name.to_string())
+    };
     // Strip whitespace before checking for args
     let (rest_ws, _) = ws(rest)?;
     // Parse optional args (parenthesized, colon-form, or fake-infix adverbs)
@@ -734,6 +744,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // The untyped form's self-read is the `.=` invocant, not a use of the
     // variable in its own initializer: exempt it from that check
     // (`outer_redecl`, X::Syntax::Variable::Initializer).
+    // Untyped scalar names carry no sigil, so `BareWord` above would name a type;
+    // the indirect form needs the variable itself as invocant.
+    let target_expr = match (&dynamic_name, &target_expr) {
+        (Some(_), Expr::BareWord(n)) if s.type_constraint.is_none() && *n == s.name => {
+            Expr::Var(s.name.clone())
+        }
+        _ => target_expr,
+    };
     let mut custom_traits = s.custom_traits.clone();
     if !matches!(target_expr, Expr::BareWord(_)) {
         custom_traits.push((
@@ -741,13 +759,29 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             None,
         ));
     }
-    let expr = Expr::MethodCall {
-        target: Box::new(target_expr),
-        name: Symbol::intern(&method_name),
-        args,
-        modifier: None,
-        quoted: false,
+    let expr = match dynamic_name {
+        Some(name_expr) => Expr::DynamicMethodCall {
+            target: Box::new(target_expr),
+            name_expr: Box::new(name_expr),
+            args,
+            modifier: None,
+            quoted: false,
+        },
+        None => Expr::MethodCall {
+            target: Box::new(target_expr),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        },
     };
+    // A postfix chain after the indirect call (`my $x .= $m.actions.new`)
+    // applies to the declared variable's new value and is sunk, as in Rakudo.
+    let chain_base = (rest.starts_with('.') && !rest.starts_with(".."))
+        .then(|| Expr::Var(s.name.clone()))
+        .filter(|_| {
+            matches!(expr, Expr::DynamicMethodCall { .. }) && !s.name.starts_with(['@', '%', '&'])
+        });
     let stmt = Stmt::VarDecl {
         name: s.name,
         expr,
@@ -760,6 +794,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
+    if let Some(base) = chain_base {
+        let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;
+        let combined = Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(chained)]);
+        if s.apply_modifier {
+            return parse_statement_modifier(r, combined);
+        }
+        return Ok((r, combined));
+    }
     // Handle trailing comma list
     let (rest, _) = ws(rest)?;
     if rest.starts_with(',') && !rest.starts_with(",,") {

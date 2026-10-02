@@ -1,18 +1,19 @@
 use super::*;
-use crate::ast::CallArg;
 use crate::scan_cache::{self, FileStamp, ScanDep};
 use std::cell::Cell;
 use std::rc::Rc;
 
+mod decl_scan;
 mod dynamic_stash;
 mod enum_values;
 mod export_hook;
-use dynamic_stash::{has_dynamic_export_stash_binding, probe_dynamic_exports};
-use enum_values::{collect_module_enum_values, import_admits};
+mod source_scan;
+use decl_scan::scan_module_decls;
+use dynamic_stash::probe_dynamic_exports;
+use enum_values::import_admits;
 use export_hook::{
     collect_export_hook_operator_subs, collect_export_hook_value_terms,
-    collect_unit_scope_routines, declares_export_sub, find_export_sub_body,
-    source_declares_export_sub, unit_scope_routine_names_fallback,
+    collect_unit_scope_routines, declares_export_sub,
 };
 
 /// Everything one module-file scan learns that importers need replayed:
@@ -822,14 +823,18 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // file that `use Zef`. Registration (`apply_scan_types`) happens in the
     // caller after this scan returns, so the names land in the importer's
     // current scope, not the module's discarded parse scope.
+    let decls = scan_module_decls(&stmts);
     let mut type_names: Vec<String> = transitive_types;
-    collect_module_type_names(&stmts, &mut type_names);
+    type_names.extend(decls.type_names);
     let mut enum_type_names: Vec<String> = transitive_enum_types;
-    collect_module_enum_type_names(&stmts, &mut enum_type_names);
-    let declares_export_hook = declares_export_sub(&stmts) || source_declares_export_sub(source);
-    let mut enum_values: Vec<String> = Vec::new();
-    let mut tagged_enum_values: Vec<(String, Vec<String>)> = Vec::new();
-    collect_module_enum_values(&stmts, &mut enum_values, &mut tagged_enum_values);
+    enum_type_names.extend(decls.enum_type_names);
+    // The source-text fallbacks below see code only: Pod and heredoc bodies
+    // are blanked out first.
+    let code = source_scan::code_text(source);
+    let declares_export_hook =
+        declares_export_sub(&stmts) || source_scan::declares_export_sub(&code);
+    let mut enum_values: Vec<String> = decls.enum_values;
+    let tagged_enum_values: Vec<(String, Vec<String>)> = decls.tagged_enum_values;
     // Keep the scanned values the AST walk cannot see (a computed enum body's
     // names), minus the own tag-restricted ones, which travel only in
     // `tagged_enum_values`, and minus the imported ones: a `use` inside this
@@ -850,9 +855,11 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         })
         .collect();
     enum_values.extend(scanned_enum_values);
-    collect_module_constant_names(&stmts, &mut value_terms);
-    let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
-    collect_exported_subs(&stmts, &mut exports);
+    // The scope-stack harvest above only sees constants still in scope when
+    // the module's parse ends; one declared inside a `class`/`role`/`package`
+    // body, whose scope has been popped by then, comes from the AST walk.
+    value_terms.extend(decls.constant_names);
+    let mut exports: HashMap<String, InlineModuleExport> = decls.exports;
     // A module whose exports are computed by a run-time `sub EXPORT` hook has
     // no `is export` traits to find, so the scan above returns nothing at all.
     // Approximate its export set with the routines it declares in its own unit
@@ -864,14 +871,11 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // the hook's own body rather than at the module's unit scope
         // (Logic::Ternary's `multi infix:<and3>(...) is export { ... }`,
         // declared inside `sub EXPORT` so it can close over the `use`
-        // arguments). `collect_unit_scope_routines` only walks the module
-        // file's top-level statements, so a declaration nested in EXPORT's
-        // own body is invisible to it; reuse the precise `is export` walker
-        // (which also captures a custom operator's precedence/associativity,
-        // unlike the coarse unit-scope approximation) on that body too.
-        if let Some(body) = find_export_sub_body(&stmts) {
-            collect_exported_subs_in(body, &mut exports, "");
-        }
+        // arguments) are already in `exports`: the declaration scan searches
+        // every routine body, and an `is export` routine is exported from any
+        // depth. That entry, which carries a custom operator's
+        // precedence/associativity, wins over the coarse unit-scope
+        // approximation above, which only fills names not yet present.
         // A fourth idiom: operators declared locally in the hook WITHOUT
         // `is export` and handed out through the returned `Map` — see the
         // function's own doc.
@@ -887,7 +891,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         for export in nested_exports {
             exports.entry(export.name.clone()).or_insert(export);
         }
-        for name in unit_scope_routine_names_fallback(source) {
+        for name in source_scan::unit_scope_routine_names(&code) {
             exports.entry(name.clone()).or_insert(InlineModuleExport {
                 name,
                 precedence: None,
@@ -898,7 +902,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     }
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
-    for (name, is_test_assertion) in extract_exported_names_fallback(source) {
+    for (name, is_test_assertion) in source_scan::exported_names(&code) {
         exports.entry(name.clone()).or_insert(InlineModuleExport {
             name,
             precedence: None,
@@ -909,13 +913,6 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
 
     let mut result: Vec<InlineModuleExport> = exports.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut declare_keywords = Vec::new();
-    collect_exporthow_declare(&stmts, &mut declare_keywords);
-    // L10N distributions do not `use Slangify` themselves. Their generated
-    // EXPORT hook calls `$*LANG.define_slang(...)` instead, so inspect the
-    // parsed AST for that method call. This deliberately operates on AST
-    // nodes rather than source text: a comment mentioning `define_slang` must
-    // not cause an arbitrary module to execute in the parse-time interpreter.
     let inline_module_exports: Vec<(String, Vec<InlineModuleExport>)> =
         INLINE_MODULE_EXPORTS.with(|m| {
             m.borrow()
@@ -924,8 +921,9 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
                 .map(|(name, exports)| (name.clone(), exports.clone()))
                 .collect()
         });
-    let defines_slang = contains_define_slang(&stmts);
-    let uses_slangify = defines_slang
+    // L10N distributions do not `use Slangify` themselves; their generated
+    // EXPORT hook calls `$*LANG.define_slang(...)` (see `decl_scan`).
+    let uses_slangify = decls.defines_slang
         || stmts.iter().any(|s| {
             matches!(s, Stmt::Use { module, .. }
             if module == "Slangify" || module.starts_with("Slangify:"))
@@ -937,278 +935,16 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         enum_values,
         tagged_enum_values,
         value_terms,
-        declare_keywords,
+        declare_keywords: decls.declare_keywords,
         type_index_incomplete,
         uses_slangify,
         declares_export_hook,
-        dynamic_export_stash: has_dynamic_export_stash_binding(&stmts),
+        dynamic_export_stash: decls.dynamic_export_stash,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.
         deps: Vec::new(),
         stamp: None,
-    }
-}
-
-fn contains_define_slang(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(contains_define_slang_stmt)
-}
-
-fn contains_define_slang_stmt(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::VarDecl {
-            expr,
-            where_constraint,
-            custom_traits,
-            ..
-        } => {
-            contains_define_slang_expr(expr)
-                || where_constraint
-                    .as_deref()
-                    .is_some_and(contains_define_slang_expr)
-                || custom_traits
-                    .iter()
-                    .filter_map(|(_, arg)| arg.as_ref())
-                    .any(contains_define_slang_expr)
-        }
-        Stmt::Assign { expr, .. }
-        | Stmt::Return(expr)
-        | Stmt::Die(expr)
-        | Stmt::Fail(expr)
-        | Stmt::Goto(expr) => contains_define_slang_expr(expr),
-        Stmt::Take(expr, _) => contains_define_slang_expr(expr),
-        Stmt::SubDecl {
-            body,
-            signature_alternates,
-            ..
-        } => {
-            contains_define_slang(body)
-                || signature_alternates
-                    .iter()
-                    .flat_map(|(_, defs)| defs)
-                    .any(|def| {
-                        def.default.as_ref().is_some_and(contains_define_slang_expr)
-                            || def
-                                .where_constraint
-                                .as_deref()
-                                .is_some_and(contains_define_slang_expr)
-                    })
-        }
-        Stmt::MethodDecl { body, .. }
-        | Stmt::TokenDecl { body, .. }
-        | Stmt::RuleDecl { body, .. }
-        | Stmt::ProtoDecl { body, .. }
-        | Stmt::Package { body, .. }
-        | Stmt::ClassDecl { body, .. }
-        | Stmt::AugmentClass { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::React { body }
-        | Stmt::Phaser { body, .. } => contains_define_slang(body),
-        Stmt::EnumDecl { variants, .. } => variants
-            .iter()
-            .filter_map(|(_, expr)| expr.as_ref())
-            .any(contains_define_slang_expr),
-        Stmt::SubsetDecl { predicate, .. } => {
-            predicate.as_ref().is_some_and(contains_define_slang_expr)
-        }
-        Stmt::HasDecl { default, .. } => default.as_ref().is_some_and(contains_define_slang_expr),
-        Stmt::Expr(expr) => contains_define_slang_expr(expr),
-        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
-            exprs.iter().any(contains_define_slang_expr)
-        }
-        Stmt::Call { args, .. } => args.iter().any(contains_define_slang_call_arg),
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            contains_define_slang_expr(cond)
-                || contains_define_slang(then_branch)
-                || contains_define_slang(else_branch)
-        }
-        Stmt::While { cond, body, .. } => {
-            contains_define_slang_expr(cond) || contains_define_slang(body)
-        }
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            ..
-        } => {
-            init.as_deref().is_some_and(contains_define_slang_stmt)
-                || cond.as_ref().is_some_and(contains_define_slang_expr)
-                || step.as_ref().is_some_and(contains_define_slang_expr)
-                || contains_define_slang(body)
-        }
-        Stmt::For { iterable, body, .. } => {
-            contains_define_slang_expr(iterable) || contains_define_slang(body)
-        }
-        Stmt::Given { topic, body, .. }
-        | Stmt::When {
-            cond: topic, body, ..
-        } => contains_define_slang_expr(topic) || contains_define_slang(body),
-        Stmt::Whenever { supply, body, .. } => {
-            contains_define_slang_expr(supply) || contains_define_slang(body)
-        }
-        Stmt::Label { stmt, .. } => contains_define_slang_stmt(stmt),
-        Stmt::Let { index, value, .. } => {
-            index.as_deref().is_some_and(contains_define_slang_expr)
-                || value.as_deref().is_some_and(contains_define_slang_expr)
-        }
-        Stmt::TempMethodAssign {
-            method_args, value, ..
-        } => {
-            method_args.iter().any(contains_define_slang_expr) || contains_define_slang_expr(value)
-        }
-        _ => false,
-    }
-}
-
-fn contains_define_slang_call_arg(arg: &CallArg) -> bool {
-    match arg {
-        CallArg::Positional(expr) | CallArg::Slip(expr) | CallArg::Invocant(expr) => {
-            contains_define_slang_expr(expr)
-        }
-        CallArg::Named { value, .. } => value.as_ref().is_some_and(contains_define_slang_expr),
-    }
-}
-
-fn contains_define_slang_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            args.iter().any(contains_define_slang_expr)
-        }
-        Expr::AssignExpr { expr, .. }
-        | Expr::Grouped(expr)
-        | Expr::ZenSlice(expr)
-        | Expr::Eager(expr)
-        | Expr::Itemize(expr)
-        | Expr::DeitemizeForBind(expr)
-        | Expr::PositionalPair(expr)
-        | Expr::IndirectTypeLookup(expr)
-        | Expr::Unary { expr, .. }
-        | Expr::PostfixOp { expr, .. }
-        | Expr::Reduction { expr, .. }
-        | Expr::WhateverCurry(expr) => contains_define_slang_expr(expr),
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::HyperFuncOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            contains_define_slang_expr(left) || contains_define_slang_expr(right)
-        }
-        Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_define_slang_expr),
-        Expr::InfixFunc { left, right, .. } => {
-            contains_define_slang_expr(left) || right.iter().any(contains_define_slang_expr)
-        }
-        Expr::Feed { source, sink, .. } => {
-            contains_define_slang_expr(source) || contains_define_slang_expr(sink)
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            contains_define_slang_expr(cond)
-                || contains_define_slang_expr(then_expr)
-                || contains_define_slang_expr(else_expr)
-        }
-        Expr::MethodCall {
-            target, args, name, ..
-        }
-        | Expr::HyperMethodCall {
-            target, args, name, ..
-        } => {
-            name.resolve() == "define_slang"
-                || contains_define_slang_expr(target)
-                || args.iter().any(contains_define_slang_expr)
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
-            ..
-        }
-        | Expr::HyperMethodCallDynamic {
-            target,
-            name_expr,
-            args,
-            ..
-        } => {
-            contains_define_slang_expr(target)
-                || contains_define_slang_expr(name_expr)
-                || args.iter().any(contains_define_slang_expr)
-        }
-        Expr::CallOn { target, args } => {
-            contains_define_slang_expr(target) || args.iter().any(contains_define_slang_expr)
-        }
-        Expr::Index { target, index, .. } => {
-            contains_define_slang_expr(target) || contains_define_slang_expr(index)
-        }
-        Expr::MultiDimIndex {
-            target, dimensions, ..
-        } => {
-            contains_define_slang_expr(target) || dimensions.iter().any(contains_define_slang_expr)
-        }
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-            ..
-        } => {
-            contains_define_slang_expr(target)
-                || dimensions.iter().any(contains_define_slang_expr)
-                || contains_define_slang_expr(value)
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            ..
-        } => {
-            contains_define_slang_expr(target)
-                || contains_define_slang_expr(index)
-                || contains_define_slang_expr(value)
-        }
-        Expr::Exists { target, arg, .. } => {
-            contains_define_slang_expr(target)
-                || arg.as_deref().is_some_and(contains_define_slang_expr)
-        }
-        Expr::SymbolicDeref { expr, .. } => contains_define_slang_expr(expr),
-        Expr::SymbolicDerefAssign { expr, value, .. }
-        | Expr::IndirectTypeLookupAssign { expr, value } => {
-            contains_define_slang_expr(expr) || contains_define_slang_expr(value)
-        }
-        Expr::IndirectCodeLookup { package, .. }
-        | Expr::HyperSlice {
-            target: package, ..
-        } => contains_define_slang_expr(package),
-        Expr::ArrayLiteral(items)
-        | Expr::BracketArray(items, _)
-        | Expr::CaptureLiteral(items)
-        | Expr::StringInterpolation(items) => items.iter().any(contains_define_slang_expr),
-        Expr::Hash(pairs) => pairs
-            .iter()
-            .filter_map(|(_, value)| value.as_ref())
-            .any(contains_define_slang_expr),
-        Expr::Block(body)
-        | Expr::Gather(body)
-        | Expr::DoBlock { body, .. }
-        | Expr::Once { body }
-        | Expr::PhaserExpr { body, .. }
-        | Expr::AnonSub { body, .. } => contains_define_slang(body),
-        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => contains_define_slang(body),
-        Expr::Try { body, catch } => {
-            contains_define_slang(body) || catch.as_deref().is_some_and(contains_define_slang)
-        }
-        Expr::DoStmt(stmt) => contains_define_slang_stmt(stmt),
-        _ => false,
     }
 }
 
@@ -1224,223 +960,6 @@ pub(super) fn module_activates_slang(module: &str) -> bool {
             .as_ref()
             .is_some_and(|(m, activates)| m == module && *activates)
     })
-}
-
-/// Collect `(keyword, HOW type name)` pairs from a scanned module's
-/// `my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`
-/// blocks. A `constant` inside a package parses as an our-scoped VarDecl
-/// carrying the `__constant` marker trait, with the HOW type name as a
-/// bareword initializer. Descends into non-EXPORTHOW packages so a
-/// `unit module Foo;`-wrapped EXPORTHOW block is found too.
-fn collect_exporthow_declare(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
-    for stmt in stmts {
-        let Stmt::Package { name, body, .. } = stmt else {
-            continue;
-        };
-        if name.resolve() != "EXPORTHOW" {
-            collect_exporthow_declare(body, out);
-            continue;
-        }
-        for inner in body {
-            let Stmt::Package { name, body, .. } = inner else {
-                continue;
-            };
-            if name.resolve() != "DECLARE" {
-                continue;
-            }
-            for decl in body {
-                if let Stmt::VarDecl {
-                    name,
-                    expr,
-                    custom_traits,
-                    ..
-                } = decl
-                    && custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && let Expr::BareWord(how_type) = expr
-                {
-                    out.push((name.clone(), how_type.clone()));
-                }
-            }
-        }
-    }
-}
-
-/// Collect the names of `constant` declarations at any nesting depth.
-///
-/// The scope-stack harvest in `scan_module_source` only sees constants that are
-/// still in scope when the module's parse ends, so a `constant` declared inside
-/// a `class`/`role`/`package` body — whose scope has been popped by then — needs
-/// the AST walk. Only the bare name is collected: that is the spelling an
-/// importer writes for an `is export` constant, and the qualified spelling is
-/// matched on its last segment.
-fn collect_module_constant_names(stmts: &[Stmt], out: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::VarDecl {
-                name,
-                custom_traits,
-                ..
-            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
-                // Sigiled constants (`constant $x = 1`) are not barewords.
-                if !name.is_empty() && !name.starts_with(['$', '@', '%', '&']) {
-                    out.push(name.clone());
-                }
-            }
-            Stmt::ClassDecl { body, .. }
-            | Stmt::RoleDecl { body, .. }
-            | Stmt::Package { body, .. }
-            // The metadata wrapper of an adverbed declarator (`module
-            // Foo:auth<x> { ... }`) -- see `collect_exported_subs_in`.
-            | Stmt::SyntheticBlock(body) => collect_module_constant_names(body, out),
-            _ => {}
-        }
-    }
-}
-
-/// Recursively collect the names of type declarations (class/role/enum/grammar)
-/// found in a parsed module's statement list. Descends into `package`/`module`/
-/// `grammar` bodies (whose members are `our`-scoped) so nested type names are
-/// captured too. These names are registered into the importer's scope so the
-/// parser knows they are declared types rather than undeclared barewords.
-fn collect_module_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
-    collect_module_type_names_under(stmts, "", out);
-}
-
-/// Collect enum type names with the same package composition rules as the
-/// general type-name harvest. The importer needs the enum/class distinction so
-/// a qualified enum member remains a `when` term rather than a block-gobbling
-/// routine call.
-fn collect_module_enum_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
-    collect_module_enum_type_names_under(stmts, "", out);
-}
-
-fn collect_module_enum_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<String>) {
-    let mut prefix = prefix.to_string();
-    for stmt in stmts {
-        match stmt {
-            Stmt::EnumDecl { name, .. } => {
-                let name = name.resolve();
-                out.push(compose_type_name(&prefix, &name));
-                out.push(name);
-            }
-            Stmt::ClassDecl {
-                name,
-                body,
-                is_unit,
-                ..
-            } => {
-                let name = name.resolve();
-                let composed = compose_type_name(&prefix, &name);
-                collect_module_enum_type_names_under(body, &composed, out);
-                if *is_unit {
-                    prefix = composed;
-                }
-            }
-            Stmt::RoleDecl { name, body, .. } => {
-                let name = name.resolve();
-                let composed = compose_type_name(&prefix, &name);
-                collect_module_enum_type_names_under(body, &composed, out);
-            }
-            Stmt::Package {
-                name,
-                body,
-                is_unit,
-                ..
-            } => {
-                let name = name.resolve();
-                let composed =
-                    compose_type_name(&prefix, name.strip_prefix("GLOBAL::").unwrap_or(&name));
-                collect_module_enum_type_names_under(body, &composed, out);
-                if *is_unit {
-                    prefix = composed;
-                }
-            }
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_module_enum_type_names_under(body, &prefix, out);
-            }
-            _ => {}
-        }
-    }
-}
-
-/// `prefix` is the `::`-joined path of the enclosing package-like declarators.
-/// A nested declaration is installed under its composed name, so both spellings
-/// are collected: the literal one (visible inside the declaring body) and
-/// `<prefix>::<name>` (how the importer must spell it).
-///
-/// A `unit` declarator (`unit module Foo;`, `unit class Foo;`) parses to a
-/// declaration with an *empty* body followed by its contents as siblings, so
-/// the prefix it establishes has to be carried forward across the rest of the
-/// statement list rather than descended into. Without that, a nested
-/// `class Part` under `unit module Cro::HTTP::Body;` is only ever harvested as
-/// `MultiPartFormData::Part`, never as the
-/// `Cro::HTTP::Body::MultiPartFormData::Part` spelling an importer writes.
-fn collect_module_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<String>) {
-    let mut prefix = prefix.to_string();
-    for stmt in stmts {
-        match stmt {
-            Stmt::EnumDecl { name, .. } => {
-                let name = name.resolve();
-                out.push(compose_type_name(&prefix, &name));
-                out.push(name);
-            }
-            Stmt::ClassDecl {
-                name,
-                body,
-                is_unit,
-                ..
-            } => {
-                let name = name.resolve();
-                let composed = compose_type_name(&prefix, &name);
-                collect_module_type_names_under(body, &composed, out);
-                out.push(composed.clone());
-                out.push(name);
-                if *is_unit {
-                    prefix = composed;
-                }
-            }
-            Stmt::RoleDecl { name, body, .. } => {
-                let name = name.resolve();
-                let composed = compose_type_name(&prefix, &name);
-                collect_module_type_names_under(body, &composed, out);
-                out.push(composed);
-                out.push(name);
-            }
-            Stmt::Package {
-                name,
-                body,
-                is_unit,
-                ..
-            } => {
-                // `grammar Foo { ... }` is a Package with kind Grammar; its name
-                // is itself a type. `module`/`package` names are namespaces, but
-                // registering them is harmless and covers grammar declarations.
-                let name = name.resolve();
-                // `GLOBAL` is a pseudo-package: `package GLOBAL::X::Foo` installs
-                // `X::Foo`, so it must not appear in the composed name.
-                let composed =
-                    compose_type_name(&prefix, name.strip_prefix("GLOBAL::").unwrap_or(&name));
-                collect_module_type_names_under(body, &composed, out);
-                out.push(composed.clone());
-                out.push(name);
-                if *is_unit {
-                    prefix = composed;
-                }
-            }
-            // A trait on a declarator (`class Foo is export { }`) makes the
-            // parser wrap the declaration in a bare `Stmt::Block`. A bare block
-            // introduces no package level, so it is walked with the SAME
-            // prefix — without this, EVERY `is export`ed class in a `use`d
-            // module was invisible to the importer's parse-time type index,
-            // and `when SomeImportedType { … }` was diagnosed as an undeclared
-            // bareword gobbling its block. (A `unit` declarator is never
-            // wrapped this way, so no prefix has to be carried back out.)
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_module_type_names_under(body, &prefix, out);
-            }
-            _ => {}
-        }
-    }
 }
 
 fn compose_type_name(prefix: &str, name: &str) -> String {
@@ -1475,23 +994,6 @@ fn is_our_scoped(custom_traits: &[(String, Option<Expr>)]) -> bool {
     custom_traits.iter().any(|(t, _)| t == "__our_scoped")
 }
 
-/// Collect `is export` sub/proto declarations from a statement list,
-/// recursing into `module`/`package` (and class/role) bodies: exported subs
-/// routinely live inside a `module Foo { ... }` block (e.g. Cro::HTTP::Router's
-/// `multi route(&route-definition) is export`). The regex fallback misses the
-/// bare-`multi` form (no `sub` keyword), so the AST walk must see them.
-fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
-    collect_exported_subs_in(stmts, exports, "");
-}
-
-/// `in_export_stash` is true while walking directly inside a module's own
-/// `my package EXPORT::<tag> { ... }` block. Every `our`-scoped sub/multi
-/// declared there is part of that tag's export list by construction — the
-/// well-known "manual EXPORT stash" idiom — whether or not it also carries
-/// an explicit `is export` trait (`Net::IP::Parse`'s
-/// `our sub infix:<< ip== >> (...) { ... }` inside `EXPORT::DEFAULT` is
-/// never `is export`-tagged, yet `use Net::IP::Parse` must still learn the
-/// operator so the importer's file parses at all).
 /// The parser-facing export record of one routine declaration: its name plus
 /// a custom operator's precedence (resolved from an `is tighter/looser/equiv`
 /// trait against the referenced operator) and associativity.
@@ -1514,222 +1016,6 @@ pub(super) fn sub_export_entry(
         associativity,
         is_test_assertion,
     }
-}
-
-/// `package` is the full name of the package being walked (`""` outside
-/// any), so a nested `package EXPORT { package DEFAULT { ... } }` is
-/// recognised as the `EXPORT::DEFAULT` stash just like the one-line spelling.
-fn collect_exported_subs_in(
-    stmts: &[Stmt],
-    exports: &mut HashMap<String, InlineModuleExport>,
-    package: &str,
-) {
-    let in_export_stash = is_export_stash_package(package);
-    for stmt in stmts {
-        match stmt {
-            Stmt::SubDecl {
-                name,
-                is_export,
-                associativity,
-                precedence_trait,
-                is_test_assertion,
-                custom_traits,
-                ..
-            } if *is_export || (in_export_stash && is_our_scoped(custom_traits)) => {
-                // Every `is export` sub is collected, whatever tag it carries.
-                // The tag decides which `use` *imports* the name; it does not
-                // decide whether the name is a routine, and this set answers
-                // only the latter question (ADR-0087): it lands in
-                // `Scope::imported_functions`, whose every consumer is a
-                // parser decision such as "is `joined <a b c>` a listop call
-                // or an infix `<`". Filtering by DEFAULT/MANDATORY here made
-                // `use M :extra; joined <a b c>` a hard parse error even
-                // though `:extra` does import `joined` -- the scan is given
-                // the module name only, never the importer's tag list, so it
-                // cannot tell that case from a plain `use M` (#7939).
-                //
-                // Run-time name resolution is a separate path that honours
-                // the tags, so a name the importer's tag list withholds still
-                // fails to resolve; the superset costs a worse diagnostic for
-                // such a name and can never change the meaning of a program
-                // that runs.
-                let entry = sub_export_entry(
-                    name.resolve(),
-                    precedence_trait.as_ref(),
-                    associativity.clone(),
-                    *is_test_assertion,
-                );
-                exports.insert(entry.name.clone(), entry);
-            }
-            Stmt::ProtoDecl {
-                name,
-                is_export,
-                is_our,
-                ..
-            } if *is_export || (in_export_stash && *is_our) => {
-                // Same superset rationale as the `SubDecl` arm above: every
-                // `is export` proto is collected whatever tag it carries,
-                // because this set only answers "is `name` a routine" for
-                // the parser, not "does the importer's tag list admit it".
-                // An `our proto sub` declared directly inside the module's own
-                // `EXPORT::<tag>` stash is exported by construction too, the
-                // proto-family counterpart of the `SubDecl` arm's `our sub`/
-                // `our multi sub` handling (raku rejects `our multi sub`
-                // outright, so an `our`-scoped proto is the only way to put a
-                // multi family into an export stash this way).
-                let resolved = name.resolve();
-                exports
-                    .entry(resolved.clone())
-                    .or_insert(InlineModuleExport {
-                        name: resolved,
-                        precedence: None,
-                        associativity: None,
-                        is_test_assertion: false,
-                    });
-            }
-            // `our &infix:<op> is export = &[other];` (PatternMatching's
-            // `┇` alias) exports a routine under the same `&name` a
-            // `sub name is export` would, so the importer's parse must learn
-            // the name -- for an operator, that it is an operator at all.
-            Stmt::VarDecl {
-                name, is_export, ..
-            } if *is_export && name.len() > 1 && name.starts_with('&') => {
-                let resolved = name[1..].to_string();
-                exports
-                    .entry(resolved.clone())
-                    .or_insert(InlineModuleExport {
-                        name: resolved,
-                        precedence: None,
-                        associativity: None,
-                        is_test_assertion: false,
-                    });
-            }
-            // `my token foo is export { ... }` exports a Regex under `&foo`,
-            // the same namespace a `sub foo is export` uses, so a plain
-            // `use Module` must learn the name too.
-            Stmt::TokenDecl {
-                name,
-                is_export,
-                export_tags,
-                ..
-            }
-            | Stmt::RuleDecl {
-                name,
-                is_export,
-                export_tags,
-                ..
-            } if *is_export => {
-                if export_tags
-                    .iter()
-                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
-                {
-                    let resolved = name.resolve();
-                    exports
-                        .entry(resolved.clone())
-                        .or_insert(InlineModuleExport {
-                            name: resolved,
-                            precedence: None,
-                            associativity: None,
-                            is_test_assertion: false,
-                        });
-                }
-            }
-            // `OUR::{'&infix:<@~~>'} := ...` (or `OUR::«'...'»`) directly in
-            // an export stash binds that routine into the tag's export list,
-            // exactly like an `our sub` declared there (Data::Record's
-            // `&infix:<@~~>`). Only a literal key is knowable here; a key
-            // computed at run time flags the module for a parse-time probe
-            // instead (`dynamic_stash`, #9500).
-            Stmt::Expr(Expr::IndexAssign { target, index, .. })
-                if in_export_stash
-                    && matches!(target.as_ref(), Expr::PseudoStash(s) if s == "OUR::") =>
-            {
-                if let Expr::Literal(key) = index.as_ref()
-                    && let crate::value::ValueView::Str(key) = key.view()
-                    && let Some(routine) = key.strip_prefix('&')
-                    && !routine.is_empty()
-                {
-                    let resolved = routine.to_string();
-                    exports
-                        .entry(resolved.clone())
-                        .or_insert(InlineModuleExport {
-                            name: resolved,
-                            precedence: None,
-                            associativity: None,
-                            is_test_assertion: false,
-                        });
-                }
-            }
-            Stmt::Package { name, body, .. } => {
-                let name = name.resolve();
-                let nested = if package.is_empty() || name.contains("::") {
-                    name
-                } else {
-                    format!("{package}::{name}")
-                };
-                collect_exported_subs_in(body, exports, &nested);
-            }
-            Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
-                // A class/role body is never itself an export stash — its
-                // `our`-scoped subs are package-qualified methods/routines
-                // of the type, not implicit exports of the enclosing module.
-                collect_exported_subs_in(body, exports, "");
-            }
-            // A declarator carrying adverbs or traits (`module Foo:auth<x> {
-            // ... }`, `class Foo is export { ... }`) is wrapped in a
-            // `SyntheticBlock` / bare `Block` together with its metadata
-            // statements. The wrapper opens no package, so it is walked with
-            // the same stash state -- without this every `is export` routine
-            // of an adverbed `module Foo:auth<...> { }` block was invisible to
-            // the importer's parse, and an exported symbol operator failed to
-            // parse at its use site (PatternMatching).
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_exported_subs_in(body, exports, package);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
-    // `sub foo(...) is export`
-    // `multi sub foo(...) is export`
-    // `proto sub foo(|) is export`
-    // Group 2 captures the declaration text between the name and `is export`,
-    // which may include a `is test-assertion` trait; group 3 is the export tag
-    // list, matched only so a tagged `is export(:foo)` is recognised as an
-    // export at all -- its contents are not consulted (see below).
-    let sub_re = Regex::new(
-        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
-    )
-    .expect("valid exported-sub regex");
-    // `proto foo(|) is export` (without the `sub` keyword)
-    let proto_re = Regex::new(
-        r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
-    )
-    .expect("valid exported-proto regex");
-
-    let test_assertion_re =
-        Regex::new(r"\bis\s+test-assertion\b").expect("valid test-assertion regex");
-
-    let mut names: HashMap<String, bool> = HashMap::new();
-    for re in [&sub_re, &proto_re] {
-        for caps in re.captures_iter(source) {
-            // Group 3 (the `is export(...)` tag list) is deliberately not
-            // consulted: like the AST walk above, this set is parse-time
-            // routine-name knowledge, not the importer's actual import set.
-            if let Some(name) = caps.get(1) {
-                let prefix = caps.get(2).map(|m| m.as_str()).unwrap_or("");
-                let is_ta = test_assertion_re.is_match(prefix);
-                let entry = names.entry(name.as_str().to_string()).or_insert(false);
-                *entry = *entry || is_ta;
-            }
-        }
-    }
-
-    let mut names: Vec<(String, bool)> = names.into_iter().collect();
-    names.sort();
-    names
 }
 
 /// What `use Test` puts in scope, as a parse-time shortcut.

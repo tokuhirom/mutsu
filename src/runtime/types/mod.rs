@@ -10,6 +10,7 @@ mod binding_signature;
 mod coercion;
 mod native_backed_class;
 mod param_exprs;
+mod readonly_capture;
 mod role_candidate;
 mod role_mixin_class;
 mod roles;
@@ -920,7 +921,20 @@ impl Interpreter {
                 // round-trip cloned every attribute per attributive param and
                 // could clobber a concurrent write to a *different* attribute
                 // between snapshot and commit.
-                attributes.insert(attr_name.to_string(), attr_value);
+                // A scalar and a container attribute may share a bare name
+                // (`has %!c; has $!c`): resolve the storage key by sigil so
+                // `:$!c` does not overwrite the `%!c` slot.
+                let bare = crate::symbol::Symbol::intern(attr_name);
+                let sigil = crate::value::attr_twigil_sigil(name).unwrap_or('$');
+                let key = Self::attr_key_in_map(
+                    self.method_class_stack_top_sym(),
+                    bare,
+                    name.contains('!'),
+                    sigil,
+                    &attributes.as_map(),
+                )
+                .unwrap_or(bare);
+                attributes.insert(key, attr_value);
             }
         }
         if matches!(

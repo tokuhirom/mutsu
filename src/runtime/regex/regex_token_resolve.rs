@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::NamedRegexLookupSpec;
+use super::regex_token_candidates::TokenCandidates;
 use crate::symbol::Symbol;
 
 /// A resolved-and-parsed subrule candidate: (parsed pattern, dispatch package,
@@ -12,7 +13,7 @@ pub(in crate::runtime::regex) type ParsedTokenCandidate =
     (std::sync::Arc<RegexPattern>, Symbol, Option<String>);
 
 /// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
-type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
+type CachedCandidates = (u64, std::sync::Arc<TokenCandidates>);
 
 /// A raw (pre-parse) candidate: pattern source text, dispatch package, and
 /// `:sym<...>` key -- the same shape [`Interpreter::resolve_token_patterns_static_in_pkg`]
@@ -110,7 +111,7 @@ impl Interpreter {
         name: &str,
         name_sym: Symbol,
         pkg: Symbol,
-    ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
+    ) -> Option<std::sync::Arc<TokenCandidates>> {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let tok_gen =
@@ -134,7 +135,7 @@ impl Interpreter {
             let parsed = self.parse_candidate_in_pkg(sub_pat, *sub_pkg)?;
             parsed_list.push((parsed, *sub_pkg, sym_key.clone()));
         }
-        let arc = std::sync::Arc::new(parsed_list);
+        let arc = std::sync::Arc::new(TokenCandidates::new(parsed_list));
         if all_static {
             PARSED_TOKEN_CANDIDATES.with(|c| {
                 c.borrow_mut()
@@ -206,6 +207,21 @@ impl Interpreter {
         parsed
     }
 
+    /// Is `name` in `pkg` resolved by the argument-less memo
+    /// ([`PARSED_TOKEN_CANDIDATES`]) under the current token generation? Only a
+    /// fully static rule is, so a caller may keep a verdict derived from the
+    /// candidates exactly when this holds.
+    // Cost: O(1) expected (one hash probe).
+    pub(super) fn parsed_candidates_are_memoized(name_sym: Symbol, pkg: Symbol) -> bool {
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        PARSED_TOKEN_CANDIDATES.with(|c| {
+            c.borrow()
+                .get(&(pkg, name_sym))
+                .is_some_and(|(cached_gen, _)| *cached_gen == tok_gen)
+        })
+    }
+
     /// Parsed candidates for a subrule reference: memoized fast path for the
     /// argument-less case, per-call resolution + parse otherwise (candidates
     /// whose pattern fails to parse are skipped, as before). The second value
@@ -216,7 +232,7 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         pkg: Symbol,
         arg_values: &[Value],
-    ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
+    ) -> (std::sync::Arc<TokenCandidates>, bool) {
         // `<&$re('a')>` / `<&re: 'a'>` may name a *lexical* holding a Regex
         // value rather than a registry rule. That resolution reads the
         // caller's scope, so it runs ahead of — and never enters — the memos
@@ -272,7 +288,10 @@ impl Interpreter {
                         parsed_list.push((parsed, sub_pkg, sym_key));
                     }
                 }
-                (raw_empty, std::sync::Arc::new(parsed_list))
+                (
+                    raw_empty,
+                    std::sync::Arc::new(TokenCandidates::new(parsed_list)),
+                )
             });
         if let Some(fp) = args_fp
             && !consulted_ambient
@@ -458,8 +477,23 @@ impl Interpreter {
                 self.resolve_one_token_pattern_with_args(&def, arg_values)
             });
             match resolved {
-                Ok(candidates) => {
+                Ok(mut candidates) => {
                     bound_candidate = true;
+                    // An inherited rule dispatches its own subrules virtually
+                    // through the receiver grammar, exactly as the argument-less
+                    // path does (`resolve_unqualified_token_patterns_in_pkg`):
+                    // under `grammar Top is A is B`, a rule of `A` calling a
+                    // rule only `B` declares must find it.
+                    for entry in candidates.iter_mut() {
+                        if entry.1 != pkg
+                            && self
+                                .mro_readonly(pkg.as_str())
+                                .iter()
+                                .any(|scope| scope.as_str() == entry.1.as_str())
+                        {
+                            entry.1 = pkg;
+                        }
+                    }
                     out.extend(candidates);
                 }
                 Err(err) => {

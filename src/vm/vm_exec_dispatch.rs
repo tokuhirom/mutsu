@@ -534,11 +534,8 @@ impl Interpreter {
                             return None;
                         }
                         // Extract bare component after the last `::`
-                        let bare = if let Some(pos) = name.rfind("::") {
-                            &name[pos + 2..]
-                        } else {
-                            return None;
-                        };
+                        let pos = name.rfind("::")?;
+                        let bare = &name[pos + 2..];
                         if bare.is_empty() {
                             return None;
                         }
@@ -1139,7 +1136,12 @@ impl Interpreter {
                         match name.chars().next() {
                             Some('@') => Value::array(Vec::new()),
                             Some('%') => Value::hash(crate::value::HashData::default()),
-                            _ => Value::NIL,
+                            Some('&') => Value::NIL,
+                            // A scalar's package-qualified storage key drops
+                            // its sigil (`Foo::x`), so any other spelling is
+                            // a scalar: bare `our $x;` holds the `Any` type
+                            // object, not `Nil` (#10393).
+                            _ => Value::package(crate::symbol::wk::any()),
                         }
                     });
                 // Auto-deref ContainerRef for stack use (ContainerRef axis of
@@ -2011,7 +2013,7 @@ impl Interpreter {
                             {
                                 return Err(err);
                             }
-                            return Err(runtime::utils::type_check_assignment_typed_error(
+                            return Err(self.type_check_assignment_failure(
                                 &name,
                                 &constraint,
                                 &val,
@@ -5755,7 +5757,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5771,7 +5772,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5788,7 +5788,6 @@ impl Interpreter {
                 global,
                 nth_idx,
                 x_idx,
-                perl5,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -5804,7 +5803,6 @@ impl Interpreter {
                     *global,
                     *nth_idx,
                     *x_idx,
-                    *perl5,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -5860,12 +5858,24 @@ impl Interpreter {
             }
 
             // -- Package scope --
-            // Cost: O(L + v) plus the body, L = locals (copied by `locals.to_vec()`), v = env
-            // entries (walked at exit to record package lexicals). One-shot per `package` block.
+            // Cost: O(L + v + k) plus the body, L = locals (copied by `locals.to_vec()`), v = env
+            // entries (walked at exit to record package lexicals), k = body lexicals re-bound for
+            // a split-off run-time body (`lexicals_idx`). One-shot per `package` block.
             // Rakudo: O(1) plus the body -- see #9171.
-            OpCode::PackageScope { name_idx, body_end } => {
+            OpCode::PackageScope {
+                name_idx,
+                body_end,
+                lexicals_idx,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
+                self.exec_package_scope_op(
+                    code,
+                    *name_idx,
+                    *body_end,
+                    *lexicals_idx,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
             // and one probe of the chunk's name index. One-shot per declaration.
@@ -5896,6 +5906,9 @@ impl Interpreter {
             // and one probe of the chunk's name index. One-shot per declaration.
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                // Before the binding below overwrites an enclosing same-named one:
+                // a branch/loop body gives it back on exit (#10594).
+                self.save_lexical_type_binding_for_scope_exit(&name);
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
@@ -5925,6 +5938,14 @@ impl Interpreter {
                 // package A` un-suppressed by `shadow_suppressed_type_with_package`
                 // above never got re-suppressed either.
                 self.register_lexical_class(name);
+                *ip += 1;
+            }
+            // Cost: O(m) plus hashed lookups, m = bytes of the name (probed, then copied and
+            // interned once). A qualified name is resolved through its parent package's stash, so
+            // it also pays O(s), s = members of that package. One-shot per scope entry.
+            OpCode::DeclareRequireStub { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.declare_require_stub(&name);
                 *ip += 1;
             }
             // Cost: O(1) (one registry set insert of the name).
@@ -6214,6 +6235,21 @@ impl Interpreter {
             // Cost: O(R) plus the body, R = routine-registry entries snapshotted and diffed (see exec_routine_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::RoutineScope { body_end } => {
                 self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
+            }
+            // Cost: O(1) plus the body and, on an early exit, the loop's NEXT/UNDO/LEAVE queues.
+            OpCode::LoopExitGuard {
+                body_end,
+                exit_start,
+                end,
+                label,
+            } => {
+                self.exec_loop_exit_guard_op(
+                    code,
+                    (*body_end, *exit_start, *end),
+                    label,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {

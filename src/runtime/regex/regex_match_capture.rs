@@ -47,14 +47,14 @@ impl Interpreter {
         super::regex_helpers::OuterCapsSeed,
     ) {
         use super::regex_helpers::{
-            InlineVarsSeed, OuterCapsSeed, any_regex_backref_lowered, inline_capture_scope,
+            InlineVarsSeed, OuterCapsSeed, any_regex_capture_reader_lowered, inline_capture_scope,
             inline_regex_vars_active,
         };
         // Nothing published and nothing to publish: whichever branch the cold
         // path would take, it arms `InlineVarsSeed::arm(None)` with the slot
         // already empty (inert) and, with no backreference lowered anywhere in
         // the process, `OuterCapsSeed::inert()`.
-        if !any_regex_backref_lowered()
+        if !any_regex_capture_reader_lowered()
             && !inline_regex_vars_active()
             && current_caps.regex_vars_shared().is_none()
             && inline_capture_scope().is_none()
@@ -78,7 +78,8 @@ impl Interpreter {
         } else {
             super::regex_helpers::InlineVarsSeed::arm(None)
         };
-        (vars, Self::arm_outer_caps_seed(atom, current_caps))
+        let outer = Self::arm_outer_caps_seed(atom, current_caps).consume_capture_scope();
+        (vars, outer)
     }
 
     /// Is this atom's sub-pattern matched *in the same capture scope* as the
@@ -93,7 +94,7 @@ impl Interpreter {
     /// arm a barrier rather than a read-through, and the barrier also hides the
     /// outer level from anything nested deeper inside them
     /// (`/ $<x>=(\w) ( [ $<x> ] ) /` fails in raku too).
-    fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
+    pub(super) fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
         matches!(
             atom,
             RegexAtom::Group(_)
@@ -101,6 +102,48 @@ impl Interpreter {
                 | RegexAtom::SequentialAlternation(_)
                 | RegexAtom::Conjunction(_)
                 | RegexAtom::GoalMatch { .. }
+        )
+    }
+
+    /// The barrier a subrule call arms before its body's walk. A subrule is a
+    /// different regex, so it inherits neither the enclosing regex's `:my`
+    /// lexicals nor its captures — including the ones an enclosing same-scope
+    /// sub-pattern published for ITS walks, because the continuation (this call)
+    /// runs inside that sub-pattern's dynamic extent. The streamed subrule driver
+    /// walks the body itself, so it arms this by hand.
+    #[inline]
+    pub(super) fn arm_subrule_barrier() -> (
+        super::regex_helpers::InlineVarsSeed,
+        super::regex_helpers::OuterCapsSeed,
+    ) {
+        use super::regex_helpers::{
+            InlineVarsSeed, OuterCapsSeed, any_regex_capture_reader_lowered,
+            outer_caps_seed_published,
+        };
+        let outer = if any_regex_capture_reader_lowered() && outer_caps_seed_published() {
+            OuterCapsSeed::arm(None)
+        } else {
+            OuterCapsSeed::inert()
+        };
+        (InlineVarsSeed::arm(None), outer.consume_capture_scope())
+    }
+
+    /// Does matching this atom start a regex of its own (a different capture
+    /// scope from the pattern containing it)?
+    fn atom_starts_own_regex(atom: &RegexAtom) -> bool {
+        matches!(
+            atom,
+            RegexAtom::Named(_)
+                | RegexAtom::CaptureGroup(_)
+                | RegexAtom::CaptureIsolatedGroup(_)
+                | RegexAtom::CaptureIsolatedGroupScoped(..)
+                | RegexAtom::Lookaround { .. }
+                | RegexAtom::CodeAssertion { .. }
+                | RegexAtom::VarDecl { .. }
+                | RegexAtom::ClosureInterpolation { .. }
+                | RegexAtom::CodeInterp { .. }
+                | RegexAtom::QqInterp { .. }
+                | RegexAtom::RecurseSelf(_)
         )
     }
 
@@ -118,18 +161,34 @@ impl Interpreter {
         current_caps: &RegexCaptures,
     ) -> super::regex_helpers::OuterCapsSeed {
         use super::regex_helpers::{
-            OuterCapsSeed, any_regex_backref_lowered, atom_contains_backref, inline_capture_scope,
+            OuterCapsSeed, any_regex_capture_reader_lowered, atom_contains_backref,
+            atom_contains_code, inline_capture_scope, outer_caps_seed_published,
         };
         let capture_scope = inline_capture_scope();
-        let needs_backref_scope = any_regex_backref_lowered() && atom_contains_backref(atom);
+        let reader = any_regex_capture_reader_lowered();
+        // An atom that starts a regex of its own — a subrule call above all,
+        // but also a capture group, a lookaround, or code that runs a match —
+        // never reads the enclosing level's captures. An enclosing same-scope
+        // sub-pattern publishes them for ITS nested walks, and the rest of the
+        // pattern (this atom included) runs inside that sub-pattern's dynamic
+        // extent, so the barrier has to go up whenever one is published: a
+        // subrule's `$/` starts at the subrule.
+        if reader && Self::atom_starts_own_regex(atom) && outer_caps_seed_published() {
+            return OuterCapsSeed::arm(None);
+        }
+        let needs_backref_scope = reader && atom_contains_backref(atom);
+        // A code block inside a same-scope sub-pattern sees the enclosing
+        // level's captures and match start, like a backreference does.
+        let needs_code_scope =
+            reader && Self::atom_shares_backref_scope(atom) && atom_contains_code(atom);
         let needs_capture_scope = capture_scope.is_some() && Self::atom_shares_backref_scope(atom);
-        if !needs_backref_scope && !needs_capture_scope {
+        if !needs_backref_scope && !needs_capture_scope && !needs_code_scope {
             return OuterCapsSeed::inert();
         }
         if !Self::atom_shares_backref_scope(atom) {
             return OuterCapsSeed::arm(None);
         }
-        if !atom_contains_backref(atom) && capture_scope.is_none() {
+        if !atom_contains_backref(atom) && !needs_code_scope && capture_scope.is_none() {
             return OuterCapsSeed::inert();
         }
         OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
@@ -137,6 +196,7 @@ impl Interpreter {
             positional: current_caps.positional.clone(),
             parent: current_caps.outer_backref().cloned(),
             merge_positional: capture_scope,
+            match_from: current_caps.match_from,
         })))
     }
 
@@ -252,7 +312,7 @@ impl Interpreter {
                     .map(|(next, mut inner_caps)| {
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().merge(v);
+                            new_caps.named.slot_mut(k).merge(v);
                         }
                         new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                         new_caps.positional.append(&mut inner_caps.positional);
@@ -460,108 +520,8 @@ impl Interpreter {
                 }
                 return None;
             }
-            RegexAtom::CodeAssertion {
-                code,
-                negated,
-                is_assertion,
-                body,
-                code_cache_id,
-            } => {
-                // Declarative-prefix (LTM) measurement: never execute the code
-                // (ADR-0009). The two kinds are treated differently, per
-                // roast/S05-grammar/protoregex.t:
-                if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-                    if *is_assertion {
-                        // "<?{...}> does not terminate LTM" / "<!{...}> does not
-                        // terminate LTM": Rakudo's NFA treats an assertion as a
-                        // zero-width pass and keeps measuring the atoms after it, so
-                        // `token ass1:sym<a> { a <?{ 1 }> .+ }` has declarative
-                        // prefix `a .+` and beats a bare `aa` candidate on 'aaa'.
-                        return Some((pos, RegexCaptures::default()));
-                    }
-                    // "However, code blocks do terminate LTM": `token
-                    // block:sym<a> { a {} .+ }` has declarative prefix `a` only, so
-                    // on 'aaa' the bare `aa` candidate wins. The block is a fate:
-                    // it ends this path of the measurement (`regex_ltm_fate`).
-                    super::regex_ltm_fate::ltm_record_fate(pos);
-                    return None;
-                }
-                // Failure-position probe: don't execute, don't stop — a code atom is
-                // a zero-width no-op so the probe measures the declarative skeleton.
-                if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
-                    return Some((pos, RegexCaptures::default()));
-                }
-                if *is_assertion {
-                    // The text matched up to this assertion — becomes `$/.Str`
-                    // inside the `<?{ … }>` so `$/.lc` / `~$/` see the matched-so-far
-                    // text (e.g. the card grammar's `%*PLAYED{$/.lc}++` dup check).
-                    let matched_so_far: String = chars
-                        [current_caps.inline_match_from().min(chars.len())..pos]
-                        .iter()
-                        .collect();
-                    // Runs on THIS interpreter, with real side effects, right here
-                    // (ADR-0009 part B). It is therefore NOT recorded as a code block
-                    // for `execute_regex_code_blocks` to replay on the winning path —
-                    // that replay would run it a second time.
-                    let outcome = self.eval_regex_inline_code(
-                        code,
-                        body.as_ref(),
-                        *code_cache_id,
-                        current_caps,
-                        &matched_so_far,
-                        false,
-                    );
-                    let result = outcome.value.map(|v| v.truthy()).unwrap_or(false);
-                    let pass = if *negated { !result } else { result };
-                    if pass {
-                        let mut new_caps = RegexCaptures::default();
-                        new_caps.extend_regex_vars(outcome.writes);
-                        new_caps.ast = outcome.made;
-                        return Some((pos, new_caps));
-                    } else {
-                        return None;
-                    }
-                }
-                let matched_so_far: String = chars
-                    [current_caps.inline_match_from().min(chars.len())..pos]
-                    .iter()
-                    .collect();
-                // raku runs EVERY plain `{ … }` block inline, left-to-right,
-                // during matching: a write to an in-regex `:my` lexical is
-                // visible to the atoms that follow it (YAMLish's `root-block`
-                // computes its indent this way), a `make` is visible to a later
-                // block in the same rule as `$/.made`, and a subrule's `make` has
-                // already landed on the child node by the time the parent's next
-                // block reads `$<child>.made`. So does a block that mentions a
-                // `$*` dynamic variable: the rule's `:my $*x` declaration and its
-                // `$*` parameters are both live in `self.env` right here, and the
-                // per-match value the block writes travels onward on the capture
-                // delta's `regex_vars`, which `install_fresh_rule_dynvars` reads
-                // back at reduce time. A block inside a later `||` branch is not a
-                // special case either: `walk_seq_alternation` only evaluates that
-                // branch once raku's cursor would enter it, so reaching this point
-                // means the block really is on the cursor's path.
-                let outcome = self.eval_regex_inline_code(
-                    code,
-                    body.as_ref(),
-                    *code_cache_id,
-                    current_caps,
-                    &matched_so_far,
-                    true,
-                );
-                // The block `die`d: fail the match so the engine unwinds; the
-                // parked pending error is re-raised at the match entry point.
-                if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                    return None;
-                }
-                let mut new_caps = RegexCaptures::default();
-                new_caps.extend_regex_vars(outcome.writes);
-                // The `make` belongs to the rule node being matched: it rides
-                // the capture delta so the trail undoes it if this branch is
-                // abandoned, and `build_named_candidates_from_inner` commits it
-                // to the subrule's own node rather than the parent's.
-                new_caps.ast = outcome.made;
-                return Some((pos, new_caps));
+            RegexAtom::CodeAssertion { .. } => {
+                return self.regex_code_atom(atom, chars, pos, current_caps, pkg);
             }
             RegexAtom::CodeInterp { code, list } => {
                 return self
@@ -569,39 +529,13 @@ impl Interpreter {
                     .pop();
             }
             RegexAtom::ClosureInterpolation { code, body } => {
-                let target: String = chars.iter().collect();
-                let pattern_str = self.eval_regex_closure_interpolation(
+                return self.regex_closure_interp_atom(
                     code,
                     body.as_ref(),
+                    chars,
+                    pos,
                     current_caps,
-                    &target,
                 );
-                if let Some(ref pat_str) = pattern_str
-                    && Interpreter::contains_dangerous_regex_code(pat_str)
-                {
-                    super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
-                        *e.borrow_mut() = Some(Interpreter::make_security_policy_error());
-                    });
-                    return None;
-                }
-                if let Some(pat_str) = pattern_str
-                    && let Some(parsed) = self.parse_regex(&pat_str)
-                {
-                    let pkg = self.current_package_sym();
-                    if let Some((end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
-                    {
-                        let mut new_caps = RegexCaptures::default();
-                        new_caps
-                            .positional
-                            .extend(inner_caps.positional.iter().cloned());
-                        for (k, v) in &inner_caps.named {
-                            new_caps.named.entry(*k).or_default().merge(v.clone());
-                        }
-                        return Some((end, new_caps));
-                    }
-                }
-                return None;
             }
             RegexAtom::CaptureStartMarker => {
                 let new_caps = RegexCaptures {
@@ -716,175 +650,7 @@ impl Interpreter {
                 };
             }
             RegexAtom::VarDecl { code } => {
-                let source = format!("{};", code);
-                if let Some(stmts) = self.parse_regex_code_cached(&source) {
-                    let mut new_caps = RegexCaptures::default();
-                    // Grammar-rule dynamic declarations are initialized by the
-                    // rule-entry frame. Keep the declaration zero-width here,
-                    // and carry the installed value into the capture delta,
-                    // rather than evaluating the initializer once per LTM
-                    // candidate/end (or a second time on the winning path).
-                    let declared_dynamic_keys: Vec<String> = stmts
-                        .iter()
-                        .filter_map(|stmt| match stmt {
-                            Stmt::VarDecl { name, .. } if crate::env::is_dynamic_var_name(name) => {
-                                Some(
-                                    Self::grammar_dynvar_env_keys(name)
-                                        .into_iter()
-                                        .next()
-                                        .unwrap_or_else(|| name.clone()),
-                                )
-                            }
-                            _ => None,
-                        })
-                        .collect();
-                    if declared_dynamic_keys
-                        .iter()
-                        .any(|name| super::regex_helpers::grammar_dynvar_scope_active(name))
-                    {
-                        for name in declared_dynamic_keys {
-                            if let Some(value) = self.env.get(&name).cloned() {
-                                new_caps.regex_vars_mut().insert(name, value);
-                            }
-                        }
-                        return Some((pos, new_caps));
-                    }
-                    // The initializer may reference the regex's own
-                    // in-progress match state — `:my $c = ~$0;` needs `$0`
-                    // bound to the capture matched so far, exactly like a
-                    // plain `{ … }` code block sees it. Install those
-                    // bindings around both evaluation paths below (they are
-                    // restored just before this arm returns).
-                    let capture_env = Self::regex_capture_bindings(current_caps, chars, pos);
-                    let mut capture_saved: Vec<(String, Option<Value>)> = Vec::new();
-                    for (k, v) in &capture_env {
-                        capture_saved.push((k.clone(), self.env.get(k).cloned()));
-                        self.env.insert(k.clone(), v.clone());
-                    }
-                    // Evaluate each non-dynamic declaration here, with the
-                    // lexicals declared before it installed around the call so
-                    // a later one can read — and dispatch on — an earlier one
-                    // (`:my @segs = $req.path-segments;`, Cro's route matcher).
-                    // Dynamics (`:my %*PLAYED = ()`) and any other statement
-                    // shape run together below over an isolated copy of the
-                    // env, and are harvested by an env diff.
-                    let mut scratch_stmts: Vec<Stmt> = Vec::new();
-                    for stmt in stmts.iter() {
-                        let Stmt::VarDecl {
-                            name, expr, is_our, ..
-                        } = stmt
-                        else {
-                            scratch_stmts.push(stmt.clone());
-                            continue;
-                        };
-                        if name.trim_start_matches(['@', '%']).starts_with('*') || name == "_" {
-                            scratch_stmts.push(stmt.clone());
-                            continue;
-                        }
-                        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
-                        for (k, v) in current_caps
-                            .regex_vars()
-                            .iter()
-                            .chain(new_caps.regex_vars())
-                        {
-                            saved.push((k.clone(), self.env.get(k).cloned()));
-                            self.env.insert(k.clone(), v.clone());
-                        }
-                        let v = if *is_our {
-                            // `:our $var = ...;` is a real package-scoped
-                            // declaration, not merely a regex-local lexical
-                            // like `:my`/`:constant`/`:temp`/`:let`. Run the
-                            // WHOLE statement (not just its RHS expr) through
-                            // the normal `our` compile path
-                            // (`Compiler::qualify_variable_name` /
-                            // `OpCode::DeclareOurScalar`) so it writes through
-                            // to the package's `our`-scoped storage exactly
-                            // like a plain (non-regex) `our $var = ...;`
-                            // would — see
-                            // todo/tickets/regex-our-declarator-writeback-missing.md.
-                            // `eval_block_value` runs on `self` (the real
-                            // interpreter), so a method-calling initializer
-                            // still dispatches correctly, same as the
-                            // plain-expr branch below.
-                            let _ = self.eval_block_value(std::slice::from_ref(stmt));
-                            self.env.get(name).cloned().unwrap_or(Value::NIL)
-                        } else {
-                            self.eval_block_value(&[Stmt::Expr(expr.clone())])
-                                .unwrap_or(Value::NIL)
-                        };
-                        for (k, orig) in saved {
-                            match orig {
-                                Some(prev) => self.env.insert(k, prev),
-                                None => self.env.remove(&k),
-                            };
-                        }
-                        new_caps.regex_vars_mut().insert(name.clone(), v);
-                    }
-                    if scratch_stmts.is_empty() {
-                        for (k, orig) in capture_saved {
-                            match orig {
-                                Some(prev) => self.env.insert(k, prev),
-                                None => self.env.remove(&k),
-                            };
-                        }
-                        return Some((pos, new_caps));
-                    }
-                    let mut env = self.env.clone();
-                    for (k, v) in current_caps
-                        .regex_vars()
-                        .iter()
-                        .chain(new_caps.regex_vars())
-                    {
-                        env.insert(k.clone(), v.clone());
-                    }
-                    // Run over an isolated copy of the env; what the
-                    // declarations wrote is read back out of it before it is
-                    // restored.
-                    let after = self.run_regex_sub_eval(env, None, |interp| {
-                        let _ = interp.eval_block_value(&scratch_stmts);
-                        interp.env.clone()
-                    });
-                    for (k, v) in &after {
-                        // The topic is not a `:my` declaration — the isolated
-                        // run leaves `$_` holding the declaration's value, and
-                        // recording it would let a later code block / assertion
-                        // (which installs `regex_vars` into its env) see that stale
-                        // value as `$_` instead of the real topic.
-                        if k.resolve() == "_" {
-                            continue;
-                        }
-                        if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
-                            new_caps.regex_vars_mut().insert(k.resolve(), v.clone());
-                        }
-                    }
-                    // The env diff above only sees a *change*. The isolated env is
-                    // cloned from this one, so a declaration whose write reached
-                    // the shared storage compares equal and is missed — which left
-                    // the lexical out of `regex_vars` entirely. It then only worked
-                    // for blocks that run inline (they read the write from `env`);
-                    // a `make`-bearing block, which runs on the reduce walk long
-                    // after that write is gone, saw nothing. Record what the
-                    // declaration itself introduced, by name.
-                    for stmt in stmts.iter() {
-                        let Stmt::VarDecl { name, .. } = stmt else {
-                            continue;
-                        };
-                        if name == "_" || new_caps.regex_vars().contains_key(name) {
-                            continue;
-                        }
-                        if let Some(v) = after.get(name) {
-                            new_caps.regex_vars_mut().insert(name.clone(), v.clone());
-                        }
-                    }
-                    for (k, orig) in capture_saved {
-                        match orig {
-                            Some(prev) => self.env.insert(k, prev),
-                            None => self.env.remove(&k),
-                        };
-                    }
-                    return Some((pos, new_caps));
-                }
-                return Some((pos, RegexCaptures::default()));
+                return self.regex_var_decl_atom(code, chars, pos, current_caps);
             }
             _ => {}
         }
@@ -934,15 +700,20 @@ impl Interpreter {
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 let mut best_sym: Option<String> = None;
                 for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                    if let Some((inner_end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, *sub_pkg)
-                    {
+                    // One rule invocation per candidate (#9803).
+                    self.enter_rule_cursor();
+                    let matched =
+                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, *sub_pkg);
+                    let cursor = self.leave_rule_cursor();
+                    if let Some((inner_end, mut inner_caps)) = matched {
+                        if let Some(cursor) = cursor {
+                            inner_caps.set_cursor(cursor);
+                        }
                         let better = best
                             .as_ref()
                             .map(|(best_end, _)| inner_end > *best_end)
                             .unwrap_or(true);
                         if better {
-                            let mut inner_caps = inner_caps;
                             inner_caps.from = pos;
                             inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));
@@ -956,7 +727,7 @@ impl Interpreter {
                 // action channel behave identically on both paths.
                 if let Some((inner_end, mut inner_caps)) = best {
                     if best_sym.is_some() {
-                        inner_caps.set_sym(best_sym);
+                        inner_caps.set_sym(best_sym.as_deref().map(Symbol::intern));
                     }
                     return self
                         .build_named_candidates_from_inner(
@@ -1002,8 +773,7 @@ impl Interpreter {
                 if !spec.silent {
                     new_caps
                         .named
-                        .entry(Symbol::intern(&spec.lookup_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&spec.lookup_name))
                         .nodes
                         .push(std::sync::Arc::new(CapNode {
                             from: pos,
@@ -1049,8 +819,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(Symbol::intern(capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(capture_name))
                         .merge(NamedSlot::leaf(pos, end));
                     // For <foo=alpha>, also capture under the original name.
                     // For <foo=.alpha>, the dot suppresses the original name.
@@ -1063,8 +832,7 @@ impl Interpreter {
                             .insert(Symbol::intern(capture_name), spec.lookup_sym);
                         new_caps
                             .named
-                            .entry(Symbol::intern(&spec.lookup_name))
-                            .or_default()
+                            .slot_mut(Symbol::intern(&spec.lookup_name))
                             .merge(NamedSlot::leaf(pos, end));
                     }
                 }
@@ -1099,8 +867,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(Symbol::intern(capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(capture_name))
                         .merge(NamedSlot::leaf(pos, end));
                 }
                 return Some((end, new_caps));
@@ -1171,8 +938,7 @@ impl Interpreter {
                     let capture_name = spec.capture_name.clone().unwrap_or(literal);
                     new_caps
                         .named
-                        .entry(Symbol::intern(&capture_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&capture_name))
                         .merge(NamedSlot::leaf(pos, pos + name_chars.len()));
                     return Some((pos + name_chars.len(), new_caps));
                 }

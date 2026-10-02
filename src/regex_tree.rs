@@ -735,36 +735,45 @@ impl RegexTree {
                     code,
                     negated,
                     body,
-                } => Some(vec![token(
-                    crate::runtime::RegexAtom::CodeAssertion {
-                        code: code.clone(),
-                        negated: *negated,
-                        is_assertion: true,
-                        body: Some(std::sync::Arc::new(body.clone())),
-                        code_cache_id: crate::value::next_instance_id(),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
-                RegexNode::CodeBlock { code, body } => Some(vec![token(
-                    crate::runtime::RegexAtom::CodeAssertion {
-                        code: code.clone(),
-                        negated: false,
-                        is_assertion: false,
-                        body: Some(std::sync::Arc::new(body.clone())),
-                        code_cache_id: crate::value::next_instance_id(),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
-                RegexNode::InterpolatedBlock { code, body, .. } => Some(vec![token(
-                    crate::runtime::RegexAtom::ClosureInterpolation {
-                        code: code.clone(),
-                        body: Some(std::sync::Arc::new(body.clone())),
-                    },
-                    crate::runtime::RegexQuant::One,
-                    ratchet,
-                )]),
+                } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::CodeAssertion {
+                            code: code.clone(),
+                            negated: *negated,
+                            is_assertion: true,
+                            body: Some(std::sync::Arc::new(body.clone())),
+                            code_cache_id: crate::value::next_instance_id(),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::CodeBlock { code, body } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::CodeAssertion {
+                            code: code.clone(),
+                            negated: false,
+                            is_assertion: false,
+                            body: Some(std::sync::Arc::new(body.clone())),
+                            code_cache_id: crate::value::next_instance_id(),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::InterpolatedBlock { code, body, .. } => {
+                    crate::runtime::regex::regex_helpers::note_regex_code_lowered();
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::ClosureInterpolation {
+                            code: code.clone(),
+                            body: Some(std::sync::Arc::new(body.clone())),
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -1186,10 +1195,10 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         },
         crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
-        crate::ast::Expr::Var(name) => Some(format!("${name}")),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
-        crate::ast::Expr::ArrayVar(name) => Some(format!("@{name}")),
-        crate::ast::Expr::HashVar(name) => Some(format!("%{name}")),
+        crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
+            expr.sigiled_var_name()
+        }
         crate::ast::Expr::CodeVar(name) => Some(format!("&{name}")),
         crate::ast::Expr::BareWord(name) => Some(name.clone()),
         crate::ast::Expr::Unary { op, expr } => Some(format!(

@@ -246,12 +246,8 @@ impl Compiler {
     /// Compile a statement-position branch, including the branch's own
     /// `let`/`temp` save frame. This is shared with constant-condition folding,
     /// which bypasses the ordinary `compile_if_construct` path.
-    pub(super) fn compile_if_statement_branch(&mut self, branch: &[Stmt]) {
-        self.compile_if_statement_branch_scoped(branch, false)
-    }
-
-    /// As [`Compiler::compile_if_statement_branch`], but told whether the branch
-    /// is a STATEMENT MODIFIER's body rather than a block.
+    /// Told whether the branch is a STATEMENT MODIFIER's body rather than a
+    /// block.
     ///
     /// A statement modifier is not a block, so it opens no `let`/`temp` scope:
     /// `temp $x = 2 with $c; say $x` must still see `2`, because the save is

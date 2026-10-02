@@ -19,6 +19,7 @@
 //! point, since a document under edit is broken most of the time (S3).
 
 use crate::ast::{PackageKind, ParamDef, Stmt};
+use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 
 /// What a declaration declares. Deliberately mutsu's own vocabulary rather than
 /// LSP's `SymbolKind`, which has no spelling for a role, a grammar token or a
@@ -100,13 +101,78 @@ pub fn symbols(source: &str) -> Vec<Symbol> {
 /// `in_routine` suppresses plain variable declarations: `my $x` at the top of a
 /// class or a file is an outline entry, the same line inside a `sub` body is a
 /// local and would bury the outline in noise.
+// Cost: O(n), n = size of `stmts`.
 fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
-    let mut out = Vec::new();
-    for stmt in stmts {
+    let mut scan = OutlineScan {
+        line: *line,
+        out: Vec::new(),
+        locals: in_routine,
+    };
+    walk_stmts(&mut scan, stmts);
+    *line = scan.line;
+    scan.out
+}
+
+/// The outline walk (ADR-0137 visitor). A declaration anywhere is found — in a
+/// nested block, a branch, a closure — and listed under the declaration whose
+/// body holds it; only a declaration's body is entered for its children.
+struct OutlineScan {
+    /// The running line: the most recent `Stmt::SetLine` seen.
+    line: u32,
+    /// The declarations found so far at the current nesting level.
+    out: Vec<Symbol>,
+    /// Whether a plain `my $x` here is a local (inside a routine body, a
+    /// nested block or an expression) rather than an outline entry.
+    locals: bool,
+}
+
+impl OutlineScan {
+    fn with_locals(&mut self, locals: bool, f: impl FnOnce(&mut Self)) {
+        let saved = std::mem::replace(&mut self.locals, locals);
+        f(self);
+        self.locals = saved;
+    }
+
+    /// Build a declaration and walk its body, using the running line cursor to
+    /// approximate where the declaration ends.
+    fn declaration(
+        &mut self,
+        name: String,
+        kind: SymbolKind,
+        body: &[Stmt],
+        body_is_routine: bool,
+        signature: Option<String>,
+    ) {
+        let start = self.line;
+        let outer = std::mem::take(&mut self.out);
+        // The body's own `SetLine` markers advance the shared cursor; wherever
+        // it ends up is the last line the declaration demonstrably covers. The
+        // closing brace is not counted, because nothing marks it.
+        self.with_locals(body_is_routine || !kind.is_package_like(), |s| {
+            walk_stmts(s, body)
+        });
+        let children = std::mem::replace(&mut self.out, outer);
+        self.out.push(Symbol {
+            name,
+            kind,
+            line: start,
+            end_line: self.line.max(start),
+            signature,
+            children,
+        });
+    }
+
+    fn leaf(&mut self, name: String, kind: SymbolKind) {
+        self.out.push(leaf(name, kind, self.line));
+    }
+}
+
+impl Visit for OutlineScan {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::SetLine(n) => {
                 if *n > 0 {
-                    *line = *n as u32;
+                    self.line = *n as u32;
                 }
             }
             Stmt::ClassDecl {
@@ -122,16 +188,10 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 } else {
                     SymbolKind::Class
                 };
-                out.push(declaration(name.resolve(), kind, line, body, false));
+                self.declaration(name.resolve(), kind, body, false, None);
             }
             Stmt::RoleDecl { name, body, .. } => {
-                out.push(declaration(
-                    name.resolve(),
-                    SymbolKind::Role,
-                    line,
-                    body,
-                    false,
-                ));
+                self.declaration(name.resolve(), SymbolKind::Role, body, false, None)
             }
             Stmt::Package {
                 name, kind, body, ..
@@ -141,7 +201,7 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                     PackageKind::Package => SymbolKind::Package,
                     PackageKind::Grammar => SymbolKind::Grammar,
                 };
-                out.push(declaration(name.resolve(), kind, line, body, false));
+                self.declaration(name.resolve(), kind, body, false, None);
             }
             Stmt::SubDecl {
                 name,
@@ -149,16 +209,13 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 param_defs,
                 return_type,
                 ..
-            } => {
-                out.push(declaration_with_signature(
-                    name.resolve(),
-                    SymbolKind::Sub,
-                    line,
-                    body,
-                    true,
-                    render_signature(param_defs, return_type.as_deref()),
-                ));
-            }
+            } => self.declaration(
+                name.resolve(),
+                SymbolKind::Sub,
+                body,
+                true,
+                render_signature(param_defs, return_type.as_deref()),
+            ),
             Stmt::ProtoDecl {
                 name,
                 body,
@@ -170,7 +227,7 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 } else {
                     SymbolKind::Sub
                 };
-                out.push(declaration(name.resolve(), kind, line, body, true));
+                self.declaration(name.resolve(), kind, body, true, None);
             }
             Stmt::MethodDecl {
                 name,
@@ -185,55 +242,45 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 } else {
                     SymbolKind::Method
                 };
-                out.push(declaration_with_signature(
+                self.declaration(
                     name.resolve(),
                     kind,
-                    line,
                     body,
                     true,
                     render_signature(param_defs, return_type.as_deref()),
-                ));
+                );
             }
             Stmt::TokenDecl { name, body, .. } => {
-                out.push(declaration(
-                    name.resolve(),
-                    SymbolKind::Token,
-                    line,
-                    body,
-                    true,
-                ));
+                self.declaration(name.resolve(), SymbolKind::Token, body, true, None)
             }
             Stmt::RuleDecl { name, body, .. } => {
-                out.push(declaration(
-                    name.resolve(),
-                    SymbolKind::Rule,
-                    line,
-                    body,
-                    true,
-                ));
+                self.declaration(name.resolve(), SymbolKind::Rule, body, true, None)
             }
-            Stmt::ProtoToken { name } => out.push(leaf(name.resolve(), SymbolKind::Token, *line)),
-            Stmt::SubsetDecl { name, .. } => {
-                out.push(leaf(name.resolve(), SymbolKind::Subset, *line))
-            }
+            Stmt::ProtoToken { name } => self.leaf(name.resolve(), SymbolKind::Token),
+            Stmt::SubsetDecl { name, .. } => self.leaf(name.resolve(), SymbolKind::Subset),
             Stmt::EnumDecl { name, variants, .. } => {
-                let mut symbol = leaf(name.resolve(), SymbolKind::Enum, *line);
+                let mut symbol = leaf(name.resolve(), SymbolKind::Enum, self.line);
                 symbol.children = variants
                     .iter()
-                    .map(|(variant, _)| leaf(variant.clone(), SymbolKind::EnumMember, *line))
+                    .map(|(variant, _)| leaf(variant.clone(), SymbolKind::EnumMember, self.line))
                     .collect();
-                out.push(symbol);
+                self.out.push(symbol);
             }
-            Stmt::HasDecl { name, .. } => {
-                out.push(leaf(name.resolve(), SymbolKind::Attribute, *line))
+            Stmt::HasDecl { name, .. } => self.leaf(name.resolve(), SymbolKind::Attribute),
+            Stmt::VarDecl { name, .. } => {
+                if !self.locals && !name.is_empty() {
+                    self.leaf(name.clone(), SymbolKind::Variable);
+                }
+                // The initializer is an expression: a `my` in it is a local.
+                self.with_locals(true, |s| walk_stmt(s, stmt));
             }
-            Stmt::VarDecl { name, .. } if !in_routine && !name.is_empty() => {
-                out.push(leaf(name.clone(), SymbolKind::Variable, *line))
-            }
-            _ => {}
+            // A re-entry of a package already listed at its declaration.
+            Stmt::PackageRuntimeBody { .. } => {}
+            // Anything else nests: its blocks and expressions hold locals, but
+            // a routine or type declared in them is still an outline entry.
+            _ => self.with_locals(true, |s| walk_stmt(s, stmt)),
         }
     }
-    out
 }
 
 fn leaf(name: String, kind: SymbolKind, line: u32) -> Symbol {
@@ -319,42 +366,6 @@ fn sigil_name(param: &ParamDef) -> String {
         param.name.clone()
     } else {
         format!("${}", param.name)
-    }
-}
-
-/// Build a declaration and walk its body, using the running line cursor to
-/// approximate where the declaration ends.
-fn declaration(
-    name: String,
-    kind: SymbolKind,
-    line: &mut u32,
-    body: &[Stmt],
-    body_is_routine: bool,
-) -> Symbol {
-    declaration_with_signature(name, kind, line, body, body_is_routine, None)
-}
-
-fn declaration_with_signature(
-    name: String,
-    kind: SymbolKind,
-    line: &mut u32,
-    body: &[Stmt],
-    body_is_routine: bool,
-    signature: Option<String>,
-) -> Symbol {
-    let start = *line;
-    // The body's own `SetLine` markers advance the shared cursor; wherever it
-    // ends up is the last line the declaration demonstrably covers. The closing
-    // brace is not counted, because nothing marks it.
-    let children = collect(body, line, body_is_routine || !kind.is_package_like());
-    let end_line = (*line).max(start);
-    Symbol {
-        name,
-        kind,
-        line: start,
-        end_line,
-        signature,
-        children,
     }
 }
 
@@ -488,6 +499,25 @@ class Foo {
             "{found:#?}"
         );
         assert!(found[0].children.is_empty(), "{:#?}", found[0]);
+    }
+
+    /// The walk reaches every position (ADR-0137): a routine declared in a
+    /// nested block or a closure is still a declaration, while a `my` there
+    /// is a local.
+    #[test]
+    fn a_declaration_nested_in_a_block_or_closure_is_found() {
+        let found = symbols(
+            "if 1 {\n    my $local = 1;\n    sub inner() { 1 }\n}\nmy $c = -> { sub in-closure() { 2 } };\n",
+        );
+        assert_eq!(
+            kinds(&found),
+            vec![
+                ("inner".to_string(), SymbolKind::Sub, 3),
+                ("c".to_string(), SymbolKind::Variable, 5),
+                ("in-closure".to_string(), SymbolKind::Sub, 5),
+            ],
+            "{found:#?}"
+        );
     }
 
     #[test]

@@ -353,15 +353,10 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     is_positional: true,
                 }
             } else {
-                let target_var_name = match target.as_ref() {
-                    Expr::Var(name) => Some(name.clone()),
-                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                    Expr::BareWord(name) => Some(name.clone()),
-                    Expr::DoStmt(s) => {
-                        crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)
-                    }
-                    _ => None,
-                };
+                let target_var_name =
+                    crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(
+                        &target,
+                    );
                 let method_name = if modifier == Some('!') {
                     format!("!{}", name.resolve())
                 } else {

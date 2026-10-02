@@ -582,7 +582,16 @@ impl Compiler {
                 });
             }
             Expr::Call { name, args } => {
-                self.compile_expr_call(name, args);
+                // `f(@a.AT-POS($i))` hands the callee the element's container
+                // exactly as `f(@a[$i])` does (List::MoreUtils `pairwise`
+                // binds `is rw` parameters this way), so spell it as the
+                // subscript the rw-argument machinery already understands.
+                if args.iter().any(Self::is_array_at_pos_call) {
+                    let args: Vec<Expr> = args.iter().map(Self::at_pos_call_as_index).collect();
+                    self.compile_expr_call(name, &args);
+                } else {
+                    self.compile_expr_call(name, args);
+                }
             }
             Expr::UserRoutineCall { name, args } => {
                 self.compile_expr_user_routine_call(name, args);
@@ -711,7 +720,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
-            } if Self::is_mutating_method_on_index(target, name) => {
+            } if self.is_mutating_method_on_index(target, name) => {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
             // Compile-time fold: Nil.gist / Nil.raku / Nil.perl → "Nil"

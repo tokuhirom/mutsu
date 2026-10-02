@@ -1107,6 +1107,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod begin_use;
+mod body_scans;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_placeholder;
@@ -1116,6 +1117,7 @@ mod control_for_tail;
 mod control_if;
 mod decl_plan;
 mod decl_reset;
+mod enter_phaser_exprs;
 mod expr;
 mod expr_binary;
 mod expr_block;
@@ -1145,12 +1147,20 @@ mod helpers_phasers;
 mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
+mod hoist_nested_types;
 pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod package_runtime_body;
+mod require_stubs;
+mod type_decl_value;
+pub(crate) use hoist_nested_types::{nested_decl_composes_role, nested_type_decls};
+pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
+pub(crate) mod routine_scans;
+pub(crate) mod scope_scan;
 mod stmt;
 mod subst_thunk;
 mod term_constants;
@@ -1160,6 +1170,9 @@ mod trir_call;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Open `Stmt::LoopExitGuard` regions: the guard op's index and the
+    /// NEXT / UNDO+LEAVE queues `Stmt::LoopExitGuardEnd` lays out after it.
+    loop_exit_guards: Vec<(usize, Vec<Stmt>, Vec<Stmt>)>,
     /// Whether `use fatal` is textually active at the point currently being
     /// compiled (#9521) — a compile-time mirror of the runtime `fatal_mode`
     /// flag `use fatal;`'s own statement sets. `use fatal` is lexical in real
@@ -1304,6 +1317,15 @@ pub(crate) struct Compiler {
     /// must still target the class package's static store, while an
     /// undeclared routine assignment remains readonly.
     pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// The `my` lexicals a class or package body declares at its top level,
+    /// in `VarDecl` naming (`x`, `@a`). A class-body statement compiles in a
+    /// chunk of its own, and the run-time part of a body the BEGIN prologue
+    /// split off (ADR-0134, #10332) compiles apart from its declarations, so
+    /// neither sees the declaration's slot. Such a name is still the body's
+    /// lexical, not a package variable: [`Self::qualify_variable_name`] keeps
+    /// it bare, so it resolves through the package's static store
+    /// (`package_lexicals`) as it does from the body's methods.
+    pub(crate) package_body_lexicals: HashSet<String>,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -1658,6 +1680,9 @@ pub(crate) struct Compiler {
     /// compiler, so the fold also reaches a sibling named sub that calls it,
     /// which makes the capture transitive.
     lexical_sub_free_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
+    /// The subset of [`Compiler::lexical_sub_free_vars`] each sub (transitively)
+    /// writes; folded at call sites into `nested_routine_free_writes`.
+    lexical_sub_written_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
     /// Placeholder params (`^p` caret-form) an interpret-path caller has
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
@@ -1840,6 +1865,7 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
             variables_pragma: None,
             trir_routines: HashMap::new(),
@@ -1860,6 +1886,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
+            package_body_lexicals: HashSet::new(),
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
@@ -1914,6 +1941,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             lexical_sub_free_vars: Default::default(),
+            lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             with_element_source_capture: None,
             last_source_line: None,
@@ -2079,6 +2107,7 @@ impl Compiler {
             || name.contains("::")
             || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
+            || self.package_body_lexicals.contains(name)
         {
             return name.to_string();
         }
@@ -2410,6 +2439,7 @@ impl Compiler {
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
+        sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
     }
 
@@ -2418,10 +2448,17 @@ impl Compiler {
     /// routine body is recorded: a mainline or bare-block sub already resolves
     /// its free variables lexically (ADR-0024), and a routine-nested one is
     /// the case ADR-0024 leaves on dynamic resolution.
-    pub(crate) fn record_lexical_sub_free_vars(&mut self, name: &str, free: Vec<Symbol>) {
-        if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
+    pub(crate) fn record_lexical_sub_free_vars(
+        &mut self,
+        name: &str,
+        free: Vec<Symbol>,
+        written: Vec<Symbol>,
+    ) {
+        if !self.binds_lexsub_free_vars() || name.contains("::") {
             return;
         }
+        std::rc::Rc::make_mut(&mut self.lexical_sub_written_vars)
+            .insert(Symbol::intern(name), written);
         std::rc::Rc::make_mut(&mut self.lexical_sub_free_vars).insert(Symbol::intern(name), free);
     }
 
@@ -2434,6 +2471,11 @@ impl Compiler {
             && !free.is_empty()
         {
             self.code.nested_routine_free_reads.push(free.clone());
+        }
+        if let Some(written) = self.lexical_sub_written_vars.get(name)
+            && !written.is_empty()
+        {
+            self.code.nested_routine_free_writes.push(written.clone());
         }
     }
 
@@ -3092,13 +3134,9 @@ impl Compiler {
 
     fn positional_arg_source_name(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
-            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
+            Expr::DoStmt(stmt) => stmt.declared_var_key(),
             // For FatArrow (named args like `:into(%h)`), encode "key=varname"
             // so the VM can write back to the variable after a builtin call.
             Expr::Binary {
@@ -3118,36 +3156,16 @@ impl Compiler {
                     None
                 }
             }
-            _ => None,
+            other => other.var_key(),
         }
     }
 
     /// Extract variable name from an expression, including through DoStmt/SyntheticBlock.
+    // Cost: O(s + |name|), s = statements of a declaration's SyntheticBlock.
     fn extract_inner_varname(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
-            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
-            _ => None,
-        }
-    }
-
-    /// Extract variable name from a statement, handling VarDecl and SyntheticBlock.
-    fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
-        match stmt {
-            Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
-            Stmt::Assign { name, .. } => Some(name.clone()),
-            Stmt::SyntheticBlock(stmts) => {
-                for s in stmts {
-                    if let Some(name) = Self::extract_varname_from_stmt(s) {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            _ => None,
+            Expr::DoStmt(stmt) => stmt.declared_var_key(),
+            other => other.var_key(),
         }
     }
 
@@ -3783,6 +3801,10 @@ impl Compiler {
                     || *name == "kv") =>
             {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
+                    || (*name != "keys"
+                        && *name != "List"
+                        && Self::is_literal_list_receiver(target)
+                        && Self::for_iterable_yields_bare_items(target))
             }
             // `.Seq` reifies whatever items its target already has — it mints
             // no fresh ones — so it inherits the target's bareness exactly:
@@ -3794,6 +3816,23 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty() && *name == "Seq" => Self::for_iterable_yields_bare_items(target),
+            // A view of a LITERAL receiver (`(1,2).values`, `(1,2).kv`,
+            // `(1,2).reverse`, `(1,2).sort`): the literal has no element
+            // containers to hand out, so the view inherits its bareness. A
+            // variable receiver is excluded -- `@a.values` / `@a.sort` alias
+            // the array's own cells and are decided at run time
+            // (`for_source_is_value_sequence`).
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty()
+                && (*name == "values"
+                    || *name == "list"
+                    || *name == "reverse"
+                    || *name == "sort")
+                && Self::is_literal_list_receiver(target) =>
+            {
+                Self::for_iterable_yields_bare_items(target)
+            }
             _ => false,
         }
     }
@@ -3837,6 +3876,23 @@ impl Compiler {
                 .provably_bare_receiver_vars
                 .contains(&format!("${name}")),
             _ => Self::for_iterable_yields_bare_items(iterable),
+        }
+    }
+
+    /// A parenthesised list literal or `Range`, i.e. a receiver that is an
+    /// expression rather than a variable.
+    fn is_literal_list_receiver(e: &Expr) -> bool {
+        match e {
+            Expr::Grouped(inner) => Self::is_literal_list_receiver(inner),
+            Expr::ArrayLiteral(_) => true,
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+            ),
+            _ => false,
         }
     }
 
@@ -3919,15 +3975,8 @@ impl Compiler {
 
     fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
         match iterable {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
-                Expr::Var(name) => Some(name.clone()),
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                _ => None,
-            },
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => iterable.container_var_key(),
+            Expr::ArrayLiteral(items) if items.len() == 1 => items[0].container_var_key(),
             // Handle @a.values, @a.kv, @a.pairs, $pair.value → source is @a / $pair
             Expr::MethodCall {
                 target, name, args, ..
@@ -3939,7 +3988,9 @@ impl Compiler {
             // Handle @a.reverse → source is @a (reversed)
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "reverse" => Self::for_iterable_source_name(target),
+            } if args.is_empty() && (*name == "reverse" || *name == "sort") => {
+                Self::for_iterable_source_name(target)
+            }
             // `@$h` desugars to `($h).list`: the loop iterates the scalar's
             // inner array and must alias its elements (`$_ .= uc for @$hdr`
             // uppercases in place — Text::CSV's header munge). Tag the source
@@ -4206,54 +4257,12 @@ impl Compiler {
         retry.compile_unit(stmts)
     }
 
+    /// Record every sigilless `constant Name = Type` alias in the unit, at any
+    /// depth (`body_scans::type_aliases`).
+    // Cost: O(n), n = size of `stmts`.
     fn seed_type_aliases(&mut self, stmts: &[Stmt]) {
-        for stmt in stmts {
-            match stmt {
-                Stmt::VarDecl {
-                    name,
-                    expr: Expr::BareWord(target),
-                    custom_traits,
-                    ..
-                } if custom_traits
-                    .iter()
-                    .any(|(trait_name, _)| trait_name == "__constant")
-                    && !name.starts_with(['$', '@', '%', '&']) =>
-                {
-                    self.type_aliases.insert(name.clone(), target.clone());
-                }
-                Stmt::Package { body, .. }
-                | Stmt::ClassDecl { body, .. }
-                | Stmt::RoleDecl { body, .. }
-                | Stmt::SubDecl { body, .. }
-                | Stmt::TokenDecl { body, .. }
-                | Stmt::RuleDecl { body, .. }
-                | Stmt::MethodDecl { body, .. }
-                | Stmt::ProtoDecl { body, .. }
-                | Stmt::Block(body)
-                | Stmt::SyntheticBlock(body)
-                | Stmt::React { body }
-                | Stmt::Whenever { body, .. }
-                | Stmt::Default(body)
-                | Stmt::Catch(body)
-                | Stmt::Control(body)
-                | Stmt::Phaser { body, .. }
-                | Stmt::AugmentClass { body, .. } => self.seed_type_aliases(body),
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    self.seed_type_aliases(then_branch);
-                    self.seed_type_aliases(else_branch);
-                }
-                Stmt::For { body, .. }
-                | Stmt::While { body, .. }
-                | Stmt::Loop { body, .. }
-                | Stmt::Given { body, .. }
-                | Stmt::When { body, .. } => self.seed_type_aliases(body),
-                Stmt::Label { stmt, .. } => self.seed_type_aliases(std::slice::from_ref(stmt)),
-                _ => {}
-            }
+        for (name, target) in body_scans::type_aliases(stmts) {
+            self.type_aliases.insert(name, target);
         }
     }
 
@@ -4330,6 +4339,11 @@ impl Compiler {
         // already construct the type (Raku type declarations are compile-time;
         // see `hoist_type_decl_shells`).
         self.hoist_type_decl_shells(stmts);
+        // Install `our` classes/roles declared inside routines and blocks at
+        // compile time, before the code that declares them runs (#10470).
+        if self.is_mainline && !self.is_routine {
+            self.hoist_nested_type_decl_shells(stmts);
+        }
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).
@@ -4460,6 +4474,11 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {
+                            self.compile_type_decl_value(stmt);
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         _ => {}
                     }
                 }
@@ -4522,10 +4541,7 @@ impl Compiler {
         // entry-time value becomes the block's result value (Raku semantics).
         // Capture that value in the ENTER section via PushEnterResult and load it
         // back as the block result at the end of the body via LoadEnterResult.
-        // Ignore trailing `SetLine` markers when locating the last statement.
-        let last_idx = stmts
-            .iter()
-            .rposition(|s| !matches!(s, Stmt::SetLine(_)))
+        let last_idx = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers)
             .unwrap_or(usize::MAX);
         let last_is_enter = matches!(
             stmts.get(last_idx),
@@ -4619,9 +4635,16 @@ impl Compiler {
             // trailing `SetLine` markers (emitted between statements once real line
             // numbers differ) must not become the block's value, or a phaser-only
             // block would yield a spurious `True` and run KEEP instead of UNDO.
-            let last_value_idx = body_stmts
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
+            // A trailing LEAVE/KEEP/UNDO/PRE/POST is the block's last statement
+            // and makes its value Nil (`do { 42; LEAVE { } }` is Nil in rakudo).
+            let last_value_idx = if stmts
+                .get(last_idx)
+                .is_some_and(crate::ast::is_nil_valued_tail_phaser)
+            {
+                None
+            } else {
+                crate::ast::last_value_stmt_index(&body_stmts, crate::ast::TailSkip::Markers)
+            };
             for (i, s) in body_stmts.iter().enumerate() {
                 if Some(i) == last_value_idx {
                     match mode {

@@ -3,41 +3,36 @@ use super::*;
 /// Find expression-position declarations inside a synthesized WhateverCode.
 /// The generated callable is transparent for lexical scoping, while explicit
 /// source closures/blocks remain boundaries of their own.
+// Cost: O(n), n = size of `body` outside nested scopes.
 fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSet<String>) {
-    fn expr(node: &Expr, out: &mut std::collections::HashSet<String>) {
-        match node {
-            Expr::DoStmt(stmt) => {
-                if let Stmt::VarDecl { name, is_our, .. } = stmt.as_ref()
-                    && !*is_our
-                {
-                    out.insert(name.clone());
-                }
+    struct DeclScan<'a> {
+        out: &'a mut std::collections::HashSet<String>,
+    }
+    impl crate::ast_visit::Visit for DeclScan<'_> {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            if let Stmt::VarDecl { name, is_our, .. } = stmt
+                && !*is_our
+            {
+                self.out.insert(name.clone());
             }
-            Expr::Unary { expr: inner, .. }
-            | Expr::PostfixOp { expr: inner, .. }
-            | Expr::Grouped(inner) => expr(inner, out),
-            Expr::Binary { left, right, .. } => {
-                expr(left, out);
-                expr(right, out);
+            super::scope_scan::walk_stmt_own_scope(self, stmt);
+        }
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !super::scope_scan::opens_own_scope(expr) {
+                crate::ast_visit::walk_expr(self, expr);
             }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                expr(cond, out);
-                expr(then_expr, out);
-                expr(else_expr, out);
-            }
-            _ => {}
         }
     }
+    let mut scan = DeclScan { out };
+    // A WhateverCode body is the curried expression; its statements are only
+    // that expression and line markers.
     for stmt in body {
         if let Stmt::Expr(e) = stmt {
-            expr(e, out);
+            crate::ast_visit::Visit::visit_expr(&mut scan, e);
         }
     }
 }
+
 use crate::symbol::Symbol;
 
 impl Compiler {
@@ -600,7 +595,21 @@ impl Compiler {
                     | crate::value::ValueView::Num(_)
                     | crate::value::ValueView::Bool(_)
             ),
-            Expr::Var(_) | Expr::Binary { .. } | Expr::Unary { .. } => true,
+            // A range / sequence / repetition operator builds a LIST of
+            // indices (`@a[2 ..^ 4] = @o`, `@a[^2] = @o`), so it is a slice
+            // even though it is a single `Binary` node (#10370).
+            Expr::Binary { op, .. } => {
+                !matches!(
+                    op,
+                    TokenKind::DotDot
+                        | TokenKind::DotDotCaret
+                        | TokenKind::CaretDotDot
+                        | TokenKind::CaretDotDotCaret
+                        | TokenKind::DotDotDot
+                        | TokenKind::DotDotDotCaret
+                ) && !matches!(op, TokenKind::Ident(name) if name == "xx")
+            }
+            Expr::Var(_) | Expr::Unary { .. } => true,
             _ => false,
         };
         if !single_subscript {
@@ -647,13 +656,69 @@ impl Compiler {
             return false;
         };
         let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
-            !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
+            !pkg.is_empty()
+                && (pkg == "GLOBAL" || !pkg.split("::").any(crate::parser::is_pseudo_package))
         });
-        if !named
-            || matches!(index, Expr::Literal(lit)
-                if lit.as_str().is_some_and(|key| !key.starts_with('&')))
-        {
+        if !named {
             return false;
+        }
+        // `Pkg::<$v> {=,:=} value` is the stash spelling of `$Pkg::v {=,:=}
+        // value`: route it through the qualified-variable assignment, which
+        // writes through the variable's container (and so checks its declared
+        // constraint, ADR-0042) instead of replacing the stash entry. Only a
+        // `$` key: an `@`/`%` stash entry is the Array/Hash itself, not a
+        // Scalar, and rakudo refuses `Pkg::<@a> = ...` as an assignment to an
+        // immutable value.
+        if let Expr::Literal(lit) = index
+            && let Some(key) = lit.as_str()
+            && !key.starts_with('&')
+        {
+            // `Pkg::<@a> = ...` / `Pkg::<%h> = ...` (assignment, not bind).
+            if key.starts_with(['@', '%'])
+                && key.len() > 1
+                && !matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            {
+                self.compile_expr(&Expr::Call {
+                    name: Symbol::intern("die"),
+                    args: vec![Expr::Literal(Value::str(
+                        "Cannot assign to an immutable value".to_string(),
+                    ))],
+                });
+                return true;
+            }
+            let Some(bare) = key
+                .strip_prefix('$')
+                .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
+            else {
+                return false;
+            };
+            let (is_bind, rhs) = match value {
+                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => (
+                    true,
+                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
+                ),
+                other => (false, other.clone()),
+            };
+            // `GLOBAL::<$x> = v` (plain assign): the statement form's store, so
+            // a never-declared `$GLOBAL::x` lands where the GLOBAL stash reads
+            // it back (the expression-form `AssignExpr` op does not register it).
+            if !is_bind && stash_name == "GLOBAL::" {
+                self.with_escape(true, |c| c.compile_expr(&rhs));
+                let qualified = format!("GLOBAL::{bare}");
+                self.emit_set_named_var(&qualified);
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(self.qualify_variable_name(&qualified)));
+                self.code.emit(OpCode::GetGlobal(name_idx));
+                return true;
+            }
+            // `$Pkg::v` compiles to AssignExpr name "Pkg::v" (sigil dropped).
+            self.compile_expr(&Expr::AssignExpr {
+                name: format!("{stash_name}{bare}"),
+                expr: Box::new(rhs),
+                is_bind,
+            });
+            return true;
         }
         self.compile_bind_index_value(value);
         self.compile_expr(index);
@@ -1076,7 +1141,7 @@ impl Compiler {
             self.compile_expr_index_assign(&rewritten, index, value, outer_positional);
             return;
         }
-        if let Some(name) = Self::index_assign_target_name(target) {
+        if let Some(name) = self.index_assign_target_name(target) {
             let target_slot = self.local_map.get(&name).copied();
             if Self::index_assign_target_requires_eval(target) {
                 self.compile_expr(target);
@@ -1117,7 +1182,7 @@ impl Compiler {
                 target_slot,
                 concat_append: false,
             });
-        } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
+        } else if let Some((name, chain)) = self.index_assign_deep_nested_target(target) {
             // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
             // chain contains (index_expr, is_positional) from innermost to outermost
             // We also have the IndexAssign's own (index, outer_positional) as the final level.
@@ -1142,7 +1207,7 @@ impl Compiler {
                 positional_flags_idx,
             });
         } else if let Some((name, inner_index, inner_positional)) =
-            Self::index_assign_nested_target(target)
+            self.index_assign_nested_target(target)
         {
             // `outer_positional` (the outermost subscript flag) is passed in
             // from the IndexAssign AST node. `inner_positional` is the inner
@@ -1169,7 +1234,7 @@ impl Compiler {
             let writeback_name = if var_name.is_empty() {
                 method_args
                     .first()
-                    .and_then(Self::index_assign_target_name)
+                    .and_then(|t| self.index_assign_target_name(t))
                     .unwrap_or_default()
             } else {
                 var_name
@@ -1191,7 +1256,7 @@ impl Compiler {
                 args,
             };
             self.compile_expr(&rewritten);
-        } else if let Some(arr_name) = Self::map_rw_identity_target_name(target) {
+        } else if let Some(arr_name) = self.map_rw_identity_target_name(target) {
             // @arr.map(-> $v is rw {$v})[idx] = val  →  @arr[idx] = val
             // When map's closure has an `is rw` parameter and returns it unchanged,
             // the result is a list of containers bound to the original array elements.
@@ -1287,7 +1352,7 @@ impl Compiler {
         value: &Expr,
         is_positional: bool,
     ) {
-        if let Some(var_name) = Self::index_assign_target_name(target) {
+        if let Some(var_name) = self.index_assign_target_name(target) {
             self.compile_expr(value);
             for dim in dimensions {
                 self.compile_expr(dim);
@@ -1298,7 +1363,7 @@ impl Compiler {
                 ndims: dimensions.len() as u32,
                 is_positional,
             });
-        } else if let Some((name, chain)) = Self::index_chain_target(target) {
+        } else if let Some((name, chain)) = self.index_chain_target(target) {
             // `%o<inner>{1;2} = 5`: the target is a subscript chain rooted at a
             // named variable. `MultiDimIndexAssignGeneric` would pop the chain's
             // *value* and mutate that detached copy, so an autovivified level
@@ -1415,20 +1480,67 @@ impl Compiler {
     }
 }
 
+/// Finds a mutation of the WhateverCode's placeholder (`$_` after lowering)
+/// anywhere in its body, or a use that depends on its container identity.
+/// A nested code object has a `$_` of its own and is not entered.
+#[derive(Default)]
+struct TopicMutationScan {
+    found: bool,
+}
+
+impl crate::ast_visit::Visit for TopicMutationScan {
+    fn visit_expr(&mut self, e: &Expr) {
+        if self.found || super::scope_scan::is_code_object(e) {
+            return;
+        }
+        self.found = match e {
+            // `*++` / `*--` / `++*` / `--*`
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+                expr,
+            }
+            | Expr::Unary {
+                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
+                expr,
+            } => expr_refs_topic(expr),
+            // `* =:= $x` — container identity needs the same container.
+            Expr::Binary {
+                op: TokenKind::Ident(name),
+                left,
+                right,
+            } if name == "=:=" => expr_refs_topic(left) || expr_refs_topic(right),
+            // `*.=foo` — mutating method-assign on the placeholder.
+            Expr::MethodCall {
+                target,
+                modifier: Some('='),
+                ..
+            } => expr_refs_topic(target),
+            _ => false,
+        };
+        if !self.found {
+            crate::ast_visit::walk_expr(self, e);
+        }
+    }
+}
+
 /// Whether a single-`*` WhateverCode body (the `*` already lowered to `Var("_")`)
 /// *mutates* its placeholder or depends on its container identity, requiring the
 /// `_` parameter to bind `is raw`: `*++`/`*--`/`++*`/`--*`, `* =:= $x`, `*.=foo`.
+// Cost: O(n), n = size of `body` outside nested code objects.
 fn whatever_lambda_body_mutates_topic(body: &[Stmt]) -> bool {
-    body.iter().any(|stmt| match stmt {
-        Stmt::Expr(e) => expr_mutates_topic(e),
-        _ => false,
-    })
+    let mut scan = TopicMutationScan::default();
+    crate::ast_visit::walk_stmts(&mut scan, body);
+    scan.found
 }
 
 fn is_topic_var(e: &Expr) -> bool {
     matches!(e, Expr::Var(name) if name == "_")
 }
 
+/// Whether `e` denotes the topic itself, seen through the operator chain that
+/// carries it (a prefix/postfix, an infix operand, a method-call invocant).
+/// A value-path spine, not a subtree search: an argument mentioning `$_` does
+/// not make the expression the topic.
 fn expr_refs_topic(e: &Expr) -> bool {
     if is_topic_var(e) {
         return true;
@@ -1437,45 +1549,6 @@ fn expr_refs_topic(e: &Expr) -> bool {
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_refs_topic(expr),
         Expr::Binary { left, right, .. } => expr_refs_topic(left) || expr_refs_topic(right),
         Expr::MethodCall { target, .. } => expr_refs_topic(target),
-        _ => false,
-    }
-}
-
-fn expr_mutates_topic(e: &Expr) -> bool {
-    match e {
-        // `*++` / `*--`
-        Expr::PostfixOp {
-            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-            expr,
-        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
-        // `++*` / `--*`
-        Expr::Unary {
-            op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-            expr,
-        } => expr_refs_topic(expr) || expr_mutates_topic(expr),
-        Expr::Unary { expr, .. } => expr_mutates_topic(expr),
-        Expr::PostfixOp { expr, .. } => expr_mutates_topic(expr),
-        // `* =:= $x` — container identity needs the same container.
-        Expr::Binary {
-            op: TokenKind::Ident(name),
-            left,
-            right,
-        } if name == "=:=" => {
-            expr_refs_topic(left)
-                || expr_refs_topic(right)
-                || expr_mutates_topic(left)
-                || expr_mutates_topic(right)
-        }
-        Expr::Binary { left, right, .. } => expr_mutates_topic(left) || expr_mutates_topic(right),
-        // `*.=foo` — mutating method-assign on the placeholder.
-        Expr::MethodCall {
-            target,
-            modifier: Some('='),
-            ..
-        } if expr_refs_topic(target) => true,
-        Expr::MethodCall { target, args, .. } => {
-            expr_mutates_topic(target) || args.iter().any(expr_mutates_topic)
-        }
         _ => false,
     }
 }

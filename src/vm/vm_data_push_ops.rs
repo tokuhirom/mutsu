@@ -473,11 +473,7 @@ impl Interpreter {
                 // A rejected element push reports "for an element of @a"
                 // (matching rakudo and the interpreter's other array-mutator
                 // paths), not the scalar "in assignment to @a" wording.
-                return Err(crate::runtime::utils::type_check_element_typed_error(
-                    target_name,
-                    &type_name,
-                    item,
-                ));
+                return Err(self.type_check_element_failure(target_name, &type_name, item));
             }
         }
         Ok(())

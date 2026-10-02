@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           targets: ${{ matrix.target }}
 
@@ -60,21 +60,6 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: ${{ matrix.target }}
-
-      # See .github/workflows/ci.yml's "Use canonical apt mirror" step for why:
-      # the default runner apt-mirrors.txt (azure.archive.ubuntu.com first) has
-      # been observed hanging indefinitely.
-      - name: Use canonical apt mirror
-        if: runner.os == 'Linux'
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          fi
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
-
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libpcre2-dev
 
       # Build both shipped binaries: the interpreter (`mutsu`) and the package
       # manager shim (`mzef`).
@@ -128,14 +113,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: x86_64-unknown-linux-gnu
 
-      # libpcre2 for building mutsu; libssl for the OpenSSL / IO::Socket::SSL
+      # libssl for the OpenSSL / IO::Socket::SSL
       # batteries' NativeCall at runtime.
       # See .github/workflows/ci.yml's "Use canonical apt mirror" step for why:
       # the default runner apt-mirrors.txt (azure.archive.ubuntu.com first) has
@@ -148,7 +133,7 @@ jobs:
           sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libpcre2-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
 
       - name: Build release mutsu
         run: cargo build --release --bin mutsu
@@ -158,7 +143,7 @@ jobs:
       # checkout identical to a fetch, so a release is not blocked by an
       # upstream host that happens to be down. Anything missing is fetched.
       - name: Restore the battery source cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: tmp/battery-src-cache
           key: battery-src-${{ hashFiles('batteries.lock') }}
@@ -180,7 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
         with:
           targets: wasm32-unknown-unknown
 
@@ -220,7 +205,7 @@ jobs:
         run: sha256sum mutsu-*.tar.gz > mutsu-${{ github.ref_name }}-SHA256SUMS.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
           files: |

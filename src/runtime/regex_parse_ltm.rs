@@ -1,7 +1,6 @@
 use super::regex_parse::*;
 use super::*;
 use crate::regex_tree::RegexTree;
-use ::regex::Regex;
 use std::hash::{Hash, Hasher};
 
 /// Lower the static subset of the shared source tree directly to the matcher
@@ -1046,22 +1045,20 @@ impl Interpreter {
             return pattern.to_string();
         }
 
-        static WITH_COUNT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new(r"^(.+?)\*\*(\??)(\^?[0-9_]+(?:\^?\.\.(?:\^?[0-9_]+|\*))?)(?:(%%|%)(.+))?$")
-                .expect("ltm count regex is valid")
-        });
-        static BARE_SEP: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new(r"^(.+?)(%%|%)(.+)$").expect("ltm sep regex is valid")
-        });
-        let with_count = &*WITH_COUNT;
-        let bare_sep = &*BARE_SEP;
-
-        if let Some(caps) = with_count.captures(&compact) {
-            let atom = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
-            let frugal = caps.get(2).is_some_and(|m| !m.as_str().is_empty());
-            let count_spec = caps.get(3).map(|m| m.as_str()).unwrap_or_default();
-            let sep_mode = caps.get(4).map(|m| m.as_str());
-            let full_sep_str = caps.get(5).map(|m| m.as_str()).unwrap_or_default();
+        // Under sigspace, a separated quantifier is parsed natively: the
+        // per-token parser records the separator's `<.ws>` boundaries in the
+        // separator plan (`consume_repeat_separator`), which keeps a frugal
+        // quantifier's priority and a capture's structure intact. Expanding
+        // it to text here lost both (#10339).
+        if sigspace && Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
+        }
+        if let Some(counted) = super::regex_ltm_split::split_counted_atom(&compact) {
+            let atom = counted.atom;
+            let frugal = counted.frugal;
+            let count_spec = counted.count;
+            let sep_mode = counted.sep.map(|(mode, _)| mode);
+            let full_sep_str = counted.sep.map_or("", |(_, sep)| sep);
             if frugal && (sep_mode.is_none() || !sigspace) {
                 return pattern.to_string();
             }
@@ -1158,17 +1155,14 @@ impl Interpreter {
         if !Self::has_unquoted_ltm_separator(pattern) {
             return pattern.to_string();
         }
-        if let Some(caps) = bare_sep.captures(&compact) {
-            let atom = caps
-                .get(1)
-                .map(|m| m.as_str())
-                .unwrap_or_default()
-                .to_string();
+        if let Some((atom, sep_mode, full_sep)) =
+            super::regex_ltm_split::split_bare_separator(&compact)
+        {
+            let atom = atom.to_string();
             if !sigspace && (atom.ends_with("*?") || atom.ends_with("+?")) {
                 return pattern.to_string();
             }
-            let sep_mode = caps.get(2).map(|m| m.as_str());
-            let full_sep = caps.get(3).map(|m| m.as_str()).unwrap_or_default();
+            let sep_mode = Some(sep_mode);
             // `%` takes only a single atom as separator; split off the remainder.
             let (sep_atom, sep_rest) = Self::split_first_atom(full_sep);
             let sep = Some(sep_atom.as_str());

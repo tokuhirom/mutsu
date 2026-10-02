@@ -13,120 +13,6 @@ use crate::parser::stmt::{
     qualified_ident,
 };
 
-/// Extract names of exported sub declarations from a statement list.
-pub(crate) fn extract_exported_subs(
-    stmts: &[Stmt],
-) -> Vec<super::super::simple::InlineModuleExportSpec> {
-    let mut names = Vec::new();
-    for stmt in stmts {
-        match stmt {
-            Stmt::SubDecl {
-                name,
-                is_export,
-                precedence_trait,
-                associativity,
-                ..
-            } if *is_export => {
-                names.push((
-                    name.to_string(),
-                    precedence_trait.clone(),
-                    associativity.clone(),
-                ));
-            }
-            // `token foo is export` / `rule foo is export` export a Regex under
-            // `&foo`, so they are importable names just like an exported sub.
-            Stmt::TokenDecl {
-                name, is_export, ..
-            }
-            | Stmt::RuleDecl {
-                name, is_export, ..
-            } if *is_export => {
-                names.push((name.to_string(), None, None));
-            }
-            Stmt::SyntheticBlock(inner) => {
-                names.extend(extract_exported_subs(inner));
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
-/// Extract names of `is export` *operator methods* (`method prefix:<~> is
-/// export`, `method infix:<as> is export`, ...) from a class/role body. These
-/// are exposed by `import ClassName` as importable operator *subs*, so the
-/// parser must learn the new operator symbols (e.g. `as` becomes a known infix)
-/// when the `import` statement is parsed.
-pub(crate) fn extract_exported_operator_methods(
-    stmts: &[Stmt],
-) -> Vec<super::super::simple::InlineModuleExportSpec> {
-    let mut names = Vec::new();
-    for stmt in stmts {
-        match stmt {
-            Stmt::MethodDecl {
-                name, is_export, ..
-            } if *is_export => {
-                let resolved = name.resolve();
-                if is_operator_categorical_name(&resolved) {
-                    names.push((resolved.to_string(), None, None));
-                }
-            }
-            Stmt::SyntheticBlock(inner) => {
-                names.extend(extract_exported_operator_methods(inner));
-            }
-            _ => {}
-        }
-    }
-    names
-}
-
-/// True for a categorical operator declaration name (`prefix:<...>`,
-/// `infix:<...>`, `postfix:<...>`, `circumfix:<...>`, `postcircumfix:<...>`).
-fn is_operator_categorical_name(name: &str) -> bool {
-    const CATEGORIES: &[&str] = &[
-        "prefix:",
-        "postfix:",
-        "infix:",
-        "circumfix:",
-        "postcircumfix:",
-    ];
-    CATEGORIES.iter().any(|c| name.starts_with(c)) && name.ends_with('>')
-}
-
-/// Recursively collect exported sub names (descending into nested blocks),
-/// returning the first symbol that is exported more than once. In Raku two
-/// `is export` declarations of the same symbol within one package raise
-/// X::Export::NameClash at compile time.
-pub(crate) fn find_export_name_clash(stmts: &[Stmt]) -> Option<String> {
-    let mut seen = std::collections::HashSet::new();
-    fn walk(stmts: &[Stmt], seen: &mut std::collections::HashSet<String>) -> Option<String> {
-        for stmt in stmts {
-            match stmt {
-                // `multi` candidates legitimately share a name, so only a
-                // non-multi (`only`) exported sub can clash.
-                Stmt::SubDecl {
-                    name,
-                    is_export,
-                    multi,
-                    ..
-                } if *is_export && !*multi => {
-                    if !seen.insert(name.to_string()) {
-                        return Some(name.to_string());
-                    }
-                }
-                Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
-                    if let Some(clash) = walk(inner, seen) {
-                        return Some(clash);
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-    walk(stmts, &mut seen)
-}
-
 /// Build an X::Export::NameClash parse error for a symbol exported twice.
 pub(crate) fn export_name_clash_error(name: &str) -> PError {
     let symbol = format!("&{}", name);
@@ -695,6 +581,11 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
         rest
     };
     let (rest, name) = parse_sub_name(rest)?;
+    if !is_regex_proto && !is_method {
+        // A lone `proto sub infix:<op>` (no `multi` candidates in this
+        // file) still declares the operator for the rest of the scope.
+        super::super::simple::register_user_sub(&name);
+    }
     let (rest, _) = ws(rest)?;
     let (rest, (param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
@@ -710,6 +601,14 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     let (rest, _) = ws(rest)?;
     // Parse traits (is export, etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    // A `proto sub infix:<precedes>(...) {*}` declares the operator for the
+    // rest of the scope, exactly as an `only`/`multi` sub would: `$a precedes
+    // $b` must parse even before (or without) any candidate (#10516).
+    if !is_method && !is_regex_proto {
+        crate::parser::stmt::simple::register_user_sub(&name);
+        crate::parser::stmt::simple::register_user_callable_term_symbol(&name);
+        crate::parser::stmt::sub::register_parse_affecting_traits(&name, &traits);
+    }
     let (rest, _) = ws(rest)?;
     // May have body or just semicolon
     let mut body = Vec::new();
@@ -742,6 +641,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                     .iter()
                     .map(|(n, _)| n.clone())
                     .collect(),
+                trait_args: traits.custom_traits.clone(),
                 is_method,
                 is_our,
             },
@@ -771,6 +671,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 .iter()
                 .map(|(n, _)| n.clone())
                 .collect(),
+            trait_args: traits.custom_traits.clone(),
             is_method,
             is_our,
         },

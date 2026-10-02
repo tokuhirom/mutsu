@@ -28,11 +28,11 @@
 //!   block nested in a routine is fine, and inside a pointy at unit mainline is
 //!   not (measured against `raku`).
 //!
-//! Like `parser::whenever_scope`, the walker is deliberately conservative: an
-//! unhandled container is simply not recursed into, which can only *miss* an
-//! offending use (leaving today's behaviour), never invent one.
+//! The walk is the typed AST visitor (ADR-0137), so every child — parameter
+//! defaults, regex code blocks, hash values, ... — is searched.
 
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::runtime::Interpreter;
 use crate::value::RuntimeError;
 
@@ -53,192 +53,77 @@ impl Interpreter {
 
 /// The name of the first routine-scoped magical used outside a routine, or
 /// `None` when every use is properly enclosed.
+// Cost: O(n), n = size of the AST.
 pub(crate) fn find_routine_magical_outside_routine(stmts: &[Stmt]) -> Option<String> {
-    let mut found: Option<String> = None;
-    walk_stmts(stmts, false, &mut found);
-    found
+    let mut scan = RoutineMagicals::default();
+    walk_stmts(&mut scan, stmts);
+    scan.found
 }
 
-fn walk_stmts(stmts: &[Stmt], in_routine: bool, found: &mut Option<String>) {
-    for s in stmts {
-        walk_stmt(s, in_routine, found);
-    }
+#[derive(Default)]
+struct RoutineMagicals {
+    /// Whether a routine lexically encloses the current node.
+    in_routine: bool,
+    found: Option<String>,
 }
 
-fn walk_stmt(stmt: &Stmt, in_routine: bool, found: &mut Option<String>) {
-    if found.is_some() {
-        return;
-    }
-    match stmt {
-        // Routine boundaries: everything below them has an enclosing routine.
-        Stmt::SubDecl { body, .. }
-        | Stmt::MethodDecl { body, .. }
-        | Stmt::TokenDecl { body, .. }
-        | Stmt::RuleDecl { body, .. }
-        | Stmt::ProtoDecl { body, .. } => walk_stmts(body, true, found),
-
-        // Package-like bodies are not routines: `class C { &?ROUTINE }` is as
-        // undeclared as a mainline use, while `class C { method m { … } }` is
-        // covered by the MethodDecl arm above.
-        Stmt::ClassDecl { body, .. }
-        | Stmt::RoleDecl { body, .. }
-        | Stmt::Package { body, .. }
-        | Stmt::Block(body)
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body)
-        | Stmt::Given { body, .. }
-        | Stmt::When { body, .. }
-        | Stmt::While { body, .. }
-        | Stmt::React { body, .. } => walk_stmts(body, in_routine, found),
-        Stmt::Whenever { supply, body, .. } => {
-            walk_expr(supply, in_routine, found);
-            walk_stmts(body, in_routine, found);
-        }
-        Stmt::Phaser { body, .. } => walk_stmts(body, in_routine, found),
-        Stmt::For { body, iterable, .. } => {
-            walk_expr(iterable, in_routine, found);
-            walk_stmts(body, in_routine, found);
-        }
-        Stmt::Loop { body, init, .. } => {
-            if let Some(init) = init {
-                walk_stmt(init, in_routine, found);
-            }
-            walk_stmts(body, in_routine, found);
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            walk_expr(cond, in_routine, found);
-            walk_stmts(then_branch, in_routine, found);
-            walk_stmts(else_branch, in_routine, found);
-        }
-        Stmt::Label { stmt, .. } => walk_stmt(stmt, in_routine, found),
-
-        Stmt::Expr(e)
-        | Stmt::VarDecl { expr: e, .. }
-        | Stmt::Assign { expr: e, .. }
-        | Stmt::Return(e)
-        | Stmt::Die(e)
-        | Stmt::Fail(e)
-        | Stmt::Take(e, _) => walk_expr(e, in_routine, found),
-        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-            for e in es {
-                walk_expr(e, in_routine, found);
-            }
-        }
-
-        _ => {}
+impl RoutineMagicals {
+    fn in_routine(&mut self, f: impl FnOnce(&mut Self)) {
+        let saved = std::mem::replace(&mut self.in_routine, true);
+        f(self);
+        self.in_routine = saved;
     }
 }
 
-fn walk_expr(expr: &Expr, in_routine: bool, found: &mut Option<String>) {
-    if found.is_some() {
-        return;
+impl Visit for RoutineMagicals {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.found.is_some() {
+            return;
+        }
+        match stmt {
+            // Routine boundaries: everything below them has an enclosing
+            // routine. Package-like bodies are not routines: `class C {
+            // &?ROUTINE }` is as undeclared as a mainline use.
+            Stmt::SubDecl { .. }
+            | Stmt::MethodDecl { .. }
+            | Stmt::TokenDecl { .. }
+            | Stmt::RuleDecl { .. }
+            | Stmt::ProtoDecl { .. } => self.in_routine(|v| walk_stmt(v, stmt)),
+            _ => walk_stmt(self, stmt),
+        }
     }
-    match expr {
-        // The use itself. `&?BLOCK` is deliberately NOT checked: every block —
-        // the unit mainline included — is a `Block`, so it is always declared.
-        Expr::CodeVar(name) if name == "?ROUTINE" => {
-            if !in_routine {
-                *found = Some(name.clone());
-            }
-        }
 
-        // `AnonSub` carries `is_block`, which separates a bare block `{ }` (a
-        // `Block`: NOT a routine boundary) from an anonymous `sub { }` (a
-        // `Routine`: it does supply `&?ROUTINE`).
-        Expr::AnonSub {
-            body,
-            is_block: true,
-            ..
-        } => walk_stmts(body, in_routine, found),
-        Expr::AnonSub { body, .. } => walk_stmts(body, true, found),
-
-        // `AnonSubParams` and `Lambda` are ambiguous in the AST: a pointy block
-        // `-> { }` / `-> $x { }` (a `Block`, which does NOT supply `&?ROUTINE` —
-        // measured: `EVAL 'my $z = -> { &?ROUTINE }; $z()'` is
-        // X::Undeclared::Symbols in raku) and a parameterised anonymous
-        // `sub ($x) { }` (which does) both lower to them, with nothing left to
-        // tell them apart. Treat them as routine boundaries: per this module's
-        // conservatism rule that can only *miss* an offending pointy-block use,
-        // where the alternative would wrongly reject a legal `sub ($x) { … }`.
-        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => {
-            walk_stmts(body, true, found)
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.found.is_some() {
+            return;
         }
-        Expr::Block(body) | Expr::Gather(body) => walk_stmts(body, in_routine, found),
-        Expr::DoBlock { body, .. } => walk_stmts(body, in_routine, found),
-        Expr::DoStmt(s) => walk_stmt(s, in_routine, found),
-        Expr::Try { body, catch } => {
-            walk_stmts(body, in_routine, found);
-            if let Some(catch) = catch {
-                walk_stmts(catch, in_routine, found);
+        match expr {
+            // The use itself. `&?BLOCK` is deliberately NOT checked: every
+            // block — the unit mainline included — is a `Block`, so it is
+            // always declared.
+            Expr::CodeVar(name) if name == "?ROUTINE" => {
+                if !self.in_routine {
+                    self.found = Some(name.clone());
+                }
             }
-        }
-
-        Expr::Grouped(inner)
-        | Expr::WhateverCurry(inner)
-        | Expr::Itemize(inner)
-        | Expr::Eager(inner)
-        | Expr::ZenSlice(inner)
-        | Expr::PositionalPair(inner)
-        | Expr::DeitemizeForBind(inner) => walk_expr(inner, in_routine, found),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
-            walk_expr(expr, in_routine, found)
-        }
-        Expr::Binary { left, right, .. } => {
-            walk_expr(left, in_routine, found);
-            walk_expr(right, in_routine, found);
-        }
-        Expr::AssignExpr { expr, .. } => walk_expr(expr, in_routine, found),
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            walk_expr(cond, in_routine, found);
-            walk_expr(then_expr, in_routine, found);
-            walk_expr(else_expr, in_routine, found);
-        }
-        Expr::ChainedCompare { operands, .. } => {
-            for o in operands {
-                walk_expr(o, in_routine, found);
+            // `AnonSub` carries `is_block`, which separates a bare block `{ }`
+            // (a `Block`: NOT a routine boundary) from an anonymous `sub { }`
+            // (a `Routine`: it does supply `&?ROUTINE`).
+            Expr::AnonSub {
+                is_block: false, ..
+            } => self.in_routine(|v| walk_expr(v, expr)),
+            // `AnonSubParams` and `Lambda` are ambiguous in the AST: a pointy
+            // block `-> { }` (a `Block`, which does NOT supply `&?ROUTINE` --
+            // measured: `EVAL 'my $z = -> { &?ROUTINE }; $z()'` is
+            // X::Undeclared::Symbols in raku) and a parameterised anonymous
+            // `sub ($x) { }` (which does) both lower to them, with nothing left
+            // to tell them apart. Treat them as routine boundaries: that can
+            // only *miss* an offending pointy-block use, where the alternative
+            // would wrongly reject a legal `sub ($x) { … }`.
+            Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
+                self.in_routine(|v| walk_expr(v, expr))
             }
+            _ => walk_expr(self, expr),
         }
-        Expr::InfixFunc { left, right, .. } => {
-            walk_expr(left, in_routine, found);
-            for r in right {
-                walk_expr(r, in_routine, found);
-            }
-        }
-        Expr::ArrayLiteral(items)
-        | Expr::BracketArray(items, _)
-        | Expr::CaptureLiteral(items)
-        | Expr::StringInterpolation(items) => {
-            for i in items {
-                walk_expr(i, in_routine, found);
-            }
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            for a in args {
-                walk_expr(a, in_routine, found);
-            }
-        }
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            walk_expr(target, in_routine, found);
-            for a in args {
-                walk_expr(a, in_routine, found);
-            }
-        }
-        Expr::Index { target, index, .. } => {
-            walk_expr(target, in_routine, found);
-            walk_expr(index, in_routine, found);
-        }
-
-        _ => {}
     }
 }

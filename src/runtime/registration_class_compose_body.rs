@@ -141,7 +141,7 @@ impl Interpreter {
                 class_lang_rev: "c",
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
-                is_hoisted_shell: false,
+                is_hoisted_shell: crate::runtime::HoistedShell::No,
             };
             self.compose_role_into_class(&mut cx, &role_name, base_role_name, false, resolved)?;
             cx.out
@@ -265,10 +265,22 @@ impl Interpreter {
                     .collect()
             })
             .unwrap_or_default();
+        // A value parameter that shadows a binding the composing scope already
+        // holds (`role U[\units]` composed from a routine with its own
+        // `$units`) is put back once the body has run: composition can happen
+        // inside a routine's frame, whose return merge would otherwise write
+        // the role's argument over the caller's same-named variable. The
+        // composed methods do not need the live binding — they read the
+        // parameter through `class_role_param_bindings` and the persisted
+        // body statics below.
+        let mut shadowed_params: Vec<(String, Value)> = Vec::new();
         for (param_name, param_value) in role_param_values {
             if type_capture_names.contains(param_name) {
                 self.bind_type_capture(param_name, param_value);
             } else {
+                if let Some(prior) = self.env.get(param_name) {
+                    shadowed_params.push((param_name.clone(), prior.clone()));
+                }
                 self.env.insert(param_name.clone(), param_value.clone());
             }
         }
@@ -339,6 +351,9 @@ impl Interpreter {
             // `<item>`, so two roles declaring the same token name
             // silently alias (`grammar GA does A` seeing B's `item`).
             let is_regex_decl = op.kind == crate::opcode::DeferredBodyOpKind::TokenRule;
+            // A `proto token name {*}` is likewise keyed under the composing
+            // grammar (its `:sym<>` candidates were registered there).
+            let is_proto_token_decl = matches!(op.raw, Stmt::ProtoToken { .. });
             // A `use`/`need` statement imports into "the current package"
             // (`import_module`'s `target_pkg`), which must be the ROLE's
             // own package -- not whoever is composing it -- or the import
@@ -370,7 +385,7 @@ impl Interpreter {
                 if is_use_decl {
                     self.import_target_package = Some(base_role_name.to_string());
                 }
-            } else if is_regex_decl {
+            } else if is_regex_decl || is_proto_token_decl {
                 self.set_current_package(cx.name.to_string());
             } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
                 self.set_current_package(package.to_string());
@@ -405,7 +420,12 @@ impl Interpreter {
                 run_one(self)
             };
             self.nested_capture_owners.pop();
-            if is_type_decl || is_regex_decl || is_use_decl || is_lexical_sub_decl {
+            if is_type_decl
+                || is_regex_decl
+                || is_proto_token_decl
+                || is_use_decl
+                || is_lexical_sub_decl
+            {
                 self.set_current_package(saved_body_pkg.clone());
             }
             if is_use_decl {
@@ -519,6 +539,9 @@ impl Interpreter {
         for param_name in role_param_values.keys() {
             self.env.remove(&Self::type_capture_marker_key(param_name));
             // Don't remove the param name itself - methods may need it
+        }
+        for (param_name, prior) in shadowed_params {
+            self.env.insert(param_name, prior);
         }
         Ok(())
     }

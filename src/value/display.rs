@@ -1164,7 +1164,6 @@ impl Value {
                 let overlap = &a.overlap;
                 let repeat = &a.repeat;
                 let nth = &a.nth;
-                let perl5 = &a.perl5;
                 let ignore_case = &a.ignore_case;
                 let sigspace = &a.sigspace;
                 let samecase = &a.samecase;
@@ -1209,9 +1208,6 @@ impl Value {
                     }
                     if let Some(raw) = nth {
                         prefix.push_str(&format!(":nth({raw})"));
-                    }
-                    if *perl5 {
-                        prefix.push_str(":P5");
                     }
                     if *samecase {
                         prefix.push_str(":ii");
@@ -1421,7 +1417,10 @@ impl Value {
 
         for ch in raw.chars() {
             match ch {
-                '.' | '-' | '+' | '/' => {
+                // Rakudo splits a version string into `*`, digit runs and
+                // alphabetic runs; any other character (`.`, `-`, `!`, ...) is
+                // a separator, so `Version.new("!2.0")` is `v2.0`.
+                c if c != '_' && c != '*' && !c.is_ascii_digit() && !c.is_alphabetic() => {
                     if !current.is_empty() {
                         flush(&mut parts, &mut spellings, &mut current, is_digit_run);
                     }

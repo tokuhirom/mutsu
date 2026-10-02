@@ -321,14 +321,8 @@ pub(crate) fn build_compound_assign_expr(
             modifier: _,
             quoted: _,
         } => {
-            let target_var_name = match target.as_ref() {
-                Expr::Var(name) => Some(name.clone()),
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                Expr::BareWord(name) => Some(name.clone()),
-                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
-                _ => None,
-            };
+            let target_var_name =
+                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: Box::new((*target).clone()),
                 name,
@@ -695,12 +689,7 @@ pub(crate) fn build_custom_compound_assign_expr(
 /// or `None` for an LHS shape `Z=` does not element-wise-assign (only plain
 /// variables are supported; an `Index` LHS keeps the value-producing path).
 fn zip_assign_target_name(lhs: &Expr) -> Option<String> {
-    match lhs {
-        Expr::Var(name) => Some(name.clone()),
-        Expr::ArrayVar(name) => Some(format!("@{name}")),
-        Expr::HashVar(name) => Some(format!("%{name}")),
-        _ => None,
-    }
+    lhs.container_var_key()
 }
 
 pub(crate) fn build_meta_assign_expr(

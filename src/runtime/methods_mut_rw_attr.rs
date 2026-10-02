@@ -111,7 +111,7 @@ impl Interpreter {
             let value = Self::wrap_native_int_by_constraint(&type_constraint, value)?;
             return self.check_attr_store_where(class_name, attr, value);
         }
-        Err(RuntimeError::typecheck_assignment(
+        Err(self.typecheck_assignment_failure(
             &type_constraint,
             &value,
             Some(&format!("$!{}", attr)),
@@ -135,11 +135,7 @@ impl Interpreter {
         if self.check_attribute_where_constraint(&pred, &value, scope) {
             return Ok(value);
         }
-        Err(crate::runtime::utils::type_check_assignment_typed_error(
-            &format!("$!{}", attr),
-            "<anon>",
-            &value,
-        ))
+        Err(self.type_check_assignment_failure(&format!("$!{}", attr), "<anon>", &value))
     }
 
     /// Itemize the value a `$`-sigil attribute store is about to commit.

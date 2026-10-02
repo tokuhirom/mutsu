@@ -11,7 +11,7 @@
 use super::super::*;
 use super::regex_helpers::{
     alternation_list_flags, atom_contains_alternation, capture_group_list_flags,
-    count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
+    count_capture_groups, is_simple_atom,
 };
 use super::regex_trail::CapStore;
 use super::regex_zero_width_iter::zero_width_iter_counts;
@@ -247,6 +247,10 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        if let Some(found) = self.rx_try_all_ends(pattern, chars, start, pkg) {
+            return found;
+        }
         self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
     }
 
@@ -264,7 +268,31 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, true)
+        // The compiled engine (ADR-0135) answers when it covers the pattern.
+        if let Some(found) = self.rx_try_ends_until_full(pattern, chars, start, pkg) {
+            return found;
+        }
+        // The start rule is itself a rule invocation: a grammar method it calls
+        // writes to its cursor, which is the parse's own Match (#9803).
+        self.enter_rule_cursor();
+        let mut ends = self.regex_walk_ends_for_diff(pattern, chars, start, pkg, true);
+        let cursor = self.leave_rule_cursor();
+        Self::file_rule_cursor(cursor, &mut ends);
+        ends
+    }
+
+    /// The tree walk's ends (up to the first full match with `stop_at_full`)
+    /// — the answer the compiled engine is held to under `MUTSU_RX_DIFF`
+    /// (ADR-0135 D6), and the path every pattern it declines takes.
+    pub(super) fn regex_walk_ends_for_diff(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+        stop_at_full: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, stop_at_full)
     }
 
     /// Backtracking match returning the complete-match end positions (with
@@ -397,6 +425,11 @@ impl Interpreter {
         // Backreference read-through to the enclosing pattern level (see
         // `OuterBackrefCaps`). Never published outward — cleared below.
         base.set_outer_backref(super::regex_helpers::take_inline_outer_caps_seed());
+        // A same-scope sub-pattern belongs to the regex that contains it, so the
+        // `$/` a code block inside it sees starts where that regex's match did.
+        if let Some(outer) = base.outer_backref() {
+            base.match_from = outer.match_from;
+        }
         let mut store = CapStore::new(base);
         let ctx = WalkCtx {
             pattern,
@@ -527,7 +560,7 @@ impl Interpreter {
         // for `<x>`). An empty rule name marks that — the same name the walk
         // already gives a positional `( )` group — while the walk still
         // descends into the node's own captures.
-        let no_rule = || Some(String::new());
+        let no_rule = || Some(Symbol::intern(""));
         let mut sub = if let Some(mut gs) = group_subcap.take() {
             // Keep the group's nested captures, but pin the span to the
             // aliased group's extent.
@@ -574,7 +607,7 @@ impl Interpreter {
         if let RegexAtom::Named(atom_name) = &token.atom {
             let spec = atom_name.spec();
             if spec.silent && !spec.lookup_name.is_empty() && sub.action_name.is_none() {
-                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_name.clone());
+                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_sym);
             }
         }
         // A sigil-prefixed alias (`$<alias> = <rule>`) shares the subrule's
@@ -599,7 +632,7 @@ impl Interpreter {
                 && std::sync::Arc::ptr_eq(original, &sub)
             {
                 let node = std::sync::Arc::make_mut(original);
-                node.action_name = Some(spec.lookup_name.clone());
+                node.action_name = Some(spec.lookup_sym);
                 sub = std::sync::Arc::clone(original);
             }
         }
@@ -765,9 +798,10 @@ impl Interpreter {
                                store: &mut CapStore,
                                next: usize,
                                delta: RegexCaptures| {
+                // The token's own capture name was applied per item
+                // (`with_iteration_capture`); a whole-span alias is a group.
                 let m = store.mark();
                 store.merge_delta(delta);
-                Self::store_apply_named_capture(store, token, pos, next, pos_base);
                 let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 stop
@@ -858,8 +892,11 @@ impl Interpreter {
                 let named_zero_capture =
                     !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
                         && !token.subrule_call_capture;
-                if token.frugal && !token.ratchet {
-                    // Frugal: prefer zero matches — try zero first.
+                if token.frugal {
+                    // Frugal: prefer zero matches — try zero first. Ratchet
+                    // does not change that (raku: `"ab" ~~ /:r a?? ab/`
+                    // matches); it only commits the atom to its first
+                    // candidate below.
                     if self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -909,7 +946,7 @@ impl Interpreter {
                 }
                 // Greedy: the zero candidate is tried last. A ratcheted `?`
                 // takes it only when the atom did not match at all.
-                if (!token.ratchet && !token.frugal) || (token.ratchet && !any_candidate) {
+                if !token.frugal && (!token.ratchet || !any_candidate) {
                     return self.walk_zero_or_one_zero_arm(
                         ctx,
                         idx,
@@ -981,7 +1018,7 @@ impl Interpreter {
                         (*min, *max)
                     }
                     RegexQuant::RepeatCode(code) => {
-                        match self.eval_regex_repeat_code(code, store.caps()) {
+                        match self.regex_repeat_count(code, pos, store.caps()) {
                             Some((min, max)) => (min, max),
                             None => return false, // code eval failed, no match
                         }
@@ -1098,8 +1135,9 @@ impl Interpreter {
         if zero_or_one {
             Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
         }
-        // Frugal `??`: the zero-width arm is preferred, so it goes first.
-        let zero_first = zero_or_one && token.frugal && !token.ratchet;
+        // Frugal `??`: the zero-width arm is preferred, so it goes first, under
+        // ratchet too (raku: `"ab" ~~ /:r [a||x]?? ab/` matches).
+        let zero_first = zero_or_one && token.frugal;
         if zero_first
             && self.walk_seqalt_zero(
                 ctx,
@@ -1222,92 +1260,18 @@ impl Interpreter {
             }
             return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
         }
-        let named_atom_wrapped = matches!(&token.atom, RegexAtom::Named(name)
-            if self.token_method_has_wrap_chain(ctx.pkg.as_str(), &name.spec().lookup_name));
-        if is_silent_named_atom(&token.atom)
-            && !named_atom_wrapped
-            && let Some((resolved, resolved_pkg)) =
-                self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
-        {
-            // Ratcheted silent Named token (e.g. <.ws>): resolve the pattern
-            // once and match directly; silent atoms produce no captures.
-            let mut current = pos;
-            let mut count = 0usize;
-            while current < ctx.chars.len() {
-                if let Some(end) =
-                    self.regex_match_end_from_in_pkg(&resolved, ctx.chars, current, resolved_pkg)
-                {
-                    if end == current && !zero_width_iter_counts(count, min, None) {
-                        break;
-                    }
-                    current = end;
-                    count += 1;
-                } else {
-                    break;
-                }
-            }
-            if count < min {
-                return Some(false);
-            }
-            return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
-        }
-        if is_named_atom_no_args(&token.atom)
-            && !named_atom_wrapped
-            && let Some((resolved, resolved_pkg)) =
-                self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
-        {
-            // Ratcheted non-silent Named token (e.g. <huge>*): resolve the
-            // pattern once and loop directly, accumulating named captures on
-            // the store without re-parsing per iteration.
-            let capture_name = if let RegexAtom::Named(name) = &token.atom {
-                name.trim().to_string()
-            } else {
-                String::new()
-            };
-            let m = store.mark();
-            if !capture_name.is_empty() {
-                store.insert_named_quantified(capture_name.clone());
-            }
-            let mut current = pos;
-            let mut count = 0usize;
-            while current <= ctx.chars.len() {
-                let Some((end, inner_caps)) = self.regex_match_end_from_caps_in_pkg(
-                    &resolved,
-                    ctx.chars,
-                    current,
-                    resolved_pkg,
-                ) else {
-                    break;
-                };
-                if end == current && !zero_width_iter_counts(count, min, None) {
-                    break;
-                }
-                if !capture_name.is_empty() {
-                    let mut subcap = inner_caps;
-                    subcap.from = current;
-                    subcap.to = end;
-                    let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                    // This subrule iteration has REDUCED — log it for the
-                    // failed-parse action replay, exactly as the general
-                    // `build_named_candidates_from_inner` path does.
-                    super::regex_helpers::record_reduced_subrule(&capture_name, &subcap);
-                    store.push_named_node(&capture_name, subcap);
-                }
-                current = end;
-                count += 1;
-                if current >= ctx.chars.len() {
-                    break;
-                }
-            }
-            if count < min {
+        // The two Named scans (silent / non-silent) are one leaf shared with
+        // the compiled engine (`regex_named_run`).
+        match self.regex_named_ratchet_run(&token.atom, ctx.chars, pos, min, ctx.pkg)? {
+            None => Some(false),
+            Some((current, delta)) => {
+                let m = store.mark();
+                store.merge_delta(delta);
+                let stop = self.walk_tokens(ctx, idx + 1, current, store, matches);
                 store.rewind(m);
-                return Some(false);
+                Some(stop)
             }
-            let stop = self.walk_tokens(ctx, idx + 1, current, store, matches);
-            store.rewind(m);
-            return Some(stop);
         }
-        None
     }
 
     /// General chain quantifier (`*`, `+`, `**min..max`) over a single-match
@@ -1337,14 +1301,22 @@ impl Interpreter {
         let prior_quantified = suppress_padding.then(|| {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.replace(true))
         });
+        // Code in the atom sees the iterations so far folded (`regex_match_plain_view`).
+        let view = super::regex_match_plain_view::arm_plain_iter_view(
+            &token.atom,
+            store.caps(),
+            pos_base,
+            count_capture_groups(&token.atom),
+        );
         let matched = self.regex_match_atom_with_capture_in_pkg(
             &token.atom,
             ctx.chars,
             current,
-            store.caps(),
+            view.as_ref().map_or(store.caps(), |(view, _)| view),
             ctx.pkg,
             ctx.pattern.ignore_case,
         );
+        drop(view);
         if let Some(prior) = prior_quantified {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));
         }
@@ -1661,16 +1633,41 @@ impl Interpreter {
                 store.rewind(mark);
                 stop
             };
-            self.for_each_atom_candidate(
+            // Code in the atom sees the iterations so far folded
+            // (`regex_match_plain_view`): the atom matches against a store
+            // holding that view, its candidates continue on the real one.
+            match super::regex_match_plain_view::arm_plain_iter_view(
                 &token.atom,
-                ctx.chars,
-                current,
-                store,
-                ctx.pkg,
-                ctx.pattern.ignore_case,
-                false,
-                &mut next,
-            );
+                store.caps(),
+                pos_base,
+                stride,
+            ) {
+                Some((view, _scope)) => {
+                    let mut view_store = CapStore::new(view);
+                    self.for_each_atom_candidate(
+                        &token.atom,
+                        ctx.chars,
+                        current,
+                        &mut view_store,
+                        ctx.pkg,
+                        ctx.pattern.ignore_case,
+                        false,
+                        &mut |interp, _view_store, end, delta| next(interp, store, end, delta),
+                    );
+                }
+                None => {
+                    self.for_each_atom_candidate(
+                        &token.atom,
+                        ctx.chars,
+                        current,
+                        store,
+                        ctx.pkg,
+                        ctx.pattern.ignore_case,
+                        false,
+                        &mut next,
+                    );
+                }
+            }
         }
         if let Some(prior) = prior_quantified {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));

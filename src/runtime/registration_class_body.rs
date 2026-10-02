@@ -55,7 +55,7 @@ pub(super) struct ClassBodyCx<'a> {
     /// `ClassDeclModifiers::compiled_fns`.
     pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
     /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
-    pub(super) is_hoisted_shell: bool,
+    pub(super) is_hoisted_shell: super::registration_class::HoistedShell,
     /// Deferred `compose` hooks queued by `apply_attribute_traits` (#8845) —
     /// see `Interpreter::run_pending_attr_composes`.
     pub(super) pending_attr_composes: Vec<PendingAttrCompose>,
@@ -115,7 +115,7 @@ impl Interpreter {
         declared_static_names: &[Symbol],
         compiled_fns: &crate::opcode::CompiledFns,
         body_plan: &[crate::opcode::ClassBodyOp],
-        is_hoisted_shell: bool,
+        is_hoisted_shell: super::registration_class::HoistedShell,
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -544,6 +544,7 @@ impl Interpreter {
             param_defs,
             return_type,
             body: proto_body,
+            trait_args,
             is_method: true,
             ..
         } = stmt
@@ -581,9 +582,19 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
+        let proto_params = fdef.params.clone();
+        let proto_param_defs = fdef.param_defs.clone();
         self.registry_mut()
             .set_proto_method(cx.name, &method_name, fdef);
-        Ok(())
+        self.apply_method_is_traits(
+            cx.name,
+            &method_name,
+            &proto_params,
+            &proto_param_defs,
+            proto_body,
+            false,
+            trait_args,
+        )
     }
 
     /// Any other class-body statement: validate anonymous-method attribute

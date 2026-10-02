@@ -137,7 +137,14 @@ the record, `checkout-dist.py`, load probe, rakudo first and mutsu second per fi
 `tmp/`, fix what is bounded and file a `tokuhirom/mutsu` issue for what is not, pin every fix with a
 `t/` test, re-measure the record, and open the PR with auto-merge.
 
-Two things that belong to this wrapper rather than that one:
+Three things that belong to this wrapper rather than that one:
+
+- **Do NOT re-measure and do NOT commit `ecosystem/dists/**` records** (user decision,
+  2026-10-01). Skip `ecosystem-dist-fix` step 7 entirely: no `--only` re-measure, no record in the
+  diff. Parallel roulette PRs each rewrote their own record from a different `main`, and the
+  records conflicted constantly; the nightly sweep refreshes the ledger instead. Verify the fix with
+  the distribution's own test files (step 3) and the `t/` pin, and report "file X now passes under
+  mutsu" in the PR body in place of a record transition.
 
 - **Mention the lock in the PR body** ("locked on #10045"), so a reviewer can see the run was
   serialized and can find the release.
@@ -188,8 +195,9 @@ graded `accepted` and drops out of the draw, while the rest of the distribution 
 
 ## Done means
 
-One distribution: locked, worked to `ecosystem-dist-fix`'s finish line (record `green`, or every
-remaining non-`parity` baseline file explained by an open `tokuhirom/mutsu` issue named in the PR),
+One distribution: locked, worked to `ecosystem-dist-fix`'s finish line (every baseline file passes
+by direct run, or each one still failing is explained by an open `tokuhirom/mutsu` issue named in
+the PR; the ledger record is *not* touched, see step 4),
 and unlocked with a one-line outcome.
 
 Then, if you were asked for several: draw again from step 1 with a **fresh** shortlist — the board

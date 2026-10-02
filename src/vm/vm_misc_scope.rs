@@ -114,6 +114,27 @@ impl Interpreter {
         cur == owner || cur.starts_with(&format!("{owner}::"))
     }
 
+    /// What an initializer of `Nil` leaves in the container of `our $x = Nil`:
+    /// the container's default, as for `my $x = Nil` -- the declared type's type
+    /// object (`our Int $x = Nil` holds `Int`, `our Mu $x = Nil` holds `Mu`),
+    /// else `Any`. Assigning `Nil` resets a Scalar rather than storing a `Nil`
+    /// in it, and the BEGIN prologue's static half of `our $x = 9` is exactly
+    /// such a store (`phasers::split_var_decl` gives it a `Nil` initializer).
+    ///
+    /// A definite constraint (`our Int:D $x = Nil`) is left alone: that
+    /// assignment is a type error, not a reset, and this op has no way to
+    /// report one.
+    // Cost: O(1) amortized (one constraint-name probe).
+    fn our_scalar_nil_default(&mut self, name: &str) -> Value {
+        match loan_env!(self, var_type_constraint(name)) {
+            Some(constraint) if self.is_definite_constraint(&constraint) => Value::NIL,
+            Some(constraint) if constraint != "Nil" => {
+                self.typed_scalar_nil_seed_value(name, &constraint)
+            }
+            _ => Value::package(crate::symbol::wk::any()),
+        }
+    }
+
     /// `our $x = <expr>` for a plain untyped scalar (see `OpCode::DeclareOurScalar`
     /// for the exact eligibility gate): install ONE shared `ContainerRef` cell
     /// under the lexical local slot AND every runtime-visible name this package
@@ -138,6 +159,11 @@ impl Interpreter {
         let idx = slot as usize;
         let raw = self.stack.pop().unwrap_or(Value::NIL);
         let local_name = code.locals[idx].clone();
+        let raw = if raw.is_nil() {
+            self.our_scalar_nil_default(&local_name)
+        } else {
+            raw
+        };
         let val = Self::itemize_scalar_store(&local_name, raw);
         let qualified = Self::const_str(code, qualified_idx).to_string();
         // A redeclaration of `our $x` (module re-eval'd, block re-entered,
@@ -157,6 +183,10 @@ impl Interpreter {
             }
             None => val.into_container_ref(),
         };
+        // The declared type (`our Int $x`, registered just before this op) is
+        // carried by the cell itself, so a write through the package-qualified
+        // name (`$Pkg::x = "a"`) is checked like one through `$x` (ADR-0042).
+        self.register_container_cell_constraint_for_name(&cell, &local_name);
         self.locals[idx] = cell.clone();
         self.env_mut().insert(local_name.clone(), cell.clone());
         self.env_mut().insert(qualified.clone(), cell.clone());

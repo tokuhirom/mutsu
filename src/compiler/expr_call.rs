@@ -918,7 +918,7 @@ impl Compiler {
                 is_positional: index_is_positional,
                 ..
             } = &args[0]
-            && let Some(var_name) = Self::postfix_index_name(index_target)
+            && let Some(var_name) = self.postfix_index_name(index_target)
         {
             let target_slot = self.local_map.get(&var_name).copied();
             let tmp_target_name = format!(
@@ -1246,12 +1246,7 @@ impl Compiler {
                     name: inner_name,
                     args: inner_args,
                 } if inner_name.resolve() == "temp" && inner_args.len() == 1 => {
-                    match &inner_args[0] {
-                        Expr::Var(n) => Some(n.clone()),
-                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                        Expr::HashVar(n) => Some(format!("%{}", n)),
-                        _ => None,
-                    }
+                    inner_args[0].container_var_key()
                 }
                 _ => None,
             };
@@ -1281,12 +1276,7 @@ impl Compiler {
                     return;
                 }
             }
-            let var_name = match &args[0] {
-                Expr::Var(n) => Some(n.clone()),
-                Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                Expr::HashVar(n) => Some(format!("%{}", n)),
-                _ => None,
-            };
+            let var_name = args[0].container_var_key();
             if matches!(&args[0], Expr::CodeVar(_)) {
                 // undefine &sub -- always dies (subs are immutable)
                 self.compile_expr(&args[0]);
@@ -1683,11 +1673,7 @@ impl Compiler {
                 index,
                 is_positional: _,
             } = &args[0]
-                && let Some(arr_name) = match target.as_ref() {
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
-                    _ => None,
-                }
+                && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 let call_name_idx = self
                     .code
@@ -1708,11 +1694,7 @@ impl Compiler {
             else if let Expr::MultiDimIndex {
                 target, dimensions, ..
             } = &args[0]
-                && let Some(arr_name) = match target.as_ref() {
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
-                    _ => None,
-                }
+                && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // Pass dimensions as a list: __mutsu_cas_array_multidim("@arr", [d1,d2,...], expected, new)
                 let call_name_idx = self
@@ -1886,11 +1868,7 @@ impl Compiler {
                 index,
                 is_positional: _,
             } = &args[0]
-                && let Some(arr_name) = match target.as_ref() {
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
-                    _ => None,
-                }
+                && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // cas(@arr[idx], &code) -> __mutsu_cas_array_elem_code("@arr", idx, code)
                 let call_name_idx = self
@@ -1909,11 +1887,7 @@ impl Compiler {
             } else if let Expr::MultiDimIndex {
                 target, dimensions, ..
             } = &args[0]
-                && let Some(arr_name) = match target.as_ref() {
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
-                    _ => None,
-                }
+                && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // cas(@arr[d1;d2], &code) ->
                 //   __mutsu_cas_array_multidim_code("@arr", [d1,d2,...], code)

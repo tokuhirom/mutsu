@@ -21,26 +21,6 @@ pub(crate) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
     Err(PError::obsolete("'foreach'", "'for'"))
 }
 
-/// Return true if `expr` is (or ends in) a bare brace block — used to detect a
-/// block gobbled by a comma list / list-op, e.g. the trailing `{ say 3 }` in
-/// `for 1, 2, 3, { say 3 }`. A brace block parses as `AnonSub`/`AnonSubParams`/
-/// `Block`; in a comma list it lands as the final element of an `ArrayLiteral`.
-///
-/// An *empty* or key-value-looking brace also parses as `Expr::Hash`, and an
-/// infix's right operand is another place the block gets eaten: `for 1.. { }`
-/// leaves `1 .. {}` with the loop's block as the range endpoint. rakudo answers
-/// all of these the same way — the "Expression needs parens to avoid gobbling
-/// block" sorrow — so they belong here, not in the plain `X::Syntax::Missing`
-/// branch (`for 1..2`, which really is just missing its block).
-fn expr_ends_with_block(expr: &Expr) -> bool {
-    match expr {
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_) | Expr::Hash(_) => true,
-        Expr::ArrayLiteral(items) => items.last().is_some_and(expr_ends_with_block),
-        Expr::Binary { right, .. } => expr_ends_with_block(right),
-        _ => false,
-    }
-}
-
 /// Given input starting at `(`, return true if its matching `)` group contains
 /// a top-level `;` (the C-style `for (init; test; incr)` obsolete form).
 fn paren_has_toplevel_semicolon(input: &str) -> bool {
@@ -205,21 +185,29 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     }
     // Try to detect `<->` (rw pointy block) before the expression parser
     // consumes the `<` as a comparison operator.
-    let (rest, iterable, rw_detected) = if let Some(rw_pos) = find_rw_pointy_block(rest) {
-        let expr_part = &rest[..rw_pos];
-        let (leftover, iterable) = parse_comma_or_expr(expr_part)?;
-        let (leftover, _) = ws(leftover)?;
-        if leftover.is_empty() {
-            (&rest[rw_pos..], iterable, true)
+    //
+    // `iterable_gobbled_block`: a block term was parsed inside the iterable —
+    // the block-term parsers record where the last one ended
+    // (`parser::stmt_ending_brace`), rakudo's `$*BORG<block>`.
+    let gobbled =
+        |from: &str, to: &str| crate::parser::stmt_ending_brace::block_term_within(from, to);
+    let (rest, iterable, rw_detected, iterable_gobbled_block) =
+        if let Some(rw_pos) = find_rw_pointy_block(rest) {
+            let expr_part = &rest[..rw_pos];
+            let (after_expr, iterable) = parse_comma_or_expr(expr_part)?;
+            let (leftover, _) = ws(after_expr)?;
+            if leftover.is_empty() {
+                let gobbled = gobbled(expr_part, after_expr);
+                (&rest[rw_pos..], iterable, true, gobbled)
+            } else {
+                // Expression didn't consume everything before `<->`, fall back
+                let (r, iterable) = parse_comma_or_expr(rest)?;
+                (r, iterable, false, gobbled(rest, r))
+            }
         } else {
-            // Expression didn't consume everything before `<->`, fall back
             let (r, iterable) = parse_comma_or_expr(rest)?;
-            (r, iterable, false)
-        }
-    } else {
-        let (r, iterable) = parse_comma_or_expr(rest)?;
-        (r, iterable, false)
-    };
+            (r, iterable, false, gobbled(rest, r))
+        };
     let (rest, _) = ws(rest)?;
     let (rest, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
         parse_for_params(rest)?;
@@ -237,11 +225,11 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
                 ("message", Value::str("Missing block".to_string())),
             ],
         );
-        // When the iterable expression itself ended with a brace block (e.g.
+        // When the iterable expression parsed a block term (e.g.
         // `for 1, 2, 3, { say 3 }`), the block was gobbled by the comma list, so
         // raku reports an additional X::Syntax::BlockGobbled sorrow alongside the
         // X::Syntax::Missing panic, bundled in an X::Comp::Group.
-        if expr_ends_with_block(&iterable) {
+        if iterable_gobbled_block {
             let sorrow = Value::make_exception(
                 "X::Syntax::BlockGobbled",
                 &[(

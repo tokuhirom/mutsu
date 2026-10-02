@@ -165,9 +165,18 @@ impl Interpreter {
                 crate::opcode::RoleBodyOp::Method => {
                     self.role_body_method_decl(cx)?;
                 }
-                crate::opcode::RoleBodyOp::Deferred { is_stub_marker, .. } => {
+                crate::opcode::RoleBodyOp::Deferred {
+                    is_stub_marker,
+                    raw,
+                } => {
                     if *is_stub_marker {
                         cx.role_def.is_stub_role = true;
+                    }
+                    if let Stmt::ProtoDecl {
+                        is_method: true, ..
+                    } = &**raw
+                    {
+                        self.role_body_deferred_proto_method(cx.name, raw)?;
                     }
                     // Every other statement (non-method/non-attribute/non-`does`,
                     // including `SetLine` source-line markers) is deferred to
@@ -241,7 +250,7 @@ impl Interpreter {
             // which for a role in a `use`d module is the importer's.
             language_version: language_version.to_string(),
         };
-        {
+        let replaced_first_candidate = {
             let mut registry = self.registry_mut();
             let cands = registry
                 .role_candidates
@@ -262,12 +271,19 @@ impl Interpreter {
                 Some(i) => cands[i] = candidate,
                 None => cands.push(candidate),
             }
-        }
-        if self
-            .registry()
-            .roles
-            .get(name)
-            .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
+            sig_match == Some(0)
+        };
+        // `roles[name]` holds the first candidate's definition. Re-registering
+        // that same candidate (the in-place declaration after a `__hoisted`
+        // shell, a routine re-entered) replaces it too, so the methods it
+        // carries close over the re-registration's lexicals, not the
+        // shell's (#10470).
+        if replaced_first_candidate
+            || self
+                .registry()
+                .roles
+                .get(name)
+                .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
         {
             // A role-composed `DESTROY` submethod is dispatched straight off
             // `RoleDef::methods` (6.e role-submethod DESTROY), never through

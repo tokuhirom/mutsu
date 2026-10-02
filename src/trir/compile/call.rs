@@ -134,6 +134,19 @@ impl TrirCompiler<'_> {
                     {
                         return Some(arg);
                     }
+                    // `f($free)` to a generic callee — a free variable,
+                    // handed over as itself so an `is rw` parameter can
+                    // bind the variable's own cell (#10372). A resolved
+                    // callee's `is rw` parameter needs a slot reference,
+                    // which a free variable is not, so that declines below.
+                    if want_kind.is_none()
+                        && let Expr::Var(n) = a
+                        && self.binding_of(n).is_none()
+                        && Self::is_plain_outer_name(n)
+                        && !matches!(n.as_str(), "_" | "/" | "¢")
+                    {
+                        return Some(TrArg::Outer(self.outer(n)));
+                    }
                 }
             }
             // `f(++$pos)` — Raku's `++` yields the container, so this binds

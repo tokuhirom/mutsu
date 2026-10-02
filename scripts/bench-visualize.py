@@ -307,7 +307,7 @@ __CHROME_NAV__
     <span class="ctl-label">Metric</span>
     <div class="seg" id="metric" role="group" aria-label="Metric">
       <button data-v="seconds" aria-pressed="true">mutsu seconds</button>
-      <button data-v="ratio" aria-pressed="false">ratio vs raku</button>
+      <button data-v="ratio" aria-pressed="false">ratio vs rakudo</button>
       <button data-v="ratiopp" aria-pressed="false" id="metricRakupp" hidden>ratio vs rakupp</button>
       <button data-v="instr" aria-pressed="false" id="metricInstr" hidden>instructions</button>
       <button data-v="allocs" aria-pressed="false" id="metricAllocs" hidden>allocations</button>
@@ -412,7 +412,7 @@ function chart(b) {
   if (isRatio() && 1 >= lo && 1 <= hi) {
     const y = sy(1);
     svg += `<line class="refline" x1="${PADL}" x2="${W - PADR}" y1="${y}" y2="${y}"/>`;
-    svg += `<text class="axis" x="${W - PADR}" y="${y - 3}" text-anchor="end">${metric === 'ratiopp' ? 'rakupp' : 'raku'}</text>`;
+    svg += `<text class="axis" x="${W - PADR}" y="${y - 3}" text-anchor="end">${metric === 'ratiopp' ? 'rakupp' : 'rakudo'}</text>`;
   }
   svg += `<text class="axis" x="${PADL}" y="${PADT - 2}">${fmt(hi)}${unit()}</text>`;
   svg += `<text class="axis" x="${PADL}" y="${H - 4}">${fmt(lo)}${unit()}</text>`;
@@ -661,7 +661,7 @@ document.getElementById('meta').textContent =
 document.getElementById('foot').innerHTML =
   `Each chart has an independent y-axis (small multiples), fitted to the data by default; ` +
   `<b>Y axis: from 0</b> anchors every axis at zero instead. Values are the median of 7 runs; ` +
-  `ratio is mutsu ÷ Rakudo on the same runner (below 1× = faster than raku). ` +
+  `<b>ratio vs rakudo</b> is mutsu ÷ Rakudo on the same runner (below 1× = faster than Rakudo). ` +
   (DATA.hasRakupp
     ? `<b>ratio vs rakupp</b> is mutsu ÷ <a href="https://github.com/ash/rakupp">Raku++</a>, ` +
       `an independent C++ implementation, measured the same way on the same runner. `

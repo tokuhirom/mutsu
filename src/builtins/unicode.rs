@@ -857,10 +857,7 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
         return None;
     }
     // Only allow Unicode Decimal_Number (Nd), not No/Nl.
-    static ND_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let nd_re = ND_RE.get_or_init(|| regex::Regex::new(r"^\p{Nd}$").expect("valid Nd regex"));
-    let mut tmp = [0u8; 4];
-    if !nd_re.is_match(c.encode_utf8(&mut tmp)) {
+    if super::unicode_gc::general_category(c) != super::unicode_gc::GeneralCategory::Nd {
         return None;
     }
     let cp = c as u32;
@@ -877,8 +874,7 @@ pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
         }
         let prev = run_start - 1;
         let is_nd = char::from_u32(prev).is_some_and(|ch| {
-            let mut b = [0u8; 4];
-            nd_re.is_match(ch.encode_utf8(&mut b))
+            super::unicode_gc::general_category(ch) == super::unicode_gc::GeneralCategory::Nd
         });
         if !is_nd {
             break;
@@ -918,8 +914,8 @@ fn is_control_char(cp: u32) -> bool {
 /// UCD ranges whose characters have *derived* names of the form
 /// `<prefix>-<codepoint in hex>` rather than an entry in `UnicodeData.txt`.
 ///
-/// Rakudo/MoarVM derive these algorithmically; `unicode_names2` indexes a name
-/// table instead, so it covers whichever of them its (older) UCD snapshot
+/// Rakudo/MoarVM derive these algorithmically; the `unicode_name` table
+/// enumerates names instead, so it covers whichever of them its (older) UCD snapshot
 /// happened to enumerate and misses the rest. Deriving them here makes
 /// `.uniname` independent of that snapshot: `TANGUT IDEOGRAPH-*` was absent
 /// entirely, and three CJK ranges stopped a handful of codepoints short of
@@ -927,7 +923,7 @@ fn is_control_char(cp: u32) -> bool {
 ///
 /// Only the families that actually diverged are listed. Hangul syllables,
 /// Nushu, Khitan Small Script, Egyptian Hieroglyph, CJK Compatibility Ideograph
-/// and Tangut Component already agree with Rakudo through `unicode_names2`, so
+/// and Tangut Component already agree with Rakudo through the name table, so
 /// they keep resolving there — duplicating them here would add a second, easily
 /// stale source of truth for no gain.
 const DERIVED_NAME_RANGES: &[(u32, u32, &str)] = &[
@@ -957,7 +953,7 @@ pub(crate) fn derived_char_name(cp: u32) -> Option<String> {
 /// these three are unranged, while every other derived family
 /// (`TANGUT COMPONENT`, `NUSHU CHARACTER`, `KHITAN SMALL SCRIPT CHARACTER`,
 /// `EGYPTIAN HIEROGLYPH`, …) *is* range-checked and resolves through the
-/// `unicode_names2` table instead.
+/// `unicode_name` table instead.
 const UNRANGED_NAME_PREFIXES: &[&str] = &[
     "CJK UNIFIED IDEOGRAPH",
     "CJK COMPATIBILITY IDEOGRAPH",
@@ -966,7 +962,7 @@ const UNRANGED_NAME_PREFIXES: &[&str] = &[
 
 /// Parse a derived `<prefix>-<hex>` name back into its codepoint — the inverse
 /// of [`derived_char_name`], for `uniparse` / `\c[...]`. Consulted only after
-/// the `unicode_names2` table lookup, so it never shadows a real name.
+/// the `unicode_name` table lookup, so it never shadows a real name.
 pub(crate) fn char_from_derived_name(name: &str) -> Option<char> {
     let (prefix, hex) = name.rsplit_once('-')?;
     if !UNRANGED_NAME_PREFIXES.contains(&prefix) {
@@ -1008,9 +1004,8 @@ pub(crate) fn unicode_char_name_by_codepoint(cp: u32) -> String {
     }
     // Try to convert to char
     if let Some(ch) = char::from_u32(cp) {
-        // Try unicode_names2 first
-        if let Some(name) = unicode_names2::name(ch) {
-            return name.to_string();
+        if let Some(name) = super::unicode_name::char_name(ch) {
+            return name;
         }
         // A ranged/derived name (`CJK UNIFIED IDEOGRAPH-4E00`) the name table
         // does not enumerate.

@@ -272,6 +272,27 @@ impl Interpreter {
                 }
                 None => qualified_name.clone(),
             };
+            // A `my class` binds its source-facing names in the declaring scope's
+            // env below. Record what an enclosing same-named binding held first,
+            // so an `if`/loop body that declared it hands that binding back on
+            // exit (#10594); a bare block and an `EVAL` restore their own env.
+            if *is_lexical {
+                let qualified_sym = Symbol::intern(&qualified_name);
+                let short = crate::qualified::is_qualified(qualified_sym)
+                    .then(|| crate::qualified::unqualified_part(qualified_sym).as_str());
+                let alias = source_compound_name(custom_traits);
+                for bound in [
+                    Some(qualified_name.as_str()),
+                    Some(resolved_name.as_str()),
+                    short,
+                    alias.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    self.save_lexical_type_binding_for_scope_exit(bound);
+                }
+            }
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body
             // so that references to the class name inside the body can resolve.
@@ -381,9 +402,15 @@ impl Interpreter {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
-            let is_hoisted_shell = custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted");
+            let has_trait = |name: &str| custom_traits.iter().any(|(t, _)| t == name);
+            let hoisted_shell = if has_trait("__hoisted_nested") {
+                crate::runtime::HoistedShell::Nested
+            } else if has_trait("__hoisted") {
+                crate::runtime::HoistedShell::Forward
+            } else {
+                crate::runtime::HoistedShell::No
+            };
+            let is_hoisted_shell = hoisted_shell.is_shell();
             // A DECLARE'd class can use its HOW while the class body is being
             // registered.  Red's `is relationship` attribute trait is one
             // such case: its trait handler calls `.^add-relationship` on the
@@ -436,7 +463,7 @@ impl Interpreter {
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
                         body_plan,
-                        is_hoisted_shell,
+                        is_hoisted_shell: hoisted_shell,
                     },
                 )
             )
@@ -624,7 +651,7 @@ impl Interpreter {
                             .entry(parent)
                             .or_default()
                             .entry(short)
-                            .or_insert_with(|| storage_name.clone());
+                            .insert_entry(storage_name.clone());
                     }
                 }
             }
@@ -1008,6 +1035,7 @@ impl Interpreter {
             // If the short name was suppressed by an earlier lexical type with
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
+            self.note_amp_param_shadowed_names(type_param_defs);
             loan_env!(
                 self,
                 register_role_decl(
@@ -1146,7 +1174,7 @@ impl Interpreter {
                         .entry(parent)
                         .or_default()
                         .entry(short)
-                        .or_insert_with(|| qualified_name.clone());
+                        .insert_entry(qualified_name.clone());
                 }
             }
             // A role's non-declaration body statements are NOT run here. Rakudo

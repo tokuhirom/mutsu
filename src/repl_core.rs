@@ -300,8 +300,10 @@ mod tests {
 
     #[test]
     fn test_declaration_does_not_replay_previous_value() {
-        // `sub`/`class`/`my regex` produce no value; the REPL must not echo the
-        // value the *previous* line produced.
+        // A declaration line must not echo the value the *previous* line
+        // produced. A class declaration's own value is its type object, which
+        // rakudo's REPL displays (`(C)`); it also shows `&f` and the regex,
+        // which mutsu does not display yet.
         let out = repl_session(&[
             "my $b = 7",
             "sub f { 1 }",
@@ -309,7 +311,7 @@ mod tests {
             "my regex r { \\d+ }",
             "42",
         ]);
-        assert_eq!(out, vec!["7\n", "42\n"]);
+        assert_eq!(out, vec!["7\n", "(C)\n", "42\n"]);
     }
 
     #[test]
@@ -326,9 +328,11 @@ mod tests {
     #[test]
     fn test_user_defined_gist_wins_in_repl_display() {
         let out = repl_session(&[
-            "class Foo { has $.x; method gist { \"Foo<{$!x}>\" } }",
+            "class Foo { has $.x; method gist { self.defined ?? \"Foo<{$!x}>\" !! \"(Foo)\" } }",
             "Foo.new(x => 42)",
         ]);
-        assert_eq!(out, vec!["Foo<42>\n"]);
+        // The declaration line displays its type object (through the same
+        // user `.gist`), as rakudo's REPL does.
+        assert_eq!(out, vec!["(Foo)\n", "Foo<42>\n"]);
     }
 }

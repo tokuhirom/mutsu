@@ -3,8 +3,10 @@
 //! `Levels::edit` so a backtrack undoes it.
 
 use super::super::regex_helpers::{count_capture_groups, merge_regex_captures};
-use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
-use super::super::regex_match_sep::{separated_capture_delta, separator_stride};
+use super::super::regex_match_delta::{
+    alternation_tail_delta, capture_group_delta, group_merge_delta,
+};
+use super::super::regex_match_sep::{separated_capture_delta_syms, separator_stride};
 use super::rx_levels::Levels;
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
@@ -27,26 +29,79 @@ impl Interpreter {
     ) -> Option<usize> {
         match op {
             // Cost: O(1).
-            RxOp::OpenCapture => levels.open(pos),
+            RxOp::OpenCapture => levels.open(pos, true),
+            // Cost: O(c), c = the captures the enclosing level sees (one
+            // flattened copy).
+            RxOp::OpenInline => levels.open_inline(None, None),
+            // Cost: O(n + c), n = the names under the token, c = the captures
+            // the enclosing level sees plus those of the iterations collected
+            // so far (one fold, one flattened copy), as the walk pays per atom.
+            RxOp::OpenSepIter {
+                tok,
+                base,
+                sep,
+                names,
+            } => {
+                let token = &program.toks[tok as usize];
+                let entries = levels.collected_since(regs[base as usize]).to_vec();
+                let folded =
+                    Self::rx_sep_fold(token, &program.name_sets[names as usize], entries, false);
+                let atom_stride = count_capture_groups(&token.atom);
+                let fold = if sep {
+                    let sep = &token.separator.as_ref().expect("a separated token").pattern;
+                    (atom_stride, separator_stride(sep))
+                } else {
+                    (0, atom_stride)
+                };
+                levels.open_inline(Some(folded), Some(fold));
+            }
+            // Cost: O(c), c = the captures the enclosing level sees (one fold,
+            // one flattened copy), as the walk pays per iteration.
+            RxOp::OpenPlainIter { tok, pos_base } => {
+                let stride = count_capture_groups(&program.toks[tok as usize].atom);
+                levels.open_plain_iter(regs[pos_base as usize], stride);
+            }
+            // Cost: O(c), c = the iteration's captures (one snapshot).
+            RxOp::ClosePlainIter => {
+                let inner = levels.close();
+                levels.edit(|s| s.merge_delta(group_merge_delta(inner)));
+            }
+            // Cost: O(1).
+            RxOp::OpenIsolated => levels.open(pos, false),
+            // Cost: O(1).
+            RxOp::DropCapture => levels.discard(),
             // Cost: O(c) amortized, c = the closed level's captures (one
             // snapshot); O(1) for a group whose body captures nothing.
             RxOp::CloseCapture { start, nested } => {
                 let from = regs[start as usize];
-                let inner = if nested {
-                    levels.close()
+                if nested {
+                    let inner = levels.close();
+                    levels.edit(|s| s.merge_delta(capture_group_delta(from, pos, inner)));
                 } else {
-                    RegexCaptures {
-                        match_from: from,
+                    // A body that captured nothing is a leaf sub-Match: the slot
+                    // `capture_group_delta` builds over an empty level, pushed
+                    // without the delta around it.
+                    let leaf = crate::runtime::CapNode {
+                        from,
+                        to: pos,
                         ..Default::default()
-                    }
-                };
-                levels.edit(|s| s.merge_delta(capture_group_delta(from, pos, inner)));
+                    };
+                    levels.edit(|s| {
+                        s.push_positional(crate::runtime::PosSlot {
+                            from,
+                            to: pos,
+                            subcap: Some(std::sync::Arc::new(leaf)),
+                            ..Default::default()
+                        })
+                    });
+                }
             }
             // Cost: O(n), n = the characters a backreference compares; O(1)
             // for a marker; one run of the body for a lookahead, and one per
             // candidate start (at most the body's longest match back) for a
             // lookbehind.
             RxOp::CapAtom(i) => {
+                walk_leaf_use(&program.atoms[i as usize]);
                 let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
                     &program.atoms[i as usize],
                     chars,
@@ -55,6 +110,32 @@ impl Interpreter {
                     pkg,
                     program.atom_ic[i as usize],
                 )?;
+                levels.edit(|s| s.merge_delta(delta));
+                return Some(next);
+            }
+            // Cost: O(1) amortized to merge the delta, plus `regex_code_atom`'s
+            // own cost (one run of the user's code).
+            RxOp::Code(i) => {
+                let (next, delta) = self.regex_code_atom(
+                    &program.atoms[i as usize],
+                    chars,
+                    pos,
+                    levels.top().caps(),
+                    pkg,
+                )?;
+                levels.edit(|s| s.merge_delta(delta));
+                return Some(next);
+            }
+            // Cost: O(v) amortized to merge the delta, v = the lexicals the
+            // declaration introduces, plus `regex_var_decl_atom`'s own cost
+            // (one run of each initializer).
+            RxOp::VarDecl(i) => {
+                let RegexAtom::VarDecl { code } = &program.atoms[i as usize] else {
+                    debug_assert!(false, "a VarDecl op names a declaration atom");
+                    return None;
+                };
+                let (next, delta) =
+                    self.regex_var_decl_atom(code, chars, pos, levels.top().caps())?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }
@@ -72,20 +153,19 @@ impl Interpreter {
                     regs[pos_base as usize],
                 )
             }),
-            // Cost: O(a + n), a = the atom's capture groups, n = the names
-            // under it (the walk's zero arm, same order).
-            RxOp::ZeroArm { tok, pos_base } => {
+            // Cost: O(a + n·m), a = the atom's capture groups, n = the names
+            // under it (the walk's zero arm, same order), m = the names the
+            // level has filed.
+            RxOp::ZeroArm {
+                tok,
+                pos_base,
+                plan,
+            } => {
                 let token = &program.toks[tok as usize];
-                let flags =
-                    super::super::regex_helpers::capture_group_list_flags(&token.atom, false);
-                let named_zero_capture =
-                    !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
-                        && !token.subrule_call_capture;
-                let mut list_names = std::collections::HashSet::new();
-                Self::collect_nested_list_quantified_names(&token.atom, &mut list_names);
+                let plan = &program.zero_arms[plan as usize];
                 levels.edit(|s| {
-                    s.reserve_nil(&flags);
-                    if named_zero_capture {
+                    s.reserve_nil(&plan.flags);
+                    if plan.named_zero_capture {
                         Self::store_apply_named_capture(
                             s,
                             token,
@@ -94,19 +174,26 @@ impl Interpreter {
                             regs[pos_base as usize],
                         );
                     }
-                    for n in list_names {
-                        s.insert_named_quantified(n);
+                    for &n in plan.list_names.iter() {
+                        s.insert_named_quantified_sym(n);
                     }
                 });
             }
-            // Cost: O(n), n = the names under the token.
-            RxOp::QuantNames { tok } => {
-                let names = Self::collect_quantified_names_for_token(&program.toks[tok as usize]);
+            // Cost: O(n·m), n = the names under the token, m = the names the
+            // level has filed.
+            RxOp::QuantNames { names } => {
                 levels.edit(|s| {
-                    for n in names {
-                        s.insert_named_quantified(n);
+                    for &n in program.name_sets[names as usize].iter() {
+                        s.insert_named_quantified_sym(n);
                     }
                 });
+            }
+            // Cost: O(t + (k + n)·m), t = the capture-trail entries since the
+            // quantifier began, k = those that filed a name, n = the names
+            // under the token, m = the names the level has filed.
+            RxOp::SepNames { base, names } => {
+                let since = regs[base as usize];
+                levels.edit(|s| s.mark_filed_quantified(since, &program.name_sets[names as usize]));
             }
             // Cost: O(k), k = the slots folded.
             RxOp::Fold { tok, pos_base } => {
@@ -130,56 +217,139 @@ impl Interpreter {
                 }
             }
             // Cost: O(c) for the first branch's captures, plus one nested
-            // run per other branch.
-            RxOp::ConjTail { tok, start } => {
+            // run per other branch; when `seeded`, also O(v) per other branch,
+            // v = the captures visible to it (its seed).
+            RxOp::ConjTail { tok, start, seeded } => {
                 let RegexAtom::Conjunction(branches) = &program.toks[tok as usize].atom else {
                     unreachable!("a ConjTail names a conjunction token");
                 };
                 let from = regs[start as usize];
                 let mut merged = merge_regex_captures(RegexCaptures::default(), levels.close());
                 for branch in &branches[1..] {
-                    let branch_program = super::rx_vm::program_for(branch)
+                    let branch_program = super::rx_entry::program_for(branch)
                         .expect("a compiled conjunction's branches compile");
-                    let (_, caps) = self.rx_run(branch_program, chars, from, pkg, Some(pos))?;
+                    // Every other branch is part of the same regex too: its
+                    // nested run starts from the enclosing level's view and the
+                    // earlier branches' captures, as rakudo's one cursor has them.
+                    let seed = seeded.then(|| {
+                        super::rx_levels::inline_level_caps(
+                            levels.top().caps(),
+                            Some(merged.clone()),
+                            None,
+                        )
+                    });
+                    let (_, mut caps) =
+                        self.rx_run_seeded(branch_program, chars, from, pkg, Some(pos), seed)?;
+                    caps.set_outer_backref(None);
                     merged = merge_regex_captures(merged, caps);
                 }
                 levels.edit(|s| s.merge_delta(merged));
             }
+            // Cost: O(1) unless an action-driven parse reads a `$*` variable;
+            // then one run of the iteration's action.
+            RxOp::ReduceAction { tok } => {
+                self.maybe_run_reduce_time_dynvar_action(
+                    &program.toks[tok as usize],
+                    levels.top().caps(),
+                );
+            }
             // Cost: O(1).
             RxOp::Collect { sep } => levels.collect(sep),
+            // Cost: O(c), c = the captures of the inner pattern and the goal
+            // (one close, one merge).
+            RxOp::GoalEnd { base } => {
+                let goal_caps = levels.close();
+                let inner_caps = levels
+                    .drain_collected(regs[base as usize])
+                    .pop()
+                    .map(|(_, caps)| caps)
+                    .unwrap_or_default();
+                // As the walk's `GoalMatch` arm merges them: the goal's
+                // captures first, as it is written first.
+                let merged = merge_regex_captures(
+                    RegexCaptures::default(),
+                    merge_regex_captures(goal_caps, inner_caps),
+                );
+                levels.edit(|s| s.merge_delta(merged));
+            }
+            // Cost: O(1).
+            RxOp::GoalFail { tok } => {
+                let RegexAtom::GoalMatch { goal_text, .. } = &program.toks[tok as usize].atom
+                else {
+                    debug_assert!(false, "a GoalFail names a goal-match token");
+                    return None;
+                };
+                Self::record_goal_failure(goal_text, pos);
+                return None;
+            }
             // Cost: O(n + c), n = the names under the token, c = the
             // captures across the collected iterations.
-            RxOp::SepEmit { tok, base } => {
+            RxOp::SepEmit { tok, base, names } => {
                 let token = &program.toks[tok as usize];
-                let names = Self::collect_quantified_names_for_token(token);
-                let mut entries = levels.drain_collected(regs[base as usize]);
-                // A `%%` chain that ends on a separator took a trailing one.
-                let trailing = entries
-                    .last()
-                    .is_some_and(|(sep, _)| *sep)
-                    .then(|| entries.pop().map(|(_, caps)| caps))
-                    .flatten();
-                let (seps, atoms): (Vec<_>, Vec<_>) = entries.into_iter().partition(|(s, _)| *s);
-                let atoms: Vec<RegexCaptures> = atoms.into_iter().map(|(_, c)| c).collect();
-                let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
-                let delta = if atoms.is_empty() {
-                    // Zero iterations mark the names only.
-                    separated_capture_delta(&names, &[], &[], None, 0, 0)
-                } else {
-                    let sep = &token.separator.as_ref().expect("a separated token").pattern;
-                    separated_capture_delta(
-                        &names,
-                        &atoms,
-                        &seps,
-                        trailing.as_ref(),
-                        count_capture_groups(&token.atom),
-                        separator_stride(sep),
-                    )
-                };
+                let entries = levels.drain_collected(regs[base as usize]);
+                let delta =
+                    Self::rx_sep_fold(token, &program.name_sets[names as usize], entries, true);
                 levels.edit(|s| s.merge_delta(delta));
             }
             _ => unreachable!("not a capture op: {op:?}"),
         }
         Some(pos)
     }
+}
+
+impl Interpreter {
+    /// The capture delta of the separated quantifier `token`'s collected
+    /// iterations, `(is_separator, captures)` in match order, folded side by
+    /// side as the walk's chain does (`separated_capture_delta`). With
+    /// `trailing`, a last separator is a `%%` chain's trailing one.
+    // Cost: O(n + c), n = the names under the token (`names`, interned when
+    // the pattern compiled), c = the iterations' captures.
+    fn rx_sep_fold(
+        token: &crate::runtime::regex_types::RegexToken,
+        names: &[Symbol],
+        mut entries: Vec<(bool, RegexCaptures)>,
+        at_end: bool,
+    ) -> RegexCaptures {
+        let names = names.iter().copied();
+        let trailing = (at_end && entries.last().is_some_and(|(sep, _)| *sep))
+            .then(|| entries.pop().map(|(_, caps)| caps))
+            .flatten();
+        let (seps, atoms): (Vec<_>, Vec<_>) = entries.into_iter().partition(|(s, _)| *s);
+        let atoms: Vec<RegexCaptures> = atoms.into_iter().map(|(_, c)| c).collect();
+        let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
+        if at_end && atoms.is_empty() {
+            // Zero iterations mark the names only.
+            return separated_capture_delta_syms(names, &[], &[], None, 0, 0);
+        }
+        let sep = &token.separator.as_ref().expect("a separated token").pattern;
+        separated_capture_delta_syms(
+            names,
+            &atoms,
+            &seps,
+            trailing.as_ref(),
+            count_capture_groups(&token.atom),
+            separator_stride(sep),
+        )
+    }
+}
+
+/// Count a `CapAtom` on `MUTSU_VM_STATS`'s `regex-walk:` line: the walk's
+/// single-atom arm matches it. A quantified `<subrule>` is the arm running the
+/// callee, so it is a bridge; every other atom is a leaf.
+// Cost: O(1).
+#[inline]
+fn walk_leaf_use(atom: &RegexAtom) {
+    use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk};
+    let (kind, reason) = match atom {
+        RegexAtom::Named(_) => (WalkUse::Bridged, "quantified-call"),
+        RegexAtom::Lookaround { .. } => (WalkUse::Leaf, "lookaround"),
+        RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => (WalkUse::Leaf, "backref"),
+        RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => (WalkUse::Leaf, "marker"),
+        RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
+        RegexAtom::WsRule => (WalkUse::Leaf, "ws-rule"),
+        RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
+        RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
+        _ => (WalkUse::Leaf, "other"),
+    };
+    record_regex_walk(kind, reason);
 }

@@ -399,6 +399,73 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     names
 }
 
+/// What [`Interpreter::consume_repeat_separator`] found after a repeating
+/// quantifier.
+#[derive(Default)]
+struct SeparatorParse {
+    /// The `%` / `%%` separator, if one follows.
+    separator: Option<Box<RegexSeparatorSpec>>,
+    /// Under `:sigspace`, whitespace separated the quantifier from its `%`:
+    /// a `<.ws>` follows the whole separated quantifier.
+    ws_after_quant: bool,
+}
+
+/// The `<.ws>` token `:sigspace` inserts for significant whitespace.
+fn sigspace_ws_token(ratchet: bool) -> RegexToken {
+    RegexToken {
+        atom: RegexAtom::WsRule,
+        quant: RegexQuant::One,
+        named_capture: None,
+        hash_capture: None,
+        secondary_named_capture: None,
+        force_list_capture: false,
+        ratchet,
+        frugal: false,
+        separator: None,
+        from_runtime_interpolation: false,
+        subrule_call_capture: false,
+    }
+}
+
+/// Make a quantified token repeat `[atom <.ws>]` instead of `atom`: under
+/// `:sigspace`, whitespace between an atom and its quantifier is matched after
+/// the atom in every iteration. The token's captures stay on the inner atom,
+/// so they are still collected once per iteration.
+// Cost: O(1).
+fn append_per_item_ws(token: &mut RegexToken, ignore_case: bool, ignore_mark: bool) {
+    if matches!(token.quant, RegexQuant::One) {
+        return;
+    }
+    let ratchet = token.ratchet;
+    let placeholder = RegexToken {
+        atom: RegexAtom::Group(RegexPattern {
+            tokens: Vec::new(),
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case,
+            ignore_mark,
+            derived: Default::default(),
+        }),
+        quant: RegexQuant::One,
+        named_capture: None,
+        hash_capture: None,
+        secondary_named_capture: None,
+        force_list_capture: false,
+        ratchet,
+        frugal: false,
+        separator: None,
+        from_runtime_interpolation: false,
+        subrule_call_capture: false,
+    };
+    let mut item = std::mem::replace(token, placeholder);
+    token.quant = std::mem::replace(&mut item.quant, RegexQuant::One);
+    token.frugal = std::mem::take(&mut item.frugal);
+    token.separator = item.separator.take();
+    if let RegexAtom::Group(group) = &mut token.atom {
+        group.tokens = vec![item, sigspace_ws_token(ratchet)];
+    }
+}
+
 /// Try to consume a trailing quantifier (`*`, `+`, `?`, `**N..M`, `**{code}`,
 /// plus a frugal `?` modifier) from `chars`, the same shapes the main atom
 /// loop accepts after an ordinary atom. Returns `None` (leaving `chars`
@@ -442,6 +509,7 @@ fn try_consume_quantifier(
                 if chars.peek() == Some(&'{') {
                     chars.next();
                     let code = read_code_block_body(chars.by_ref());
+                    super::regex::regex_helpers::note_regex_code_lowered();
                     RegexQuant::RepeatCode(code)
                 } else {
                     let mut count_str = String::new();
@@ -535,6 +603,46 @@ impl Interpreter {
         // The parameterized-subrule memo stores PARSED candidates, so a parse
         // that is not a function of its own key makes that entry impure too.
         crate::runtime::regex::regex_arg_purity::note_opaque_read();
+    }
+
+    /// The `<alias=$var>` spelling of a scalar sigil alias (`$<alias>=<$var>`)
+    /// on a call of a Regex-valued variable, else `None`.
+    ///
+    /// Rakudo's `subrule_alias` renames a subrule call under a sigil alias, so
+    /// `$<a>=<$re>` is `<a=$re>`: `a` holds the called regex's own Match, with
+    /// its nested captures. The plain `<$var>` path wraps the parsed regex in a
+    /// capture-isolated group, which discards those captures, so the alias would
+    /// only see the matched span. A numbered alias (`$0=`) is positional, and a
+    /// non-Regex value (a Str pattern) keeps the textual path, which the
+    /// match-time lookup of `<a=$var>` does not serve.
+    // Cost: O(1) env lookup; the call spelling is not rescanned.
+    fn sigil_aliased_regex_call(&self, alias: &str, call: &str) -> Option<String> {
+        let call = call.trim();
+        let var_name = call.strip_prefix('$')?;
+        if !Self::is_interpolated_alias_target(call)
+            || !alias
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            || !alias
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+        {
+            return None;
+        }
+        // Reads the variable's VALUE at parse time, like the `<$var>` arm.
+        Self::note_regex_parse_ambient_read();
+        let value = self
+            .env
+            .get(var_name)
+            .cloned()
+            .or_else(|| self.env.get(&format!("${var_name}")).cloned())?
+            .into_deref();
+        matches!(
+            value.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        )
+        .then(|| format!("{alias}={call}"))
     }
 
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
@@ -748,14 +856,25 @@ impl Interpreter {
     /// a quantified interpolated array (`@oct ** 4 % \.` mis-parsed the `%`
     /// as a stray hash sigil instead of a separator — regression pinned by
     /// `t/regex-anchored-separated-repeat.t`).
+    ///
+    /// Under `:sigspace` the whitespace around the separator is significant,
+    /// as in Rakudo: whitespace after the separator atom is a `<.ws>` that
+    /// belongs to the separator (`a+ % "," ` matches `","<.ws>` between
+    /// items), and whitespace between the quantifier and the `%` is a `<.ws>`
+    /// after the whole separated quantifier, reported through
+    /// `SeparatorParse::ws_after_quant` for the caller to push once the
+    /// quantified token itself is in place.
     fn consume_repeat_separator(
         &self,
         chars: &mut std::iter::Peekable<std::str::Chars>,
         quant: &RegexQuant,
         mode: RegexParseMode,
-    ) -> Option<Box<RegexSeparatorSpec>> {
+        sigspace: bool,
+        ratchet: bool,
+    ) -> SeparatorParse {
+        let mut result = SeparatorParse::default();
         if matches!(quant, RegexQuant::One | RegexQuant::ZeroOrOne) {
-            return None;
+            return result;
         }
         // Skip whitespace before the `%`.
         let mut lookahead = chars.clone();
@@ -794,9 +913,10 @@ impl Interpreter {
             }
         };
         if lookahead.peek() != Some(&'%') || is_hash_alias {
-            return None;
+            return result;
         }
         // Commit: consume up to and including the `%`/`%%`.
+        result.ws_after_quant = sigspace && chars.peek().is_some_and(|c| c.is_whitespace());
         while chars.peek().is_some_and(|c| c.is_whitespace()) {
             chars.next();
         }
@@ -820,13 +940,35 @@ impl Interpreter {
         for _ in 0..sep_atom_str.chars().count() {
             chars.next();
         }
-        self.parse_regex_with_mode(sep_atom_str.trim(), mode)
-            .map(|pattern| {
+        let sep_source = sep_atom_str.trim();
+        if !sigspace {
+            result.separator = self.parse_regex_with_mode(sep_source, mode).map(|pattern| {
                 Box::new(RegexSeparatorSpec {
                     pattern,
                     allow_trailing,
                 })
-            })
+            });
+            return result;
+        }
+        // The separator atom is itself parsed under sigspace (`% [ "," ]`
+        // keeps the `<.ws>` inside the group), and whitespace after it is the
+        // separator's own trailing `<.ws>`.
+        let ws_after_sep = chars.peek().is_some_and(|c| c.is_whitespace());
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        result.separator = self
+            .parse_regex_with_mode(&format!(":s {sep_source}"), mode)
+            .map(|mut pattern| {
+                if ws_after_sep {
+                    pattern.tokens.push(sigspace_ws_token(ratchet));
+                }
+                Box::new(RegexSeparatorSpec {
+                    pattern,
+                    allow_trailing,
+                })
+            });
+        result
     }
 
     /// Parse `pattern`, memoizing the structural parse in
@@ -1424,7 +1566,7 @@ impl Interpreter {
         // to the whole interpolated value instead of just its last spliced
         // char — see `try_consume_quantifier`'s doc comment.
         let mut interp_span_start: Option<usize> = None;
-        while let Some(c) = chars.next() {
+        'atoms: while let Some(c) = chars.next() {
             if c == Self::NON_DECLARATIVE_INTERP_MARK {
                 in_non_declarative_interp = !in_non_declarative_interp;
                 if in_non_declarative_interp {
@@ -1440,7 +1582,10 @@ impl Interpreter {
                     // ever reaching that code, so before this call it
                     // silently dropped the separator (mis-parsed as a stray
                     // `%`). See `consume_repeat_separator`'s doc comment.
-                    let separator = self.consume_repeat_separator(&mut chars, &quant, mode);
+                    let SeparatorParse {
+                        separator,
+                        ws_after_quant,
+                    } = self.consume_repeat_separator(&mut chars, &quant, mode, sigspace, ratchet);
                     let mut span_tokens: Vec<RegexToken> = tokens.split_off(start);
                     if span_tokens.len() == 1 {
                         // A single-char interpolated value: quantify that one
@@ -1474,6 +1619,9 @@ impl Interpreter {
                             from_runtime_interpolation: true,
                             subrule_call_capture: false,
                         });
+                    }
+                    if ws_after_quant {
+                        tokens.push(sigspace_ws_token(ratchet));
                     }
                 }
                 continue;
@@ -1589,6 +1737,10 @@ impl Interpreter {
                 anchor_end = true;
                 break;
             }
+            // A backreference (`$0`, `$<name>`) parsed below; it skips the other
+            // `$`-led forms and goes straight to the common atom path, which
+            // reads its quantifier.
+            let mut backref_atom: Option<RegexAtom> = None;
             // $0, $1, ... — either a numbered scalar capture alias (`$0=(...)`)
             // or a backreference to a positional capture group (`$0`).
             if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
@@ -1617,23 +1769,12 @@ impl Interpreter {
                 }
                 if let Ok(idx) = digits.parse::<usize>() {
                     crate::runtime::regex::regex_helpers::note_regex_backref_lowered();
-                    tokens.push(RegexToken {
-                        atom: RegexAtom::Backref(idx),
-                        quant: RegexQuant::One,
-                        named_capture: pending_named_capture.take(),
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                    continue;
+                    // Matched by the common atom path below, so a quantifier
+                    // after it (`$0*`, `$0 ** 2`, `$0+ % ','`) applies to it.
+                    backref_atom = Some(RegexAtom::Backref(idx));
                 }
             }
-            if c == '$' && chars.peek() == Some(&'<') {
+            if backref_atom.is_none() && c == '$' && chars.peek() == Some(&'<') {
                 chars.next();
                 let mut capture_name = String::new();
                 for ch in chars.by_ref() {
@@ -1657,193 +1798,106 @@ impl Interpreter {
                 }
                 // $<name> without `=` is a backreference to a named capture
                 crate::runtime::regex::regex_helpers::note_regex_backref_lowered();
-                tokens.push(RegexToken {
-                    atom: RegexAtom::NamedBackref(capture_name),
-                    quant: RegexQuant::One,
-                    named_capture: None,
-                    hash_capture: None,
-                    secondary_named_capture: None,
-                    force_list_capture: false,
-                    ratchet,
-                    frugal: false,
-                    separator: None,
-                    from_runtime_interpolation: false,
-                    subrule_call_capture: false,
-                });
-                continue;
+                backref_atom = Some(RegexAtom::NamedBackref(capture_name));
             }
-            // Bare `$name` interpolating an in-regex `:my $name …` lexical: a
-            // match-time interpolation of that variable's string value as a
-            // literal (Raku semantics). Pre-substitution from `env`
-            // (`interpolate_bound_regex_scalars`) can't do this — the value is
-            // only set while matching (often by a code block), so it is read from
-            // `caps.regex_vars` at match time via the `VarInterp` atom. Only fires
-            // for names this pattern declared with `:my`/`:let` (tracked above);
-            // outer-scope `$var` still goes through pre-substitution.
-            if mode == RegexParseMode::Match
-                && c == '$'
-                && chars
-                    .peek()
-                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
-            {
-                let mut probe = chars.clone();
-                let mut var_name = String::new();
-                while let Some(&ch) = probe.peek() {
-                    let kebab = ch == '-' && {
-                        let mut after = probe.clone();
-                        after.next();
-                        after.peek().is_some_and(|n| n.is_alphabetic() || *n == '_')
-                    };
-                    if ch.is_alphanumeric() || ch == '_' || kebab {
-                        var_name.push(ch);
-                        probe.next();
-                    } else {
-                        break;
+            'pre_atom: {
+                if backref_atom.is_some() {
+                    break 'pre_atom;
+                }
+                // Bare `$name` interpolating an in-regex `:my $name …` lexical: a
+                // match-time interpolation of that variable's string value as a
+                // literal (Raku semantics). Pre-substitution from `env`
+                // (`interpolate_bound_regex_scalars`) can't do this — the value is
+                // only set while matching (often by a code block), so it is read from
+                // `caps.regex_vars` at match time via the `VarInterp` atom. Only fires
+                // for names this pattern declared with `:my`/`:let` (tracked above);
+                // outer-scope `$var` still goes through pre-substitution.
+                if mode == RegexParseMode::Match
+                    && c == '$'
+                    && chars
+                        .peek()
+                        .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                {
+                    let mut probe = chars.clone();
+                    let mut var_name = String::new();
+                    while let Some(&ch) = probe.peek() {
+                        let kebab = ch == '-' && {
+                            let mut after = probe.clone();
+                            after.next();
+                            after.peek().is_some_and(|n| n.is_alphabetic() || *n == '_')
+                        };
+                        if ch.is_alphanumeric() || ch == '_' || kebab {
+                            var_name.push(ch);
+                            probe.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    if declared_regex_vars.contains(&var_name) {
+                        chars = probe;
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::VarInterp(var_name),
+                            quant: RegexQuant::One,
+                            named_capture: pending_named_capture.take(),
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal: false,
+                            separator: None,
+                            from_runtime_interpolation: false,
+                            subrule_call_capture: false,
+                        });
+                        continue 'atoms;
                     }
                 }
-                if declared_regex_vars.contains(&var_name) {
-                    chars = probe;
-                    tokens.push(RegexToken {
-                        atom: RegexAtom::VarInterp(var_name),
-                        quant: RegexQuant::One,
-                        named_capture: pending_named_capture.take(),
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                    continue;
-                }
-            }
-            // `@<name>=(...)` — array capture alias. Behaves like the scalar
-            // `$<name>=` alias (routes the following atom's capture to `name`),
-            // but the `@` sigil is the list-context form: applied to a capturing
-            // group (`@<foo>=(.(.))+`) it yields a List of the group's Matches,
-            // one per iteration. This is recognized only when a trailing `=`
-            // follows `<name>`; a bare `@var` is array interpolation (handled
-            // below / during interpolation).
-            if c == '@' && chars.peek() == Some(&'<') {
-                let mut probe = chars.clone();
-                probe.next(); // consume '<'
-                let mut capture_name = String::new();
-                let mut closed = false;
-                for ch in probe.by_ref() {
-                    if ch == '>' {
-                        closed = true;
-                        break;
+                // `@<name>=(...)` — array capture alias. Behaves like the scalar
+                // `$<name>=` alias (routes the following atom's capture to `name`),
+                // but the `@` sigil is the list-context form: applied to a capturing
+                // group (`@<foo>=(.(.))+`) it yields a List of the group's Matches,
+                // one per iteration. This is recognized only when a trailing `=`
+                // follows `<name>`; a bare `@var` is array interpolation (handled
+                // below / during interpolation).
+                if c == '@' && chars.peek() == Some(&'<') {
+                    let mut probe = chars.clone();
+                    probe.next(); // consume '<'
+                    let mut capture_name = String::new();
+                    let mut closed = false;
+                    for ch in probe.by_ref() {
+                        if ch == '>' {
+                            closed = true;
+                            break;
+                        }
+                        capture_name.push(ch);
                     }
-                    capture_name.push(ch);
-                }
-                if closed && !capture_name.is_empty() {
-                    while probe.peek().is_some_and(|ch| ch.is_whitespace()) {
-                        probe.next();
-                    }
-                    if probe.peek() == Some(&'=') {
-                        probe.next(); // consume '='
+                    if closed && !capture_name.is_empty() {
                         while probe.peek().is_some_and(|ch| ch.is_whitespace()) {
                             probe.next();
                         }
-                        chars = probe;
-                        pending_named_capture = Some(capture_name);
-                        pending_named_capture_is_array = true;
-                        continue;
-                    }
-                }
-                // Not an alias — fall through to generic `@` handling below.
-            }
-            // A bare `$` end-of-string anchor is not an interpolation, so Match
-            // mode's interpolation pass never substitutes it and it reaches the
-            // parser here (`$$`, `$0`, `$<name>` and a trailing `$` were handled
-            // above). Give it the same EndOfLine treatment the Validate branch
-            // below does; without this it fell through to a literal `$`, so a `$`
-            // followed by any further atom (`… $ { code }`, `… $ <?{…}>`) demanded
-            // a literal `$` in the input and never matched (YAMLish `Schema::Core`
-            // `token plain { ^ .* $ { make … } }`; t/regex-end-anchor-then-atom.t).
-            if mode == RegexParseMode::Match && c == '$' {
-                let next = chars.peek().copied();
-                let is_interp = next.is_some_and(|ch| {
-                    ch.is_alphabetic()
-                        || ch == '_'
-                        || ch == '{'
-                        || ch == '('
-                        || ch == '*'
-                        || ch == '?'
-                        || ch == '^'
-                        || ch == '.'
-                });
-                if !is_interp {
-                    if next == Some('+') {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
-                        return None;
-                    }
-                    tokens.push(RegexToken {
-                        atom: RegexAtom::EndOfString,
-                        quant: RegexQuant::One,
-                        named_capture: None,
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                    continue;
-                }
-                // A surviving `$`-interpolation falls through to the existing
-                // literal handling below (unchanged prior behavior).
-            }
-            // Validate mode handling of `$` / `@` that was NOT recognized as an
-            // anchor (`$$`, trailing `$`) or backreference (`$0`, `$<name>`)
-            // above. In `Match` mode interpolation already substituted these, so
-            // they only reach here at parse time.
-            if mode == RegexParseMode::Validate && (c == '$' || c == '@') {
-                let next = chars.peek().copied();
-                let placeholder = |toks: &mut Vec<RegexToken>| {
-                    toks.push(RegexToken {
-                        atom: RegexAtom::ZeroWidth,
-                        quant: RegexQuant::One,
-                        named_capture: None,
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                };
-                if c == '$' {
-                    // `$!attr` — interpolating an attribute into a regex is prohibited.
-                    if next == Some('!') {
-                        let mut symbol = String::from("$!");
-                        let mut peeked = chars.clone();
-                        peeked.next(); // skip '!'
-                        while peeked
-                            .peek()
-                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
-                        {
-                            symbol.push(peeked.next().unwrap());
-                        }
-                        if symbol.chars().count() > 2 {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(make_attribute_regex_error(&symbol));
-                            });
-                            return None;
+                        if probe.peek() == Some(&'=') {
+                            probe.next(); // consume '='
+                            while probe.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                probe.next();
+                            }
+                            chars = probe;
+                            pending_named_capture = Some(capture_name);
+                            pending_named_capture_is_array = true;
+                            continue 'atoms;
                         }
                     }
-                    // `$` followed by a variable-introducing char is interpolation
-                    // (`$name`, `${...}`, `$(...)`, `$*dyn`, `$.attr`, ...). `$$`,
-                    // `$<name>`, `$0`, and trailing `$` were handled above; what
-                    // remains that is NOT interpolation is the end-of-string anchor.
-                    let is_var = next.is_some_and(|ch| {
+                    // Not an alias — fall through to generic `@` handling below.
+                }
+                // A bare `$` end-of-string anchor is not an interpolation, so Match
+                // mode's interpolation pass never substitutes it and it reaches the
+                // parser here (`$$`, `$0`, `$<name>` and a trailing `$` were handled
+                // above). Give it the same EndOfLine treatment the Validate branch
+                // below does; without this it fell through to a literal `$`, so a `$`
+                // followed by any further atom (`… $ { code }`, `… $ <?{…}>`) demanded
+                // a literal `$` in the input and never matched (YAMLish `Schema::Core`
+                // `token plain { ^ .* $ { make … } }`; t/regex-end-anchor-then-atom.t).
+                if mode == RegexParseMode::Match && c == '$' {
+                    let next = chars.peek().copied();
+                    let is_interp = next.is_some_and(|ch| {
                         ch.is_alphabetic()
                             || ch == '_'
                             || ch == '{'
@@ -1853,313 +1907,396 @@ impl Interpreter {
                             || ch == '^'
                             || ch == '.'
                     });
-                    if is_var {
-                        skip_opaque_var_ref(&mut chars);
-                        placeholder(&mut tokens);
-                        continue;
-                    }
-                    // Bare `$` end-of-string anchor; quantifying it is NonQuantifiable.
-                    if next == Some('+') {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
-                        return None;
-                    }
-                    tokens.push(RegexToken {
-                        atom: RegexAtom::EndOfString,
-                        quant: RegexQuant::One,
-                        named_capture: None,
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                    continue;
-                }
-                // `@...` is always an array interpolation (e.g. `@var`, `@$aref`,
-                // `@var[0]`). Consume the reference opaquely and leave any trailing
-                // construct (like `[0]` / `$aref`) for subsequent iterations.
-                skip_opaque_var_ref(&mut chars);
-                placeholder(&mut tokens);
-                continue;
-            }
-            // Handle %<name>= and %ident= hash aliasing in regex
-            if c == '%' {
-                if chars.peek() == Some(&'<') {
-                    chars.next();
-                    let mut hash_name = String::new();
-                    for ch in chars.by_ref() {
-                        if ch == '>' {
-                            break;
-                        }
-                        hash_name.push(ch);
-                    }
-                    if !hash_name.is_empty() {
-                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                            chars.next();
-                        }
-                        if chars.peek() == Some(&'=') {
-                            chars.next();
-                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                                chars.next();
-                            }
-                            pending_hash_capture = Some(hash_name);
-                            continue;
-                        }
-                    }
-                    // `%<name>` without `=` is a bare hash variable — reserved.
-                    if mode == RegexParseMode::Validate {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
-                        return None;
-                    }
-                    continue;
-                } else if chars
-                    .peek()
-                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
-                {
-                    let mut hash_name = String::new();
-                    while chars
-                        .peek()
-                        .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
-                    {
-                        hash_name.push(chars.next().unwrap());
-                    }
-                    if !hash_name.is_empty() {
-                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                            chars.next();
-                        }
-                        if chars.peek() == Some(&'=') {
-                            chars.next();
-                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                                chars.next();
-                            }
-                            pending_hash_capture = Some(hash_name);
-                            continue;
-                        }
-                    }
-                    // Bare `%var` (no `=` aliasing) is a reserved hash interpolation.
-                    if mode == RegexParseMode::Validate {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
-                        return None;
-                    }
-                    continue;
-                }
-            }
-            // Handle :my, :our, :constant, :let, and :temp variable declarations
-            // in regex.  The structural parser is also used for nested rule
-            // bodies, where match-time dynamic declarations must remain atoms
-            // instead of being mistaken for ordinary pattern text.
-            if c == ':' {
-                let remaining: String = chars.clone().collect();
-                let temp_dynamic = remaining
-                    .strip_prefix("temp ")
-                    .and_then(|rest| rest.trim_start().chars().nth(1).map(|twigil| twigil == '*'))
-                    .unwrap_or(false);
-                if remaining.starts_with("my ")
-                    || remaining.starts_with("our ")
-                    || remaining.starts_with("constant ")
-                    || remaining.starts_with("let ")
-                    || temp_dynamic
-                {
-                    // Collect everything up to and including the semicolon
-                    let mut decl_code = String::new();
-                    for ch in chars.by_ref() {
-                        if ch == ';' {
-                            break;
-                        }
-                        decl_code.push(ch);
-                    }
-                    // Record each scalar name this declaration introduces so a
-                    // later bare `$name` becomes a match-time interpolation of the
-                    // regex-local lexical rather than an outer-scope substitution.
-                    for name in scalar_names_in_decl(&decl_code) {
-                        super::regex::regex_helpers::declare_enclosing_regex_var(&name);
-                        declared_regex_vars.insert(name);
-                    }
-                    tokens.push(RegexToken {
-                        atom: RegexAtom::VarDecl { code: decl_code },
-                        quant: RegexQuant::One,
-                        named_capture: pending_named_capture.take(),
-                        hash_capture: None,
-                        secondary_named_capture: None,
-                        force_list_capture: false,
-                        ratchet,
-                        frugal: false,
-                        separator: None,
-                        from_runtime_interpolation: false,
-                        subrule_call_capture: false,
-                    });
-                    continue;
-                }
-                // Handle inline scope modifiers: :ratchet, :!ratchet, :r, :!r,
-                // :ignorecase, :!ignorecase, :i, :!i, :sigspace, :!sigspace, :s, :!s,
-                // :ignoremark, :!ignoremark, :m, :!m
-                if let Some(modifier_rest) = Self::try_parse_inline_modifier(
-                    &remaining,
-                    &mut ratchet,
-                    &mut ignore_case,
-                    &mut ignore_mark,
-                    &mut sigspace,
-                ) {
-                    // Advance chars by the number of characters consumed
-                    let consumed = remaining.len() - modifier_rest.len();
-                    for _ in 0..consumed {
-                        chars.next();
-                    }
-                    continue;
-                }
-                // Standalone backtrack control `:` — "commit to the atom just
-                // matched, never backtrack into it" (`token key { <.plainfirst> :
-                // <-[\:\#]>* }`). It is not a modifier and not a `:my` decl: it
-                // ratchets the token already emitted, which is exactly what the
-                // per-token `ratchet` flag means. `::` / `:::` are *different*
-                // controls and are left alone here. With no preceding atom the
-                // construct is an error, which the validator below reports.
-                if !tokens.is_empty()
-                    && chars.peek() != Some(&':')
-                    && chars
-                        .peek()
-                        .is_none_or(|ch| !ch.is_alphanumeric() && !matches!(ch, '_' | '!' | '('))
-                {
-                    if let Some(last) = tokens.last_mut() {
-                        last.ratchet = true;
-                    }
-                    continue;
-                }
-                // Validate mode: the `:my`/inline-modifier forms above were not
-                // matched. Reproduce the validator's remaining `:` checks —
-                // solitary backtrack control and unrecognized modifiers.
-                if mode == RegexParseMode::Validate {
-                    if chars.peek() == Some(&'!') {
-                        chars.next();
-                        continue;
-                    }
-                    // Bare `:` with no preceding atom -> solitary backtrack control.
-                    if tokens.is_empty() && !anchor_start {
-                        let mut lookahead = chars.clone();
-                        while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
-                            lookahead.next();
-                        }
-                        if lookahead
-                            .peek()
-                            .is_none_or(|ch| !ch.is_alphanumeric() && *ch != '_')
-                        {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(make_solitary_backtrack_control_error());
-                            });
+                    if !is_interp {
+                        if next == Some('+') {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
                             return None;
                         }
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::EndOfString,
+                            quant: RegexQuant::One,
+                            named_capture: None,
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal: false,
+                            separator: None,
+                            from_runtime_interpolation: false,
+                            subrule_call_capture: false,
+                        });
+                        continue 'atoms;
                     }
-                    // `:digits` with no following modifier name -> unrecognized.
-                    let mut digits = String::new();
-                    while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                        digits.push(chars.next().unwrap());
+                    // A surviving `$`-interpolation falls through to the existing
+                    // literal handling below (unchanged prior behavior).
+                }
+                // Validate mode handling of `$` / `@` that was NOT recognized as an
+                // anchor (`$$`, trailing `$`) or backreference (`$0`, `$<name>`)
+                // above. In `Match` mode interpolation already substituted these, so
+                // they only reach here at parse time.
+                if mode == RegexParseMode::Validate && (c == '$' || c == '@') {
+                    let next = chars.peek().copied();
+                    let placeholder = |toks: &mut Vec<RegexToken>| {
+                        toks.push(RegexToken {
+                            atom: RegexAtom::ZeroWidth,
+                            quant: RegexQuant::One,
+                            named_capture: None,
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal: false,
+                            separator: None,
+                            from_runtime_interpolation: false,
+                            subrule_call_capture: false,
+                        });
+                    };
+                    if c == '$' {
+                        // `$!attr` — interpolating an attribute into a regex is prohibited.
+                        if next == Some('!') {
+                            let mut symbol = String::from("$!");
+                            let mut peeked = chars.clone();
+                            peeked.next(); // skip '!'
+                            while peeked
+                                .peek()
+                                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                            {
+                                symbol.push(peeked.next().unwrap());
+                            }
+                            if symbol.chars().count() > 2 {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(make_attribute_regex_error(&symbol));
+                                });
+                                return None;
+                            }
+                        }
+                        // `$` followed by a variable-introducing char is interpolation
+                        // (`$name`, `${...}`, `$(...)`, `$*dyn`, `$.attr`, ...). `$$`,
+                        // `$<name>`, `$0`, and trailing `$` were handled above; what
+                        // remains that is NOT interpolation is the end-of-string anchor.
+                        let is_var = next.is_some_and(|ch| {
+                            ch.is_alphabetic()
+                                || ch == '_'
+                                || ch == '{'
+                                || ch == '('
+                                || ch == '*'
+                                || ch == '?'
+                                || ch == '^'
+                                || ch == '.'
+                        });
+                        if is_var {
+                            skip_opaque_var_ref(&mut chars);
+                            placeholder(&mut tokens);
+                            continue 'atoms;
+                        }
+                        // Bare `$` end-of-string anchor; quantifying it is NonQuantifiable.
+                        if next == Some('+') {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
+                            return None;
+                        }
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::EndOfString,
+                            quant: RegexQuant::One,
+                            named_capture: None,
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal: false,
+                            separator: None,
+                            from_runtime_interpolation: false,
+                            subrule_call_capture: false,
+                        });
+                        continue 'atoms;
                     }
-                    if !digits.is_empty() {
-                        let mut name = String::new();
+                    // `@...` is always an array interpolation (e.g. `@var`, `@$aref`,
+                    // `@var[0]`). Consume the reference opaquely and leave any trailing
+                    // construct (like `[0]` / `$aref`) for subsequent iterations.
+                    skip_opaque_var_ref(&mut chars);
+                    placeholder(&mut tokens);
+                    continue 'atoms;
+                }
+                // Handle %<name>= and %ident= hash aliasing in regex
+                if c == '%' {
+                    if chars.peek() == Some(&'<') {
+                        chars.next();
+                        let mut hash_name = String::new();
+                        for ch in chars.by_ref() {
+                            if ch == '>' {
+                                break;
+                            }
+                            hash_name.push(ch);
+                        }
+                        if !hash_name.is_empty() {
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
+                            if chars.peek() == Some(&'=') {
+                                chars.next();
+                                while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                    chars.next();
+                                }
+                                pending_hash_capture = Some(hash_name);
+                                continue 'atoms;
+                            }
+                        }
+                        // `%<name>` without `=` is a bare hash variable — reserved.
+                        if mode == RegexParseMode::Validate {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
+                            return None;
+                        }
+                        continue 'atoms;
+                    } else if chars
+                        .peek()
+                        .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                    {
+                        let mut hash_name = String::new();
                         while chars
                             .peek()
                             .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
                         {
-                            name.push(chars.next().unwrap());
+                            hash_name.push(chars.next().unwrap());
                         }
-                        if name.is_empty() {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(make_unrecognized_modifier_error(&digits));
-                            });
+                        if !hash_name.is_empty() {
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
+                            if chars.peek() == Some(&'=') {
+                                chars.next();
+                                while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                    chars.next();
+                                }
+                                pending_hash_capture = Some(hash_name);
+                                continue 'atoms;
+                            }
+                        }
+                        // Bare `%var` (no `=` aliasing) is a reserved hash interpolation.
+                        if mode == RegexParseMode::Validate {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_hash_reserved_error()));
                             return None;
                         }
-                        continue;
+                        continue 'atoms;
                     }
-                    // `:name` — unknown adverb (e.g. `:iabc`), or `:name(...)`.
-                    let mut name = String::new();
+                }
+                // Handle :my, :our, :constant, :let, and :temp variable declarations
+                // in regex.  The structural parser is also used for nested rule
+                // bodies, where match-time dynamic declarations must remain atoms
+                // instead of being mistaken for ordinary pattern text.
+                if c == ':' {
+                    let remaining: String = chars.clone().collect();
+                    let temp_dynamic = remaining
+                        .strip_prefix("temp ")
+                        .and_then(|rest| {
+                            rest.trim_start().chars().nth(1).map(|twigil| twigil == '*')
+                        })
+                        .unwrap_or(false);
+                    if remaining.starts_with("my ")
+                        || remaining.starts_with("our ")
+                        || remaining.starts_with("constant ")
+                        || remaining.starts_with("let ")
+                        || temp_dynamic
                     {
-                        let mut lookahead = chars.clone();
-                        while lookahead
-                            .peek()
-                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
-                        {
-                            name.push(lookahead.next().unwrap());
+                        // Collect everything up to and including the semicolon
+                        let mut decl_code = String::new();
+                        for ch in chars.by_ref() {
+                            if ch == ';' {
+                                break;
+                            }
+                            decl_code.push(ch);
                         }
+                        // Record each scalar name this declaration introduces so a
+                        // later bare `$name` becomes a match-time interpolation of the
+                        // regex-local lexical rather than an outer-scope substitution.
+                        for name in scalar_names_in_decl(&decl_code) {
+                            super::regex::regex_helpers::declare_enclosing_regex_var(&name);
+                            declared_regex_vars.insert(name);
+                        }
+                        super::regex::regex_helpers::note_regex_code_lowered();
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::VarDecl { code: decl_code },
+                            quant: RegexQuant::One,
+                            named_capture: pending_named_capture.take(),
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal: false,
+                            separator: None,
+                            from_runtime_interpolation: false,
+                            subrule_call_capture: false,
+                        });
+                        continue 'atoms;
                     }
-                    if !name.is_empty() {
-                        for _ in 0..name.chars().count() {
+                    // Handle inline scope modifiers: :ratchet, :!ratchet, :r, :!r,
+                    // :ignorecase, :!ignorecase, :i, :!i, :sigspace, :!sigspace, :s, :!s,
+                    // :ignoremark, :!ignoremark, :m, :!m
+                    if let Some(modifier_rest) = Self::try_parse_inline_modifier(
+                        &remaining,
+                        &mut ratchet,
+                        &mut ignore_case,
+                        &mut ignore_mark,
+                        &mut sigspace,
+                    ) {
+                        // Advance chars by the number of characters consumed
+                        let consumed = remaining.len() - modifier_rest.len();
+                        for _ in 0..consumed {
                             chars.next();
                         }
-                        if chars.peek() == Some(&'(') {
-                            // `:name(...)` optional argument — consume balanced parens.
+                        continue 'atoms;
+                    }
+                    // Standalone backtrack control `:` — "commit to the atom just
+                    // matched, never backtrack into it" (`token key { <.plainfirst> :
+                    // <-[\:\#]>* }`). It is not a modifier and not a `:my` decl: it
+                    // ratchets the token already emitted, which is exactly what the
+                    // per-token `ratchet` flag means. `::` / `:::` are *different*
+                    // controls and are left alone here. With no preceding atom the
+                    // construct is an error, which the validator below reports.
+                    if !tokens.is_empty()
+                        && chars.peek() != Some(&':')
+                        && chars.peek().is_none_or(|ch| {
+                            !ch.is_alphanumeric() && !matches!(ch, '_' | '!' | '(')
+                        })
+                    {
+                        if let Some(last) = tokens.last_mut() {
+                            last.ratchet = true;
+                        }
+                        continue 'atoms;
+                    }
+                    // Validate mode: the `:my`/inline-modifier forms above were not
+                    // matched. Reproduce the validator's remaining `:` checks —
+                    // solitary backtrack control and unrecognized modifiers.
+                    if mode == RegexParseMode::Validate {
+                        if chars.peek() == Some(&'!') {
                             chars.next();
-                            let mut depth = 1u32;
-                            for ch in chars.by_ref() {
-                                if ch == '(' {
-                                    depth += 1;
-                                } else if ch == ')' {
-                                    depth -= 1;
-                                    if depth == 0 {
-                                        break;
+                            continue 'atoms;
+                        }
+                        // Bare `:` with no preceding atom -> solitary backtrack control.
+                        if tokens.is_empty() && !anchor_start {
+                            let mut lookahead = chars.clone();
+                            while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                lookahead.next();
+                            }
+                            if lookahead
+                                .peek()
+                                .is_none_or(|ch| !ch.is_alphanumeric() && *ch != '_')
+                            {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(make_solitary_backtrack_control_error());
+                                });
+                                return None;
+                            }
+                        }
+                        // `:digits` with no following modifier name -> unrecognized.
+                        let mut digits = String::new();
+                        while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                            digits.push(chars.next().unwrap());
+                        }
+                        if !digits.is_empty() {
+                            let mut name = String::new();
+                            while chars
+                                .peek()
+                                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                            {
+                                name.push(chars.next().unwrap());
+                            }
+                            if name.is_empty() {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() =
+                                        Some(make_unrecognized_modifier_error(&digits));
+                                });
+                                return None;
+                            }
+                            continue 'atoms;
+                        }
+                        // `:name` — unknown adverb (e.g. `:iabc`), or `:name(...)`.
+                        let mut name = String::new();
+                        {
+                            let mut lookahead = chars.clone();
+                            while lookahead
+                                .peek()
+                                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                            {
+                                name.push(lookahead.next().unwrap());
+                            }
+                        }
+                        if !name.is_empty() {
+                            for _ in 0..name.chars().count() {
+                                chars.next();
+                            }
+                            if chars.peek() == Some(&'(') {
+                                // `:name(...)` optional argument — consume balanced parens.
+                                chars.next();
+                                let mut depth = 1u32;
+                                for ch in chars.by_ref() {
+                                    if ch == '(' {
+                                        depth += 1;
+                                    } else if ch == ')' {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            break;
+                                        }
                                     }
                                 }
+                                continue 'atoms;
                             }
-                            continue;
+                            if !is_known_regex_adverb(&name) {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(make_unrecognized_modifier_error(&name));
+                                });
+                                return None;
+                            }
+                            continue 'atoms;
                         }
-                        if !is_known_regex_adverb(&name) {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(make_unrecognized_modifier_error(&name));
-                            });
-                            return None;
-                        }
-                        continue;
                     }
                 }
-            }
-            // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching
-            // atom position usually has nothing valid to quantify — any quantifier
-            // that legitimately follows a normal atom is consumed by the quantifier
-            // peek below. Reproduces the former validator's solitary/non-quantifiable
-            // checks (e.g. `/ * /`, `/ a+ + /`, `/ ^+ /`, `/ ~? /`).
-            if mode == RegexParseMode::Validate && matches!(c, '*' | '+' | '?') {
-                // Backreferences and interpolation placeholders are pushed WITHOUT
-                // a quantifier peek (they `continue` immediately), so a quantifier
-                // here is a valid first quantifier on that atom (e.g. `$0*`,
-                // `@var+`). Consume it (and any `**`-range / frugal marker) instead
-                // of treating it as solitary.
-                if matches!(
-                    tokens.last().map(|t| &t.atom),
-                    Some(RegexAtom::Backref(_))
-                        | Some(RegexAtom::NamedBackref(_))
-                        | Some(RegexAtom::ZeroWidth)
-                ) {
-                    if c == '*' && chars.peek() == Some(&'*') {
-                        chars.next();
-                        while chars.peek().is_some_and(|ch| {
-                            ch.is_ascii_digit() || matches!(ch, '.' | '*' | '^' | '_' | ' ')
-                        }) {
+                // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching
+                // atom position usually has nothing valid to quantify — any quantifier
+                // that legitimately follows a normal atom is consumed by the quantifier
+                // peek below. Reproduces the former validator's solitary/non-quantifiable
+                // checks (e.g. `/ * /`, `/ a+ + /`, `/ ^+ /`, `/ ~? /`).
+                if mode == RegexParseMode::Validate && matches!(c, '*' | '+' | '?') {
+                    // Backreferences and interpolation placeholders are pushed WITHOUT
+                    // a quantifier peek (they `continue` immediately), so a quantifier
+                    // here is a valid first quantifier on that atom (e.g. `$0*`,
+                    // `@var+`). Consume it (and any `**`-range / frugal marker) instead
+                    // of treating it as solitary.
+                    if matches!(
+                        tokens.last().map(|t| &t.atom),
+                        Some(RegexAtom::Backref(_))
+                            | Some(RegexAtom::NamedBackref(_))
+                            | Some(RegexAtom::ZeroWidth)
+                    ) {
+                        if c == '*' && chars.peek() == Some(&'*') {
+                            chars.next();
+                            while chars.peek().is_some_and(|ch| {
+                                ch.is_ascii_digit() || matches!(ch, '.' | '*' | '^' | '_' | ' ')
+                            }) {
+                                chars.next();
+                            }
+                        }
+                        if chars.peek() == Some(&'?') {
                             chars.next();
                         }
+                        // A repeating quantifier on an interpolation placeholder /
+                        // backref may carry a `%` / `%%` separator modifier
+                        // (`@oct ** 4 % \.`, `$0+ % ','`). The normal atom path
+                        // consumes this below, but placeholders `continue` early, so
+                        // consume (and validate) it here too; otherwise the `%` is
+                        // mis-parsed as a stray hash sigil and the whole regex fails
+                        // to compile. `?` (ZeroOrOne) is non-repeating and takes none.
+                        if matches!(c, '*' | '+') {
+                            self.consume_placeholder_quantifier_separator(&mut chars, mode)?;
+                        }
+                        continue 'atoms;
                     }
-                    if chars.peek() == Some(&'?') {
-                        chars.next();
-                    }
-                    // A repeating quantifier on an interpolation placeholder /
-                    // backref may carry a `%` / `%%` separator modifier
-                    // (`@oct ** 4 % \.`, `$0+ % ','`). The normal atom path
-                    // consumes this below, but placeholders `continue` early, so
-                    // consume (and validate) it here too; otherwise the `%` is
-                    // mis-parsed as a stray hash sigil and the whole regex fails
-                    // to compile. `?` (ZeroOrOne) is non-repeating and takes none.
-                    if matches!(c, '*' | '+') {
-                        self.consume_placeholder_quantifier_separator(&mut chars, mode)?;
-                    }
-                    continue;
+                    let err = quantifier_context_error(&tokens, anchor_start);
+                    PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                    return None;
                 }
-                let err = quantifier_context_error(&tokens, anchor_start);
-                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
-                return None;
             }
             // ADR-0046 Slice 1 (Decision 2 item 3): set when this atom came
             // from `array_var_alternation_atom` (the `<@var>` / `<?@var>` /
@@ -2180,1098 +2317,689 @@ impl Interpreter {
             // capturing call and the alias is a List of per-iteration Matches;
             // see `wrap_named_quant` below.
             let mut aliased_subrule_call = false;
-            let atom = match c {
-                '.' => RegexAtom::Any,
-                '$' | '@'
-                    if mode == RegexParseMode::Match
-                        && chars.peek() == Some(&'(')
-                        && code_interp_close(&chars.clone().collect::<Vec<char>>(), 0)
-                            .is_some() =>
-                {
-                    // `$( code )` / `@( code )`: the interpolation pre-pass
-                    // leaves the code in the text; it runs when the atom is
-                    // matched, on the running interpreter (#10157).
-                    let rest: Vec<char> = chars.clone().collect();
-                    let close = code_interp_close(&rest, 0)?;
-                    let code: String = rest[1..close].iter().collect();
-                    for _ in 0..=close {
-                        chars.next();
+            let atom = if let Some(atom) = backref_atom {
+                atom
+            } else {
+                match c {
+                    '.' => RegexAtom::Any,
+                    '$' | '@'
+                        if mode == RegexParseMode::Match
+                            && chars.peek() == Some(&'(')
+                            && code_interp_close(&chars.clone().collect::<Vec<char>>(), 0)
+                                .is_some() =>
+                    {
+                        // `$( code )` / `@( code )`: the interpolation pre-pass
+                        // leaves the code in the text; it runs when the atom is
+                        // matched, on the running interpreter (#10157).
+                        let rest: Vec<char> = chars.clone().collect();
+                        let close = code_interp_close(&rest, 0)?;
+                        let code: String = rest[1..close].iter().collect();
+                        for _ in 0..=close {
+                            chars.next();
+                        }
+                        runtime_value_atom = true;
+                        super::regex::regex_helpers::note_regex_code_lowered();
+                        RegexAtom::CodeInterp {
+                            code: code.into(),
+                            list: c == '@',
+                        }
                     }
-                    runtime_value_atom = true;
-                    RegexAtom::CodeInterp {
-                        code: code.into(),
-                        list: c == '@',
-                    }
-                }
-                '\\' => {
-                    let esc = chars.next()?;
-                    match esc {
-                        'd' => RegexAtom::CharClass(CharClass {
-                            negated: false,
-                            items: vec![ClassItem::Digit],
-                        }),
-                        'D' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::Digit],
-                        }),
-                        'w' => RegexAtom::CharClass(CharClass {
-                            negated: false,
-                            items: vec![ClassItem::Word],
-                        }),
-                        'W' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::Word],
-                        }),
-                        's' => RegexAtom::CharClass(CharClass {
-                            negated: false,
-                            items: vec![ClassItem::Space],
-                        }),
-                        'S' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::Space],
-                        }),
-                        'h' => RegexAtom::CharClass(CharClass {
-                            negated: false,
-                            items: vec![ClassItem::HorizSpace],
-                        }),
-                        'H' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::HorizSpace],
-                        }),
-                        'v' => RegexAtom::CharClass(CharClass {
-                            negated: false,
-                            items: vec![ClassItem::VertSpace],
-                        }),
-                        'V' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::VertSpace],
-                        }),
-                        'n' => RegexAtom::Newline,
-                        'N' => RegexAtom::NotNewline,
-                        't' => RegexAtom::Literal('\t'),
-                        'T' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::Char('\t')],
-                        }),
-                        'r' => RegexAtom::Literal('\r'),
-                        'R' => RegexAtom::Newline, // \R matches any newline sequence
-                        'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
-                        'f' => RegexAtom::Literal('\u{000C}'), // form feed
-                        'F' => RegexAtom::CharClass(CharClass {
-                            negated: true,
-                            items: vec![ClassItem::Char('\u{000C}')],
-                        }),
-                        'x' => {
-                            // \x[HEX] or \xHH hex escape in regex
-                            if chars.peek() == Some(&'[') {
-                                chars.next(); // skip '['
-                                let mut hex = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
+                    '\\' => {
+                        let esc = chars.next()?;
+                        match esc {
+                            'd' => RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::Digit],
+                            }),
+                            'D' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Digit],
+                            }),
+                            'w' => RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::Word],
+                            }),
+                            'W' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Word],
+                            }),
+                            's' => RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::Space],
+                            }),
+                            'S' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Space],
+                            }),
+                            'h' => RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::HorizSpace],
+                            }),
+                            'H' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::HorizSpace],
+                            }),
+                            'v' => RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::VertSpace],
+                            }),
+                            'V' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::VertSpace],
+                            }),
+                            'n' => RegexAtom::Newline,
+                            'N' => RegexAtom::NotNewline,
+                            't' => RegexAtom::Literal('\t'),
+                            'T' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Char('\t')],
+                            }),
+                            'r' => RegexAtom::Literal('\r'),
+                            'R' => RegexAtom::Newline, // \R matches any newline sequence
+                            'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
+                            'f' => RegexAtom::Literal('\u{000C}'), // form feed
+                            'F' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Char('\u{000C}')],
+                            }),
+                            'x' => {
+                                // \x[HEX] or \xHH hex escape in regex
+                                if chars.peek() == Some(&'[') {
+                                    chars.next(); // skip '['
+                                    let mut hex = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        hex.push(ch);
                                         chars.next();
-                                        break;
                                     }
-                                    hex.push(ch);
-                                    chars.next();
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::Literal(c)
-                                } else {
-                                    continue;
-                                }
-                            } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                // \x followed by hex digits without brackets
-                                let mut hex = String::new();
-                                while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                    hex.push(chars.next().unwrap());
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::Literal(c)
-                                } else {
-                                    continue;
-                                }
-                            } else {
-                                RegexAtom::Literal('x')
-                            }
-                        }
-                        'o' => {
-                            // \o[OCT] or \o### octal escape in regex
-                            if chars.peek() == Some(&'[') {
-                                chars.next(); // skip '['
-                                let mut oct = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
-                                        chars.next();
-                                        break;
-                                    }
-                                    oct.push(ch);
-                                    chars.next();
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::Literal(c)
-                                } else {
-                                    continue;
-                                }
-                            } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
-                                // \o followed by octal digits without brackets
-                                let mut oct = String::new();
-                                while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
-                                    oct.push(chars.next().unwrap());
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::Literal(c)
-                                } else {
-                                    continue;
-                                }
-                            } else {
-                                RegexAtom::Literal('o')
-                            }
-                        }
-                        'O' => {
-                            // \O[OCT] or \O### matches any char NOT the given octal char
-                            if chars.peek() == Some(&'[') {
-                                chars.next(); // skip '['
-                                let mut oct = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
-                                        chars.next();
-                                        break;
-                                    }
-                                    oct.push(ch);
-                                    chars.next();
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::CharClass(CharClass {
-                                        negated: true,
-                                        items: vec![ClassItem::Char(c)],
-                                    })
-                                } else {
-                                    continue;
-                                }
-                            } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
-                                let mut oct = String::new();
-                                while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
-                                    oct.push(chars.next().unwrap());
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::CharClass(CharClass {
-                                        negated: true,
-                                        items: vec![ClassItem::Char(c)],
-                                    })
-                                } else {
-                                    continue;
-                                }
-                            } else {
-                                RegexAtom::Literal('O')
-                            }
-                        }
-                        'c' => {
-                            // \c[NAME] or \c[NAME1, NAME2] named character escape in regex
-                            if chars.peek() == Some(&'[') {
-                                chars.next(); // skip '['
-                                let mut name = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
-                                        chars.next();
-                                        break;
-                                    }
-                                    name.push(ch);
-                                    chars.next();
-                                }
-                                // Handle comma-separated names
-                                let parts: Vec<&str> = name.split(',').map(|s| s.trim()).collect();
-                                let mut resolved: Vec<char> = Vec::new();
-                                for part in &parts {
                                     if let Some(c) =
-                                        crate::token_kind::lookup_unicode_char_by_name(part)
+                                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
                                     {
-                                        resolved.push(c);
+                                        RegexAtom::Literal(c)
+                                    } else {
+                                        continue;
                                     }
+                                } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                    // \x followed by hex digits without brackets
+                                    let mut hex = String::new();
+                                    while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                        hex.push(chars.next().unwrap());
+                                    }
+                                    if let Some(c) =
+                                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::Literal(c)
+                                    } else {
+                                        continue;
+                                    }
+                                } else {
+                                    RegexAtom::Literal('x')
                                 }
-                                if resolved.is_empty() {
-                                    continue;
-                                }
-                                // Push all but last as separate literal tokens
-                                for &c in &resolved[..resolved.len() - 1] {
-                                    tokens.push(RegexToken {
-                                        atom: RegexAtom::Literal(c),
-                                        quant: RegexQuant::One,
-                                        named_capture: None,
-                                        hash_capture: None,
-                                        secondary_named_capture: None,
-                                        force_list_capture: false,
-                                        ratchet: false,
-                                        frugal: false,
-                                        separator: None,
-                                        from_runtime_interpolation: false,
-                                        subrule_call_capture: false,
-                                    });
-                                }
-                                RegexAtom::Literal(*resolved.last().unwrap())
-                            } else {
-                                RegexAtom::Literal('c')
                             }
-                        }
-                        'C' => {
-                            // \C[NAME] matches any char that is NOT the named char
-                            if chars.peek() == Some(&'[') {
-                                chars.next();
-                                let mut name = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
+                            'o' => {
+                                // \o[OCT] or \o### octal escape in regex
+                                if chars.peek() == Some(&'[') {
+                                    chars.next(); // skip '['
+                                    let mut oct = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        oct.push(ch);
                                         chars.next();
-                                        break;
                                     }
-                                    name.push(ch);
-                                    chars.next();
-                                }
-                                if let Some(c) =
-                                    crate::token_kind::lookup_unicode_char_by_name(&name)
-                                {
-                                    RegexAtom::CharClass(CharClass {
-                                        negated: true,
-                                        items: vec![ClassItem::Char(c)],
-                                    })
+                                    if let Some(c) =
+                                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::Literal(c)
+                                    } else {
+                                        continue;
+                                    }
+                                } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                    // \o followed by octal digits without brackets
+                                    let mut oct = String::new();
+                                    while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                        oct.push(chars.next().unwrap());
+                                    }
+                                    if let Some(c) =
+                                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::Literal(c)
+                                    } else {
+                                        continue;
+                                    }
                                 } else {
-                                    continue;
+                                    RegexAtom::Literal('o')
                                 }
-                            } else {
-                                RegexAtom::Literal('C')
                             }
-                        }
-                        'X' => {
-                            // \X[HEX] or \XHH matches any char that is NOT the given hex char
-                            if chars.peek() == Some(&'[') {
-                                chars.next();
-                                let mut hex = String::new();
-                                while let Some(&ch) = chars.peek() {
-                                    if ch == ']' {
+                            'O' => {
+                                // \O[OCT] or \O### matches any char NOT the given octal char
+                                if chars.peek() == Some(&'[') {
+                                    chars.next(); // skip '['
+                                    let mut oct = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        oct.push(ch);
                                         chars.next();
-                                        break;
                                     }
-                                    hex.push(ch);
+                                    if let Some(c) =
+                                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::CharClass(CharClass {
+                                            negated: true,
+                                            items: vec![ClassItem::Char(c)],
+                                        })
+                                    } else {
+                                        continue;
+                                    }
+                                } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                    let mut oct = String::new();
+                                    while chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
+                                        oct.push(chars.next().unwrap());
+                                    }
+                                    if let Some(c) =
+                                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::CharClass(CharClass {
+                                            negated: true,
+                                            items: vec![ClassItem::Char(c)],
+                                        })
+                                    } else {
+                                        continue;
+                                    }
+                                } else {
+                                    RegexAtom::Literal('O')
+                                }
+                            }
+                            'c' => {
+                                // \c[NAME] or \c[NAME1, NAME2] named character escape in regex
+                                if chars.peek() == Some(&'[') {
+                                    chars.next(); // skip '['
+                                    let mut name = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        name.push(ch);
+                                        chars.next();
+                                    }
+                                    // Handle comma-separated names
+                                    let parts: Vec<&str> =
+                                        name.split(',').map(|s| s.trim()).collect();
+                                    let mut resolved: Vec<char> = Vec::new();
+                                    for part in &parts {
+                                        if let Some(c) =
+                                            crate::token_kind::lookup_unicode_char_by_name(part)
+                                        {
+                                            resolved.push(c);
+                                        }
+                                    }
+                                    if resolved.is_empty() {
+                                        continue;
+                                    }
+                                    // Push all but last as separate literal tokens
+                                    for &c in &resolved[..resolved.len() - 1] {
+                                        tokens.push(RegexToken {
+                                            atom: RegexAtom::Literal(c),
+                                            quant: RegexQuant::One,
+                                            named_capture: None,
+                                            hash_capture: None,
+                                            secondary_named_capture: None,
+                                            force_list_capture: false,
+                                            ratchet: false,
+                                            frugal: false,
+                                            separator: None,
+                                            from_runtime_interpolation: false,
+                                            subrule_call_capture: false,
+                                        });
+                                    }
+                                    RegexAtom::Literal(*resolved.last().unwrap())
+                                } else {
+                                    RegexAtom::Literal('c')
+                                }
+                            }
+                            'C' => {
+                                // \C[NAME] matches any char that is NOT the named char
+                                if chars.peek() == Some(&'[') {
                                     chars.next();
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::CharClass(CharClass {
-                                        negated: true,
-                                        items: vec![ClassItem::Char(c)],
-                                    })
+                                    let mut name = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        name.push(ch);
+                                        chars.next();
+                                    }
+                                    if let Some(c) =
+                                        crate::token_kind::lookup_unicode_char_by_name(&name)
+                                    {
+                                        RegexAtom::CharClass(CharClass {
+                                            negated: true,
+                                            items: vec![ClassItem::Char(c)],
+                                        })
+                                    } else {
+                                        continue;
+                                    }
                                 } else {
-                                    continue;
+                                    RegexAtom::Literal('C')
                                 }
-                            } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                let mut hex = String::new();
-                                while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                    hex.push(chars.next().unwrap());
-                                }
-                                if let Some(c) =
-                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                                {
-                                    RegexAtom::CharClass(CharClass {
-                                        negated: true,
-                                        items: vec![ClassItem::Char(c)],
-                                    })
+                            }
+                            'X' => {
+                                // \X[HEX] or \XHH matches any char that is NOT the given hex char
+                                if chars.peek() == Some(&'[') {
+                                    chars.next();
+                                    let mut hex = String::new();
+                                    while let Some(&ch) = chars.peek() {
+                                        if ch == ']' {
+                                            chars.next();
+                                            break;
+                                        }
+                                        hex.push(ch);
+                                        chars.next();
+                                    }
+                                    if let Some(c) =
+                                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::CharClass(CharClass {
+                                            negated: true,
+                                            items: vec![ClassItem::Char(c)],
+                                        })
+                                    } else {
+                                        continue;
+                                    }
+                                } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                    let mut hex = String::new();
+                                    while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
+                                        hex.push(chars.next().unwrap());
+                                    }
+                                    if let Some(c) =
+                                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                    {
+                                        RegexAtom::CharClass(CharClass {
+                                            negated: true,
+                                            items: vec![ClassItem::Char(c)],
+                                        })
+                                    } else {
+                                        continue;
+                                    }
                                 } else {
-                                    continue;
+                                    RegexAtom::Literal('X')
                                 }
-                            } else {
-                                RegexAtom::Literal('X')
                             }
-                        }
-                        'b' => {
-                            // Bare \b is obsolete Perl 5 syntax — reject with X::Obsolete
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "\\b as a word boundary",
-                                    "<?wb> (word boundary) or <!wb> (not a word boundary)",
-                                ));
-                            });
-                            return None;
-                        }
-                        'B' => {
-                            // Bare \B is obsolete Perl 5 syntax — reject with X::Obsolete
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "\\B as a word boundary",
-                                    "<?wb> (word boundary) or <!wb> (not a word boundary)",
-                                ));
-                            });
-                            return None;
-                        }
-                        // Obsolete Perl 5 anchors — reject at parse time (Validate).
-                        'A' if mode == RegexParseMode::Validate => {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "\\A as beginning-of-string matcher",
-                                    "^",
-                                ));
-                            });
-                            return None;
-                        }
-                        'Z' if mode == RegexParseMode::Validate => {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "\\Z as end-of-string matcher",
-                                    "\\n?$",
-                                ));
-                            });
-                            return None;
-                        }
-                        'z' if mode == RegexParseMode::Validate => {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "\\z as end-of-string matcher",
-                                    "$",
-                                ));
-                            });
-                            return None;
-                        }
-                        // `\ ` (backslash + whitespace) is an "unspace", a main-slang
-                        // construct not allowed in a regex -> X::Syntax::Regex::Unspace.
-                        ws if ws.is_whitespace() => {
-                            if mode == RegexParseMode::Validate {
-                                PENDING_REGEX_ERROR
-                                    .with(|e| *e.borrow_mut() = Some(make_unspace_error(ws)));
-                                return None;
-                            }
-                            RegexAtom::Literal(ws)
-                        }
-                        other => {
-                            // Validate mode: an unknown *alphabetic* backslash escape
-                            // is invalid metasyntax (e.g. `\a`, `\q`). Non-alphabetic
-                            // escapes are always valid (escaping a metacharacter).
-                            if mode == RegexParseMode::Validate && other.is_ascii_alphabetic() {
+                            'b' => {
+                                // Bare \b is obsolete Perl 5 syntax — reject with X::Obsolete
                                 PENDING_REGEX_ERROR.with(|e| {
-                                    *e.borrow_mut() =
-                                        Some(make_backslash_unrecognized_error(other));
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\b as a word boundary",
+                                        "<?wb> (word boundary) or <!wb> (not a word boundary)",
+                                    ));
                                 });
                                 return None;
                             }
-                            RegexAtom::Literal(other)
-                        }
-                    }
-                }
-                '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
-                    // Quoted literal string in Raku regex: 'foo-bar' matches literally
-                    // In single-quoted regex strings, \\ matches a literal backslash
-                    // and \' matches a literal single quote.
-                    let mut literal = String::new();
-                    loop {
-                        match chars.next() {
-                            Some('\\') => match chars.peek() {
-                                Some(&next_ch)
-                                    if next_ch == '\\' || regex_single_quote_closes(c, next_ch) =>
-                                {
-                                    literal.push(next_ch);
-                                    chars.next();
-                                }
-                                _ => literal.push('\\'),
-                            },
-                            Some(ch) if regex_single_quote_closes(c, ch) => break,
-                            Some(ch) => literal.push(ch),
-                            None => break,
-                        }
-                    }
-                    regex_single_quote_atom(literal, ignore_case)
-                }
-                '"' | '\u{201C}' | '\u{201E}'
-                    if mode == RegexParseMode::Match
-                        && super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)
-                            .is_some() =>
-                {
-                    // A `"..."` atom whose qq thunk result was not spliced in
-                    // (`splice_regex_qq_thunk_result`): read it at match time.
-                    let (body, span) =
-                        super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)?;
-                    for _ in 0..span {
-                        chars.next();
-                    }
-                    runtime_value_atom = true;
-                    self.regex_qq_interp_atom(c, &body, ignore_case)?
-                }
-                '"' | '\u{201C}' | '\u{201E}' => {
-                    // Double-quoted literal string in Raku regex: "foo" matches literally
-                    // Interpolation was done before this parse: by the
-                    // pre-pass for a bare `$name`, or by splicing a compiled qq
-                    // thunk's result (`crate::regex_qq_atoms`); the arm above
-                    // takes an atom whose result is read at match time.
-                    let close = match c {
-                        '"' => '"',
-                        '\u{201C}' | '\u{201E}' => '\u{201D}',
-                        _ => unreachable!(),
-                    };
-                    let mut literal = String::new();
-                    let mut saw_interp_mark = false;
-                    // Literal runs, each followed by an embedded `$( code )`
-                    // the pre-pass left for match time (#10157).
-                    let mut code_segments: Vec<(String, String)> = Vec::new();
-                    loop {
-                        match chars.next() {
-                            Some('$')
-                                if mode == RegexParseMode::Match
-                                    && chars.peek() == Some(&'(')
-                                    && let Some(close_at) = code_interp_close(
-                                        &chars.clone().collect::<Vec<char>>(),
-                                        0,
-                                    ) =>
-                            {
-                                let code: String =
-                                    chars.by_ref().take(close_at + 1).skip(1).collect();
-                                let code = code[..code.len() - 1].to_string();
-                                code_segments.push((std::mem::take(&mut literal), code));
+                            'B' => {
+                                // Bare \B is obsolete Perl 5 syntax — reject with X::Obsolete
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\B as a word boundary",
+                                        "<?wb> (word boundary) or <!wb> (not a word boundary)",
+                                    ));
+                                });
+                                return None;
                             }
-                            Some('\\') => match chars.next() {
-                                Some('n') => literal.push('\n'),
-                                Some('t') => literal.push('\t'),
-                                Some('r') => literal.push('\r'),
-                                Some('f') => literal.push('\u{000C}'),
-                                Some('b') => literal.push('\u{0008}'), // backspace
-                                Some('0') => literal.push('\0'),
-                                Some('c') | Some('C') => {
-                                    // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
-                                    if chars.peek() == Some(&'[') {
-                                        chars.next(); // skip '['
-                                        let mut name = String::new();
-                                        while let Some(&ch) = chars.peek() {
-                                            if ch == ']' {
-                                                chars.next();
-                                                break;
-                                            }
-                                            name.push(ch);
-                                            chars.next();
-                                        }
-                                        let parts: Vec<&str> =
-                                            name.split(',').map(|s| s.trim()).collect();
-                                        for part in &parts {
-                                            if let Some(resolved_char) =
+                            // Obsolete Perl 5 anchors — reject at parse time (Validate).
+                            'A' if mode == RegexParseMode::Validate => {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\A as beginning-of-string matcher",
+                                        "^",
+                                    ));
+                                });
+                                return None;
+                            }
+                            'Z' if mode == RegexParseMode::Validate => {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\Z as end-of-string matcher",
+                                        "\\n?$",
+                                    ));
+                                });
+                                return None;
+                            }
+                            'z' if mode == RegexParseMode::Validate => {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\z as end-of-string matcher",
+                                        "$",
+                                    ));
+                                });
+                                return None;
+                            }
+                            // `\ ` (backslash + whitespace) is an "unspace", a main-slang
+                            // construct not allowed in a regex -> X::Syntax::Regex::Unspace.
+                            ws if ws.is_whitespace() => {
+                                if mode == RegexParseMode::Validate {
+                                    PENDING_REGEX_ERROR
+                                        .with(|e| *e.borrow_mut() = Some(make_unspace_error(ws)));
+                                    return None;
+                                }
+                                RegexAtom::Literal(ws)
+                            }
+                            other => {
+                                // Validate mode: an unknown *alphabetic* backslash escape
+                                // is invalid metasyntax (e.g. `\a`, `\q`). Non-alphabetic
+                                // escapes are always valid (escaping a metacharacter).
+                                if mode == RegexParseMode::Validate && other.is_ascii_alphabetic() {
+                                    PENDING_REGEX_ERROR.with(|e| {
+                                        *e.borrow_mut() =
+                                            Some(make_backslash_unrecognized_error(other));
+                                    });
+                                    return None;
+                                }
+                                RegexAtom::Literal(other)
+                            }
+                        }
+                    }
+                    '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
+                        // Quoted literal string in Raku regex: 'foo-bar' matches literally
+                        // In single-quoted regex strings, \\ matches a literal backslash
+                        // and \' matches a literal single quote.
+                        let mut literal = String::new();
+                        loop {
+                            match chars.next() {
+                                Some('\\') => match chars.peek() {
+                                    Some(&next_ch)
+                                        if next_ch == '\\'
+                                            || regex_single_quote_closes(c, next_ch) =>
+                                    {
+                                        literal.push(next_ch);
+                                        chars.next();
+                                    }
+                                    _ => literal.push('\\'),
+                                },
+                                Some(ch) if regex_single_quote_closes(c, ch) => break,
+                                Some(ch) => literal.push(ch),
+                                None => break,
+                            }
+                        }
+                        regex_single_quote_atom(literal, ignore_case)
+                    }
+                    '"' | '\u{201C}' | '\u{201E}'
+                        if mode == RegexParseMode::Match
+                            && super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)
+                                .is_some() =>
+                    {
+                        // A `"..."` atom whose qq thunk result was not spliced in
+                        // (`splice_regex_qq_thunk_result`): read it at match time.
+                        let (body, span) =
+                            super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)?;
+                        for _ in 0..span {
+                            chars.next();
+                        }
+                        runtime_value_atom = true;
+                        self.regex_qq_interp_atom(c, &body, ignore_case)?
+                    }
+                    '"' | '\u{201C}' | '\u{201E}' => {
+                        // Double-quoted literal string in Raku regex: "foo" matches literally
+                        // Interpolation was done before this parse: by the
+                        // pre-pass for a bare `$name`, or by splicing a compiled qq
+                        // thunk's result (`crate::regex_qq_atoms`); the arm above
+                        // takes an atom whose result is read at match time.
+                        let close = match c {
+                            '"' => '"',
+                            '\u{201C}' | '\u{201E}' => '\u{201D}',
+                            _ => unreachable!(),
+                        };
+                        let mut literal = String::new();
+                        let mut saw_interp_mark = false;
+                        // Literal runs, each followed by an embedded `$( code )`
+                        // the pre-pass left for match time (#10157).
+                        let mut code_segments: Vec<(String, String)> = Vec::new();
+                        loop {
+                            match chars.next() {
+                                Some('$')
+                                    if mode == RegexParseMode::Match
+                                        && chars.peek() == Some(&'(')
+                                        && let Some(close_at) = code_interp_close(
+                                            &chars.clone().collect::<Vec<char>>(),
+                                            0,
+                                        ) =>
+                                {
+                                    let code: String =
+                                        chars.by_ref().take(close_at + 1).skip(1).collect();
+                                    let code = code[..code.len() - 1].to_string();
+                                    code_segments.push((std::mem::take(&mut literal), code));
+                                }
+                                Some('\\') => {
+                                    match chars.next() {
+                                        Some('n') => literal.push('\n'),
+                                        Some('t') => literal.push('\t'),
+                                        Some('r') => literal.push('\r'),
+                                        Some('f') => literal.push('\u{000C}'),
+                                        Some('b') => literal.push('\u{0008}'), // backspace
+                                        Some('0') => literal.push('\0'),
+                                        Some('c') | Some('C') => {
+                                            // \c[NAME] or \c[NAME1, NAME2] inside double-quoted regex string
+                                            if chars.peek() == Some(&'[') {
+                                                chars.next(); // skip '['
+                                                let mut name = String::new();
+                                                while let Some(&ch) = chars.peek() {
+                                                    if ch == ']' {
+                                                        chars.next();
+                                                        break;
+                                                    }
+                                                    name.push(ch);
+                                                    chars.next();
+                                                }
+                                                let parts: Vec<&str> =
+                                                    name.split(',').map(|s| s.trim()).collect();
+                                                for part in &parts {
+                                                    if let Some(resolved_char) =
                                                 crate::token_kind::lookup_unicode_char_by_name(part)
                                             {
                                                 literal.push(resolved_char);
                                             }
-                                        }
-                                    } else {
-                                        literal.push('c');
-                                    }
-                                }
-                                Some('x') => {
-                                    // \x[HEX] or bracketless \xHH inside a double-quoted
-                                    // regex string (e.g. `token SP { "\x20" }`).
-                                    if chars.peek() == Some(&'[') {
-                                        chars.next(); // skip '['
-                                        let mut hex = String::new();
-                                        while let Some(&ch) = chars.peek() {
-                                            if ch == ']' {
-                                                chars.next();
-                                                break;
+                                                }
+                                            } else {
+                                                literal.push('c');
                                             }
-                                            hex.push(ch);
-                                            chars.next();
                                         }
-                                        if let Ok(cp) = u32::from_str_radix(hex.trim(), 16)
-                                            && let Some(ch) = char::from_u32(cp)
-                                        {
-                                            literal.push(ch);
-                                        }
-                                    } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                        let mut hex = String::new();
-                                        while chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
-                                            hex.push(chars.next().unwrap());
-                                        }
-                                        if let Ok(cp) = u32::from_str_radix(&hex, 16)
-                                            && let Some(ch) = char::from_u32(cp)
-                                        {
-                                            literal.push(ch);
-                                        }
-                                    } else {
-                                        literal.push('x');
-                                    }
-                                }
-                                Some(other) => literal.push(other),
-                                None => break,
-                            },
-                            Some(ch) if ch == close => break,
-                            // A runtime-interpolated span: the whole literal
-                            // becomes one non-declarative atom (ADR-0022 §5).
-                            Some(Self::NON_DECLARATIVE_INTERP_MARK) => saw_interp_mark = true,
-                            Some(ch) => literal.push(ch),
-                            None => break,
-                        }
-                    }
-                    if saw_interp_mark {
-                        runtime_value_atom = true;
-                    }
-                    if code_segments.is_empty() {
-                        regex_single_quote_atom(literal, ignore_case)
-                    } else {
-                        runtime_value_atom = true;
-                        dq_code_interp_atom(code_segments, literal, ignore_case)
-                    }
-                }
-                '\u{00AB}' => {
-                    // « — left word boundary
-                    RegexAtom::LeftWordBoundary
-                }
-                '\u{00BB}' => {
-                    // » — right word boundary
-                    RegexAtom::RightWordBoundary
-                }
-                '<' if chars.peek() == Some(&'<') => {
-                    // << — left word boundary
-                    chars.next();
-                    RegexAtom::LeftWordBoundary
-                }
-                '>' if chars.peek() == Some(&'>') => {
-                    // >> — right word boundary
-                    chars.next();
-                    RegexAtom::RightWordBoundary
-                }
-                '<' => {
-                    if chars.peek() == Some(&'(') {
-                        chars.next();
-                        RegexAtom::CaptureStartMarker
-                    } else {
-                        // A sigil alias on a `<?name …>` / `<!name …>` *subrule*
-                        // assertion (`$<a>=<?foo>`, `$<a>=<?before x>`,
-                        // `$<a>=<!foo>`) does not keep the assertion's zero
-                        // width: Rakudo's `metachar:sym<var>` action runs
-                        // `subrule_alias` on any subrule-typed atom, which renames
-                        // it `a=foo` and resets its subtype to `capture`,
-                        // overwriting the `zerowidth` the `?`/`!` prefix set. So
-                        // `$<a>=<?foo>` is exactly `$<a>=<foo>` (it consumes and
-                        // captures both `a` and `foo`), and `$<a>=<?before x>` is
-                        // `$<a>=<before x>` (`before` is itself zero-width, so both
-                        // keys hold an empty match). Drop the `?` and parse the
-                        // capturing call. A negated one keeps its `negate` flag but
-                        // is now a capturing call: when the subrule fails, the
-                        // cursor moves to the failed match's (negative) position,
-                        // so the match can never succeed -- see the atom override
-                        // below. Non-subrule assertions (`<?[x]>`, `<?{…}>`,
-                        // `<?:L>`, `<?@a>`) become an ordinary subcapture and stay
-                        // zero-width, so they are left alone.
-                        if pending_named_capture.is_some()
-                            && !pending_named_capture_is_angle_alias
-                            && let Some(&polarity @ ('?' | '!')) = chars.peek()
-                            && {
-                                let mut la = chars.clone();
-                                la.next();
-                                is_subrule_lookahead_name(&la.take(2).collect::<String>())
-                            }
-                        {
-                            if polarity == '?' {
-                                chars.next();
-                            } else {
-                                aliased_negated_subrule = true;
-                            }
-                        }
-                        if pending_named_capture.is_some()
-                            && !pending_named_capture_is_angle_alias
-                            && is_subrule_lookahead_name(&chars.clone().take(2).collect::<String>())
-                        {
-                            aliased_subrule_call = true;
-                        }
-                        // Check for lookaround assertions: <?before ...>, <!before ...>,
-                        // <?after ...>, <!after ...>
-                        let peek_str: String = chars.clone().collect();
-                        if peek_str.starts_with("?[")
-                            || peek_str.starts_with("![")
-                            || peek_str.starts_with("?-[")
-                            || peek_str.starts_with("!-[")
-                        {
-                            // <?[a]> or <![a]> — zero-width character class assertion
-                            let negated = peek_str.starts_with('!');
-                            // Skip '?' or '!'
-                            chars.next();
-                            // Read content between current position and closing '>'
-                            let mut cc_content = String::new();
-                            let mut angle_depth = 1usize;
-                            for ch in chars.by_ref() {
-                                if ch == '<' {
-                                    angle_depth += 1;
-                                    cc_content.push(ch);
-                                } else if ch == '>' {
-                                    angle_depth -= 1;
-                                    if angle_depth == 0 {
-                                        break;
-                                    }
-                                    cc_content.push(ch);
-                                } else {
-                                    cc_content.push(ch);
-                                }
-                            }
-                            // Parse the character class content (e.g., [a], -[a], [\n]).
-                            // Compound bracket classes must stay as CompositeClass atoms:
-                            // stripping only the outer brackets would turn `[a] - [b]` into
-                            // ordinary class text and lose the set subtraction before the
-                            // Lookaround matcher can apply its outer negation.
-                            let cc_trimmed = cc_content.trim();
-                            let inner_atom = if (cc_trimmed.starts_with('[')
-                                || cc_trimmed.starts_with("-[")
-                                || cc_trimmed.starts_with("+["))
-                                && cc_trimmed.ends_with(']')
-                            {
-                                self.parse_bracket_char_class(cc_trimmed)
-                            } else if cc_trimmed.starts_with('[')
-                                || cc_trimmed.starts_with("-[")
-                                || cc_trimmed.starts_with("+[")
-                            {
-                                self.parse_combined_class(cc_trimmed, mode)
-                            } else {
-                                let (cc_negated, cc_inner) =
-                                    if let Some(rest) = cc_trimmed.strip_prefix("-[") {
-                                        (true, rest.strip_suffix(']').unwrap_or(rest))
-                                    } else if let Some(rest) = cc_trimmed.strip_prefix('[') {
-                                        (false, rest.strip_suffix(']').unwrap_or(rest))
-                                    } else {
-                                        (false, cc_trimmed)
-                                    };
-                                self.parse_raku_char_class(cc_inner, cc_negated)
-                                    .map(RegexAtom::CharClass)
-                            };
-                            // The outer `?`/`!` negation is carried by the
-                            // Lookaround's `negated` flag below; the inner atom
-                            // only reflects an explicitly negated class form.
-                            if let Some(inner_atom) = inner_atom {
-                                // Build a lookahead with the char class as the inner pattern
-                                let inner_pattern = RegexPattern {
-                                    tokens: vec![RegexToken {
-                                        atom: inner_atom,
-                                        quant: RegexQuant::One,
-                                        named_capture: None,
-                                        hash_capture: None,
-                                        secondary_named_capture: None,
-                                        force_list_capture: false,
-                                        ratchet: false,
-                                        frugal: false,
-                                        separator: None,
-                                        from_runtime_interpolation: false,
-                                        subrule_call_capture: false,
-                                    }],
-                                    anchor_start: false,
-                                    anchor_end: false,
-                                    ignore_case,
-                                    ignore_mark,
-                                    derived: Default::default(),
-                                };
-                                RegexAtom::Lookaround {
-                                    pattern: inner_pattern,
-                                    negated,
-                                    is_behind: false,
-                                }
-                            } else {
-                                continue;
-                            }
-                        } else if let Some((negated, is_behind, head_len)) =
-                            lookaround_keyword(&peek_str)
-                        {
-                            // The bare `<before …>` / `<after …>` spelling is a
-                            // subrule call like any other, so it publishes a
-                            // (zero-width) `before`/`after` capture; the `?`, `!`
-                            // and `.` spellings do not.
-                            if !peek_str.starts_with(['?', '!', '.']) {
-                                pending_builtin_named_capture =
-                                    Some(if is_behind { "after" } else { "before" }.to_string());
-                            }
-                            // Skip the optional `?`/`!`/`.`, the keyword and the
-                            // whitespace that separates it from the body.
-                            for _ in 0..peek_str[..head_len].chars().count() {
-                                chars.next();
-                            }
-                            // Read the inner pattern up to the closing '>'.
-                            let mut inner = String::new();
-                            let mut angle_depth = 1usize;
-                            // A quoted literal inside the assertion may contain
-                            // the angle brackets themselves (`<!before '%>' >`,
-                            // `<!before '<%' >`), so its content must not move
-                            // the angle-depth count. `regex_quote_closer`
-                            // recognizes the Unicode quote pairs as well as
-                            // `'`/`"` -- `<!before ‘<%’>` is how
-                            // `Template::Classic` writes exactly this -- and it
-                            // answers the CLOSER, which differs from the opener
-                            // for every Unicode pair.
-                            let mut quote: Option<char> = None;
-                            while let Some(ch) = chars.next() {
-                                if ch == '\\' {
-                                    // Keep an escaped char (and its backslash)
-                                    // literally so an escaped delimiter (`\>`,
-                                    // `\<`) inside the assertion — e.g.
-                                    // `<!before \>>` — does not prematurely close
-                                    // it or shift the angle-depth count.
-                                    inner.push(ch);
-                                    if let Some(next) = chars.next() {
-                                        inner.push(next);
-                                    }
-                                    continue;
-                                }
-                                if let Some(q) = quote {
-                                    if ch == q {
-                                        quote = None;
-                                    }
-                                    inner.push(ch);
-                                    continue;
-                                }
-                                if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
-                                    quote = Some(closer);
-                                    inner.push(ch);
-                                } else if ch == '<' && {
-                                    let mut la = chars.clone();
-                                    match la.next() {
-                                        Some('[') => true,
-                                        Some('-' | '+' | '!') => la.next() == Some('['),
-                                        _ => false,
-                                    }
-                                } {
-                                    // A character class inside the assertion
-                                    // (`<!before '"' <-["]>*? >`): copy its
-                                    // content verbatim — a quote or bracket char
-                                    // in it must not move the quote/angle state.
-                                    // Only `\]` escapes `]` inside `[...]`.
-                                    inner.push(ch);
-                                    for c2 in chars.by_ref() {
-                                        inner.push(c2);
-                                        if c2 == '[' {
-                                            break;
-                                        }
-                                    }
-                                    'char_class: loop {
-                                        loop {
-                                            match chars.next() {
-                                                Some('\\') => {
-                                                    inner.push('\\');
-                                                    if let Some(n) = chars.next() {
-                                                        inner.push(n);
+                                        Some('x') => {
+                                            // \x[HEX] or bracketless \xHH inside a double-quoted
+                                            // regex string (e.g. `token SP { "\x20" }`).
+                                            if chars.peek() == Some(&'[') {
+                                                chars.next(); // skip '['
+                                                let mut hex = String::new();
+                                                while let Some(&ch) = chars.peek() {
+                                                    if ch == ']' {
+                                                        chars.next();
+                                                        break;
                                                     }
+                                                    hex.push(ch);
+                                                    chars.next();
                                                 }
-                                                Some(']') => {
-                                                    inner.push(']');
-                                                    break;
+                                                if let Ok(cp) = u32::from_str_radix(hex.trim(), 16)
+                                                    && let Some(ch) = char::from_u32(cp)
+                                                {
+                                                    literal.push(ch);
                                                 }
-                                                Some(c2) => inner.push(c2),
-                                                None => break 'char_class,
+                                            } else if chars
+                                                .peek()
+                                                .is_some_and(|c| c.is_ascii_hexdigit())
+                                            {
+                                                let mut hex = String::new();
+                                                while chars
+                                                    .peek()
+                                                    .is_some_and(|c| c.is_ascii_hexdigit())
+                                                {
+                                                    hex.push(chars.next().unwrap());
+                                                }
+                                                if let Ok(cp) = u32::from_str_radix(&hex, 16)
+                                                    && let Some(ch) = char::from_u32(cp)
+                                                {
+                                                    literal.push(ch);
+                                                }
+                                            } else {
+                                                literal.push('x');
                                             }
                                         }
-                                        // After ']': '>' closes the class;
-                                        // `+[` / `-[` / `[` continue a compound
-                                        // class. Anything else falls back to the
-                                        // outer loop.
-                                        let mut la = chars.clone();
-                                        match la.next() {
-                                            Some('>') => {
-                                                chars.next();
-                                                inner.push('>');
-                                                break 'char_class;
-                                            }
-                                            Some(p @ ('+' | '-')) if la.next() == Some('[') => {
-                                                chars.next();
-                                                chars.next();
-                                                inner.push(p);
-                                                inner.push('[');
-                                                continue 'char_class;
-                                            }
-                                            Some('[') => {
-                                                chars.next();
-                                                inner.push('[');
-                                                continue 'char_class;
-                                            }
-                                            _ => break 'char_class,
-                                        }
+                                        Some(other) => literal.push(other),
+                                        None => break,
                                     }
-                                } else if ch == '<' {
-                                    angle_depth += 1;
-                                    inner.push(ch);
-                                } else if ch == '>' {
-                                    angle_depth -= 1;
-                                    if angle_depth == 0 {
-                                        break;
-                                    }
-                                    inner.push(ch);
-                                } else {
-                                    inner.push(ch);
                                 }
+                                Some(ch) if ch == close => break,
+                                // A runtime-interpolated span: the whole literal
+                                // becomes one non-declarative atom (ADR-0022 §5).
+                                Some(Self::NON_DECLARATIVE_INTERP_MARK) => saw_interp_mark = true,
+                                Some(ch) => literal.push(ch),
+                                None => break,
                             }
-                            // Parse the inner pattern as a regex. In `Match` mode
-                            // the body has already been interpolated, so an empty
-                            // one means a bound variable interpolated to "" —
-                            // a zero-width, always-true assertion, NOT the
-                            // null-regex *syntax* error (which `Validate` mode
-                            // still reports against the uninterpolated source).
-                            let inner_pattern = if mode == RegexParseMode::Match
-                                && inner.trim().is_empty()
+                        }
+                        if saw_interp_mark {
+                            runtime_value_atom = true;
+                        }
+                        if code_segments.is_empty() {
+                            regex_single_quote_atom(literal, ignore_case)
+                        } else {
+                            runtime_value_atom = true;
+                            dq_code_interp_atom(code_segments, literal, ignore_case)
+                        }
+                    }
+                    '\u{00AB}' => {
+                        // « — left word boundary
+                        RegexAtom::LeftWordBoundary
+                    }
+                    '\u{00BB}' => {
+                        // » — right word boundary
+                        RegexAtom::RightWordBoundary
+                    }
+                    '<' if chars.peek() == Some(&'<') => {
+                        // << — left word boundary
+                        chars.next();
+                        RegexAtom::LeftWordBoundary
+                    }
+                    '>' if chars.peek() == Some(&'>') => {
+                        // >> — right word boundary
+                        chars.next();
+                        RegexAtom::RightWordBoundary
+                    }
+                    '<' => {
+                        if chars.peek() == Some(&'(') {
+                            chars.next();
+                            RegexAtom::CaptureStartMarker
+                        } else {
+                            // A sigil alias on a `<?name …>` / `<!name …>` *subrule*
+                            // assertion (`$<a>=<?foo>`, `$<a>=<?before x>`,
+                            // `$<a>=<!foo>`) does not keep the assertion's zero
+                            // width: Rakudo's `metachar:sym<var>` action runs
+                            // `subrule_alias` on any subrule-typed atom, which renames
+                            // it `a=foo` and resets its subtype to `capture`,
+                            // overwriting the `zerowidth` the `?`/`!` prefix set. So
+                            // `$<a>=<?foo>` is exactly `$<a>=<foo>` (it consumes and
+                            // captures both `a` and `foo`), and `$<a>=<?before x>` is
+                            // `$<a>=<before x>` (`before` is itself zero-width, so both
+                            // keys hold an empty match). Drop the `?` and parse the
+                            // capturing call. A negated one keeps its `negate` flag but
+                            // is now a capturing call: when the subrule fails, the
+                            // cursor moves to the failed match's (negative) position,
+                            // so the match can never succeed -- see the atom override
+                            // below. Non-subrule assertions (`<?[x]>`, `<?{…}>`,
+                            // `<?:L>`, `<?@a>`) become an ordinary subcapture and stay
+                            // zero-width, so they are left alone.
+                            if pending_named_capture.is_some()
+                                && !pending_named_capture_is_angle_alias
+                                && let Some(&polarity @ ('?' | '!')) = chars.peek()
+                                && {
+                                    let mut la = chars.clone();
+                                    la.next();
+                                    is_subrule_lookahead_name(&la.take(2).collect::<String>())
+                                }
                             {
-                                RegexPattern {
-                                    tokens: Vec::new(),
-                                    anchor_start: false,
-                                    anchor_end: false,
-                                    ignore_case,
-                                    ignore_mark,
-                                    derived: Default::default(),
+                                if polarity == '?' {
+                                    chars.next();
+                                } else {
+                                    aliased_negated_subrule = true;
                                 }
-                            } else {
-                                let _preserve_array_interpolation =
-                                    crate::runtime::regex_parse::PreserveArrayInterpolationScope::enter();
-                                let Some(parsed) = self.parse_regex_with_mode(&inner, mode) else {
-                                    continue;
-                                };
-                                parsed
-                            };
-                            RegexAtom::Lookaround {
-                                pattern: inner_pattern,
-                                negated,
-                                is_behind,
                             }
-                        } else if peek_str.starts_with("?{")
-                            || peek_str.starts_with("!{")
-                            || peek_str.starts_with('{')
-                        {
-                            // Check for code assertion: <?{...}> or <!{...}>
-                            // These need special handling because code may contain < and >
-                            let is_closure_interp = peek_str.starts_with('{');
-                            let negated = !is_closure_interp && peek_str.starts_with('!');
-                            if !is_closure_interp {
+                            if pending_named_capture.is_some()
+                                && !pending_named_capture_is_angle_alias
+                                && is_subrule_lookahead_name(
+                                    &chars.clone().take(2).collect::<String>(),
+                                )
+                            {
+                                aliased_subrule_call = true;
+                            }
+                            // Check for lookaround assertions: <?before ...>, <!before ...>,
+                            // <?after ...>, <!after ...>
+                            let peek_str: String = chars.clone().collect();
+                            if peek_str.starts_with("?[")
+                                || peek_str.starts_with("![")
+                                || peek_str.starts_with("?-[")
+                                || peek_str.starts_with("!-[")
+                            {
+                                // <?[a]> or <![a]> — zero-width character class assertion
+                                let negated = peek_str.starts_with('!');
                                 // Skip '?' or '!'
                                 chars.next();
-                            }
-                            // Skip '{'
-                            chars.next();
-                            let rest: Vec<char> = chars.clone().collect();
-                            let (code, consumed) = scan_code_assertion_body(&rest)?;
-                            for _ in 0..consumed {
-                                chars.next();
-                            }
-                            // Consume the closing '>'
-                            if chars.peek() == Some(&'>') {
-                                chars.next();
-                            }
-                            if is_closure_interp {
-                                RegexAtom::ClosureInterpolation { code, body: None }
-                            } else {
-                                RegexAtom::CodeAssertion {
-                                    code,
-                                    negated,
-                                    is_assertion: true,
-                                    body: None,
-                                    code_cache_id: 0,
-                                }
-                            }
-                        } else {
-                            // Read content between < and >, handling nested <...>.
-                            // Also balance parens/brackets/braces and skip quoted
-                            // strings so `<.foo(a => 1)>` and `<.foo(|[3,4,5])>`
-                            // are not terminated by the inner `>` or by close
-                            // brackets that match opens inside the args list.
-                            // Scan honouring quotes first. A quote that never closes
-                            // means the `'`/`"` was not a quote opener at all but a
-                            // literal word of a `< ... >` alternation (Raku takes a
-                            // lone `'` there as the one-character word `'`, e.g. the
-                            // HTTP tchar set `< ! # $ % & ' * + - . ^ _ \` | ~ >`).
-                            // Honouring it swallowed the closing `>` and everything
-                            // after it, silently dropping the assertion's quantifier
-                            // — `< ! ' # >+` matched exactly once. Re-scan with quote
-                            // tracking off in that case; a properly closed quote keeps
-                            // the original behaviour.
-                            let rest: Vec<char> = chars.clone().collect();
-                            let scanned = match scan_angle_assertion_body(&rest, true) {
-                                scan @ AngleBodyScan { closed: true, .. } => scan,
-                                _ => scan_angle_assertion_body(&rest, false),
-                            };
-                            for _ in 0..scanned.consumed {
-                                chars.next();
-                            }
-                            let mut name = scanned.name;
-                            // Check for word alternation: < word1 word2 ... >
-                            // In Raku, when the first character after `<` is
-                            // whitespace (space or tab), the contents are treated
-                            // as a list of quoted alternatives rather than a method
-                            // call. (`<a aa>` with no leading whitespace is a call.)
-                            if name.starts_with(|c: char| c.is_whitespace()) {
-                                let words: Vec<&str> = name.split_whitespace().collect();
-                                if !words.is_empty() {
-                                    let alternatives: Vec<RegexPattern> = words
-                                        .iter()
-                                        .map(|w| {
-                                            // Unescape backslash sequences: \< → <, \> → >, etc.
-                                            let mut word_chars: Vec<char> = Vec::new();
-                                            let mut wchars = w.chars().peekable();
-                                            while let Some(wch) = wchars.next() {
-                                                if wch == '\\' {
-                                                    if let Some(&next) = wchars.peek() {
-                                                        word_chars.push(next);
-                                                        wchars.next();
-                                                    } else {
-                                                        word_chars.push(wch);
-                                                    }
-                                                } else {
-                                                    word_chars.push(wch);
-                                                }
-                                            }
-                                            let toks: Vec<RegexToken> = word_chars
-                                                .iter()
-                                                .map(|&ch| RegexToken {
-                                                    atom: RegexAtom::Literal(ch),
-                                                    quant: RegexQuant::One,
-                                                    named_capture: None,
-                                                    hash_capture: None,
-                                                    secondary_named_capture: None,
-                                                    force_list_capture: false,
-                                                    ratchet: false,
-                                                    frugal: false,
-                                                    separator: None,
-                                                    from_runtime_interpolation: false,
-                                                    subrule_call_capture: false,
-                                                })
-                                                .collect();
-                                            RegexPattern {
-                                                tokens: toks,
-                                                anchor_start: false,
-                                                anchor_end: false,
-                                                ignore_case,
-                                                ignore_mark,
-                                                derived: Default::default(),
-                                            }
-                                        })
-                                        .collect();
-                                    RegexAtom::Alternation(alternatives)
-                                } else {
-                                    RegexAtom::ZeroWidth
-                                }
-                            } else {
-                                // Handle aliasing of a char-class / Unicode-property
-                                // assertion to a named capture, e.g. `<foo=[bao]>`,
-                                // `<bar=-[bao]>`, `<foo=:Letter>`, `<bar=:!Letter>`,
-                                // `<baz=-:Letter>`. The general `<name=subrule>` aliasing
-                                // (for named rules) is resolved at match time via
-                                // parse_named_regex_lookup_spec, but char classes and
-                                // Unicode properties are parsed into dedicated atoms here,
-                                // so we strip the `ident=` prefix and record the alias as
-                                // the pending named capture before dispatching on the RHS.
-                                {
-                                    let t = name.trim();
-                                    if let Some(eq_pos) = t.find('=') {
-                                        let lhs = t[..eq_pos].trim();
-                                        let rhs = t[eq_pos + 1..].trim();
-                                        let lhs_is_ident = !lhs.is_empty()
-                                            && lhs
-                                                .chars()
-                                                .next()
-                                                .is_some_and(|c| c.is_alphabetic() || c == '_')
-                                            && lhs.chars().all(|c| {
-                                                c.is_alphanumeric()
-                                                    || c == '_'
-                                                    || c == '-'
-                                                    || c == '\''
-                                            });
-                                        let rhs_is_class_or_prop = rhs.starts_with('[')
-                                            || rhs.starts_with("-[")
-                                            || rhs.starts_with("+[")
-                                            || rhs.starts_with(':')
-                                            || rhs.starts_with("-:")
-                                            || rhs.starts_with(":!")
-                                            || rhs.starts_with("!:");
-                                        if lhs_is_ident && rhs_is_class_or_prop {
-                                            pending_named_capture = Some(lhs.to_string());
-                                            pending_named_capture_is_angle_alias = true;
-                                            name = rhs.to_string();
+                                // Read content between current position and closing '>'
+                                let mut cc_content = String::new();
+                                let mut angle_depth = 1usize;
+                                for ch in chars.by_ref() {
+                                    if ch == '<' {
+                                        angle_depth += 1;
+                                        cc_content.push(ch);
+                                    } else if ch == '>' {
+                                        angle_depth -= 1;
+                                        if angle_depth == 0 {
+                                            break;
                                         }
-                                    }
-                                }
-                                // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
-                                // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
-                                let trimmed = name.trim();
-                                // Validate mode: reject a compound character class
-                                // assertion that is missing a `+`/`-` operator
-                                // between its parts (e.g. `<[abc] [def]>`,
-                                // `<:Kata :Hira>`).
-                                if mode == RegexParseMode::Validate
-                                    && let Err(err) = check_missing_class_operator(trimmed)
-                                {
-                                    PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
-                                    return None;
-                                }
-                                // Validate mode: a long name (`::`) used as a regex
-                                // alias (`<Name::Path=alias>`, `<::IO::File=bar>`) is
-                                // illegal. Exclude embedded code (`<{...}>`,
-                                // `<?{...}>`, `<!{...}>`) which may contain `::`/`=`.
-                                if mode == RegexParseMode::Validate
-                                    && !trimmed.starts_with('{')
-                                    && !trimmed.starts_with("?{")
-                                    && !trimmed.starts_with("!{")
-                                    && Self::contains_longname_alias(trimmed)
-                                {
-                                    PENDING_REGEX_ERROR.with(|e| {
-                                        *e.borrow_mut() = Some(Self::make_longname_alias_error());
-                                    });
-                                    return None;
-                                }
-                                if (trimmed.starts_with('[')
-                                    || trimmed.starts_with("-[")
-                                    || trimmed.starts_with("+["))
-                                    && trimmed.ends_with(']')
-                                {
-                                    if let Some(atom) = self.parse_bracket_char_class(trimmed) {
-                                        atom
+                                        cc_content.push(ch);
                                     } else {
-                                        continue;
+                                        cc_content.push(ch);
                                     }
-                                } else if trimmed.starts_with('[')
-                                    && Self::bracket_class_has_combination_tail(trimmed)
+                                }
+                                // Parse the character class content (e.g., [a], -[a], [\n]).
+                                // Compound bracket classes must stay as CompositeClass atoms:
+                                // stripping only the outer brackets would turn `[a] - [b]` into
+                                // ordinary class text and lose the set subtraction before the
+                                // Lookaround matcher can apply its outer negation.
+                                let cc_trimmed = cc_content.trim();
+                                let inner_atom = if (cc_trimmed.starts_with('[')
+                                    || cc_trimmed.starts_with("-[")
+                                    || cc_trimmed.starts_with("+["))
+                                    && cc_trimmed.ends_with(']')
                                 {
-                                    // A bracket class combined with named classes:
-                                    // `[a..z] +digit`, `[\-._~] +alpha +digit`. The
-                                    // leading bracket is an implicit positive item.
-                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
-                                        atom
-                                    } else {
-                                        continue;
-                                    }
-                                } else if trimmed == "?" {
-                                    // <?>  null assertion: matches zero-width at any position
-                                    RegexAtom::ZeroWidth
-                                } else if let Some(prop_name) = trimmed.strip_prefix("!:") {
-                                    // <!:PropName> — zero-width negative Unicode property assertion
-                                    let (name, inner_neg) = strip_inner_prop_negation(prop_name);
-                                    RegexAtom::UnicodePropAssert {
-                                        name: name.to_string(),
-                                        negated: !inner_neg,
-                                    }
-                                } else if (trimmed.starts_with("?@") || trimmed.starts_with("!@"))
-                                    && mode == RegexParseMode::Validate
+                                    self.parse_bracket_char_class(cc_trimmed)
+                                } else if cc_trimmed.starts_with('[')
+                                    || cc_trimmed.starts_with("-[")
+                                    || cc_trimmed.starts_with("+[")
                                 {
-                                    // <?@var> / <!@var> lookahead — opaque at parse time.
-                                    RegexAtom::Named(name.clone().into())
-                                } else if trimmed.starts_with("?@") || trimmed.starts_with("!@") {
-                                    // <?@var> / <!@var> — zero-width lookahead asserting the
-                                    // position matches (or, negated, does not match) any
-                                    // element of the array variable: a lookahead wrapping
-                                    // `<@var>`. Placed before the generic `<!...>` handler so
-                                    // `!@` is not mistaken for a negated named-class assertion.
-                                    let negated = trimmed.starts_with('!');
-                                    let env_key = &trimmed[1..]; // drop '?'/'!', keep '@var'
-                                    let Some(inner_atom) =
-                                        self.array_var_alternation_atom(env_key, mode)
-                                    else {
-                                        continue;
-                                    };
-                                    // ADR-0046 Slice 1: array interpolation
-                                    // terminates the declarative LTM prefix
-                                    // unconditionally (ADR §2.1) -- mark the
-                                    // inner token so a measurement of this
-                                    // lookahead's own pattern (`ltm_atom_mode`'s
-                                    // `TerminateAfter` inlining) sees it as
-                                    // non-declarative too.
+                                    self.parse_combined_class(cc_trimmed, mode)
+                                } else {
+                                    let (cc_negated, cc_inner) =
+                                        if let Some(rest) = cc_trimmed.strip_prefix("-[") {
+                                            (true, rest.strip_suffix(']').unwrap_or(rest))
+                                        } else if let Some(rest) = cc_trimmed.strip_prefix('[') {
+                                            (false, rest.strip_suffix(']').unwrap_or(rest))
+                                        } else {
+                                            (false, cc_trimmed)
+                                        };
+                                    self.parse_raku_char_class(cc_inner, cc_negated)
+                                        .map(RegexAtom::CharClass)
+                                };
+                                // The outer `?`/`!` negation is carried by the
+                                // Lookaround's `negated` flag below; the inner atom
+                                // only reflects an explicitly negated class form.
+                                if let Some(inner_atom) = inner_atom {
+                                    // Build a lookahead with the char class as the inner pattern
                                     let inner_pattern = RegexPattern {
                                         tokens: vec![RegexToken {
                                             atom: inner_atom,
@@ -3283,7 +3011,7 @@ impl Interpreter {
                                             ratchet: false,
                                             frugal: false,
                                             separator: None,
-                                            from_runtime_interpolation: true,
+                                            from_runtime_interpolation: false,
                                             subrule_call_capture: false,
                                         }],
                                         anchor_start: false,
@@ -3297,31 +3025,1029 @@ impl Interpreter {
                                         negated,
                                         is_behind: false,
                                     }
-                                } else if let Some(negated_name) = trimmed.strip_prefix('!') {
-                                    if negated_name.is_empty() {
-                                        // <!> — always-fail (handled as Named("!") downstream)
-                                        RegexAtom::Named(name.into())
-                                    } else if negated_name == "same" || negated_name == ".same" {
-                                        // <!same> — zero-width assertion: next two chars are different
-                                        RegexAtom::SameAssertion { negated: true }
-                                    } else if negated_name == "wb" || negated_name == ".wb" {
-                                        // <!wb> — zero-width assertion: NOT at a word boundary
-                                        RegexAtom::WordBoundary { negated: true }
-                                    } else if negated_name == "ww" || negated_name == ".ww" {
-                                        // <!ww> — zero-width assertion: NOT within a word
-                                        RegexAtom::WithinWord { negated: true }
-                                    } else if negated_name.starts_with('+')
-                                        || negated_name.starts_with('-')
+                                } else {
+                                    continue;
+                                }
+                            } else if let Some((negated, is_behind, head_len)) =
+                                lookaround_keyword(&peek_str)
+                            {
+                                // The bare `<before …>` / `<after …>` spelling is a
+                                // subrule call like any other, so it publishes a
+                                // (zero-width) `before`/`after` capture; the `?`, `!`
+                                // and `.` spellings do not.
+                                if !peek_str.starts_with(['?', '!', '.']) {
+                                    pending_builtin_named_capture = Some(
+                                        if is_behind { "after" } else { "before" }.to_string(),
+                                    );
+                                }
+                                // Skip the optional `?`/`!`/`.`, the keyword and the
+                                // whitespace that separates it from the body.
+                                for _ in 0..peek_str[..head_len].chars().count() {
+                                    chars.next();
+                                }
+                                // Read the inner pattern up to the closing '>'.
+                                let mut inner = String::new();
+                                let mut angle_depth = 1usize;
+                                // A quoted literal inside the assertion may contain
+                                // the angle brackets themselves (`<!before '%>' >`,
+                                // `<!before '<%' >`), so its content must not move
+                                // the angle-depth count. `regex_quote_closer`
+                                // recognizes the Unicode quote pairs as well as
+                                // `'`/`"` -- `<!before ‘<%’>` is how
+                                // `Template::Classic` writes exactly this -- and it
+                                // answers the CLOSER, which differs from the opener
+                                // for every Unicode pair.
+                                let mut quote: Option<char> = None;
+                                while let Some(ch) = chars.next() {
+                                    if ch == '\\' {
+                                        // Keep an escaped char (and its backslash)
+                                        // literally so an escaped delimiter (`\>`,
+                                        // `\<`) inside the assertion — e.g.
+                                        // `<!before \>>` — does not prematurely close
+                                        // it or shift the angle-depth count.
+                                        inner.push(ch);
+                                        if let Some(next) = chars.next() {
+                                            inner.push(next);
+                                        }
+                                        continue;
+                                    }
+                                    if let Some(q) = quote {
+                                        if ch == q {
+                                            quote = None;
+                                        }
+                                        inner.push(ch);
+                                        continue;
+                                    }
+                                    if let Some(closer) = super::regex_parse::regex_quote_closer(ch)
                                     {
-                                        // `<!+alpha>`, `<!-alpha>`, `<!+[a..z] -[q]>` — a
-                                        // zero-width negative lookahead over an *enumerated*
-                                        // class expression. Like `<![a]>` (and unlike the
-                                        // `<!:Prop>` character-property form) this is a plain
-                                        // lookaround, so it succeeds at end of string.
+                                        quote = Some(closer);
+                                        inner.push(ch);
+                                    } else if ch == '<' && {
+                                        let mut la = chars.clone();
+                                        match la.next() {
+                                            Some('[') => true,
+                                            Some('-' | '+' | '!') => la.next() == Some('['),
+                                            _ => false,
+                                        }
+                                    } {
+                                        // A character class inside the assertion
+                                        // (`<!before '"' <-["]>*? >`): copy its
+                                        // content verbatim — a quote or bracket char
+                                        // in it must not move the quote/angle state.
+                                        // Only `\]` escapes `]` inside `[...]`.
+                                        inner.push(ch);
+                                        for c2 in chars.by_ref() {
+                                            inner.push(c2);
+                                            if c2 == '[' {
+                                                break;
+                                            }
+                                        }
+                                        'char_class: loop {
+                                            loop {
+                                                match chars.next() {
+                                                    Some('\\') => {
+                                                        inner.push('\\');
+                                                        if let Some(n) = chars.next() {
+                                                            inner.push(n);
+                                                        }
+                                                    }
+                                                    Some(']') => {
+                                                        inner.push(']');
+                                                        break;
+                                                    }
+                                                    Some(c2) => inner.push(c2),
+                                                    None => break 'char_class,
+                                                }
+                                            }
+                                            // After ']': '>' closes the class;
+                                            // `+[` / `-[` / `[` continue a compound
+                                            // class. Anything else falls back to the
+                                            // outer loop.
+                                            let mut la = chars.clone();
+                                            match la.next() {
+                                                Some('>') => {
+                                                    chars.next();
+                                                    inner.push('>');
+                                                    break 'char_class;
+                                                }
+                                                Some(p @ ('+' | '-')) if la.next() == Some('[') => {
+                                                    chars.next();
+                                                    chars.next();
+                                                    inner.push(p);
+                                                    inner.push('[');
+                                                    continue 'char_class;
+                                                }
+                                                Some('[') => {
+                                                    chars.next();
+                                                    inner.push('[');
+                                                    continue 'char_class;
+                                                }
+                                                _ => break 'char_class,
+                                            }
+                                        }
+                                    } else if ch == '<' {
+                                        angle_depth += 1;
+                                        inner.push(ch);
+                                    } else if ch == '>' {
+                                        angle_depth -= 1;
+                                        if angle_depth == 0 {
+                                            break;
+                                        }
+                                        inner.push(ch);
+                                    } else {
+                                        inner.push(ch);
+                                    }
+                                }
+                                // Parse the inner pattern as a regex. In `Match` mode
+                                // the body has already been interpolated, so an empty
+                                // one means a bound variable interpolated to "" —
+                                // a zero-width, always-true assertion, NOT the
+                                // null-regex *syntax* error (which `Validate` mode
+                                // still reports against the uninterpolated source).
+                                let inner_pattern = if mode == RegexParseMode::Match
+                                    && inner.trim().is_empty()
+                                {
+                                    RegexPattern {
+                                        tokens: Vec::new(),
+                                        anchor_start: false,
+                                        anchor_end: false,
+                                        ignore_case,
+                                        ignore_mark,
+                                        derived: Default::default(),
+                                    }
+                                } else {
+                                    let _preserve_array_interpolation =
+                                    crate::runtime::regex_parse::PreserveArrayInterpolationScope::enter();
+                                    let Some(parsed) = self.parse_regex_with_mode(&inner, mode)
+                                    else {
+                                        continue;
+                                    };
+                                    parsed
+                                };
+                                RegexAtom::Lookaround {
+                                    pattern: inner_pattern,
+                                    negated,
+                                    is_behind,
+                                }
+                            } else if peek_str.starts_with("?{")
+                                || peek_str.starts_with("!{")
+                                || peek_str.starts_with('{')
+                            {
+                                // Check for code assertion: <?{...}> or <!{...}>
+                                // These need special handling because code may contain < and >
+                                let is_closure_interp = peek_str.starts_with('{');
+                                let negated = !is_closure_interp && peek_str.starts_with('!');
+                                if !is_closure_interp {
+                                    // Skip '?' or '!'
+                                    chars.next();
+                                }
+                                // Skip '{'
+                                chars.next();
+                                let rest: Vec<char> = chars.clone().collect();
+                                let (code, consumed) = scan_code_assertion_body(&rest)?;
+                                for _ in 0..consumed {
+                                    chars.next();
+                                }
+                                // Consume the closing '>'
+                                if chars.peek() == Some(&'>') {
+                                    chars.next();
+                                }
+                                if is_closure_interp {
+                                    super::regex::regex_helpers::note_regex_code_lowered();
+                                    RegexAtom::ClosureInterpolation { code, body: None }
+                                } else {
+                                    super::regex::regex_helpers::note_regex_code_lowered();
+                                    RegexAtom::CodeAssertion {
+                                        code,
+                                        negated,
+                                        is_assertion: true,
+                                        body: None,
+                                        code_cache_id: 0,
+                                    }
+                                }
+                            } else {
+                                // Read content between < and >, handling nested <...>.
+                                // Also balance parens/brackets/braces and skip quoted
+                                // strings so `<.foo(a => 1)>` and `<.foo(|[3,4,5])>`
+                                // are not terminated by the inner `>` or by close
+                                // brackets that match opens inside the args list.
+                                // Scan honouring quotes first. A quote that never closes
+                                // means the `'`/`"` was not a quote opener at all but a
+                                // literal word of a `< ... >` alternation (Raku takes a
+                                // lone `'` there as the one-character word `'`, e.g. the
+                                // HTTP tchar set `< ! # $ % & ' * + - . ^ _ \` | ~ >`).
+                                // Honouring it swallowed the closing `>` and everything
+                                // after it, silently dropping the assertion's quantifier
+                                // — `< ! ' # >+` matched exactly once. Re-scan with quote
+                                // tracking off in that case; a properly closed quote keeps
+                                // the original behaviour.
+                                let rest: Vec<char> = chars.clone().collect();
+                                let scanned = match scan_angle_assertion_body(&rest, true) {
+                                    scan @ AngleBodyScan { closed: true, .. } => scan,
+                                    _ => scan_angle_assertion_body(&rest, false),
+                                };
+                                for _ in 0..scanned.consumed {
+                                    chars.next();
+                                }
+                                let mut name = scanned.name;
+                                // Check for word alternation: < word1 word2 ... >
+                                // In Raku, when the first character after `<` is
+                                // whitespace (space or tab), the contents are treated
+                                // as a list of quoted alternatives rather than a method
+                                // call. (`<a aa>` with no leading whitespace is a call.)
+                                if name.starts_with(|c: char| c.is_whitespace()) {
+                                    let words: Vec<&str> = name.split_whitespace().collect();
+                                    if !words.is_empty() {
+                                        let alternatives: Vec<RegexPattern> = words
+                                            .iter()
+                                            .map(|w| {
+                                                // Unescape backslash sequences: \< → <, \> → >, etc.
+                                                let mut word_chars: Vec<char> = Vec::new();
+                                                let mut wchars = w.chars().peekable();
+                                                while let Some(wch) = wchars.next() {
+                                                    if wch == '\\' {
+                                                        if let Some(&next) = wchars.peek() {
+                                                            word_chars.push(next);
+                                                            wchars.next();
+                                                        } else {
+                                                            word_chars.push(wch);
+                                                        }
+                                                    } else {
+                                                        word_chars.push(wch);
+                                                    }
+                                                }
+                                                let toks: Vec<RegexToken> = word_chars
+                                                    .iter()
+                                                    .map(|&ch| RegexToken {
+                                                        atom: RegexAtom::Literal(ch),
+                                                        quant: RegexQuant::One,
+                                                        named_capture: None,
+                                                        hash_capture: None,
+                                                        secondary_named_capture: None,
+                                                        force_list_capture: false,
+                                                        ratchet: false,
+                                                        frugal: false,
+                                                        separator: None,
+                                                        from_runtime_interpolation: false,
+                                                        subrule_call_capture: false,
+                                                    })
+                                                    .collect();
+                                                RegexPattern {
+                                                    tokens: toks,
+                                                    anchor_start: false,
+                                                    anchor_end: false,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                    derived: Default::default(),
+                                                }
+                                            })
+                                            .collect();
+                                        RegexAtom::Alternation(alternatives)
+                                    } else {
+                                        RegexAtom::ZeroWidth
+                                    }
+                                } else {
+                                    // Handle aliasing of a char-class / Unicode-property
+                                    // assertion to a named capture, e.g. `<foo=[bao]>`,
+                                    // `<bar=-[bao]>`, `<foo=:Letter>`, `<bar=:!Letter>`,
+                                    // `<baz=-:Letter>`. The general `<name=subrule>` aliasing
+                                    // (for named rules) is resolved at match time via
+                                    // parse_named_regex_lookup_spec, but char classes and
+                                    // Unicode properties are parsed into dedicated atoms here,
+                                    // so we strip the `ident=` prefix and record the alias as
+                                    // the pending named capture before dispatching on the RHS.
+                                    {
+                                        let t = name.trim();
+                                        if let Some(eq_pos) = t.find('=') {
+                                            let lhs = t[..eq_pos].trim();
+                                            let rhs = t[eq_pos + 1..].trim();
+                                            let lhs_is_ident = !lhs.is_empty()
+                                                && lhs
+                                                    .chars()
+                                                    .next()
+                                                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                                                && lhs.chars().all(|c| {
+                                                    c.is_alphanumeric()
+                                                        || c == '_'
+                                                        || c == '-'
+                                                        || c == '\''
+                                                });
+                                            let rhs_is_class_or_prop = rhs.starts_with('[')
+                                                || rhs.starts_with("-[")
+                                                || rhs.starts_with("+[")
+                                                || rhs.starts_with(':')
+                                                || rhs.starts_with("-:")
+                                                || rhs.starts_with(":!")
+                                                || rhs.starts_with("!:");
+                                            if lhs_is_ident && rhs_is_class_or_prop {
+                                                pending_named_capture = Some(lhs.to_string());
+                                                pending_named_capture_is_angle_alias = true;
+                                                name = rhs.to_string();
+                                            }
+                                        }
+                                    }
+                                    // A scalar sigil alias (`$<a>=<$re>`) on a call of a
+                                    // Regex-valued variable is `<a=$re>`: see
+                                    // `sigil_aliased_regex_call`.
+                                    // TODO: `@<a>=<$re>` (a forced List) stays on the
+                                    // isolated path: the compiled matcher only files an
+                                    // alias that sits on the token, not one on the
+                                    // subrule's own spec, so the list marking is lost.
+                                    if mode != RegexParseMode::Validate
+                                        && !pending_named_capture_is_angle_alias
+                                        && !pending_named_capture_is_array
+                                        && let Some(alias) = pending_named_capture.as_deref()
+                                        && let Some(call) =
+                                            self.sigil_aliased_regex_call(alias, &name)
+                                    {
+                                        name = call;
+                                        pending_named_capture = None;
+                                    }
+                                    // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
+                                    // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
+                                    let trimmed = name.trim();
+                                    // Validate mode: reject a compound character class
+                                    // assertion that is missing a `+`/`-` operator
+                                    // between its parts (e.g. `<[abc] [def]>`,
+                                    // `<:Kata :Hira>`).
+                                    if mode == RegexParseMode::Validate
+                                        && let Err(err) = check_missing_class_operator(trimmed)
+                                    {
+                                        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                                        return None;
+                                    }
+                                    // Validate mode: a long name (`::`) used as a regex
+                                    // alias (`<Name::Path=alias>`, `<::IO::File=bar>`) is
+                                    // illegal. Exclude embedded code (`<{...}>`,
+                                    // `<?{...}>`, `<!{...}>`) which may contain `::`/`=`.
+                                    if mode == RegexParseMode::Validate
+                                        && !trimmed.starts_with('{')
+                                        && !trimmed.starts_with("?{")
+                                        && !trimmed.starts_with("!{")
+                                        && Self::contains_longname_alias(trimmed)
+                                    {
+                                        PENDING_REGEX_ERROR.with(|e| {
+                                            *e.borrow_mut() =
+                                                Some(Self::make_longname_alias_error());
+                                        });
+                                        return None;
+                                    }
+                                    if (trimmed.starts_with('[')
+                                        || trimmed.starts_with("-[")
+                                        || trimmed.starts_with("+["))
+                                        && trimmed.ends_with(']')
+                                    {
+                                        if let Some(atom) = self.parse_bracket_char_class(trimmed) {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else if trimmed.starts_with('[')
+                                        && Self::bracket_class_has_combination_tail(trimmed)
+                                    {
+                                        // A bracket class combined with named classes:
+                                        // `[a..z] +digit`, `[\-._~] +alpha +digit`. The
+                                        // leading bracket is an implicit positive item.
+                                        if let Some(atom) = self.parse_combined_class(trimmed, mode)
+                                        {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else if trimmed == "?" {
+                                        // <?>  null assertion: matches zero-width at any position
+                                        RegexAtom::ZeroWidth
+                                    } else if let Some(prop_name) = trimmed.strip_prefix("!:") {
+                                        // <!:PropName> — zero-width negative Unicode property assertion
+                                        let (name, inner_neg) =
+                                            strip_inner_prop_negation(prop_name);
+                                        RegexAtom::UnicodePropAssert {
+                                            name: name.to_string(),
+                                            negated: !inner_neg,
+                                        }
+                                    } else if (trimmed.starts_with("?@")
+                                        || trimmed.starts_with("!@"))
+                                        && mode == RegexParseMode::Validate
+                                    {
+                                        // <?@var> / <!@var> lookahead — opaque at parse time.
+                                        RegexAtom::Named(name.clone().into())
+                                    } else if trimmed.starts_with("?@") || trimmed.starts_with("!@")
+                                    {
+                                        // <?@var> / <!@var> — zero-width lookahead asserting the
+                                        // position matches (or, negated, does not match) any
+                                        // element of the array variable: a lookahead wrapping
+                                        // `<@var>`. Placed before the generic `<!...>` handler so
+                                        // `!@` is not mistaken for a negated named-class assertion.
+                                        let negated = trimmed.starts_with('!');
+                                        let env_key = &trimmed[1..]; // drop '?'/'!', keep '@var'
                                         let Some(inner_atom) =
-                                            self.parse_combined_class(negated_name, mode)
+                                            self.array_var_alternation_atom(env_key, mode)
                                         else {
                                             continue;
+                                        };
+                                        // ADR-0046 Slice 1: array interpolation
+                                        // terminates the declarative LTM prefix
+                                        // unconditionally (ADR §2.1) -- mark the
+                                        // inner token so a measurement of this
+                                        // lookahead's own pattern (`ltm_atom_mode`'s
+                                        // `TerminateAfter` inlining) sees it as
+                                        // non-declarative too.
+                                        let inner_pattern = RegexPattern {
+                                            tokens: vec![RegexToken {
+                                                atom: inner_atom,
+                                                quant: RegexQuant::One,
+                                                named_capture: None,
+                                                hash_capture: None,
+                                                secondary_named_capture: None,
+                                                force_list_capture: false,
+                                                ratchet: false,
+                                                frugal: false,
+                                                separator: None,
+                                                from_runtime_interpolation: true,
+                                                subrule_call_capture: false,
+                                            }],
+                                            anchor_start: false,
+                                            anchor_end: false,
+                                            ignore_case,
+                                            ignore_mark,
+                                            derived: Default::default(),
+                                        };
+                                        RegexAtom::Lookaround {
+                                            pattern: inner_pattern,
+                                            negated,
+                                            is_behind: false,
+                                        }
+                                    } else if let Some(negated_name) = trimmed.strip_prefix('!') {
+                                        if negated_name.is_empty() {
+                                            // <!> — always-fail (handled as Named("!") downstream)
+                                            RegexAtom::Named(name.into())
+                                        } else if negated_name == "same" || negated_name == ".same"
+                                        {
+                                            // <!same> — zero-width assertion: next two chars are different
+                                            RegexAtom::SameAssertion { negated: true }
+                                        } else if negated_name == "wb" || negated_name == ".wb" {
+                                            // <!wb> — zero-width assertion: NOT at a word boundary
+                                            RegexAtom::WordBoundary { negated: true }
+                                        } else if negated_name == "ww" || negated_name == ".ww" {
+                                            // <!ww> — zero-width assertion: NOT within a word
+                                            RegexAtom::WithinWord { negated: true }
+                                        } else if negated_name.starts_with('+')
+                                            || negated_name.starts_with('-')
+                                        {
+                                            // `<!+alpha>`, `<!-alpha>`, `<!+[a..z] -[q]>` — a
+                                            // zero-width negative lookahead over an *enumerated*
+                                            // class expression. Like `<![a]>` (and unlike the
+                                            // `<!:Prop>` character-property form) this is a plain
+                                            // lookaround, so it succeeds at end of string.
+                                            let Some(inner_atom) =
+                                                self.parse_combined_class(negated_name, mode)
+                                            else {
+                                                continue;
+                                            };
+                                            RegexAtom::Lookaround {
+                                                pattern: RegexPattern {
+                                                    tokens: vec![RegexToken {
+                                                        atom: inner_atom,
+                                                        quant: RegexQuant::One,
+                                                        named_capture: None,
+                                                        hash_capture: None,
+                                                        secondary_named_capture: None,
+                                                        force_list_capture: false,
+                                                        ratchet: false,
+                                                        frugal: false,
+                                                        separator: None,
+                                                        from_runtime_interpolation: false,
+                                                        subrule_call_capture: false,
+                                                    }],
+                                                    anchor_start: false,
+                                                    anchor_end: false,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                    derived: Default::default(),
+                                                },
+                                                negated: true,
+                                                is_behind: false,
+                                            }
+                                        } else {
+                                            // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
+                                            let clean_name = negated_name
+                                                .strip_prefix('.')
+                                                .unwrap_or(negated_name);
+                                            let is_known = matches!(
+                                                clean_name,
+                                                "alpha"
+                                                    | "upper"
+                                                    | "lower"
+                                                    | "digit"
+                                                    | "xdigit"
+                                                    | "space"
+                                                    | "alnum"
+                                                    | "blank"
+                                                    | "cntrl"
+                                                    | "punct"
+                                                    | "graph"
+                                                    | "print"
+                                                    | "ws"
+                                                    | "ident"
+                                            );
+                                            if !is_known && is_subrule_lookahead_name(negated_name)
+                                            {
+                                                // <!subrule> — general zero-width *negative*
+                                                // lookahead of a named subrule (the twin of the
+                                                // positive `<?subrule>` below): assert the subrule
+                                                // does NOT match at the current position.
+                                                self.subrule_lookaround_atom(
+                                                    negated_name,
+                                                    true,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                )
+                                            } else if is_known {
+                                                let inner_atom = if clean_name == "ident" {
+                                                    RegexAtom::Group(RegexPattern {
+                                                        tokens: vec![
+                                                            RegexToken {
+                                                                atom: RegexAtom::CharClass(
+                                                                    CharClass {
+                                                                        items: vec![
+                                                                            ClassItem::NamedBuiltin(
+                                                                                "alpha".to_string(),
+                                                                            ),
+                                                                        ],
+                                                                        negated: false,
+                                                                    },
+                                                                ),
+                                                                quant: RegexQuant::One,
+                                                                named_capture: None,
+                                                                hash_capture: None,
+                                                                secondary_named_capture: None,
+                                                                force_list_capture: false,
+                                                                ratchet: false,
+                                                                frugal: false,
+                                                                separator: None,
+                                                                from_runtime_interpolation: false,
+                                                                subrule_call_capture: false,
+                                                            },
+                                                            RegexToken {
+                                                                atom: RegexAtom::CharClass(
+                                                                    CharClass {
+                                                                        items: vec![
+                                                                            ClassItem::NamedBuiltin(
+                                                                                "alnum".to_string(),
+                                                                            ),
+                                                                        ],
+                                                                        negated: false,
+                                                                    },
+                                                                ),
+                                                                quant: RegexQuant::ZeroOrMore,
+                                                                named_capture: None,
+                                                                hash_capture: None,
+                                                                secondary_named_capture: None,
+                                                                force_list_capture: false,
+                                                                ratchet: false,
+                                                                frugal: false,
+                                                                separator: None,
+                                                                from_runtime_interpolation: false,
+                                                                subrule_call_capture: false,
+                                                            },
+                                                        ],
+                                                        anchor_start: false,
+                                                        anchor_end: false,
+                                                        ignore_case,
+                                                        ignore_mark,
+                                                        derived: Default::default(),
+                                                    })
+                                                } else {
+                                                    RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            clean_name.to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    })
+                                                };
+                                                let inner_pattern = RegexPattern {
+                                                    tokens: vec![RegexToken {
+                                                        atom: inner_atom,
+                                                        quant: RegexQuant::One,
+                                                        named_capture: None,
+                                                        hash_capture: None,
+                                                        secondary_named_capture: None,
+                                                        force_list_capture: false,
+                                                        ratchet: false,
+                                                        frugal: false,
+                                                        separator: None,
+                                                        from_runtime_interpolation: false,
+                                                        subrule_call_capture: false,
+                                                    }],
+                                                    anchor_start: false,
+                                                    anchor_end: false,
+                                                    ignore_case,
+                                                    ignore_mark,
+                                                    derived: Default::default(),
+                                                };
+                                                RegexAtom::Lookaround {
+                                                    pattern: inner_pattern,
+                                                    negated: true,
+                                                    is_behind: false,
+                                                }
+                                            } else {
+                                                // Not a known builtin — pass through as Named
+                                                RegexAtom::Named(name.into())
+                                            }
+                                        } // close else (non-empty negated_name)
+                                    } else if trimmed.starts_with("::") {
+                                        // <::($expr)> — symbolic indirect subrule. The
+                                        // double colon distinguishes it from a `<:PropName>`
+                                        // Unicode-property assertion; keep it as a Named atom
+                                        // so the dynamic name is resolved at match time.
+                                        RegexAtom::Named(name.into())
+                                    } else if trimmed.starts_with(":!") || trimmed.starts_with("-:")
+                                    {
+                                        // <:!PropName> or <-:PropName> — negated Unicode property
+                                        let prop_name = &trimmed[2..];
+                                        if top_level_combine_is_subtractive(prop_name) {
+                                            // `<-:C-[:;,"]>` — a negated property followed by a
+                                            // top-level `-[...]`/`-name` set *subtraction*. The
+                                            // whole class starts from the full character set
+                                            // (leading `-`), so route it to the combined-class
+                                            // parser as a leading *negative* item (`-:C-[:;,"]`);
+                                            // its purely-subtractive terms fold into a single
+                                            // negated char class. Both `:!P` and `-:P` normalise
+                                            // to the `-:P` form. (A tail containing a top-level
+                                            // `+` union is left to the plain-property path: the
+                                            // combined-class parser's positive-item semantics do
+                                            // not match Raku's full-set base there.)
+                                            if let Some(atom) = self.parse_combined_class(
+                                                &format!("-:{prop_name}"),
+                                                mode,
+                                            ) {
+                                                atom
+                                            } else {
+                                                continue;
+                                            }
+                                        } else {
+                                            let (pname, pargs) = split_prop_args(prop_name);
+                                            RegexAtom::UnicodeProp {
+                                                name: pname.to_string(),
+                                                negated: true,
+                                                args: pargs.map(|s| s.to_string()),
+                                            }
+                                        }
+                                    } else if let Some(prop_name) = trimmed.strip_prefix(':') {
+                                        // `<:Ll+:N>` / `<:Ll-:Lu>` — a compact combined
+                                        // class joins property (and named-class) atoms
+                                        // with top-level `+`/`-` set operators. Route it
+                                        // to the combined-class parser (which also handles
+                                        // the spaced `<+:Ll +:N>` form) by treating the
+                                        // leading atom as an implicit positive item.
+                                        if has_top_level_combine_op(prop_name) {
+                                            if let Some(atom) = self
+                                                .parse_combined_class(&format!("+{trimmed}"), mode)
+                                            {
+                                                atom
+                                            } else {
+                                                continue;
+                                            }
+                                        } else {
+                                            // <:PropName> — single Unicode property assertion
+                                            let (pname, pargs) = split_prop_args(prop_name);
+                                            RegexAtom::UnicodeProp {
+                                                name: pname.to_string(),
+                                                negated: false,
+                                                args: pargs.map(|s| s.to_string()),
+                                            }
+                                        }
+                                    } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
+                                        // Combined character class: <+ xdigit - lower>
+                                        if let Some(atom) = self.parse_combined_class(trimmed, mode)
+                                        {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else if trimmed
+                                        .strip_prefix('.')
+                                        .is_some_and(|r| r.starts_with('-') || r.starts_with('+'))
+                                    {
+                                        // `<.-[a]-[b]>` / `<.-:letter-:digit>` — the `.`
+                                        // any-character base followed by a chain of set
+                                        // `+`/`-` parts. This is ordinary class arithmetic
+                                        // with a universe seed, so it belongs to the same
+                                        // accumulator as `<+alpha -[aeiou]>`. (A single
+                                        // subtraction used to reach the right answer only by
+                                        // accident, via the match-time `Named` fallback that
+                                        // re-reads `-:letter` as a negated property; a chain
+                                        // of two or more parts had no path at all.)
+                                        if let Some(atom) = self.parse_combined_class(trimmed, mode)
+                                        {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else if trimmed.starts_with('$')
+                                        && mode == RegexParseMode::Validate
+                                    {
+                                        // <$!attr> — attribute interpolation is prohibited.
+                                        if let Some(rest) = trimmed.strip_prefix("$!") {
+                                            let symbol =
+                                                format!("$!{}", rest.trim_end_matches('>'));
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() =
+                                                    Some(make_attribute_regex_error(&symbol));
+                                            });
+                                            return None;
+                                        }
+                                        // <$var> interpolation — opaque at parse time (the variable's
+                                        // value is unavailable). Accept it as a syntactically-valid
+                                        // assertion; the runtime `Match` path below resolves it.
+                                        RegexAtom::Named(name.clone().into())
+                                    } else if let Some(var_name) = trimmed.strip_prefix('$') {
+                                        // <$var> — look up scalar variable and compile as regex.
+                                        // The `${name}` fallback and `.into_deref()` mirror the
+                                        // bare-`$name` interpolation path above: a defining-scope
+                                        // capture (`LoadRegexClosure`) may have boxed a mutated
+                                        // scalar into a shared `ContainerRef` cell (bug 1 of
+                                        // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`),
+                                        // which must be dereferenced before it is stringified.
+                                        // Reads the scalar's VALUE at parse time (and
+                                        // recompiles it as a regex), so the tree is not a
+                                        // function of the pattern text alone.
+                                        Self::note_regex_parse_ambient_read();
+                                        let value =
+                                            match self.env.get(var_name).cloned().or_else(|| {
+                                                self.env.get(&format!("${var_name}")).cloned()
+                                            }) {
+                                                Some(v) => v.into_deref(),
+                                                None => {
+                                                    // Variable not declared — X::Undeclared
+                                                    let symbol = format!("${var_name}");
+                                                    let msg = format!(
+                                                        "Variable '{symbol}' is not declared"
+                                                    );
+                                                    let mut attrs =
+                                                        std::collections::HashMap::new();
+                                                    attrs.insert(
+                                                        "symbol".to_string(),
+                                                        Value::str(symbol),
+                                                    );
+                                                    attrs.insert(
+                                                        "message".to_string(),
+                                                        Value::str(msg.clone()),
+                                                    );
+                                                    let ex = Value::make_instance(
+                                                        Symbol::intern("X::Undeclared"),
+                                                        attrs,
+                                                    );
+                                                    let mut err =
+                                                        RuntimeError::new(msg.to_string());
+                                                    err.exception = Some(Box::new(ex));
+                                                    PENDING_REGEX_ERROR.with(|e| {
+                                                        *e.borrow_mut() = Some(err);
+                                                    });
+                                                    return None;
+                                                }
+                                            };
+                                        // A genuine `Regex`/`RegexWithAdverbs` value can only
+                                        // have been built by actual regex literal syntax
+                                        // (rx//, m//, token/rule/regex) — its embedded
+                                        // `@(...)`/`$(...)`/`{...}` code was written by that
+                                        // trusted source, not smuggled in through runtime
+                                        // string concatenation. The security check below
+                                        // exists for the OTHER case: a plain `Str` whose
+                                        // *contents* happen to look like dangerous regex
+                                        // syntax (`roast/S05-interpolation/regex-in-variable.t`
+                                        // uses `my $x = '...'` throughout, never a `Regex`
+                                        // value) — so it must not fire on a value that is
+                                        // already a compiled regex (issue #8951).
+                                        let is_regex_value = matches!(
+                                            value.view(),
+                                            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                                        );
+                                        let closure_scope = value.regex_closure_scope();
+                                        let pat_str = match value.view() {
+                                            ValueView::Regex(pat) => pat.to_string(),
+                                            ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                                            _ => value.to_string_value(),
+                                        };
+                                        // Check for longname alias first
+                                        if Self::contains_longname_alias(&pat_str) {
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() =
+                                                    Some(Self::make_longname_alias_error());
+                                            });
+                                            return None;
+                                        }
+                                        // Security check: reject dangerous patterns (skipped
+                                        // for a genuine Regex value — see above)
+                                        if !is_regex_value
+                                            && Self::contains_dangerous_regex_code(&pat_str)
+                                        {
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() =
+                                                    Some(Self::make_security_policy_error());
+                                            });
+                                            return None;
+                                        }
+                                        // `$re`'s own defining scope, active for the rest of
+                                        // this arm: re-resolving/re-parsing its pattern text
+                                        // must see the lexicals it closed over, not this call's
+                                        // ambient env (issue #8951) — see
+                                        // `RegexInterpClosureScopeGuard`.
+                                        let _closure_scope_guard = closure_scope.clone().map(
+                                        super::regex::regex_helpers::RegexInterpClosureScopeGuard::activate,
+                                    );
+                                        // Check for undeclared variables in the resolved string
+                                        if let Some(err) =
+                                            self.check_undeclared_vars_in_pattern(&pat_str)
+                                        {
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() = Some(err);
+                                            });
+                                            return None;
+                                        }
+                                        // Parse as regex, propagating outer modifiers (:i, :m)
+                                        let scoped_pat = if ignore_case || ignore_mark {
+                                            let mut s = String::new();
+                                            if ignore_case {
+                                                s.push_str(":i ");
+                                            }
+                                            if ignore_mark {
+                                                s.push_str(":m ");
+                                            }
+                                            s.push_str(&pat_str);
+                                            s
+                                        } else {
+                                            pat_str
+                                        };
+                                        if let Some(parsed) =
+                                            self.parse_regex_with_mode(&scoped_pat, mode)
+                                        {
+                                            // A `<$var>` call gets its own discarded Match
+                                            // object in Raku — no positional or named
+                                            // captures escape into the outer match's
+                                            // numbering, though a backreference to a
+                                            // capture WITHIN `parsed` itself (e.g. Cro's
+                                            // MIME boundary pattern `$<b>=[...] ... $<b>`)
+                                            // must keep working — verified against real
+                                            // `raku`. `CaptureIsolatedGroup` matches
+                                            // `parsed` exactly like `Group` (so its own
+                                            // captures resolve normally for such internal
+                                            // backreferences) but never publishes them to
+                                            // the caller (see its doc comment and
+                                            // `todo/tickets/
+                                            // stored-regex-loses-its-defining-scope-lexicals.md`
+                                            // bug 2).
+                                            //
+                                            // When `value` is itself a `RegexCaptured` (a
+                                            // regex that closed over its defining scope —
+                                            // issue #8951), `CaptureIsolatedGroupScoped`
+                                            // additionally installs that scope for the
+                                            // duration of `parsed`'s own MATCH (this
+                                            // arm's guard above only covers its PARSE).
+                                            // ADR-0046 Slice 1 / ADR §2.1 probe S:
+                                            // the `<$var>` regex-value reroute
+                                            // terminates the declarative LTM
+                                            // prefix unconditionally, same as the
+                                            // array forms below and regardless of
+                                            // `constant`-ness -- verified against
+                                            // `raku` for `constant $rx = rx/.../`
+                                            // too, unlike the plain `$`-scalar
+                                            // textual-splice case. That covers a
+                                            // genuine Regex-typed value only
+                                            // (`is_regex_value`): its own AST is
+                                            // opaque to the NFA build the way a
+                                            // called routine's body is. A `$var`
+                                            // holding a plain Str is different —
+                                            // `parsed` above IS this arm's own
+                                            // freshly-parsed AST, exactly as
+                                            // knowable as if the source had been
+                                            // written literally, so it measures
+                                            // normally (issue #9692: `<$ops>`
+                                            // holding `"['+'|'-']"` must rank
+                                            // identically to a hand-written
+                                            // `['+'|'-']` in the same spot).
+                                            runtime_value_atom = is_regex_value;
+                                            match closure_scope {
+                                                Some(scope) => {
+                                                    RegexAtom::CaptureIsolatedGroupScoped(
+                                                        parsed, scope,
+                                                    )
+                                                }
+                                                None => RegexAtom::CaptureIsolatedGroup(parsed),
+                                            }
+                                        } else {
+                                            continue;
+                                        }
+                                    } else if trimmed.starts_with('@')
+                                        && mode == RegexParseMode::Validate
+                                    {
+                                        // <@var> interpolation — opaque at parse time.
+                                        RegexAtom::Named(name.clone().into())
+                                    } else if trimmed.starts_with('@') {
+                                        // <@var> — look up array variable and compile
+                                        // each element as a regex pattern (alternation).
+                                        // ADR-0046 Slice 1 / ADR §2.1 probe K: array
+                                        // interpolation terminates the declarative LTM
+                                        // prefix unconditionally, so mark the resulting
+                                        // token as runtime-interpolated (propagated to
+                                        // the token push below via `runtime_value_atom`).
+                                        match self.array_var_alternation_atom(trimmed, mode) {
+                                            Some(atom) => {
+                                                runtime_value_atom = true;
+                                                atom
+                                            }
+                                            None => continue,
+                                        }
+                                    } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
+                                        // <?:PropName> — zero-width positive Unicode property assertion
+                                        // (the positive twin of `<!:PropName>` above).
+                                        let (name, inner_neg) =
+                                            strip_inner_prop_negation(prop_name);
+                                        RegexAtom::UnicodePropAssert {
+                                            name: name.to_string(),
+                                            negated: inner_neg,
+                                        }
+                                    } else if trimmed
+                                        .strip_prefix('?')
+                                        .map(|n| n.strip_prefix('.').unwrap_or(n))
+                                        .is_some_and(|n| {
+                                            matches!(
+                                                n,
+                                                "alpha"
+                                                    | "upper"
+                                                    | "lower"
+                                                    | "digit"
+                                                    | "xdigit"
+                                                    | "space"
+                                                    | "alnum"
+                                                    | "blank"
+                                                    | "cntrl"
+                                                    | "punct"
+                                                    | "graph"
+                                                    | "print"
+                                                    | "ws"
+                                                    | "ident"
+                                            )
+                                        })
+                                    {
+                                        // <?alpha>, <?digit>, <?alnum>, ... — zero-width positive
+                                        // assertion for a named class (the positive twin of `<!alpha>`).
+                                        let pos_name = trimmed.strip_prefix('?').unwrap();
+                                        let clean_name =
+                                            pos_name.strip_prefix('.').unwrap_or(pos_name);
+                                        let inner_atom = if clean_name == "ident" {
+                                            RegexAtom::Group(RegexPattern {
+                                                tokens: vec![
+                                                    RegexToken {
+                                                        atom: RegexAtom::CharClass(CharClass {
+                                                            items: vec![ClassItem::NamedBuiltin(
+                                                                "alpha".to_string(),
+                                                            )],
+                                                            negated: false,
+                                                        }),
+                                                        quant: RegexQuant::One,
+                                                        named_capture: None,
+                                                        hash_capture: None,
+                                                        secondary_named_capture: None,
+                                                        force_list_capture: false,
+                                                        ratchet: false,
+                                                        frugal: false,
+                                                        separator: None,
+                                                        from_runtime_interpolation: false,
+                                                        subrule_call_capture: false,
+                                                    },
+                                                    RegexToken {
+                                                        atom: RegexAtom::CharClass(CharClass {
+                                                            items: vec![ClassItem::NamedBuiltin(
+                                                                "alnum".to_string(),
+                                                            )],
+                                                            negated: false,
+                                                        }),
+                                                        quant: RegexQuant::ZeroOrMore,
+                                                        named_capture: None,
+                                                        hash_capture: None,
+                                                        secondary_named_capture: None,
+                                                        force_list_capture: false,
+                                                        ratchet: false,
+                                                        frugal: false,
+                                                        separator: None,
+                                                        from_runtime_interpolation: false,
+                                                        subrule_call_capture: false,
+                                                    },
+                                                ],
+                                                anchor_start: false,
+                                                anchor_end: false,
+                                                ignore_case,
+                                                ignore_mark,
+                                                derived: Default::default(),
+                                            })
+                                        } else {
+                                            RegexAtom::CharClass(CharClass {
+                                                items: vec![ClassItem::NamedBuiltin(
+                                                    clean_name.to_string(),
+                                                )],
+                                                negated: false,
+                                            })
                                         };
                                         RegexAtom::Lookaround {
                                             pattern: RegexPattern {
@@ -3344,722 +4070,200 @@ impl Interpreter {
                                                 ignore_mark,
                                                 derived: Default::default(),
                                             },
-                                            negated: true,
+                                            negated: false,
                                             is_behind: false,
                                         }
-                                    } else {
-                                        // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
-                                        let clean_name =
-                                            negated_name.strip_prefix('.').unwrap_or(negated_name);
-                                        let is_known = matches!(
-                                            clean_name,
-                                            "alpha"
-                                                | "upper"
-                                                | "lower"
-                                                | "digit"
-                                                | "xdigit"
-                                                | "space"
-                                                | "alnum"
-                                                | "blank"
-                                                | "cntrl"
-                                                | "punct"
-                                                | "graph"
-                                                | "print"
-                                                | "ws"
-                                                | "ident"
-                                        );
-                                        if !is_known && is_subrule_lookahead_name(negated_name) {
-                                            // <!subrule> — general zero-width *negative*
-                                            // lookahead of a named subrule (the twin of the
-                                            // positive `<?subrule>` below): assert the subrule
-                                            // does NOT match at the current position.
-                                            self.subrule_lookaround_atom(
-                                                negated_name,
-                                                true,
-                                                ignore_case,
-                                                ignore_mark,
-                                            )
-                                        } else if is_known {
-                                            let inner_atom = if clean_name == "ident" {
-                                                RegexAtom::Group(RegexPattern {
-                                                    tokens: vec![
-                                                        RegexToken {
-                                                            atom: RegexAtom::CharClass(CharClass {
-                                                                items: vec![
-                                                                    ClassItem::NamedBuiltin(
-                                                                        "alpha".to_string(),
-                                                                    ),
-                                                                ],
-                                                                negated: false,
-                                                            }),
-                                                            quant: RegexQuant::One,
-                                                            named_capture: None,
-                                                            hash_capture: None,
-                                                            secondary_named_capture: None,
-                                                            force_list_capture: false,
-                                                            ratchet: false,
-                                                            frugal: false,
-                                                            separator: None,
-                                                            from_runtime_interpolation: false,
-                                                            subrule_call_capture: false,
-                                                        },
-                                                        RegexToken {
-                                                            atom: RegexAtom::CharClass(CharClass {
-                                                                items: vec![
-                                                                    ClassItem::NamedBuiltin(
-                                                                        "alnum".to_string(),
-                                                                    ),
-                                                                ],
-                                                                negated: false,
-                                                            }),
-                                                            quant: RegexQuant::ZeroOrMore,
-                                                            named_capture: None,
-                                                            hash_capture: None,
-                                                            secondary_named_capture: None,
-                                                            force_list_capture: false,
-                                                            ratchet: false,
-                                                            frugal: false,
-                                                            separator: None,
-                                                            from_runtime_interpolation: false,
-                                                            subrule_call_capture: false,
-                                                        },
-                                                    ],
-                                                    anchor_start: false,
-                                                    anchor_end: false,
-                                                    ignore_case,
-                                                    ignore_mark,
-                                                    derived: Default::default(),
-                                                })
-                                            } else {
-                                                RegexAtom::CharClass(CharClass {
-                                                    items: vec![ClassItem::NamedBuiltin(
-                                                        clean_name.to_string(),
-                                                    )],
-                                                    negated: false,
-                                                })
-                                            };
-                                            let inner_pattern = RegexPattern {
-                                                tokens: vec![RegexToken {
-                                                    atom: inner_atom,
-                                                    quant: RegexQuant::One,
-                                                    named_capture: None,
-                                                    hash_capture: None,
-                                                    secondary_named_capture: None,
-                                                    force_list_capture: false,
-                                                    ratchet: false,
-                                                    frugal: false,
-                                                    separator: None,
-                                                    from_runtime_interpolation: false,
-                                                    subrule_call_capture: false,
-                                                }],
-                                                anchor_start: false,
-                                                anchor_end: false,
-                                                ignore_case,
-                                                ignore_mark,
-                                                derived: Default::default(),
-                                            };
-                                            RegexAtom::Lookaround {
-                                                pattern: inner_pattern,
-                                                negated: true,
-                                                is_behind: false,
-                                            }
-                                        } else {
-                                            // Not a known builtin — pass through as Named
-                                            RegexAtom::Named(name.into())
+                                    } else if trimmed == "?same" || trimmed == "?.same" {
+                                        // <?same> — zero-width assertion: next two chars are the same
+                                        RegexAtom::SameAssertion { negated: false }
+                                    } else if trimmed == "?wb" || trimmed == "?.wb" {
+                                        // <?wb> — zero-width assertion: at a word boundary
+                                        RegexAtom::WordBoundary { negated: false }
+                                    } else if trimmed == "?ww" || trimmed == "?.ww" {
+                                        // <?ww> — zero-width assertion: within a word
+                                        RegexAtom::WithinWord { negated: false }
+                                    } else if matches!(
+                                        trimmed,
+                                        "same" | ".same" | "wb" | ".wb" | "ww" | ".ww"
+                                    ) && !self.regex_name_is_grammar_token(
+                                        trimmed.trim_start_matches('.'),
+                                    ) {
+                                        // Bare `<same>` / `<wb>` / `<ww>` are the same
+                                        // zero-width assertions as their `<?...>` spellings,
+                                        // except that — like every other bare subrule call —
+                                        // they also publish a (zero-width) named capture:
+                                        // `'aa' ~~ m/ . <same> /` yields `same => ｢｣`.
+                                        // The `<.name>` spelling suppresses that capture.
+                                        let is_dot_call = trimmed.starts_with('.');
+                                        let bare = trimmed.trim_start_matches('.');
+                                        if !is_dot_call {
+                                            pending_builtin_named_capture = Some(bare.to_string());
                                         }
-                                    } // close else (non-empty negated_name)
-                                } else if trimmed.starts_with("::") {
-                                    // <::($expr)> — symbolic indirect subrule. The
-                                    // double colon distinguishes it from a `<:PropName>`
-                                    // Unicode-property assertion; keep it as a Named atom
-                                    // so the dynamic name is resolved at match time.
-                                    RegexAtom::Named(name.into())
-                                } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
-                                    // <:!PropName> or <-:PropName> — negated Unicode property
-                                    let prop_name = &trimmed[2..];
-                                    if top_level_combine_is_subtractive(prop_name) {
-                                        // `<-:C-[:;,"]>` — a negated property followed by a
-                                        // top-level `-[...]`/`-name` set *subtraction*. The
-                                        // whole class starts from the full character set
-                                        // (leading `-`), so route it to the combined-class
-                                        // parser as a leading *negative* item (`-:C-[:;,"]`);
-                                        // its purely-subtractive terms fold into a single
-                                        // negated char class. Both `:!P` and `-:P` normalise
-                                        // to the `-:P` form. (A tail containing a top-level
-                                        // `+` union is left to the plain-property path: the
-                                        // combined-class parser's positive-item semantics do
-                                        // not match Raku's full-set base there.)
-                                        if let Some(atom) = self
-                                            .parse_combined_class(&format!("-:{prop_name}"), mode)
-                                        {
-                                            atom
-                                        } else {
-                                            continue;
+                                        match bare {
+                                            "same" => RegexAtom::SameAssertion { negated: false },
+                                            "wb" => RegexAtom::WordBoundary { negated: false },
+                                            _ => RegexAtom::WithinWord { negated: false },
                                         }
-                                    } else {
-                                        let (pname, pargs) = split_prop_args(prop_name);
-                                        RegexAtom::UnicodeProp {
-                                            name: pname.to_string(),
-                                            negated: true,
-                                            args: pargs.map(|s| s.to_string()),
-                                        }
-                                    }
-                                } else if let Some(prop_name) = trimmed.strip_prefix(':') {
-                                    // `<:Ll+:N>` / `<:Ll-:Lu>` — a compact combined
-                                    // class joins property (and named-class) atoms
-                                    // with top-level `+`/`-` set operators. Route it
-                                    // to the combined-class parser (which also handles
-                                    // the spaced `<+:Ll +:N>` form) by treating the
-                                    // leading atom as an implicit positive item.
-                                    if has_top_level_combine_op(prop_name) {
-                                        if let Some(atom) =
-                                            self.parse_combined_class(&format!("+{trimmed}"), mode)
-                                        {
-                                            atom
-                                        } else {
-                                            continue;
-                                        }
-                                    } else {
-                                        // <:PropName> — single Unicode property assertion
-                                        let (pname, pargs) = split_prop_args(prop_name);
-                                        RegexAtom::UnicodeProp {
-                                            name: pname.to_string(),
-                                            negated: false,
-                                            args: pargs.map(|s| s.to_string()),
-                                        }
-                                    }
-                                } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
-                                    // Combined character class: <+ xdigit - lower>
-                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
-                                        atom
-                                    } else {
-                                        continue;
-                                    }
-                                } else if trimmed
-                                    .strip_prefix('.')
-                                    .is_some_and(|r| r.starts_with('-') || r.starts_with('+'))
-                                {
-                                    // `<.-[a]-[b]>` / `<.-:letter-:digit>` — the `.`
-                                    // any-character base followed by a chain of set
-                                    // `+`/`-` parts. This is ordinary class arithmetic
-                                    // with a universe seed, so it belongs to the same
-                                    // accumulator as `<+alpha -[aeiou]>`. (A single
-                                    // subtraction used to reach the right answer only by
-                                    // accident, via the match-time `Named` fallback that
-                                    // re-reads `-:letter` as a negated property; a chain
-                                    // of two or more parts had no path at all.)
-                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
-                                        atom
-                                    } else {
-                                        continue;
-                                    }
-                                } else if trimmed.starts_with('$')
-                                    && mode == RegexParseMode::Validate
-                                {
-                                    // <$!attr> — attribute interpolation is prohibited.
-                                    if let Some(rest) = trimmed.strip_prefix("$!") {
-                                        let symbol = format!("$!{}", rest.trim_end_matches('>'));
-                                        PENDING_REGEX_ERROR.with(|e| {
-                                            *e.borrow_mut() =
-                                                Some(make_attribute_regex_error(&symbol));
-                                        });
-                                        return None;
-                                    }
-                                    // <$var> interpolation — opaque at parse time (the variable's
-                                    // value is unavailable). Accept it as a syntactically-valid
-                                    // assertion; the runtime `Match` path below resolves it.
-                                    RegexAtom::Named(name.clone().into())
-                                } else if let Some(var_name) = trimmed.strip_prefix('$') {
-                                    // <$var> — look up scalar variable and compile as regex.
-                                    // The `${name}` fallback and `.into_deref()` mirror the
-                                    // bare-`$name` interpolation path above: a defining-scope
-                                    // capture (`LoadRegexClosure`) may have boxed a mutated
-                                    // scalar into a shared `ContainerRef` cell (bug 1 of
-                                    // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`),
-                                    // which must be dereferenced before it is stringified.
-                                    // Reads the scalar's VALUE at parse time (and
-                                    // recompiles it as a regex), so the tree is not a
-                                    // function of the pattern text alone.
-                                    Self::note_regex_parse_ambient_read();
-                                    let value = match self
-                                        .env
-                                        .get(var_name)
-                                        .cloned()
-                                        .or_else(|| self.env.get(&format!("${var_name}")).cloned())
-                                    {
-                                        Some(v) => v.into_deref(),
-                                        None => {
-                                            // Variable not declared — X::Undeclared
-                                            let symbol = format!("${var_name}");
-                                            let msg =
-                                                format!("Variable '{symbol}' is not declared");
-                                            let mut attrs = std::collections::HashMap::new();
-                                            attrs.insert("symbol".to_string(), Value::str(symbol));
-                                            attrs.insert(
-                                                "message".to_string(),
-                                                Value::str(msg.clone()),
-                                            );
-                                            let ex = Value::make_instance(
-                                                Symbol::intern("X::Undeclared"),
-                                                attrs,
-                                            );
-                                            let mut err = RuntimeError::new(msg.to_string());
-                                            err.exception = Some(Box::new(ex));
-                                            PENDING_REGEX_ERROR.with(|e| {
-                                                *e.borrow_mut() = Some(err);
-                                            });
-                                            return None;
-                                        }
-                                    };
-                                    // A genuine `Regex`/`RegexWithAdverbs` value can only
-                                    // have been built by actual regex literal syntax
-                                    // (rx//, m//, token/rule/regex) — its embedded
-                                    // `@(...)`/`$(...)`/`{...}` code was written by that
-                                    // trusted source, not smuggled in through runtime
-                                    // string concatenation. The security check below
-                                    // exists for the OTHER case: a plain `Str` whose
-                                    // *contents* happen to look like dangerous regex
-                                    // syntax (`roast/S05-interpolation/regex-in-variable.t`
-                                    // uses `my $x = '...'` throughout, never a `Regex`
-                                    // value) — so it must not fire on a value that is
-                                    // already a compiled regex (issue #8951).
-                                    let is_regex_value = matches!(
-                                        value.view(),
-                                        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-                                    );
-                                    let closure_scope = value.regex_closure_scope();
-                                    let pat_str = match value.view() {
-                                        ValueView::Regex(pat) => pat.to_string(),
-                                        ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
-                                        _ => value.to_string_value(),
-                                    };
-                                    // Check for longname alias first
-                                    if Self::contains_longname_alias(&pat_str) {
-                                        PENDING_REGEX_ERROR.with(|e| {
-                                            *e.borrow_mut() =
-                                                Some(Self::make_longname_alias_error());
-                                        });
-                                        return None;
-                                    }
-                                    // Security check: reject dangerous patterns (skipped
-                                    // for a genuine Regex value — see above)
-                                    if !is_regex_value
-                                        && Self::contains_dangerous_regex_code(&pat_str)
-                                    {
-                                        PENDING_REGEX_ERROR.with(|e| {
-                                            *e.borrow_mut() =
-                                                Some(Self::make_security_policy_error());
-                                        });
-                                        return None;
-                                    }
-                                    // `$re`'s own defining scope, active for the rest of
-                                    // this arm: re-resolving/re-parsing its pattern text
-                                    // must see the lexicals it closed over, not this call's
-                                    // ambient env (issue #8951) — see
-                                    // `RegexInterpClosureScopeGuard`.
-                                    let _closure_scope_guard = closure_scope.clone().map(
-                                        super::regex::regex_helpers::RegexInterpClosureScopeGuard::activate,
-                                    );
-                                    // Check for undeclared variables in the resolved string
-                                    if let Some(err) =
-                                        self.check_undeclared_vars_in_pattern(&pat_str)
-                                    {
-                                        PENDING_REGEX_ERROR.with(|e| {
-                                            *e.borrow_mut() = Some(err);
-                                        });
-                                        return None;
-                                    }
-                                    // Parse as regex, propagating outer modifiers (:i, :m)
-                                    let scoped_pat = if ignore_case || ignore_mark {
-                                        let mut s = String::new();
-                                        if ignore_case {
-                                            s.push_str(":i ");
-                                        }
-                                        if ignore_mark {
-                                            s.push_str(":m ");
-                                        }
-                                        s.push_str(&pat_str);
-                                        s
-                                    } else {
-                                        pat_str
-                                    };
-                                    if let Some(parsed) =
-                                        self.parse_regex_with_mode(&scoped_pat, mode)
-                                    {
-                                        // A `<$var>` call gets its own discarded Match
-                                        // object in Raku — no positional or named
-                                        // captures escape into the outer match's
-                                        // numbering, though a backreference to a
-                                        // capture WITHIN `parsed` itself (e.g. Cro's
-                                        // MIME boundary pattern `$<b>=[...] ... $<b>`)
-                                        // must keep working — verified against real
-                                        // `raku`. `CaptureIsolatedGroup` matches
-                                        // `parsed` exactly like `Group` (so its own
-                                        // captures resolve normally for such internal
-                                        // backreferences) but never publishes them to
-                                        // the caller (see its doc comment and
-                                        // `todo/tickets/
-                                        // stored-regex-loses-its-defining-scope-lexicals.md`
-                                        // bug 2).
-                                        //
-                                        // When `value` is itself a `RegexCaptured` (a
-                                        // regex that closed over its defining scope —
-                                        // issue #8951), `CaptureIsolatedGroupScoped`
-                                        // additionally installs that scope for the
-                                        // duration of `parsed`'s own MATCH (this
-                                        // arm's guard above only covers its PARSE).
-                                        // ADR-0046 Slice 1 / ADR §2.1 probe S:
-                                        // the `<$var>` regex-value reroute
-                                        // terminates the declarative LTM
-                                        // prefix unconditionally, same as the
-                                        // array forms below and regardless of
-                                        // `constant`-ness -- verified against
-                                        // `raku` for `constant $rx = rx/.../`
-                                        // too, unlike the plain `$`-scalar
-                                        // textual-splice case. That covers a
-                                        // genuine Regex-typed value only
-                                        // (`is_regex_value`): its own AST is
-                                        // opaque to the NFA build the way a
-                                        // called routine's body is. A `$var`
-                                        // holding a plain Str is different —
-                                        // `parsed` above IS this arm's own
-                                        // freshly-parsed AST, exactly as
-                                        // knowable as if the source had been
-                                        // written literally, so it measures
-                                        // normally (issue #9692: `<$ops>`
-                                        // holding `"['+'|'-']"` must rank
-                                        // identically to a hand-written
-                                        // `['+'|'-']` in the same spot).
-                                        runtime_value_atom = is_regex_value;
-                                        match closure_scope {
-                                            Some(scope) => {
-                                                RegexAtom::CaptureIsolatedGroupScoped(parsed, scope)
-                                            }
-                                            None => RegexAtom::CaptureIsolatedGroup(parsed),
-                                        }
-                                    } else {
-                                        continue;
-                                    }
-                                } else if trimmed.starts_with('@')
-                                    && mode == RegexParseMode::Validate
-                                {
-                                    // <@var> interpolation — opaque at parse time.
-                                    RegexAtom::Named(name.clone().into())
-                                } else if trimmed.starts_with('@') {
-                                    // <@var> — look up array variable and compile
-                                    // each element as a regex pattern (alternation).
-                                    // ADR-0046 Slice 1 / ADR §2.1 probe K: array
-                                    // interpolation terminates the declarative LTM
-                                    // prefix unconditionally, so mark the resulting
-                                    // token as runtime-interpolated (propagated to
-                                    // the token push below via `runtime_value_atom`).
-                                    match self.array_var_alternation_atom(trimmed, mode) {
-                                        Some(atom) => {
-                                            runtime_value_atom = true;
-                                            atom
-                                        }
-                                        None => continue,
-                                    }
-                                } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
-                                    // <?:PropName> — zero-width positive Unicode property assertion
-                                    // (the positive twin of `<!:PropName>` above).
-                                    let (name, inner_neg) = strip_inner_prop_negation(prop_name);
-                                    RegexAtom::UnicodePropAssert {
-                                        name: name.to_string(),
-                                        negated: inner_neg,
-                                    }
-                                } else if trimmed
-                                    .strip_prefix('?')
-                                    .map(|n| n.strip_prefix('.').unwrap_or(n))
-                                    .is_some_and(|n| {
-                                        matches!(
-                                            n,
-                                            "alpha"
-                                                | "upper"
-                                                | "lower"
-                                                | "digit"
-                                                | "xdigit"
-                                                | "space"
-                                                | "alnum"
-                                                | "blank"
-                                                | "cntrl"
-                                                | "punct"
-                                                | "graph"
-                                                | "print"
-                                                | "ws"
-                                                | "ident"
-                                        )
-                                    })
-                                {
-                                    // <?alpha>, <?digit>, <?alnum>, ... — zero-width positive
-                                    // assertion for a named class (the positive twin of `<!alpha>`).
-                                    let pos_name = trimmed.strip_prefix('?').unwrap();
-                                    let clean_name = pos_name.strip_prefix('.').unwrap_or(pos_name);
-                                    let inner_atom = if clean_name == "ident" {
-                                        RegexAtom::Group(RegexPattern {
-                                            tokens: vec![
-                                                RegexToken {
-                                                    atom: RegexAtom::CharClass(CharClass {
-                                                        items: vec![ClassItem::NamedBuiltin(
-                                                            "alpha".to_string(),
-                                                        )],
-                                                        negated: false,
-                                                    }),
-                                                    quant: RegexQuant::One,
-                                                    named_capture: None,
-                                                    hash_capture: None,
-                                                    secondary_named_capture: None,
-                                                    force_list_capture: false,
-                                                    ratchet: false,
-                                                    frugal: false,
-                                                    separator: None,
-                                                    from_runtime_interpolation: false,
-                                                    subrule_call_capture: false,
-                                                },
-                                                RegexToken {
-                                                    atom: RegexAtom::CharClass(CharClass {
-                                                        items: vec![ClassItem::NamedBuiltin(
-                                                            "alnum".to_string(),
-                                                        )],
-                                                        negated: false,
-                                                    }),
-                                                    quant: RegexQuant::ZeroOrMore,
-                                                    named_capture: None,
-                                                    hash_capture: None,
-                                                    secondary_named_capture: None,
-                                                    force_list_capture: false,
-                                                    ratchet: false,
-                                                    frugal: false,
-                                                    separator: None,
-                                                    from_runtime_interpolation: false,
-                                                    subrule_call_capture: false,
-                                                },
-                                            ],
-                                            anchor_start: false,
-                                            anchor_end: false,
-                                            ignore_case,
-                                            ignore_mark,
-                                            derived: Default::default(),
-                                        })
-                                    } else {
-                                        RegexAtom::CharClass(CharClass {
-                                            items: vec![ClassItem::NamedBuiltin(
-                                                clean_name.to_string(),
-                                            )],
-                                            negated: false,
-                                        })
-                                    };
-                                    RegexAtom::Lookaround {
-                                        pattern: RegexPattern {
-                                            tokens: vec![RegexToken {
-                                                atom: inner_atom,
-                                                quant: RegexQuant::One,
-                                                named_capture: None,
-                                                hash_capture: None,
-                                                secondary_named_capture: None,
-                                                force_list_capture: false,
-                                                ratchet: false,
-                                                frugal: false,
-                                                separator: None,
-                                                from_runtime_interpolation: false,
-                                                subrule_call_capture: false,
-                                            }],
-                                            anchor_start: false,
-                                            anchor_end: false,
-                                            ignore_case,
-                                            ignore_mark,
-                                            derived: Default::default(),
-                                        },
-                                        negated: false,
-                                        is_behind: false,
-                                    }
-                                } else if trimmed == "?same" || trimmed == "?.same" {
-                                    // <?same> — zero-width assertion: next two chars are the same
-                                    RegexAtom::SameAssertion { negated: false }
-                                } else if trimmed == "?wb" || trimmed == "?.wb" {
-                                    // <?wb> — zero-width assertion: at a word boundary
-                                    RegexAtom::WordBoundary { negated: false }
-                                } else if trimmed == "?ww" || trimmed == "?.ww" {
-                                    // <?ww> — zero-width assertion: within a word
-                                    RegexAtom::WithinWord { negated: false }
-                                } else if matches!(
-                                    trimmed,
-                                    "same" | ".same" | "wb" | ".wb" | "ww" | ".ww"
-                                ) && !self
-                                    .regex_name_is_grammar_token(trimmed.trim_start_matches('.'))
-                                {
-                                    // Bare `<same>` / `<wb>` / `<ww>` are the same
-                                    // zero-width assertions as their `<?...>` spellings,
-                                    // except that — like every other bare subrule call —
-                                    // they also publish a (zero-width) named capture:
-                                    // `'aa' ~~ m/ . <same> /` yields `same => ｢｣`.
-                                    // The `<.name>` spelling suppresses that capture.
-                                    let is_dot_call = trimmed.starts_with('.');
-                                    let bare = trimmed.trim_start_matches('.');
-                                    if !is_dot_call {
-                                        pending_builtin_named_capture = Some(bare.to_string());
-                                    }
-                                    match bare {
-                                        "same" => RegexAtom::SameAssertion { negated: false },
-                                        "wb" => RegexAtom::WordBoundary { negated: false },
-                                        _ => RegexAtom::WithinWord { negated: false },
-                                    }
-                                } else if trimmed == "~~" {
-                                    // `<~~>` — recurse into the enclosing regex (or,
-                                    // inside a grammar token/rule, that rule's body).
-                                    // The enclosing source is captured now; matching
-                                    // re-parses it through the (memoized) pattern cache.
-                                    // `<~~N>` — recursing into a numbered capture — is
-                                    // "not yet implemented" in Rakudo too, so it keeps
-                                    // falling through to the generic subrule path.
-                                    // Reads the ENCLOSING regex's source, which the
-                                    // memo key (this pattern's own text) does not carry.
-                                    Self::note_regex_parse_ambient_read();
-                                    match crate::runtime::regex_parse::TopLevelSourceScope::current(
+                                    } else if trimmed == "~~" {
+                                        // `<~~>` — recurse into the enclosing regex (or,
+                                        // inside a grammar token/rule, that rule's body).
+                                        // The enclosing source is captured now; matching
+                                        // re-parses it through the (memoized) pattern cache.
+                                        // `<~~N>` — recursing into a numbered capture — is
+                                        // "not yet implemented" in Rakudo too, so it keeps
+                                        // falling through to the generic subrule path.
+                                        // Reads the ENCLOSING regex's source, which the
+                                        // memo key (this pattern's own text) does not carry.
+                                        Self::note_regex_parse_ambient_read();
+                                        match crate::runtime::regex_parse::TopLevelSourceScope::current(
                                     ) {
                                         Some(src) => RegexAtom::RecurseSelf(Box::from(&*src)),
                                         None => RegexAtom::Named(name.into()),
                                     }
-                                } else if trimmed == "|w" {
-                                    // <|w> — zero-width assertion at a boundary of the
-                                    // word (`\w`) character class, i.e. `\b`. (YAMLish's
-                                    // `Schema::JSON` uses it to terminate a numeric token.)
-                                    RegexAtom::WordBoundary { negated: false }
-                                } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
-                                    // <at(N)> — zero-width assertion: match at position N
-                                    let inner = &trimmed[3..trimmed.len() - 1];
-                                    if let Ok(pos) = inner.trim().parse::<usize>() {
-                                        RegexAtom::AtPosition(pos)
-                                    } else {
-                                        RegexAtom::Named(name.into())
-                                    }
-                                } else if let Some(sub) = trimmed
-                                    .strip_prefix('?')
-                                    .filter(|s| is_subrule_lookahead_name(s))
-                                {
-                                    // <?subrule> — general zero-width positive lookahead of a
-                                    // named subrule (the twin of `<?before …>`/`<?alpha>` for
-                                    // any other rule name, e.g. YAMLish's `<?break>`).
-                                    self.subrule_lookaround_atom(
-                                        sub,
-                                        false,
-                                        ignore_case,
-                                        ignore_mark,
-                                    )
-                                } else {
-                                    // Strip dot prefix for non-capturing named calls
-                                    // <.alpha> is the same as <alpha> but without named capture
-                                    let (class_name, is_dot_call) =
-                                        if let Some(stripped) = trimmed.strip_prefix('.') {
-                                            (stripped, true)
+                                    } else if trimmed == "|w" {
+                                        // <|w> — zero-width assertion at a boundary of the
+                                        // word (`\w`) character class, i.e. `\b`. (YAMLish's
+                                        // `Schema::JSON` uses it to terminate a numeric token.)
+                                        RegexAtom::WordBoundary { negated: false }
+                                    } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
+                                        // <at(N)> — zero-width assertion: match at position N
+                                        let inner = &trimmed[3..trimmed.len() - 1];
+                                        if let Ok(pos) = inner.trim().parse::<usize>() {
+                                            RegexAtom::AtPosition(pos)
                                         } else {
-                                            (trimmed, false)
-                                        };
-                                    // If this name matches a builtin char class but
-                                    // the current grammar defines a token with the
-                                    // same name, the grammar token takes precedence.
-                                    let is_builtin_name = matches!(
-                                        class_name,
-                                        "alpha"
-                                            | "upper"
-                                            | "lower"
-                                            | "digit"
-                                            | "xdigit"
-                                            | "space"
-                                            | "alnum"
-                                            | "blank"
-                                            | "cntrl"
-                                            | "punct"
-                                            | "graph"
-                                            | "print"
-                                            | "ident"
-                                    );
-                                    let grammar_overrides_builtin = is_builtin_name
-                                        && !self.current_package().is_empty()
-                                        && self.resolve_token_defs(class_name).is_some();
-                                    if grammar_overrides_builtin {
-                                        RegexAtom::Named(name.into())
+                                            RegexAtom::Named(name.into())
+                                        }
+                                    } else if let Some(sub) = trimmed
+                                        .strip_prefix('?')
+                                        .filter(|s| is_subrule_lookahead_name(s))
+                                    {
+                                        // <?subrule> — general zero-width positive lookahead of a
+                                        // named subrule (the twin of `<?before …>`/`<?alpha>` for
+                                        // any other rule name, e.g. YAMLish's `<?break>`).
+                                        self.subrule_lookaround_atom(
+                                            sub,
+                                            false,
+                                            ignore_case,
+                                            ignore_mark,
+                                        )
                                     } else {
-                                        // Check for named character classes
-                                        match class_name {
-                                            "alpha" | "upper" | "lower" | "digit" | "xdigit"
-                                            | "space" | "alnum" | "blank" | "cntrl" | "punct"
-                                            | "graph" | "print" => {
-                                                // Set builtin named capture so $<alpha>, $<digit>, etc. work
-                                                // (only for non-dot calls)
-                                                if !is_dot_call {
-                                                    pending_builtin_named_capture =
-                                                        Some(class_name.to_string());
+                                        // Strip dot prefix for non-capturing named calls
+                                        // <.alpha> is the same as <alpha> but without named capture
+                                        let (class_name, is_dot_call) =
+                                            if let Some(stripped) = trimmed.strip_prefix('.') {
+                                                (stripped, true)
+                                            } else {
+                                                (trimmed, false)
+                                            };
+                                        // If this name matches a builtin char class but
+                                        // the current grammar defines a token with the
+                                        // same name, the grammar token takes precedence.
+                                        let is_builtin_name = matches!(
+                                            class_name,
+                                            "alpha"
+                                                | "upper"
+                                                | "lower"
+                                                | "digit"
+                                                | "xdigit"
+                                                | "space"
+                                                | "alnum"
+                                                | "blank"
+                                                | "cntrl"
+                                                | "punct"
+                                                | "graph"
+                                                | "print"
+                                                | "ident"
+                                        );
+                                        let grammar_overrides_builtin = is_builtin_name
+                                            && !self.current_package().is_empty()
+                                            && self.resolve_token_defs(class_name).is_some();
+                                        if grammar_overrides_builtin {
+                                            RegexAtom::Named(name.into())
+                                        } else {
+                                            // Check for named character classes
+                                            match class_name {
+                                                "alpha" | "upper" | "lower" | "digit"
+                                                | "xdigit" | "space" | "alnum" | "blank"
+                                                | "cntrl" | "punct" | "graph" | "print" => {
+                                                    // Set builtin named capture so $<alpha>, $<digit>, etc. work
+                                                    // (only for non-dot calls)
+                                                    if !is_dot_call {
+                                                        pending_builtin_named_capture =
+                                                            Some(class_name.to_string());
+                                                    }
+                                                    RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            class_name.to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    })
                                                 }
-                                                RegexAtom::CharClass(CharClass {
-                                                    items: vec![ClassItem::NamedBuiltin(
-                                                        class_name.to_string(),
-                                                    )],
-                                                    negated: false,
-                                                })
-                                            }
-                                            "ident" => {
-                                                // <ident> = <alpha> <alnum>*
-                                                if !is_dot_call {
-                                                    pending_builtin_named_capture =
-                                                        Some("ident".to_string());
+                                                "ident" => {
+                                                    // <ident> = <alpha> <alnum>*
+                                                    if !is_dot_call {
+                                                        pending_builtin_named_capture =
+                                                            Some("ident".to_string());
+                                                    }
+                                                    RegexAtom::Group(RegexPattern {
+                                                        tokens: vec![
+                                                            RegexToken {
+                                                                atom: RegexAtom::CharClass(
+                                                                    CharClass {
+                                                                        items: vec![
+                                                                            ClassItem::NamedBuiltin(
+                                                                                "alpha".to_string(),
+                                                                            ),
+                                                                        ],
+                                                                        negated: false,
+                                                                    },
+                                                                ),
+                                                                quant: RegexQuant::One,
+                                                                named_capture: None,
+                                                                hash_capture: None,
+                                                                secondary_named_capture: None,
+                                                                force_list_capture: false,
+                                                                ratchet: false,
+                                                                frugal: false,
+                                                                separator: None,
+                                                                from_runtime_interpolation: false,
+                                                                subrule_call_capture: false,
+                                                            },
+                                                            RegexToken {
+                                                                atom: RegexAtom::CharClass(
+                                                                    CharClass {
+                                                                        items: vec![
+                                                                            ClassItem::NamedBuiltin(
+                                                                                "alnum".to_string(),
+                                                                            ),
+                                                                        ],
+                                                                        negated: false,
+                                                                    },
+                                                                ),
+                                                                quant: RegexQuant::ZeroOrMore,
+                                                                named_capture: None,
+                                                                hash_capture: None,
+                                                                secondary_named_capture: None,
+                                                                force_list_capture: false,
+                                                                ratchet: false,
+                                                                frugal: false,
+                                                                separator: None,
+                                                                from_runtime_interpolation: false,
+                                                                subrule_call_capture: false,
+                                                            },
+                                                        ],
+                                                        anchor_start: false,
+                                                        anchor_end: false,
+                                                        ignore_case,
+                                                        ignore_mark,
+                                                        derived: Default::default(),
+                                                    })
                                                 }
-                                                RegexAtom::Group(RegexPattern {
-                                                    tokens: vec![
-                                                        RegexToken {
-                                                            atom: RegexAtom::CharClass(CharClass {
-                                                                items: vec![
-                                                                    ClassItem::NamedBuiltin(
-                                                                        "alpha".to_string(),
-                                                                    ),
-                                                                ],
-                                                                negated: false,
-                                                            }),
-                                                            quant: RegexQuant::One,
-                                                            named_capture: None,
-                                                            hash_capture: None,
-                                                            secondary_named_capture: None,
-                                                            force_list_capture: false,
-                                                            ratchet: false,
-                                                            frugal: false,
-                                                            separator: None,
-                                                            from_runtime_interpolation: false,
-                                                            subrule_call_capture: false,
-                                                        },
-                                                        RegexToken {
-                                                            atom: RegexAtom::CharClass(CharClass {
-                                                                items: vec![
-                                                                    ClassItem::NamedBuiltin(
-                                                                        "alnum".to_string(),
-                                                                    ),
-                                                                ],
-                                                                negated: false,
-                                                            }),
-                                                            quant: RegexQuant::ZeroOrMore,
-                                                            named_capture: None,
-                                                            hash_capture: None,
-                                                            secondary_named_capture: None,
-                                                            force_list_capture: false,
-                                                            ratchet: false,
-                                                            frugal: false,
-                                                            separator: None,
-                                                            from_runtime_interpolation: false,
-                                                            subrule_call_capture: false,
-                                                        },
-                                                    ],
-                                                    anchor_start: false,
-                                                    anchor_end: false,
-                                                    ignore_case,
-                                                    ignore_mark,
-                                                    derived: Default::default(),
-                                                })
-                                            }
-                                            _ => {
-                                                // <sym> / <.sym> can only be used in a proto regex
-                                                // with :sym<> adverb — it should have been replaced
-                                                // by instantiate_token_pattern before reaching here
-                                                if class_name == "sym" {
-                                                    PENDING_REGEX_ERROR.with(|e| {
+                                                _ => {
+                                                    // <sym> / <.sym> can only be used in a proto regex
+                                                    // with :sym<> adverb — it should have been replaced
+                                                    // by instantiate_token_pattern before reaching here
+                                                    if class_name == "sym" {
+                                                        PENDING_REGEX_ERROR.with(|e| {
                                                     let msg = "Can only use \"<sym>\" token in a proto regex";
                                                     let mut err = RuntimeError::new(msg);
                                                     let mut attrs = std::collections::HashMap::new();
@@ -4068,89 +4272,152 @@ impl Interpreter {
                                                     err.exception = Some(Box::new(ex));
                                                     *e.borrow_mut() = Some(err);
                                                 });
-                                                    return None;
+                                                        return None;
+                                                    }
+                                                    // Check for longname aliases
+                                                    if Self::contains_longname_alias(trimmed) {
+                                                        PENDING_REGEX_ERROR.with(|e| {
+                                                            *e.borrow_mut() = Some(
+                                                                Self::make_longname_alias_error(),
+                                                            );
+                                                        });
+                                                        return None;
+                                                    }
+                                                    // No other characters are allowed after the
+                                                    // initial identifier of a subrule assertion
+                                                    // (S05). e.g. `<test*>`, `<test|>`, `<test&>`
+                                                    // are malformed and must be rejected at compile
+                                                    // time. Validate that the leading identifier is
+                                                    // followed only by an allowed continuation
+                                                    // (whitespace, `=`, `:`, `(`) or end of name.
+                                                    if let Some(err) =
+                                                        Self::check_subrule_name_tail(class_name)
+                                                    {
+                                                        PENDING_REGEX_ERROR.with(|e| {
+                                                            *e.borrow_mut() = Some(err);
+                                                        });
+                                                        return None;
+                                                    }
+                                                    RegexAtom::Named(name.into())
                                                 }
-                                                // Check for longname aliases
-                                                if Self::contains_longname_alias(trimmed) {
-                                                    PENDING_REGEX_ERROR.with(|e| {
-                                                        *e.borrow_mut() =
-                                                            Some(Self::make_longname_alias_error());
-                                                    });
-                                                    return None;
-                                                }
-                                                // No other characters are allowed after the
-                                                // initial identifier of a subrule assertion
-                                                // (S05). e.g. `<test*>`, `<test|>`, `<test&>`
-                                                // are malformed and must be rejected at compile
-                                                // time. Validate that the leading identifier is
-                                                // followed only by an allowed continuation
-                                                // (whitespace, `=`, `:`, `(`) or end of name.
-                                                if let Some(err) =
-                                                    Self::check_subrule_name_tail(class_name)
-                                                {
-                                                    PENDING_REGEX_ERROR.with(|e| {
-                                                        *e.borrow_mut() = Some(err);
-                                                    });
-                                                    return None;
-                                                }
-                                                RegexAtom::Named(name.into())
                                             }
-                                        }
-                                    } // close else of grammar_overrides_builtin
+                                        } // close else of grammar_overrides_builtin
+                                    }
+                                } // close word-alternation else
+                            } // close else for code assertion special case
+                        }
+                    }
+                    ')' if chars.peek() == Some(&'>') => {
+                        chars.next();
+                        RegexAtom::CaptureEndMarker
+                    }
+                    '(' => {
+                        // Capture group: (...)
+                        let (group_pattern, depth) =
+                            Self::scan_regex_group_body(&mut chars, '(', ')');
+                        // If depth > 0, the group was never closed — parse error
+                        if depth > 0 {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(RuntimeError::typed("X::Comp::Group", {
+                                    let mut attrs = ValueMap::default();
+                                    attrs.insert(
+                                        "message".to_string(),
+                                        Value::str("Unmatched ( in regex".to_string()),
+                                    );
+                                    attrs
+                                }));
+                            });
+                            return None;
+                        }
+                        // An empty capture group `()` is a null regex.
+                        if group_pattern.trim().is_empty() {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
+                            return None;
+                        }
+                        let (alternatives, cap_is_sequential) =
+                            Self::split_top_level_alternation(&group_pattern);
+                        // A trailing/interior empty branch inside the group (`(a|)`)
+                        // is null; a leading empty branch is allowed (`(|a)`).
+                        if alternatives.len() > 1
+                            && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
+                        {
+                            PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                            return None;
+                        }
+                        let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
+                        if alternatives.len() > 1 {
+                            let mut alt_patterns = Vec::new();
+                            for (alt_idx, alt) in alternatives.iter().enumerate() {
+                                // A leading null alternative is ignored in Raku: `( || X )`
+                                // and `( | X )` behave like `( X )`. Skip a whitespace/comment-only
+                                // first alternative so it does not contribute a spurious
+                                // empty-matching (and, under ratchet, empty-winning) branch.
+                                if alt_idx == 0 && regex_branch_is_blank(alt) {
+                                    continue;
                                 }
-                            } // close word-alternation else
-                        } // close else for code assertion special case
-                    }
-                }
-                ')' if chars.peek() == Some(&'>') => {
-                    chars.next();
-                    RegexAtom::CaptureEndMarker
-                }
-                '(' => {
-                    // Capture group: (...)
-                    let (group_pattern, depth) = Self::scan_regex_group_body(&mut chars, '(', ')');
-                    // If depth > 0, the group was never closed — parse error
-                    if depth > 0 {
-                        PENDING_REGEX_ERROR.with(|e| {
-                            *e.borrow_mut() = Some(RuntimeError::typed("X::Comp::Group", {
-                                let mut attrs = ValueMap::default();
-                                attrs.insert(
-                                    "message".to_string(),
-                                    Value::str("Unmatched ( in regex".to_string()),
-                                );
-                                attrs
-                            }));
-                        });
-                        return None;
-                    }
-                    // An empty capture group `()` is a null regex.
-                    if group_pattern.trim().is_empty() {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
-                        return None;
-                    }
-                    let (alternatives, cap_is_sequential) =
-                        Self::split_top_level_alternation(&group_pattern);
-                    // A trailing/interior empty branch inside the group (`(a|)`)
-                    // is null; a leading empty branch is allowed (`(|a)`).
-                    if alternatives.len() > 1
-                        && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
-                    {
-                        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
-                        return None;
-                    }
-                    let needs_capture_scope = ignore_case || sigspace || ratchet || ignore_mark;
-                    if alternatives.len() > 1 {
-                        let mut alt_patterns = Vec::new();
-                        for (alt_idx, alt) in alternatives.iter().enumerate() {
-                            // A leading null alternative is ignored in Raku: `( || X )`
-                            // and `( | X )` behave like `( X )`. Skip a whitespace/comment-only
-                            // first alternative so it does not contribute a spurious
-                            // empty-matching (and, under ratchet, empty-winning) branch.
-                            if alt_idx == 0 && regex_branch_is_blank(alt) {
-                                continue;
+                                let parsed_alt = if needs_capture_scope {
+                                    let mut scoped = String::new();
+                                    if ignore_case {
+                                        scoped.push_str(":i ");
+                                    }
+                                    if sigspace {
+                                        scoped.push_str(":s ");
+                                    }
+                                    if ratchet {
+                                        scoped.push_str(":ratchet ");
+                                    }
+                                    if ignore_mark {
+                                        scoped.push_str(":m ");
+                                    }
+                                    if sigspace {
+                                        scoped.push_str(alt);
+                                    } else {
+                                        scoped.push_str(alt.trim_end());
+                                    }
+                                    self.parse_regex_with_mode(&scoped, mode)
+                                } else {
+                                    self.parse_regex_with_mode(alt, mode)
+                                };
+                                if let Some(p) = parsed_alt {
+                                    alt_patterns.push(p);
+                                }
                             }
-                            let parsed_alt = if needs_capture_scope {
+                            if alt_patterns.len() == 1 {
+                                // Only one real alternative remained after dropping the
+                                // leading null: treat it as a plain (capturing) group.
+                                RegexAtom::CaptureGroup(alt_patterns.into_iter().next().unwrap())
+                            } else {
+                                let group_atom = if cap_is_sequential {
+                                    RegexAtom::SequentialAlternation(alt_patterns)
+                                } else {
+                                    try_collapse_alternation_to_charclass(&alt_patterns)
+                                        .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                                };
+                                let group_pat = RegexPattern {
+                                    tokens: vec![RegexToken {
+                                        atom: group_atom,
+                                        quant: RegexQuant::One,
+                                        named_capture: None,
+                                        hash_capture: None,
+                                        secondary_named_capture: None,
+                                        force_list_capture: false,
+                                        ratchet: false,
+                                        frugal: false,
+                                        separator: None,
+                                        from_runtime_interpolation: false,
+                                        subrule_call_capture: false,
+                                    }],
+                                    anchor_start: false,
+                                    anchor_end: false,
+                                    ignore_case,
+                                    ignore_mark,
+                                    derived: Default::default(),
+                                };
+                                RegexAtom::CaptureGroup(group_pat)
+                            }
+                        } else {
+                            let parsed_group = if needs_capture_scope {
                                 let mut scoped = String::new();
                                 if ignore_case {
                                     scoped.push_str(":i ");
@@ -4165,141 +4432,124 @@ impl Interpreter {
                                     scoped.push_str(":m ");
                                 }
                                 if sigspace {
-                                    scoped.push_str(alt);
+                                    scoped.push_str(&group_pattern);
                                 } else {
-                                    scoped.push_str(alt.trim_end());
+                                    scoped.push_str(group_pattern.trim_end());
                                 }
                                 self.parse_regex_with_mode(&scoped, mode)
                             } else {
-                                self.parse_regex_with_mode(alt, mode)
+                                self.parse_regex_with_mode(&group_pattern, mode)
                             };
-                            if let Some(p) = parsed_alt {
-                                alt_patterns.push(p);
+                            if let Some(p) = parsed_group {
+                                RegexAtom::CaptureGroup(p)
+                            } else {
+                                continue;
                             }
                         }
-                        if alt_patterns.len() == 1 {
-                            // Only one real alternative remained after dropping the
-                            // leading null: treat it as a plain (capturing) group.
-                            RegexAtom::CaptureGroup(alt_patterns.into_iter().next().unwrap())
-                        } else {
-                            let group_atom = if cap_is_sequential {
+                    }
+                    '[' => {
+                        // In Raku regex, [...] is a non-capturing group (alternation)
+                        // Parse as alternation: [a|b|c]. It reads its body by exactly
+                        // the rules `( ... )` does, so it uses the same scanner: a
+                        // quoted `]` is a literal (`[[ ']' x ]]`), and so is one
+                        // inside a character class (`[<[.)]>]`). Scanning brackets
+                        // raw made a quoted `]` close the group one level down,
+                        // which is why `Code::Coverable` (and `Code::Coverage` /
+                        // `Test::Coverage` through it) failed at the `while` FAR
+                        // above the regex that actually broke (#7954).
+                        let (group_pattern, _depth) =
+                            Self::scan_regex_group_body(&mut chars, '[', ']');
+                        // An empty non-capturing group `[]` is a null regex.
+                        if group_pattern.trim().is_empty() {
+                            PENDING_REGEX_ERROR
+                                .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
+                            return None;
+                        }
+                        // Parse the group as top-level alternation, including `||`.
+                        let (alternatives, bracket_is_sequential) =
+                            Self::split_top_level_alternation(&group_pattern);
+                        // Raku keeps a leading inline `:i` modifier active for the
+                        // whole bracketed alternation (`[:i'first-'[...]|before|after]`),
+                        // not only for the first branch.  Each branch is parsed as
+                        // a separate pattern below, so carry that leading scope into
+                        // the other branches explicitly.
+                        let bracket_ignore_case = {
+                            let body = group_pattern.trim_start();
+                            body.strip_prefix(":ignorecase")
+                                .or_else(|| body.strip_prefix(":i"))
+                                .is_some_and(|rest| {
+                                    rest.is_empty()
+                                        || rest.starts_with(|c: char| {
+                                            !c.is_ascii_alphanumeric() && c != '_'
+                                        })
+                                })
+                        };
+                        // A trailing/interior empty branch inside the group (`[a|]`)
+                        // is null; a leading empty branch is allowed (`[|a]`).
+                        if alternatives.len() > 1
+                            && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
+                        {
+                            PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
+                            return None;
+                        }
+                        let needs_scope = ignore_case
+                            || bracket_ignore_case
+                            || sigspace
+                            || ratchet
+                            || ignore_mark;
+                        if alternatives.len() > 1 {
+                            let mut alt_patterns = Vec::new();
+                            for (alt_idx, alt) in alternatives.iter().enumerate() {
+                                // A leading null alternative is ignored in Raku: `[ || X ]`
+                                // and `[ | X ]` behave like `[ X ]`. Skip a whitespace/comment-only
+                                // first alternative so it does not contribute a spurious
+                                // empty-matching (and, under ratchet, empty-winning) branch.
+                                if alt_idx == 0 && regex_branch_is_blank(alt) {
+                                    continue;
+                                }
+                                let parsed_alt = if needs_scope {
+                                    let mut scoped = String::new();
+                                    if ignore_case || bracket_ignore_case {
+                                        scoped.push_str(":i ");
+                                    }
+                                    if sigspace {
+                                        scoped.push_str(":s ");
+                                    }
+                                    if ratchet {
+                                        scoped.push_str(":ratchet ");
+                                    }
+                                    if ignore_mark {
+                                        scoped.push_str(":m ");
+                                    }
+                                    // In sigspace mode, preserve trailing whitespace so it
+                                    // becomes \s* — needed for quantified groups.
+                                    if sigspace {
+                                        scoped.push_str(alt);
+                                    } else {
+                                        scoped.push_str(alt.trim_end());
+                                    }
+                                    self.parse_regex_with_mode(&scoped, mode)
+                                } else {
+                                    self.parse_regex_with_mode(alt, mode)
+                                };
+                                if let Some(p) = parsed_alt {
+                                    alt_patterns.push(p);
+                                }
+                            }
+                            if alt_patterns.len() == 1 {
+                                // Only one real alternative remained after dropping the
+                                // leading null: treat it as a plain non-capturing group.
+                                RegexAtom::Group(alt_patterns.into_iter().next().unwrap())
+                            } else if bracket_is_sequential {
                                 RegexAtom::SequentialAlternation(alt_patterns)
                             } else {
                                 try_collapse_alternation_to_charclass(&alt_patterns)
                                     .unwrap_or(RegexAtom::Alternation(alt_patterns))
-                            };
-                            let group_pat = RegexPattern {
-                                tokens: vec![RegexToken {
-                                    atom: group_atom,
-                                    quant: RegexQuant::One,
-                                    named_capture: None,
-                                    hash_capture: None,
-                                    secondary_named_capture: None,
-                                    force_list_capture: false,
-                                    ratchet: false,
-                                    frugal: false,
-                                    separator: None,
-                                    from_runtime_interpolation: false,
-                                    subrule_call_capture: false,
-                                }],
-                                anchor_start: false,
-                                anchor_end: false,
-                                ignore_case,
-                                ignore_mark,
-                                derived: Default::default(),
-                            };
-                            RegexAtom::CaptureGroup(group_pat)
-                        }
-                    } else {
-                        let parsed_group = if needs_capture_scope {
-                            let mut scoped = String::new();
-                            if ignore_case {
-                                scoped.push_str(":i ");
                             }
-                            if sigspace {
-                                scoped.push_str(":s ");
-                            }
-                            if ratchet {
-                                scoped.push_str(":ratchet ");
-                            }
-                            if ignore_mark {
-                                scoped.push_str(":m ");
-                            }
-                            if sigspace {
-                                scoped.push_str(&group_pattern);
-                            } else {
-                                scoped.push_str(group_pattern.trim_end());
-                            }
-                            self.parse_regex_with_mode(&scoped, mode)
                         } else {
-                            self.parse_regex_with_mode(&group_pattern, mode)
-                        };
-                        if let Some(p) = parsed_group {
-                            RegexAtom::CaptureGroup(p)
-                        } else {
-                            continue;
-                        }
-                    }
-                }
-                '[' => {
-                    // In Raku regex, [...] is a non-capturing group (alternation)
-                    // Parse as alternation: [a|b|c]. It reads its body by exactly
-                    // the rules `( ... )` does, so it uses the same scanner: a
-                    // quoted `]` is a literal (`[[ ']' x ]]`), and so is one
-                    // inside a character class (`[<[.)]>]`). Scanning brackets
-                    // raw made a quoted `]` close the group one level down,
-                    // which is why `Code::Coverable` (and `Code::Coverage` /
-                    // `Test::Coverage` through it) failed at the `while` FAR
-                    // above the regex that actually broke (#7954).
-                    let (group_pattern, _depth) = Self::scan_regex_group_body(&mut chars, '[', ']');
-                    // An empty non-capturing group `[]` is a null regex.
-                    if group_pattern.trim().is_empty() {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
-                        return None;
-                    }
-                    // Parse the group as top-level alternation, including `||`.
-                    let (alternatives, bracket_is_sequential) =
-                        Self::split_top_level_alternation(&group_pattern);
-                    // Raku keeps a leading inline `:i` modifier active for the
-                    // whole bracketed alternation (`[:i'first-'[...]|before|after]`),
-                    // not only for the first branch.  Each branch is parsed as
-                    // a separate pattern below, so carry that leading scope into
-                    // the other branches explicitly.
-                    let bracket_ignore_case = {
-                        let body = group_pattern.trim_start();
-                        body.strip_prefix(":ignorecase")
-                            .or_else(|| body.strip_prefix(":i"))
-                            .is_some_and(|rest| {
-                                rest.is_empty()
-                                    || rest.starts_with(|c: char| {
-                                        !c.is_ascii_alphanumeric() && c != '_'
-                                    })
-                            })
-                    };
-                    // A trailing/interior empty branch inside the group (`[a|]`)
-                    // is null; a leading empty branch is allowed (`[|a]`).
-                    if alternatives.len() > 1
-                        && let Some(err) = null_regex_if_empty_branch(&alternatives, true)
-                    {
-                        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
-                        return None;
-                    }
-                    let needs_scope =
-                        ignore_case || bracket_ignore_case || sigspace || ratchet || ignore_mark;
-                    if alternatives.len() > 1 {
-                        let mut alt_patterns = Vec::new();
-                        for (alt_idx, alt) in alternatives.iter().enumerate() {
-                            // A leading null alternative is ignored in Raku: `[ || X ]`
-                            // and `[ | X ]` behave like `[ X ]`. Skip a whitespace/comment-only
-                            // first alternative so it does not contribute a spurious
-                            // empty-matching (and, under ratchet, empty-winning) branch.
-                            if alt_idx == 0 && regex_branch_is_blank(alt) {
-                                continue;
-                            }
-                            let parsed_alt = if needs_scope {
+                            let parsed_group = if needs_scope {
                                 let mut scoped = String::new();
-                                if ignore_case || bracket_ignore_case {
+                                if ignore_case {
                                     scoped.push_str(":i ");
                                 }
                                 if sigspace {
@@ -4311,148 +4561,116 @@ impl Interpreter {
                                 if ignore_mark {
                                     scoped.push_str(":m ");
                                 }
-                                // In sigspace mode, preserve trailing whitespace so it
-                                // becomes \s* — needed for quantified groups.
                                 if sigspace {
-                                    scoped.push_str(alt);
+                                    scoped.push_str(&group_pattern);
                                 } else {
-                                    scoped.push_str(alt.trim_end());
+                                    scoped.push_str(group_pattern.trim_end());
                                 }
                                 self.parse_regex_with_mode(&scoped, mode)
                             } else {
-                                self.parse_regex_with_mode(alt, mode)
+                                self.parse_regex_with_mode(&group_pattern, mode)
                             };
-                            if let Some(p) = parsed_alt {
-                                alt_patterns.push(p);
-                            }
-                        }
-                        if alt_patterns.len() == 1 {
-                            // Only one real alternative remained after dropping the
-                            // leading null: treat it as a plain non-capturing group.
-                            RegexAtom::Group(alt_patterns.into_iter().next().unwrap())
-                        } else if bracket_is_sequential {
-                            RegexAtom::SequentialAlternation(alt_patterns)
-                        } else {
-                            try_collapse_alternation_to_charclass(&alt_patterns)
-                                .unwrap_or(RegexAtom::Alternation(alt_patterns))
-                        }
-                    } else {
-                        let parsed_group = if needs_scope {
-                            let mut scoped = String::new();
-                            if ignore_case {
-                                scoped.push_str(":i ");
-                            }
-                            if sigspace {
-                                scoped.push_str(":s ");
-                            }
-                            if ratchet {
-                                scoped.push_str(":ratchet ");
-                            }
-                            if ignore_mark {
-                                scoped.push_str(":m ");
-                            }
-                            if sigspace {
-                                scoped.push_str(&group_pattern);
+                            if let Some(p) = parsed_group {
+                                RegexAtom::Group(p)
                             } else {
-                                scoped.push_str(group_pattern.trim_end());
+                                continue;
                             }
-                            self.parse_regex_with_mode(&scoped, mode)
-                        } else {
-                            self.parse_regex_with_mode(&group_pattern, mode)
-                        };
-                        if let Some(p) = parsed_group {
-                            RegexAtom::Group(p)
-                        } else {
-                            continue;
                         }
                     }
-                }
-                '{' => {
-                    // Code block in regex: { ... }
-                    let code = read_code_block_body(chars.by_ref());
-                    // Validate mode: an embedded code block may not interpolate
-                    // an attribute (`{ $!attr }`).
-                    if mode == RegexParseMode::Validate
-                        && let Some(symbol) = find_attribute_interpolation(&code)
-                    {
-                        PENDING_REGEX_ERROR
-                            .with(|e| *e.borrow_mut() = Some(make_attribute_regex_error(&symbol)));
-                        return None;
-                    }
-                    // Detect P5-style {N,M} or {N,} quantifiers
-                    let trimmed_code = code.trim();
-                    if !trimmed_code.is_empty() {
-                        let is_p5_quant = if let Some((left, right)) = trimmed_code.split_once(',')
+                    '{' => {
+                        // Code block in regex: { ... }
+                        let code = read_code_block_body(chars.by_ref());
+                        // Validate mode: an embedded code block may not interpolate
+                        // an attribute (`{ $!attr }`).
+                        if mode == RegexParseMode::Validate
+                            && let Some(symbol) = find_attribute_interpolation(&code)
                         {
-                            left.trim().chars().all(|c| c.is_ascii_digit())
-                                && !left.trim().is_empty()
-                                && (right.is_empty()
-                                    || right.trim().chars().all(|c| c.is_ascii_digit()))
-                        } else {
-                            false
-                        };
-                        if is_p5_quant {
                             PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(RuntimeError::obsolete(
-                                    "{N,M} as general quantifier",
-                                    "** N..M (or ** N..*)",
-                                ));
+                                *e.borrow_mut() = Some(make_attribute_regex_error(&symbol))
                             });
                             return None;
                         }
-                    }
-                    RegexAtom::CodeAssertion {
-                        code,
-                        negated: false,
-                        is_assertion: false,
-                        body: None,
-                        code_cache_id: 0,
-                    }
-                }
-                '~' => RegexAtom::TildeMarker,
-                other => {
-                    // Validate mode: an unhandled non-identifier glyph here is an
-                    // unrecognized regex metacharacter (e.g. `-`, `!`, `;`). The
-                    // validator accepts `=`, `,`, `|`, `&` as bare metacharacters
-                    // (residual alternation/conjunction markers); `.`, `~`, `«`,
-                    // `»` are handled in their own arms above. Reproduces the
-                    // former validator's UnrecognizedMetachar check.
-                    // A combining mark is never an atom of its own in
-                    // Rakudo's grapheme-level grammar — it is part of the
-                    // literal grapheme its base character starts — so it is
-                    // not a metacharacter either. `merge_grapheme_literal_tokens`
-                    // re-joins it with that base below.
-                    if mode == RegexParseMode::Validate
-                        && !other.is_alphanumeric()
-                        && other != '_'
-                        && !unicode_normalization::char::is_combining_mark(other)
-                        && !matches!(other, '=' | ',' | '|' | '&')
-                    {
-                        // If an earlier sorrow was already recorded for this
-                        // pattern (e.g. a malformed `**` range), this metachar is
-                        // a follow-on sorrow rather than the top-level error: the
-                        // fatal panic becomes "couldn't find final '/'", and both
-                        // sorrows are bundled into the resulting X::Comp::Group.
-                        let has_sorrows = REGEX_SORROWS.with(|s| !s.borrow().is_empty());
-                        if has_sorrows {
-                            push_regex_sorrow(unrecognized_metachar_exception(other));
-                            let mut panic_err =
-                                RuntimeError::new("Unable to parse regex; couldn't find final '/'");
-                            panic_err.exception = Some(Box::new(regex_unparseable_panic_value()));
-                            PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(panic_err));
-                        } else {
-                            PENDING_REGEX_ERROR.with(|e| {
-                                *e.borrow_mut() = Some(make_unrecognized_metachar_error(other));
-                            });
+                        // Detect P5-style {N,M} or {N,} quantifiers
+                        let trimmed_code = code.trim();
+                        if !trimmed_code.is_empty() {
+                            let is_p5_quant =
+                                if let Some((left, right)) = trimmed_code.split_once(',') {
+                                    left.trim().chars().all(|c| c.is_ascii_digit())
+                                        && !left.trim().is_empty()
+                                        && (right.is_empty()
+                                            || right.trim().chars().all(|c| c.is_ascii_digit()))
+                                } else {
+                                    false
+                                };
+                            if is_p5_quant {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "{N,M} as general quantifier",
+                                        "** N..M (or ** N..*)",
+                                    ));
+                                });
+                                return None;
+                            }
                         }
-                        return None;
+                        super::regex::regex_helpers::note_regex_code_lowered();
+                        RegexAtom::CodeAssertion {
+                            code,
+                            negated: false,
+                            is_assertion: false,
+                            body: None,
+                            code_cache_id: 0,
+                        }
                     }
-                    RegexAtom::Literal(other)
+                    '~' => RegexAtom::TildeMarker,
+                    other => {
+                        // Validate mode: an unhandled non-identifier glyph here is an
+                        // unrecognized regex metacharacter (e.g. `-`, `!`, `;`). The
+                        // validator accepts `=`, `,`, `|`, `&` as bare metacharacters
+                        // (residual alternation/conjunction markers); `.`, `~`, `«`,
+                        // `»` are handled in their own arms above. Reproduces the
+                        // former validator's UnrecognizedMetachar check.
+                        // A combining mark is never an atom of its own in
+                        // Rakudo's grapheme-level grammar — it is part of the
+                        // literal grapheme its base character starts — so it is
+                        // not a metacharacter either. `merge_grapheme_literal_tokens`
+                        // re-joins it with that base below.
+                        if mode == RegexParseMode::Validate
+                            && !other.is_alphanumeric()
+                            && other != '_'
+                            && !unicode_normalization::char::is_combining_mark(other)
+                            && !matches!(other, '=' | ',' | '|' | '&')
+                        {
+                            // If an earlier sorrow was already recorded for this
+                            // pattern (e.g. a malformed `**` range), this metachar is
+                            // a follow-on sorrow rather than the top-level error: the
+                            // fatal panic becomes "couldn't find final '/'", and both
+                            // sorrows are bundled into the resulting X::Comp::Group.
+                            let has_sorrows = REGEX_SORROWS.with(|s| !s.borrow().is_empty());
+                            if has_sorrows {
+                                push_regex_sorrow(unrecognized_metachar_exception(other));
+                                let mut panic_err = RuntimeError::new(
+                                    "Unable to parse regex; couldn't find final '/'",
+                                );
+                                panic_err.exception =
+                                    Some(Box::new(regex_unparseable_panic_value()));
+                                PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(panic_err));
+                            } else {
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(make_unrecognized_metachar_error(other));
+                                });
+                            }
+                            return None;
+                        }
+                        RegexAtom::Literal(other)
+                    }
                 }
             };
             let mut quant = RegexQuant::One;
             // In Raku regex, whitespace between an atom and its quantifier is
-            // insignificant. Peek past whitespace to find quantifier characters.
+            // insignificant -- except under `:sigspace`, where it is a `<.ws>`
+            // matched after the atom in every iteration (`<alpha> +% \,`
+            // repeats `<alpha><.ws>`; Rakudo's `sigmaybe`).
+            let mut ws_before_quant = false;
             {
                 let mut lookahead = chars.clone();
                 while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
@@ -4463,6 +4681,7 @@ impl Interpreter {
                     .is_some_and(|ch| *ch == '*' || *ch == '+' || *ch == '?')
                 {
                     // Consume the whitespace before the quantifier
+                    ws_before_quant = sigspace && chars.peek().is_some_and(|ch| ch.is_whitespace());
                     while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
                         chars.next();
                     }
@@ -4513,6 +4732,7 @@ impl Interpreter {
                                 // `** {code}` — code block quantifier
                                 chars.next(); // skip '{'
                                 let code = read_code_block_body(chars.by_ref());
+                                super::regex::regex_helpers::note_regex_code_lowered();
                                 RegexQuant::RepeatCode(code)
                             } else {
                                 // Parse the count/range: N, N..M, N..*, with
@@ -4619,7 +4839,10 @@ impl Interpreter {
             // separator is a single atom (the next atom in the stream); the rest
             // of the line is matched after the quantified group. `%%` permits an
             // optional trailing separator.
-            let token_separator = self.consume_repeat_separator(&mut chars, &quant, mode);
+            let SeparatorParse {
+                separator: token_separator,
+                ws_after_quant,
+            } = self.consume_repeat_separator(&mut chars, &quant, mode, sigspace, ratchet);
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
             // See the `'<'` arm: an aliased negated subrule assertion can never
@@ -4682,10 +4905,12 @@ impl Interpreter {
                 && !aliased_subrule_call
                 && !matches!(atom, RegexAtom::CaptureGroup(_))
                 && hash_capture.is_none()
-                && token_separator.is_none()
                 && matches!(
                     quant,
-                    RegexQuant::ZeroOrMore | RegexQuant::OneOrMore | RegexQuant::Repeat(..)
+                    RegexQuant::ZeroOrMore
+                        | RegexQuant::OneOrMore
+                        | RegexQuant::Repeat(..)
+                        | RegexQuant::RepeatCode(_)
                 );
             // An `@<name>=` array-sigil alias only produces a List when the
             // aliased atom is itself a *capturing* construct — a capture group
@@ -4713,7 +4938,9 @@ impl Interpreter {
                     force_list_capture: false,
                     ratchet: token_ratchet,
                     frugal: token_frugal,
-                    separator: None,
+                    // The alias names the whole separated span, so the
+                    // separator stays on the quantified inner token.
+                    separator: token_separator,
                     // ADR-0046 Slice 1: `runtime_value_atom` marks an atom
                     // built directly by `array_var_alternation_atom` (the
                     // `<@var>` form) or the `<$var>` regex-value reroute --
@@ -4774,6 +5001,22 @@ impl Interpreter {
                     from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
                     subrule_call_capture,
                 });
+            }
+            if ws_before_quant && let Some(last) = tokens.last_mut() {
+                // A whole-span alias wraps the quantified token in a group;
+                // the per-item `<.ws>` belongs to that inner quantified token.
+                let target = match &mut last.atom {
+                    RegexAtom::Group(inner)
+                        if matches!(last.quant, RegexQuant::One) && inner.tokens.len() == 1 =>
+                    {
+                        &mut inner.tokens[0]
+                    }
+                    _ => last,
+                };
+                append_per_item_ws(target, ignore_case, ignore_mark);
+            }
+            if ws_after_quant {
+                tokens.push(sigspace_ws_token(ratchet));
             }
         }
         let tokens = merge_grapheme_literal_tokens(tokens);

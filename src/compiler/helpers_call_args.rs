@@ -303,13 +303,12 @@ impl Compiler {
     }
 
     /// Check if a block body contains placeholder variables ($^a, $^b, etc.)
+    /// that belong to the block itself — the same parameters
+    /// `collect_placeholders_shallow` gives the closure it then compiles, so
+    /// the two answers cannot disagree.
+    // Cost: O(n log n), n = size of `stmts` (the collector sorts its names).
     pub(super) fn has_block_placeholders(stmts: &[Stmt]) -> bool {
-        for stmt in stmts {
-            if Self::stmt_has_placeholder(stmt) {
-                return true;
-            }
-        }
-        false
+        !crate::ast::collect_placeholders_shallow(stmts).is_empty()
     }
 
     /// A closure passed as a **method argument** escapes the creating frame.
@@ -503,8 +502,7 @@ impl Compiler {
     }
 
     fn bind_target_returns_aggregate_stmts(stmts: &[Stmt]) -> bool {
-        stmts
-            .last()
+        crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
             .is_some_and(Self::bind_target_returns_aggregate_stmt)
     }
 
@@ -715,33 +713,23 @@ impl Compiler {
         if !Self::is_named_arg_expr(arg) {
             self.code.emit(OpCode::ContainerizePair);
         }
+        // A sigil-less constant's binding is its term key (#9962). An
+        // anonymous scalar assignment (`$ = value`) produces a writable
+        // container, so it is wrapped with VarRef so `is rw` dispatch can
+        // match. An inline declaration used as an argument (`$y := my $x`,
+        // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`: compiling it
+        // declares the variable in the enclosing scope and leaves its value on
+        // the stack, and the VarRef to the freshly-declared variable lets a
+        // `:=` bind (or an `is rw` parameter) alias the new container rather
+        // than snapshot its value.
         let source_name = match arg {
-            Expr::Var(n) => Some(n.clone()),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            Expr::CodeVar(n) => Some(format!("&{}", n)),
-            // A sigil-less constant's binding is its term key (#9962).
-            Expr::BareWord(n) if self.names_term_constant(n) => {
-                Some(crate::runtime::term_names::term_key(n))
-            }
-            Expr::BareWord(n) => Some(n.clone()),
-            // Anonymous scalar assignment (`$ = value`) produces a writable
-            // container, so wrap it with VarRef so `is rw` dispatch can match.
-            Expr::AssignExpr { name, .. } => Some(name.clone()),
-            Expr::CompoundAssign { expanded, .. } => match expanded.as_ref() {
-                Expr::AssignExpr { name, .. } => Some(name.clone()),
-                _ => None,
-            },
-            // An inline declaration used as an argument (`$y := my $x`,
-            // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`. Compiling it
-            // declares the variable in the enclosing scope and leaves its value
-            // on the stack; wrap that with a VarRef to the freshly-declared
-            // variable so a `:=` bind (or an `is rw` parameter) can alias the
-            // new container rather than snapshotting its value. The `VarDecl`
-            // `name` already carries the sigil convention WrapVarRef expects
-            // ("x" for `$x`, "@x" for `@x`, "%y" for `%y`).
-            Expr::DoStmt(stmt) => crate::runtime::term_names::stmt_decl_storage_name(stmt),
-            _ => None,
+            Expr::CodeVar(_) => arg.var_key(),
+            _ => self.lvalue_root_key(
+                arg,
+                crate::ast::LvaluePeel::ASSIGN
+                    | crate::ast::LvaluePeel::DECL
+                    | crate::ast::LvaluePeel::SIGILLESS,
+            ),
         };
         if matches!(arg, Expr::Index { .. }) && is_bind_target {
             // `:=` bind to an Index expression (`my $x := @a[$i]`): the Index
@@ -1059,6 +1047,40 @@ impl Compiler {
             .collect()
     }
 
+    /// `@a.AT-POS(EXPR)`: a plain one-argument call on an `@` variable (not a
+    /// scalar, which may hold a class with its own `AT-POS`), the positional
+    /// subscript `@a[EXPR]` spelled as a
+    /// method.
+    pub(super) fn is_array_at_pos_call(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                quoted: false,
+            } if args.len() == 1
+                && matches!(**target, Expr::ArrayVar(_))
+                && name.with_str(|n| n == "AT-POS")
+        )
+    }
+
+    /// The `Expr::Index` spelling of an [`Self::is_array_at_pos_call`] argument;
+    /// any other expression is returned unchanged.
+    pub(super) fn at_pos_call_as_index(arg: &Expr) -> Expr {
+        match arg {
+            Expr::MethodCall { target, args, .. } if Self::is_array_at_pos_call(arg) => {
+                Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(args[0].clone()),
+                    is_positional: true,
+                }
+            }
+            other => other.clone(),
+        }
+    }
+
     /// Whether an argument expression *could* be a public attribute accessor
     /// read (`$c.v`) or a direct private/public attribute read (`$!v`/`$.v`
     /// compiled as a bare `Expr::Var`) — the two shapes whose compiled
@@ -1165,72 +1187,6 @@ impl Compiler {
                     | TokenKind::DotDotDotCaret
             ),
             Expr::Whatever | Expr::HyperWhatever | Expr::ArrayLiteral(_) => true,
-            _ => false,
-        }
-    }
-
-    pub(super) fn stmt_has_placeholder(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
-                Self::expr_has_placeholder(e)
-            }
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-                Self::expr_has_placeholder(expr)
-            }
-            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
-                es.iter().any(Self::expr_has_placeholder)
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::expr_has_placeholder(cond)
-                    || then_branch.iter().any(Self::stmt_has_placeholder)
-                    || else_branch.iter().any(Self::stmt_has_placeholder)
-            }
-            Stmt::Block(stmts) => stmts.iter().any(Self::stmt_has_placeholder),
-            _ => false,
-        }
-    }
-
-    pub(super) fn expr_has_placeholder(expr: &Expr) -> bool {
-        match expr {
-            Expr::Var(name) => name.starts_with('^'),
-            Expr::CodeVar(name) => name.starts_with('^'),
-            Expr::Binary { left, right, .. } => {
-                Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
-            }
-            Expr::Unary { expr, .. } => Self::expr_has_placeholder(expr),
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::expr_has_placeholder(cond)
-                    || Self::expr_has_placeholder(then_expr)
-                    || Self::expr_has_placeholder(else_expr)
-            }
-            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-                args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::MethodCall { target, args, .. }
-            | Expr::DynamicMethodCall { target, args, .. }
-            | Expr::HyperMethodCall { target, args, .. }
-            | Expr::HyperMethodCallDynamic { target, args, .. } => {
-                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::Index { target, index, .. } | Expr::IndexAssign { target, index, .. } => {
-                Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
-            }
-            Expr::CallOn { target, args } => {
-                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
-            }
-            Expr::StringInterpolation(parts)
-            | Expr::ArrayLiteral(parts)
-            | Expr::BracketArray(parts, _)
-            | Expr::CaptureLiteral(parts) => parts.iter().any(Self::expr_has_placeholder),
             _ => false,
         }
     }

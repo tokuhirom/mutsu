@@ -428,6 +428,15 @@ impl Interpreter {
         }
     }
 
+    /// Whether one of `class_name`'s methods declares a class or role in its
+    /// body (`Registry::classes_with_method_type_decls`).
+    // Cost: O(1) expected, hash lookup.
+    pub(crate) fn class_has_method_type_decls(&self, class_name: &str) -> bool {
+        self.registry()
+            .classes_with_method_type_decls
+            .contains(class_name)
+    }
+
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         // Single guard for both reads (no user-code re-entry here, so let-binding
         // is safe and avoids a same-thread recursive read lock).

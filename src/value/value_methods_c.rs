@@ -28,6 +28,7 @@ impl Value {
             positional,
             named,
             &crate::runtime::RegexVarMap::default(),
+            None,
             target,
         )
     }
@@ -36,21 +37,29 @@ impl Value {
     /// action walk. Ordinary regex callers have none; grammar captures with a
     /// rule-local dynamic declaration use this path so the action sees the
     /// value recorded by the winning match.
+    ///
+    /// `cursor` is the grammar instance the rule invocation owned, whose
+    /// attributes the Match answers (#9803); `None` when it owned none.
     pub(crate) fn make_match_object_full_with_regex_vars(
         from: i64,
         to: i64,
         positional: &[crate::runtime::PosSlot],
         named: &crate::runtime::NamedCaptureMap,
         regex_vars: &crate::runtime::RegexVarMap,
+        cursor: Option<Value>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        let has_children = !named.is_empty() || !positional.is_empty() || !regex_vars.is_empty();
+        let has_children = !named.is_empty()
+            || !positional.is_empty()
+            || !regex_vars.is_empty()
+            || cursor.is_some();
         let children = has_children.then(|| {
             Box::new(crate::runtime::CapChildren {
                 named: named.clone(),
                 capture_alias_map: Default::default(),
                 positional: positional.to_vec(),
                 regex_vars: regex_vars.clone(),
+                cursor,
             })
         });
         let cap = crate::runtime::CapNode {

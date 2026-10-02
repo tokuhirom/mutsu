@@ -247,6 +247,8 @@ impl Compiler {
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
         self.attach_param_chunks(param_defs, name);
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -429,7 +431,7 @@ impl Compiler {
             // would not be detected as the block result. Use the ENTER-result stack
             // (PushEnterResult / LoadEnterResult) to bridge the two sections.
             let last_is_enter = matches!(
-                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers),
                 Some(Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     ..
@@ -600,6 +602,7 @@ impl Compiler {
         // declaration metadata so `Code.line` can report it without a second
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
+        sub_compiler.code.declared_in_routine = self.is_routine || self.lexically_in_routine;
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
@@ -747,7 +750,10 @@ impl Compiler {
             .push(cf.code.free_var_syms.clone());
         let mut lexical_free = cf.code.free_var_syms.clone();
         lexical_free.extend(cf.code.free_var_writes.iter().copied());
-        self.record_lexical_sub_free_vars(name, lexical_free);
+        let mut written_free: Vec<Symbol> = cf.code.free_var_writes.clone();
+        written_free.extend(cf.code.free_var_container_writes.iter().copied());
+        written_free.extend(cf.code.nested_sub_written_free.iter().copied());
+        self.record_lexical_sub_free_vars(name, lexical_free, written_free);
         // An `our sub` is installed into the package registry and outlives its
         // declaring block, but a registry routine has no per-sub closure env. So
         // every lexical it READS or WRITES must be boxed into a shared cell at its
@@ -993,6 +999,7 @@ impl Compiler {
                         sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                         continue;
                     }
+                    s if sub_compiler.compile_type_decl_value(s) => continue,
                     // ENTER phaser as last statement: compile body inline
                     // so the value is left on stack as implicit return
                     Stmt::Phaser {
@@ -1213,6 +1220,8 @@ impl Compiler {
         promoted_decls: &[String],
     ) -> CompiledCode {
         self.attach_param_chunks(param_defs, "<anon>");
+        let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
+        let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
         let mut sub_compiler = Compiler::new();
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
@@ -1370,17 +1379,17 @@ impl Compiler {
             // closure's implicit return value (Raku semantics). Capture it in the
             // ENTER section and re-materialize it on the value stack at the end of
             // the body (the closure returns its value via the stack, not the topic).
+            let tail = crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers);
             let last_is_enter = matches!(
-                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                tail,
                 Some(Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     ..
                 })
             );
-            let enter_last_idx = body
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)))
-                .unwrap_or(usize::MAX);
+            let enter_last_idx =
+                crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
+                    .unwrap_or(usize::MAX);
             // ENTER phasers
             for (i, stmt) in body.iter().enumerate() {
                 if let Stmt::Phaser {
@@ -1436,11 +1445,14 @@ impl Compiler {
                     )
                 })
                 .collect();
-            // The value-producing statement is the last non-`SetLine` statement;
-            // trailing markers must not become the closure's value.
-            let last_value_idx = body_stmts
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
+            // The value-producing statement is the last non-marker statement;
+            // trailing markers must not become the closure's value. A trailing
+            // LEAVE/KEEP/UNDO/PRE/POST makes the value Nil, as in rakudo.
+            let last_value_idx = if tail.is_some_and(crate::ast::is_nil_valued_tail_phaser) {
+                None
+            } else {
+                crate::ast::last_value_stmt_index(&body_stmts, crate::ast::TailSkip::Markers)
+            };
             for (i, stmt) in body_stmts.iter().enumerate() {
                 let is_value = !last_is_enter && Some(i) == last_value_idx;
                 if is_value && let Stmt::Expr(expr) = stmt {
@@ -1518,6 +1530,9 @@ impl Compiler {
                 if is_value && let Stmt::VarDecl { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
                     sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
+                    continue;
+                }
+                if is_value && sub_compiler.compile_type_decl_value(stmt) {
                     continue;
                 }
                 if is_value && let Stmt::Assign { name, .. } = stmt {
@@ -1673,6 +1688,7 @@ impl Compiler {
                             sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                             continue;
                         }
+                        s if sub_compiler.compile_type_decl_value(s) => continue,
                         Stmt::Assign { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
                             sub_compiler.emit_tail_var_stmt_value(stmt, name, true);

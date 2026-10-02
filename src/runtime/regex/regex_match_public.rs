@@ -39,16 +39,7 @@ impl Interpreter {
             let name = &after_colon[..name_len];
             if !matches!(
                 name,
-                "ratchet"
-                    | "ignorecase"
-                    | "ignoremark"
-                    | "sigspace"
-                    | "i"
-                    | "m"
-                    | "s"
-                    | "r"
-                    | "x"
-                    | "p5"
+                "ratchet" | "ignorecase" | "ignoremark" | "sigspace" | "i" | "m" | "s" | "r" | "x"
             ) {
                 break;
             }
@@ -76,13 +67,11 @@ impl Interpreter {
             }
             let after_name = &after_colon[name_len..];
             let body = after_name.trim_start();
-            let stmt_text;
-            let consumed_len;
             let scoped_token_decl = matches!(decl_name, "my" | "our" | "state")
                 && (body.starts_with("token ")
                     || body.starts_with("regex ")
                     || body.starts_with("rule "));
-            if scoped_token_decl {
+            let (stmt_text, consumed_len) = if scoped_token_decl {
                 let Some(open_idx) = body.find('{') else {
                     break;
                 };
@@ -93,19 +82,22 @@ impl Interpreter {
                 if body[end_idx..].starts_with(';') {
                     end_idx += 1;
                 }
-                stmt_text = format!("{decl_name} {}", body[..end_idx].trim());
-                consumed_len =
-                    (rest.len() - after_name.len()) + (after_name.len() - body.len()) + end_idx;
+                (
+                    format!("{decl_name} {}", body[..end_idx].trim()),
+                    (rest.len() - after_name.len()) + (after_name.len() - body.len()) + end_idx,
+                )
             } else {
                 let Some(semi_idx) = Self::find_top_level_semicolon(body) else {
                     break;
                 };
-                stmt_text = format!("{decl_name} {}", body[..semi_idx].trim());
-                consumed_len = (rest.len() - after_name.len())
-                    + (after_name.len() - body.len())
-                    + semi_idx
-                    + 1;
-            }
+                (
+                    format!("{decl_name} {}", body[..semi_idx].trim()),
+                    (rest.len() - after_name.len())
+                        + (after_name.len() - body.len())
+                        + semi_idx
+                        + 1,
+                )
+            };
             decls.push((decl_name.to_string(), stmt_text));
             rest = &rest[consumed_len..];
         }
@@ -362,16 +354,15 @@ impl Interpreter {
             if let Some(mut best) = best {
                 // Store the winning :sym<> variant name
                 if best_sym.is_some() {
-                    best.set_sym(best_sym.clone());
+                    best.set_sym(best_sym.as_deref().map(Symbol::intern));
                 }
                 // Ensure subcapture exists for the subrule so sym_variant
                 // propagates to the child Match object via make_subcap_match
                 if !spec.silent {
                     let mut subcap = best.clone();
-                    subcap.set_sym(best_sym);
+                    subcap.set_sym(best_sym.as_deref().map(Symbol::intern));
                     best.named
-                        .entry(Symbol::intern(&spec.lookup_name))
-                        .or_default()
+                        .slot_mut(Symbol::intern(&spec.lookup_name))
                         .nodes
                         .push(std::sync::Arc::new(subcap.into_cap_node()));
                 }

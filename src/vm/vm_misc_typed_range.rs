@@ -82,7 +82,7 @@ impl Interpreter {
             ));
         }
         let name = var_name.unwrap_or("@");
-        crate::runtime::utils::type_check_element_typed_error(name, constraint, &bad)
+        self.type_check_element_failure(name, constraint, &bad)
     }
 
     /// Like `array_elements_match_constraint`, but returns the first element that

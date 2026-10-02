@@ -3,7 +3,6 @@
 //! body are registered when the role is declared, not only at composition.
 
 use super::*;
-use serde_json::Value as Json;
 
 impl Interpreter {
     /// Register every lexical TYPE declaration (`my class`, `my grammar`, `my
@@ -121,59 +120,46 @@ impl Interpreter {
 /// Whether `stmt` mentions any of a parameterized role's parameters
 /// (`params`: the bare names of `::T` captures and `$n` value parameters).
 ///
-/// Conservative by construction: the statement is walked through its derived
-/// `Serialize` impl, so every string leaf of the AST — variable and type
-/// names, type constraints (`T:D`, `Array[T]`), literal text — is inspected,
-/// and one containing a parameter's name as a whole word counts as a mention.
-/// A false positive only defers a declaration to composition (the behavior
-/// before #10244); a statement that cannot be serialized counts as a mention
-/// for the same reason.
+/// Conservative by construction: every identifier the typed AST visitor
+/// (ADR-0137) reports — variable and type names, type constraints (`T:D`,
+/// `Array[T]`), source text compiled later — is inspected, and one containing
+/// a parameter's name as a whole word counts as a mention. A false positive
+/// only defers a declaration to composition (the behavior before #10244).
+/// String literals are data, not mentions: `my constant X is export = "T"`
+/// does not depend on `T`.
 ///
 /// Cost: O(n), n = size of `stmt`'s AST (times the parameter count).
 fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
-    let Ok(json) = serde_json::to_value(stmt) else {
-        return true;
+    use crate::ast_visit::{NameKind, Visit, contains_word, walk_expr, walk_stmt};
+
+    struct Mentions<'a> {
+        params: Vec<&'a str>,
+        found: bool,
+    }
+    impl Visit for Mentions<'_> {
+        fn visit_stmt(&mut self, stmt: &Stmt) {
+            if !self.found {
+                walk_stmt(self, stmt);
+            }
+        }
+        fn visit_expr(&mut self, expr: &Expr) {
+            if !self.found {
+                walk_expr(self, expr);
+            }
+        }
+        fn visit_name(&mut self, name: &str, _kind: NameKind) {
+            self.found |= self.params.iter().any(|p| contains_word(name, p));
+        }
+    }
+
+    let mut m = Mentions {
+        params: params
+            .iter()
+            .map(|p| p.as_str())
+            .filter(|p| !p.is_empty())
+            .collect(),
+        found: false,
     };
-    let params: Vec<&str> = params
-        .iter()
-        .map(|p| p.as_str())
-        .filter(|p| !p.is_empty())
-        .collect();
-    json_mentions_any(&json, &params)
-}
-
-fn json_mentions_any(json: &Json, params: &[&str]) -> bool {
-    match json {
-        Json::String(s) => params.iter().any(|p| contains_word(s, p)),
-        Json::Array(items) => items.iter().any(|v| json_mentions_any(v, params)),
-        Json::Object(map) => map.iter().any(|(k, v)| {
-            params.iter().any(|p| contains_word(k, p)) || json_mentions_any(v, params)
-        }),
-        _ => false,
-    }
-}
-
-/// `word` occurs in `s` not flanked by an identifier character.
-fn contains_word(s: &str, word: &str) -> bool {
-    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-    s.match_indices(word).any(|(i, _)| {
-        !s[..i].chars().next_back().is_some_and(is_ident)
-            && !s[i + word.len()..].chars().next().is_some_and(is_ident)
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::contains_word;
-
-    #[test]
-    fn contains_word_matches_whole_words_only() {
-        assert!(contains_word("T", "T"));
-        assert!(contains_word("Array[T]", "T"));
-        assert!(contains_word("T:D", "T"));
-        assert!(contains_word("Key-T", "T"));
-        assert!(!contains_word("Test", "T"));
-        assert!(!contains_word("KT", "T"));
-        assert!(!contains_word("T_x", "T"));
-    }
+    m.visit_stmt(stmt);
+    m.found
 }

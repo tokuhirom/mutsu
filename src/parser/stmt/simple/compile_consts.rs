@@ -227,6 +227,16 @@ pub(crate) fn suppress_worries() {
     });
 }
 
+/// Re-enable compiler warnings in the current scope (`use worries`), undoing
+/// an enclosing `no worries` for the rest of this scope and nested scopes.
+pub(crate) fn restore_worries() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.worries_suppressed = false;
+        }
+    });
+}
+
 /// Returns true when `no worries` is in effect in the current (innermost) scope.
 pub(crate) fn worries_suppressed() -> bool {
     SCOPES.with(|s| {

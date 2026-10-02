@@ -63,6 +63,16 @@ enum SerValue {
         index: usize,
     },
     Regex(String),
+    /// A grammar `token`/`rule`/`regex` value keeping its verbatim declaration
+    /// text (`Regex.gist`) and source tree across the module AST cache.
+    RegexDeclared {
+        pattern: String,
+        /// `None` for an anonymous declarator term (`regex { ... }`), which
+        /// keeps its code-object payload but has no declaration text.
+        declared_source: Option<String>,
+        source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+        signature: Option<Vec<crate::ast::ParamDef>>,
+    },
     RegexWithAdverbs {
         pattern: String,
         global: bool,
@@ -70,7 +80,6 @@ enum SerValue {
         overlap: bool,
         repeat: Option<usize>,
         nth: Option<String>,
-        perl5: bool,
         pos: bool,
         #[serde(default)]
         pos_value: Option<usize>,
@@ -247,6 +256,12 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             value: value.clone(),
             index,
         }),
+        ValueView::Regex(s) if v.is_regex_code_payload() => Ok(SerValue::RegexDeclared {
+            pattern: (**s).clone(),
+            declared_source: v.regex_declared_source().map(str::to_string),
+            source_tree: v.regex_source_tree().cloned().map(Box::new),
+            signature: v.regex_signature().map(|sig| (*sig).clone()),
+        }),
         ValueView::Regex(s) => Ok(SerValue::Regex((**s).clone())),
         ValueView::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
             pattern: (*a.pattern).clone(),
@@ -255,7 +270,6 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             overlap: a.overlap,
             repeat: a.repeat,
             nth: a.nth.as_ref().map(|v| (**v).clone()),
-            perl5: a.perl5,
             pos: a.pos,
             pos_value: a.pos_value,
             continue_: a.continue_,
@@ -468,6 +482,20 @@ fn ser_to_value(sv: SerValue) -> Value {
             index,
         }),
         SerValue::Regex(s) => Value::Regex(Arc::new(s)),
+        SerValue::RegexDeclared {
+            pattern,
+            declared_source,
+            source_tree,
+            signature,
+        } => Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
+            pattern: Arc::new(pattern),
+            scope: None,
+            source_tree,
+            signature: signature.map(Arc::new),
+            topic: None,
+            declared_source: declared_source.map(Arc::from),
+            name: Default::default(),
+        })),
         SerValue::RegexWithAdverbs {
             pattern,
             global,
@@ -475,7 +503,6 @@ fn ser_to_value(sv: SerValue) -> Value {
             overlap,
             repeat,
             nth,
-            perl5,
             pos,
             pos_value,
             continue_,
@@ -492,7 +519,6 @@ fn ser_to_value(sv: SerValue) -> Value {
             overlap,
             repeat,
             nth: nth.map(Arc::new),
-            perl5,
             pos,
             pos_value,
             continue_,
