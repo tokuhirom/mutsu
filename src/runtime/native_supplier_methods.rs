@@ -314,7 +314,10 @@ impl Interpreter {
                         let _ = take_supplier_done_callbacks(supplier_id);
                     }
                     close_all_supplier_taps(supplier_id);
-                    supplier_reset_keep_quit(supplier_id);
+                    Self::reset_supplier_after_quit(
+                        supplier_id,
+                        attributes.contains_key("preserving"),
+                    );
                 }
                 Ok(Value::NIL)
             }
@@ -629,10 +632,13 @@ impl Interpreter {
                         let _ = take_supplier_done_callbacks(sid);
                     }
                     close_all_supplier_taps(sid);
-                    supplier_reset_keep_quit(sid);
+                    Self::reset_supplier_after_quit(sid, attrs.contains_key("preserving"));
                 }
                 attrs.insert("done".to_string(), Value::FALSE);
                 attrs.remove("emitted");
+                if !attrs.contains_key("preserving") {
+                    attrs.remove("quit_reason");
+                }
                 Ok((Value::NIL, attrs))
             }
             _ => Err(RuntimeError::new(format!(
@@ -643,4 +649,18 @@ impl Interpreter {
     }
 
     // --- Supply mutable ---
+
+    /// Settle a supplier's state once its `quit` has reached every current
+    /// consumer. A plain `Supplier` keeps no terminal state, exactly as after
+    /// `done`: raku does not replay a quit to a tap made afterwards (#10866).
+    /// A `Supplier::Preserving` keeps the quit (and its backlog) for the next
+    /// tap, as it keeps `done`.
+    // Cost: O(1).
+    fn reset_supplier_after_quit(supplier_id: u64, preserving: bool) {
+        if preserving {
+            supplier_reset_keep_quit(supplier_id);
+        } else {
+            supplier_reset(supplier_id);
+        }
+    }
 }

@@ -124,8 +124,11 @@ impl Interpreter {
         }
         // A shared on-demand Supply completes its output when the source's
         // whenever done-group reaches zero. Mark that output done before
-        // invoking the first subscriber's callback so later subscribers are
-        // notified through the same completion edge.
+        // invoking the first subscriber's callback so every current
+        // subscriber is notified through the same completion edge, then drop
+        // the terminal state: the shared output is a plain Supplier in raku,
+        // so a tap made after completion sees nothing, not a replayed `done`
+        // (#10866).
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -150,6 +153,7 @@ impl Interpreter {
             {
                 self.call_sub_value(done_cb.clone(), vec![], true)?;
             }
+            supplier_reset(supplier_id);
             return Ok(false);
         }
         // A plain callback here is typically a `whenever`'s LAST phaser (or a
