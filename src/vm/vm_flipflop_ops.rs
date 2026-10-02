@@ -580,6 +580,14 @@ impl Interpreter {
         {
             return Err(self.multi_no_match_error(op_name, &call_args));
         }
+        // A user `proto sub infix:<op>` with no candidate: the operator parsed
+        // (the proto alone registers it), but nothing can answer the call
+        // (mutsu#10531).
+        if let Some(op_name) = infix_name
+            && self.is_candidate_less_proto(op_name)
+        {
+            return Err(self.multi_no_candidates_error(op_name, &call_args));
+        }
         match self.call_function_compiled_first(name, call_args.clone(), compiled_fns) {
             Ok(v) => Ok(v),
             Err(err) => {

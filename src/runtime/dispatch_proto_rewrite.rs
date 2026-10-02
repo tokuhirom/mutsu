@@ -9,7 +9,8 @@ fn dispatch_call() -> Expr {
 }
 
 /// `{*}`: a block whose only statement (besides line markers) is a bare `*`.
-fn is_only_star_block(body: &[Stmt]) -> bool {
+// Cost: O(n), n = statements of `body`.
+pub(crate) fn is_only_star_block(body: &[Stmt]) -> bool {
     let mut stmts = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
     matches!(
         (stmts.next(), stmts.next()),
