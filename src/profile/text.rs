@@ -53,7 +53,7 @@ fn render_header(profile: &Profile, out: &mut String) {
     }
     // Stated on every report, in the report itself, because the number most
     // likely to be pasted into a document is the one on the next line
-    // (ADR-0106 §7): PERFORMANCE.md / news numbers come from the bench CI.
+    // (ADR-0106 §7): PLAN.md / news numbers come from the bench CI.
     out.push_str(
         "            hits are exact; every time below is SAMPLED -- never quote it as a measurement\n",
     );

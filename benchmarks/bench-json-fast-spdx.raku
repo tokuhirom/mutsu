@@ -29,7 +29,7 @@
 # it is where rakudo's JIT has had the least time to warm up. Repeating the
 # decode would measure a steady state no real caller reaches.
 #
-# Deliberately ~3s on a release mutsu, far outside PERFORMANCE.md's 0.1-0.4s
+# Deliberately ~3s on a release mutsu, far outside docs/benchmarks.md's 0.1-0.4s
 # guideline: the gap widens with document size (rakudo gets faster per record
 # as its JIT warms, mutsu does not), so a small document would under-report
 # exactly the number this file exists for.

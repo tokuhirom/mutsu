@@ -46,7 +46,7 @@ set -u
 # Deliberately NOT `**/*.md`: a README under modules/ or site/ sits next
 # to files the build reads, and the blast radius of guessing wrong there is a
 # silently-untested merge. Top-level *.md (PLAN, README, AGENTS, ANALYSIS,
-# PERFORMANCE, BATTERIES) is safe and covers the common case. Top-level
+# BATTERIES) is safe and covers the common case. Top-level
 # *.tsv / *.svg is the same case in a different extension: HISTORY.tsv and
 # HISTORY-pass.svg are the roast-history record and its chart, appended by
 # scripts/roast-history.sh and read by nothing that builds or tests.

@@ -48,6 +48,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [docs/ci-pipeline.md](docs/ci-pipeline.md) | CI job layout, the docs-only skip and its allowlist, cancelled-run aggregators |
 | [docs/issue-workflow.md](docs/issue-workflow.md) | The GitHub-issue work queue: labels, tiers, the full claim protocol |
 | [docs/flaky-test-policy.md](docs/flaky-test-policy.md) | Quarantine policy, flake history, the suspected-flake triage protocol |
+| [docs/benchmarks.md](docs/benchmarks.md) | Writing a benchmark, the `@section`/warm series, bench CI noise classes |
 | [docs/t-directory-layout.md](docs/t-directory-layout.md) | Which `t/` category a new test goes in |
 | [docs/complexity-annotations.md](docs/complexity-annotations.md) | The `// Cost:` comment format |
 | [docs/adr/](docs/adr/) | Architecture decisions (`README.md` has the conventions) |
