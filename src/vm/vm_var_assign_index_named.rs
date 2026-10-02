@@ -1101,33 +1101,27 @@ impl Interpreter {
             if idx_i >= 0 {
                 let idx_u = idx_i as usize;
                 attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                    let (mut items, kind) = match storage.view() {
-                        ValueView::Array(items, kind) => ((**items).clone(), kind),
-                        _ => (
-                            crate::value::ArrayData::new(Vec::new()),
-                            crate::value::ArrayKind::Array,
-                        ),
-                    };
-                    let old_len = items.items().len();
-                    if idx_u >= old_len {
-                        // ADR-0049 slice 5: fill skipped slots with the
-                        // standard `Package("Any")` gap marker instead of a
-                        // raw `Value::NIL` -- `Nil` is no longer a hole
-                        // sentinel, only `ArrayData::initialized` is.
-                        items.resize(idx_u + 1, Self::native_fill_for_constraint(None));
-                    }
-                    // Through an element container a `for` alias or a `:=`
-                    // bind holds, like a plain Array's store (#10350).
-                    Value::assign_element_slot(&mut items.live_mut()[idx_u], val.clone());
-                    // Materialize the "all present" range before recording
-                    // `idx_u` as present, so a skipped intermediate slot from
-                    // the resize above is correctly left OUT and reads as a
-                    // gap via `hole_at`.
-                    items
-                        .initialized
-                        .get_or_insert_with(|| (0..old_len).collect())
-                        .insert(idx_u);
-                    *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+                    Self::with_array_storage_mut(storage, |items| {
+                        let old_len = items.items().len();
+                        if idx_u >= old_len {
+                            // ADR-0049 slice 5: fill skipped slots with the
+                            // standard `Package("Any")` gap marker instead of a
+                            // raw `Value::NIL` -- `Nil` is no longer a hole
+                            // sentinel, only `ArrayData::initialized` is.
+                            items.resize(idx_u + 1, Self::native_fill_for_constraint(None));
+                        }
+                        // Through an element container a `for` alias or a `:=`
+                        // bind holds, like a plain Array's store (#10350).
+                        Value::assign_element_slot(&mut items.live_mut()[idx_u], val.clone());
+                        // Materialize the "all present" range before recording
+                        // `idx_u` as present, so a skipped intermediate slot from
+                        // the resize above is correctly left OUT and reads as a
+                        // gap via `hole_at`.
+                        items
+                            .initialized
+                            .get_or_insert_with(|| (0..old_len).collect())
+                            .insert(idx_u);
+                    });
                 });
                 self.stack.push(val);
                 return Ok(());
@@ -5398,9 +5392,8 @@ impl Interpreter {
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
-    // Cost: O(1) amortized for one index into an Array/Hash target, plus O(n) to
-    // stringify the key; O(e) into an `is Array` instance target, e = its elements
-    // (`__mutsu_array_storage` is copied per store). Rakudo: O(1) -- see #9157.
+    // Cost: O(1) amortized for one index into an Array/Hash or `is Array` instance
+    // target, plus O(n) to stringify the key.
     pub(super) fn exec_index_assign_generic_op(
         &mut self,
         code: &CompiledCode,
@@ -5854,25 +5847,20 @@ impl Interpreter {
             {
                 if let Ok(i) = key.parse::<usize>() {
                     attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                        let (mut items, kind) = match storage.view() {
-                            ValueView::Array(items, kind) => ((**items).clone(), kind),
-                            _ => (
-                                crate::value::ArrayData::new(Vec::new()),
-                                crate::value::ArrayKind::Array,
-                            ),
-                        };
-                        if i >= items.items().len() {
-                            items.resize(i + 1, Value::package(crate::symbol::wk::any()));
-                        }
-                        match &bind_cell {
-                            Some((_, cell)) => {
-                                items.live_mut()[i] = Value::container_ref(cell.clone())
+                        Self::with_array_storage_mut(storage, |items| {
+                            if i >= items.items().len() {
+                                items.resize(i + 1, Value::package(crate::symbol::wk::any()));
                             }
-                            None => {
-                                Value::assign_element_slot(&mut items.live_mut()[i], val.clone())
+                            match &bind_cell {
+                                Some((_, cell)) => {
+                                    items.live_mut()[i] = Value::container_ref(cell.clone())
+                                }
+                                None => Value::assign_element_slot(
+                                    &mut items.live_mut()[i],
+                                    val.clone(),
+                                ),
                             }
-                        }
-                        *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+                        });
                     });
                     if let Some((Some(src), cell)) = &bind_cell {
                         let cell_val = Value::container_ref(cell.clone());

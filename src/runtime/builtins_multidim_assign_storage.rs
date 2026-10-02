@@ -2,6 +2,29 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Mutate the `ArrayData` behind an `is Array` instance's
+    /// `__mutsu_array_storage` attribute value. The node is written in place
+    /// when this attribute is its only holder and copied first otherwise
+    /// (`Gc::make_mut`), so a store never leaks into another holder of the
+    /// storage array -- the same visibility the per-store copy it replaces
+    /// gave, without copying a singly-owned storage array on every store
+    /// (#9157). A non-Array `storage` starts as an empty Array, so `f` always
+    /// runs (the `Option` only mirrors `Value::with_array_mut`).
+    // Cost: O(1) when the storage node is singly owned; O(e), e = its elements,
+    // when it is shared (the one copy that detaches it).
+    pub(crate) fn with_array_storage_mut<R>(
+        storage: &mut Value,
+        f: impl FnOnce(&mut crate::value::ArrayData) -> R,
+    ) -> Option<R> {
+        if !matches!(storage.view(), ValueView::Array(..)) {
+            *storage = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::Array,
+            );
+        }
+        storage.with_array_mut(|gc, _| f(gc.make_mut()))
+    }
+
     /// Store one element into an `is Array` / `is Hash` (or `is List` / `is Map`)
     /// subclass instance that a method accessor handed back (`$obj.self[1] = 1`,
     /// `$o.arr[0] = 7` where `.arr` holds such an object).
@@ -18,9 +41,7 @@ impl Interpreter {
     ///
     /// Only a single index/key is handled; returns `false` (nothing stored)
     /// for any other shape so the caller's general path takes over.
-    // Cost: O(e) for an `is Array` instance, e = its elements (the storage
-    // array is copied per store); O(1) amortized for an `is Hash` instance.
-    // Rakudo: O(1) -- see #9157.
+    // Cost: O(1) amortized for an `is Array` or `is Hash` instance.
     pub(super) fn store_into_storage_instance_element(
         current: &Value,
         index: &Value,
@@ -41,18 +62,12 @@ impl Interpreter {
                 return false;
             };
             attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                let (mut items, kind) = match storage.view() {
-                    ValueView::Array(items, kind) => ((**items).clone(), kind),
-                    _ => (
-                        crate::value::ArrayData::new(Vec::new()),
-                        crate::value::ArrayKind::Array,
-                    ),
-                };
-                if i >= items.items().len() {
-                    items.resize(i + 1, Value::package(crate::symbol::wk::any()));
-                }
-                Value::assign_element_slot(&mut items.live_mut()[i], value.clone());
-                *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+                Self::with_array_storage_mut(storage, |items| {
+                    if i >= items.items().len() {
+                        items.resize(i + 1, Value::package(crate::symbol::wk::any()));
+                    }
+                    Value::assign_element_slot(&mut items.live_mut()[i], value.clone());
+                });
             });
             return true;
         }

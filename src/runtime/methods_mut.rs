@@ -338,6 +338,25 @@ impl Interpreter {
         }
     }
 
+    /// The name of an env variable bound to the array node `needle`, for an
+    /// error message that reports the variable (a failed element type check);
+    /// empty when no binding holds it. Only error paths call this.
+    // Cost: O(v), v = env bindings.
+    pub(crate) fn array_binding_name(
+        &self,
+        needle: &crate::gc::Gc<crate::value::ArrayData>,
+    ) -> String {
+        self.env
+            .iter()
+            .find_map(|(name, bound)| match bound.view() {
+                ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(&existing, needle) => {
+                    Some(name.resolve().to_string())
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn overwrite_array_bindings_by_identity(
         &mut self,
         needle: &crate::gc::Gc<crate::value::ArrayData>,

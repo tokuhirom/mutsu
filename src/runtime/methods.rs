@@ -152,19 +152,45 @@ pub(crate) fn make_not_enough_dimensions_error(
     err
 }
 
-/// Recursively assign value at indices, rebuilding the array chain.
-/// If the innermost slot is currently a Scalar (BIND-POS marker), returns an error.
+/// The array one level of a multi-dimensional `*-POS` walk writes into: the
+/// level itself, or the array a `ContainerRef` element cell holds (the cell
+/// shares the array's node, so writing into it writes the element).
+fn multidim_level(target: &Value) -> Value {
+    if target.is_container_ref() {
+        let inner = target.deref_container();
+        if matches!(inner.view(), ValueView::Array(..)) {
+            return inner;
+        }
+    }
+    target.clone()
+}
+
+/// The next level down for a multi-dimensional store at slot `i` of `data`:
+/// the existing child, or -- past the end -- a fresh Array autovivified into
+/// slot `i` (the skipped slots stay holes).
+// Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
+fn multidim_child_for_store(data: &mut crate::value::ArrayData, i: usize) -> Value {
+    if i >= data.len() {
+        data.store_element(i, Value::real_array(vec![]));
+    }
+    multidim_level(&data[i])
+}
+
+/// `ASSIGN-POS` with several indices: store `value` at the innermost slot,
+/// writing through each level's shared node in place (container identity), so
+/// every holder of the array -- and of each inner array -- observes it.
+/// A bound (`BIND-POS`) innermost slot refuses the assignment.
+// Cost: O(d), d = indices (amortized; growing a level is O(i - e) there).
 pub(crate) fn multidim_assign_pos(
     target: &Value,
     indices: &[Value],
     value: Value,
-) -> Result<Value, RuntimeError> {
+) -> Result<(), RuntimeError> {
     assert!(!indices.is_empty());
-    // Unwrap any outer Scalar wrapper.
     if let ValueView::Scalar(_) = target.view() {
         return Err(RuntimeError::assignment_ro(None));
     }
-    let ValueView::Array(items, arr_kind) = target.view() else {
+    let ValueView::Array(items, _) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional ASSIGN-POS on non-Array",
         ));
@@ -172,45 +198,34 @@ pub(crate) fn multidim_assign_pos(
     let Some(i) = pos_index(&indices[0]) else {
         return Err(RuntimeError::new("Cannot ASSIGN-POS with a negative index"));
     };
-    let mut updated = items.to_vec();
+    // SAFETY: audited aliased in-place container write (see
+    // value::aliased_mut); no borrow into the node is live across it.
+    let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        // Check for bound slot (Scalar wrapper)
-        if updated
+        if data
             .get(i)
             .is_some_and(|v| matches!(v.view(), ValueView::Scalar(_)))
         {
             return Err(RuntimeError::assignment_ro(None));
         }
-        if i >= updated.len() {
-            updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
-        }
-        updated[i] = value;
-    } else {
-        let child = updated
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| Value::real_array(vec![]));
-        let new_child = multidim_assign_pos(&child, &indices[1..], value)?;
-        if i >= updated.len() {
-            updated.resize(i + 1, Value::real_array(vec![]));
-        }
-        updated[i] = new_child;
+        data.store_element(i, value);
+        return Ok(());
     }
-    Ok(Value::array_with_kind(
-        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-        arr_kind,
-    ))
+    let child = multidim_child_for_store(data, i);
+    multidim_assign_pos(&child, &indices[1..], value)
 }
 
-/// Recursively bind value at indices. The innermost slot is stored as
-/// Value::scalar(value) to mark it as bound (immutable).
+/// `BIND-POS` with several indices: bind the innermost slot (stored as
+/// `Value::scalar(value)`, which marks it bound/immutable), in place through
+/// each level's shared node like [`multidim_assign_pos`].
+// Cost: O(d), d = indices (amortized; growing a level is O(i - e) there).
 pub(crate) fn multidim_bind_pos(
     target: &Value,
     indices: &[Value],
     value: Value,
-) -> Result<Value, RuntimeError> {
+) -> Result<(), RuntimeError> {
     assert!(!indices.is_empty());
-    let ValueView::Array(items, arr_kind) = target.view() else {
+    let ValueView::Array(items, _) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional BIND-POS on non-Array",
         ));
@@ -218,36 +233,27 @@ pub(crate) fn multidim_bind_pos(
     let Some(i) = pos_index(&indices[0]) else {
         return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
     };
-    let mut updated = items.to_vec();
+    // SAFETY: audited aliased in-place container write (see
+    // value::aliased_mut); no borrow into the node is live across it.
+    let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        if i >= updated.len() {
-            updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
-        }
-        updated[i] = Value::scalar(value);
-    } else {
-        let child = updated
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| Value::real_array(vec![]));
-        let new_child = multidim_bind_pos(&child, &indices[1..], value)?;
-        if i >= updated.len() {
-            updated.resize(i + 1, Value::real_array(vec![]));
-        }
-        updated[i] = new_child;
+        data.store_element(i, Value::scalar(value));
+        return Ok(());
     }
-    Ok(Value::array_with_kind(
-        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-        arr_kind,
-    ))
+    let child = multidim_child_for_store(data, i);
+    multidim_bind_pos(&child, &indices[1..], value)
 }
 
-/// Recursively delete the innermost slot. Returns (deleted_value, updated_outer_array).
+/// `DELETE-POS` with several indices: vacate the innermost slot in place
+/// (it becomes a hole) and return what it held; `Nil` when the path does not
+/// reach an existing slot.
+// Cost: O(d), d = indices.
 pub(crate) fn multidim_delete_pos(
     target: &Value,
     indices: &[Value],
-) -> Result<(Value, Value), RuntimeError> {
+) -> Result<Value, RuntimeError> {
     assert!(!indices.is_empty());
-    let ValueView::Array(items, arr_kind) = target.view() else {
+    let ValueView::Array(items, _) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional DELETE-POS on non-Array",
         ));
@@ -255,50 +261,32 @@ pub(crate) fn multidim_delete_pos(
     let Some(i) = pos_index(&indices[0]) else {
         return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
     };
-    let old_len = items.len();
-    // Materialize the "all present" range (`None` means every in-range
-    // index exists) up front so the leaf-level delete below can correctly
-    // record the vacated slot as a hole -- `ArrayData::new` further down
-    // starts a brand-new node with no `initialized` set of its own.
-    let mut initialized = items.initialized.clone();
-    let mut updated = items.to_vec();
-    let deleted;
-    if indices.len() == 1 {
-        if i < updated.len() {
-            // ADR-0049 slice 5: the vacated slot gets the standard
-            // `Package("Any")` gap marker instead of a raw `Value::NIL` --
-            // `Nil` is no longer a hole sentinel, only `initialized` is
-            // (mirrors the single-dimension `.DELETE-POS`,
-            // `array_delete_pos_value` in methods_subscript_protocol.rs).
-            let old = std::mem::replace(&mut updated[i], Value::package(crate::symbol::wk::any()));
-            deleted = match old.view() {
-                ValueView::Scalar(inner) => inner.clone(),
-                _ => old.clone(),
-            };
-            initialized
-                .get_or_insert_with(|| (0..old_len).collect())
-                .remove(&i);
-        } else {
-            deleted = Value::NIL;
-        }
-    } else {
-        let child = updated
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| Value::real_array(vec![]));
-        let (d, new_child) = multidim_delete_pos(&child, &indices[1..])?;
-        if i < updated.len() {
-            updated[i] = new_child;
-        }
-        deleted = d;
+    if i >= items.len() {
+        return Ok(Value::NIL);
     }
-    let mut data = crate::value::ArrayData::new(updated);
-    data.value_type = items.value_type.clone();
-    data.initialized = initialized;
-    Ok((
-        deleted,
-        Value::array_with_kind(crate::gc::Gc::new(data), arr_kind),
-    ))
+    // SAFETY: audited aliased in-place container write (see
+    // value::aliased_mut); no borrow into the node is live across it.
+    let data = unsafe { crate::value::gc_contents_mut(&items) };
+    if indices.len() == 1 {
+        // ADR-0049 slice 5: the vacated slot gets the standard
+        // `Package("Any")` gap marker and leaves `initialized` -- `Nil` is no
+        // longer a hole sentinel (mirrors the single-dimension `.DELETE-POS`,
+        // `array_delete_pos_value` in methods_subscript_protocol.rs).
+        let len = data.len();
+        data.initialized
+            .get_or_insert_with(|| (0..len).collect())
+            .remove(&i);
+        let old = std::mem::replace(
+            &mut data.live_mut()[i],
+            Value::package(crate::symbol::wk::any()),
+        );
+        return Ok(match old.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => old,
+        });
+    }
+    let child = multidim_level(&data[i]);
+    multidim_delete_pos(&child, &indices[1..])
 }
 
 /// Compare two values numerically (like Raku's == operator) for allomorph ACCEPTS.

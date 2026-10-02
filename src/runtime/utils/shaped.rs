@@ -12,11 +12,9 @@ pub(crate) fn is_shaped_array(value: &Value) -> bool {
     shaped_array_shape(value).is_some()
 }
 
-// Cost: O(E), E = leaves of a shaped array: the cached shape is re-validated against
-// the whole element structure (`shape_matches_structure`) on every call; O(1) for a
-// non-shaped array. Called per element access by the shaped store/delete paths, so a
-// `@a[$i] = $v` loop over `my @a[N]` is O(N) per store.
-// Rakudo: O(1) (the shape is a fixed attribute of the container) -- see #9157.
+// Cost: O(d), d = dimensions, when the array carries its shape (the cached shape is
+// checked along the first-child spine only); O(E), E = leaves, the first time a shape
+// has to be inferred, which then caches it on the array.
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     let ValueView::Array(items, kind) = value.view() else {
         return None;
@@ -26,24 +24,49 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         return None;
     }
 
-    fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
-        if shape.is_empty() {
+    // The shape is a fixed attribute of the container: element stores go through
+    // `assign_array_multidim` / `*-POS`, which keep each level's length, so the
+    // cached shape only needs a spine check (each level's length along the first
+    // child) to reject a stale shape left on a restructured array. A leaf may
+    // legitimately hold an (itemized) Array, so leaves are not inspected.
+    fn shape_matches_spine(value: &Value, shape: &[usize]) -> bool {
+        let Some((&len, rest)) = shape.split_first() else {
             return false;
-        }
+        };
         let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
-        if items.len() != shape[0] {
+        if items.len() != len {
             return false;
         }
-        if shape.len() == 1 {
+        if rest.is_empty() {
+            return true;
+        }
+        items
+            .first()
+            .is_some_and(|child| shape_matches_spine(child, rest))
+    }
+
+    // A freshly inferred shape has never been validated, so it is checked
+    // against every level (O(E)) before it is cached.
+    fn shape_matches_full_structure(value: &Value, shape: &[usize]) -> bool {
+        let Some((&len, rest)) = shape.split_first() else {
+            return false;
+        };
+        let ValueView::Array(items, ..) = value.view() else {
+            return false;
+        };
+        if items.len() != len {
+            return false;
+        }
+        if rest.is_empty() {
             return items
                 .iter()
                 .all(|v| !matches!(v.view(), ValueView::Array(..)));
         }
         items
             .iter()
-            .all(|child| shape_matches_structure(child, &shape[1..]))
+            .all(|child| shape_matches_full_structure(child, rest))
     }
 
     if items.is_empty() {
@@ -76,7 +99,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     // the current element structure (a stale cached shape after restructuring
     // is rejected and re-inferred).
     if let Some(cached_shape) = &items.shape
-        && shape_matches_structure(value, cached_shape)
+        && shape_matches_spine(value, cached_shape)
     {
         return Some(cached_shape.to_vec());
     }
@@ -89,10 +112,12 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         .iter()
         .all(|v| !matches!(v.view(), ValueView::Array(..)))
     {
-        return Some(vec![items.len()]);
+        let shape = vec![items.len()];
+        mark_shaped_array_items(&items, Some(&shape));
+        return Some(shape);
     }
     let inferred_shape = infer_shape_from_array(items.as_ref())?;
-    if !shape_matches_structure(value, &inferred_shape) {
+    if !shape_matches_full_structure(value, &inferred_shape) {
         return None;
     }
     mark_shaped_array_items(&items, Some(&inferred_shape));
