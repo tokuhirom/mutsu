@@ -577,7 +577,15 @@ impl Interpreter {
             }
             let resolved_name = name.resolve();
             crate::value::note_user_declared_type_name(&resolved_name);
-            self.register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my, 0);
+            self.register_subset_decl(
+                &resolved_name,
+                base,
+                predicate.as_ref(),
+                None,
+                version,
+                *is_my,
+                0,
+            );
             if self.suppress_exports {
                 continue;
             }

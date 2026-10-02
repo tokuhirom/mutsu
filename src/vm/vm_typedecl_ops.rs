@@ -1291,6 +1291,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        predicate_closure: Option<Value>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubsetDecl {
@@ -1318,6 +1319,7 @@ impl Interpreter {
                     &resolved_name,
                     base,
                     predicate.as_ref(),
+                    predicate_closure,
                     version,
                     *is_my,
                     *decl_id

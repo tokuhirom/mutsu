@@ -1135,6 +1135,7 @@ pub(crate) mod routine_scans;
 pub(crate) mod scope_scan;
 mod static_call_args;
 mod stmt;
+mod subset_decl;
 mod subst_thunk;
 mod term_constants;
 mod trir_call;

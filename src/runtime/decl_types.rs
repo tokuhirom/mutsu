@@ -158,6 +158,12 @@ pub(crate) struct SubsetDef {
     /// (see `type_matches_value`). A property of the predicate alone, so it
     /// is decided here instead of by an AST walk on every check.
     pub(crate) predicate_inline: bool,
+    /// The predicate as a closure built at the declaration site, when it
+    /// refers to outer lexicals (`my $n; subset C where { $n++; True }`).
+    /// Such a predicate must run over its declaring scope's variables: run
+    /// inline against the checking frame's env, its writes were lost and its
+    /// reads saw whatever that frame held under the name (#10868).
+    pub(crate) predicate_closure: Option<Value>,
 }
 
 #[derive(Debug, Clone)]

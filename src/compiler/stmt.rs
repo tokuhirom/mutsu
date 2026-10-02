@@ -1253,8 +1253,7 @@ impl Compiler {
                             // The generated name is already unique per site.
                             decl_id: 0,
                         };
-                        let idx = self.code.add_stmt(subset_stmt);
-                        self.code.emit(OpCode::RegisterSubset(idx));
+                        self.emit_register_subset(subset_stmt);
                         Some(anon)
                     }
                     _ => type_constraint.clone(),
@@ -4658,10 +4657,7 @@ impl Compiler {
                 let idx = self.add_role_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
-            Stmt::SubsetDecl { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RegisterSubset(idx));
-            }
+            Stmt::SubsetDecl { .. } => self.emit_register_subset(stmt.clone()),
             Stmt::Whenever {
                 supply,
                 params,

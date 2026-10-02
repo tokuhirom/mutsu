@@ -10,6 +10,7 @@ impl Interpreter {
         name: &str,
         base: &str,
         predicate: Option<&Expr>,
+        predicate_closure: Option<Value>,
         version: &str,
         is_my: bool,
         decl_id: u64,
@@ -77,6 +78,7 @@ impl Interpreter {
             version: version.to_string(),
             decl_package_sym: crate::symbol::Symbol::intern(&pkg),
             predicate_inline,
+            predicate_closure,
         });
         // The qualified name is the subset's *identity* (raku reports `Foo::RM`
         // from `.^name` and in every type-check message), so the short name is

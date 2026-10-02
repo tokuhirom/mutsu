@@ -198,6 +198,9 @@ impl Interpreter {
                 visitor.visit_value(v);
             }
         }
+        for def in self.registry().subsets.values() {
+            visit_opt(visitor, &def.predicate_closure);
+        }
         for fallbacks in self.method_fallbacks.values() {
             for (cond, calc) in fallbacks {
                 visitor.visit_value(cond);
