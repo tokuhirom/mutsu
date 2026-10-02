@@ -27,7 +27,7 @@ pub(super) struct NamedParamInfo {
 
 #[derive(Default)]
 pub(super) struct SubMainOpts {
-    named_anywhere: bool,
+    pub(super) named_anywhere: bool,
     bundling: bool,
     allow_no: bool,
     coerce_allomorphs_to: Option<String>,
@@ -120,11 +120,10 @@ impl Interpreter {
             Vec::new()
         };
 
-        if raw_args.iter().any(|a| a == "--help") {
-            let usage = self.generate_usage_message(&main_def);
-            self.emit_output(&format!("Usage:\n{}\n", usage));
-            return Ok(());
-        }
+        let package = self.current_package();
+        let usage_candidates = self.usage_candidates(&package, "MAIN", Some(&main_def));
+        let usage = self.generate_usage(&usage_candidates, None);
+        self.set_usage_var(&usage);
 
         self.warn_rw_main_params(&all_candidates);
 
@@ -141,7 +140,7 @@ impl Interpreter {
             }
         }
 
-        self.handle_main_dispatch_failure(&main_def)?;
+        self.handle_main_dispatch_failure(&usage_candidates, &all_candidates, &raw_args)?;
         Ok(())
     }
 
@@ -243,27 +242,43 @@ impl Interpreter {
     }
 
     pub(super) fn collect_main_candidates(&self) -> Vec<FunctionDef> {
-        let mut candidates = Vec::new();
+        self.collect_cli_candidates("MAIN")
+    }
+
+    /// The candidates of the command-line handler `name` (`MAIN`, or the
+    /// routine handed to `RUN-MAIN`), most specific first; candidates of equal
+    /// specificity keep their declaration order.
+    pub(super) fn collect_cli_candidates(&self, name: &str) -> Vec<FunctionDef> {
+        let mut candidates: Vec<FunctionDef> = Vec::new();
         let mut seen_keys = std::collections::HashSet::new();
         let prefixes: Vec<String> = {
-            let mut p = vec!["GLOBAL::MAIN/".to_string()];
+            let mut p = vec![format!("GLOBAL::{name}/")];
             let pkg = &self.current_package();
             if pkg != "GLOBAL" {
-                p.push(format!("{pkg}::MAIN/"));
+                p.push(format!("{pkg}::{name}/"));
             }
             p
         };
-        for (key, def) in self.registry().functions.iter() {
-            let ks = key.resolve();
-            if prefixes.iter().any(|prefix| ks.starts_with(prefix)) {
-                let fp = def.body_fingerprint();
-                if seen_keys.insert(fp) {
-                    candidates.push((**def).clone());
-                }
+        let mut rows: Vec<_> = self
+            .registry()
+            .functions
+            .iter()
+            .filter(|(key, _)| {
+                let ks = key.resolve();
+                prefixes.iter().any(|prefix| ks.starts_with(prefix))
+            })
+            .map(|(_, def)| def.clone())
+            .collect();
+        // Every candidate has two registry rows (hoist pass and in-sequence
+        // pass, see `routine_candidate_defs`); keep the declaration-order one.
+        rows.sort_by_key(|def| def.decl_order);
+        for def in rows {
+            if seen_keys.insert(def.body_fingerprint()) {
+                candidates.push((*def).clone());
             }
         }
         if candidates.is_empty()
-            && let Some(def) = self.resolve_function("MAIN")
+            && let Some(def) = self.resolve_function(name)
         {
             candidates.push((*def).clone());
         }
@@ -307,6 +322,11 @@ impl Interpreter {
     }
 
     fn param_all_names(pd: &ParamDef) -> Vec<String> {
+        // A named alias chain (`:x(:y(:$zed))`) answers to every link.
+        let sig = crate::value::signature::param_def_to_sig_param(pd);
+        if !sig.named_names.is_empty() {
+            return sig.named_names;
+        }
         let mut names = vec![pd.name.trim_start_matches(['$', '@', '%']).to_string()];
         if let Some(sub_params) = &pd.sub_signature {
             for sp in sub_params {
@@ -543,14 +563,6 @@ impl Interpreter {
                 .unwrap_or_else(|| value.clone());
             args.push(Value::pair(name.clone(), coerced));
         }
-        let all_candidates = self.collect_main_candidates();
-        let usage_text = self.generate_usage_from_candidates(&all_candidates);
-        self.env
-            .insert("$*USAGE".to_string(), Value::str(usage_text.clone()));
-        self.env
-            .insert("*USAGE".to_string(), Value::str(usage_text));
-        self.mark_readonly("$*USAGE");
-        self.mark_readonly("*USAGE");
         // rakudo's `RUN-MAIN` SINKS whatever `MAIN` returns
         // (`roast/S06-other/main.t`'s "MAIN return value is sunk"), so a `MAIN`
         // whose tail is a `map` still runs its callback. Since ADR-0058 that
@@ -572,102 +584,48 @@ impl Interpreter {
         }
     }
 
-    fn handle_main_dispatch_failure(&mut self, main_def: &FunctionDef) -> Result<(), RuntimeError> {
-        let usage = self.generate_usage_message(main_def);
-        self.env
-            .insert("$*USAGE".to_string(), Value::str(usage.clone()));
-        self.env
-            .insert("*USAGE".to_string(), Value::str(usage.clone()));
-        self.mark_readonly("$*USAGE");
-        self.mark_readonly("*USAGE");
-        if self.resolve_function("GENERATE-USAGE").is_some() {
-            let result = self.call_function("GENERATE-USAGE", vec![])?;
-            self.emit_stderr(&format!("{}\n", result.to_string_value()));
+    /// Report a failed implicit `MAIN` dispatch the way Rakudo's `RUN-MAIN`
+    /// does: an old-style `USAGE` sub if one is in scope, else the generated
+    /// usage (narrowed to the sub-command the first argument names) on
+    /// `$*OUT` with exit code 0 for `--help`, on `$*ERR` with 2 otherwise.
+    fn handle_main_dispatch_failure(
+        &mut self,
+        usage_candidates: &[super::main_usage::UsageCandidate],
+        main_candidates: &[FunctionDef],
+        raw_args: &[String],
+    ) -> Result<(), RuntimeError> {
+        let named_info: Vec<NamedParamInfo> = main_candidates
+            .iter()
+            .flat_map(Self::extract_named_param_info)
+            .collect();
+        let sub_main_opts = self.read_sub_main_opts();
+        let parsed = Self::parse_cli_args(raw_args, &named_info, &sub_main_opts).ok();
+        let help_requested = parsed
+            .as_ref()
+            .is_some_and(|p| p.named.iter().any(|(k, v)| k == "help" && v.truthy()));
+        if self.resolve_function("USAGE").is_some() {
+            self.call_function("USAGE", vec![])?;
         } else {
-            self.emit_stderr(&format!("Usage:\n{}\n", usage));
+            let first = parsed.as_ref().and_then(|p| p.positional.first());
+            let usage = self.generate_usage(usage_candidates, first);
+            if help_requested {
+                self.emit_output(&format!("{usage}\n"));
+            } else {
+                self.emit_stderr(&format!("{usage}\n"));
+            }
         }
-        self.exit_code = 2;
+        self.exit_code = if help_requested { 0 } else { 2 };
         Ok(())
     }
 
-    fn generate_usage_message(&self, main_def: &FunctionDef) -> String {
-        let all_candidates = self.collect_main_candidates();
-        if all_candidates.len() > 1 {
-            self.generate_usage_from_candidates(&all_candidates)
-        } else {
-            self.generate_usage_from_candidates(std::slice::from_ref(main_def))
-        }
-    }
-
-    pub(super) fn generate_usage_from_candidates(&self, candidates: &[FunctionDef]) -> String {
-        let program = self
-            .env
-            .get("*PROGRAM-NAME")
-            .or_else(|| self.env.get("$*PROGRAM-NAME"))
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| "program".to_string());
-        let mut lines = Vec::new();
-        for candidate in candidates {
-            // Skip candidates declared `is hidden-from-USAGE`. The recorded key
-            // is the def's memoized fingerprint (see the registration side), so
-            // read it the same way rather than recomputing from the fields.
-            let fp = candidate.body_fingerprint();
-            if self.main_hidden_from_usage.contains(&fp) {
-                continue;
-            }
-            let mut parts = vec![format!("  {}", program)];
-            for pd in &candidate.param_defs {
-                if pd.named {
-                    let name = pd.name.trim_start_matches(['$', '@', '%']);
-                    let is_bool = pd.type_constraint.as_ref().is_some_and(|t| t == "Bool");
-                    if is_bool {
-                        parts.push(format!("[--{}]", name));
-                    } else {
-                        let value_placeholder = self.usage_value_placeholder(pd);
-                        if pd.required {
-                            parts.push(format!("--{}{}", name, value_placeholder));
-                        } else {
-                            parts.push(format!("[--{}{}]", name, value_placeholder));
-                        }
-                    }
-                } else if pd.slurpy {
-                    let name = pd.name.trim_start_matches(['$', '@', '%', '*']);
-                    parts.push(format!("[<{}>...]", name));
-                } else if pd.double_slurpy {
-                    // skip
-                } else if let Some(ref lit) = pd.literal_value {
-                    parts.push(lit.to_string_value());
-                } else {
-                    let name = pd.name.trim_start_matches(['$', '@', '%', '\\']);
-                    if pd.default.is_some() || pd.optional_marker {
-                        parts.push(format!("[<{}>]", name));
-                    } else {
-                        parts.push(format!("<{}>", name));
-                    }
-                }
-            }
-            lines.push(parts.join(" "));
-        }
-        lines.join("\n")
-    }
-
-    /// Build the `=<value>` placeholder for a named parameter in the usage
-    /// message. Enum-typed params show `=<EnumName> (variants...)`, subset-typed
-    /// params show `[=SubsetName]`, everything else shows `=<value>`.
-    fn usage_value_placeholder(&self, pd: &ParamDef) -> String {
-        if let Some(tc) = &pd.type_constraint {
-            if let Some(key) = self.resolve_enum_type_key(tc.as_str())
-                && let Some(variants) = self.registry().enum_types.get(key.as_str())
-            {
-                let mut names: Vec<&str> = variants.iter().map(|(k, _)| k.as_str()).collect();
-                names.sort_unstable();
-                return format!("=<{}> ({})", tc, names.join(" "));
-            }
-            if self.registry().subsets.contains_key(tc.as_str()) {
-                return format!("[={}]", tc);
-            }
-        }
-        "=<value>".to_string()
+    /// Bind the read-only `$*USAGE` to the default usage message.
+    pub(super) fn set_usage_var(&mut self, usage: &str) {
+        self.env
+            .insert("$*USAGE".to_string(), Value::str(usage.to_string()));
+        self.env
+            .insert("*USAGE".to_string(), Value::str(usage.to_string()));
+        self.mark_readonly("$*USAGE");
+        self.mark_readonly("*USAGE");
     }
 
     /// Auto-convert an untyped CLI argument string to an enum value when the
