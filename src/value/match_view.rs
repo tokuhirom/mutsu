@@ -247,7 +247,12 @@ impl Value {
     // Cost: O(p), p = positional captures.
     pub(crate) fn capture_list_with_holes(items: Vec<Value>, as_array: bool) -> Value {
         if as_array {
-            return Value::real_array(items.into_iter().map(Value::unbound_capture_as_mu).collect());
+            return Value::real_array(
+                items
+                    .into_iter()
+                    .map(Value::unbound_capture_as_mu)
+                    .collect(),
+            );
         }
         if !items.iter().any(Value::is_nil) {
             return Value::array(items);
