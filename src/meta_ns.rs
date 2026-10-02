@@ -197,9 +197,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_repo_fs::<canonical-prefix>` — a `CompUnit::Repository::FileSystem`
     /// object, cached per canonicalized prefix path.
     RepoFs,
-    /// `__mutsu_ro_index::<name>` — the set of this container's indices that
-    /// are readonly.
-    RoIndex,
     /// `__mutsu_shared_dirty::<name>` — the shared-store entry for `name` has
     /// been written by another thread and the local mirror must re-read it.
     SharedDirty,
@@ -299,7 +296,6 @@ impl MetaNs {
         MetaNs::Outer,
         MetaNs::PredictiveSeqIter,
         MetaNs::RepoFs,
-        MetaNs::RoIndex,
         MetaNs::SharedDirty,
         MetaNs::VarMeta,
         MetaNs::VarDefault,
@@ -360,7 +356,6 @@ impl MetaNs {
             MetaNs::Outer => "__mutsu_outer::",
             MetaNs::PredictiveSeqIter => "__mutsu_predictive_seq_iter::",
             MetaNs::RepoFs => "__mutsu_repo_fs::",
-            MetaNs::RoIndex => "__mutsu_ro_index::",
             MetaNs::SharedDirty => "__mutsu_shared_dirty::",
             MetaNs::VarMeta => "__mutsu_var_meta::",
             MetaNs::VarDefault => "__mutsu_var_default::",
@@ -625,7 +620,6 @@ mod tests {
             (MetaNs::Outer, "__mutsu_outer::@a"),
             (MetaNs::PredictiveSeqIter, "__mutsu_predictive_seq_iter::@a"),
             (MetaNs::RepoFs, "__mutsu_repo_fs::@a"),
-            (MetaNs::RoIndex, "__mutsu_ro_index::@a"),
             (MetaNs::SharedDirty, "__mutsu_shared_dirty::@a"),
             (MetaNs::VarMeta, "__mutsu_var_meta::@a"),
             (MetaNs::VarDefault, "__mutsu_var_default::@a"),

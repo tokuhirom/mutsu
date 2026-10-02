@@ -206,8 +206,7 @@ impl Interpreter {
     /// ([`Self::try_fast_hash_element_assign`]) and the element read-modify-write
     /// ([`Self::try_fast_hash_element_incdec`]): `%name` must be a plain,
     /// untyped, writable hash with no `:=`-bound element and no `is default`,
-    /// held by env and at most one local slot. `key` is the subscript already
-    /// stringified, for the `:=`-bound-literal probe.
+    /// held by env and at most one local slot.
     ///
     /// Returns `None` to decline, `Some(Absent)` when env holds no entry under
     /// the name at all (the store lane autovivifies it), and `Some(Hash)` with
@@ -218,7 +217,6 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         target_slot: Option<u32>,
-        key: &str,
     ) -> Option<PlainHashTarget> {
         // Reject if there are any local bind pairs (`:=` bindings in scope)
         if !self.local_bind_pairs.is_empty() {
@@ -264,11 +262,6 @@ impl Interpreter {
             if self.env().contains_key_sym(bound_key) {
                 return None;
             }
-        }
-        // Reject if this key was `:=`-bound to an immutable literal (`%h<i> := 137`):
-        // the slow path must throw X::AdHoc / X::Assignment::RO, not overwrite it.
-        if crate::env::elem_index_meta_possible() && self.is_ro_index(var_name, key) {
-            return None;
         }
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
@@ -415,7 +408,7 @@ impl Interpreter {
             return None;
         }
         let PlainHashTarget::Hash { local_slot } =
-            self.plain_hash_lane_target(code, name_idx, slot, &key)?
+            self.plain_hash_lane_target(code, name_idx, slot)?
         else {
             return None;
         };

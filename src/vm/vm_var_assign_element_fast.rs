@@ -267,7 +267,7 @@ impl Interpreter {
         // Both latches are false for the overwhelming majority of programs, and
         // each one being true means a *name-keyed* side table may describe this
         // element (`__mutsu_bound_index::`, `__mutsu_elem_share::`,
-        // `__mutsu_deleted_index::`, `__mutsu_ro_index::`, or a declared shape).
+        // `__mutsu_deleted_index::`, or a declared shape).
         // This lane deliberately knows nothing about those: it declines instead.
         if crate::env::elem_index_meta_possible() || crate::env::shaped_array_dims_possible() {
             return None;
