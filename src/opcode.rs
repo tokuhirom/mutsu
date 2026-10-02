@@ -1065,10 +1065,12 @@ pub(crate) enum OpCode {
     /// and therefore only ever rewrite — a marker pair it just emitted itself.
     ///
     /// `typechecked` is set when the declaration's own `TypeCheck` /
-    /// `TypeCheckBind` immediately precedes the markers: the value was already
-    /// matched against the declared type, so the store does not match it a
-    /// second time (a `where` block or subset predicate runs once per
-    /// assignment, as in Rakudo).
+    /// `TypeCheckBind` immediately precedes the markers. The store then trusts
+    /// the mark that check sets when it fully matched the value against the
+    /// declared type, and does not match it a second time (a `where` block or
+    /// subset predicate runs once per assignment, as in Rakudo). A check that
+    /// took a narrower path (a native type, a Proxy bind) sets no mark, so the
+    /// store still matches.
     SetLocalDecl {
         slot: u32,
         explicit_init: bool,

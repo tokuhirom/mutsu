@@ -264,9 +264,11 @@ impl crate::runtime::Interpreter {
         MarkFlag::new(&self.mark_ctx.flags, bit::VARDECL)
     }
 
-    /// Set by `SetLocalDecl` when the declaration's own `TypeCheck` already
-    /// matched the value against the declared type, so the store skips its
-    /// own match (a `where` predicate must run once per assignment).
+    /// Set by a `TypeCheck` that fully matched the value against its type;
+    /// honoured only by the declaration store fused right after it
+    /// (`SetLocalDecl { typechecked: true }`), which then skips its own match
+    /// (a `where` predicate must run once per assignment). Every other
+    /// declaration store clears it.
     #[inline]
     pub(crate) fn decl_typechecked_context(&self) -> MarkFlag<'_> {
         MarkFlag::new(&self.mark_ctx.flags, bit::DECL_TYPECHECKED)

@@ -3315,6 +3315,8 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::MarkVarDeclContext => {
                 self.vardecl_context().set(true);
+                // An unfused declaration store re-checks its value itself.
+                self.decl_typechecked_context().set(false);
                 *ip += 1;
             }
             // Cost: O(1).
@@ -6609,7 +6611,11 @@ impl Interpreter {
                 // (which reads and clears them).
                 self.explicit_initializer_context().set(*explicit_init);
                 self.vardecl_context().set(true);
-                self.decl_typechecked_context().set(*typechecked);
+                // Only the declaration's own adjacent `TypeCheck` vouches for
+                // the value (it sets the mark when it fully matched it).
+                if !*typechecked {
+                    self.decl_typechecked_context().set(false);
+                }
                 self.exec_set_local_op(code, *slot)?;
                 self.publish_state_local(code, *slot);
                 *ip += 1;

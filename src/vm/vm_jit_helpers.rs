@@ -223,7 +223,9 @@ pub(super) unsafe extern "C" fn set_local_decl(
     // bit 0: explicit initializer; bit 1: already type-checked.
     interp.explicit_initializer_context().set(flags & 1 != 0);
     interp.vardecl_context().set(true);
-    interp.decl_typechecked_context().set(flags & 2 != 0);
+    if flags & 2 == 0 {
+        interp.decl_typechecked_context().set(false);
+    }
     panic_boundary(|| match interp.exec_set_local_op(code, idx) {
         Ok(()) => {
             interp.publish_state_local(code, idx);

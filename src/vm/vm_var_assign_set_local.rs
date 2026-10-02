@@ -989,7 +989,7 @@ impl Interpreter {
         let has_explicit_initializer = marks.explicit_initializer();
         let is_vardecl = marks.vardecl();
         // The declaration's `TypeCheck` already matched this value.
-        let decl_typechecked = marks.decl_typechecked();
+        let decl_typechecked = is_vardecl && marks.decl_typechecked();
         let is_shaped_decl = self.shaped_decl_context;
         let scalar_bind = marks.scalar_bind();
         let param_raw_bind = marks.param_raw_bind();
