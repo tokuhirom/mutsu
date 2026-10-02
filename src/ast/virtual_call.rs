@@ -10,8 +10,8 @@ struct FirstVirtualCall {
     found: Option<String>,
 }
 
-impl Visit for FirstVirtualCall {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for FirstVirtualCall {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         // A method, and the methods of a nested package, rebind the invocant;
         // a `sub` does not (rakudo rejects `has $.x = sub { $.y }`).
         let rebinds_invocant = is_scope_declaration(stmt) && !matches!(stmt, Stmt::SubDecl { .. });
@@ -20,7 +20,7 @@ impl Visit for FirstVirtualCall {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         // An anonymous method rebinds the invocant; every other closure (a
         // block, a pointy block, a `sub`, a WhateverCode) still runs against
         // the partially-constructed object, as rakudo's check agrees.
@@ -37,7 +37,7 @@ impl Visit for FirstVirtualCall {
     }
 
     // A regex is not an attribute-initializer expression mutsu checks.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         let sigil = match kind {

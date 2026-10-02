@@ -160,8 +160,8 @@ pub(crate) fn literal_lib_paths(stmts: &[Stmt]) -> Vec<String> {
 /// The walk of [`literal_lib_paths`], in source order.
 struct LibPaths(Vec<String>);
 
-impl Visit for LibPaths {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for LibPaths {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::Use {
             module,
             arg: Some(arg),

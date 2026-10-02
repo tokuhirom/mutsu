@@ -89,8 +89,8 @@ const READ_ONLY_METAMETHODS: &[&str] = &[
     "enum_value_list",
 ];
 
-impl Visit for Mentions {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for Mentions {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         self.has_begin |= matches!(
             stmt,
             Stmt::Phaser {
@@ -102,7 +102,7 @@ impl Visit for Mentions {
         walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         self.has_begin |= matches!(
             expr,
             Expr::PhaserExpr {

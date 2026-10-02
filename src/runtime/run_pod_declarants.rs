@@ -286,8 +286,8 @@ struct PodDeclarants<'a> {
     multi_counters: HashMap<String, usize>,
 }
 
-impl crate::ast_visit::Visit for PodDeclarants<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> crate::ast_visit::Visit<'ast> for PodDeclarants<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         Interpreter::record_pod_declarant(stmt, &self.package, self.out, &mut self.multi_counters);
         match stmt {
             Stmt::ClassDecl { name, .. }

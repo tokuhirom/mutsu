@@ -436,7 +436,7 @@ struct Names {
     symbolic: bool,
 }
 
-impl Visit for Names {
+impl<'ast> Visit<'ast> for Names {
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         self.symbolic |= kind == NameKind::Symbolic;
         self.names.push(name.to_string());
@@ -457,8 +457,8 @@ fn locals_of(body: &[Stmt]) -> HashSet<String> {
 #[derive(Default)]
 struct Locals(HashSet<String>);
 
-impl Visit for Locals {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for Locals {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if !matches!(
             stmt,
             Stmt::Phaser {
@@ -470,7 +470,7 @@ impl Visit for Locals {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !matches!(
             expr,
             Expr::PhaserExpr {

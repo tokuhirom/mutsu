@@ -167,8 +167,8 @@ impl OutlineScan {
     }
 }
 
-impl Visit for OutlineScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for OutlineScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::SetLine(n) => {
                 if *n > 0 {

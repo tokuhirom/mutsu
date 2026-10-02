@@ -215,8 +215,8 @@ struct DeclaratorFacts<'a> {
     set_hows: &'a mut Vec<(String, String)>,
 }
 
-impl Visit for DeclaratorFacts<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for DeclaratorFacts<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::VarDecl { name, expr, .. } = stmt
             && name == "*PKGDECL"
             && let Some(text) = literal_str(expr)
@@ -226,7 +226,7 @@ impl Visit for DeclaratorFacts<'_> {
         walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::MethodCall {
             target, name, args, ..
         } = expr

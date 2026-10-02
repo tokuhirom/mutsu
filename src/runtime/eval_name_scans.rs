@@ -115,7 +115,7 @@ struct ModuleNames {
     names: HashSet<String>,
 }
 
-impl Visit for ModuleNames {
+impl<'ast> Visit<'ast> for ModuleNames {
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if kind == NameKind::Module {
             self.names.insert(name.to_string());
@@ -129,7 +129,7 @@ struct CallNames {
     names: HashSet<String>,
 }
 
-impl Visit for CallNames {
+impl<'ast> Visit<'ast> for CallNames {
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::Call | NameKind::UserRoutineCall) {
             self.names.insert(name.to_string());
@@ -144,8 +144,8 @@ struct TypeRefs {
     names: Vec<String>,
 }
 
-impl Visit for TypeRefs {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for TypeRefs {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::BareWord(name) = expr
             && name.starts_with(|c: char| c.is_ascii_uppercase())
         {
@@ -201,8 +201,8 @@ impl UndeclaredName<'_> {
     }
 }
 
-impl Visit for UndeclaredName<'_> {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for UndeclaredName<'_> {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_some() {
             return;
         }

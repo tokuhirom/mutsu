@@ -755,14 +755,14 @@ struct HeredocScopeScan<'a> {
     found: Option<String>,
 }
 
-impl crate::ast_visit::Visit for HeredocScopeScan<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_none() {
             super::scope_scan::walk_stmt_own_scope(self, stmt);
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_some() || super::scope_scan::opens_own_scope(expr) {
             return;
         }
@@ -791,8 +791,8 @@ struct UndeclaredHeredocVar<'a> {
     found: Option<String>,
 }
 
-impl crate::ast_visit::Visit for UndeclaredHeredocVar<'_> {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> crate::ast_visit::Visit<'ast> for UndeclaredHeredocVar<'_> {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_none() {
             crate::ast_visit::walk_expr(self, expr);
         }

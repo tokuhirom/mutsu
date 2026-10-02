@@ -139,8 +139,8 @@ fn body_mentions_return(body: &[Stmt]) -> bool {
 
     #[derive(Default)]
     struct FindReturn(bool);
-    impl Visit for FindReturn {
-        fn visit_stmt(&mut self, stmt: &Stmt) {
+    impl<'ast> Visit<'ast> for FindReturn {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             if self.0 {
                 return;
             }
@@ -150,7 +150,7 @@ fn body_mentions_return(body: &[Stmt]) -> bool {
             }
             walk_stmt(self, stmt);
         }
-        fn visit_expr(&mut self, expr: &Expr) {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
             if !self.0 {
                 walk_expr(self, expr);
             }

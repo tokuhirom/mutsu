@@ -58,8 +58,8 @@ impl AstScan {
     }
 }
 
-impl Visit for AstScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for AstScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.reject_all {
             return;
         }
@@ -81,7 +81,7 @@ impl Visit for AstScan {
         walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.reject_all {
             return;
         }
@@ -169,13 +169,13 @@ pub(super) fn stmt_names(stmt: &Stmt, sym: &str) -> bool {
         sym: &'a str,
         found: bool,
     }
-    impl Visit for Find<'_> {
-        fn visit_stmt(&mut self, stmt: &Stmt) {
+    impl<'ast> Visit<'ast> for Find<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             if !self.found {
                 walk_stmt(self, stmt);
             }
         }
-        fn visit_expr(&mut self, expr: &Expr) {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
             if !self.found {
                 walk_expr(self, expr);
             }

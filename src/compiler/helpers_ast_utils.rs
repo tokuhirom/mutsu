@@ -400,7 +400,10 @@ impl Compiler {
     /// to `hoist_sub_decls`, which already registers them.
     pub(super) fn hoist_nested_our_subs(&mut self, stmts: &[Stmt]) {
         let nested = super::body_scans::nested_our_subs(stmts);
-        for mut hoisted in nested {
+        for decl in nested {
+            // The hoisted copy is retagged below; the source-order declaration
+            // keeps its own traits.
+            let mut hoisted = decl.clone();
             let name = match &mut hoisted {
                 Stmt::SubDecl {
                     name,

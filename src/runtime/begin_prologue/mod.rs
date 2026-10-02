@@ -169,8 +169,8 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
 /// lifted.
 struct OutsideBegin(HashSet<String>);
 
-impl Visit for OutsideBegin {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for OutsideBegin {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if !matches!(
             stmt,
             Stmt::Phaser {
@@ -182,7 +182,7 @@ impl Visit for OutsideBegin {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !matches!(
             expr,
             Expr::PhaserExpr {

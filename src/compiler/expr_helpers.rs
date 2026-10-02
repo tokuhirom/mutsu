@@ -487,8 +487,8 @@ impl Compiler {
         struct PureValueScan {
             pure: bool,
         }
-        impl crate::ast_visit::Visit for PureValueScan {
-            fn visit_expr(&mut self, expr: &Expr) {
+        impl<'ast> crate::ast_visit::Visit<'ast> for PureValueScan {
+            fn visit_expr(&mut self, expr: &'ast Expr) {
                 if !self.pure {
                     return;
                 }

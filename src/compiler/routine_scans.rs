@@ -18,8 +18,8 @@ struct ReturnRwScan {
     found: bool,
 }
 
-impl Visit for ReturnRwScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ReturnRwScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -33,7 +33,7 @@ impl Visit for ReturnRwScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found {
             return;
         }
@@ -49,7 +49,7 @@ impl Visit for ReturnRwScan {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a routine body hands its caller a container through an explicit
@@ -77,8 +77,8 @@ impl NonNilReturnScan {
     }
 }
 
-impl Visit for NonNilReturnScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for NonNilReturnScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -88,7 +88,7 @@ impl Visit for NonNilReturnScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found || opens_own_scope(expr) {
             return;
         }
@@ -103,7 +103,7 @@ impl Visit for NonNilReturnScan {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a routine body `return`s a non-Nil argument in its own scope — the
@@ -124,8 +124,8 @@ struct TypeDeclScan {
     found: bool,
 }
 
-impl Visit for TypeDeclScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for TypeDeclScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -140,7 +140,7 @@ impl Visit for TypeDeclScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             // A closure's body is compiled as a routine of its own.
             Expr::Lambda { .. } | Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => {}
@@ -150,7 +150,7 @@ impl Visit for TypeDeclScan {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a routine body declares a `class`/`role` where the VM's
@@ -171,8 +171,8 @@ struct RoutineStateScan {
     found: bool,
 }
 
-impl Visit for RoutineStateScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for RoutineStateScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -183,7 +183,7 @@ impl Visit for RoutineStateScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Lambda { .. } | Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => {}
             _ if !self.found => walk_expr(self, expr),
@@ -192,7 +192,7 @@ impl Visit for RoutineStateScan {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a routine body declares a `state` variable. See

@@ -62,7 +62,7 @@ pub(crate) fn is_scope_declaration(s: &Stmt) -> bool {
 /// loop's init/cond/step, a `whenever` supply. Not the body. Any other
 /// statement has no header and is not walked.
 // Cost: O(n), n = size of the header.
-pub(crate) fn walk_control_header<V: Visit + ?Sized>(v: &mut V, stmt: &Stmt) {
+pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
     match stmt {
         Stmt::If { cond, .. }
         | Stmt::While { cond, .. }
@@ -95,7 +95,7 @@ pub(crate) fn walk_control_header<V: Visit + ?Sized>(v: &mut V, stmt: &Stmt) {
 /// thunked declarations (`enum`, `subset`, `has`, `use`) are not entered at
 /// all. Every other statement is walked in full.
 // Cost: O(n), n = size of the part of `stmt` that runs in the enclosing scope.
-pub(crate) fn walk_stmt_own_scope<V: Visit + ?Sized>(v: &mut V, stmt: &Stmt) {
+pub(crate) fn walk_stmt_own_scope<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
     match stmt {
         Stmt::If {
             then_branch,

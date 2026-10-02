@@ -67,8 +67,8 @@ struct AttrScan<'a, 'c> {
     err: Option<RuntimeError>,
 }
 
-impl Visit for AttrScan<'_, '_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for AttrScan<'_, '_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.err.is_none() {
             match stmt {
                 // A nested type declares its own attributes, and its methods
@@ -79,7 +79,7 @@ impl Visit for AttrScan<'_, '_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.err.is_none() {
             match expr {
                 // Not checked inside a `try` body: the undeclared attribute is

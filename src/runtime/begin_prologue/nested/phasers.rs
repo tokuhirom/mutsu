@@ -214,8 +214,8 @@ fn has_init_or_check(stmt: &Stmt) -> bool {
 
 struct HasInitOrCheck(bool);
 
-impl Visit for HasInitOrCheck {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for HasInitOrCheck {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::Phaser {
                 kind: PhaserKind::Init | PhaserKind::Check,
@@ -225,7 +225,7 @@ impl Visit for HasInitOrCheck {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::PhaserExpr {
                 kind: PhaserKind::Init | PhaserKind::Check,

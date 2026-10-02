@@ -118,8 +118,8 @@ pub(super) struct TypeDecls<'a> {
     pub(super) out: DeclaredTypes,
 }
 
-impl Visit for TypeDecls<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for TypeDecls<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         let out = &mut self.out;
         match stmt {
             Stmt::Use { module, .. } | Stmt::Need { module } => {
@@ -200,8 +200,8 @@ impl UseLibDirs<'_> {
     }
 }
 
-impl Visit for UseLibDirs<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for UseLibDirs<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::Use {
             module,
             arg: Some(arg),
@@ -257,8 +257,8 @@ impl SubParamTypes<'_> {
     }
 }
 
-impl Visit for SubParamTypes<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for SubParamTypes<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.error.is_some() {
             return;
         }
@@ -278,7 +278,7 @@ impl Visit for SubParamTypes<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.error.is_some() {
             return;
         }
@@ -330,8 +330,8 @@ impl CaptureInheritance {
     }
 }
 
-impl Visit for CaptureInheritance {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for CaptureInheritance {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.error.is_some() {
             return;
         }
@@ -345,7 +345,7 @@ impl Visit for CaptureInheritance {
         Captures::scoped(self, |v| &mut v.captures, added, |v| walk_stmt(v, stmt));
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.error.is_some() {
             return;
         }
@@ -384,8 +384,8 @@ impl<'a> TypeArgs<'a> {
     }
 }
 
-impl Visit for TypeArgs<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for TypeArgs<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() {
             return;
         }
@@ -415,7 +415,7 @@ impl Visit for TypeArgs<'_> {
         );
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_some() {
             return;
         }
@@ -423,7 +423,7 @@ impl Visit for TypeArgs<'_> {
         Captures::scoped(self, |v| &mut v.captures, added, |v| walk_expr(v, expr));
     }
 
-    fn visit_param(&mut self, param: &ParamDef) {
+    fn visit_param(&mut self, param: &'ast ParamDef) {
         self.check(param.type_constraint.as_deref());
         walk_param(self, param);
     }
@@ -436,8 +436,8 @@ pub(super) struct Trusts<'a> {
     pub(super) found: Option<String>,
 }
 
-impl Visit for Trusts<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for Trusts<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() {
             return;
         }
@@ -456,7 +456,7 @@ impl Visit for Trusts<'_> {
 }
 
 /// Walks `stmts` with `v` (shorthand for the entry points).
-pub(super) fn scan<V: Visit>(mut v: V, stmts: &[Stmt]) -> V {
+pub(super) fn scan<'ast, V: Visit<'ast>>(mut v: V, stmts: &'ast [Stmt]) -> V {
     walk_stmts(&mut v, stmts);
     v
 }

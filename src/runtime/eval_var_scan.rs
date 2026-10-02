@@ -256,8 +256,8 @@ impl UndeclaredVars<'_> {
     }
 }
 
-impl Visit for UndeclaredVars<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() {
             return;
         }
@@ -380,7 +380,7 @@ impl Visit for UndeclaredVars<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_some() {
             return;
         }
@@ -437,7 +437,7 @@ impl Visit for UndeclaredVars<'_> {
 
     // Regex-internal declarations (`:my $x`) and match variables are not
     // modelled, so a regex is not entered.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
@@ -478,8 +478,8 @@ struct VarRefs {
     names: Vec<String>,
 }
 
-impl Visit for VarRefs {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for VarRefs {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) | Expr::CodeVar(n) = expr {
             self.names.push(n.clone());
         }

@@ -28,8 +28,8 @@ struct LetScan {
     found: bool,
 }
 
-impl Visit for LetScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for LetScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -59,7 +59,7 @@ impl Visit for LetScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found {
             return;
         }
@@ -83,7 +83,7 @@ impl Visit for LetScan {
     }
 
     // A regex code block runs inside the matcher, as a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether `stmts` holds a `let`/`temp` this block's save frame must resolve
@@ -106,8 +106,8 @@ struct StateScan {
     found: bool,
 }
 
-impl Visit for StateScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for StateScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -117,14 +117,14 @@ impl Visit for StateScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !self.found && !opens_own_scope(expr) {
             walk_expr(self, expr);
         }
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether `stmts` declares a `state` variable at its own block level.
@@ -152,8 +152,8 @@ struct WhenScan {
     found: bool,
 }
 
-impl Visit for WhenScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for WhenScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -168,14 +168,14 @@ impl Visit for WhenScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !self.found && !opens_own_scope(expr) {
             walk_expr(self, expr);
         }
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a `when`/`default` in `stmts` can reach this block's own succeed
@@ -194,8 +194,8 @@ struct TopicRebindScan {
     found: bool,
 }
 
-impl Visit for TopicRebindScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for TopicRebindScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -212,7 +212,7 @@ impl Visit for TopicRebindScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found {
             return;
         }
@@ -230,7 +230,7 @@ impl Visit for TopicRebindScan {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether `stmts` rebinds the topic (`$_ := ...`). See [`TopicRebindScan`].
@@ -252,8 +252,8 @@ struct BlockLocalDeclScan {
     types_only: bool,
 }
 
-impl Visit for BlockLocalDeclScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for BlockLocalDeclScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
@@ -280,14 +280,14 @@ impl Visit for BlockLocalDeclScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !self.found && !opens_own_scope(expr) {
             walk_expr(self, expr);
         }
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
 /// Whether a branch body declares a block-local `my` (or a lexically scoped
@@ -313,18 +313,18 @@ pub(super) fn declares_lexical_type(stmts: &[Stmt]) -> bool {
 
 /// Collects the `our sub` declarations nested in plain blocks (not at the top
 /// level, which `hoist_sub_decls` registers itself).
-struct NestedOurSubScan {
+struct NestedOurSubScan<'ast> {
     depth: usize,
-    out: Vec<Stmt>,
+    out: Vec<&'ast Stmt>,
 }
 
-impl Visit for NestedOurSubScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for NestedOurSubScan<'ast> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::SubDecl { custom_traits, .. }
                 if self.depth > 0 && custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
             {
-                self.out.push(stmt.clone());
+                self.out.push(stmt);
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                 self.depth += 1;
@@ -339,10 +339,10 @@ impl Visit for NestedOurSubScan {
     }
 }
 
-/// The `our sub` declarations nested in plain blocks of `stmts`, cloned for
-/// early registration.
+/// The `our sub` declarations nested in plain blocks of `stmts`, for early
+/// registration.
 // Cost: O(n), n = statements reachable through plain block nesting.
-pub(super) fn nested_our_subs(stmts: &[Stmt]) -> Vec<Stmt> {
+pub(super) fn nested_our_subs(stmts: &[Stmt]) -> Vec<&Stmt> {
     let mut scan = NestedOurSubScan {
         depth: 0,
         out: Vec::new(),
@@ -357,8 +357,8 @@ struct TypeAliasScan {
     out: Vec<(String, String)>,
 }
 
-impl Visit for TypeAliasScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for TypeAliasScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::VarDecl {
             name,
             expr: Expr::BareWord(target),

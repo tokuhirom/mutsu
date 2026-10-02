@@ -31,8 +31,8 @@ struct AttrTwigilScan {
     found: bool,
 }
 
-impl Visit for AttrTwigilScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for AttrTwigilScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             _ if self.found => {}
             // A nested method has its own `self` (rakudo accepts
@@ -51,7 +51,7 @@ impl Visit for AttrTwigilScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             _ if self.found => {}
             // A method literal (`method { $!a }`, `anon method m { }`) has its
@@ -234,14 +234,14 @@ struct VarNameScan<'a> {
     found: bool,
 }
 
-impl Visit for VarNameScan<'_> {
+impl<'ast> Visit<'ast> for VarNameScan<'_> {
     // A statement reached from the scanned expression or statement sits in a
     // nested block, which may declare a lexical of the same name
     // (`my $y = { my $x = 1; $x }` is accepted by rakudo), so it is not
     // searched.
-    fn visit_stmt(&mut self, _stmt: &Stmt) {}
+    fn visit_stmt(&mut self, _stmt: &'ast Stmt) {}
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if !self.found {
             walk_expr(self, expr);
         }

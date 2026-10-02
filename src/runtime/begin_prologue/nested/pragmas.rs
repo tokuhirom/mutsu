@@ -117,8 +117,8 @@ fn is_literal_arg(arg: &Expr) -> bool {
 /// Whether every expression it visits is a literal, a pair or a list of them.
 struct LiteralArg(bool);
 
-impl Visit for LiteralArg {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for LiteralArg {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Literal(_) | Expr::Binary { .. } | Expr::ArrayLiteral(_) => walk_expr(self, expr),
             _ => self.0 = false,
