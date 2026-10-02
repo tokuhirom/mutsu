@@ -352,6 +352,30 @@ impl Interpreter {
         if signature_has_type_captures {
             return err;
         }
+        // A mismatch on a parameter that has a default (`Int $ = 5`, `Int = 5`) is
+        // not statically rejected by rakudo: it surfaces verbatim at run time
+        // (`Type check failed in binding to parameter '<anon>'; ...`) instead of
+        // the compile-time "will never work" wrapper.
+        if let Some(failing) = err
+            .message
+            .split_once("parameter '")
+            .and_then(|(_, rest)| rest.split_once('\''))
+            .map(|(p, _)| p.to_string())
+        {
+            let bare = failing
+                .strip_prefix(['$', '@', '%', '&'])
+                .unwrap_or(&failing);
+            let failed_has_default = param_defs.iter().any(|pd| {
+                pd.default.is_some()
+                    && !pd.named
+                    && (pd.name == bare
+                        || (failing == "<anon>"
+                            && matches!(pd.name.as_str(), "__ANON_STATE__" | "__type_only__")))
+            });
+            if failed_has_default {
+                return err;
+            }
+        }
         // Capture the hint before `err.exception` is (possibly) moved out below,
         // so the later `set_hint` does not clash with that partial move.
         let hint = err.take_hint();
