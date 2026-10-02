@@ -239,6 +239,7 @@ mod tests {
             arg: None,
             tags: Vec::new(),
             condition: None,
+            if_imports: Vec::new(),
         }
     }
 
