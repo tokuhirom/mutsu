@@ -367,6 +367,7 @@ impl Compiler {
                 arity: 1,
                 arg_sources_idx,
                 literal_native_args: 0,
+                static_arg_types: false,
             });
             return;
         }
@@ -444,6 +445,7 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                     literal_native_args: 0,
+                    static_arg_types: false,
                 });
                 self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
@@ -466,6 +468,7 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                     literal_native_args: 0,
+                    static_arg_types: false,
                 });
                 self.code.emit(OpCode::RestoreTopic);
                 let jump_end = self.code.emit(OpCode::Jump(0));

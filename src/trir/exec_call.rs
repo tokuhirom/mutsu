@@ -282,6 +282,7 @@ impl Interpreter {
         // literal mask: a TRIR site's arguments are never literals, but the
         // mask must be published rather than inherited from the caller.
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let saved_static = std::mem::replace(&mut self.static_call_args, false);
         let armed = self.trir_gen_arm(call.name);
         // Only an `is rw` parameter was handed a container, so only then do
         // the arguments need keeping for the read-back below.
@@ -289,6 +290,7 @@ impl Interpreter {
         let result = self.call_function(&name, args);
         self.trir_gen_settle(chunk, site, armed);
         self.literal_native_args = saved;
+        self.static_call_args = saved_static;
         let result = result?;
         // Read the containers back, so an `is rw` parameter's write lands in
         // this frame's slot.

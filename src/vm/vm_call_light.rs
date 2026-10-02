@@ -1,58 +1,5 @@
 use super::*;
 
-/// Build the `X::TypeCheck::Argument` for a positional-light arity mismatch.
-///
-/// Outlined and `#[cold]` on purpose: the message `format!` and the attribute
-/// map are dead weight on the hot path, but LLVM still reserves their stack
-/// slots in [`Interpreter::call_compiled_function_positional_light_at`]'s
-/// frame, which every recursive call touches. Keeping them out of that frame
-/// is the point — do not inline these back in.
-#[cold]
-#[inline(never)]
-fn positional_light_arity_error(
-    func_name: &str,
-    param_defs: &[crate::ast::ParamDef],
-    args: &[Value],
-    expected: usize,
-    actual: usize,
-    too_many: bool,
-) -> RuntimeError {
-    // Several call sites pattern-match on these exact messages (the general
-    // binder in `binding_signature.rs` produces the same two).
-    let msg = if too_many {
-        format!("Too many positionals passed; expected {expected} arguments but got {actual}")
-    } else {
-        format!("Too few positionals passed; expected {expected} arguments but got {actual}")
-    };
-    RuntimeError::typed(
-        "X::TypeCheck::Argument",
-        Interpreter::type_check_argument_attrs(func_name, param_defs, args, msg),
-    )
-}
-
-/// Build the `X::TypeCheck::Argument` for a positional-light parameter whose
-/// argument failed its type constraint. `#[cold]` for the same reason as
-/// [`positional_light_arity_error`].
-#[cold]
-#[inline(never)]
-fn positional_light_type_error(
-    func_name: &str,
-    param_defs: &[crate::ast::ParamDef],
-    args: &[Value],
-    param_idx: usize,
-    tc: &str,
-    got: &str,
-) -> RuntimeError {
-    let msg = format!(
-        "Type check failed in binding ${}: expected {}, got {}",
-        param_defs[param_idx].name, tc, got
-    );
-    let mut attrs = Interpreter::type_check_argument_attrs(func_name, param_defs, args, msg);
-    attrs.insert("expected".to_string(), Value::str(tc.to_string()));
-    attrs.insert("got".to_string(), Value::str(got.to_string()));
-    RuntimeError::typed("X::TypeCheck::Argument", attrs)
-}
-
 /// The value a positional argument's type constraint applies to: through the
 /// `VarRef` tag a call site wraps a named variable in, and through a `Scalar`
 /// container if one arrived.
@@ -91,6 +38,64 @@ impl Interpreter {
     /// (the OTF promotion arm and the slow `call_function` resolution path).
     /// The hot cached dispatch calls the `_at` form directly, leaving the
     /// arguments where the caller's opcodes evaluated them -- on the VM stack.
+    /// The error for a positional-light arity mismatch: the general binder's
+    /// run-time message, promoted to the compile-time `X::TypeCheck::Argument`
+    /// only for a call site whose argument types are all static (#10640).
+    ///
+    /// Outlined and `#[cold]` on purpose: the message `format!` and the attribute
+    /// map are dead weight on the hot path, but LLVM still reserves their stack
+    /// slots in [`Interpreter::call_compiled_function_positional_light_at`]'s
+    /// frame, which every recursive call touches. Keeping them out of that frame
+    /// is the point — do not inline these back in.
+    #[cold]
+    #[inline(never)]
+    fn positional_light_arity_error(
+        &self,
+        cf: &CompiledFunction,
+        func_name: &str,
+        args_base: usize,
+        expected: usize,
+        actual: usize,
+        too_many: bool,
+    ) -> RuntimeError {
+        // Several call sites pattern-match on these exact messages (the general
+        // binder in `binding_signature.rs` produces the same two).
+        let err = RuntimeError::new(format!(
+            "Too {} positionals passed; expected {expected} argument{} but got {actual}",
+            if too_many { "many" } else { "few" },
+            if expected == 1 { "" } else { "s" },
+        ));
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+    }
+
+    /// The error for a positional-light parameter whose argument failed its
+    /// type constraint: the general binder's run-time
+    /// `X::TypeCheck::Binding::Parameter`, promoted to the compile-time
+    /// `X::TypeCheck::Argument` only for a call site whose argument types are
+    /// all static (#10640). `#[cold]` for the same reason as
+    /// [`Self::positional_light_arity_error`].
+    #[cold]
+    #[inline(never)]
+    fn positional_light_type_error(
+        &mut self,
+        cf: &CompiledFunction,
+        func_name: &str,
+        args_base: usize,
+        param_idx: usize,
+        tc: &str,
+    ) -> RuntimeError {
+        let pd = &cf.param_defs[param_idx];
+        let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
+        let err = self
+            .typecheck_binding_parameter_failure(
+                &crate::runtime::types::param_display_name(pd),
+                tc,
+                &val,
+            )
+            .with_parameter_object(pd, Some(&*self));
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+    }
+
     pub(super) fn call_compiled_function_positional_light(
         &mut self,
         cf: &CompiledFunction,
@@ -238,10 +243,10 @@ impl Interpreter {
             let required_count = cf.light_required_positionals.unwrap_or(positional_count);
             if too_many || actual_count < required_count {
                 self.current_unit = saved_unit;
-                let err = positional_light_arity_error(
+                let err = self.positional_light_arity_error(
+                    cf,
                     func_name,
-                    &cf.param_defs,
-                    &self.stack[args_base..],
+                    args_base,
                     positional_count,
                     actual_count,
                     too_many,
@@ -463,7 +468,7 @@ impl Interpreter {
         // complete, unmodified argument list for `X::TypeCheck::Argument`'s
         // `arguments` attribute. Only the failing index is remembered, so the
         // borrow of `self.stack` ends before the `&mut self` rollback runs.
-        let mut type_failure: Option<(usize, &'static str)> = None;
+        let mut type_failure: Option<usize> = None;
         // Set only for a `NativeInt` (native `int`) param whose value shape
         // passed the check below but whose actual coercion then failed (an
         // out-of-range `BigInt` -- `wrap_native_int_for_binding` mirrors the
@@ -492,6 +497,11 @@ impl Interpreter {
             let is_native_int;
             let ok = match cf.param_fast_types.get(param_idx) {
                 Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
+                Some(crate::opcode::FastParamCheck::ImplicitCallable) => {
+                    is_native_int = false;
+                    let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
+                    self.type_matches_value("Callable", &val)
+                }
                 Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
                     is_native_int = matches!(
                         kind,
@@ -540,20 +550,23 @@ impl Interpreter {
                     Ok(coerced) => self.stack[args_base + param_idx] = coerced,
                     Err(e) => {
                         native_coerce_err = Some(e);
-                        type_failure = Some((param_idx, ""));
+                        type_failure = Some(param_idx);
                         break;
                     }
                 }
                 continue;
             }
             if !ok {
-                let val = arg_binding_value(&self.stack[args_base + param_idx]);
-                type_failure = Some((param_idx, runtime::value_type_name(&val)));
+                type_failure = Some(param_idx);
                 break;
             }
         }
-        if let Some((param_idx, got)) = type_failure {
-            let tc = cf.param_defs[param_idx].type_constraint.as_ref().unwrap();
+        if let Some(param_idx) = type_failure {
+            // An untyped `&c` failed its implicit `Callable` constraint.
+            let tc = cf.param_defs[param_idx]
+                .type_constraint
+                .as_deref()
+                .unwrap_or("Callable");
             // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
             match caller_env {
                 Some(caller_env) => self.set_env(caller_env),
@@ -599,18 +612,14 @@ impl Interpreter {
                             .with_parameter_object(pd, Some(&*self)),
                     }
                 }
-                None => positional_light_type_error(
-                    func_name,
-                    &cf.param_defs,
-                    &self.stack[args_base..],
-                    param_idx,
-                    tc,
-                    got,
-                ),
+                None => self.positional_light_type_error(cf, func_name, args_base, param_idx, tc),
             };
             self.stack.truncate(args_base);
             return Err(err);
         }
+        // The binding is done: the call site's `static_arg_types` must not
+        // reach a call the body makes through a route that publishes none.
+        self.static_call_args = false;
         for (param_idx, slot) in param_slots.iter().enumerate() {
             let is_rw_param = cf.has_rw_positional_param
                 && param_idx < actual_count

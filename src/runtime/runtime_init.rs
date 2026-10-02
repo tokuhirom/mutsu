@@ -3066,6 +3066,7 @@ impl Interpreter {
         let mut interpreter = Self {
             open_role_group: None,
             literal_native_args: 0,
+            static_call_args: false,
             user_declared_classes: Default::default(),
             env: Env::from(env),
             output_sink: Arc::new(RwLock::new(OutputSink::new())),

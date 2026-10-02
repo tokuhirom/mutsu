@@ -120,7 +120,9 @@ impl Interpreter {
                 )
             })
             .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-            .map(|a| super::value_type_name(a).to_string())
+            // The object's own class (`f(F)`), not the generic `Any` that
+            // `value_type_name` answers for an instance.
+            .map(|a| super::utils::got_type_name(a.unwrap_varref()))
             .collect()
     }
 
@@ -236,12 +238,32 @@ impl Interpreter {
         )
     }
 
+    /// [`Self::enhance_binding_error`] for a binding failure of the call the
+    /// current `CallFunc` site published (`static_call_args`).
+    pub(crate) fn enhance_binding_error_at_site(
+        &self,
+        err: RuntimeError,
+        func_name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        args: &[Value],
+    ) -> RuntimeError {
+        Self::enhance_binding_error(err, func_name, param_defs, args, self.static_call_args)
+    }
+
     /// Enhance a binding error with function name, call profile, and signature info.
+    ///
+    /// `static_site` says whether the call site's argument types are all known
+    /// at compile time (`OpCode::CallFunc::static_arg_types`). Only such a call
+    /// is reported as rakudo's compile-time `X::TypeCheck::Argument` ("Calling
+    /// f(Str) will never work with declared signature ..."); any other keeps
+    /// the binder's run-time exception (`X::TypeCheck::Binding::Parameter`, or
+    /// the plain arity error), exactly as rakudo raises it (#10640).
     pub(crate) fn enhance_binding_error(
         mut err: RuntimeError,
         func_name: &str,
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
+        static_site: bool,
     ) -> RuntimeError {
         // Don't enhance errors that are already enhanced or are control flow
         if err.is_return() || err.is_last() || err.is_next() || func_name.is_empty() {
@@ -332,6 +354,9 @@ impl Interpreter {
             }
             return err;
         }
+        if !static_site {
+            return err;
+        }
         // A signature with a generic type capture (`sub c(::T $x, T $y, $z)`)
         // cannot be checked at compile time at all -- what `T` means is only
         // known once `$x` binds -- so rakudo reports a plain RUNTIME
@@ -363,9 +388,11 @@ impl Interpreter {
         let signature = Self::build_signature_string(param_defs);
 
         // Enhance the error message, preserving the original for exception type matching
+        // Rakudo's compile-time message is this one line; the binder's own
+        // run-time wording is what the call would have died with instead.
         let enhanced_msg = format!(
-            "Calling {} will never work with declared signature {}\n  {}",
-            call_profile, signature, err.message
+            "Calling {} will never work with declared signature {}",
+            call_profile, signature
         );
         let mut enhanced = RuntimeError::new(enhanced_msg.clone());
         // For binding type-check errors on regular calls, wrap as X::TypeCheck::Argument

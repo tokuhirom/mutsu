@@ -235,20 +235,24 @@ impl Interpreter {
                                     });
                                 break 'bind;
                             }
-                            let got = runtime::value_type_name(&val);
-                            let msg = format!(
-                                "Type check failed in binding ${}: expected {}, got {}",
-                                cf.param_defs[i].name, tc, got
-                            );
-                            let mut attrs = Self::type_check_argument_attrs(
+                            // The general binder's run-time exception,
+                            // promoted to the compile-time
+                            // `X::TypeCheck::Argument` only for a call site
+                            // whose argument types are all static (#10640).
+                            let pd = &cf.param_defs[i];
+                            let err = self
+                                .typecheck_binding_parameter_failure(
+                                    &crate::runtime::types::param_display_name(pd),
+                                    tc,
+                                    &val,
+                                )
+                                .with_parameter_object(pd, Some(&*self));
+                            bind_err = Some(self.enhance_binding_error_at_site(
+                                err,
                                 func_name,
                                 &cf.param_defs,
                                 args,
-                                msg,
-                            );
-                            attrs.insert("expected".to_string(), Value::str(tc.to_string()));
-                            attrs.insert("got".to_string(), Value::str(got.to_string()));
-                            bind_err = Some(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+                            ));
                             break 'bind;
                         }
                         // A native `int` param's shape check above already
@@ -307,13 +311,17 @@ impl Interpreter {
                                     && !Self::is_callsite_line_marker(a)
                             })
                             .count();
-                        let msg = format!(
-                            "Too few positionals passed; expected {} arguments but got {}",
-                            plan.positional_count, got
-                        );
-                        bind_err = Some(RuntimeError::typed(
-                            "X::TypeCheck::Argument",
-                            Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+                        let err = RuntimeError::new(format!(
+                            "Too few positionals passed; expected {} argument{} but got {}",
+                            plan.positional_count,
+                            if plan.positional_count == 1 { "" } else { "s" },
+                            got
+                        ));
+                        bind_err = Some(self.enhance_binding_error_at_site(
+                            err,
+                            func_name,
+                            &cf.param_defs,
+                            args,
                         ));
                         break 'bind;
                     } else {
@@ -424,13 +432,17 @@ impl Interpreter {
                                 && !Self::is_callsite_line_marker(a)
                         })
                         .count();
-                    let msg = format!(
-                        "Too many positionals passed; expected {} arguments but got {}",
-                        plan.positional_count, got
-                    );
-                    bind_err = Some(RuntimeError::typed(
-                        "X::TypeCheck::Argument",
-                        Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+                    let err = RuntimeError::new(format!(
+                        "Too many positionals passed; expected {} argument{} but got {}",
+                        plan.positional_count,
+                        if plan.positional_count == 1 { "" } else { "s" },
+                        got
+                    ));
+                    bind_err = Some(self.enhance_binding_error_at_site(
+                        err,
+                        func_name,
+                        &cf.param_defs,
+                        args,
                     ));
                     break;
                 }
@@ -460,6 +472,9 @@ impl Interpreter {
             self.current_unit = saved_unit;
             return Err(e);
         }
+        // The binding is done: the call site's `static_arg_types` must not
+        // reach a call the body makes through a route that publishes none.
+        self.static_call_args = false;
 
         // Mark parameters as readonly (eligibility excludes `is rw/copy/raw`
         // traits, so every param is immutable).

@@ -577,29 +577,19 @@ impl Interpreter {
             && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
         {
             let resolved_constraint = self.resolved_type_capture_name(constraint);
-            let type_error_kind = "X::TypeCheck::Binding::Parameter";
             // For &-sigil parameters, the type constraint specifies the
             // callable's return type, not the type of the value itself.
             // e.g. `Callable &x` means Callable[Callable], `Int &x` means Callable[Int].
             if pd.name.starts_with('&') {
                 // First, the value must be Callable
                 if !self.type_matches_value("Callable", &value) {
-                    let mut err = RuntimeError::new(format!(
-                        "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
-                        type_error_kind,
-                        pd.name,
-                        resolved_constraint,
-                        crate::runtime::value_type_name(&value),
-                        crate::runtime::utils::gist_value(&value)
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                    let exception = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                        ex_attrs,
-                    );
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(self
+                        .typecheck_binding_parameter_failure(
+                            &param_display_name(pd),
+                            &format!("Callable[{resolved_constraint}]"),
+                            &value,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                 }
                 // Then check the callable's return type matches the constraint
                 let return_type = self.callable_return_type(&value);
@@ -607,22 +597,13 @@ impl Interpreter {
                     .as_deref()
                     .is_some_and(|rt| rt == resolved_constraint);
                 if !return_ok {
-                    let mut err = RuntimeError::new(format!(
-                        "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
-                        type_error_kind,
-                        pd.name,
-                        resolved_constraint,
-                        crate::runtime::value_type_name(&value),
-                        crate::runtime::utils::gist_value(&value)
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                    let exception = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                        ex_attrs,
-                    );
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(self
+                        .typecheck_binding_parameter_failure(
+                            &param_display_name(pd),
+                            &format!("Callable[{resolved_constraint}]"),
+                            &value,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                 }
             } else if resolved_constraint.starts_with("::") {
                 // `::?CLASS` / `::?ROLE` / `::(expr)`: reported as a capture by
@@ -668,22 +649,22 @@ impl Interpreter {
                     source_name,
                     source_type_constraint,
                 ) {
-                    let mut err = RuntimeError::new(format!(
-                        "{}: Type check failed in binding to parameter '{}'; expected {} but got {} ({})",
-                        type_error_kind,
-                        pd.name,
-                        expected,
-                        crate::runtime::value_type_name(&value),
-                        crate::runtime::utils::gist_value(&value)
-                    ));
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                    let exception = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                        ex_attrs,
-                    );
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    // Rakudo names a `%` parameter's argument by its type alone.
+                    let err = if pd.name.starts_with('%') {
+                        RuntimeError::typecheck_binding_parameter_with_repr(
+                            &param_display_name(pd),
+                            &expected,
+                            &value,
+                            "",
+                        )
+                    } else {
+                        self.typecheck_binding_parameter_failure(
+                            &param_display_name(pd),
+                            &expected,
+                            &value,
+                        )
+                    };
+                    return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
             } else if !self.type_matches_value(&resolved_constraint, &value) {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
@@ -3338,24 +3319,13 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Any", &value)
                     {
-                        let mut err = RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Any but got {} ({})",
-                            if pd.name.is_empty() {
-                                "<anon>"
-                            } else {
-                                &pd.name
-                            },
-                            crate::runtime::value_type_name(&value),
-                            crate::runtime::utils::gist_value(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        return Err(self
+                            .typecheck_binding_parameter_failure(
+                                &param_display_name(pd),
+                                "Any",
+                                &value,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
                     }
                     // Implicit Positional constraint: untyped @-sigiled parameters
                     // require the argument to be Positional (Array, List, etc.).
@@ -3364,22 +3334,13 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Positional", &value)
                     {
-                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
-                        let mut err = RuntimeError::new(format!(
-                            "{}: Type check failed in binding to parameter '{}'; expected Positional but got {} ({})",
-                            type_error_kind,
-                            pd.name,
-                            crate::runtime::value_type_name(&value),
-                            crate::runtime::utils::gist_value(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        return Err(self
+                            .typecheck_binding_parameter_failure(
+                                &param_display_name(pd),
+                                "Positional",
+                                &value,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
                     }
                     // Implicit Associative constraint: untyped %-sigiled parameters
                     // require the argument to be Associative (Hash, Map, etc.).
@@ -3388,22 +3349,14 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Associative", &value)
                     {
-                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
-                        let mut err = RuntimeError::new(format!(
-                            "{}: Type check failed in binding to parameter '{}'; expected Associative but got {} ({})",
-                            type_error_kind,
-                            pd.name,
-                            crate::runtime::value_type_name(&value),
-                            crate::runtime::utils::gist_value(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        // Rakudo names a `%` parameter's argument by its type alone.
+                        return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                            &param_display_name(pd),
+                            "Associative",
+                            &value,
+                            "",
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                     }
                     // Implicit Callable constraint: untyped &-sigiled parameters
                     // require the argument to be Callable (Sub, Block, etc.).
@@ -3412,22 +3365,13 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Callable", &value)
                     {
-                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
-                        let mut err = RuntimeError::new(format!(
-                            "{}: Type check failed in binding to parameter '{}'; expected Callable but got {} ({})",
-                            type_error_kind,
-                            pd.name,
-                            crate::runtime::value_type_name(&value),
-                            crate::runtime::utils::gist_value(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        return Err(self
+                            .typecheck_binding_parameter_failure(
+                                &param_display_name(pd),
+                                "Callable",
+                                &value,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
                     }
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)

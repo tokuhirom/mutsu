@@ -2492,6 +2492,15 @@ pub(crate) enum OpCode {
         /// a ranking step that only runs when a `multi` declares both a native
         /// and a boxed candidate.
         literal_native_args: u32,
+        /// Every argument's type is known at compile time (a literal, a type
+        /// object, a variable declared with a type) and there is no named or
+        /// flattened argument -- the call shape rakudo's optimizer checks
+        /// statically. Only such a call reports a binding failure as the
+        /// compile-time `X::TypeCheck::Argument` ("Calling f(Str) will never
+        /// work with declared signature ..."); any other call keeps the
+        /// run-time `X::TypeCheck::Binding::Parameter` (#10640). See
+        /// `Compiler::static_arg_types`.
+        static_arg_types: bool,
     },
     /// An `nqp::` VALUE op (`nqp::add_i`, `nqp::ordat`, `nqp::atpos_i`, ...)
     /// with a fixed, all-positional argument list: pop `arity` operands, run
@@ -2561,6 +2570,8 @@ pub(crate) enum OpCode {
         /// a ranking step that only runs when a `multi` declares both a native
         /// and a boxed candidate.
         literal_native_args: u32,
+        /// See `CallFunc::static_arg_types`.
+        static_arg_types: bool,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
@@ -12152,6 +12163,10 @@ impl FastParamType {
 pub(crate) enum FastParamCheck {
     /// The parameter has no type constraint: nothing to check.
     Unconstrained,
+    /// An untyped `&c` parameter: no declared constraint, but the sigil
+    /// itself requires a `Callable` argument (rakudo: `sub g(&c) {}; g(1)`
+    /// dies with "expected Callable but got Int", #10640).
+    ImplicitCallable,
     /// Check `kind`; `name_sym` is the constraint name pre-interned, so the
     /// bare-type-object case (`sub f(Int $a); f(Int)`) compares two `Symbol`s
     /// instead of resolving one to a `&str` and comparing bytes.
@@ -12162,6 +12177,15 @@ pub(crate) enum FastParamCheck {
 }
 
 impl FastParamCheck {
+    /// The plan for parameter `pd`: [`Self::of`] its type constraint, except
+    /// that an untyped `&` parameter still checks the implicit `Callable`.
+    pub(crate) fn of_param(pd: &ParamDef) -> Option<Self> {
+        if pd.type_constraint.is_none() && pd.name.starts_with('&') && !pd.slurpy {
+            return Some(Self::ImplicitCallable);
+        }
+        Self::of(pd.type_constraint.as_ref())
+    }
+
     /// The plan for a `type_constraint` field, or `None` when the constraint is
     /// not one the light paths handle (such a routine never reaches them).
     pub(crate) fn of(constraint: Option<&String>) -> Option<Self> {
@@ -12765,7 +12789,7 @@ impl CompiledFunction {
         self.param_fast_types = self
             .param_defs
             .iter()
-            .map(|pd| FastParamCheck::of(pd.type_constraint.as_ref()))
+            .map(FastParamCheck::of_param)
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default();
         self.return_fast_type = self

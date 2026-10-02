@@ -436,10 +436,12 @@ impl Interpreter {
         // names before it ever consults the registry, so a `sub copy(...)`
         // whose bind declined here used to run the core `copy` (#9288).
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let saved_static = std::mem::replace(&mut self.static_call_args, site.static_arg_types);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
         let result = self.vm_call_function_fallback(&name, &args);
         self.literal_native_args = saved;
+        self.static_call_args = saved_static;
         result
     }
 

@@ -603,6 +603,7 @@ impl Interpreter {
         let mut cloned = Self {
             open_role_group: None,
             literal_native_args: 0,
+            static_call_args: false,
             env: self.env.clone(),
             output_sink: thread_output_sink,
             warn_output: String::new(),
