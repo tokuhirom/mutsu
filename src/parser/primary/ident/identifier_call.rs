@@ -1355,6 +1355,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        "proto" => {
+            // `proto method NAME(...) {*}` in expression position
+            // (`my constant &p = proto method handler(|) {*}`): the same
+            // declaration the statement path parses, whose value is the proto.
+            let (r, _) = ws(rest)?;
+            if keyword("method", r).is_some() || keyword("submethod", r).is_some() {
+                let (r, stmt) = crate::parser::stmt::proto_decl_pub(input)?;
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "token" | "regex" | "rule" => {
             // Anonymous declarator term: `token { ... }`, and — since rakudo's
             // `regex_def` is `<deflongname>? <signature>? '{' <p6regex> '}'`,
