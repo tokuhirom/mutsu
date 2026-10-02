@@ -1187,6 +1187,17 @@ impl Interpreter {
                 })
                 .unwrap();
         }
+        let package_array = crate::qualified::is_package_array(Symbol::intern(key));
+        if package_array
+            && let Some(stored) = self
+                .get_our_var(key)
+                .cloned()
+                .or_else(|| self.our_var_pseudo_unqualified(key))
+        {
+            // A prior call's env overlay has gone away. Restore the package
+            // container before mutating so the same array kind and data survive.
+            self.env.insert(key.to_string(), stored);
+        }
         // A plain lexical `@name` already present in the shared store routes
         // through the atomic store (see `push_to_existing_shared_array`); when
         // absent it is thread-local and falls through to the env path below.
@@ -1211,7 +1222,7 @@ impl Interpreter {
             if in_shared {
                 return self.shared_array_extend(key, values, false);
             }
-        } else if key.starts_with('@') && self.shared_vars_active {
+        } else if key.starts_with('@') && self.shared_vars_active && !package_array {
             // Attribute / twigil'd arrays keep the base-key in-place path
             // (per-instance identity — see `push_to_existing_shared_array`).
             // Drop env's copy of the Arc first so that shared_vars holds
@@ -1292,7 +1303,7 @@ impl Interpreter {
         if let Some(slot) = self.env_root_descended_mut(key)
             && matches!(slot.view(), ValueView::Array(..))
         {
-            return slot
+            let result = slot
                 .with_array_mut(|arc_items, kind| {
                     let items = crate::value::gc_data_mut(arc_items);
                     items.extend(values);
@@ -1303,6 +1314,10 @@ impl Interpreter {
                     Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
                 })
                 .unwrap();
+            if package_array {
+                self.set_our_var(key.to_string(), result.clone());
+            }
+            return result;
         }
         let mut items = match target_fallback.view() {
             ValueView::Array(v, ..) => v.to_vec(),
@@ -1310,7 +1325,15 @@ impl Interpreter {
         };
         items.extend(values);
         let result = Value::real_array(items);
-        self.env.insert(key.to_string(), result.clone());
+        let stored = if package_array {
+            Self::itemize_scalar_store_value(result.clone())
+        } else {
+            result.clone()
+        };
+        self.env.insert(key.to_string(), stored.clone());
+        if package_array {
+            self.set_our_var(key.to_string(), stored);
+        }
         result
     }
 

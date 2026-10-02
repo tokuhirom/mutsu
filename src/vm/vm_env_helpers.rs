@@ -238,7 +238,7 @@ impl Interpreter {
 
     /// Look up an `our`-scoped variable by trying the bare (unqualified) name
     /// after stripping pseudo-package prefixes like GLOBAL::, OUR::, etc.
-    pub(super) fn our_var_pseudo_unqualified(&self, name: &str) -> Option<Value> {
+    pub(crate) fn our_var_pseudo_unqualified(&self, name: &str) -> Option<Value> {
         Self::pseudo_package_unqualified_name(name)
             .and_then(|bare| self.get_our_var(&bare).cloned())
     }
