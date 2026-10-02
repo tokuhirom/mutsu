@@ -1646,6 +1646,10 @@ impl Interpreter {
                 .filter(|(short, qualified)| {
                     short != qualified
                         && !Self::is_builtin_type(short)
+                        // The compunit's own type (`unit class P::Sto;`) is reached as
+                        // `P::Sto`; its short name `Sto` is not in the importer's
+                        // scope unless the type is `is export`ed.
+                        && (qualified != module || exported_here.contains(short))
                         && (exported_here.contains(short)
                             || !self.is_my_scoped_package_item(qualified))
                 })

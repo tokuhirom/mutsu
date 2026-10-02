@@ -2013,7 +2013,10 @@ impl Interpreter {
                     .and_then(|pd| pd.type_constraint.as_deref())
                     .or(implicit_any_fail.then_some("Any"))
                 {
-                    let resolved_constraint = self.resolved_type_capture_name(constraint);
+                    let resolved_constraint = match pd {
+                        Some(pd) => self.resolved_param_constraint(pd, constraint),
+                        None => self.resolved_type_capture_name(constraint),
+                    };
                     // A native-int parameter binds the coerced value -- the
                     // same unbox/wrap the sub binders apply (#9533): an
                     // `int8` param wraps `200` to `-56`, and an Int-valued
@@ -2033,7 +2036,15 @@ impl Interpreter {
                     if native_err.is_none()
                         && ((skip_constraint_recheck
                             && self.constraint_is_user_subset(&resolved_constraint))
-                            || self.type_matches_value(&resolved_constraint, &val))
+                            || if pd.is_some_and(|pd| pd.name == "__type_only__")
+                                && !resolved_constraint.as_bytes().starts_with(b"::")
+                                && !self.is_resolvable_type(&resolved_constraint)
+                            {
+                                // A bare enum value / constant (`method m(Store)`).
+                                self.type_only_param_value_matches(&resolved_constraint, &val)
+                            } else {
+                                self.type_matches_value(&resolved_constraint, &val)
+                            })
                     {
                         param_values.push((binding_name, binding_sym, val));
                         arg_idx += 1;

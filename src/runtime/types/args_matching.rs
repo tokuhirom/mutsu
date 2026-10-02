@@ -490,7 +490,7 @@ impl Interpreter {
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
-                    let mut resolved_constraint = self.resolved_type_capture_name(constraint);
+                    let mut resolved_constraint = self.resolved_param_constraint(pd, constraint);
                     // An unsupplied optional binds its default (or, with no
                     // default, the bare type object), and `arg_for_checks` above
                     // stands in the type object either way. A `:D` smiley tested
@@ -555,41 +555,8 @@ impl Interpreter {
                         // An enum key's bare spelling lives in the enum-key namespace
                         // (#7914), so ask that first: the plain `env` key is a
                         // same-named `$`-scalar's storage and never the enum value.
-                        if let Some(expected_val) =
-                            self.enum_bare_value(&resolved_constraint).cloned()
+                        if !self.type_only_param_value_matches(&resolved_constraint, &dispatch_arg)
                         {
-                            if dispatch_arg != expected_val {
-                                return false;
-                            }
-                        } else if let Some(expected_val) =
-                            self.type_name_binding(&resolved_constraint)
-                        {
-                            // A `constant` bound to a value (`multi f(G)`):
-                            // rakudo smartmatches the argument against it,
-                            // which for a definite object is `===` -- WHICH
-                            // identity, not structural equality, so a fresh
-                            // `Point.new(v => 1)` does not bind to `G` unless
-                            // `Point` gives itself value semantics.
-                            //
-                            // The constant's type is the parameter's NOMINAL
-                            // type, checked first as for any parameter: an
-                            // argument of another type can never bind, and
-                            // rakudo never asks either side for its `WHICH`.
-                            // Warming first ran secp256k1's user `WHICH` on
-                            // `G` -- two field inversions -- for every `Int *
-                            // Int` that reached `multi infix:<*>(Int $n where
-                            // ..., G)` (#9967).
-                            if let ValueView::Instance { class_name, .. } = expected_val.view()
-                                && !self.type_matches_value(&class_name.resolve(), &dispatch_arg)
-                            {
-                                return false;
-                            }
-                            self.warm_which_identity_for_identity(&dispatch_arg);
-                            self.warm_which_identity_for_identity(&expected_val);
-                            if !crate::runtime::values_identical(&dispatch_arg, &expected_val) {
-                                return false;
-                            }
-                        } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {
                             return false;
                         }
                     } else if pd.name.starts_with('&') {
@@ -1136,6 +1103,76 @@ impl Interpreter {
                     ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
                 )
         })
+    }
+
+    /// [`Self::resolved_type_capture_name`] for a parameter's constraint, except
+    /// that a type-only parameter naming an enum value (`multi m(Store)`) keeps
+    /// its bare spelling even when a package short-name alias (`Store` for a
+    /// module's `Pkg::Store` class) would otherwise capture it.
+    // Cost: O(1) lookups.
+    pub(crate) fn resolved_param_constraint(&self, pd: &ParamDef, constraint: &str) -> String {
+        if self.type_only_enum_value_shadows_alias(pd, constraint) {
+            return constraint.to_string();
+        }
+        self.resolved_type_capture_name(constraint)
+    }
+
+    /// Whether `pd` is a type-only parameter whose bare name is an enum value
+    /// and not a directly registered type.
+    // Cost: O(1) lookups.
+    pub(crate) fn type_only_enum_value_shadows_alias(
+        &self,
+        pd: &ParamDef,
+        constraint: &str,
+    ) -> bool {
+        pd.name == "__type_only__"
+            && self.enum_bare_value(constraint).is_some()
+            && !self.has_type_direct(constraint)
+    }
+
+    /// Whether `arg` satisfies a type-only parameter whose bare identifier is not
+    /// a type: an enum value (`multi m(Store)`) or a `constant` bound to a value.
+    /// Shared by multi dispatch and the fast method binder so both agree.
+    // Cost: O(1) lookups plus one value comparison.
+    pub(crate) fn type_only_param_value_matches(
+        &mut self,
+        resolved_constraint: &str,
+        arg: &Value,
+    ) -> bool {
+        if let Some(expected_val) = self.enum_bare_value(resolved_constraint).cloned() {
+            if *arg != expected_val {
+                return false;
+            }
+        } else if let Some(expected_val) = self.type_name_binding(resolved_constraint) {
+            // A `constant` bound to a value (`multi f(G)`):
+            // rakudo smartmatches the argument against it,
+            // which for a definite object is `===` -- WHICH
+            // identity, not structural equality, so a fresh
+            // `Point.new(v => 1)` does not bind to `G` unless
+            // `Point` gives itself value semantics.
+            //
+            // The constant's type is the parameter's NOMINAL
+            // type, checked first as for any parameter: an
+            // argument of another type can never bind, and
+            // rakudo never asks either side for its `WHICH`.
+            // Warming first ran secp256k1's user `WHICH` on
+            // `G` -- two field inversions -- for every `Int *
+            // Int` that reached `multi infix:<*>(Int $n where
+            // ..., G)` (#9967).
+            if let ValueView::Instance { class_name, .. } = expected_val.view()
+                && !self.type_matches_value(&class_name.resolve(), arg)
+            {
+                return false;
+            }
+            self.warm_which_identity_for_identity(arg);
+            self.warm_which_identity_for_identity(&expected_val);
+            if !crate::runtime::values_identical(arg, &expected_val) {
+                return false;
+            }
+        } else if !self.type_matches_value(resolved_constraint, arg) {
+            return false;
+        }
+        true
     }
 
     pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
