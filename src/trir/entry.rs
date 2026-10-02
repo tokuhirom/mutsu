@@ -330,6 +330,9 @@ impl Interpreter {
                 if p.type_name == "str" && !val.is_str_value() {
                     return None;
                 }
+                if p.implicit_any && !self.light_arg_is_any(val) {
+                    return None;
+                }
                 if let Some(check) = &p.check {
                     if let Some(want) = check.defined
                         && crate::runtime::types::value_is_defined(val) != want
