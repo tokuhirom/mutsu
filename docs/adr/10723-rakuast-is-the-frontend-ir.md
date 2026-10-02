@@ -68,7 +68,7 @@ that ordinary programs never exercise.
 
 ### 1.3 Baseline: how far the round trip gets today (2026-10-02)
 
-Measured on every one of the 5638 `t/**/*.t` files with a release build of `main` (`8ddf12cf`),
+Measured on every one of the 5638 `t/**/*.t` files with a release build of `main` (`516446ee`, 2026-10-01),
 comparing a normal run against `EVAL(slurp($file).AST)` (exit status and the number of `ok`
 lines must match). All 5638 pass when run normally.
 
