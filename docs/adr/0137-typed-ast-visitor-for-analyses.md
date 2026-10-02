@@ -1,7 +1,8 @@
 # ADR-0137: AST analyses walk the AST through one typed visitor, never its serialized form
 
-- **Status**: Accepted (implemented for the four serde-based analyses; the hand-rolled walkers
-  are being ported under the `check-ast-walkers` ratchet — see "Implementation status")
+- **Status**: Accepted (implemented: every read-only analysis walker is on the visitor; the
+  `check-ast-walkers` baseline lists only annotated code generation, spines and by-design
+  partial walks — see "Implementation status")
 - **Date**: 2026-10-01
 - **Related**: [#10441](https://github.com/tokuhirom/mutsu/issues/10441),
   [ADR-0113](0113-frame-lexical-inner-subs.md) (frame-lexical proof),
@@ -116,3 +117,11 @@ a separate decision when the first rewriting pass wants one.
   `visit_name` stays `&str`), so an analysis collects borrows of the nodes it finds. The
   class body's nested-`has` collection became a visitor on it and now finds a `has` in any
   position below a method, in source order, as rakudo does (109 → 107).
+- **Close-out** (#10468): the RakuAST converter's declared-name scan, the last read-only
+  analysis left, is a visitor, so a type or constant declared in an `if` or loop body, a
+  closure or a `do` block resolves like a top-level one (`t/rakuast/rakuast-declared-name-nested.t`).
+  Every remaining baseline row carries a note: code generation (`compile_*`, TRIR, RakuAST
+  conversion, declaration plans), single-path spines, parser lowerings and parse functions,
+  shape matches and constant evaluators, renderers, and the by-design partial walks. The
+  rewriting passes are on `VisitMut` ([ADR-10499](10499-mutable-typed-ast-visitor.md)).
+  Count: 265 at the start of #10468 → 106.

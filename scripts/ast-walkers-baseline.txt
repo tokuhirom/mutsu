@@ -8,13 +8,13 @@
 
 src/chain_compare.rs                                 1  # build_chain_cmp_expr: lowering of a comparison chain into temps (builds a new tree)
 src/compiler/const_fold.rs                           1  # const_operand_mode is a constant evaluator (folding), not an analysis
-src/compiler/control_if.rs                           1
-src/compiler/decl_plan.rs                            3
+src/compiler/control_if.rs                           1  # code generation (compile_if_construct emits the if/elsif chain)
+src/compiler/decl_plan.rs                            3  # code generation (sub/class/role declaration plans: compile-time op construction, recursing into nested declarations)
 src/compiler/expr_binary.rs                          3  # 3 value-path rewrites/spines (subst_topic_var, retarget_chain_rhs over andthen/orelse chains; native_int_operand_signedness): stay hand-rolled; the chain-root name is Expr::lvalue_root
-src/compiler/expr_call.rs                            1
+src/compiler/expr_call.rs                            1  # code generation (compile_expr_call_inner)
 src/compiler/expr_closure.rs                         3  # 2 codegen (compile_*) + expr_refs_topic, an operand spine (is this operand the topic?)
 src/compiler/expr_helpers.rs                         2  # 2 spines/lowerings: subst pattern to text, container-name path
-src/compiler/expr_ops.rs                             1
+src/compiler/expr_ops.rs                             1  # code generation (compile_expr_meta_op)
 src/compiler/helpers_ast_utils.rs                    3  # assign_expr_for_lvalue lowering, peel_compound_assign spine, type_decl_shell_body transform (the lvalue/index-chain spines are Expr::lvalue_root / Expr::index_path)
 src/compiler/helpers_call_args.rs                    5  # 2 codegen (compile_*) + 3 value-path spines (needs_decont, bind_target_returns_aggregate*: statement tail)
 src/compiler/helpers_control_flow.rs                 1  # control_block_is_resume_safe: shape classifier over a CONTROL block's arms (single-default delegation)
@@ -46,7 +46,7 @@ src/parser/stmt/nested_block_methods.rs              1  # hoist_in_block mutates
 src/parser/stmt/simple/lib_paths.rs                  1  # static_path: constant evaluator of a path-method chain (`$?FILE.IO.parent.add(...)`)
 src/parser/stmt/sub/param_validate.rs                1  # literal_value_from_expr: constant evaluator of a signed literal
 src/parser/stmt/sub_param/where_constraint.rs        2  # 2 left-spine recursions (does the block lead with `*`?)
-src/rakuast/convert.rs                               7
+src/rakuast/convert.rs                               6  # RakuAST conversion (convert_stmt/convert_expr and their per-construct helpers): code generation over every node, by construction
 src/regex_tree.rs                                    3  # 3 renderers of an expression back to regex source text
 src/runtime/begin_prologue/mod.rs                    3  # partition_stmt/partition_will_begin are transforms (they move statements into the prologue); is_begin_time_stmt classifies one statement through its SyntheticBlock grouping
 src/runtime/begin_prologue/nested/decls.rs           2  # classifies a type body's members (is_pure_member): must not descend into method bodies
@@ -54,6 +54,6 @@ src/runtime/begin_prologue/package_body.rs           3  # splits a package body'
 src/runtime/begin_prologue/package_phasers.rs        2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
 src/runtime/run.rs                                   2  # 2 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue follow the last statement only, located by ast::last_value_stmt): stay hand-rolled
 src/runtime/types/mod.rs                             1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
-src/trir/compile/expr.rs                             3
+src/trir/compile/expr.rs                             3  # TRIR code generation (compile_expr / compile_expr_sink / compile_unary)
 src/whatever_curry/build.rs                          3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/whatever_curry/replace.rs                        1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
