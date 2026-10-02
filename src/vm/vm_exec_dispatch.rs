@@ -3236,7 +3236,7 @@ impl Interpreter {
                 // the container this asks for, so ask slice 3a's filter first.
                 // See the opcode's doc comment.
                 let raw_callee_possible = match method_name_idx {
-                    Some(idx) => crate::runtime::raw_invocant::native_method_returns_raw_invocant(
+                    Some(idx) => crate::runtime::raw_invocant::native_method_boxes_lvalue_invocant(
                         Self::const_str(code, *idx),
                     ),
                     // A dynamic method name is only knowable at run time; pass.

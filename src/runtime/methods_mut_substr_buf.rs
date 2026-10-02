@@ -14,6 +14,14 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // A boxed raw invocant (`native_method_writes_raw_invocant`): read the
+        // string through it and write the result back into it.
+        let container = target.is_container_ref().then(|| target.clone());
+        let target = if container.is_some() {
+            target.deref_container()
+        } else {
+            target
+        };
         // Positions and lengths count graphemes, like `.substr`.
         let s = target.to_string_value();
         let chars = crate::builtins::string_pos::grapheme_units(&s);
@@ -56,7 +64,11 @@ impl Interpreter {
         let new_str = format!("{}{}{}", prefix, replacement, suffix);
 
         let result = Value::str(new_str);
-        if let Some(var) = target_var {
+        if let Some(container) = container {
+            if let Some(stored) = self.assign_lvalue_container(&container, result) {
+                stored?;
+            }
+        } else if let Some(var) = target_var {
             // The target may be a sigilless parameter captured by a Proxy
             // callback. Its environment still holds the caller's
             // `ContainerRef`; replace-the-binding would sever that alias and

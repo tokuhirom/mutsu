@@ -85,6 +85,26 @@ pub(crate) fn native_method_returns_raw_invocant(method: &str) -> bool {
     }
 }
 
+/// Native lvalue methods that Rakudo declares with a raw invocant
+/// (`method substr-rw(\SELF: ...) is rw`) but that hand back a Proxy into the
+/// invocant rather than the invocant itself, so they are not rows of
+/// [`native_method_returns_raw_invocant`]: the write is the method's own
+/// (`Interpreter::assign_substr_rw`), applied to the boxed container.
+///
+/// Boxing the invocant is what lets `$c.s.substr-rw(0, 1) = "Z"` (an `is rw`
+/// accessor) and `$x.substr-rw(...) = v` on an `is rw` parameter reach the
+/// caller's container, which a by-name writeback cannot (#10790). `subbuf-rw`
+/// is deliberately absent: it splices the Buf's storage node in place, which
+/// every alias already sees.
+pub(crate) fn native_method_writes_raw_invocant(method: &str) -> bool {
+    method == "substr-rw"
+}
+
+/// The VM gates' native pre-filter: either native raw-invocant family.
+pub(crate) fn native_method_boxes_lvalue_invocant(method: &str) -> bool {
+    native_method_returns_raw_invocant(method) || native_method_writes_raw_invocant(method)
+}
+
 /// Whether a `ParamDef` declares a **raw invocant** — parameter zero bound to
 /// the caller's container rather than to a copy.
 ///
@@ -136,6 +156,25 @@ impl Interpreter {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
         }
         native_method_returns_raw_invocant(method)
+    }
+
+    /// Whether the VM should box the invocant of `target.method(args) = v`:
+    /// [`Self::method_returns_raw_invocant`], or a native
+    /// [`native_method_writes_raw_invocant`] method no user routine shadows.
+    pub(crate) fn lvalue_call_boxes_invocant(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+    ) -> bool {
+        if self.method_returns_raw_invocant(target, method, method_args) {
+            return true;
+        }
+        native_method_writes_raw_invocant(method) && {
+            let class_name = Self::raw_invocant_class_name(target);
+            self.resolve_method(&class_name, method, method_args)
+                .is_none()
+        }
     }
 
     /// The ADR-0067 slice 3b **arrival** oracle: does `target.method(args)`
