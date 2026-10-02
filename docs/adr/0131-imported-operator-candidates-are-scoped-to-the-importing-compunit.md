@@ -129,4 +129,4 @@ not only imported operators:
 outside the module, and a family a module imported is not visible to that
 module's own importer. Both match Rakudo. Candidates the *main script*
 declares are still unscoped. A module whose family shares a name with them
-still sees the script's candidates (#11004 follow-up).
+still sees the script's candidates (#11081).
