@@ -97,10 +97,15 @@ impl Interpreter {
         {
             return;
         }
-        let Some(mut cval) = container_override
-            .cloned()
-            .or_else(|| self.get_env_with_main_alias(container))
-        else {
+        let is_attr = Self::attr_twigil_base(container).is_some();
+        let Some(mut cval) = container_override.cloned().or_else(|| {
+            if is_attr {
+                // An attribute container lives in `self`'s attribute cell.
+                self.read_self_attr_cell(container)
+            } else {
+                self.get_env_with_main_alias(container)
+            }
+        }) else {
             return;
         };
         // Only a genuine mutable Array/Hash (or a cell wrapping one) is a
@@ -118,6 +123,9 @@ impl Interpreter {
         // autoviv reservation cannot realistically fail; this writeback
         // teardown has no error channel, so discard the Result.
         Self::assign_element_source_path(&mut cval, path, current);
+        if is_attr {
+            self.write_self_attr_cell(container, cval.clone());
+        }
         self.set_env_with_main_alias(container, cval.clone());
         self.update_local_if_exists(code, container, &cval);
     }
@@ -131,10 +139,19 @@ impl Interpreter {
             let _ = Self::assign_into_nested_container(target, &key, value);
             return;
         }
-        let Some(mut child) = Self::read_element_source_child(target, index) else {
-            return;
-        };
+        // A missing (or undefined) intermediate element autovivifies, shaped by
+        // the next subscript, like `%f<a>[0] = 7` does.
+        let existing = Self::read_element_source_child(target, index)
+            .filter(|child| Self::is_writable_element_container(child));
+        let mut child = existing.unwrap_or_else(|| {
+            if path[1].1 {
+                Value::real_array(Vec::new())
+            } else {
+                Value::hash(crate::value::HashData::default())
+            }
+        });
         Self::assign_element_source_path(&mut child, &path[1..], value);
+        let _ = Self::assign_into_nested_container(target, &key, child);
     }
 
     fn read_element_source_child(target: &Value, index: &Value) -> Option<Value> {

@@ -3050,37 +3050,36 @@ impl Compiler {
                 // the element value and tag the (container, index) source so the
                 // body's final `$_` is written back. `topic_readonly` is false.
                 let element_source = match topic {
-                    Expr::Index {
-                        target,
-                        index,
-                        is_positional,
-                    } => Self::container_var_name(target)
-                        // The element-source writeback optimization looks the
-                        // container up by name in the locals store. An instance
-                        // attribute (`%!h`, `@!a`, twigil `!`/`.`) lives in the
-                        // instance attribute store, not in locals, so the lookup
-                        // would read an empty container and bind `$_` to Nil.
-                        // Fall through to evaluating the element value directly
-                        // (read-only, but correct) for attribute containers.
-                        .filter(|c| {
-                            let after_sigil = c.strip_prefix(['$', '@', '%']).unwrap_or(c);
-                            !after_sigil.starts_with(['!', '.'])
-                        })
-                        .map(|c| (c, index, *is_positional)),
+                    Expr::Index { .. } => {
+                        let mut path = Vec::new();
+                        let root = topic.index_path(&mut path);
+                        Self::container_var_name(root).map(|c| (c, root, path))
+                    }
                     _ => None,
                 };
                 let topic_readonly;
                 let tagged_source;
-                if let Some((container, index, is_positional)) = element_source {
-                    if let Expr::Index { target, .. } = topic {
-                        self.compile_expr(target);
-                    }
-                    self.compile_expr(index);
+                if let Some((container, root, path)) = element_source {
                     let container_idx = self.code.add_constant(Value::str(container));
-                    self.code.emit(OpCode::TagElementSource {
-                        container_idx,
-                        positional: is_positional,
-                    });
+                    if path.len() == 1 {
+                        let (index, is_positional) = path[0];
+                        self.compile_expr(root);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::TagElementSource {
+                            container_idx,
+                            positional: is_positional,
+                        });
+                    } else {
+                        let positionals = path.iter().map(|(_, positional)| *positional).collect();
+                        self.compile_expr(root);
+                        for (index, _) in &path {
+                            self.compile_expr(index);
+                        }
+                        self.code.emit(OpCode::TagElementSourcePath {
+                            container_idx,
+                            positionals,
+                        });
+                    }
                     topic_readonly = false;
                     tagged_source = false;
                 } else {
