@@ -164,7 +164,10 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Enum { enum_type, .. } => {
             crate::value::user_facing_type_name(&enum_type.resolve()).into_owned()
         }
-        ValueView::Sub(_) | ValueView::WeakSub(_) => "Sub".to_string(),
+        // A pointy block / bare block is a `Block`, a method a `Method`, a
+        // routine a `Sub`: the same classification `.^name` reports.
+        ValueView::Sub(_) => crate::runtime::value_type_name(val).to_string(),
+        ValueView::WeakSub(_) => "Sub".to_string(),
         ValueView::Routine { .. } => "Sub".to_string(),
         ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => "Regex".to_string(),
         ValueView::Junction { .. } => "Junction".to_string(),
