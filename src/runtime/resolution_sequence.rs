@@ -514,6 +514,17 @@ impl Interpreter {
                 .iter()
                 .any(|c| matches!(c, ResolvedCandidate::User { def, .. } if def.is_multi));
             if !any_multi && all_matches.is_empty() {
+                // A lone non-multi candidate wins whether or not the arguments
+                // bind it, so the speculative match is skipped: it would only
+                // run each subset/`where` predicate a second time ahead of the
+                // binder's own check (#10935). A sub-signature parameter keeps
+                // the match: it is the only check of the `where` clauses nested
+                // in a slurpy's sub-signature (#10989).
+                if let [ResolvedCandidate::User { owner, def, .. }] = group
+                    && def.param_defs.iter().all(|pd| pd.sub_signature.is_none())
+                {
+                    return Some((owner.symbol(), (**def).clone()));
+                }
                 let mut first_visible: Option<(Symbol, MethodDef)> = None;
                 for c in group {
                     let ResolvedCandidate::User { owner, def, .. } = c else {
