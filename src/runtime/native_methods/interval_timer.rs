@@ -17,7 +17,7 @@
 //! values: `Instant::now()` panics on wasm32, where the same heap is driven by
 //! the cooperative scheduler's pump instead of by a thread.
 use crate::runtime::native_methods::SupplyEvent;
-use crate::runtime::thread_compat;
+use crate::thread_compat;
 use crate::value::Value;
 use std::collections::BinaryHeap;
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -125,6 +125,9 @@ fn ensure_driver() -> std::io::Result<()> {
 
 #[cfg(target_arch = "wasm32")]
 fn ensure_driver() -> std::io::Result<()> {
+    // No driver thread: `wasm_sched::pump` fires the timers when a waiter
+    // would block.
+    crate::wasm_sched::set_timer_source(wasm_fire_next_timer);
     Ok(())
 }
 
@@ -152,7 +155,7 @@ fn run_due_actions(due: Vec<TimerEntry>) -> Vec<TimerEntry> {
 /// scheduler's signal that a waiter can never be woken.
 ///
 /// This is the wasm stand-in for the driver thread: same heap, same actions,
-/// but driven from [`crate::runtime::wasm_sched::pump`] at the points where a
+/// but driven from [`crate::wasm_sched::pump`] at the points where a
 /// native build would be blocked waiting.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn wasm_fire_next_timer() -> bool {
@@ -161,7 +164,7 @@ pub(crate) fn wasm_fire_next_timer() -> bool {
         Some(entry) => entry.next,
         None => return false,
     };
-    crate::runtime::wasm_sched::advance_clock_to(deadline);
+    crate::wasm_sched::advance_clock_to(deadline);
     let now = thread_compat::mono_now();
     let mut due = Vec::new();
     {

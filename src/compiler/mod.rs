@@ -1132,7 +1132,6 @@ pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
 pub(crate) mod routine_scans;
-pub(crate) mod scope_scan;
 mod static_call_args;
 mod stmt;
 mod subst_thunk;
@@ -1220,8 +1219,9 @@ pub(crate) struct Compiler {
     /// it learns its target name too late to be answered any other way. Empty for a
     /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
     enclosing_scopes: Vec<lex_scope::ScopeFrame>,
-    /// Scalar names the compilation unit writes through `OUTER::` (`$OUTER::x
-    /// = 1`, `$OUTER::x := $y`, `$OUTER::x++`), each with whether one of those
+    /// Names the compilation unit writes through `OUTER::` (`$OUTER::x = 1`,
+    /// `$OUTER::x := $y`, `$OUTER::x++`, any mention of `@OUTER::a` /
+    /// `%OUTER::h`), each with whether one of those
     /// writes is a `:=`. A declaration of such a name shares its binding in a
     /// cell from the start (see `outer_ref`), so a write that later reaches it
     /// past a shadow lands where the slot, the env and every capture see it.

@@ -284,6 +284,7 @@ impl Interpreter {
             is_method: false,
             is_submethod: false,
             is_block: false,
+            is_inlined_block: false,
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
@@ -321,6 +322,7 @@ impl Interpreter {
             is_method: true,
             is_submethod,
             is_block: false,
+            is_inlined_block: false,
             is_hidden_from_backtrace,
             def_file,
             invocation_id,
@@ -333,6 +335,7 @@ impl Interpreter {
     /// body was written in, known when the frame comes from a closure value
     /// (`SubData::source_file`); an inlined bare block passes `None` and is
     /// attributed to the routine that lexically encloses it.
+    // Cost: O(1) amortized.
     pub(crate) fn push_block_routine_with_location(
         &mut self,
         package: Symbol,
@@ -340,6 +343,32 @@ impl Interpreter {
         line: Option<u32>,
         file: Option<Symbol>,
         def_file: Option<Symbol>,
+    ) {
+        self.push_block_frame(package, name, line, file, def_file, false);
+    }
+
+    /// Push the frame of an inlined bare block -- a statement-level `{ ... }`
+    /// run in place rather than called. It is anonymous and belongs to the
+    /// routine that lexically encloses it (#10786).
+    // Cost: O(1) amortized.
+    pub(crate) fn push_inlined_block_frame(
+        &mut self,
+        package: Symbol,
+        line: Option<u32>,
+        file: Option<Symbol>,
+    ) {
+        self.push_block_frame(package, Symbol::intern(""), line, file, None, true);
+    }
+
+    // Cost: O(1) amortized.
+    fn push_block_frame(
+        &mut self,
+        package: Symbol,
+        name: Symbol,
+        line: Option<u32>,
+        file: Option<Symbol>,
+        def_file: Option<Symbol>,
+        is_inlined: bool,
     ) {
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
@@ -352,6 +381,7 @@ impl Interpreter {
             is_method: false,
             is_submethod: false,
             is_block: true,
+            is_inlined_block: is_inlined,
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
@@ -716,6 +746,16 @@ impl Interpreter {
                     .lazy_pull_entry_routine_depth
                     .is_some_and(|entry| routine_depth > entry);
                 if nested_vm_call || nested_interpreter_call {
+                    self.gather_suspend_pending = true;
+                    return Ok(());
+                }
+                if self.take_defer_to_op_end {
+                    // Inside an opcode that takes once per element (`@a».take`):
+                    // it cannot be resumed mid-iteration, so let it finish (its
+                    // iteration is finite) and suspend at its own end
+                    // (`suspend_after_take_deferring_op`). No overshoot
+                    // backstop: signalling here would drop the rest of its
+                    // elements (#9785).
                     self.gather_suspend_pending = true;
                     return Ok(());
                 }
@@ -1136,6 +1176,7 @@ mod call_site_file_tests {
             is_method: false,
             is_submethod: false,
             is_block,
+            is_inlined_block: false,
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id: 1,

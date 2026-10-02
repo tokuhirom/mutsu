@@ -47,7 +47,7 @@ impl Interpreter {
     /// the `n` it needs, as Rakudo's does, so an unbounded iterator that does
     /// not claim `is-lazy` still answers (#9353).
     // Cost: O(limit) `pull-one` calls.
-    fn pull_iterator_prefix_to_vec(
+    pub(crate) fn pull_iterator_prefix_to_vec(
         &mut self,
         iterator: &Value,
         limit: usize,
@@ -485,8 +485,21 @@ impl Interpreter {
             }
             return Ok(target);
         };
-        if matches!(method, "is-lazy" | "gist") {
+        if matches!(method, "is-lazy" | "gist" | "map" | "grep") {
             self.resolve_seq_iterator_laziness(&body)?;
+        }
+        // `.map`/`.grep` on a lazy, untouched iterator Seq consumes the Seq
+        // but must not drain the (possibly infinite) iterator: hand the
+        // iterator to a fresh lazy Seq, which `is_lazy_pipe_source` turns into
+        // a pull-on-demand stage (#10891).
+        if matches!(method, "map" | "grep")
+            && body.is_lazy()
+            && body.is_empty()
+            && let Some(iterator) = body.take_iterator_source()?
+        {
+            let fresh = SeqBody::deferred(SeqSource::Iterator(iterator));
+            fresh.mark_lazy();
+            return Ok(Value::seq_body(fresh));
         }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
@@ -1123,7 +1136,7 @@ impl Interpreter {
     /// Pre-scanned with `needs_element_itemization` so the overwhelmingly
     /// common case -- a flat sequence of scalars -- keeps the vector it was
     /// handed, with no rebuild (ADR-0040 §5.2).
-    fn itemize_lazy_array_elements(items: Vec<Value>) -> Vec<Value> {
+    pub(super) fn itemize_lazy_array_elements(items: Vec<Value>) -> Vec<Value> {
         if !items.iter().any(Value::needs_element_itemization) {
             return items;
         }
@@ -1423,63 +1436,17 @@ impl Interpreter {
         Ok(items)
     }
 
-    /// Force a gather-based LazyList to produce at least `needed` elements.
-    /// Uses coroutine-style suspend/resume: the gather body pauses at each
-    /// `take` once enough elements are available, and can be resumed later.
-    /// Side effects (e.g. `$count++`) are correctly scoped because we pause
-    /// mid-execution rather than re-running from scratch.
+    /// Force a gather-based LazyList to produce at least `needed` elements
+    /// and answer the first `needed` (fewer when it runs out). See
+    /// [`Self::force_lazy_list_vm_window`].
+    // Cost: O(needed) for the copy, plus whatever producing the missing
+    // elements costs.
     pub(crate) fn force_lazy_list_vm_n(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
-        // GC safepoint (§9.2a `lazy_force`): the bounded pull/resume boundary.
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::LazyForce, 0);
-        let caller_code = self.current_code;
-        // The body runs under its OWN readonly context, not the consumer
-        // frame's (see take_readonly_state).
-        let saved_readonly = self.take_readonly_state();
-        // See `force_lazy_list_vm`: the body's `samewith` is lexical.
-        let pushed_samewith = self.push_captured_samewith_context(&list.env);
-        let saved_unit = list
-            .env
-            .get("__mutsu_gather_unit")
-            .and_then(|value| match value.view() {
-                ValueView::Str(unit) => Some(std::mem::replace(
-                    &mut self.current_unit,
-                    crate::symbol::Symbol::intern(unit.as_str()),
-                )),
-                _ => None,
-            });
-        // See `force_lazy_list_vm`: restore the package the gather was
-        // WRITTEN in for the duration of this (possibly resumed) pull.
-        let saved_package = self.enter_gather_package(&list.env);
-        // A lazy gather body runs in its own captured env, not the forcing
-        // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        // A method call, as in `force_lazy_list_vm` (#10746).
-        let r = self.with_catch_marker(|this| {
-            this.in_method_call(|this| this.force_lazy_list_vm_n_inner(list, needed))
-        });
-        if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
-        }
-        if let Some(unit) = saved_unit {
-            self.current_unit = unit;
-        }
-        self.pop_captured_samewith_context(pushed_samewith);
-        self.restore_readonly_state(saved_readonly);
-        self.reconcile_caller_after_lazy_force(caller_code);
-        // See force_lazy_list_vm: array-context elements store Any, not Nil,
-        // and are itemized like any other element store.
-        if list.in_array_context() {
-            return match r {
-                Ok(items) => Ok(Self::itemize_lazy_array_elements(
-                    self.decay_nil_vec_elements(items),
-                )),
-                err => err,
-            };
-        }
-        r
+        self.force_lazy_list_vm_window(list, 0, needed)
     }
 
     /// Number of leading elements a list-shaped subscript needs: largest

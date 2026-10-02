@@ -4186,14 +4186,8 @@ impl Interpreter {
             OpCode::PushBlockFrame => {
                 let call_line = self.current_source_line();
                 let call_file = self.executing_source_file_sym();
-                self.push_block_routine_with_location(
-                    self.current_package_sym(),
-                    Symbol::intern(""),
-                    call_line,
-                    call_file,
-                    // An inlined bare block belongs to its enclosing routine.
-                    None,
-                );
+                // An inlined bare block belongs to its enclosing routine.
+                self.push_inlined_block_frame(self.current_package_sym(), call_line, call_file);
                 *ip += 1;
             }
             // Cost: O(1).
@@ -6038,19 +6032,21 @@ impl Interpreter {
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 // A method call, for `resolve_onlystar` (#10746).
-                let result = self.in_method_call(|vm| {
-                    vm.exec_hyper_method_call_op(
-                        code,
-                        *name_idx,
-                        *arity,
-                        *modifier_idx,
-                        *quoted,
-                        *target_name_idx,
-                        *arg_sources_idx,
-                    )
+                let result = self.run_take_deferring_op(|vm| {
+                    vm.in_method_call(|vm| {
+                        vm.exec_hyper_method_call_op(
+                            code,
+                            *name_idx,
+                            *arity,
+                            *modifier_idx,
+                            *quoted,
+                            *target_name_idx,
+                            *arg_sources_idx,
+                        )
+                    })
                 });
                 match result {
-                    Ok(()) => {}
+                    Ok(()) => self.suspend_after_take_deferring_op(code, *ip)?,
                     Err(e) => {
                         // A per-element method may raise a resumable warn (the
                         // hyper op re-raises it carrying the full result); record
@@ -6074,16 +6070,18 @@ impl Interpreter {
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 // A method call, for `resolve_onlystar` (#10746).
-                let result = self.in_method_call(|vm| {
-                    vm.exec_hyper_method_call_dynamic_op(
-                        code,
-                        *arity,
-                        *modifier_idx,
-                        *arg_sources_idx,
-                    )
+                let result = self.run_take_deferring_op(|vm| {
+                    vm.in_method_call(|vm| {
+                        vm.exec_hyper_method_call_dynamic_op(
+                            code,
+                            *arity,
+                            *modifier_idx,
+                            *arg_sources_idx,
+                        )
+                    })
                 });
                 match result {
-                    Ok(()) => {}
+                    Ok(()) => self.suspend_after_take_deferring_op(code, *ip)?,
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
@@ -6115,14 +6113,17 @@ impl Interpreter {
                 writeback,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_hyper_func_op(
-                    code,
-                    *name_idx,
-                    *dwim_left,
-                    *dwim_right,
-                    *writeback,
-                    compiled_fns,
-                )?;
+                self.run_take_deferring_op(|vm| {
+                    vm.exec_hyper_func_op(
+                        code,
+                        *name_idx,
+                        *dwim_left,
+                        *dwim_right,
+                        *writeback,
+                        compiled_fns,
+                    )
+                })?;
+                self.suspend_after_take_deferring_op(code, *ip)?;
                 *ip += 1;
             }
 
@@ -6741,7 +6742,13 @@ impl Interpreter {
                 slot,
             } => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_outer_var(code, name, *depth as usize, *slot);
+                // A read yields the value: the binding may live in a shared
+                // cell (a capture, or one a write past a shadow published,
+                // #10827), and a cell on the stack would be written back into
+                // itself by a mutating method call on it.
+                let val = self
+                    .get_outer_var(code, name, *depth as usize, *slot)
+                    .into_deref();
                 self.stack.push(val);
                 *ip += 1;
             }

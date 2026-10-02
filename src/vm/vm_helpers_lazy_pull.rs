@@ -1,18 +1,56 @@
 use super::*;
 
 impl Interpreter {
+    /// The first `needed` elements of `list` (fewer when it runs out).
+    // Cost: O(needed) for the copy, plus whatever producing the missing
+    // elements costs.
     pub(super) fn force_lazy_list_vm_n_inner(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.force_lazy_list_vm_window_inner(list, 0, needed)
+    }
+
+    /// Elements `from..needed` of `list` (clamped to what it produces):
+    /// fill the cache to `needed`, then copy only the window.
+    // Cost: O(needed - from) for the copy, plus whatever producing the
+    // missing elements costs.
+    pub(super) fn force_lazy_list_vm_window_inner(
+        &mut self,
+        list: &LazyList,
+        from: usize,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        match self.fill_lazy_list_vm_n(list, needed)? {
+            Some(items) => Ok(items.get(from..).map(<[Value]>::to_vec).unwrap_or_default()),
+            None => Ok(list.cache_window(from, needed)),
+        }
+    }
+
+    /// Make `list.cache` hold at least `needed` elements, or every element
+    /// when the list has fewer. Answers `None` when the result is in the
+    /// cache, and `Some(items)` for the two shapes whose result is not
+    /// cache-backed (a `WALK` list, the interpreter prefix bridge) — the
+    /// caller then reads that vector instead.
+    ///
+    /// Returning nothing in the cache-backed case is the point (#10780): a
+    /// `for` loop pulls one element per iteration, and copying the whole
+    /// reified prefix back on every pull made it quadratic.
+    // Cost: O(1) amortized per newly produced element, plus the per-element
+    // cost of the producer (user code for a gather or a map/grep pipe).
+    fn fill_lazy_list_vm_n(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
         // Check cache first
         {
             let cache = list.cache.lock().unwrap();
             if let Some(cached) = cache.as_ref()
                 && cached.len() >= needed
             {
-                return Ok(cached[..needed].to_vec());
+                return Ok(None);
             }
         }
 
@@ -22,24 +60,27 @@ impl Interpreter {
         // and a BOUNDED pull (`.head(n)`) must do the same or it reads an
         // empty cache and answers `()`.
         if list.scan_spec.is_some() {
-            return self.force_scan_lazy_list(list, needed);
+            self.fill_scan_lazy_list(list, needed)?;
+            return Ok(None);
         }
 
         // Lazy `WALK(method)()`: invoke the next MRO-level candidate(s) on demand,
         // one method call per pulled element (Rakudo's lazy WALK semantics).
         if list.walk_pending.is_some() {
-            return self.force_walk_pending(list, needed);
+            return self.force_walk_pending(list, needed).map(Some);
         }
 
         // Lazy `IO::CatHandle.lines` / `.handles`: pull the next line / handle
         // from the live cat instance on demand.
         if list.cat_pull.is_some() {
-            return self.force_cat_pull(list, needed);
+            self.fill_cat_pull(list, needed)?;
+            return Ok(None);
         }
 
         // For sequence-spec lazy lists, generate more elements on demand
         if let Some(ref spec) = list.sequence_spec {
-            return Self::extend_sequence_cache(list, spec, needed);
+            Self::fill_sequence_cache(list, spec, needed);
+            return Ok(None);
         }
 
         // For infinite closure-based sequences (`1, 1, * + * ... *`), re-invoke
@@ -47,23 +88,24 @@ impl Interpreter {
         // demand, so an unbounded sequence stays lazy instead of truncating to
         // its eager prefix.
         if list.closure_seq.is_some() {
-            return self.extend_closure_sequence(list, needed);
+            self.fill_closure_sequence(list, needed)?;
+            return Ok(None);
         }
 
         // Lazy map/grep pipeline: pull from the source and apply the stage on
         // demand (one source element at a time), so an infinite source stays
         // lazy instead of materializing.
         if list.lazy_pipe.is_some() {
-            return self.force_lazy_pipe(list, needed);
+            self.fill_lazy_pipe(list, needed)?;
+            return Ok(None);
         }
 
         // Check if coroutine is finished (body completed, all elements produced)
         if let Some(ref coro_mutex) = list.coroutine {
             let coro = coro_mutex.lock().unwrap();
             if coro.finished {
-                // Body is done; return whatever we have cached
-                let cache = list.cache.lock().unwrap();
-                return Ok(cache.as_ref().cloned().unwrap_or_default());
+                // Body is done; whatever we have cached is the whole list.
+                return Ok(None);
             }
         }
 
@@ -72,7 +114,7 @@ impl Interpreter {
             (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
             _ => {
                 // Fall back to interpreter prefix bridge
-                return self.force_lazy_list_prefix_bridge(list, needed);
+                return self.force_lazy_list_prefix_bridge(list, needed).map(Some);
             }
         };
 
@@ -161,11 +203,14 @@ impl Interpreter {
         // fire this run's first loop boundary.
         self.gather_suspend_pending = false;
 
-        // If resuming, restore already-cached items into the gather collector
-        // so that the take_value limit check accounts for them.
-        let _already_cached = if has_prior_state {
-            let cache = list.cache.lock().unwrap();
-            let items = cache.as_ref().cloned().unwrap_or_default();
+        // If resuming, MOVE the already-cached items into the gather collector
+        // so the take_value limit check (and a `:=` self-reference read)
+        // accounts for them; they move back into the cache when the run ends.
+        // Copying them in and the grown collector back out cost O(cached) per
+        // pull, which made a one-element-per-iteration consumer quadratic
+        // (#10780).
+        let already_cached = if has_prior_state {
+            let items = list.cache.lock().unwrap().take().unwrap_or_default();
             let len = items.len();
             self.push_gather_items(items);
             len
@@ -183,6 +228,9 @@ impl Interpreter {
         let saved_routine_depth = self
             .lazy_pull_entry_routine_depth
             .replace(self.routine_stack_len());
+        // An enclosing multi-take op's deferral belongs to the OUTER pull; this
+        // pull's own takes suspend normally.
+        let saved_take_defer_to_op_end = std::mem::replace(&mut self.take_defer_to_op_end, false);
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -231,6 +279,7 @@ impl Interpreter {
 
         self.lazy_pull_entry_call_depth = saved_pull_depth;
         self.lazy_pull_entry_routine_depth = saved_routine_depth;
+        self.take_defer_to_op_end = saved_take_defer_to_op_end;
         // The body may finish (or error) with the deferred-suspension flag
         // still set (straight-line takes, last iteration); it must not leak
         // into an unrelated later loop.
@@ -310,17 +359,18 @@ impl Interpreter {
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;
 
+        // The collector is append-only and started from the moved-out cache:
+        // on success it is the new cache; on error the cache keeps only what
+        // it held before this pull.
+        let mut items = items;
+        if run_result.is_err() {
+            items.truncate(already_cached);
+        }
+        if run_result.is_ok() || has_prior_state {
+            *list.cache.lock().unwrap() = Some(items);
+        }
         run_result?;
-
-        // Update cache
-        *list.cache.lock().unwrap() = Some(items.clone());
-
-        let result = if items.len() > needed {
-            items[..needed].to_vec()
-        } else {
-            items
-        };
-        Ok(result)
+        Ok(None)
     }
 
     /// Produce at least `needed` output elements of a lazy `map`/`grep` pipeline
@@ -331,11 +381,20 @@ impl Interpreter {
     /// list's cache. A `grep` stage filters (0 or 1 output per source element);
     /// a `map` stage transforms (a `Slip` result contributes multiple). The
     /// source itself may be another lazy pipeline, so chains nest.
+    // Cost: O(needed) for the copy, plus the pipe's per-element cost.
     pub(crate) fn force_lazy_pipe(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.fill_lazy_pipe(list, needed)?;
+        Ok(list.cache_window(0, needed))
+    }
+
+    /// [`Self::force_lazy_pipe`] without the copy: run the pipe until its
+    /// cache holds `needed` elements or the source is exhausted.
+    // Cost: O(1) amortized per produced element, plus the stage callback.
+    fn fill_lazy_pipe(&mut self, list: &LazyList, needed: usize) -> Result<(), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -354,8 +413,7 @@ impl Interpreter {
                 if let Some(c) = cache.as_ref()
                     && (c.len() >= needed || done)
                 {
-                    let n = needed.min(c.len());
-                    return Ok(c[..n].to_vec());
+                    return Ok(());
                 }
             }
 
@@ -389,11 +447,7 @@ impl Interpreter {
                     // Source exhausted: mark done and return what we have.
                     let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
                     spec.done = true;
-                    drop(spec);
-                    let cache = list.cache.lock().unwrap();
-                    let c = cache.as_ref().cloned().unwrap_or_default();
-                    let n = needed.min(c.len());
-                    return Ok(c[..n].to_vec());
+                    return Ok(());
                 }
                 Some(elem) if index_transform.is_some() => {
                     // `.pairs`/`.antipairs`/`.kv` over a lazy source: emit the
@@ -462,11 +516,7 @@ impl Interpreter {
                             // `last`: terminate the sequence, current element excluded.
                             let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
                             spec.done = true;
-                            drop(spec);
-                            let cache = list.cache.lock().unwrap();
-                            let c = cache.as_ref().cloned().unwrap_or_default();
-                            let n = needed.min(c.len());
-                            return Ok(c[..n].to_vec());
+                            return Ok(());
                         }
                         // `next`: skip the current element and continue.
                         Err(e) if e.is_next() => Vec::new(),
@@ -492,11 +542,19 @@ impl Interpreter {
     /// the user's `$cat`, mid-iteration mutations (`.chomp = …`, `.nl-in = …`,
     /// `.encoding: …`) take effect on later pulls and `.path`/`on-switch` track
     /// the current handle, matching Rakudo's lazy iterators.
+    // Cost: O(needed) for the copy, plus one cat read per pulled element.
     pub(crate) fn force_cat_pull(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.fill_cat_pull(list, needed)?;
+        Ok(list.cache_window(0, needed))
+    }
+
+    /// [`Self::force_cat_pull`] without the copy.
+    // Cost: O(1) amortized per pulled element, plus the cat read.
+    fn fill_cat_pull(&mut self, list: &LazyList, needed: usize) -> Result<(), RuntimeError> {
         use crate::value::CatPullMode;
         loop {
             // Fast path: enough cached, or the cat is exhausted.
@@ -510,8 +568,7 @@ impl Interpreter {
                 if let Some(c) = cache.as_ref()
                     && (c.len() >= needed || done)
                 {
-                    let n = needed.min(c.len());
-                    return Ok(c[..n].to_vec());
+                    return Ok(());
                 }
             }
 
@@ -551,11 +608,7 @@ impl Interpreter {
             if pulled.is_nil() {
                 let mut spec = list.cat_pull.as_ref().unwrap().lock().unwrap();
                 spec.done = true;
-                drop(spec);
-                let cache = list.cache.lock().unwrap();
-                let c = cache.as_ref().cloned().unwrap_or_default();
-                let n = needed.min(c.len());
-                return Ok(c[..n].to_vec());
+                return Ok(());
             }
 
             let mut cache = list.cache.lock().unwrap();

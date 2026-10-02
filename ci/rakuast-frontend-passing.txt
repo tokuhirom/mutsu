@@ -14,6 +14,7 @@ t/collections/array/array-methods.t
 t/collections/array/array-mutate.t
 t/collections/array/array-push-byref-coherence.t
 t/collections/array/push-on-index.t
+t/collections/buf-accepts-element-count.t
 t/collections/count-only.t
 t/collections/elem-identity-element-container.t
 t/collections/element-array-share.t
@@ -115,6 +116,7 @@ t/collections/set-bag-mix/setbagmix-sort.t
 t/collections/subscript/angle-subscript-word-chars.t
 t/collections/subscript/array-empty-semicolon-slices.t
 t/collections/subscript/at-pos-call-rw-argument.t
+t/collections/subscript/at-pos-return-rw-assign.t
 t/collections/subscript/buf-index-slice-assign.t
 t/collections/subscript/computed-index-single-itemize.t
 t/collections/subscript/computed-slice-result.t
@@ -310,6 +312,7 @@ t/grammar/grammar-token-instance-method.t
 t/io/argfiles-eof-stdin.t
 t/io/chdir-path-check.t
 t/io/chmod-mode-listop-postfix.t
+t/io/copy-param-shadows-caller-readonly.t
 t/io/dir-seq-map-gist.t
 t/io/indir-return-value-laziness.t
 t/io/io-colon-invocant.t
@@ -343,6 +346,7 @@ t/io/slurpy-params.t
 t/io/slurpy-string-range.t
 t/io/sprintf-slurpy-flatten.t
 t/io/spurt-no-content-and-chmod-list.t
+t/io/tail-io-builtin-return.t
 t/lang/adverbs/adverbial-pair-variable-name.t
 t/lang/and-not-loose-precedence.t
 t/lang/angle-bracket-hyphen.t
@@ -439,6 +443,7 @@ t/modules/begin-once-in-module-routine.t
 t/modules/begin-package-dynvar.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
+t/modules/classhow-methods-package.t
 t/modules/classhow-set-name-package.t
 t/modules/compound-declared-type-does-not-shadow-core-in-module.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
@@ -544,6 +549,7 @@ t/modules/our-in-dead-branch-is-installed.t
 t/modules/package-block-my-sub-hoist.t
 t/modules/package-main-lexical-capture.t
 t/modules/package-scope-outer-lexical-preserved.t
+t/modules/package-stash-sigiled-entry-not-itemized.t
 t/modules/proto-package-qualified-visibility.t
 t/modules/resources-second-use-module.t
 t/modules/role-body-use-module-imports-own-operator.t
@@ -602,6 +608,7 @@ t/oo/attribute/attr-array-hash-whole-assign.t
 t/oo/attribute/attr-default-trailing-comma.t
 t/oo/attribute/attribute-sigil-collision.t
 t/oo/attribute/attribute-table.t
+t/oo/attribute/callwith-reaches-ancestor-accessor.t
 t/oo/attribute/can-ok-sees-attribute-accessors.t
 t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/datetime-attributes-unmarshal.t
@@ -609,6 +616,9 @@ t/oo/attribute/given-without-attribute-element.t
 t/oo/attribute/hash-attribute-seq-construction.t
 t/oo/attribute/interp-self-accessor-call.t
 t/oo/attribute/method-table-reports-rw-accessor.t
+t/oo/attribute/multi-method-mixed-attribute-type-object-specificity.t
+t/oo/attribute/multi-method-where-invocant-attribute.t
+t/oo/attribute/rw-arg-attribute-source-writeback.t
 t/oo/attribute/self-accessor-decontainerizes.t
 t/oo/attribute/sigil-context-accessor.t
 t/oo/attribute/slip-to-array-attribute.t
@@ -619,6 +629,7 @@ t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-static-compound-assignment.t
 t/oo/class/class-body-sub-forward-ref.t
 t/oo/class/class.t
+t/oo/class/classhow-lookup-mro.t
 t/oo/class/classify-bucket-itemized.t
 t/oo/class/classify-pair-iteration.t
 t/oo/class/classify-whatever-identity.t
@@ -651,11 +662,15 @@ t/oo/method/add-method-pointy-invocant.t
 t/oo/method/builtin-subclass-method-override.t
 t/oo/method/callframe-code-name-method-unit.t
 t/oo/method/class-body-write-to-method-captured-lexical.t
+t/oo/method/classhow-lookup-method-instance-callable.t
+t/oo/method/classhow-lookup-method-is-dispatcher-multi.t
+t/oo/method/classhow-method-names.t
 t/oo/method/coercion-str-method-dispatch.t
 t/oo/method/colon-method-arg-loose-ops.t
 t/oo/method/empty-body-method-compiled.t
 t/oo/method/has-decl-nested-in-method-closures.t
 t/oo/method/hyper-hash-method-scalar.t
+t/oo/method/hyper-method-call-subscript.t
 t/oo/method/indirect-method-notation.t
 t/oo/method/interp-array-slice-method.t
 t/oo/method/interp-method-arg-quotes.t
@@ -663,6 +678,7 @@ t/oo/method/invalid-qualifier-method-name.t
 t/oo/method/method-call-colon-empty-args.t
 t/oo/method/method-call-colonpair-adverb.t
 t/oo/method/method-captured-var-writeback-coherence.t
+t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-leave-tail-if-value.t
 t/oo/method/method-lookup-signature-parameter-identity.t
@@ -670,9 +686,15 @@ t/oo/method/method-param-array-hash-alias.t
 t/oo/method/method-postcircumfix-operator.t
 t/oo/method/method-rw-writeback-attr-source-no-leak.t
 t/oo/method/mixin-method-compiled.t
+t/oo/method/multi-method-distance-ignores-named-args.t
+t/oo/method/multi-method.t
 t/oo/method/mut-method-receiver-writeback-coherence.t
 t/oo/method/mutating-method-colon.t
 t/oo/method/nested-method-captured-writeback-coherence.t
+t/oo/method/nested-sub-in-method-compiled.t
+t/oo/method/private-method-apostrophe-name.t
+t/oo/method/private-method-call-in-closure.t
+t/oo/method/private-method-compiled-dispatch.t
 t/oo/method/recursive-param-method-call.t
 t/oo/method/reduction-zero-arg-method-call.t
 t/oo/method/routine-submethod-routine-name-wrong.t
@@ -686,6 +708,7 @@ t/oo/mixin-list-iteration.t
 t/oo/mop/can-built-in-mro-candidates.t
 t/oo/mop/can-does.t
 t/oo/mop/can-method.t
+t/oo/mop/metamodel-declares-method.t
 t/oo/role/builtin-role-composes-its-own-roles.t
 t/oo/role/but-role-list.t
 t/oo/role/classhow-can-mixin-role.t
@@ -693,6 +716,7 @@ t/oo/role/classhow-methods-mixin-role.t
 t/oo/role/dependent-role-attribute-default.t
 t/oo/role/dist-in-role-method.t
 t/oo/role/does-compound-role-name-dynamic-mixin.t
+t/oo/role/dynamic-add-role-begin-private-method.t
 t/oo/role/imperative-does-parameterized-role.t
 t/oo/role/mixin-role-application-order.t
 t/oo/role/punned-role-name.t
@@ -704,6 +728,7 @@ t/oo/role/role-param-qualified-type-cross-file-import.t
 t/oo/role/role-param-qualified-type-reuse-across-roles.t
 t/oo/role/role-param-qualified-type-reuse.t
 t/oo/role/role-pun-private-attribute.t
+t/oo/role/role-submethod-composed-into-class.t
 t/oo/role/run-nested-role-body.t
 t/oo/role/seq-does-sequence-role.t
 t/oo/self-is-lexical-in-blocks.t
@@ -893,6 +918,7 @@ t/routines/closure/whatevercode-pair-arg-arity.t
 t/routines/core-postcircumfix-routine.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/builtin-shadow-dispatch.t
+t/routines/dispatch/callwith-rw-passthrough.t
 t/routines/dispatch/listop-imported-multi-extends-core.t
 t/routines/dispatch/listop-multi-extends-core.t
 t/routines/dispatch/multi-aggregate-rejects-nil.t
@@ -901,15 +927,18 @@ t/routines/dispatch/multi-flexible-arity-beats-untyped-catchall.t
 t/routines/dispatch/multi-frame-accumulation-coherence.t
 t/routines/dispatch/multi-function-resolution-cache.t
 t/routines/dispatch/multi-nonconstant-default-no-spurious-warn.t
+t/routines/dispatch/multi-optional-typed-dispatch.t
 t/routines/dispatch/multi-ref-dispatch.t
 t/routines/dispatch/multi-where-runs-once-when-nothing-binds.t
 t/routines/dispatch/multi-where-subset-tie.t
 t/routines/dispatch/multiline-pod-declarator.t
+t/routines/dispatch/nextwith-fewer-args-arity-mismatch.t
 t/routines/dispatch/nontrivial-proto-body-nested-sub-compiled.t
 t/routines/dispatch/routine-candidates-multi-flag.t
 t/routines/dispatch/say-multi-args.t
 t/routines/dispatch/sprintf-user-str-dispatch.t
 t/routines/dispatch/whatevercode-multiarg-subscript.t
+t/routines/dispatch/wrap-candidate-unwrap-restore.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/gather-infinite-coroutine.t
 t/routines/inner-sub-same-name-across-routines.t
@@ -929,12 +958,14 @@ t/routines/routine-topic-is-fresh-any-not-caller.t
 t/routines/routine-value-self-recursion-after-import-scope-pop.t
 t/routines/signature/array-param-positional-bind-failover.t
 t/routines/signature/block-topic-explicit-params.t
+t/routines/signature/bracket-destructuring-params.t
 t/routines/signature/builtin-shadow-default-param.t
 t/routines/signature/captured-param-cell-not-in-shared-vars-lane.t
 t/routines/signature/closure-captured-bang-var-through-code-param.t
 t/routines/signature/cro-client-nested-param-shadow.t
 t/routines/signature/defaulted-param-positional-light.t
 t/routines/signature/for-loop-param-getupvalue-hijack.t
+t/routines/signature/for-topic-shadows-topic-param.t
 t/routines/signature/hash-parametric-keyof.t
 t/routines/signature/implicit-topic-block-signature-gist.t
 t/routines/signature/map-array-optional-trailing-param.t
@@ -1167,6 +1198,7 @@ t/vm/scope/named-sub-lexical-scope.t
 t/vm/scope/process-stash-compound-assign.t
 t/vm/scope/process-stash-visible-across-sub-boundary.t
 t/vm/scope/pseudo-core-stash.t
+t/vm/scope/pseudo-stash-lexical-outer-frames.t
 t/vm/scope/pseudo-stash-my-body-root.t
 t/vm/scope/pseudo-stash-my-nested-block.t
 t/vm/scope/pseudostash-type.t

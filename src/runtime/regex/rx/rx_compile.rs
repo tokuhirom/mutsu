@@ -10,7 +10,7 @@
 use super::super::regex_helpers::{
     AlternationListFlags, atom_contains_alternation, atom_contains_backref, count_capture_groups,
 };
-use super::super::regex_match_plain_view::plain_iter_needs_view;
+use super::super::regex_match_plain_view::{atom_has_numbered_alias, plain_iter_needs_view};
 use super::{RxOp, RxProgram};
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
 
@@ -781,9 +781,13 @@ impl Compiler {
             self.ops.push(RxOp::Height(h));
         }
         let alt_body = atom_contains_alternation(&token.atom);
-        // Code in the body sees the iterations so far folded.
-        let iter_level =
-            fold.filter(|_| plain_iter_needs_view(&token.atom, count_capture_groups(token)));
+        // Code in the body sees the iterations so far folded; a `$N=` in the
+        // body numbers from the iteration's first slot, as the walk's nested
+        // match of the body does.
+        let iter_level = fold.filter(|_| {
+            plain_iter_needs_view(&token.atom, count_capture_groups(token))
+                || atom_has_numbered_alias(&token.atom)
+        });
         if let Some((pos_base, tok)) = iter_level {
             self.ops.push(RxOp::OpenPlainIter { tok, pos_base });
         }

@@ -235,6 +235,13 @@ impl Compiler {
             self.compile_expr(&via_var);
             return;
         }
+        // A mutating call on `@OUTER::a` writes its result back to the binding
+        // `OUTER::` names, which past a shadow is reached through its own key
+        // (#10827, #10857).
+        let target_name = match self.outer_write_target(&target_name, false) {
+            Some(outer) => outer,
+            None => target_name,
+        };
         // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
         // Only for local variables (not captured closures) to avoid COW env
         // sync issues. Custom positional containers captured by a closure use

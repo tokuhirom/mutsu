@@ -695,6 +695,14 @@ impl Interpreter {
         // return `value`. (roast S06-advanced/return.t: a container holding
         // `Nil` passes `--> Callable:D`, exactly as a plain `Nil` does.)
         let checked = value.deref_container();
+        // A `Proxy` is a container too: rakudo checks what its FETCH yields and
+        // hands the Proxy itself back, so a write still reaches its STORE
+        // (`method m(--> Str) is rw { Proxy.new(...) }`, #10811).
+        let checked = if checked.is_proxy_value() {
+            self.auto_fetch_proxy(&checked)?
+        } else {
+            checked
+        };
         // Nil and Failure pass through unconditionally
         if checked.is_nil() || Self::is_failure_value(&checked) {
             return Ok(value);

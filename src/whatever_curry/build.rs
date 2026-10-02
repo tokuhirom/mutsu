@@ -3,9 +3,9 @@
 //! parser used to build eagerly (`wrap_whatevercode`, pre-ADR-0033).
 
 use super::replace::{replace_whatever_numbered, replace_whatever_single};
+use crate::ast::scope_scan::is_code_object;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
-use crate::compiler::scope_scan::is_code_object;
 use crate::parser::{contains_whatever, is_whatever, should_wrap_whatevercode};
 use crate::regex_tree::RegexNode;
 use crate::symbol::Symbol;

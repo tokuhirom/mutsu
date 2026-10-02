@@ -84,10 +84,10 @@ pub(crate) fn advance_clock(secs: f64) {
     }
 }
 
-/// Advance the virtual clock so that [`crate::runtime::thread_compat::mono_now`]
+/// Advance the virtual clock so that [`crate::thread_compat::mono_now`]
 /// reaches `deadline` (no-op when it is already there).
 pub(crate) fn advance_clock_to(deadline: f64) {
-    advance_clock(deadline - crate::runtime::thread_compat::mono_now());
+    advance_clock(deadline - crate::thread_compat::mono_now());
 }
 
 /// Queue `f` to run later on the single thread, and hand back the slot its
@@ -182,7 +182,21 @@ pub(crate) fn pump() -> bool {
     if run_one() {
         return true;
     }
-    crate::runtime::native_methods::interval_timer::wasm_fire_next_timer()
+    TIMER_SOURCE.get().is_some_and(|fire_next| fire_next())
+}
+
+/// Fires the earliest pending timer, jumping the virtual clock to its deadline;
+/// `false` when no timer is pending. The timer heap lives above this module
+/// (`runtime::native_methods::interval_timer`), so it registers itself here
+/// when the first timer is armed (#10779) — until then there is nothing for
+/// [`pump`] to fire.
+static TIMER_SOURCE: std::sync::OnceLock<fn() -> bool> = std::sync::OnceLock::new();
+
+/// Register the timer heap's "fire the next timer" step for [`pump`].
+/// Idempotent: the first registration wins.
+// Cost: O(1).
+pub(crate) fn set_timer_source(fire_next: fn() -> bool) {
+    let _ = TIMER_SOURCE.set(fire_next);
 }
 
 /// Run everything that is ready, so `start { say "hi" }` still prints when the

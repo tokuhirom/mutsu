@@ -846,6 +846,7 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 // Native type-name predicates live below the parser (issue #10779).
 pub(crate) use crate::native_types;
+mod lazy_seq_raku;
 pub(crate) mod nativecall;
 #[cfg(feature = "libffi")]
 pub(crate) mod nativecall_callback;
@@ -979,7 +980,6 @@ mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
 mod test_module_predicates;
-pub(crate) mod thread_compat;
 mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
@@ -997,9 +997,6 @@ mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
-/// Cooperative scheduler standing in for OS threads in the browser.
-#[cfg(target_arch = "wasm32")]
-pub(crate) mod wasm_sched;
 mod which_identity;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod worker_pool;
@@ -1878,6 +1875,11 @@ pub(crate) struct RoutineFrame {
     pub is_submethod: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
+    /// Whether this block frame is an *inlined* bare block (a statement-level
+    /// `{ ... }` run in place), not a code object that was called. Rakudo
+    /// inlines such a block, so it is no frame of its own for a `{*}`'s
+    /// `X::NoDispatcher` name (#10786); a backtrace still shows it.
+    pub is_inlined_block: bool,
     /// Whether this routine carries `is hidden-from-backtrace`.
     pub is_hidden_from_backtrace: bool,
     /// The file this routine's BODY lives in (None = same as the caller /
@@ -3826,7 +3828,7 @@ pub struct Interpreter {
     /// taps for the rewritten subscription — see
     /// `Interpreter::normalize_promise_whenever_markers`.
     pub(crate) pending_promise_whenever_arms: Vec<(crate::value::SharedPromise, Value)>,
-    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::runtime::thread_compat::Instant)>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::thread_compat::Instant)>>,
     /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
     /// `react`. When a stream consumer is registered for an emitter's
     /// `supplier_id`, `emit` delivers the value to the consumer callback
@@ -5030,6 +5032,13 @@ pub struct Interpreter {
     /// and roast pins its side-effect timing (S04-statements/gather.t
     /// "gather is lazy"). Saved/restored on loop-op entry/exit.
     pub(crate) lazy_take_boundary_defer: bool,
+    /// True while an opcode that `take`s once per element of its own internal
+    /// loop (a hyper method call, `@a».take`) is executing in the current
+    /// frame. A take-limit hit then parks `gather_suspend_pending` instead of
+    /// signalling, and the op suspends after it completes — see
+    /// `vm/vm_take_deferring_op.rs` (#9785). Saved/cleared around each lazy
+    /// pull so a nested pull's own takes still suspend at the take.
+    pub(crate) take_defer_to_op_end: bool,
     /// Call-frame depth (`call_frames.len()`) at entry to the innermost active
     /// lazy-gather pull (`force_lazy_list_vm_n_inner`), `None` outside one.
     /// The pull driver can only snapshot/resume ITS OWN frame (ip, stack,

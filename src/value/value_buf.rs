@@ -204,7 +204,7 @@ fn elem_to_u64(v: &Value) -> u64 {
         // representation stored those as-is and converted lazily on read, so
         // encoding at write time has to do the same conversion or they silently
         // become zeros (`roast/S32-container/buf.t` 3/14/16).
-        _ => crate::runtime::to_int(v) as u64,
+        _ => super::numeric_coerce::to_int(v) as u64,
     }
 }
 
@@ -243,7 +243,7 @@ fn elem_bits(v: &Value, width: u8, kind: ElemKind) -> u64 {
     if kind != ElemKind::Float {
         return elem_to_u64(v);
     }
-    let f = crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
+    let f = super::numeric_coerce::to_float_value(v).unwrap_or(0.0);
     if width == 4 {
         (f as f32).to_bits() as u64
     } else {

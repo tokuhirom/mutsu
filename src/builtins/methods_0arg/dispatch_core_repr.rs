@@ -984,7 +984,10 @@ pub(super) fn dispatch(
         // (raku: `(...)`). Finite/`cat_pull` lazy lists fall through to force.
         ValueView::LazyList(ll)
             if (method == "gist" || method == "raku" || method == "perl")
-                && ll.renders_lazy_placeholder() =>
+                && ll.renders_lazy_placeholder()
+                // A bare lazy Seq's `.raku` reifies a prefix, which needs the
+                // interpreter (`Interpreter::lazy_seq_raku`): decline.
+                && !(method != "gist" && !ll.in_array_context()) =>
         {
             Some(Ok(Value::str(crate::value::lazy_list_placeholder(
                 method,

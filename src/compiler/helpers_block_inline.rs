@@ -44,6 +44,28 @@ impl Compiler {
                 }
                 true
             }
+            // The tail `if` of a `when`/`default`/`given` body that is itself
+            // an `is rw` routine's tail: the taken branch's tail is the
+            // routine's lvalue return, exactly as for a routine's own tail
+            // `if` (`compile_routine_tail_if`). `with $p { if .. { } else {
+            // %!h{$p} } }` lowers to `if { given }`, so it reaches here (#10811).
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+                is_statement_modifier,
+                ..
+            } if rw_branch => {
+                self.compile_routine_tail_if(
+                    cond,
+                    then_branch,
+                    else_branch,
+                    binding_var,
+                    *is_statement_modifier,
+                );
+                true
+            }
             Stmt::If {
                 cond,
                 then_branch,
@@ -773,12 +795,12 @@ struct HeredocScopeScan<'a> {
 impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_none() {
-            super::scope_scan::walk_stmt_own_scope(self, stmt);
+            crate::ast::scope_scan::walk_stmt_own_scope(self, stmt);
         }
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if self.found.is_some() || super::scope_scan::opens_own_scope(expr) {
+        if self.found.is_some() || crate::ast::scope_scan::opens_own_scope(expr) {
             return;
         }
         match expr {

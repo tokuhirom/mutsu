@@ -94,7 +94,7 @@ impl GrepAdverb {
 }
 
 static THREAD_HANDLES: std::sync::LazyLock<
-    Mutex<HashMap<u64, crate::runtime::thread_compat::JoinHandle<()>>>,
+    Mutex<HashMap<u64, crate::thread_compat::JoinHandle<()>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);

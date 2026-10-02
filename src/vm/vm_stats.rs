@@ -98,12 +98,6 @@ fn resolver_method_by_name() -> &'static Mutex<HashMap<String, u64>> {
 }
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
-static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
-/// Entries actually copied by those deep copies (the sum of the map's length at
-/// each one). The *count* alone cannot tell a copy of a 900-entry frame env from
-/// a copy of an empty scoped overlay, and only the former is a cost that grows
-/// with the size of the program; this is the number that does.
-static ENV_DEEP_COPY_ENTRIES: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
@@ -123,24 +117,6 @@ static PARAM_DEFAULT_CONSTS: AtomicU64 = AtomicU64::new(0);
 // runtime-compiled blocks add later).
 static CONST_POOL_ADDS: AtomicU64 = AtomicU64::new(0);
 static CONST_POOL_DEDUP_HITS: AtomicU64 = AtomicU64::new(0);
-
-// GC Level 1a counters (ADR-0001/0002, docs/gc-level1-detailed-design.md
-// §8/§9.4a). As of §11 step 4 the candidate buffer exists, so
-// `candidate_pushes`/`dedup_hits` are live (they increment when `MUTSU_GC` is
-// on and a `Gc` handle is dropped with survivors). The collection counters
-// still read 0 — the synchronous collector lands in §11 step 8. Note that no
-// `Value` variant is migrated to `Gc<T>` yet (§11 step 5+), so ordinary program
-// runs push nothing today. Success criterion once migration lands (§8):
-// `gc_candidate_pushes == 0` on the `fib` benchmark, proving the
-// scalar/container type filter keeps int-heavy hot paths GC-cost-free.
-static GC_CANDIDATE_PUSHES: AtomicU64 = AtomicU64::new(0);
-static GC_CANDIDATE_DEDUP_HITS: AtomicU64 = AtomicU64::new(0);
-static GC_COLLECTIONS: AtomicU64 = AtomicU64::new(0);
-static GC_RECLAIMED_NODES: AtomicU64 = AtomicU64::new(0);
-static GC_RECLAIMED_CYCLES: AtomicU64 = AtomicU64::new(0);
-static GC_PAUSE_NS_TOTAL: AtomicU64 = AtomicU64::new(0);
-static GC_PAUSE_NS_MAX: AtomicU64 = AtomicU64::new(0);
-static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 
 // ADR-0016 P2 diagnostics: how often a stored regex capture node
 // (`Arc<RegexCaptures>`) is mutated through `Arc::make_mut` while shared
@@ -1214,18 +1190,6 @@ pub(crate) fn record_clone_env() {
     }
 }
 
-/// Record an actual O(env_size) deep copy of the env HashMap, triggered when
-/// `Arc::make_mut` clones a shared env on first mutation (e.g. the first env
-/// write inside a method body whose frame holds a clone of the env). This is
-/// the real cost the dual-store work targets, not `clone_env`.
-#[inline]
-pub(crate) fn record_env_deep_copy(entries: usize) {
-    if enabled() {
-        ENV_DEEP_COPY.fetch_add(1, Ordering::Relaxed);
-        ENV_DEEP_COPY_ENTRIES.fetch_add(entries as u64, Ordering::Relaxed);
-    }
-}
-
 /// Record one parameter default the general binder bound: `evaluated` when
 /// the default's AST had to be run through `eval_block_value`, false when it
 /// was an immutable scalar literal bound directly.
@@ -1250,10 +1214,6 @@ pub(crate) fn record_env_flush(slots: u64) {
     }
 }
 
-/// Record a GC cycle-candidate buffer push: a mutation chokepoint flagged a
-/// GC-managed node as a possible cycle member (design doc §4.2). Wired from
-/// `gc::gc_ptr::buffer_candidate` (§11 step 4), but only reachable once a
-/// `Value` variant is `Gc`-managed (§11 step 5) — dead until then.
 #[inline]
 /// Record one `add_constant` call; `deduped` = it reused an existing pool slot.
 pub(crate) fn record_const_add(deduped: bool) {
@@ -1262,43 +1222,6 @@ pub(crate) fn record_const_add(deduped: bool) {
         if deduped {
             CONST_POOL_DEDUP_HITS.fetch_add(1, Ordering::Relaxed);
         }
-    }
-}
-
-pub(crate) fn record_gc_candidate_push() {
-    if enabled() {
-        GC_CANDIDATE_PUSHES.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-/// Record that a candidate push deduplicated against an already-buffered node
-/// instead of adding a new entry. Wired from `gc::gc_ptr::buffer_candidate`,
-/// reachable only once a `Value` variant is `Gc`-managed (§11 step 5).
-#[inline]
-pub(crate) fn record_gc_candidate_dedup_hit() {
-    if enabled() {
-        GC_CANDIDATE_DEDUP_HITS.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-/// Record one completed collect cycle: `roots_scanned` nodes visited from the
-/// root set, `reclaimed_nodes`/`reclaimed_cycles` freed, taking `pause_ns`.
-/// Wired from `gc::collect::collect_cycles`, which has no production caller
-/// until safepoint wiring lands (§11 step 8), so this stays dead until then.
-#[inline]
-pub(crate) fn record_gc_collection(
-    roots_scanned: u64,
-    reclaimed_nodes: u64,
-    reclaimed_cycles: u64,
-    pause_ns: u64,
-) {
-    if enabled() {
-        GC_COLLECTIONS.fetch_add(1, Ordering::Relaxed);
-        GC_ROOTS_SCANNED.fetch_add(roots_scanned, Ordering::Relaxed);
-        GC_RECLAIMED_NODES.fetch_add(reclaimed_nodes, Ordering::Relaxed);
-        GC_RECLAIMED_CYCLES.fetch_add(reclaimed_cycles, Ordering::Relaxed);
-        GC_PAUSE_NS_TOTAL.fetch_add(pause_ns, Ordering::Relaxed);
-        GC_PAUSE_NS_MAX.fetch_max(pause_ns, Ordering::Relaxed);
     }
 }
 
@@ -1338,8 +1261,7 @@ pub(crate) fn dump() {
         "[mutsu vm-stats] function-call opcodes={f_total} interpreter_fallbacks={f_fallback} ({f_pct:.1}% of opcodes) interpreter_carrier={f_carrier} (EVAL/pseudo-package, not tree-walk)"
     );
     let clone_env = CLONE_ENV.load(Ordering::Relaxed);
-    let deep_copy = ENV_DEEP_COPY.load(Ordering::Relaxed);
-    let deep_copy_entries = ENV_DEEP_COPY_ENTRIES.load(Ordering::Relaxed);
+    let (deep_copy, deep_copy_entries) = crate::env::stats::snapshot();
     let env_flush = ENV_FLUSH.load(Ordering::Relaxed);
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     eprintln!(
@@ -1363,14 +1285,16 @@ pub(crate) fn dump() {
     // GC Level 1a: candidate_pushes/dedup_hits are live as of §11 step 4
     // (nonzero only with MUTSU_GC=on once a Value variant is Gc-managed);
     // the collection counters stay zero until the collector lands (§11 step 8).
-    let gc_collections = GC_COLLECTIONS.load(Ordering::Relaxed);
-    let gc_candidate_pushes = GC_CANDIDATE_PUSHES.load(Ordering::Relaxed);
-    let gc_dedup_hits = GC_CANDIDATE_DEDUP_HITS.load(Ordering::Relaxed);
-    let gc_reclaimed_nodes = GC_RECLAIMED_NODES.load(Ordering::Relaxed);
-    let gc_reclaimed_cycles = GC_RECLAIMED_CYCLES.load(Ordering::Relaxed);
-    let gc_pause_ns_total = GC_PAUSE_NS_TOTAL.load(Ordering::Relaxed);
-    let gc_pause_ns_max = GC_PAUSE_NS_MAX.load(Ordering::Relaxed);
-    let gc_roots_scanned = GC_ROOTS_SCANNED.load(Ordering::Relaxed);
+    let crate::gc::stats::GcCounts {
+        collections: gc_collections,
+        candidate_pushes: gc_candidate_pushes,
+        dedup_hits: gc_dedup_hits,
+        reclaimed_nodes: gc_reclaimed_nodes,
+        reclaimed_cycles: gc_reclaimed_cycles,
+        pause_ns_total: gc_pause_ns_total,
+        pause_ns_max: gc_pause_ns_max,
+        roots_scanned: gc_roots_scanned,
+    } = crate::gc::stats::snapshot();
     // The ADR-0003 size trigger's effective threshold at exit (BASE unless a
     // collect adapted it; 0 = size trigger disabled). Observable proof of the
     // adaptive backoff for tests/operators.
@@ -1716,7 +1640,7 @@ pub(crate) fn dump() {
     let jit_bailouts = JIT_BAILOUTS.load(Ordering::Relaxed);
     // Tier B GetLocal fast-path spoiler latches (J4d): nonzero means every
     // inline local read fell back to the shim for the rest of the run.
-    let cells = crate::vm::vm_jit::CONTAINER_CELLS.load(Ordering::Relaxed);
+    let cells = crate::value::CONTAINER_CELLS.load(Ordering::Relaxed);
     let caller_binds = crate::vm::vm_jit::CALLER_VAR_BINDS.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds}"

@@ -41,7 +41,11 @@ pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
     if let Some(ValueView::Array(items, ..)) = attributes.get("list").map(Value::view)
         && !items.is_empty()
     {
-        let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
+        // An unbound interior slot iterates as `Mu` (`match_list_view`).
+        let items_raku: Vec<String> = items
+            .iter()
+            .map(|v| value_raku_repr(&v.clone().unbound_capture_as_mu()))
+            .collect();
         let trailing = if items.len() == 1 { "," } else { "" };
         // `:list(( ... ))`: an outer paren for the `:list(...)` adverb plus an
         // inner paren for the captured List literal — both must be closed.
@@ -257,5 +261,6 @@ pub(super) fn match_chunks(attributes: &AttrMap) -> Value {
         result.push(Value::pair("~".to_string(), Value::str(text)));
     }
 
-    Value::array(result)
+    // raku's `Match.chunks` is a `Seq` (its `.caps` stays a `List`).
+    Value::seq(result)
 }

@@ -521,7 +521,7 @@ pub(crate) struct TaskHandle<T> {
     #[cfg(not(target_arch = "wasm32"))]
     rx: std::sync::mpsc::Receiver<T>,
     #[cfg(target_arch = "wasm32")]
-    inner: crate::runtime::thread_compat::JoinHandle<T>,
+    inner: crate::thread_compat::JoinHandle<T>,
 }
 
 impl<T> TaskHandle<T> {

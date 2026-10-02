@@ -141,6 +141,14 @@ impl Interpreter {
                 {
                     default
                 }
+                // A `List` hole reads as `Nil` (rakudo's `List.AT-POS` on an
+                // nqp null): the `Mu` slot a Match's `.list` view leaves for
+                // an unbound positional capture (`match_list_view`).
+                ValueView::Package(name)
+                    if kind == ArrayKind::List && name == "Mu" && items.hole_at(idx) =>
+                {
+                    Value::NIL
+                }
                 // Shaped arrays are pre-allocated with Nil placeholders; an
                 // uninitialized in-range slot reads as the element default
                 // (e.g. 0 for `array[int]`). Non-shaped arrays may legitimately

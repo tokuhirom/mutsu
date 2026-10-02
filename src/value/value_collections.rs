@@ -325,8 +325,11 @@ impl ArrayData {
         match self.items[self.head..].get(i).map(Value::view) {
             None => true,
             Some(crate::value::ValueView::Package(name)) => {
-                let is_gap_marker =
-                    name == "Any" || self.value_type.as_deref().is_some_and(|t| name == t);
+                // `Mu` is the marker a Match's `.list` view leaves in an
+                // unbound positional capture slot (`match_list_view`).
+                let is_gap_marker = name == "Any"
+                    || name == "Mu"
+                    || self.value_type.as_deref().is_some_and(|t| name == t);
                 is_gap_marker && self.initialized.as_ref().is_some_and(|s| !s.contains(&i))
             }
             Some(_) => false,

@@ -1,6 +1,6 @@
 //! One façade over "run this concurrently", "wait", and "what time is it" —
 //! OS threads and real clocks natively, the cooperative queue and virtual clock
-//! of `crate::runtime::wasm_sched` on `wasm32`.
+//! of `crate::wasm_sched` on `wasm32`.
 //!
 //! Every spawn site in the interpreter goes through
 //! [`crate::runtime::builtins_system::spawn_user_thread`] /
@@ -17,7 +17,7 @@ pub(crate) struct JoinHandle<T> {
     #[cfg(not(target_arch = "wasm32"))]
     inner: std::thread::JoinHandle<T>,
     #[cfg(target_arch = "wasm32")]
-    inner: super::wasm_sched::PendingTask<T>,
+    inner: crate::wasm_sched::PendingTask<T>,
 }
 
 impl<T> JoinHandle<T> {
@@ -70,7 +70,7 @@ where
     T: Send + 'static,
 {
     Ok(JoinHandle {
-        inner: super::wasm_sched::spawn(f),
+        inner: crate::wasm_sched::spawn(f),
     })
 }
 
@@ -89,10 +89,10 @@ pub(crate) fn sleep(duration: Duration) {
     #[cfg(target_arch = "wasm32")]
     {
         let deadline = mono_now() + duration.as_secs_f64();
-        while mono_now() < deadline && super::wasm_sched::has_ready_tasks() {
-            super::wasm_sched::pump();
+        while mono_now() < deadline && crate::wasm_sched::has_ready_tasks() {
+            crate::wasm_sched::pump();
         }
-        super::wasm_sched::advance_clock_to(deadline);
+        crate::wasm_sched::advance_clock_to(deadline);
     }
 }
 
@@ -114,7 +114,7 @@ pub(crate) fn mono_now() -> f64 {
         // been advanced by. `Date.now()` can step backwards across an NTP
         // adjustment where a true monotonic clock would not; over the lifetime
         // of one page that is not worth a second clock.
-        js_epoch_secs() + super::wasm_sched::clock_offset_secs()
+        js_epoch_secs() + crate::wasm_sched::clock_offset_secs()
     }
 }
 

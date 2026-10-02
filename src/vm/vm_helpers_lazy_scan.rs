@@ -68,7 +68,16 @@ impl Interpreter {
                 }
                 Ok(Some(Value::num(s)))
             }
-            ValueView::Seq(items) => Ok(items.get(idx).cloned()),
+            // A lazy `Seq.new($iterator)` source is pulled only as far as
+            // `idx` (#10891); any other Seq is read as it stands.
+            ValueView::Seq(body) => {
+                if idx >= body.len() && body.unpulled_iterator().is_some() {
+                    body.extend_from_iterator(idx + 1, |iterator, count| {
+                        self.pull_iterator_prefix_to_vec(iterator, count)
+                    })?;
+                }
+                Ok(body.get(idx).cloned())
+            }
             ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
@@ -84,8 +93,8 @@ impl Interpreter {
                 {
                     return Ok(Some(v.clone()));
                 }
-                let items = self.force_lazy_list_vm_n(&ll, idx + 1)?;
-                Ok(items.get(idx).cloned())
+                let items = self.force_lazy_list_vm_window(&ll, idx, idx + 1)?;
+                Ok(items.into_iter().next())
             }
             // Other sources (non-integer GenericRange, etc.) are not gated into
             // the lazy pipeline; materialize once and index.
@@ -99,14 +108,28 @@ impl Interpreter {
     /// Force a LazyList into a Seq by evaluating the gather body.
     /// Force a scan-based LazyList, computing up to `needed` elements.
     /// Elements are computed incrementally and cached in the LazyList.
+    // Cost: O(needed) for the copy, plus one reduction step per new element.
     pub(super) fn force_scan_lazy_list(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let scan_mutex = match &list.scan_spec {
-            Some(s) => s,
-            None => return Ok(Vec::new()),
+        if list.scan_spec.is_none() {
+            return Ok(Vec::new());
+        }
+        self.fill_scan_lazy_list(list, needed)?;
+        Ok(list.cache_window(0, needed))
+    }
+
+    /// [`Self::force_scan_lazy_list`] without the copy.
+    // Cost: O(1) amortized per new element, plus the reduction step.
+    pub(super) fn fill_scan_lazy_list(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
+        let Some(scan_mutex) = &list.scan_spec else {
+            return Ok(());
         };
 
         // Read current state under lock, then release before calling reduction methods
@@ -115,7 +138,7 @@ impl Interpreter {
             let cache_guard = list.cache.lock().unwrap();
             let cached_len = cache_guard.as_ref().map_or(0, |v| v.len());
             if cached_len >= needed {
-                return Ok(cache_guard.as_ref().unwrap()[..needed].to_vec());
+                return Ok(());
             }
             (
                 spec.op.clone(),
@@ -218,8 +241,7 @@ impl Interpreter {
             // out and the scan ends with it.
             ValueView::LazyList(inner) => {
                 let inner = inner.clone();
-                let items = self.force_lazy_list_vm_n(&inner, source_needed)?;
-                items.into_iter().skip(already).take(remaining).collect()
+                self.force_lazy_list_vm_window(&inner, already, source_needed)?
             }
             _ => {
                 let items = crate::runtime::utils::value_to_list(&source);
@@ -261,15 +283,9 @@ impl Interpreter {
             spec.computed_count = computed;
 
             let mut cache_guard = list.cache.lock().unwrap();
-            let out = cache_guard.get_or_insert_with(Vec::new);
-            out.extend(new_out);
-
-            if out.len() >= needed {
-                Ok(out[..needed].to_vec())
-            } else {
-                Ok(out.clone())
-            }
+            cache_guard.get_or_insert_with(Vec::new).extend(new_out);
         }
+        Ok(())
     }
 
     pub(super) fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {

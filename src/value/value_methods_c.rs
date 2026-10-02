@@ -219,8 +219,7 @@ impl Value {
             // A subclass of native Int or Num (e.g. `class Foo is Int`)
             // carries its payload in a reserved attribute.
             ValueView::Instance { attributes, .. }
-                if let Some(payload) =
-                    crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
+                if let Some(payload) = super::numeric_payload::numeric_payload_of(&attributes) =>
             {
                 payload.to_f64()
             }
@@ -261,7 +260,7 @@ impl Value {
             // A subclass of native Int or Num (e.g. `class Foo is Int`)
             // carries its payload in a reserved attribute.
             ValueView::Instance { attributes, .. } => {
-                crate::builtins::numeric_subclass::numeric_payload_of(&attributes)
+                super::numeric_payload::numeric_payload_of(&attributes)
                     .map(|v| v.to_bigint())
                     .unwrap_or_else(|| NumBigInt::from(0))
             }
