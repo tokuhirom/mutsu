@@ -477,16 +477,8 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
-    let (return_type, custom_traits) = routine_return_type(node)?;
-    // `multiness => "multi"`. A `proto` carries a `{*}` body shape mutsu keeps
-    // in a separate `Stmt::ProtoDecl`, so it stays the boundary.
-    let multi = match node.fields.iter().find(|f| f.name == Some("multiness")) {
-        None => false,
-        Some(_) => match leaf_str(node, "multiness")?.as_str() {
-            "multi" => true,
-            _ => return Err(unsupported(node)),
-        },
-    };
+    let (return_type, custom_traits) = routine_return_type(node, None)?;
+    let multi = multiness(node)?;
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
@@ -951,10 +943,23 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
+/// `multiness => "multi"`. A `proto` carries a `{*}` body shape mutsu keeps in
+/// a separate `Stmt::ProtoDecl`, so it stays the boundary.
+fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
+    match node.fields.iter().find(|f| f.name == Some("multiness")) {
+        None => Ok(false),
+        Some(_) => match leaf_str(node, "multiness")?.as_str() {
+            "multi" => Ok(true),
+            _ => Err(unsupported(node)),
+        },
+    }
+}
+
 fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
-    let (return_type, custom_traits) = routine_return_type(node)?;
+    let mut is_traits = super::routine_traits::IsTraits::default();
+    let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
@@ -962,10 +967,10 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         params,
         param_defs,
         body,
-        multi: false,
-        is_rw: false,
-        is_raw: false,
-        is_private: false,
+        multi: multiness(node)?,
+        is_rw: is_traits.is_rw,
+        is_raw: is_traits.is_raw,
+        is_private: bool_field(node, "private")?,
         is_our: false,
         is_my: false,
         // raku names the declarator with the class, so `submethod` comes back
@@ -986,10 +991,13 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// `-->` arrow) or a `traits => (Trait::Returns|Trait::Of(Type),)` entry. The
 /// trait spelling round-trips through the same `__return_via_*` marker the
 /// parser sets, so `EVAL` reproduces the source form the converter read.
-/// Declaring both is refused rather than silently collapsed.
+/// Declaring both is refused rather than silently collapsed. A
+/// `Trait::Is(name => rw|raw)` sets `is_traits` when the caller takes one
+/// (a method) and is refused otherwise.
 #[allow(clippy::type_complexity)]
 fn routine_return_type(
     node: &RakuAstNode,
+    mut is_traits: Option<&mut super::routine_traits::IsTraits>,
 ) -> Result<(Option<String>, Vec<(String, Option<Expr>)>), RuntimeError> {
     let arrow = match named_child(node, "signature") {
         Ok(sig) => match sig.fields.iter().find(|f| f.name == Some("returns")) {
@@ -1010,6 +1018,21 @@ fn routine_return_type(
             let marker = match t.class {
                 RakuAstClass::TraitReturns => "__return_via_trait",
                 RakuAstClass::TraitOf => "__return_via_of",
+                RakuAstClass::TraitIs if t.fields.len() == 1 => {
+                    let name = positional_leaf(named_child(t, "name")?)?;
+                    let ValueView::Str(name) = name.view() else {
+                        return Err(unsupported(node));
+                    };
+                    match is_traits.as_deref_mut() {
+                        Some(flags) => {
+                            if flags.set_name(name.as_str()) {
+                                continue;
+                            }
+                            return Err(unsupported(node));
+                        }
+                        None => return Err(unsupported(node)),
+                    }
+                }
                 _ => return Err(unsupported(node)),
             };
             if via_trait.is_some() {
@@ -2534,7 +2557,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // tree renders the same node.
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
-            let (return_type, custom_traits) = routine_return_type(node)?;
+            let (return_type, custom_traits) = routine_return_type(node, None)?;
             if !custom_traits.is_empty() {
                 // Only the `-->` spelling survives an anonymous sub's internal
                 // node (it keeps no `custom_traits`), so a `returns`/`of` trait

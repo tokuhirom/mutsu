@@ -6,7 +6,10 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
-use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, name_parts};
+use super::{
+    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, name_parts,
+    routine_traits,
+};
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
@@ -787,17 +790,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // shape. raku spells `submethod` as its own class carrying exactly
             // that shape (measured: a `Submethod` and a `Method` of the same
             // signature differ only in the class name). Private/multi/our/my
-            // forms, user traits, and delegation carry extra shape.
+            // forms, user traits, and delegation carry extra shape; `multi`,
+            // `!private`, `is rw` and `is raw` are `rakuast::routine_traits`.
             let spelling = return_type_spelling(custom_traits)?;
             // `submethod_decl` marks every submethod `is_my` as its internal
             // "not inherited" flag, not because the source said `my` — so for a
             // submethod that flag carries no RakuAST shape of its own.
             let declared_my = *is_my && !*is_submethod;
             if name_expr.is_some()
-                || *multi
-                || *is_rw
-                || *is_raw
-                || *is_private
                 || *is_our
                 || declared_my
                 || *our_variable_form
@@ -817,7 +817,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 // parser inconsistency; refuse rather than render a wrong node.
                 return Err(unsupported("method with a return trait but no return type"));
             }
-            Ok(Some(statement_expression(routine_node(
+            let mut node = routine_node(
                 if *is_submethod {
                     RakuAstClass::Submethod
                 } else {
@@ -827,7 +827,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 param_defs,
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
-            )?)))
+            )?;
+            routine_traits::add_method_flags(
+                &mut node,
+                *multi,
+                *is_private,
+                routine_traits::IsTraits {
+                    is_rw: *is_rw,
+                    is_raw: *is_raw,
+                },
+            )?;
+            Ok(Some(statement_expression(node)))
         }
         Stmt::ClassDecl {
             name,
