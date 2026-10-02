@@ -219,24 +219,37 @@ impl RegexTree {
     /// still receives the original pattern, while the converter reports an
     /// honest unsupported boundary for a construct without a source tree.
     pub(crate) fn parse_static(source: &str, declaration: bool) -> Option<Self> {
+        Self::parse_static_at(source, declaration, None)
+    }
+
+    /// [`Self::parse_static`] for a regex whose `source` starts at offset
+    /// `unit_base` of the compilation unit being parsed, so the statements of
+    /// its code blocks are numbered with the unit's (`use trace`).
+    pub(crate) fn parse_static_at(
+        source: &str,
+        declaration: bool,
+        unit_base: Option<usize>,
+    ) -> Option<Self> {
         // Array interpolation keeps the existing match-time runtime path, but
         // its source form is still part of the RakuAST regex tree. The
         // execution lowerer deliberately declines these nodes and the value
         // parser reparses them uncached, so retaining them here does not turn
         // dynamic array contents into a static plan.
-        Self::parse_static_with_options(source, declaration, true)
+        Self::parse_static_with_options(source, declaration, true, unit_base)
     }
 
     fn parse_static_with_options(
         source: &str,
         declaration: bool,
         allow_array_interpolation: bool,
+        unit_base: Option<usize>,
     ) -> Option<Self> {
         let mut parser = Parser {
             chars: source.chars().collect(),
             pos: 0,
             declaration,
             allow_array_interpolation,
+            unit_base,
         };
         let body = parser.parse_alternation(&[], declaration)?;
         parser.skip_whitespace();
@@ -249,7 +262,7 @@ impl RegexTree {
     }
 
     fn parse_lookaround_body(source: &str) -> Option<Self> {
-        Self::parse_static_with_options(source, false, true)
+        Self::parse_static_with_options(source, false, true, None)
     }
 
     pub(crate) fn to_source(&self) -> String {
@@ -1383,6 +1396,9 @@ struct Parser {
     pos: usize,
     declaration: bool,
     allow_array_interpolation: bool,
+    /// The unit offset of the source's first byte, when the source is the
+    /// unit's own text (see [`RegexTree::parse_static_at`]).
+    unit_base: Option<usize>,
 }
 
 impl Parser {
@@ -1963,7 +1979,14 @@ impl Parser {
         }
         let code: String = self.chars[body_start..self.pos].iter().collect();
         self.pos += 1; // '}'
-        let Ok((body, _)) = crate::parser::parse_fragment(&code) else {
+        let parsed = match self.unit_base {
+            Some(base) => {
+                let body_byte: usize = self.chars[..body_start].iter().map(|c| c.len_utf8()).sum();
+                crate::parser::parse_fragment_at(&code, base + body_byte)
+            }
+            None => crate::parser::parse_fragment(&code),
+        };
+        let Ok((body, _)) = parsed else {
             self.pos = start;
             return None;
         };

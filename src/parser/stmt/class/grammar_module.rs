@@ -91,6 +91,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     let (is_export, export_tags) = (traits.is_export, traits.export_tags);
 
     let (rest, _) = ws(rest)?;
+    let body_region = rest;
     let (rest, mut pattern) = parse_raw_braced_regex_body(rest)?;
     // Rakudo's `regex_def` ends its body with `<?ENDSTMT>`: a declaration's
     // `}` at end of line ends the statement (`parser::stmt_ending_brace`).
@@ -108,11 +109,17 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         crate::regex_tree::RegexDeclKind::Token
     };
+    let unit_base = crate::parser::primary::fragment_attempts::unit_offset_of_copy(
+        &body_region[..body_region.len() - rest.len()],
+        &source_pattern,
+    );
     let source_regex =
-        crate::regex_tree::RegexTree::parse_static(&source_pattern, true).map(|mut tree| {
-            tree.declaration_kind = Some(regex_kind);
-            tree
-        });
+        crate::regex_tree::RegexTree::parse_static_at(&source_pattern, true, unit_base).map(
+            |mut tree| {
+                tree.declaration_kind = Some(regex_kind);
+                tree
+            },
+        );
     pattern = source_pattern;
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);

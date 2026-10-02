@@ -230,6 +230,19 @@ fn take_suppress_sink_warnings() -> bool {
     SUPPRESS_SINK_WARNINGS.with(|f| f.replace(false))
 }
 
+/// [`parse_fragment`] for a copy of the enclosing unit's text that starts at
+/// unit offset `unit_offset` (a regex code block's body): its statement
+/// attempts are recorded in the enclosing unit's numbering for `use trace`.
+pub(crate) fn parse_fragment_at(
+    input: &str,
+    unit_offset: usize,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    primary::fragment_attempts::lend_attempts(unit_offset);
+    let result = parse_fragment(input);
+    primary::fragment_attempts::clear_lent_attempts();
+    result
+}
+
 /// Parse an internal expression *fragment* (a role type argument re-parsed at
 /// run time, ...) rather than a compilation unit.
 ///

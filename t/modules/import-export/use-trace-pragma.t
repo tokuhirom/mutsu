@@ -8,7 +8,7 @@ use Test;
 # Every expectation below was taken from `raku` (2026.09) and the file passes
 # under it unchanged.
 
-plan 27;
+plan 29;
 
 sub trace-of(Str $code --> Str) {
     my $proc = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -359,6 +359,30 @@ is trace-of(q:to/CODE/), q:to/END/,
         :out, :err;
     is $proc.out.slurp(:close), "bigsmall\n2,4,6\n", 'programs compute the same results with the pragma on';
     $proc.err.slurp(:close);
+}
+
+# The statements of a regex code block are a statement list of their own: one
+# number per statement, plus the failed attempt at its closing brace. Only the
+# header of the statement after the regex is compared here.
+{
+    sub header-of-say(Str $code --> Str) {
+        my @lines = trace-of($code).lines;
+        @lines[(@lines.first(:k, 'say 5') // 0) - 1]
+    }
+    my @cases =
+        '/ a { 1 } /'          => 5,
+        '/ a { 1; 2 } /'       => 6,
+        '/ a { if 1 { 2 } } /' => 7,
+        '/ a {} /'             => 3,
+        '/ a <?{ 1 }> /'       => 5,
+        '/ a <{ "a" }> /'      => 5,
+        'm/ a { 1 } /'         => 5,
+        'rx/ a { 1 } /'        => 5;
+    my @got = @cases.map({ header-of-say("use trace; my \$a = \"a\" ~~ {.key}; say 5") });
+    is-deeply @got, [@cases.map({ "{.value} (-e line 1)" })],
+        'the statements of a regex code block are numbered';
+    is header-of-say('use trace; my token t { x { 3 } }; say 5'), '5 (-e line 1)',
+        '... in a token declaration too';
 }
 
 # vim: expandtab shiftwidth=4

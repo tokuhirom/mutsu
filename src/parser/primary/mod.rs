@@ -10,6 +10,7 @@ pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 pub(crate) use misc::next_anon_role_name;
+pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;
 mod number;
 pub(in crate::parser) mod quote_adverbs;
@@ -75,6 +76,11 @@ struct SourceOrigin {
     /// Shared (`Rc`) because [`snapshot_source_state`] clones the origin around
     /// every nested sub-parse, which must keep appending to its own unit's list.
     attempts: Option<std::rc::Rc<RefCell<StatementAttempts>>>,
+    /// Set when `attempts` is the *enclosing* unit's list, lent to the parse
+    /// of a fragment copied out of it (a regex code block,
+    /// [`fragment_attempts`]): the unit offset of the fragment's first byte,
+    /// added to every position the fragment records.
+    attempt_base: Option<usize>,
 }
 
 impl SourceOrigin {
@@ -84,6 +90,7 @@ impl SourceOrigin {
         len: 0,
         newlines: None,
         attempts: None,
+        attempt_base: None,
     };
 
     fn newlines(&self) -> &[usize] {
@@ -122,8 +129,10 @@ pub(super) fn set_original_source(source: &str) {
             attempts: source
                 .contains("trace")
                 .then(|| std::rc::Rc::new(RefCell::new(StatementAttempts::default()))),
+            attempt_base: None,
         };
     });
+    fragment_attempts::adopt_lent_attempts();
     LEAKED_REGIONS.with(|r| r.borrow_mut().clear());
 }
 
@@ -154,8 +163,7 @@ pub(in crate::parser) struct StatementAttempts {
 /// numbering, so nothing is recorded) or `input` is not in the source buffer.
 // Cost: O(log a) to locate the position plus O(a) to insert it out of order, a = attempts recorded; an in-order parse appends.
 pub(in crate::parser) fn record_statement_attempt(input: &str) -> Option<(usize, bool)> {
-    let attempts = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone())?;
-    let offset = source_offset(input)?;
+    let (attempts, offset) = attempt_offset(input)?;
     let mut attempts = attempts.borrow_mut();
     let fresh = match attempts.positions.binary_search(&offset) {
         Ok(_) => false,
@@ -171,16 +179,24 @@ pub(in crate::parser) fn record_statement_attempt(input: &str) -> Option<(usize,
 /// speculative parse that made it failed, so rakudo never made it either.
 // Cost: O(log a) to locate the position plus O(a) to remove it.
 pub(in crate::parser) fn forget_statement_attempt(input: &str) {
-    let Some(attempts) = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone()) else {
-        return;
-    };
-    let Some(offset) = source_offset(input) else {
+    let Some((attempts, offset)) = attempt_offset(input) else {
         return;
     };
     let mut attempts = attempts.borrow_mut();
     if let Ok(index) = attempts.positions.binary_search(&offset) {
         attempts.positions.remove(index);
     }
+}
+
+/// The attempt list of the unit being parsed and the unit offset of `input`
+/// in it -- shifted by the fragment's base when the list is lent
+/// ([`fragment_attempts`]).
+fn attempt_offset(input: &str) -> Option<(std::rc::Rc<RefCell<StatementAttempts>>, usize)> {
+    let (attempts, base) = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        (origin.attempts.clone(), origin.attempt_base)
+    });
+    Some((attempts?, source_offset(input)? + base.unwrap_or(0)))
 }
 
 /// Whether the unit being parsed records statement attempts at all, i.e.
@@ -202,7 +218,15 @@ pub(in crate::parser) fn note_statement_hook() {
 /// needs them: the statement with the hook at offset `p` is number
 /// `positions.partition_point(|&q| q < p) + 1`.
 pub(in crate::parser) fn take_statement_numbering() -> Option<Vec<usize>> {
-    let attempts = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone())?;
+    // A fragment parsed on a lent list is numbered with its enclosing unit,
+    // which is not finished yet.
+    let attempts = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        origin
+            .attempt_base
+            .is_none()
+            .then(|| origin.attempts.clone())
+    })??;
     let mut attempts = attempts.borrow_mut();
     attempts
         .hooked
