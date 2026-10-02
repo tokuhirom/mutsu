@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.23,
+        "secs": 3.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,7 +54,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 15.16,
+        "secs": 13.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 10.05,
+        "secs": 9.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -78,11 +78,11 @@
       "cmp": "no_baseline",
       "path": "t/02-imports.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/79B9A44EA19587C733D8126308FD055B25B54E6D31243D9C0F8F3D966BD86FB1: Read-only file system",
+        "first_failure": "Failed to open file /tmp/E294EAAA8AE79953DDD707BA889DC23957DFE3DC0442D25D44C8BFA4A877633F: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.64,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 12.27,
+        "secs": 15.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 28.36,
+        "secs": 27.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,10 +116,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

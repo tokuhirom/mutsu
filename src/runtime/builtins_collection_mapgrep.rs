@@ -67,7 +67,9 @@ impl Interpreter {
                     ValueView::Array(_, kind) if kind.is_itemized() => list_items.push(arg.clone()),
                     ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
                     ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
-                    ValueView::Hash(map) => {
+                    // An itemized hash (`$(%h)`, `%h.item`) is a single item, like the
+                    // itemized Array arm above; only a bare one flattens to its pairs.
+                    ValueView::Hash(map) if !arg.hash_is_itemized() => {
                         // Hashes in list context flatten to key-value Pairs.
                         // ADR-0021 I2: data-minted pairs default positional.
                         for (k, v) in map.iter() {
@@ -526,7 +528,9 @@ impl Interpreter {
                 // to pick an install target (`Zef/CLI.rakumod`'s `str2cur`).
                 ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
                 ValueView::Slip(items) => list_items.extend(items.iter().cloned()),
-                ValueView::Hash(map) => {
+                // A bare hash flattens to its pairs; an itemized one (`$(%h)`,
+                // `%h.item`) is one item, as in `map`/`grep` above.
+                ValueView::Hash(map) if !arg.hash_is_itemized() => {
                     for (k, v) in map.iter() {
                         list_items.push(Value::value_pair(Value::str(k.clone()), v.clone()));
                     }

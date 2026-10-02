@@ -3,29 +3,44 @@
 //!
 //! Rakudo words a failed assignment as `expected R but got F (F.new)`: the
 //! offending value's type name, then its `.raku` in parentheses. For a number,
-//! a string or a type object that text is a pure function of the value
-//! (`runtime::utils::value_short_repr`). For an *object* it is a method call --
-//! a class may declare its own `raku`, and the default renders the public
-//! attributes -- so it cannot be built by the interpreter-free error
-//! constructors. This is the interpreter-aware half: it asks the object, then
-//! hands the finished text to the pure builder.
+//! a string, a type object or a plain collection (`List`, `Array`, `Hash`,
+//! `Pair`, `Range`, `Set`, ...) that text is a pure function of the value
+//! (`runtime::utils::value_short_repr`, which renders through `raku_value`).
+//! For an *object* it is a method call -- a class may declare its own `raku`,
+//! and the default renders the public attributes -- so it cannot be built by
+//! the interpreter-free error constructors. This is the interpreter-aware half:
+//! it asks the object, then hands the finished text to the pure builder.
 //!
 //! The user's `raku` runs through compiled method dispatch
 //! (`try_dispatch_compiled_method_direct`), and the built-in default through
 //! `default_instance_repr`, the same renderer `.raku` itself reaches -- neither
-//! is a tree-walk fallback.
+//! is a tree-walk fallback. A container *holding* an object (`[Foo.new]`) is
+//! rendered by `raku_element_repr`, the leaf dispatch `.raku` on that container
+//! already uses, so the message agrees with `.raku` by construction.
 
 use super::*;
+use crate::builtins::methods_0arg::raku_repr::{needs_raku_dispatch, raku_value};
+use crate::runtime::container_needs_raku_dispatch;
 
 impl Interpreter {
     /// The `(repr)` suffix naming `val` in a type-check message, or `""` when it
-    /// has none. Everything but an `Instance` is answered by the pure
-    /// `value_short_repr`; an `Instance` is asked for its `.raku`.
-    // Cost: O(1) plus the cost of the value's `.raku`; the text kept is cut to
-    // a constant length by `short_repr_of_raku`.
+    /// has none. A value the pure renderer can spell (numbers, strings, `Pair`s,
+    /// `Range`s, `List`s, `Array`s, `Hash`es, `Set`s, ...) is answered by
+    /// `value_short_repr`; an `Instance` is asked for its `.raku`, and a `Sub` or
+    /// a container holding an object goes through the same leaf dispatch `.raku`
+    /// itself uses (`raku_element_repr`).
+    // Cost: O(t) plus the cost of the dispatched `.raku` calls, t = length of the
+    // value's `.raku` text; the text kept is cut to a constant length by
+    // `short_repr_of_raku`. Rakudo renders the whole `.raku` too.
     pub(crate) fn type_check_got_repr(&mut self, val: &Value) -> String {
-        if !matches!(val.view(), ValueView::Instance { .. }) {
+        let val = &utils::decont_for_repr(val);
+        if !needs_raku_dispatch(val) && !container_needs_raku_dispatch(val) {
             return utils::value_short_repr(val);
+        }
+        if !matches!(val.view(), ValueView::Instance { .. }) {
+            // A `Sub`, or a container holding an object: the pure container
+            // rules with each dispatch-needing leaf rendered by its own `.raku`.
+            return utils::short_repr_of_raku(&self.raku_element_repr(val));
         }
         // A `raku` the program declared wins; only a class without one gets the
         // built-in attribute dump. A user method that dies still yields the
@@ -40,7 +55,7 @@ impl Interpreter {
                 _ => None,
             })
             .map(|text| text.to_string_value())
-            .unwrap_or_else(|| crate::builtins::methods_0arg::raku_repr::raku_value(val));
+            .unwrap_or_else(|| raku_value(val));
         utils::short_repr_of_raku(&text)
     }
 
