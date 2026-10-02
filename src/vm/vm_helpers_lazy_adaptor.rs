@@ -301,15 +301,16 @@ impl Interpreter {
             done: false,
         };
         match adaptor {
+            // Cost: O(1) per step over a source that indexes in O(1); the
+            // first step jumps the whole skipped run in one indexed pull
+            // (which still reifies the source in order up to it) instead of
+            // one step per skipped element.
             PipeAdaptor::Skip { remaining } => {
-                let Some(elem) = self.pull_source_element(source, idx)? else {
-                    return Ok(AdaptorStep::finished(idx));
+                let at = idx.saturating_add(std::mem::take(remaining));
+                let Some(elem) = self.pull_source_element(source, at)? else {
+                    return Ok(AdaptorStep::finished(at));
                 };
-                if *remaining > 0 {
-                    *remaining -= 1;
-                    return Ok(one(Vec::new(), idx + 1));
-                }
-                Ok(one(vec![elem], idx + 1))
+                Ok(one(vec![elem], at + 1))
             }
             PipeAdaptor::MultiMap { arity } => {
                 let mut args = Vec::with_capacity(*arity);
