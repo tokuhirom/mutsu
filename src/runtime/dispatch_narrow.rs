@@ -91,6 +91,29 @@ impl Interpreter {
         cacheable
     }
 
+    /// Whether binding `pd` runs user code to check its constraint: a `where`
+    /// clause, or a type constraint naming a user `subset` (whose predicate
+    /// is the subset's `where`). Multi dispatch already ran exactly these
+    /// checks to pick a winner, so the binder may trust that verdict
+    /// (`pending_skip_constraint_recheck`, #8697 / #10986).
+    // Cost: O(1) — one registry lookup of the constraint's base name.
+    pub(crate) fn param_runs_constraint_predicate(&self, pd: &crate::ast::ParamDef) -> bool {
+        pd.where_constraint.is_some()
+            || pd
+                .type_constraint
+                .as_deref()
+                .is_some_and(|tc| self.constraint_is_user_subset(tc))
+    }
+
+    /// Whether a parameter type constraint is a plain user `subset` name,
+    /// optionally with a smiley (`P`, `P:D`). Parameterized and coercion
+    /// spellings are not: their check is more than the subset's predicate.
+    // Cost: O(1) — one registry lookup.
+    pub(crate) fn constraint_is_user_subset(&self, tc: &str) -> bool {
+        let (base, _smiley) = crate::runtime::types::strip_type_smiley(tc);
+        !base.contains(['[', '(', ' ']) && self.registry().subsets.contains_key(base)
+    }
+
     /// Whether any parameter of `def` makes the enclosing multi's winner depend
     /// on something other than the `(type, definedness)` pair the resolve caches
     /// key on.

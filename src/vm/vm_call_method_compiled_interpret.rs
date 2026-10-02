@@ -720,6 +720,7 @@ impl Interpreter {
                         self.try_populate_fast_cache(cache_key, cn, owner_class, &method_def, &cc);
                     }
 
+                    self.arm_multi_method_winner_trust(&method_def);
                     return self.dispatch_compiled_method(
                         cn,
                         owner_class,

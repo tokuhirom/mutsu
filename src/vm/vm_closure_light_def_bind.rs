@@ -187,9 +187,9 @@ impl Interpreter {
         }
 
         // The one-shot channels the general binder consumes on every call
-        // (see `closure_light_bind`); `pending_skip_where_recheck` describes
+        // (see `closure_light_bind`); `pending_skip_constraint_recheck` describes
         // only the bind it was set for, and there is no `where` here to skip.
-        self.pending_skip_where_recheck = false;
+        self.pending_skip_constraint_recheck = false;
         self.take_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
 

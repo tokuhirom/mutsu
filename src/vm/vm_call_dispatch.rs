@@ -587,19 +587,20 @@ impl Interpreter {
         // resolved winner -- every caller obtained it from a value-dependent
         // match (multi/proto candidate resolution, or a redispatch's own
         // next-candidate search) that had to evaluate its `where` clause(s)
-        // fresh to prove it the winner in the first place (such a candidate
+        // and subset predicates (#10986) fresh to prove it the winner in the
+        // first place (such a candidate
         // can never come from a cached, type-keyed answer -- see
         // `func_multi_argkeys_cacheable`/`def_has_value_dependent_param`).
         // So the bind below may trust that verdict instead of re-running the
-        // predicate. Gating on `def` (not `cf`) carrying a `where` also
-        // guarantees `light_eligible` is false whenever this fires --
-        // `is_positional_light_call_eligible` refuses any `where_constraint`
-        // -- so the flag is always consumed by `call_compiled_function_named`
+        // predicate. Gating on `def` (not `cf`) carrying a `where` or a
+        // subset-typed parameter also guarantees `light_eligible` is false
+        // whenever this fires -- `is_positional_light_call_eligible` refuses
+        // any `where_constraint` and any non-fast type -- so the flag is always consumed by `call_compiled_function_named`
         // below and never leaks into an unrelated later call.
-        self.pending_skip_where_recheck = def
+        self.pending_skip_constraint_recheck = def
             .param_defs
             .iter()
-            .any(|pd| pd.where_constraint.is_some());
+            .any(|pd| self.param_runs_constraint_predicate(pd));
         let result = if light_eligible {
             // No caller `CompiledCode` in scope here (see the `None` passed
             // to `is_positional_light_call_eligible` above) -- eligibility

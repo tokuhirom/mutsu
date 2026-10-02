@@ -250,7 +250,7 @@ impl Interpreter {
     /// value-dependent `multi` whose resolution just ran this exact predicate
     /// against this exact value, a few lines up in the same call
     /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)) -- see
-    /// `pending_skip_where_recheck`'s doc comment for why that verdict may be
+    /// `pending_skip_constraint_recheck`'s doc comment for why that verdict may be
     /// trusted instead of re-running the constraint.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::runtime) fn check_positional_param_where_constraint(
@@ -523,12 +523,19 @@ impl Interpreter {
     /// binding.md`). `source_name`/`source_type_constraint` are only
     /// meaningful for the positional arm's typed-container diagnostics
     /// (`Array[Int] $x = @untyped`); pass `None` for a named param.
+    ///
+    /// `predicate_verified` is `true` only when multi dispatch has just
+    /// matched this exact value against this parameter to pick the winning
+    /// candidate (`pending_skip_constraint_recheck`): a user `subset`
+    /// constraint is then trusted instead of running its predicate a second
+    /// time (#10986).
     fn check_and_coerce_param_type(
         &mut self,
         pd: &ParamDef,
         mut value: Value,
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
+        predicate_verified: bool,
     ) -> Result<Value, RuntimeError> {
         // A non-slurpy `@`-sigil parameter binds directly to a Positional
         // argument, ignoring any `$`-itemization the caller's variable
@@ -685,7 +692,9 @@ impl Interpreter {
                     );
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
-            } else if !self.type_matches_value(&resolved_constraint, &value) {
+            } else if !(predicate_verified && self.constraint_is_user_subset(&resolved_constraint))
+                && !self.type_matches_value(&resolved_constraint, &value)
+            {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
                 let (base_type, smiley) =
                     crate::runtime::types::strip_type_smiley(&resolved_constraint);
@@ -1001,8 +1010,8 @@ impl Interpreter {
         // call -- a nested call made while evaluating a default expression or
         // running the routine's own body sees the flag already back at
         // `false`, exactly like the other `pending_*` one-shot signals this
-        // struct carries (see its doc comment on `pending_skip_where_recheck`).
-        let skip_where_recheck = std::mem::take(&mut self.pending_skip_where_recheck);
+        // struct carries (see its doc comment on `pending_skip_constraint_recheck`).
+        let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         let FunctionBindingOptions {
             reads_args_array,
             reads_args_hash,
@@ -2355,8 +2364,13 @@ impl Interpreter {
                         // Checked against the raw passed value, before any
                         // container-sharing/rw promotion below.
                         if enforce_named_constraints {
-                            bound_value =
-                                self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                            bound_value = self.check_and_coerce_param_type(
+                                pd,
+                                bound_value,
+                                None,
+                                None,
+                                skip_constraint_recheck,
+                            )?;
                             // An untyped routine `:$x` is implicitly `Any`, as
                             // its positional counterpart is (#10878).
                             if crate::opcode::FastParamCheck::implicitly_any(pd)
@@ -3334,6 +3348,7 @@ impl Interpreter {
                         value,
                         source_name.as_deref(),
                         source_type_constraint.as_deref(),
+                        skip_constraint_recheck,
                     )?;
                     // A literal-value parameter (`sub f("a") {}`, `-> 'about' {}`)
                     // constrains the argument to equal that literal exactly, not
@@ -3441,7 +3456,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
                         false,
                         false,
                     )?;
@@ -3609,7 +3624,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
                         false,
                         false,
                     )?;
@@ -3668,7 +3683,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
                         false,
                         true,
                     )?;
