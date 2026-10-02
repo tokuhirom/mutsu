@@ -278,6 +278,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             arg,
             tags,
             condition: None,
+            ..
         } => Ok(Some(super::use_stmt::convert_use(
             module,
             arg.as_ref(),

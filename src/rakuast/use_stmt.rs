@@ -155,6 +155,7 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         arg,
         tags,
         condition: None,
+        if_imports: Vec::new(),
     })
 }
 
@@ -170,6 +171,7 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         arg,
         tags,
         condition: None,
+        if_imports: Vec::new(),
     })
 }
 
@@ -184,6 +186,7 @@ pub(super) fn lower_language_version(node: &RakuAstNode) -> Result<Stmt, Runtime
         arg: Some(Expr::Literal(Value::str(version.to_string_value()))),
         tags: Vec::new(),
         condition: None,
+        if_imports: Vec::new(),
     })
 }
 

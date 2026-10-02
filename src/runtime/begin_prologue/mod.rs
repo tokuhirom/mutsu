@@ -42,7 +42,8 @@ mod use_if;
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
-use use_if::{IF_CONDITION_SLOT, if_condition_check};
+pub(crate) use use_if::if_condition_slot;
+use use_if::{if_condition_check, next_if_condition_slot};
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
 /// run-time remainder, as described in the module docs. The prologue is
@@ -294,13 +295,16 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
             arg,
             tags,
             condition: Some(condition),
+            if_imports,
         } => {
-            prologue.extend(if_condition_check(*condition));
+            let slot = next_if_condition_slot(prologue);
+            prologue.extend(if_condition_check(*condition, &slot));
             Stmt::Use {
                 module,
                 arg,
                 tags,
-                condition: Some(Box::new(Expr::Var(IF_CONDITION_SLOT.to_string()))),
+                condition: Some(Box::new(Expr::Var(slot))),
+                if_imports,
             }
         }
         other => other,
@@ -383,7 +387,7 @@ fn is_positional_pragma(stmt: &Stmt) -> bool {
 /// module that happens to be spelled like a pragma (`use vars <$x @y>`, whose
 /// `sub EXPORT` a later BEGIN observes), so it is a BEGIN-time load.
 // Cost: O(1), a fixed set of names compared against one string.
-fn is_known_pragma_name(module: &str) -> bool {
+pub(crate) fn is_known_pragma_name(module: &str) -> bool {
     if let Some(rest) = module.strip_prefix('v')
         && rest.starts_with(|c: char| c.is_ascii_digit())
     {

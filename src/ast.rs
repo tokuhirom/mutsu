@@ -1574,6 +1574,17 @@ pub(crate) enum WithBlockKind {
     Orwith,
 }
 
+/// The payload of [`Stmt::UndeclaredRoutine`].
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct UndeclaredRoutineCall {
+    /// The routine name the unit calls.
+    pub(crate) name: String,
+    /// The line of the first call.
+    pub(crate) line: i64,
+    /// The "Did you mean" candidates, computed when the check ran.
+    pub(crate) suggestions: Vec<String>,
+}
+
 /// One entry of [`Stmt::NestedTypeShells`].
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct NestedTypeShell {
@@ -1645,6 +1656,12 @@ pub(crate) enum Stmt {
     /// (`Compiler::emit_type_decl_shell`). The declarations themselves stay in
     /// place, and an analysis walking the tree sees them there, not here.
     NestedTypeShells(Vec<NestedTypeShell>),
+    /// Raise the CHECK-time "Undeclared routine" error for a call. Emitted by
+    /// the undeclared-routine check after the BEGIN prologue, guarded by the
+    /// `:if` conditions of the conditional `use`s whose exports were the
+    /// call's only explanation: when every one of them was False, nothing
+    /// declared the routine (ADR-0134 §2.1.6, #10331).
+    UndeclaredRoutine(Box<UndeclaredRoutineCall>),
     /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
     ///
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
@@ -1808,6 +1825,11 @@ pub(crate) enum Stmt {
         /// At a unit's top level it is evaluated in the BEGIN prologue
         /// (ADR-0134 §2.1.6). `None` for an unconditional `use`.
         condition: Option<Box<Expr>>,
+        /// The names the parse-time export scan imported for a conditional
+        /// `use` (empty for an unconditional one). When the condition turns
+        /// out False they were never imported, so the undeclared-routine check
+        /// must not count them as declared (ADR-0134 §2.1.6, #10331).
+        if_imports: Vec<String>,
     },
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
     No {

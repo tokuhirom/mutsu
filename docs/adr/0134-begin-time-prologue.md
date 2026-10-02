@@ -527,14 +527,33 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   NativeCall `ulong`) keeps its declaration whole.
 - **Residue:**
   - A `False` condition still leaves the names the parse-time scan registered
-    for the module in place (#10331). Calling one therefore fails at run time
-    rather than at compile time. Fixing it needs §2.4's parse feedback.
+    for the module in place *for the parse* (§2.4). The undeclared-routine
+    check no longer counts them as declared, though (#10331, below).
   - The undefined-condition error is a plain `die` raised in the prologue, not
     a `===SORRY!===` compile error.
   - A `use` nested in a block still loads through GH-8201's `PreloadModule`
     hoist, not the prologue, and `constant`s nested in inner scopes run in
     position unless slice 2 lifts them. Only top-level loads and constants
     are prologue effects.
+
+**Undeclared routines behind a `False` condition — implemented** (#10331,
+`src/runtime/undeclared_routines/conditional.rs`,
+`t/modules/import-export/use-if-false-undeclared-routine.t`).
+
+- The parser records on each conditional `use` the names its export scan
+  imported (`Stmt::Use::if_imports`). The undeclared-routine check does not
+  count them as declared, and no longer gives up on a unit because of a
+  top-level conditional `use` or an import-free pragma (`use if`, `use lib`,
+  `use strict`, ...).
+- The check runs before the prologue, so it cannot know the conditions yet.
+  A call it cannot explain becomes a guard placed right after the prologue
+  (`Stmt::UndeclaredRoutine` inside `if !slot`, one test per conditional
+  `use`'s condition slot): it raises the compile-time error unless one of
+  the conditional `use`s was loaded. This is §2.1.5's order — the static
+  check after the BEGIN-time effects — without a second pass.
+- Any loaded conditional `use` suppresses every guard, because a module's
+  parse-time export scan may miss names a `sub EXPORT` hook computes. So
+  `use A:if(True); use B:if(False); b-only()` still fails only at run time.
 
 **Nested type declarations — implemented** (#10494,
 `src/compiler/hoist_nested_types.rs`,

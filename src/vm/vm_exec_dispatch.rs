@@ -6528,6 +6528,14 @@ impl Interpreter {
                 self.exec_capture_nested_method_env_op(spec);
                 *ip += 1;
             }
+            // Cost: O(s), s = the number of suggestions copied into the error.
+            OpCode::ThrowUndeclaredRoutine(call) => {
+                return Err(Self::undeclared_routine_error(
+                    &call.name,
+                    call.line,
+                    call.suggestions.clone(),
+                ));
+            }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).
             OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);

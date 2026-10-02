@@ -30,6 +30,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 arg: Some(Expr::Literal(Value::str(version))),
                 tags: Vec::new(),
                 condition: None,
+                if_imports: Vec::new(),
             },
         ));
     }
@@ -72,6 +73,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 arg: Some(arg),
                 tags: Vec::new(),
                 condition: None,
+                if_imports: Vec::new(),
             },
         ));
     }
@@ -260,16 +262,17 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let empty_import = module != "lib"
         && arg.as_ref().is_some_and(Expr::is_empty_import_list)
         && use_tags.is_empty();
-    if empty_import {
+    let if_imports = if empty_import {
         super::super::simple::register_module_type_names(&module);
+        Vec::new()
     } else {
         // Register exported function names so they are recognized as calls
         // without parens.
         // Positional arguments go to the module's `sub EXPORT`, which may
         // import anything; only a tag-only `use` selects `is export` traits.
         let import_tags = arg.is_none().then_some(use_tags.as_slice());
-        super::super::simple::register_module_exports_with_tags(&module, import_tags);
-    }
+        super::super::simple::register_use_exports(&module, import_tags, condition.is_some())
+    };
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
     // rest of this compilation unit (ADR-0026 §2.1). Activation failure —
@@ -290,6 +293,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         arg,
         tags: use_tags,
         condition,
+        if_imports,
     };
     // `use Foo ..., proto sub MAIN(|) {*}` passes the proto object to Foo's
     // EXPORT routine. The proto declaration is part of the use argument's
@@ -467,6 +471,7 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
             arg: Some(Expr::Literal(Value::str(format!(":{}", smiley)))),
             tags: Vec::new(),
             condition: None,
+            if_imports: Vec::new(),
         },
     ))
 }

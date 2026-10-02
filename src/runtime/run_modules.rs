@@ -903,7 +903,7 @@ impl Interpreter {
         let saved_language_version = crate::parser::current_language_version();
         let (mut stmts, precompiled) = self.parse_module_source(module, &source_path)?;
         // The module's BEGIN-time effects run first, in source order (ADR-0134).
-        crate::runtime::begin_prologue::order_unit(&mut stmts);
+        let prologue_len = crate::runtime::begin_prologue::order_unit(&mut stmts);
         // `$=pod` belongs to the compilation unit that declares it. The main
         // program establishes its Pod variables before execution, but a module
         // used to skip that step and therefore saw the importer's (or no)
@@ -938,8 +938,10 @@ impl Interpreter {
         // also the path a bareword-named `require ::($name)` reaches (a
         // non-path-like require target loads via `use_module`, not
         // `require_load_from_file`), so it is the one place that covers both
-        // `use` and `require` of an installed/on-path module name.
-        self.check_undeclared_routines_mainline(&stmts)?;
+        // `use` and `require` of an installed/on-path module name. A verdict
+        // that depends on a conditional `use` runs right after the prologue.
+        let guards = self.check_undeclared_routines_with_guards(&stmts)?;
+        stmts.splice(prologue_len..prologue_len, guards);
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();

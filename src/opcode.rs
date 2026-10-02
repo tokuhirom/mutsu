@@ -4295,6 +4295,10 @@ pub(crate) enum OpCode {
     /// method with the same index to take when the package-body walk installs
     /// it (`class_body_method_decl`).
     CaptureNestedMethodEnv(Box<NestedMethodCaptureSpec>),
+    /// Throw the CHECK-time "Undeclared routine" error described by the
+    /// operand (`Stmt::UndeclaredRoutine`). Stack: `[] → []`; never falls
+    /// through.
+    ThrowUndeclaredRoutine(Box<crate::ast::UndeclaredRoutineCall>),
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
