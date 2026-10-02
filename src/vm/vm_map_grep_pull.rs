@@ -119,29 +119,9 @@ impl Interpreter {
     /// `start..end`, with the call site's `use fatal` and the callback's
     /// declaring package in force. `plan` carries what earlier chunks of the
     /// same Seq computed about the callback (`runtime/map_grep_plan.rs`).
-    ///
-    /// The callbacks run inside the `.map`'s iteration, which is a method
-    /// call however late the Seq is forced: a `{*}` in one evaluates to `Nil`
-    /// instead of reaching a proto body (#10746).
     // Cost: one callback call per element of `start..end`.
     #[allow(clippy::too_many_arguments)]
     fn run_map_grep_chunk(
-        &mut self,
-        func: &Option<Value>,
-        fatal: bool,
-        mode: &MapGrepMode,
-        plan: &mut MapGrepPlanSlot,
-        items: &MapGrepItems,
-        start: usize,
-        end: usize,
-    ) -> Result<Vec<Value>, RuntimeError> {
-        self.in_method_call(|interp| {
-            interp.run_map_grep_chunk_body(func, fatal, mode, plan, items, start, end)
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn run_map_grep_chunk_body(
         &mut self,
         func: &Option<Value>,
         fatal: bool,

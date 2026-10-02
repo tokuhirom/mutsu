@@ -269,6 +269,8 @@ fn render_leaf(v: &Value) -> String {
         // A version leaf renders as its literal (`LanguageVersion.new(v6.d)`),
         // which is its `.gist`, not its `.Str` (`6.d`).
         ValueView::Version { .. } => format!("v{}", v.to_string_value()),
+        // A Num leaf renders as its literal (`NumLiteral.new(1e0)`, `Inf`).
+        ValueView::Num(f) => crate::builtins::methods_0arg::raku_repr::format_num_raku(f),
         _ => v.to_string_value(),
     }
 }

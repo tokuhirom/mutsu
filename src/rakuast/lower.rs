@@ -2385,9 +2385,10 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
-        RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
-            Ok(Expr::Literal(positional_leaf(node)?))
-        }
+        RakuAstClass::IntLiteral
+        | RakuAstClass::NumLiteral
+        | RakuAstClass::RatLiteral
+        | RakuAstClass::StrLiteral => Ok(Expr::Literal(positional_leaf(node)?)),
         // `"..."` parses to a QuotedString wrapping StrLiteral segments; a single
         // plain segment lowers to its string literal.
         RakuAstClass::QuotedString => {

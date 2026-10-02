@@ -694,7 +694,6 @@ impl Interpreter {
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
             proto_dispatch_stack: Vec::new(),
-            method_call_depth: 0,
             pending_dispatch_error: None,
             skip_postcircumfix_overload: false,
             preload_modules: Vec::new(),

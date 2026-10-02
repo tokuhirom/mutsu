@@ -57,7 +57,7 @@ impl Interpreter {
         // loop below, which is bounded by its own `atom_end <= cur`
         // no-progress guard: after a zero-width atom, the separator must
         // advance `cur` or the loop breaks.
-        let atom_stride = count_capture_groups(token);
+        let atom_stride = count_capture_groups(&token.atom);
         let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
         // What code in the next iteration sees of the chain so far
@@ -183,12 +183,12 @@ impl Interpreter {
                 &[],
                 &[],
                 None,
-                count_capture_groups(token),
+                count_capture_groups(&token.atom),
                 separator_stride(&sep.pattern),
             );
             return (start, caps);
         }
-        let atom_stride = count_capture_groups(token);
+        let atom_stride = count_capture_groups(&token.atom);
         let sep_stride = separator_stride(&sep.pattern);
         let mut end = cur;
         let mut trailing: Option<RegexCaptures> = None;

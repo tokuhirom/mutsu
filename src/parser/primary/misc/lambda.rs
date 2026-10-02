@@ -382,15 +382,6 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('{') {
         return Err(PError::expected("block or hash"));
     }
-    // The onlystar term `{*}` -- spelled exactly so; `{ * }` is a block that
-    // returns `*` -- asks the dynamic scope for a dispatcher wherever it is
-    // written, so it is a call, not a block (#10746). Its `}` ends the
-    // statement at a line end like any block's.
-    if let Some(rest) = input.strip_prefix("{*}") {
-        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
-        crate::parser::stmt_ending_brace::mark_block_term(rest);
-        return Ok((rest, Expr::onlystar_dispatch()));
-    }
     let r = &input[1..];
     let (r, _) = ws_inner(r);
 

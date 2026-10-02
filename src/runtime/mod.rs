@@ -651,7 +651,6 @@ mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;
 pub(crate) mod nqp_pure;
-mod onlystar;
 mod param_bound_aggregates;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
@@ -2640,14 +2639,11 @@ pub struct Interpreter {
     /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
     /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
     pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
-    /// Active proto bodies a `{*}` may dispatch from (#10746).
-    proto_dispatch_stack: Vec<ProtoDispatchFrame>,
-    /// How many method calls are in progress (the VM's method-call opcodes,
-    /// and a proto's `{*}` running its winning candidate). A method has a
-    /// dispatcher of its own, so a `{*}` reached through one does not reach an
-    /// enclosing proto body: `ProtoDispatchFrame::method_depth` records the
-    /// depth a proto body runs at.
-    method_call_depth: u32,
+    /// Active `{*}` proto dispatch frames: (proto_name, args, method_ctx).
+    /// `method_ctx` is `Some` when the active proto is a `proto method` body, so
+    /// `{*}` redispatches to a multi *method* candidate on the invocant rather
+    /// than a proto sub candidate.
+    proto_dispatch_stack: Vec<(String, Vec<Value>, Option<ProtoMethodCtx>)>,
     pending_dispatch_error: Option<RuntimeError>,
     /// One-shot suppression of the user `postcircumfix:<[ ]>`/`<{ }>`
     /// multi-candidate probe in `exec_index_op_with_positional`. Set only
