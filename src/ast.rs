@@ -2360,6 +2360,7 @@ mod chains;
 mod lvalue;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+pub(crate) mod regex_placeholders;
 mod scope_members;
 mod tail;
 mod virtual_call;
