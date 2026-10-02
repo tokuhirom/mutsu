@@ -1822,6 +1822,12 @@ pub(crate) enum OpCode {
     /// Compares HashEntryRef values by checking if they
     /// point to the same hash slot (Arc::ptr_eq + key equality).
     ContainerEqRaw,
+    /// [`OpCode::ContainerEqRaw`] where one operand is an `@`/`%` variable:
+    /// that variable is the Array/Hash itself, never a Scalar container, so
+    /// the two are the same container only when they share a bound cell or
+    /// slot (`@d[0] := @c`) — never because they hold the same value
+    /// (`my @b := @a[0]; @a[0] =:= @b` is False).
+    ContainerEqRawAggregate,
 
     // -- String comparison --
     /// Infix `eq` (string equality). Stack: `[left, right] → [Bool]` (right on top).

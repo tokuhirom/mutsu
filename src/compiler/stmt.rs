@@ -1578,6 +1578,7 @@ impl Compiler {
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
                 } else if bind_vardecl
+                    && !Self::array_bind_takes_item_value(name, expr)
                     && (!name.starts_with('@') && !name.starts_with('%')
                         || Self::is_simple_var_expr(expr)
                         // `my @slice := @array[1,2]` (an `@`-sigil bind to an

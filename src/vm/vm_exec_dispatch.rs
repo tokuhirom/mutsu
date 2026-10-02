@@ -3409,6 +3409,11 @@ impl Interpreter {
                 self.exec_container_eq_raw_op();
                 *ip += 1;
             }
+            // Cost: O(1).
+            OpCode::ContainerEqRawAggregate => {
+                self.exec_container_eq_raw_aggregate_op();
+                *ip += 1;
+            }
 
             // -- String comparison --
             // Cost: O(p), p = common prefix; O(1) when the lengths differ (see

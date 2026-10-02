@@ -2058,6 +2058,38 @@ impl Compiler {
         }
     }
 
+    /// Whether `my @name := expr` binds `@name` to the value held in a Scalar
+    /// container rather than aliasing that container: the RHS is a `$`
+    /// variable or a single array element (`@a[0]`, `@a[*-1]`). The `@` name
+    /// then holds the Array itself, so a later `$s = [..]` / `@a[0] = [..]`
+    /// replaces the container's content without touching `@name`, and
+    /// `@a[0] =:= @name` is False (rakudo). A slice (`@a[1,2]`) and an index
+    /// whose arity is only known at run time keep the element-aliasing route.
+    fn array_bind_takes_item_value(name: &str, expr: &Expr) -> bool {
+        if !name.starts_with('@') {
+            return false;
+        }
+        match expr {
+            Expr::Var(var) => !var.starts_with(['@', '%', '&']),
+            Expr::Index {
+                index,
+                is_positional: true,
+                ..
+            } => match index.as_ref() {
+                Expr::Literal(v) => matches!(v.view(), crate::value::ValueView::Int(_)),
+                Expr::WhateverCurry(inner) => matches!(
+                    inner.as_ref(),
+                    Expr::Binary { left, op: crate::token_kind::TokenKind::Minus, right }
+                        if matches!(left.as_ref(), Expr::WhateverArg)
+                            && matches!(right.as_ref(), Expr::Literal(v)
+                                if matches!(v.view(), crate::value::ValueView::Int(_)))
+                ),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     fn is_simple_var_expr(expr: &Expr) -> bool {
         matches!(
             expr,
