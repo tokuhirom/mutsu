@@ -47,6 +47,45 @@ mutsu's unique position. Four components:
 
 ---
 
+## 0. Two architecture projects that must be finished
+
+Both replace a mechanism the interpreter outgrew, both are spread over many PRs, and both end in a
+**deletion**: they are done when the old path is gone, not when the new one mostly works. Neither is
+a background campaign to drop when it gets hard — keep working them alongside §1 (user decision,
+2026-10-02).
+
+- [ ] **RakuAST becomes the frontend IR** —
+      [ADR-10723](docs/adr/10723-rakuast-is-the-frontend-ir.md) (supersedes ADR-0011); roadmap,
+      metric and stage checklist: [#7564](https://github.com/tokuhirom/mutsu/issues/7564). Rakudo
+      2026.09 made RakuAST its default frontend and removes the legacy grammar at 6.e, and slangs,
+      L10N, RakuDoc v2 and `.DEPARSE` now build on it. The parser emits the RakuAST tree, `lower` is
+      the only desugaring step, and `Expr`/`Stmt` stays as the compiler's lowered input.
+      - [ ] Stage 0 — `MUTSU_RAKUAST=1` round-trip mode and its pass-count ratchet
+            ([#10733](https://github.com/tokuhirom/mutsu/issues/10733)).
+      - [ ] Stage 1 — close the round trip by moving desugaring out of the parser into `lower`.
+      - [ ] Stage 2 — the parser emits RakuAST, construct family by family; `convert.rs` shrinks to
+            nothing. Decide source positions and the node representation first (ADR §4).
+      - [ ] Stage 3 — flip the default at parity and within the frontend-cost budget; delete the
+            legacy path and `convert.rs`. **This deletion is the completion criterion.**
+      - [ ] Stage 4 — slangs by execution (a follow-up ADR superseding ADR-0026 §4), RakuDoc v2,
+            total `.DEPARSE`.
+- [ ] **The regex tree walk is retired** —
+      [ADR-0135](docs/adr/0135-regex-compiles-to-a-backtracking-program.md): every regex compiles
+      to a flat backtracking program run by `RxVm`, and the recursive walk over `RegexPattern` is
+      deleted. Slices A and B have landed, C and D in part, E is under way; slice issues
+      [#10251](https://github.com/tokuhirom/mutsu/issues/10251)–[#10255](https://github.com/tokuhirom/mutsu/issues/10255).
+      The completion criterion is ADR-0135 D7: the `regex-walk:` counter
+      (`MUTSU_VM_STATS`, summed by `scripts/rx-decline-survey.sh`) reads `walked=0` and
+      `bridged=0` over the roast whitelist and `t/`, every `leaf=` primitive has moved out of the
+      walk's modules, and then the walk, its eager `Named` arm and the `MUTSU_RX_DIFF` mode are
+      deleted. Progress is recorded in ADR-0135 §8, not here.
+
+The two meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
+a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so neither
+project may reintroduce a regex kept only as source text.
+
+---
+
 ## 1. 🔋 Batteries — bundled libraries and distribution (main effort)
 
 40 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
@@ -229,8 +268,8 @@ cost. Compare warm before asserting a win.
           prefix, first-character set, required inner literal, subrule-derived first-sets,
           `<:prop>`/scoped-`:ignoremark` first-sets, the `<+a -b>` composite class, and finally
           ADR-0099 §5's NFA over the declarative prefix all landed. See `news/` for each slice.
-    - [ ] Stage 2 (a fast-lane compiled matcher) and Stage 3 (ADR-0007's CPS→bytecode regex VM) are
-          deferred questions, not work. Do not start either without a superseding ADR.
+    - Stages 2 and 3 are no longer deferred: [ADR-0135](docs/adr/0135-regex-compiles-to-a-backtracking-program.md)
+          superseded them with the compiled backtracking program, which is §0's regex project.
 - [ ] Opcode leftovers: [docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6.
 - [ ] Biased reference counting (ADR-0001 layer 3c) — frozen; start only on a measured trigger and an
       updated ADR.
@@ -317,5 +356,7 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 | Binary distribution | 4 release targets + GHCR image + mise ✅ | Achieved |
 | roast whitelist | **1437 / 1465** | Achieved; remainder is mostly non-goal |
 | GC / JIT | **default on** ✅ | Achieved |
+| RakuAST frontend round trip (§0) | tracked in [#7564](https://github.com/tokuhirom/mutsu/issues/7564) | parity with the ordinary frontend, then default flip |
+| Regex walk uses, `regex-walk:` (§0) | tracked in ADR-0135 §8 | `walked=0 bridged=0`, then the walk deleted |
 | Startup vs raku | **0.04×** | maintain |
 | fib / method-call / bench-class vs raku | all under target (bench CI) | maintain |
