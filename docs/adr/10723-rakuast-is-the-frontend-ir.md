@@ -66,6 +66,33 @@ The two directions also drift independently: a construct can be readable but not
 lowerable only from a hand-built tree, and EVAL of a converted tree is a *second* frontend path
 that ordinary programs never exercise.
 
+### 1.3 Baseline: how far the round trip gets today (2026-10-02)
+
+Measured on every one of the 5638 `t/**/*.t` files with a release build of `main` (`8ddf12cf`),
+comparing a normal run against `EVAL(slurp($file).AST)` (exit status and the number of `ok`
+lines must match). All 5638 pass when run normally.
+
+| Measure | Files | Share |
+| --- | ---: | ---: |
+| `slurp($file).AST` succeeds on the file as written | 1 | 0.0% |
+| … after deleting the `use Test;` / `use v6…;` / `use lib …;` lines (the driver loads `Test`) | 939 | 16.7% |
+| … and `EVAL` of that tree reproduces the normal run | 485 | 8.6% |
+| … but `EVAL` of that tree runs **differently** from the normal run | 454 | 8.1% |
+
+The first row is a single refusal: `use Test;` (a `Stmt::Use` that `convert` does not model) stops
+almost every test file. Past it, the most frequent refusals (first refusal per file) are an
+unresolved bareword (964 — mostly `is` / `done-testing` once `use Test` is gone, an artifact of
+the stripping), the remaining `use` statements (453), literal values the parser pre-computed
+(413 — `Any` as a type literal, `Inf`, `Slip`), the parser's `SyntheticBlock` (251) and
+`IndexAssign` (250) desugarings, non-trivial signature parameters (192), `__mutsu_*` desugar
+markers (151), and attributes / methods / declarations with traits (146 / 130 / 121).
+
+The last row matters most: **for almost half of the files that do convert, the converted tree
+silently means something else.** One root cause, found while sampling: a bare block in statement
+position (`{ say "blk" }`) lowers to a closure *value* that is never called, so its body does not
+run; rakudo prints `blk`. Nothing reports such a divergence today, because no ordinary program
+runs through `lower`. This is what Stage 0 (§2.2) is for.
+
 ## 2. Decision
 
 ### 2.1 The target pipeline
