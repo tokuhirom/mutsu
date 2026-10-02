@@ -418,6 +418,9 @@ impl Interpreter {
     /// probe (#10691); now only stores to a name some bind actually aliased do.
     // Cost: O(1) — one relaxed load, plus one env probe when the key may exist.
     fn slot_has_sigilless_meta(&self, code: &CompiledCode, idx: usize) -> bool {
+        if !crate::sigilless_alias_index::any_alias_key_possible() {
+            return false;
+        }
         code.alias_sym(idx).is_some_and(|sym| {
             crate::sigilless_alias_index::alias_key_possible(sym)
                 && self.env().contains_key_sym(sym)

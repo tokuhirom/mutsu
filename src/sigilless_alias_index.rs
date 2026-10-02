@@ -78,6 +78,9 @@ pub(crate) fn note_alias_entry(key: Symbol, value: &crate::value::Value) {
 /// latch in front of it, one unrelated `my @u := @d` made every scalar store
 /// in the process pay the probe.
 const KEY_BITS: u32 = 64 * 64;
+/// Set with the first key bit, so a program that never binds answers
+/// [`alias_key_possible`] with one load and no key lookup at the caller.
+static ANY_ALIAS_KEY: AtomicBool = AtomicBool::new(false);
 static ALIAS_KEY_BITS: [AtomicU64; (KEY_BITS / 64) as usize] =
     [const { AtomicU64::new(0) }; (KEY_BITS / 64) as usize];
 
@@ -96,7 +99,15 @@ pub(crate) fn note_alias_key(key: Symbol) {
     let (word, mask) = key_bit(key);
     if ALIAS_KEY_BITS[word].load(Ordering::Relaxed) & mask == 0 {
         ALIAS_KEY_BITS[word].fetch_or(mask, Ordering::Relaxed);
+        ANY_ALIAS_KEY.store(true, Ordering::Relaxed);
     }
+}
+
+/// False until any alias key has been written to any env.
+// Cost: O(1), one relaxed load.
+#[inline(always)]
+pub(crate) fn any_alias_key_possible() -> bool {
+    ANY_ALIAS_KEY.load(Ordering::Relaxed)
 }
 
 /// False when no env has ever held the alias key `key`; true when one may.
