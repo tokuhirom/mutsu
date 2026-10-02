@@ -6315,7 +6315,7 @@ pub(crate) struct CompiledCode {
     /// campaign that needed a new per-slot fact — see
     /// [`crate::binding_desc`]'s module doc for why they were folded into one.
     /// Access through [`CompiledCode::alias_sym`] and its siblings, or
-    /// [`CompiledCode::is_plain_local`] / [`CompiledCode::is_simple_scalar_local`],
+    /// [`CompiledCode::is_plain_local`] / [`CompiledCode::simple_scalar_local_desc`],
     /// never through this field directly.
     pub(crate) binding_descs: Vec<crate::binding_desc::BindingDesc>,
     /// Compile-time scaffolding: the type constraint each declared *name* in
@@ -8393,14 +8393,19 @@ impl CompiledCode {
         }
     }
 
-    /// True if a store into `local[idx]` may take the plain-scalar fast path.
-    /// Was `simple_scalar_locals[idx]`; see
-    /// [`crate::binding_desc::BindingFlags::simple_scalar_local`].
+    /// The descriptor of `local[idx]` if a store into it may take the
+    /// plain-scalar fast path, else `None`. Was `simple_scalar_locals[idx]`;
+    /// see [`crate::binding_desc::BindingFlags::simple_scalar_local`]. It
+    /// returns the descriptor so the fast path's later per-slot checks do not
+    /// look it up again.
     #[inline]
-    pub(crate) fn is_simple_scalar_local(&self, idx: usize) -> bool {
+    pub(crate) fn simple_scalar_local_desc(
+        &self,
+        idx: usize,
+    ) -> Option<&crate::binding_desc::BindingDesc> {
         self.binding_descs
             .get(idx)
-            .is_some_and(|d| d.flags.simple_scalar_local())
+            .filter(|d| d.flags.simple_scalar_local())
     }
 
     /// Computes the five per-local metadata `Symbol`s on every

@@ -339,7 +339,7 @@ impl Interpreter {
     /// removes and no local fix does.
     ///
     /// The decision splits in two. The **compile-time** half is
-    /// [`CompiledCode::is_simple_scalar_local`]: the slot's name settles every
+    /// [`CompiledCode::simple_scalar_local_desc`]: the slot's name settles every
     /// sigil / twigil / attribute / topic / term / anon branch at compile time,
     /// where it is already known. The **runtime** half is the guards below, each
     /// of which names the branch of the full path it stands in for; every one is
@@ -476,11 +476,7 @@ impl Interpreter {
         // The slot's name makes every name-derived branch inert (see the
         // bitmap's doc), and there is no `@`/`%`/`&`/attribute slot in play for
         // the wrapper's tied-store, `our`-sync and attribute-mirror steps either.
-        let Some(desc) = code
-            .binding_descs
-            .get(idx)
-            .filter(|d| d.flags.simple_scalar_local())
-        else {
+        let Some(desc) = code.simple_scalar_local_desc(idx) else {
             return false;
         };
         // A plain `=` into an existing variable: no bind, rebind, `constant`,
