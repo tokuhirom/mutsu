@@ -4489,19 +4489,10 @@ impl Interpreter {
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the source (mirrors the
         // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.is_genuinely_lazy()
-            && args.is_empty()
-            && matches!(method, "kv" | "pairs" | "antipairs")
+        if args.is_empty()
+            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, false)
         {
-            let transform = match method {
-                "pairs" => crate::value::IndexTransform::Pairs,
-                "antipairs" => crate::value::IndexTransform::AntiPairs,
-                _ => crate::value::IndexTransform::Kv,
-            };
-            return Ok(Value::lazy_list(crate::gc::Gc::new(
-                crate::value::LazyList::new_index_pipe(target.clone(), transform),
-            )));
+            return Ok(pipe);
         }
 
         // Stream `.skip`/`.rotor`/`.unique`/... over a lazy invocant (#9159).

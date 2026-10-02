@@ -185,6 +185,13 @@ pub(crate) fn no_zero_arg_meaning_failure(op: &str) -> Value {
 /// 100k `ArrayKind::Lazy` Array. Returns `None` for finite or non-integer
 /// ranges (the caller falls back to `coerce_to_array`).
 pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
+    let ll = infinite_int_range_sequence(value)?.with_array_context();
+    Some(Value::lazy_list(crate::gc::Gc::new(ll)))
+}
+
+/// The reify-on-demand arithmetic `LazyList` an infinite integer range
+/// stands for, without the `@` array-context tag; `None` for any other value.
+pub(crate) fn infinite_int_range_sequence(value: &Value) -> Option<crate::value::LazyList> {
     use crate::value::{LazyList, SequenceSpec};
     let start = match value.view() {
         ValueView::Range(a, i64::MAX) | ValueView::RangeExcl(a, i64::MAX) => a,
@@ -207,15 +214,13 @@ pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
     // `.map`/`.grep` (lazy pipe over the sequence). This makes `my @a = 1..*`
     // O(1) memory instead of materializing a 100k-element prefix.
     let seeds: Vec<Value> = vec![Value::int(start)];
-    let ll = LazyList::new_sequence(
+    Some(LazyList::new_sequence(
         seeds,
         SequenceSpec::Arithmetic {
             step: 1,
             all_int: true,
         },
-    )
-    .with_array_context();
-    Some(Value::lazy_list(crate::gc::Gc::new(ll)))
+    ))
 }
 
 /// Saturating conversion of an arbitrary-precision BigInt to i64.
