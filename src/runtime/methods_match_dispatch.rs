@@ -190,6 +190,7 @@ impl Interpreter {
                         &c.named,
                         c.target_or_new(&text),
                     )
+                    .with_match_cursor_pos(c.narrowed_pos())
                 })
                 .collect();
             // :nth with a single Int returns a single Match, not an array
@@ -232,7 +233,8 @@ impl Interpreter {
                 &captures.positional,
                 &captures.named,
                 mtarget,
-            );
+            )
+            .with_match_cursor_pos(captures.narrowed_pos());
             // Set positional capture env vars ($0, $1, ...) from match object
             let list_v = match_obj.match_list();
             if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {

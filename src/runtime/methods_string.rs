@@ -139,6 +139,7 @@ impl Interpreter {
                 &c.named,
                 c.target_or_new(text),
             )
+            .with_match_cursor_pos(c.narrowed_pos())
         };
         if result_is_list {
             Value::array(selected.iter().map(to_match).collect()).item()
@@ -536,7 +537,8 @@ impl Interpreter {
                         &captures.positional,
                         &captures.named,
                         captures.target_or_new(&text),
-                    );
+                    )
+                    .with_match_cursor_pos(captures.narrowed_pos());
                     self.env.insert("/".to_string(), match_obj.clone());
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();

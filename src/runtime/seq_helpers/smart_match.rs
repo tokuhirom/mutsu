@@ -657,7 +657,9 @@ impl Interpreter {
                             &captures.positional,
                             &captures.named,
                             starget,
-                        );
+                        )
+                        .with_match_cursor_pos(captures.narrowed_pos())
+                        .with_match_cursor_pos(captures.narrowed_pos());
                         self.env.insert("/".to_string(), match_obj);
                         for (k, v) in &captures.named {
                             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
@@ -731,7 +733,8 @@ impl Interpreter {
                                     &cap.positional,
                                     &cap.named,
                                     cap.target_or_new(&text),
-                                );
+                                )
+                                .with_match_cursor_pos(cap.narrowed_pos());
                                 junc_values.push(match_obj);
                             }
                         } else {
@@ -1080,7 +1083,8 @@ impl Interpreter {
                         &captures.positional,
                         &named_with_hash,
                         starget.clone(),
-                    );
+                    )
+                    .with_match_cursor_pos(captures.narrowed_pos());
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures().is_empty()
                         && let ValueView::Instance { attributes, .. } = match_obj.view()

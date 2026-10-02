@@ -59,6 +59,7 @@ mod regex_qq_interp;
 pub(crate) mod regex_qq_token_scope;
 mod regex_resolve;
 mod regex_silent_action;
+mod regex_span_finish;
 mod regex_sub_eval;
 mod regex_subrule_filing;
 mod regex_subrule_lazy;

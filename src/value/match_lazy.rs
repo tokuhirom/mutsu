@@ -123,7 +123,8 @@ impl MatchNode {
             // rebuild helpers produce plain Instances); a live lazy node
             // never carries them. Answering `None` here rather than falling
             // through keeps a probe for one from forcing the materialization.
-            "actions" | "__failed_match__" | "pos" => None,
+            "pos" => self.cap.kids().pos.map(|pos| Value::Int(pos as i64)),
+            "actions" | "__failed_match__" => None,
             crate::value::match_view::CURSOR_REGEXSUB_ATTR => None,
             _ => self.force_attrs().as_map().get(name).cloned(),
         }
@@ -188,6 +189,9 @@ impl MatchNode {
         attrs.insert("str", Value::str(self.span_text()));
         attrs.insert("from", Value::Int(cap.from as i64));
         attrs.insert("to", Value::Int(cap.to as i64));
+        if let Some(pos) = kids.pos {
+            attrs.insert("pos", Value::Int(pos as i64));
+        }
         attrs.insert("list", Value::array(pos_vals));
         attrs.insert("named", Value::hash_bare_values(sub_named));
         if !silent_caps_vals.is_empty() {
@@ -411,6 +415,26 @@ impl Value {
         let mut cap = (*node.cap).clone();
         cap.ast = Some(ast);
         Some(Value::lazy_match(Arc::new(cap), node.target.clone()))
+    }
+
+    /// A just-built lazy Match whose cursor ended at `pos` although a `)>`
+    /// marker put its `.to` earlier (`RegexCaptures::narrowed_pos`). Returns
+    /// `self` unchanged when `pos` is `None` or `self` is not a still-lazy
+    /// Match.
+    // Cost: O(1) when `pos` is `None`; otherwise one capture-node clone.
+    pub(crate) fn with_match_cursor_pos(self, pos: Option<usize>) -> Value {
+        let Some(pos) = pos else {
+            return self;
+        };
+        let Some(node) = self.0.as_match_node() else {
+            return self;
+        };
+        if node.forced().is_some() {
+            return self;
+        }
+        let mut cap = (*node.cap).clone();
+        cap.kids_mut().pos = Some(pos);
+        Value::lazy_match(Arc::new(cap), node.target.clone())
     }
 
     /// The per-match `:my $*x` values recorded at reduce time, read straight

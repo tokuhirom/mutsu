@@ -263,8 +263,7 @@ impl Interpreter {
             return self
                 .regex_match_end_from_caps_in_pkg(parsed, chars, 0, pkg)
                 .map(|(end, mut caps)| {
-                    caps.from = caps.capture_start.unwrap_or(0);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(0, end);
                     caps.set_target(Some(target.clone()));
                     caps
                 });
@@ -273,8 +272,7 @@ impl Interpreter {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {
-                caps.from = caps.capture_start.unwrap_or(start);
-                caps.to = caps.capture_end.unwrap_or(end);
+                caps.finish_span(start, end);
                 caps.set_target(Some(target.clone()));
                 return Some(caps);
             }

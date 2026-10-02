@@ -28,8 +28,7 @@ impl Interpreter {
             result = self
                 .regex_match_end_from_caps_in_pkg(&stripped_parsed, stripped_chars, 0, pkg)
                 .map(|(end, mut caps)| {
-                    caps.from = caps.capture_start.unwrap_or(0);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(0, end);
                     super::regex_helpers::remap_caps_spans(
                         &mut caps,
                         stripped.stripped_map(),
@@ -46,8 +45,7 @@ impl Interpreter {
                     start,
                     pkg,
                 ) {
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(start, end);
                     super::regex_helpers::remap_caps_spans(
                         &mut caps,
                         stripped.stripped_map(),
@@ -97,8 +95,7 @@ impl Interpreter {
                     if !is_fold_boundary(end_pos) {
                         return None;
                     }
-                    caps.from = caps.capture_start.unwrap_or(0);
-                    caps.to = end_pos;
+                    caps.finish_span(0, end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
                     caps.set_target(Some(target.clone()));
                     Some(caps)
@@ -117,8 +114,7 @@ impl Interpreter {
                     if !is_fold_boundary(end_pos) {
                         continue;
                     }
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = end_pos;
+                    caps.finish_span(start, end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
                     caps.set_target(Some(target.clone()));
                     result = Some(caps);

@@ -109,6 +109,7 @@ impl Interpreter {
                     &captures.named,
                     captures.target_or_new(orig_text.unwrap_or_default()),
                 )
+                .with_match_cursor_pos(captures.narrowed_pos())
             } else {
                 Value::str(matched_text.to_string())
             };
@@ -265,7 +266,8 @@ impl Interpreter {
             &captures.positional,
             &captures.named,
             captures.target_or_new(orig_text.unwrap_or_default()),
-        );
+        )
+        .with_match_cursor_pos(captures.narrowed_pos());
         let mut context = vec![("/".to_string(), match_obj.clone())];
         for i in 0..captures.positional.len() {
             // A quantified capture group (`( ... )+`) exposes the LIST of

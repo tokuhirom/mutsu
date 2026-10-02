@@ -13,7 +13,12 @@ pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
         Some(ValueView::Int(n)) => n,
         _ => 0,
     };
-    let to = match attributes.get("to").map(Value::view) {
+    // `:pos` is where the cursor ended: `to` unless a `)>` narrowed it.
+    let pos = match attributes
+        .get("pos")
+        .or_else(|| attributes.get("to"))
+        .map(Value::view)
+    {
         Some(ValueView::Int(n)) => n,
         _ => 0,
     };
@@ -29,7 +34,7 @@ pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
     let mut parts = vec![
         format!(":orig(\"{}\")", escaped_orig),
         format!(":from({})", from),
-        format!(":pos({})", to),
+        format!(":pos({})", pos),
     ];
 
     // Positional captures (:list)

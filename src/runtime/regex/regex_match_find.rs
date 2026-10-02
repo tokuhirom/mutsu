@@ -60,8 +60,7 @@ impl Interpreter {
             let (end, mut caps) = matches
                 .into_iter()
                 .find(|(end, _)| *end == stripped_chars.len())?;
-            caps.from = caps.capture_start.unwrap_or(0);
-            caps.to = caps.capture_end.unwrap_or(end);
+            caps.finish_span(0, end);
             super::regex_helpers::remap_caps_spans(&mut caps, stripped.stripped_map(), orig_len);
             caps.set_target(Some(target));
             return Some(caps);
@@ -81,16 +80,14 @@ impl Interpreter {
             // start rule DID match, the way Rakudo's reduce-time dispatch does.
             if !matches.is_empty() {
                 let (end, mut caps) = matches.swap_remove(0);
-                caps.from = caps.capture_start.unwrap_or(0);
-                caps.to = caps.capture_end.unwrap_or(end);
+                caps.finish_span(0, end);
                 caps.set_target(Some(target));
                 *partial = Some(caps);
             }
             return None;
         };
         let (end, mut caps) = matches.swap_remove(full_idx);
-        caps.from = caps.capture_start.unwrap_or(0);
-        caps.to = caps.capture_end.unwrap_or(end);
+        caps.finish_span(0, end);
         caps.set_target(Some(target));
         Some(caps)
     }
@@ -157,8 +154,7 @@ impl Interpreter {
                     start,
                     pkg,
                 ) {
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(start, end);
                     super::regex_helpers::remap_caps_spans(
                         &mut caps,
                         stripped.stripped_map(),
@@ -175,8 +171,7 @@ impl Interpreter {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
             {
-                caps.from = caps.capture_start.unwrap_or(start);
-                caps.to = caps.capture_end.unwrap_or(end);
+                caps.finish_span(start, end);
                 caps.set_target(Some(target.clone()));
                 return Some(caps);
             }
@@ -283,8 +278,7 @@ impl Interpreter {
                     )
                 };
                 for (end, mut caps) in ends {
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(start, end);
                     super::regex_helpers::remap_caps_spans(
                         &mut caps,
                         stripped.stripped_map(),
@@ -329,8 +323,7 @@ impl Interpreter {
                 self.regex_match_ends_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
             };
             for (end, mut caps) in ends {
-                caps.from = caps.capture_start.unwrap_or(start);
-                caps.to = caps.capture_end.unwrap_or(end);
+                caps.finish_span(start, end);
                 caps.set_target(Some(target.clone()));
                 // A capture group can report a span starting BEFORE this start
                 // position (`caps.capture_start`), so the barrier is re-tested

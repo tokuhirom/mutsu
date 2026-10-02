@@ -384,6 +384,7 @@ impl Interpreter {
                     &caps.named,
                     target,
                 )
+                .with_match_cursor_pos(caps.narrowed_pos())
             }
             None => Self::cursor_failure(cursor_class, orig, start),
         }

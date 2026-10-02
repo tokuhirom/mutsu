@@ -61,6 +61,7 @@ impl Value {
                 positional: positional.to_vec(),
                 regex_vars: regex_vars.clone(),
                 cursor,
+                pos: None,
             })
         });
         let cap = crate::runtime::CapNode {

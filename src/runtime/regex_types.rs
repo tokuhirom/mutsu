@@ -346,6 +346,9 @@ pub(crate) struct CapChildren {
     /// $!inv = True }` stored. `None` for the (overwhelming) invocation that
     /// never touched one.
     pub(crate) cursor: Option<Value>,
+    /// The cursor position (`.pos`) when a `)>` marker narrowed `.to` short
+    /// of it; `None` when `.pos` is `.to`.
+    pub(crate) pos: Option<usize>,
 }
 
 impl CapNode {
@@ -410,14 +413,24 @@ impl RegexCaptures {
         self.positional
             .truncate(PosSlot::bound_len(&self.positional));
         let (sym, action_name) = (self.sym(), self.action_name());
-        let (capture_alias_map, regex_vars, cursor) = match rare {
-            Some(rare) => (rare.capture_alias_map, rare.regex_vars, rare.cursor),
+        let (capture_alias_map, regex_vars, cursor, cursor_span) = match rare {
+            Some(rare) => (
+                rare.capture_alias_map,
+                rare.regex_vars,
+                rare.cursor,
+                rare.cursor_span,
+            ),
             None => Default::default(),
         };
+        // Only a `)>`-narrowed end gives the stored node a `.pos` of its own.
+        let pos = cursor_span
+            .map(|(_, end)| end)
+            .filter(|&end| end != self.to);
         let has_children = !self.named.is_empty()
             || !capture_alias_map.is_empty()
             || !self.positional.is_empty()
             || cursor.is_some()
+            || pos.is_some()
             || regex_vars.as_ref().is_some_and(|vars| !vars.is_empty());
         let children = has_children.then(|| {
             Box::new(CapChildren {
@@ -426,6 +439,7 @@ impl RegexCaptures {
                 positional: self.positional,
                 regex_vars: regex_vars.map(Arc::unwrap_or_clone).unwrap_or_default(),
                 cursor,
+                pos,
             })
         });
         CapNode {
@@ -501,6 +515,11 @@ pub(crate) struct RareCaps {
     /// the compiled engine's frame; carried onto the stored node by
     /// [`RegexCaptures::into_cap_node`].
     pub(crate) cursor: Option<Value>,
+    /// The cursor's own span `(start, end)` when a `<(` / `)>` marker
+    /// narrowed the match's `.from`/`.to` (see
+    /// [`RegexCaptures::finish_span`]). `None` when no marker fired, so the
+    /// span is `from`/`to`.
+    pub(crate) cursor_span: Option<(usize, usize)>,
 }
 
 impl RareCaps {
@@ -514,6 +533,7 @@ impl RareCaps {
             && self.target.is_none()
             && self.outer_backref.is_none()
             && self.cursor.is_none()
+            && self.cursor_span.is_none()
     }
 }
 
