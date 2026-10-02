@@ -2185,18 +2185,19 @@ impl Interpreter {
                 // evaluation: a lone sub's resolution never runs candidate
                 // matching (there is nothing to disambiguate), so its `where`
                 // has not run yet at this point the way a multi's has.
-                // Further gated on the winner actually carrying a `where`
-                // (mirrors `compile_and_call_function_def`'s own gate): this
-                // is not merely an optimisation but a safety property, since
-                // it guarantees the positional light-call fast paths above
-                // (gated on `pd.where_constraint.is_none()` for every param)
-                // could never have fired instead and left the flag unconsumed.
-                self.pending_skip_where_recheck = multi_def_memo.as_deref().is_some_and(|def| {
-                    def.param_defs
-                        .iter()
-                        .any(|pd| pd.where_constraint.is_some())
-                }) && self
-                    .has_multi_candidates_cached_sym(name_sym);
+                // Further gated on the winner actually carrying a `where` or
+                // a user-subset-typed parameter (#10986): this is not merely
+                // an optimisation but a safety property, since it guarantees
+                // the positional light-call fast paths above (gated on
+                // `pd.where_constraint.is_none()` and a fast nominal type for
+                // every param) could never have fired instead and left the
+                // flag unconsumed.
+                self.pending_skip_constraint_recheck =
+                    multi_def_memo.as_deref().is_some_and(|def| {
+                        def.param_defs
+                            .iter()
+                            .any(|pd| self.param_runs_constraint_predicate(pd))
+                    }) && self.has_multi_candidates_cached_sym(name_sym);
                 let result =
                     self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
                 self.set_pending_call_arg_sources(None);

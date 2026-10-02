@@ -23,6 +23,10 @@ impl Interpreter {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        // Taken at entry so it describes only THIS method's own parameter
+        // bind below, never a nested call made before it (#10986; see
+        // `pending_skip_constraint_recheck`).
+        let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         self.guard_native_stack()?;
         crate::alloc_scope!("call-compiled-method");
         // Slice F: the rw-writeback source list is drained by the CallMethod /
@@ -320,6 +324,9 @@ impl Interpreter {
                 && !needs_default_eval
                 && !has_arg_mismatch
             {
+                // The fast binder below checks the parameter types itself;
+                // hand it this call's #10986 trust.
+                self.pending_skip_constraint_recheck = skip_constraint_recheck;
                 return self.call_compiled_method_fast(
                     receiver_class_name,
                     owner_class,
@@ -818,6 +825,7 @@ impl Interpreter {
         self.inject_class_body_statics(owner_class);
 
         // Bind method parameters
+        self.pending_skip_constraint_recheck = skip_constraint_recheck;
         let rw_bindings = match loan_env!(
             self,
             bind_method_function_args_values(&bind_param_defs, &bind_params, &args)
@@ -1716,6 +1724,10 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         can_skip_merge: bool,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // #10986: a multi winner's subset predicates already ran in dispatch
+        // (`pending_skip_constraint_recheck`); taken at entry so it describes
+        // only this method's own parameter checks below.
+        let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
@@ -1986,7 +1998,11 @@ impl Interpreter {
                             Err(e) => native_err = Some(e),
                         }
                     }
-                    if native_err.is_none() && self.type_matches_value(&resolved_constraint, &val) {
+                    if native_err.is_none()
+                        && ((skip_constraint_recheck
+                            && self.constraint_is_user_subset(&resolved_constraint))
+                            || self.type_matches_value(&resolved_constraint, &val))
+                    {
                         param_values.push((binding_name, val));
                         arg_idx += 1;
                         continue;
