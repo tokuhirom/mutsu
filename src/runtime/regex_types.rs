@@ -272,7 +272,7 @@ pub(crate) enum RegexAtom {
     CaptureIsolatedGroup(RegexPattern),
     /// [`RegexAtom::CaptureIsolatedGroup`], but the interpolated value was
     /// itself a closure (its pattern embeds `@(...)`/`$(...)`/`{...}` code —
-    /// [`Value::RegexCaptured`]): `scope` is the lexical scope that code
+    /// [`Value::RegexCaptured`](crate::value::Value::RegexCaptured)): `scope` is the lexical scope that code
     /// closed over, snapshotted at the point the *inner* regex literal was
     /// evaluated. A `<$re>` reference resolves `$re`'s value at the OUTER
     /// pattern's parse time and splices its pattern text in — so without

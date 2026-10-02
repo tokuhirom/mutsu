@@ -32,7 +32,7 @@ pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 /// the per-candidate `memcpy` traffic and three `HashMap` drops were paid by
 /// every candidate to carry state almost none of them had
 /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576) item 4). This is
-/// the ADR-0016 P2 [`CapNode`]/[`CapChildren`] split applied one level up, to
+/// the ADR-0016 P2 [`CapNode`](super::CapNode)/[`CapChildren`](super::CapChildren) split applied one level up, to
 /// the accumulator instead of the stored node.
 ///
 /// Reach it through the accessors on [`RegexCaptures`]: the `_mut` ones
@@ -67,7 +67,7 @@ pub(crate) struct RareCaps {
     /// the parent walk, not a capture of this level.
     pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
     /// The grammar instance the rule invocation that produced this match owned
-    /// (see [`CapChildren::cursor`]). Set where a rule invocation returns, from
+    /// (see [`CapChildren::cursor`](super::CapChildren::cursor)). Set where a rule invocation returns, from
     /// the compiled engine's frame; carried onto the stored node by
     /// [`RegexCaptures::into_cap_node`].
     pub(crate) cursor: Option<Value>,
@@ -256,7 +256,7 @@ impl RegexCaptures {
     }
 
     /// File the grammar instance the rule invocation that produced this match
-    /// owned (see [`CapChildren::cursor`]). The payload is allocated only for
+    /// owned (see [`CapChildren::cursor`](super::CapChildren::cursor)). The payload is allocated only for
     /// an invocation that has one.
     pub(crate) fn set_cursor(&mut self, cursor: Value) {
         self.rare_mut().cursor = Some(cursor);
