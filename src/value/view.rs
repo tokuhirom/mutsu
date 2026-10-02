@@ -784,6 +784,14 @@ impl Value {
         self.0.is_plain_scalar_store_payload()
     }
 
+    /// Whether this value certainly cannot be shared by a `$s = $src`
+    /// array-share store (it is not, and cannot resolve to, an `Array`/`Hash`).
+    /// A pure tag probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_never_array_share_source(&self) -> bool {
+        self.0.is_never_array_share_source()
+    }
+
     /// Whether a local slot holding this value can be overwritten outright by a
     /// plain scalar store, rather than written *through*. A pure tag probe (see
     /// [`Self::is_junction_value`]).

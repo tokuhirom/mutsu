@@ -3331,11 +3331,24 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(1) (plus a copy of the name).
+            // Cost: O(1) (plus a copy of the name when the mark is set).
             OpCode::MarkArrayShareSource(name_idx) => {
-                self.array_share_context().set(true);
-                self.array_share_source()
-                    .set(Some(Self::const_str(code, *name_idx).to_string()));
+                // The RHS is already on the stack, and both consumers
+                // (`SetLocal`, `AssignExpr`) share only a value that derefs to
+                // an `Array`/`Hash`. For a value that certainly cannot, the mark
+                // would be consumed as a no-op, so leave it unset: a pending
+                // flag sends the store down the full cascade, and setting it
+                // copies the source name. That was most of a plain
+                // `$s = $i` store (#10955).
+                if !self
+                    .stack
+                    .last()
+                    .is_some_and(Value::is_never_array_share_source)
+                {
+                    self.array_share_context().set(true);
+                    self.array_share_source()
+                        .set(Some(Self::const_str(code, *name_idx).to_string()));
+                }
                 *ip += 1;
             }
             // Cost: O(1).
