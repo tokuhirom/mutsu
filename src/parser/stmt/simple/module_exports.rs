@@ -223,6 +223,15 @@ fn note_scan_guard_skip() {
     SCAN_GUARD_SKIPS.with(|c| c.set(c.get() + 1));
 }
 
+/// Does a module's source compute its import set in a unit-scope `sub EXPORT`
+/// hook (a column-0 `[my|our] sub EXPORT`, Pod and heredocs blanked out)?
+/// The names such a `use` imports exist only once the hook has run with the
+/// `use`'s arguments, so no source scan can list them (#11062).
+// Cost: O(n), n = source length.
+pub(crate) fn source_declares_export_hook(source: &str) -> bool {
+    source_scan::declares_export_sub(&source_scan::code_text(source))
+}
+
 /// Register exported function names for a module (called when parsing `use` statements).
 /// Exports are added to the current (innermost) lexical scope.
 ///

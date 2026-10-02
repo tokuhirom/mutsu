@@ -91,6 +91,9 @@ pub(super) struct DeclaredTypes {
     pub(super) packages: HashSet<String>,
     /// Plain classes: type-like but not parametric.
     pub(super) classes: HashSet<String>,
+    /// A `use`d module computes its import set in a `sub EXPORT` hook, so the
+    /// names the unit imports are not known before it runs (#11062).
+    pub(super) imports_through_export_hook: bool,
 }
 
 /// Record a declared type/package name under every spelling it is reachable by.
@@ -106,8 +109,9 @@ fn insert_declared_name(out: &mut HashSet<String>, name: &str) {
     out.insert(name.to_string());
 }
 
-/// Adds the type names a `use`d module declares to the set.
-pub(super) type HarvestFn<'a> = dyn Fn(&str, &mut HashSet<String>) + 'a;
+/// Adds the type names a `use`d module declares to the set, and returns whether
+/// the module computes its import set in a `sub EXPORT` hook.
+pub(super) type HarvestFn<'a> = dyn Fn(&str, &mut HashSet<String>) -> bool + 'a;
 
 /// Collects [`DeclaredTypes`], and — given an interpreter — the types each
 /// `use`d module's source declares (`harvest`). Declarations are collected
@@ -122,7 +126,15 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         let out = &mut self.out;
         match stmt {
-            Stmt::Use { module, .. } | Stmt::Need { module } => {
+            Stmt::Use { module, .. } => {
+                if let Some(harvest) = self.harvest
+                    && harvest(module, &mut out.types)
+                {
+                    out.imports_through_export_hook = true;
+                }
+            }
+            // `need` loads without importing, so an export hook never runs.
+            Stmt::Need { module } => {
                 if let Some(harvest) = self.harvest {
                     harvest(module, &mut out.types);
                 }
