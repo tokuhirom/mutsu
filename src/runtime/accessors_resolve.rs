@@ -202,6 +202,9 @@ impl Interpreter {
     /// A def with no `compiled_routine` at all (so the check cannot be made)
     /// conservatively skips stabilization too.
     pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
+        if let Some(code) = def.dispatchee {
+            return code;
+        }
         // Filtered like a closure capture, not the whole live env: sharing the
         // running frame's tier made its next write copy the tier (#9169).
         let mut captured_env = self.routine_code_object_env(def.compiled.as_ref());
@@ -298,6 +301,9 @@ impl Interpreter {
         let candidate_subs: Vec<Value> = candidates
             .iter()
             .map(|cand| {
+                if let Some(code) = &cand.dispatchee {
+                    return code.clone();
+                }
                 let mut env = base_env.clone();
                 if let Some(kind) = cand.declarator.callable_type() {
                     env.insert("__mutsu_callable_type".to_string(), Value::str_from(kind));

@@ -579,6 +579,7 @@ impl Interpreter {
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
