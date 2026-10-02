@@ -429,6 +429,13 @@ impl RuntimeError {
         Self::new("Cannot assign to an immutable value")
     }
 
+    /// X::AdHoc - a raw-invocant lvalue method (`substr-rw`) called on a name
+    /// with no writable container behind it: one bound straight to a value
+    /// (`my $k := "lit"`, sigilless, `constant`) or a readonly parameter.
+    pub(crate) fn requires_writeable_container(method: &str) -> Self {
+        Self::new(format!("'{method}' requires a writeable container"))
+    }
+
     /// X::AdHoc - a definiteness-constrained type object has no instances of
     /// its own; construction must target its unconstrained base type.
     pub(crate) fn constrained_type_instantiation(type_name: &str) -> Self {

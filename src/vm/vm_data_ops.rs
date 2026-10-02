@@ -92,8 +92,23 @@ impl Interpreter {
                     Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items);
                     continue;
                 }
+                let source_sym = source_name;
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
+                // A readonly scalar binding (`my $b := "lit"`, sigilless, a
+                // non-`is rw` parameter) has no container to alias, so the
+                // List holds its value and stays immutable there
+                // (`$l[0] = 5` dies), instead of boxing the binding into a
+                // fresh writable cell that every later write through the List
+                // -- or `substr-rw($b, ...)` -- would land in (#10893).
+                if !source_name.starts_with(['@', '%', '&'])
+                    && self.name_is_readonly_binding_for(&source_name, Some(source_sym))
+                {
+                    // A closure's capture of the binding may already be a
+                    // shared cell; the List still holds only the value.
+                    elems.push(inner.deref_container());
+                    continue;
+                }
                 let slot_hint = val.varref_slot();
                 let cell = self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint);
                 // List aliasing promotes the scalar's storage into the cell

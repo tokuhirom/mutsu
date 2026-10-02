@@ -17,6 +17,16 @@ impl Interpreter {
         // A boxed raw invocant (`native_method_writes_raw_invocant`): read the
         // string through it and write the result back into it.
         let container = target.is_container_ref().then(|| target.clone());
+        // Otherwise the write goes by name, and a name that is readonly for any
+        // reason (bound straight to a value, sigilless, a non-`is rw`
+        // parameter) has no container to write into: Rakudo's
+        // `substr-rw(\SELF: ...)` refuses it before touching the string.
+        if container.is_none()
+            && let Some(var) = target_var
+            && self.name_is_readonly_binding_for(var.trim_start_matches('$'), None)
+        {
+            return Err(RuntimeError::requires_writeable_container("substr-rw"));
+        }
         let target = if container.is_some() {
             target.deref_container()
         } else {
