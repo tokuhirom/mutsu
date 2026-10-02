@@ -310,16 +310,7 @@ impl Interpreter {
                 if let Some(result) = self.try_wrapped_token_end(chars, pos, pkg, "ws") {
                     return result;
                 }
-                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
-                let mut end = pos;
-                while end < chars.len() && crate::builtins::cclass::is_space(chars[end]) {
-                    end += 1;
-                }
-                let after_is_word = end < chars.len() && is_word_char(chars[end]);
-                if before_is_word && after_is_word {
-                    return if end > pos { Some(end) } else { None };
-                }
-                return Some(end);
+                return super::regex_helpers::ws_rule_end(chars, pos);
             }
             RegexAtom::CodeAssertion { .. } => {
                 return Some(pos);
