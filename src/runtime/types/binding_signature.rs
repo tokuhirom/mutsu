@@ -2159,6 +2159,10 @@ impl Interpreter {
                             | ValueView::Slip(..) => {
                                 flatten_into_slurpy(std::slice::from_ref(&arg), &mut items);
                             }
+                            // A non-itemized Hash/Map flattens into its Pairs.
+                            ValueView::Hash(..) if !arg.hash_is_itemized() => {
+                                flatten_into_slurpy(std::slice::from_ref(&arg), &mut items);
+                            }
                             _ => {
                                 items.push(arg.clone());
                             }

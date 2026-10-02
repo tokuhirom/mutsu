@@ -10671,6 +10671,7 @@ impl CompiledCode {
                     }
                 }
                 OpCode::GetCallerVar { .. }
+                | OpCode::GetCallersVar { .. }
                 | OpCode::SetCallerVar { .. }
                 | OpCode::BindCallerVar { .. }
                 | OpCode::GetCallerOuterVar { .. } => {
