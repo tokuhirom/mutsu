@@ -86,12 +86,29 @@ fn value_raku_repr(val: &Value) -> String {
 
 /// Extract the `from` position from a Match object value.
 pub(super) fn match_value_from(val: &Value) -> i64 {
-    val.match_from().unwrap_or(0)
+    match_visible_pos(val, val.match_from().unwrap_or(0))
 }
 
 /// Extract the `to` position from a Match object value.
 pub(super) fn match_value_to(val: &Value) -> i64 {
-    val.match_to().unwrap_or(0)
+    match_visible_pos(val, val.match_to().unwrap_or(0))
+}
+
+/// Convert a Match's internal codepoint offset into the grapheme index that
+/// `.from` / `.to` / `.pos` report (Raku counts characters, so `\r\n` is one).
+// Cost: O(n), n = chars of `.orig` for the ASCII/CRLF scan; a non-trivial
+// subject also pays an O(p) grapheme count, p = chars of the prefix.
+pub(super) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
+    use unicode_segmentation::UnicodeSegmentation;
+    let Some(orig) = val.match_orig() else {
+        return cp;
+    };
+    let text = orig.to_string_value();
+    if cp <= 0 || text.is_ascii() && !text.contains("\r\n") {
+        return cp;
+    }
+    let prefix: String = text.chars().take(cp as usize).collect();
+    prefix.graphemes(true).count() as i64
 }
 
 /// Collect all captures from a Match object sorted by position.

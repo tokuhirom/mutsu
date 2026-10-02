@@ -481,6 +481,20 @@ impl Compiler {
         let flattened = crate::ast::scope_members(body);
         let package_name = package_name.map(str::to_string);
         let mut keys = Vec::new();
+        // A `my &k` declared in the type body is an assignable Callable
+        // container for every method body (`&k = ...` is not a routine-name
+        // assignment); the scope-blind method compilers learn it from here.
+        let saved_static_code_vars = self.class_body_static_code_vars.clone();
+        self.class_body_static_code_vars
+            .extend(crate::ast::scope_members(body).filter_map(|s| match s {
+                Stmt::VarDecl {
+                    name,
+                    is_our: false,
+                    is_dynamic: false,
+                    ..
+                } if name.starts_with('&') => Some(name.clone()),
+                _ => None,
+            }));
         // The type body's own `Stmt::SetLine` markers are what tell each method
         // which line its `method` keyword sits on. The nested `method_compiler`
         // `compile_method_body` spins up is a bare `Compiler::new()` with no
@@ -529,6 +543,7 @@ impl Compiler {
             }
             keys.push(key);
         }
+        self.class_body_static_code_vars = saved_static_code_vars;
         keys
     }
 
