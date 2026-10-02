@@ -94,6 +94,7 @@ impl Interpreter {
         // Fingerprints of candidates an earlier pass already tried and that
         // did not bind; each wider pass re-gathers them, so skip them there.
         let mut rejected = std::collections::HashSet::new();
+        let had_pending_error = self.pending_dispatch_error.is_some();
         for (stage, program) in plan.stages.iter().zip(&plan.programs) {
             // A program is specific to the argument-type key, so only a plan
             // the cache keyed may build one (an unkeyed plan is per call).
@@ -110,6 +111,14 @@ impl Interpreter {
             };
             if let Some(def) = winner {
                 return Some(def);
+            }
+            // A stage that ended in `X::Multi::Ambiguous` (or a `where` that
+            // died) has decided the call: a wider pass must not pick a
+            // candidate out of the tie. `multi f(*%m)` and `multi f()` tie
+            // in the exact-arity stage for `f()`; the slurpy stage, which
+            // holds only `(*%m)`, would otherwise run it.
+            if !had_pending_error && self.pending_dispatch_error.is_some() {
+                return None;
             }
         }
         // Fall back to arity-only if no proto declared and no multi candidates were found.

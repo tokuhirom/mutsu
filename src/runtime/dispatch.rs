@@ -93,6 +93,10 @@ impl Interpreter {
     pub(super) fn candidate_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
         Self::dispatch_visible_params(def)
             .into_iter()
+            // A slurpy hash (`*%m`) never takes a positional, so it does not
+            // change the candidate's dispatch shape: `multi f(*%m)` and
+            // `multi f()` tie for `f()` and are reported ambiguous.
+            .filter(|p| !(p.slurpy && p.name.starts_with('%')))
             .map(|p| {
                 // Include sigil-based implicit type constraint in the shape
                 // so that @-param and $-param are distinguishable.
