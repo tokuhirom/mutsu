@@ -216,6 +216,7 @@ impl Interpreter {
                 // This mimics a real GC that would trace live references and
                 // collect unreachable objects.
                 self.closure_env_overrides.clear();
+                crate::gc::collect_on_request();
                 // Process pending DESTROY submethods for objects whose refcount
                 // dropped to 0 (possibly including items freed by the clear above).
                 self.run_pending_instance_destroys()?;

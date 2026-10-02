@@ -21,6 +21,7 @@ mod carrier_compile_cache_keyed_by_parse_site;
 mod carrier_compile_cache_serves_whenever_callbacks;
 mod closure_call_intern_budget;
 mod crash_report;
+mod dispatch_poll_placement;
 mod dynamic_method_intern_budget;
 mod flaky_retry;
 mod gc_stress;

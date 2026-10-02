@@ -454,6 +454,27 @@ fn gc_safepoint_armed_slow(kind: SafepointKind) {
     }
 }
 
+/// `$*VM.request-garbage-collection`: "perform a garbage collect run when
+/// possible" (raku-doc `Type/VM`). A native method body holds no container
+/// borrow, so it is possible right here: run the collect now, the same one a
+/// firing safepoint runs, after parking for any stop-the-world another thread
+/// has requested. A no-op with `MUTSU_GC=off`.
+///
+/// Before #8821 the call got its collect for free from the per-opcode poll
+/// that preceded it under `MUTSU_GC_EVERY_SAFEPOINT`; with polls on back-edges
+/// and calls only, an explicit request has to be honoured explicitly.
+// Cost: one cycle collect, O(s) in the suspects reachable from the candidate
+// buffer.
+pub(crate) fn collect_on_request() {
+    if !gc_enabled() {
+        return;
+    }
+    super::stw::park_at_safepoint();
+    crate::profile::exclude_non_raku(crate::profile::Region::Gc, || {
+        collect_cycles_at(SafepointKind::Manual.name())
+    });
+}
+
 /// `MUTSU_GC_COLLECT_NOW=1`: one collect right at program start (design §9.2).
 /// Called from `Interpreter::run`; a `Once` keeps re-entrant runs (`EVAL`,
 /// REPL lines) from re-collecting.

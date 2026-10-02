@@ -1645,6 +1645,10 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds}"
     );
+    eprintln!(
+        "[mutsu vm-stats] poll: polls={}",
+        crate::vm::vm_poll::polls_so_far()
+    );
     if let Ok(map) = jit_bailout_by_opcode().lock()
         && !map.is_empty()
     {

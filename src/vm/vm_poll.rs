@@ -98,6 +98,65 @@ pub(crate) fn armed() -> bool {
     state() & (STATE_GC | STATE_PROFILER) != 0 || test_profiler_enabled()
 }
 
+/// Where a bytecode dispatch loop polls, read once at loop entry (the policy is
+/// fixed for the life of the process, so hoisting it costs nothing in
+/// correctness and removes every per-opcode load).
+///
+/// # Polls sit on back-edges, not on every opcode (#8821)
+///
+/// With only the GC consumer armed — every default run — a dispatch loop
+/// polls at its entry and after every **backward** control transfer (an op
+/// that leaves `ip` at or before its own index: `nqp::while`'s sunk
+/// `Jump(loop_start)`, a backward `goto`). A compound loop op (`while`, `for`,
+/// C-style, `repeat`) iterates inside one `exec_one`, and each of its
+/// iterations re-enters `Interpreter::run_range`, which polls at its entry.
+/// Calls and returns have safepoints of their own (`SafepointKind::Call` /
+/// `Return`).
+///
+/// That keeps the stop-the-world bound (`gc::stw`): between two polls on one
+/// thread, the dispatch loop only moves `ip` forward, so it executes at most
+/// one chunk's worth of straight-line ops, plus a bounded nesting of
+/// non-repeating `run_range`s (`try`, `given`, a `do` block), each of which is
+/// itself straight-line. Anything that repeats does so through a back-edge, a
+/// `run_range` iteration or a call, and every one of those polls. A single op
+/// that runs long in native code (a big `sort`) was never a safepoint either,
+/// before or after. Getting this wrong costs liveness, not soundness: a
+/// collector that cannot reach quiescence times out and backs off.
+///
+/// With the profiler armed, every opcode still polls. The exact line counts
+/// (`record_line`) need to see each line transition, and ADR-0106 §D4's
+/// region attribution assumes the gap between a tick and the next poll is
+/// one opcode, so profile runs keep the old placement exactly.
+#[derive(Clone, Copy)]
+pub(crate) struct DispatchPolls {
+    armed: bool,
+    every_op: bool,
+}
+
+impl DispatchPolls {
+    #[inline(always)]
+    pub(crate) fn current() -> Self {
+        DispatchPolls {
+            armed: armed(),
+            every_op: profiler_armed(),
+        }
+    }
+
+    /// Whether the loop polls before the op at `ip`, given whether `ip` was
+    /// reached by a backward transfer (or is the loop's entry).
+    #[inline(always)]
+    pub(crate) fn due(self, backward: bool) -> bool {
+        self.armed && (self.every_op || backward)
+    }
+
+    /// Whether a back-edge that has no op of its own (an empty loop body)
+    /// polls: only when the ops around it do not already poll one by one.
+    #[inline(always)]
+    pub(crate) fn due_without_ops(self, backward: bool) -> bool {
+        self.armed && !self.every_op && backward
+    }
+}
+
 /// Whether the profiler consumer is armed.  JIT code generation uses this
 /// process-lifetime decision to select the location-carrying helper ABI, so a
 /// disarmed native backedge keeps the original one-argument helper shape.
@@ -109,6 +168,7 @@ pub(crate) fn profiler_armed() -> bool {
 /// Run the consumers for one VM poll.
 #[inline(always)]
 pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
+    count_poll();
     let s = state();
     if s & STATE_GC != 0 {
         // `armed` was checked by the caller for the hot dispatch-loop sites;
@@ -134,6 +194,7 @@ pub(crate) fn poll_code(
     code: &CompiledCode,
     interp: &Interpreter,
 ) {
+    count_poll();
     let s = state();
     if s & STATE_PROFILER != 0 || test_profiler_enabled() {
         record_line(code, site, interp);
@@ -143,6 +204,49 @@ pub(crate) fn poll_code(
     }
     if s & STATE_PROFILER != 0 || test_profiler_enabled() {
         profiler_poll(kind, site);
+    }
+}
+
+/// How many polls ([`poll`] and [`poll_code`], interpreted and native) ran,
+/// under `MUTSU_VM_STATS`: the observable for #8821's placement — it scales
+/// with back-edges, loop iterations and calls, not with executed opcodes,
+/// unless the profiler is armed.
+static POLLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[inline(always)]
+fn count_poll() {
+    if crate::stats_gate::enabled() {
+        POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// [`POLLS`] so far, for the `MUTSU_VM_STATS` report.
+pub(crate) fn polls_so_far() -> u64 {
+    POLLS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+impl Interpreter {
+    /// `exec_one` for a dispatch loop with no poll of its own — the call fast
+    /// paths' body loops, the lazy-pull and `given` inner loops: polls after a
+    /// backward transfer, so those loops keep the same stop-the-world bound
+    /// as the polled ones ([`DispatchPolls`]). Before #8821 they did not poll
+    /// at all, and a sunk `nqp::while` in a fast-called sub ran its whole loop
+    /// without a safepoint.
+    // Cost: O(1) on top of `exec_one` (an `ip` compare; a load and a poll only
+    // on a backward transfer).
+    #[inline(always)]
+    pub(crate) fn exec_one_backedge_polled(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &crate::opcode::CompiledFns,
+    ) -> Result<(), crate::value::RuntimeError> {
+        let op_ip = *ip;
+        let r = self.exec_one(code, ip, compiled_fns);
+        if *ip <= op_ip && r.is_ok() && armed() {
+            poll_code(SafepointKind::Backedge, *ip as u32, code, self);
+        }
+        r
     }
 }
 

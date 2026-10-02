@@ -1331,7 +1331,7 @@ impl Interpreter {
         let mut ip = 0;
         let mut run_result = Ok(());
         while ip < cc.ops.len() {
-            match self.exec_one(&cc, &mut ip, run_fns) {
+            match self.exec_one_backedge_polled(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
                 Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
