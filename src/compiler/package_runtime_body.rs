@@ -58,7 +58,22 @@ impl Compiler {
             .filter_map(|name| self.local_map.remove_entry(name))
             .collect();
         for s in body {
-            self.compile_stmt(s);
+            // A class body registered in place swallows the error of an `EVAL`
+            // or `BEGIN` statement so the class still registers
+            // (`class C { EVAL q[has $.w] }`, `register_class_decl`). The
+            // statements that stay behind when the prologue declares the class
+            // ahead keep that.
+            if matches!(decl, PackageRuntimeDecl::Class { .. })
+                && crate::opcode::is_swallowable_class_body_stmt(s)
+            {
+                let swallowed = Stmt::Expr(Expr::Try {
+                    body: vec![s.clone()],
+                    catch: None,
+                });
+                self.compile_stmt(&swallowed);
+            } else {
+                self.compile_stmt(s);
+            }
         }
         self.local_map.extend(shadowed);
         self.package_body_lexicals = saved_lexicals;

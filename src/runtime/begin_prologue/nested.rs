@@ -160,6 +160,10 @@ struct Frame {
     routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
+    /// A package body only: the member being walked, and the `BEGIN`s lifted
+    /// out of it, which are inserted ahead of that member ([`phasers`]).
+    member: usize,
+    inserts: Vec<(usize, Stmt)>,
     /// The package this scope is the body of, when a lifted `INIT` or `CHECK`
     /// has to re-enter it ([`phasers`]).
     package: Option<Enclosing>,
@@ -290,6 +294,14 @@ impl Walker<'_> {
         if !begin && !self.may_lift_phaser(body) {
             return false;
         }
+        // A BEGIN written in a role or a class declared in code runs in the
+        // prologue, where only what the unit's level can give it exists
+        // (#10328). One that reads more keeps its old handling.
+        if begin && self.innermost_package_frame().is_none() && !self.body_reaches_unit_level(body)
+        {
+            self.lifted.halted = true;
+            return false;
+        }
         // A blockless `BEGIN my %h = ...` declares into the enclosing scope,
         // which the lifted body's block would hide. Its body is that one
         // declaration; `BEGIN { my $x ... }` keeps its `my` to itself.
@@ -337,12 +349,23 @@ impl Walker<'_> {
         }
         let inner = vec![Stmt::Block(FrameBlock::nest(blocks, inner))];
         if begin {
-            self.lifted.effects.push(Stmt::Phaser {
+            let effect = Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body: inner,
                 condition: None,
                 end_index: None,
-            });
+            };
+            // A BEGIN written in a package runs while the package is declared,
+            // in source order with the body's own BEGINs: it becomes a member
+            // of the package body, ahead of the member it was written in
+            // (#10328). Any other goes to the prologue.
+            match self.innermost_package_frame() {
+                Some(frame) => {
+                    let member = self.frames[frame].member;
+                    self.frames[frame].inserts.push((member, effect));
+                }
+                None => self.lifted.effects.push(effect),
+            }
         } else {
             let body = self.run_in_packages(inner);
             self.lifted.phasers.push(Stmt::Phaser {
