@@ -224,7 +224,16 @@ answer to the worker.
    That program is already racy by Raku's own rules (an unordered plain
    assignment concurrent with a `cas`), and re-resolving mid-flight changes
    which slot the compare is against — a separate semantic decision. Left as
-   a `// TODO:` at the site.
+   a `// TODO:` at the site. **Decided 2026-10-02 (#9921):** `cas` follows
+   the variable's *current* lane. Under the compare's write lock it first
+   checks that the root store still maps the name to the resolved
+   `value_key`; a retired lane fails the attempt and the next attempt
+   re-resolves, as Raku's `cas` re-reads its container on every retry. Both
+   the 2-argument retry loop and the 3-argument form do this. Pinned by
+   `t/concurrency/thread-lock/atomic-lane-retired-mid-cas.t`. Today's
+   reachable trigger is item 1's bare-name keying (an unrelated `my $x` in
+   another thread retires the lane), which can still cost one spurious retry
+   until item 1 is cured.
 3. **`reset_atomic_var_key` does not clear the retired `value_key` from
    `shared_vars_dirty`**, so that process-global set grows by one entry per
    lane generation. Harmless for correctness (the reconcile finds nothing
