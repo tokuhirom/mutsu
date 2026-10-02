@@ -337,6 +337,7 @@ impl Interpreter {
                     &c.named,
                     c.target_or_new(orig),
                 )
+                .with_match_cursor_pos(c.narrowed_pos())
             })
             .collect::<Vec<_>>();
         self.reset_capture_env_vars();

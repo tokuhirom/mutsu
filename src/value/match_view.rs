@@ -166,6 +166,15 @@ impl Value {
         self.match_attr("to")?.as_int()
     }
 
+    /// Where the match's cursor ended (`.pos`): `.to`, unless a `)>` marker
+    /// put `.to` short of it. `None` when not a Match.
+    pub(crate) fn match_pos(&self) -> Option<i64> {
+        match self.match_attr("pos") {
+            Some(pos) => pos.as_int(),
+            None => self.match_to(),
+        }
+    }
+
     /// The whole subject string the match ran against (`.orig`).
     pub(crate) fn match_orig(&self) -> Option<Value> {
         self.match_attr("orig")

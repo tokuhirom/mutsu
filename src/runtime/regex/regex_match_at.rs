@@ -59,8 +59,7 @@ impl Interpreter {
                     pkg,
                 )
                 .map(|(end, mut caps)| {
-                    caps.from = caps.capture_start.unwrap_or(stripped_pos);
-                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.finish_span(stripped_pos, end);
                     super::regex_helpers::remap_caps_spans(
                         &mut caps,
                         stripped.stripped_map(),
@@ -72,8 +71,7 @@ impl Interpreter {
         }
         self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, pos, pkg)
             .map(|(end, mut caps)| {
-                caps.from = caps.capture_start.unwrap_or(pos);
-                caps.to = caps.capture_end.unwrap_or(end);
+                caps.finish_span(pos, end);
                 caps.set_target(Some(target.clone()));
                 caps
             })

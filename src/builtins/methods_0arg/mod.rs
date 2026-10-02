@@ -367,7 +367,8 @@ pub(crate) fn native_method_0arg(
             // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
             // returns the shared subject Value; `.Str` copies the k matched chars).
             "from" => return Some(Ok(Value::int(target.match_from().unwrap_or(0)))),
-            "to" | "pos" => return Some(Ok(Value::int(target.match_to().unwrap_or(0)))),
+            "to" => return Some(Ok(Value::int(target.match_to().unwrap_or(0)))),
+            "pos" => return Some(Ok(Value::int(target.match_pos().unwrap_or(0)))),
             "Str" => {
                 return Some(Ok(target
                     .match_str_value()
@@ -2075,8 +2076,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "from" => {
                 return Some(Ok(Value::int(target.match_from().unwrap_or(0))));
             }
-            "to" | "pos" => {
+            "to" => {
                 return Some(Ok(Value::int(target.match_to().unwrap_or(0))));
+            }
+            "pos" => {
+                return Some(Ok(Value::int(target.match_pos().unwrap_or(0))));
             }
             "gist" => {
                 // Full Match gist: corner-quoted text plus positional/named

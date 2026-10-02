@@ -357,6 +357,7 @@ impl Interpreter {
         let mtarget = caps.target_or_new(text);
         self.reduce_regex_captures_made(&mut caps, Some(&mtarget));
         Value::make_match_object_full_visible(from, to, &caps.positional, &caps.named, mtarget)
+            .with_match_cursor_pos(caps.narrowed_pos())
     }
 
     /// Split by a single regex pattern.

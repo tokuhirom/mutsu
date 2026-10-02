@@ -532,13 +532,14 @@ impl Interpreter {
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,
         // and a still-lazy Match is not an `Instance` at all, so neither the
         // bare-name nor the twigil spelling would find them. rakudo's `$!pos`
-        // is mutsu's `to` -- the position the match (or cursor) reached, which
-        // `.pos` already reads -- and there is no separate `$!to`. This is what
+        // is the position the match (or cursor) reached, which `.pos` reads:
+        // mutsu's `to` unless a `)>` marker narrowed `to` short of it. This is what
         // lets the cursor protocol's `nqp::getattr_i($cursor, Match, '$!pos')`
         // read where a hand-driven regex got to (#7883).
         if obj.is_match_instance() {
             return match bare {
-                "pos" | "to" => obj.match_to().map(Value::int),
+                "pos" => obj.match_pos().map(Value::int),
+                "to" => obj.match_to().map(Value::int),
                 "from" => obj.match_from().map(Value::int),
                 "orig" => obj.match_orig(),
                 "made" | "ast" => Some(obj.match_ast().unwrap_or(Value::NIL)),

@@ -921,7 +921,7 @@ impl Interpreter {
                 Some(0)
             });
             if let Some(want) = required_from
-                && captures.from != want
+                && captures.cursor_from() != want
             {
                 if let Some(ref mut actions) = actions_obj {
                     self.replay_backtracked_reduce_actions(actions, None, &text)?;
@@ -932,7 +932,11 @@ impl Interpreter {
                 }
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             }
-            if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
+            // The CURSOR must reach the end: a `)>` marker narrows `.to` but
+            // not how far the parse got.
+            if (method == "parse" || method == "parsefile")
+                && captures.cursor_pos() != text.chars().count()
+            {
                 // The start rule matched a PREFIX of the text, so `.parse` fails —
                 // but raku ran every action along the way, including the start
                 // rule's own. Dispatch the partial tree, then replay the reduces
@@ -943,7 +947,7 @@ impl Interpreter {
                 }
                 self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                 self.env.insert("/".to_string(), Value::NIL);
-                return Ok(self.make_parse_failure_value(&text, captures.to));
+                return Ok(self.make_parse_failure_value(&text, captures.cursor_pos()));
             }
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env
@@ -959,7 +963,8 @@ impl Interpreter {
                 captures.regex_vars(),
                 cursor,
                 gtarget,
-            );
+            )
+            .with_match_cursor_pos(captures.narrowed_pos());
             let match_obj = {
                 let mut updates: Vec<(&str, Value)> = Vec::new();
                 if let Some(ast) = self.env.get("made").cloned() {

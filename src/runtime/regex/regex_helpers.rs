@@ -1155,6 +1155,13 @@ fn remap_caps_spans_mapped(
     if offset == 0 {
         caps.from = m(caps.from);
         caps.to = m(caps.to);
+        if let Some(span) = caps
+            .rare
+            .as_deref_mut()
+            .and_then(|r| r.cursor_span.as_mut())
+        {
+            *span = (m(span.0), m(span.1));
+        }
     }
     for sc in caps
         .named
@@ -1222,6 +1229,9 @@ fn remap_cap_node_spans_mapped(
     let Some(children) = node.children.as_deref_mut() else {
         return;
     };
+    if let Some(pos) = children.pos.as_mut() {
+        *pos = m(*pos);
+    }
     for sc in children
         .named
         .iter_mut()
