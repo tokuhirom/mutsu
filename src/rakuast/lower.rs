@@ -637,6 +637,14 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
+/// A package body as the parser leaves it: the `method`s declared in its
+/// nested blocks and routine bodies hoisted into it (the converter rendered
+/// them where they were written, `parser::unhoist_nested_methods`).
+fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
+    crate::parser::hoist_nested_methods(&mut body);
+    body
+}
+
 /// `class NAME { … }` -> `Stmt::ClassDecl`. The body is a `Block` whose
 /// statements are the class body (methods, attributes, …), lowered by the same
 /// statement dispatch. Only the plain form round-trips: the converter refuses
@@ -644,7 +652,7 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// lowered here can carry them either.
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
-    let body = lower_block(named_child(node, "body")?)?;
+    let body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let (parents, does_parents, class_is_rw) = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
@@ -676,7 +684,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
-    let body = lower_block(named_child(node, "body")?)?;
+    let body = lower_package_body(lower_block(named_child(node, "body")?)?);
     Ok(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -770,7 +778,9 @@ fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if role_body.class != RakuAstClass::RoleBody {
         return Err(unsupported(node));
     }
-    let body = lower_stmts(named_child_or_positional(named_child(role_body, "body")?)?)?;
+    let body = lower_package_body(lower_stmts(named_child_or_positional(named_child(
+        role_body, "body",
+    )?)?)?);
     Ok(Stmt::RoleDecl {
         name: crate::symbol::Symbol::intern(&name),
         type_params: Vec::new(),
@@ -802,7 +812,7 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     Ok(Stmt::Package {
         name: crate::symbol::Symbol::intern(&call_name_str(node)?),
-        body: lower_block(named_child(node, "body")?)?,
+        body: lower_package_body(lower_block(named_child(node, "body")?)?),
         kind,
         is_unit: false,
         is_my: false,

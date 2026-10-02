@@ -131,7 +131,8 @@ fn routine_body_mut(stmt: &mut Stmt) -> Option<&mut Vec<Stmt>> {
 /// in-place registration is a no-op for a method proto) and, as a term,
 /// evaluates to that proto (`Compiler::compile_expr_do_stmt`). A proto's
 /// `{*}` body closes over nothing worth capturing, so the copy carries no
-/// capture index.
+/// capture index; it carries the [`NESTED_BLOCK_METHOD_TRAIT`] marker (with
+/// no argument) so [`unhoist`] can tell it from a proto written in the body.
 fn hoist_proto_methods(stmt: &Stmt, hoisted: &mut Vec<Stmt>) {
     struct Protos<'a> {
         out: &'a mut Vec<Stmt>,
@@ -144,7 +145,7 @@ fn hoist_proto_methods(stmt: &Stmt, hoisted: &mut Vec<Stmt>) {
                     is_method: true, ..
                 } = inner.as_ref()
             {
-                self.out.push(inner.as_ref().clone());
+                self.out.push(marked_proto_copy(inner));
                 return;
             }
             crate::ast_visit::walk_expr(self, expr);
@@ -161,7 +162,7 @@ fn hoist_proto_methods(stmt: &Stmt, hoisted: &mut Vec<Stmt>) {
     match stmt {
         Stmt::ProtoDecl {
             is_method: true, ..
-        } => hoisted.push(stmt.clone()),
+        } => hoisted.push(marked_proto_copy(stmt)),
         Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } | Stmt::ProtoDecl { .. } => {}
         _ => {
             let mut visitor = Protos {
@@ -276,4 +277,91 @@ fn capture_closure(decl: &Stmt) -> Expr {
         is_whatever_code: false,
         declarator,
     }
+}
+
+/// The package-body copy of a hoisted `proto method`: the declaration with
+/// the [`NESTED_BLOCK_METHOD_TRAIT`] marker added (a `__` marker, which trait
+/// application skips).
+fn marked_proto_copy(stmt: &Stmt) -> Stmt {
+    let mut copy = stmt.clone();
+    if let Stmt::ProtoDecl {
+        custom_traits,
+        trait_args,
+        ..
+    } = &mut copy
+    {
+        custom_traits.push(NESTED_BLOCK_METHOD_TRAIT.to_string());
+        trait_args.push((NESTED_BLOCK_METHOD_TRAIT.to_string(), None));
+    }
+    copy
+}
+
+/// Whether `stmt` is a declaration [`hoist`] appended to the package body.
+fn is_hoisted_copy(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::MethodDecl { custom_traits, .. } => custom_traits
+            .iter()
+            .any(|(t, _)| t == NESTED_BLOCK_METHOD_TRAIT),
+        Stmt::ProtoDecl { custom_traits, .. } => {
+            custom_traits.iter().any(|t| t == NESTED_BLOCK_METHOD_TRAIT)
+        }
+        _ => false,
+    }
+}
+
+/// The inverse of [`hoist`]: the package body as written. Each in-block
+/// [`Stmt::NestedMethodCapture`] marker is replaced by the method declaration
+/// it stood for, and the copies `hoist` appended are dropped. The RakuAST
+/// reader renders a package from this form (rakudo's tree has the
+/// declaration where it was written), and its lowering hoists again.
+pub(crate) fn unhoist(body: &[Stmt]) -> Vec<Stmt> {
+    let mut methods: Vec<Option<Stmt>> = Vec::new();
+    let mut written = Vec::with_capacity(body.len());
+    for stmt in body {
+        if !is_hoisted_copy(stmt) {
+            written.push(stmt.clone());
+            continue;
+        }
+        let Stmt::MethodDecl { custom_traits, .. } = stmt else {
+            continue;
+        };
+        let Some(index) = custom_traits.iter().find_map(|(t, arg)| match arg {
+            Some(Expr::Literal(v)) if t == NESTED_BLOCK_METHOD_TRAIT => v.as_int(),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let mut decl = stmt.clone();
+        if let Stmt::MethodDecl { custom_traits, .. } = &mut decl {
+            custom_traits.retain(|(t, _)| t != NESTED_BLOCK_METHOD_TRAIT);
+        }
+        let index = index as usize;
+        if methods.len() <= index {
+            methods.resize(index + 1, None);
+        }
+        methods[index] = Some(decl);
+    }
+    struct Restore(Vec<Option<Stmt>>);
+    impl crate::ast_visit::VisitMut for Restore {
+        fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+            if let Stmt::NestedMethodCapture { index, .. } = stmt
+                && let Some(decl) = self.0.get_mut(*index as usize).and_then(Option::take)
+            {
+                *stmt = decl;
+            }
+            // A nested package's markers index its own hoisted list.
+            if matches!(
+                stmt,
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. }
+            ) {
+                return;
+            }
+            crate::ast_visit::walk_stmt_mut(self, stmt);
+        }
+    }
+    let mut restore = Restore(methods);
+    for stmt in &mut written {
+        crate::ast_visit::VisitMut::visit_stmt_mut(&mut restore, stmt);
+    }
+    written
 }
