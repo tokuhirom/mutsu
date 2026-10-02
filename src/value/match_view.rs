@@ -218,14 +218,12 @@ impl Value {
         let Some(list) = self.match_list() else {
             return Value::array(Vec::new());
         };
-        let has_hole = matches!(
-            list.view(),
-            ValueView::Array(items, _) if items.iter().any(Value::is_nil)
-        );
-        if !has_hole {
-            return list;
+        match list.view() {
+            ValueView::Array(items, _) if items.iter().any(Value::is_nil) => {
+                Value::capture_list_with_holes(items.to_vec(), false)
+            }
+            _ => list,
         }
-        Value::capture_list_with_holes(crate::runtime::utils::value_to_list(&list), false)
     }
 
     /// The positional captures as the list `Any`'s iteration methods walk:
