@@ -967,10 +967,21 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                let val = self
+                let name_sym = code.const_sym(*name_idx);
+                // A package-qualified hash's canonical store is `our_vars`: an
+                // element write in another frame persisted it there, and this
+                // frame's env may hold a stale copy or none (#10901).
+                let package_val = if crate::qualified::is_package_hash(name_sym) {
+                    self.get_our_var(name)
+                        .cloned()
+                        .or_else(|| self.our_var_pseudo_unqualified(name))
+                } else {
+                    None
+                };
+                let val = package_val
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
-                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         name.strip_prefix('%')

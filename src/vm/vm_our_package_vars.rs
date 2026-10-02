@@ -383,4 +383,66 @@ impl Interpreter {
             .zip(code.free_var_parent_slots.iter())
             .any(|(sym, parent)| parent.is_some() && sym.with_str(|n| n == name))
     }
+
+    /// The `our_vars` key a package-qualified `%` name persists under: the
+    /// name itself, unless only its pseudo-package-stripped spelling is stored
+    /// (a top-level `our %h` reached as `%GLOBAL::h`).
+    fn package_hash_key(&self, name: &str) -> String {
+        if self.get_our_var(name).is_none()
+            && let Some(bare) = Self::pseudo_package_unqualified_name(name)
+            && self.get_our_var(&bare).is_some()
+        {
+            return bare;
+        }
+        name.to_string()
+    }
+
+    /// Before an element write to a package-qualified hash (`%GLOBAL::h<a>++`,
+    /// `%P::h{$k} = v`): make the running frame's env hold the persisted
+    /// container, so the op mutates it rather than a frame-local one that dies
+    /// with the frame (#10901). A slot nobody declared or assigned is vivified
+    /// here the way rakudo auto-creates an undeclared package variable, as a
+    /// Scalar holding a Hash (`%GLOBAL::h.raku` is `${...}`); the element ops
+    /// themselves only vivify a declared container. Returns the container the
+    /// op starts from, for [`Self::package_hash_elem_epilogue`].
+    // Cost: O(1) (flag lookup per symbol, then hash probes).
+    pub(crate) fn package_hash_elem_prologue(&mut self, name_sym: Symbol) -> Option<Value> {
+        let name = name_sym.as_str();
+        let key = self.package_hash_key(name);
+        let env_val = self.env().get(name).cloned();
+        let stored = match self.get_our_var(&key).cloned() {
+            Some(stored) => stored,
+            None => {
+                let fresh = env_val
+                    .clone()
+                    .filter(|v| matches!(v.view(), ValueView::Hash(_)))
+                    .unwrap_or_else(|| {
+                        Value::hash(crate::value::ValueMap::default()).with_hash_itemized(true)
+                    });
+                self.set_our_var(key, fresh.clone());
+                fresh
+            }
+        };
+        if !env_val.is_some_and(|v| Self::same_container_arc(&v, &stored)) {
+            self.env_mut().insert(name.to_string(), stored.clone());
+        }
+        Some(stored)
+    }
+
+    /// After the element write: persist env's container into `our_vars` unless
+    /// the op mutated the prologue's container in place.
+    // Cost: O(1).
+    pub(crate) fn package_hash_elem_epilogue(&mut self, name_sym: Symbol, pre: Option<Value>) {
+        let name = name_sym.as_str();
+        let Some(val) = self.env().get(name).cloned() else {
+            return;
+        };
+        if !matches!(val.view(), ValueView::Hash(_))
+            || pre.is_some_and(|pre| Self::same_container_arc(&pre, &val))
+        {
+            return;
+        }
+        let key = self.package_hash_key(name);
+        self.set_our_var(key, val);
+    }
 }
