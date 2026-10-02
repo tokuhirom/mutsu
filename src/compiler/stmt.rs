@@ -3721,11 +3721,19 @@ impl Compiler {
                     // this, a forward reference inside `package P { f(); my sub f {…} }`
                     // failed with "Unknown function". Sub bodies and inline blocks
                     // already hoist; the non-unit package body did not.
+                    //
+                    // The body is a lexical scope of its own: a `constant` or
+                    // sigilless term it declares must stop resolving to its local
+                    // slot once the body exits (`PackageScope` restores the
+                    // frame's locals then). Outside the package it is reachable
+                    // only by its package name or through an import (#10558).
+                    let lexical_scope = self.push_dynamic_scope_lexical();
                     self.hoist_sub_decls(body, true);
                     self.hoist_type_decl_shells(body);
                     for s in body {
                         self.compile_stmt(s);
                     }
+                    self.pop_dynamic_scope_lexical(lexical_scope);
                     self.current_package = saved_package;
                     self.in_unit_package = saved_in_unit;
                     self.current_package_kind = saved_package_kind;
