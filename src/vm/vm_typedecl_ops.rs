@@ -514,6 +514,14 @@ impl Interpreter {
             // compiles that one body on demand.
             if !is_hoisted_shell {
                 self.compile_class_methods(&storage_name);
+                // The class body's statements (`BEGIN { $x = 5 }`, `$x = 11`)
+                // ran as separate chunks that wrote the outer lexical into env
+                // by name and queued it for a caller-var writeback. Claim that
+                // writeback into this frame's slots now: the capture pass boxes
+                // each captured slot into a shared cell, and a cell boxed over
+                // the stale pre-body value is never reached by the later drain
+                // (#10751).
+                self.apply_pending_caller_var_writeback(code);
                 self.capture_declared_method_envs(code, &storage_name, method_outer_lexical_slots);
             }
             // Register the class name in the lexical env so that

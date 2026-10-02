@@ -525,6 +525,21 @@ impl Compiler {
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 let slot = self.declare_local(name);
                                 self.code.emit(OpCode::SetLocal(slot));
+                            } else if !*is_our && !self.local_map.contains_key(name.as_str()) {
+                                // A slot-less `my` stores env-only under its
+                                // BARE name, exactly like an expression-position
+                                // declaration (`expr_block.rs`): the
+                                // `SetVarDynamic` above declared that name.
+                                // `emit_set_named_var` would package-qualify it
+                                // inside a class body (`A8::p`), and the free-var
+                                // analysis then read the store as a write to the
+                                // enclosing scope's same-named lexical, clobbering
+                                // it through the caller-var writeback (#10751).
+                                self.code
+                                    .expr_declared_syms
+                                    .insert(crate::symbol::Symbol::intern(name));
+                                let idx = self.code.add_constant(Value::str(name.clone()));
+                                self.code.emit(OpCode::SetGlobal(idx));
                             } else {
                                 self.emit_set_named_var(name);
                             }
