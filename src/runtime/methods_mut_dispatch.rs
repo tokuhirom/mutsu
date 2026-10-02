@@ -1577,8 +1577,15 @@ impl Interpreter {
             }
         }
 
-        // Handle push/append on hash variables
-        if target_var.starts_with('%') && !self.mixin_role_has_method(&target, method) {
+        // Handle push/append on hash variables. A package-qualified `%` slot
+        // that was never written vivifies to an itemized Array (it reads as
+        // `Any`, #10962), and that Array takes the array mutators below.
+        let package_slot_array = matches!(target.view(), ValueView::Array(..))
+            && crate::qualified::is_package_hash(crate::symbol::Symbol::intern(target_var));
+        if target_var.starts_with('%')
+            && !package_slot_array
+            && !self.mixin_role_has_method(&target, method)
+        {
             let key = target_var.to_string();
             match method {
                 "push" | "append" => {
