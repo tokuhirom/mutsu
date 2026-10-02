@@ -16,80 +16,18 @@
 //! call-walker descends into also has its declarations collected — both are
 //! gathered in the same traversal to keep them symmetric.
 
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::{CallArg, Expr, Stmt, UndeclaredRoutineCall};
 use crate::ast_visit::{NameKind, Visit, walk_call_arg, walk_stmt, walk_stmts};
 use crate::value::{RuntimeError, RuntimeErrorCode};
 use std::collections::HashSet;
 
 use super::Interpreter;
 
-/// Core *term* constants: names that resolve to a value in CORE but are not
-/// routines. Calling one of them is not the same error as calling a name
-/// nobody declared — the symbol exists, it just does not exist under the `&`
-/// sigil — so rakudo answers `X::Undeclared` naming `&e` ("Variable '&e' is
-/// not declared") where an entirely unknown `zzz()` gets the CHECK-time
-/// `X::Undeclared::Symbols`. The two classes are unrelated (`X::Comp` is a
-/// role, not a superclass), so `throws-like 'e()', X::Undeclared` sees the
-/// difference.
-///
-/// `now`, `time` and `rand` are deliberately absent: they are real routines.
-pub(crate) const CORE_TERM_CONSTANTS: &[&str] =
-    &["e", "i", "pi", "tau", "Inf", "NaN", "True", "False"];
+mod conditional;
 
-/// Native (lowercase) type names that may appear in call position as
-/// coercions/constructors (`int8(...)`) without being routine declarations.
-const NATIVE_TYPE_NAMES: &[&str] = &[
-    "int",
-    "int8",
-    "int16",
-    "int32",
-    "int64",
-    "uint",
-    "uint8",
-    "uint16",
-    "uint32",
-    "uint64",
-    "num",
-    "num32",
-    "num64",
-    "str",
-    "bool",
-    "byte",
-    "atomicint",
-    "complex",
-    "size_t",
-    "ssize_t",
-    "long",
-    "ulong",
-    "longlong",
-    "ulonglong",
-];
-
-/// Callables the compiler special-cases into dedicated opcodes, so they never
-/// reach the runtime function-dispatch tables (`is_builtin_function` /
-/// `EVAL_KNOWN_ROUTINE_NAMES` don't list them all).
-const COMPILER_SPECIAL_CALL_NAMES: &[&str] = &[
-    "cas",
-    "atomic-assign",
-    "atomic-fetch",
-    "atomic-fetch-add",
-    "atomic-add-fetch",
-    "atomic-fetch-sub",
-    "atomic-sub-fetch",
-    "atomic-fetch-inc",
-    "atomic-inc-fetch",
-    "atomic-fetch-dec",
-    "atomic-dec-fetch",
-    "done",
-    "temp",
-];
-
-/// Phaser names, offered as suggestions for a lowercase typo (`begin` →
-/// "Did you mean 'BEGIN'?", matching rakudo).
-pub(crate) const PHASER_SUGGESTION_NAMES: &[&str] = &[
-    "BEGIN", "CHECK", "INIT", "END", "ENTER", "LEAVE", "KEEP", "UNDO", "FIRST", "NEXT", "LAST",
-    "PRE", "POST", "QUIT", "CLOSE",
-];
+mod names;
+use names::{COMPILER_SPECIAL_CALL_NAMES, NATIVE_TYPE_NAMES};
+pub(crate) use names::{CORE_TERM_CONSTANTS, PHASER_SUGGESTION_NAMES};
 
 #[derive(Default)]
 struct Scan {
@@ -107,6 +45,8 @@ struct Scan {
     bail: bool,
     /// The `EVAL` flavour of the check (`ScanMode::Eval`).
     eval: bool,
+    /// The unit's top-level conditional `use`s (see [`conditional`]).
+    conditional_uses: Vec<conditional::ConditionalUse>,
 }
 
 /// Which compilation unit the scan judges.
@@ -194,9 +134,12 @@ impl<'ast> Visit<'ast> for Scan {
         }
         match stmt {
             Stmt::SetLine(n) => self.line = *n,
-            Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. }
-                if !self.eval =>
-            {
+            Stmt::Use { module, .. } if !self.eval => {
+                if !conditional::imports_no_routines(module) {
+                    self.bail = true;
+                }
+            }
+            Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } if !self.eval => {
                 self.bail = true;
             }
             // Dynamically-named sub: the declared name is unknowable.
@@ -255,14 +198,21 @@ impl<'ast> Visit<'ast> for Scan {
 /// empty in a freshly constructed one — so the two paths agree on any unit the
 /// frontend sees, and the one list of static predicates lives here rather than
 /// being duplicated and left to drift.
-fn known_without_an_interpreter(name: &str, declared: &HashSet<String>) -> bool {
+///
+/// `if_imports` are the names only a conditional `use` imported: they do not
+/// explain a call (see [`conditional`]).
+fn known_without_an_interpreter(
+    name: &str,
+    declared: &HashSet<String>,
+    if_imports: &HashSet<&str>,
+) -> bool {
     declared.contains(name)
         || Interpreter::is_builtin_function(name)
         || Interpreter::is_test_function_name(name)
         || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
         || NATIVE_TYPE_NAMES.contains(&name)
         || COMPILER_SPECIAL_CALL_NAMES.contains(&name)
-        || crate::parser::is_imported_function(name)
+        || (crate::parser::is_imported_function(name) && !if_imports.contains(name))
 }
 
 /// What the walker found: every call the static tables cannot explain, in
@@ -273,6 +223,9 @@ fn known_without_an_interpreter(name: &str, declared: &HashSet<String>) -> bool 
 struct Unexplained {
     calls: Vec<(String, i64)>,
     declared_routines: HashSet<String>,
+    /// The slots holding the `:if` values of the unit's conditional `use`s.
+    /// When there are any, a call is an error only if none of them loaded.
+    condition_slots: Vec<String>,
 }
 
 fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
@@ -281,7 +234,16 @@ fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
         eval: mode == ScanMode::Eval,
         ..Default::default()
     };
-    walk_stmts(&mut scan, stmts);
+    if scan.eval {
+        walk_stmts(&mut scan, stmts);
+        return scan;
+    }
+    for stmt in stmts {
+        match conditional::conditional_use(stmt) {
+            Some(cu) => scan.conditional_uses.push(cu),
+            None => scan.visit_stmt(stmt),
+        }
+    }
     scan
 }
 
@@ -291,14 +253,24 @@ fn unexplained_calls(stmts: &[Stmt], mode: ScanMode) -> Option<Unexplained> {
     if scan.bail {
         return None;
     }
+    let if_imports: HashSet<&str> = scan
+        .conditional_uses
+        .iter()
+        .flat_map(|cu| cu.imports.iter().map(String::as_str))
+        .collect();
     let calls = scan
         .calls
         .into_iter()
-        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared))
+        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared, &if_imports))
         .collect();
     Some(Unexplained {
         calls,
         declared_routines: scan.declared_routines,
+        condition_slots: scan
+            .conditional_uses
+            .into_iter()
+            .map(|cu| cu.slot)
+            .collect(),
     })
 }
 
@@ -327,6 +299,10 @@ pub(crate) fn check_undeclared_routines_without_interpreter(
     let Some(found) = unexplained_calls(stmts, ScanMode::Mainline) else {
         return Ok(());
     };
+    // A verdict that depends on a BEGIN-time `:if` value is not reported.
+    if !found.condition_slots.is_empty() {
+        return Ok(());
+    }
     let Some((name, line)) = found.calls.first() else {
         return Ok(());
     };
@@ -365,11 +341,32 @@ impl Interpreter {
     /// unit, *before* execution starts (rakudo's CHECK-time
     /// X::Undeclared::Symbols). See the module doc for the conservativeness
     /// contract; returns Ok(()) whenever the unit imports unseen names.
+    ///
+    /// A verdict that depends on a conditional `use` is dropped: a caller that
+    /// runs the unit's BEGIN prologue uses
+    /// [`Self::check_undeclared_routines_with_guards`] instead.
     pub(crate) fn check_undeclared_routines_mainline(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        self.check_undeclared_routines(stmts, ScanMode::Mainline)
+        self.check_undeclared_routines_with_guards(stmts)
+            .map(|_| ())
+    }
+
+    /// The mainline check for a unit whose BEGIN prologue (ADR-0134) is in
+    /// place. A call that only a conditional `use` could explain is returned
+    /// as a guard statement, to be placed right after the prologue, which
+    /// raises the error when none of the unit's conditional `use`s loaded
+    /// (#10331).
+    // Cost: O(n + c * r), n = size of the unit's AST, c = unexplained calls,
+    // r = cost of one registry/env lookup.
+    pub(crate) fn check_undeclared_routines_with_guards(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<Vec<Stmt>, RuntimeError> {
+        let mut guards = Vec::new();
+        self.judge_unexplained_calls(stmts, ScanMode::Mainline, &mut guards)?;
+        Ok(guards)
     }
 
     /// The undeclared-routine check for a unit of kind `mode`; see
@@ -381,9 +378,20 @@ impl Interpreter {
         stmts: &[Stmt],
         mode: ScanMode,
     ) -> Result<(), RuntimeError> {
+        self.judge_unexplained_calls(stmts, mode, &mut Vec::new())
+    }
+
+    // Cost: O(n + c * r), as `check_undeclared_routines`.
+    fn judge_unexplained_calls(
+        &self,
+        stmts: &[Stmt],
+        mode: ScanMode,
+        guards: &mut Vec<Stmt>,
+    ) -> Result<(), RuntimeError> {
         let Some(found) = unexplained_calls(stmts, mode) else {
             return Ok(());
         };
+        let mut guarded: HashSet<&str> = HashSet::new();
         for (name, line) in &found.calls {
             // Everything beyond the static tables is per-interpreter registry
             // state, which is why the analysis frontend can skip it entirely.
@@ -417,7 +425,20 @@ impl Interpreter {
             // every declaration form, and the walker has already collected
             // them, so pass them along as extra candidates.
             let suggestions = self.suggest_routine_names_including(name, &found.declared_routines);
-            return Err(Self::undeclared_routine_error(name, *line, suggestions));
+            if found.condition_slots.is_empty() {
+                return Err(Self::undeclared_routine_error(name, *line, suggestions));
+            }
+            if !guarded.insert(name) {
+                continue;
+            }
+            // Rakudo reports the first undeclared routine; so does the first
+            // guard that fires.
+            let call = UndeclaredRoutineCall {
+                name: name.clone(),
+                line: *line,
+                suggestions,
+            };
+            guards.push(conditional::guard(call, &found.condition_slots));
         }
         Ok(())
     }

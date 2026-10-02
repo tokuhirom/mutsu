@@ -274,6 +274,56 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     })
 }
 
+/// Register the exports of a `use` of `module` (see
+/// [`super::register_module_exports_with_tags`]). For a conditional `use`
+/// (`use Foo:if(EXPR)`) the names it imported are returned: the parse cannot
+/// know the BEGIN-time condition, so they stay registered for the rest of the
+/// parse, and the statement keeps them (`Stmt::Use::if_imports`) so the
+/// undeclared-routine check can discount them if the condition is False
+/// (#10331). An unconditional `use` returns nothing.
+// Cost: O(s + k), s = the module's export registration, k = names imported
+// into the current scope so far.
+pub(in crate::parser) fn register_use_exports(
+    module: &str,
+    import_tags: Option<&[String]>,
+    conditional: bool,
+) -> Vec<String> {
+    let register = || super::register_module_exports_with_tags(module, import_tags);
+    if !conditional {
+        register();
+        return Vec::new();
+    }
+    capture_imported_functions(register)
+}
+
+/// Run `register` (a `use`'s export registration) and return exactly the
+/// function names it imported into the current scope, including ones an
+/// earlier `use` had already imported there. Registration only ever inserts,
+/// so it runs against an emptied set that is merged back afterwards.
+// Cost: O(k), k = names imported into the current scope so far.
+fn capture_imported_functions(register: impl FnOnce()) -> Vec<String> {
+    let saved = SCOPES.with(|s| {
+        std::mem::take(
+            &mut s
+                .borrow_mut()
+                .last_mut()
+                .expect("scope stack should never be empty")
+                .imported_functions,
+        )
+    });
+    register();
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        let mut captured: Vec<String> = current.imported_functions.iter().cloned().collect();
+        captured.sort();
+        current.imported_functions.extend(saved);
+        captured
+    })
+}
+
 const TEST_ASSERTION_EXPORTS: &[&str] = &[
     "ok",
     "nok",

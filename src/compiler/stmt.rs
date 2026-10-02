@@ -884,6 +884,9 @@ impl Compiler {
                     self.emit_nested_type_shell(shell);
                 }
             }
+            Stmt::UndeclaredRoutine(call) => {
+                self.code.emit(OpCode::ThrowUndeclaredRoutine(call.clone()));
+            }
             Stmt::NestedMethodCapture {
                 index,
                 closure,
@@ -4438,6 +4441,7 @@ impl Compiler {
                 tags,
                 condition,
                 arg,
+                ..
             } => {
                 // #9521: mirror `use fatal`'s effect at compile time, so a
                 // sub/method compiled from this point on in the same lexical

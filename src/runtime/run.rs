@@ -743,11 +743,19 @@ impl Interpreter {
         // CHECK time, before anything runs (X::Undeclared::Symbols) -- but after
         // the BEGIN-time effects, which ran while the unit was being parsed
         // (ADR-0134 §2.1.5). So a failing check runs the prologue first.
-        if let Err(err) = self.check_undeclared_routines_mainline(&body_main) {
-            if prologue_len > 0 {
-                self.run_begin_prologue_only(&body_main[..prologue_len])?;
+        // A verdict that depends on a conditional `use` comes back as guards
+        // that run right after the prologue, which decides the condition
+        // (#10331).
+        match self.check_undeclared_routines_with_guards(&body_main) {
+            Ok(guards) => {
+                body_main.splice(prologue_len..prologue_len, guards);
             }
-            return Err(err);
+            Err(err) => {
+                if prologue_len > 0 {
+                    self.run_begin_prologue_only(&body_main[..prologue_len])?;
+                }
+                return Err(err);
+            }
         }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());

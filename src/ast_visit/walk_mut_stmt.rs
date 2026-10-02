@@ -50,7 +50,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         | Stmt::SetLine(_)
         | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
-        Stmt::NestedTypeShells(_) => {}
+        Stmt::NestedTypeShells(_) | Stmt::UndeclaredRoutine(_) => {}
         Stmt::LoopExitGuard {
             label: _,
             next_ph,
@@ -185,6 +185,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             arg,
             tags: _,
             condition,
+            if_imports: _,
         } => {
             if let Some(e) = arg {
                 v.visit_expr_mut(e);
