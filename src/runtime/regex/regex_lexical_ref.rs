@@ -47,7 +47,7 @@ impl Interpreter {
         if spec.lookup_name.starts_with('{') {
             return self.eval_alias_code_regex(&spec.lookup_name);
         }
-        let value = self.lookup_lexical_regex(&spec.lookup_name)?;
+        let value = self.lookup_lexical_regex(&spec.lookup_name, !spec.token_lookup)?;
         self.resolve_token_patterns_static_in_pkg(spec.lookup_name.trim_start_matches('$'), pkg)
             .is_empty()
             .then_some(value)
@@ -56,7 +56,11 @@ impl Interpreter {
     /// The lexical this reference names, when it holds a Regex. Reads exactly
     /// the env key the reference's sigil implies (see
     /// [`crate::value::RegexClosure`] for the keying convention).
-    fn lookup_lexical_regex(&self, lookup_name: &str) -> Option<Value> {
+    ///
+    /// With `str_is_pattern`, a Str value is a pattern, as for `<{ code }>`:
+    /// an alias call `<a=$s>` interpolates it (#10673). A `<&$s>` call does
+    /// not -- rakudo refuses to call a Str.
+    fn lookup_lexical_regex(&self, lookup_name: &str, str_is_pattern: bool) -> Option<Value> {
         let bare = lookup_name.trim_start_matches(['&', '$']);
         // `$*dyn` is filed under its twigil-ful name (`*dyn`), which the
         // sigil-less scalar key below already spells.
@@ -83,6 +87,7 @@ impl Interpreter {
                 captured_regex: Some(regex),
                 ..
             } => Some((**regex).clone()),
+            ValueView::Str(s) if str_is_pattern => Some(Value::regex(s.to_string())),
             _ => None,
         }
     }
@@ -121,7 +126,10 @@ impl Interpreter {
     /// `my regex name` uses that spelling, but a normal package token/rule
     /// must still remain eligible for regex prefilter analysis.
     pub(super) fn lexical_regex_is_in_scope(&self, spec: &NamedRegexLookupSpec) -> bool {
-        Self::may_name_lexical_regex(spec) && self.lookup_lexical_regex(&spec.lookup_name).is_some()
+        Self::may_name_lexical_regex(spec)
+            && self
+                .lookup_lexical_regex(&spec.lookup_name, !spec.token_lookup)
+                .is_some()
     }
 
     /// Candidates for a `<&lexical(args)>` reference, or `None` when it does
