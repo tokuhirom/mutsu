@@ -2400,13 +2400,24 @@ impl Interpreter {
             // chain env at all could hit it, which is why the same routine
             // behaved correctly with a signature of plain scalars (those take
             // the slot-only light call path).
+            let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+            // A class/role body statement runs as its own chunk through
+            // `run_nested`, which starts with an empty `call_frames`: the
+            // enclosing scope's `my $z` is then visible only through `env`, so
+            // no saved frame env can vouch for it. It is still an outer
+            // lexical, and `class E { my $w := $z }` must share its cell, or
+            // the alias degrades to a by-name write that a later `$z = 5`
+            // never reaches (#11086).
+            let source_in_enclosing_decl_scope = !self.nested_capture_owners.is_empty()
+                && !source_in_same_scope
+                && self.env().contains_key(&resolved_source);
             let source_in_outer_frame = !is_percall_pseudo_var
                 && !synthetic_index_source
-                && self
-                    .call_frames
-                    .iter()
-                    .any(|f| f.saved_env.contains_key(&resolved_source));
-            let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+                && (source_in_enclosing_decl_scope
+                    || self
+                        .call_frames
+                        .iter()
+                        .any(|f| f.saved_env.contains_key(&resolved_source)));
             // `my @a := @$n` deref-bind (Slice 2c): the parser conflates `@$n`
             // (deref of a scalar `$n` that holds an array by reference) with the
             // array variable `@n`. When no `@n`/`%n` container value exists at
@@ -2739,6 +2750,12 @@ impl Interpreter {
                         resolved_source_is_own_lexical,
                         &container,
                     );
+                    // No ancestor frame is on the stack for a class-body
+                    // chunk: the declaring frame's slot adopts the cell when
+                    // the registration op drains the caller-var writeback.
+                    if source_in_enclosing_decl_scope {
+                        self.record_caller_var_writeback(&resolved_source);
+                    }
                 }
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
