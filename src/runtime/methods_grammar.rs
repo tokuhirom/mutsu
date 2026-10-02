@@ -1377,7 +1377,7 @@ impl Interpreter {
                     vec![match_obj.clone()],
                 );
                 match result {
-                    Err(e) if e.is_method_not_found() => {
+                    Err(e) if e.is_method_not_found_for(sym_name) => {
                         if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
                             self.call_method_with_values(
                                 actions.clone(),
@@ -1448,9 +1448,13 @@ impl Interpreter {
 
         match method_result {
             Ok(_) => {}
-            Err(e) if e.is_method_not_found() => {
-                // No action method for this rule — silently skip
-            }
+            // No action method for this rule: silently skip. Only a miss on
+            // the action method ITSELF counts -- a `No such method` raised
+            // inside an action's body (`(1,2)».made`) is a real error and
+            // propagates out of `.parse`, as in rakudo (#10703).
+            Err(e)
+                if e.is_method_not_found_for(rule_name)
+                    || sym_method_name.is_some_and(|sym| e.is_method_not_found_for(sym)) => {}
             Err(e) => return Err(e),
         }
 
@@ -1992,7 +1996,7 @@ impl Interpreter {
                     vec![match_obj.clone()],
                 );
                 match result {
-                    Err(e) if e.is_method_not_found() => {
+                    Err(e) if e.is_method_not_found_for(sym_name) => {
                         // Fall back to plain rule name.
                         if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
                             self.call_method_with_values(
@@ -2060,9 +2064,13 @@ impl Interpreter {
 
         match method_result {
             Ok(_) => {}
-            Err(e) if e.is_method_not_found() => {
-                // No action method for this rule — silently skip
-            }
+            // No action method for this rule: silently skip. Only a miss on
+            // the action method ITSELF counts (see `invoke_leaf_action_lazy`).
+            Err(e)
+                if e.is_method_not_found_for(rule_name)
+                    || sym_method_name
+                        .as_deref()
+                        .is_some_and(|sym| e.is_method_not_found_for(sym)) => {}
             Err(e) => return Err(e),
         }
 
