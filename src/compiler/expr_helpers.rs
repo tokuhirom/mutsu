@@ -417,10 +417,16 @@ impl Compiler {
     /// If `expr` is a Var with a known local slot, return the slot index.
     /// Used by `=:=` to emit GetLocalRaw for container identity checks.
     pub(super) fn container_eq_var_slot(&self, expr: &Expr) -> Option<u32> {
-        if let Expr::Var(name) = expr {
-            self.local_map.get(name.as_str()).copied()
-        } else {
-            None
+        match expr {
+            Expr::Var(name) => self.local_map.get(name.as_str()).copied(),
+            // An `@`/`%` variable is the Array/Hash itself, never a Scalar
+            // container: it is `=:=` to an element only when that element was
+            // `:=`-bound to it (`@d[0] := @c`), which the raw compare sees as
+            // the shared cell. Comparing values instead would call an element
+            // that merely holds the same Array (`@b := @a[0]`) identical.
+            Expr::ArrayVar(name) => self.local_map.get(format!("@{name}").as_str()).copied(),
+            Expr::HashVar(name) => self.local_map.get(format!("%{name}").as_str()).copied(),
+            _ => None,
         }
     }
 

@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # `,=` desugars to `$x = $x, RHS` and has list precedence (the whole RHS is the
 # second operand). See roast S03-operators/assign.t (RT #76414).
@@ -24,7 +24,10 @@ plan 8;
     my @a = 1, 2;
     @a ,= 3, 4;
     is @a.elems, 2, ',= on an array does NOT flatten-append';
-    ok @a[0] =:= @a, ',= inserts the array itself as element 0 (self-reference)';
+    # Element 0 holds the array itself (`===`), but in its own Scalar
+    # container, so it is not `=:=` to `@a` (rakudo).
+    ok @a[0] === @a, ',= inserts the array itself as element 0 (self-reference)';
+    nok @a[0] =:= @a, '... in a Scalar container of its own';
     is @a[1].join('|'), '3|4', ',= inserts the whole RHS list as element 1';
 }
 

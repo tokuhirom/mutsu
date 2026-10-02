@@ -250,6 +250,23 @@ impl Interpreter {
         self.stack.push(Value::truth(result));
     }
 
+    /// `=:=` between an `@`/`%` variable's raw slot and another raw container:
+    /// only a shared cell or slot makes them the same container, see
+    /// [`OpCode::ContainerEqRawAggregate`].
+    pub(super) fn exec_container_eq_raw_aggregate_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let shares_container = |a: &Value, b: &Value| {
+            matches!(a.view(), ValueView::ContainerRef(_))
+                || matches!(b.view(), ValueView::ContainerRef(_))
+                || (a.hash_entry_locate().is_some() && b.hash_entry_locate().is_some())
+        };
+        let result = shares_container(&left, &right)
+            && (Self::containers_same_slot(&left, &right)
+                || Self::containers_same_slot(&right, &left));
+        self.stack.push(Value::truth(result));
+    }
+
     /// Check if two raw container values (HashEntryRef)
     /// point to the same hash slot.
     fn containers_same_slot(a: &Value, b: &Value) -> bool {
