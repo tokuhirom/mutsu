@@ -936,6 +936,9 @@ impl Compiler {
                 is_bind,
             } => {
                 let name = self.resolve_self_lexical(name);
+                // `($OUTER::x := $y)` is a write to the visible `$x` (#10676).
+                let outer_target = self.outer_write_target(name);
+                let name = outer_target.as_deref().unwrap_or(name);
                 // A sigil-less bareword bind target arrives as a term key:
                 // it stays one for an in-scope constant (or a name this unit
                 // cannot see, for the VM to resolve), and is the plain

@@ -2216,6 +2216,16 @@ impl Compiler {
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // `$OUTER::x := $y` / `$OUTER::x = v` naming the binding a plain
+                // `$x` sees here is a write to `$x` (#10676).
+                let outer_target;
+                let name = match self.outer_write_target(name) {
+                    Some(bare) => {
+                        outer_target = bare;
+                        &outer_target
+                    }
+                    None => name,
+                };
                 // `b = 5` on an in-scope sigil-less constant targets the term,
                 // stored under its term key (#9962), not a same-named `$b`. So
                 // does one whose target this unit cannot see at all (`EVAL

@@ -87,6 +87,37 @@ pub(crate) fn resolve_outer(
     }
 }
 
+/// Whether `OUTER::` at `depth` names the very binding an unqualified lookup of
+/// `bare` sees from the emit point -- i.e. no scope between the current one
+/// (inclusive) and the target scope (exclusive) shadows it.
+///
+/// A WRITE through `$OUTER::x` (`$OUTER::x := $y`, `$OUTER::x = 5`) is then
+/// exactly a write to the plain `$x`, so the compiler can route it through the
+/// ordinary assignment / rebind machinery, which already keeps the declaring
+/// slot, a captured cell and the env overlay coherent (ADR-0097 §15).
+///
+/// The target scope must declare `bare` when it lies inside the chain. A
+/// `depth` that crosses the chain's outermost scope is answered the way the
+/// read side ([`resolve_outer`]) answers it -- by the runtime's outward
+/// cascade -- so it qualifies whenever no in-chain scope shadows the name.
+/// The topic `$_` never qualifies: every block declares its own.
+// Cost: O(d), d = the number of scopes between the emit point and the target.
+pub(crate) fn outer_is_visible_binding(scopes: &[ScopeFrame], bare: &str, depth: usize) -> bool {
+    if depth == 0 || bare == "_" {
+        return false;
+    }
+    let n = scopes.len();
+    let inner = if depth < n {
+        if !scopes[n - 1 - depth].contains_key(bare) {
+            return false;
+        }
+        &scopes[n - depth..]
+    } else {
+        scopes
+    };
+    !inner.iter().any(|frame| frame.contains_key(bare))
+}
+
 /// Resolve `OUTERS::` -- packages.rakudoc: "Symbols in any outer lexical scope".
 ///
 /// Where `OUTER` names one scope, `OUTERS` searches outward and stops at the
