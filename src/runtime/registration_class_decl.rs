@@ -274,6 +274,11 @@ impl Interpreter {
         } else {
             self.registry_mut().lexical_classes.remove(name);
         }
+        if crate::runtime::method_type_decls::methods_declare_types(method_decls) {
+            self.registry_mut()
+                .classes_with_method_type_decls
+                .insert(name.to_string());
+        }
         self.note_compound_declared_type(name);
 
         let ParentValidation {

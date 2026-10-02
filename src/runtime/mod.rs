@@ -835,6 +835,7 @@ mod dispatcher_wrap;
 mod enum_type_key;
 mod export_hook_routines;
 pub(crate) mod map_grep_plan;
+mod method_type_decls;
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
