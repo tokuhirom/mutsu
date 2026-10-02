@@ -464,10 +464,19 @@ impl Interpreter {
         // in contexts where `=` still keys by the display string (a hash
         // destructured into an anonymous `%a is raw` parameter, say), and the
         // two would land in different buckets.
+        // A `$` alias of an object hash (`my $t := $obj.attr`) has no declared
+        // constraint of its own, so there the hash's embedded key type decides
+        // (the element-assign path does the same).
         let object_hash_key_type: Option<String> = if name.starts_with('%') {
             loan_env!(self, var_hash_key_constraint_sym(&name, name_sym))
         } else {
-            None
+            container
+                .as_ref()
+                .map(Value::deref_container)
+                .and_then(|c| match c.view() {
+                    ValueView::Hash(h) => h.key_type.clone(),
+                    _ => None,
+                })
         };
         // Declared *element* type of the container being subscripted, used to
         // seed an absent element for `++`/`--` (see below). The value carried by
