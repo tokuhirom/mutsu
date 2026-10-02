@@ -799,10 +799,15 @@ impl Interpreter {
                     }
                     None => Vec::new(),
                 };
-                let (export_pkg, export_short) = match qualified_name.rsplit_once("::") {
-                    Some((pkg, short)) => (pkg.to_string(), short.to_string()),
-                    None => (self.current_package(), qualified_name.clone()),
-                };
+                let qualified_sym = Symbol::intern(&qualified_name);
+                let (export_pkg, export_short) =
+                    match crate::qualified::package_parent(qualified_sym) {
+                        Some(pkg) => (
+                            pkg.resolve(),
+                            crate::qualified::unqualified_part(qualified_sym).resolve(),
+                        ),
+                        None => (self.current_package(), qualified_name.clone()),
+                    };
                 self.register_exported_var(export_pkg, export_short, tags);
             }
 
