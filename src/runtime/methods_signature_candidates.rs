@@ -639,3 +639,68 @@ impl Interpreter {
         })
     }
 }
+
+impl Interpreter {
+    /// `Routine::Dispatcher.add_dispatchee` on a `proto`: register every
+    /// candidate of the routine `other` as an extra multi candidate of the
+    /// proto `package::name` (ecosystem `JSON::Fast::Hyper`, `CLI::Version`).
+    /// Returns the proto handle's own value for chaining, like Rakudo.
+    // Cost: O(r + c * a), r = registry size (scan for the dispatchee's rows), c = candidates of
+    // `other`, a = parameters per candidate.
+    pub(super) fn add_routine_dispatchee(
+        &mut self,
+        package: &str,
+        name: &str,
+        other: &Value,
+    ) -> Result<(), RuntimeError> {
+        let (opkg, oname) = match other.view() {
+            ValueView::Routine { name, package, .. } => (package.resolve(), name.resolve()),
+            ValueView::Sub(data) => (data.package.resolve(), data.name.resolve()),
+            _ => {
+                return Err(RuntimeError::new(
+                    "add_dispatchee requires a Routine argument",
+                ));
+            }
+        };
+        let single = crate::qualified::qualified(Symbol::intern(&opkg), Symbol::intern(&oname));
+        let single = single.as_str();
+        let multi_prefix = format!("{single}/");
+        let defs: Vec<_> = self
+            .registry()
+            .functions
+            .iter()
+            .filter(|(k, _)| {
+                let k = k.resolve();
+                k == single || k.starts_with(&multi_prefix)
+            })
+            .map(|(_, d)| d.clone())
+            .collect();
+        if defs.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "Cannot add dispatchee: no routine named '{oname}' found"
+            )));
+        }
+        let proto_key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        let proto_key = proto_key.as_str();
+        for def in defs {
+            let positional: Vec<_> = def
+                .param_defs
+                .iter()
+                .filter(|p| {
+                    !p.named && (!p.slurpy || p.name == "_capture") && !p.is_capture_subsignature()
+                })
+                .collect();
+            let types: Vec<&str> = positional
+                .iter()
+                .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
+                .collect();
+            let key = if types.iter().any(|t| *t != "Any") {
+                format!("{proto_key}/{}:{}", positional.len(), types.join(","))
+            } else {
+                format!("{proto_key}/{}", positional.len())
+            };
+            self.insert_multi_overload(&key, (*def).clone());
+        }
+        Ok(())
+    }
+}
