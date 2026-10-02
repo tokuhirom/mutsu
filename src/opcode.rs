@@ -4299,6 +4299,10 @@ pub(crate) enum OpCode {
     /// operand (`Stmt::UndeclaredRoutine`). Stack: `[] → []`; never falls
     /// through.
     ThrowUndeclaredRoutine(Box<crate::ast::UndeclaredRoutineCall>),
+    /// The main unit's BEGIN prologue has finished (`Stmt::BeginPrologueEnd`):
+    /// an error raised from here on is a run-time one, which runs the END
+    /// phasers. Stack: `[] → []`.
+    EndBeginPrologue,
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which

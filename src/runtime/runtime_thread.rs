@@ -614,6 +614,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             exit_status_locked: false,
+            begin_prologue_pending: false,
             main_hidden_from_usage: self.main_hidden_from_usage.clone(),
             explicit_run_main: self.explicit_run_main,
             nested_mode: self.nested_mode,
