@@ -630,8 +630,8 @@ impl Interpreter {
         self.current_unit = self.unit_of_source(method_def.source_file.as_deref());
         let call_result = self.call_compiled_method(
             receiver_class_name,
-            owner_class,
-            method_name,
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(method_name),
             method_def,
             &cc,
             attributes,

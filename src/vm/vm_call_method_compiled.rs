@@ -312,20 +312,14 @@ impl Interpreter {
     pub(crate) fn check_method_wrap_chain(
         &mut self,
         cn: &str,
-        owner_class: &str,
+        owner_sym: crate::symbol::Symbol,
         method: &str,
         method_def: &crate::runtime::MethodDef,
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let outermost = self.enter_method_wrap_chain(
-            cn,
-            method,
-            crate::symbol::Symbol::intern(owner_class),
-            method_def,
-            args,
-            target.clone(),
-        )?;
+        let outermost =
+            self.enter_method_wrap_chain(cn, method, owner_sym, method_def, args, target.clone())?;
         let mut call_args = vec![target.clone()];
         call_args.extend(args.to_vec());
         let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {

@@ -622,14 +622,15 @@ impl Interpreter {
     pub(crate) fn dispatch_compiled_method(
         &mut self,
         cn: &str,
-        owner_class: &str,
-        method: &str,
+        owner_class: crate::symbol::Symbol,
+        method_sym: crate::symbol::Symbol,
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
         cc: &std::sync::Arc<CompiledCode>,
         target: Value,
         args: Vec<Value>,
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
+        let method: &str = method_sym.as_str();
         let target_id = match target.view() {
             ValueView::Instance { id, .. } => Some(id),
             _ => None,
@@ -656,7 +657,7 @@ impl Interpreter {
             let result = self.call_compiled_method_fast(
                 cn,
                 owner_class,
-                method,
+                method_sym,
                 method_def,
                 cc,
                 args,
@@ -682,7 +683,7 @@ impl Interpreter {
             let result = self.call_compiled_method(
                 cn,
                 owner_class,
-                method,
+                method_sym,
                 method_def,
                 cc,
                 &attributes,
@@ -763,8 +764,8 @@ impl Interpreter {
         let invocant = Some(target);
         let result = self.call_compiled_method(
             cn,
-            owner_class,
-            method,
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(method),
             method_def,
             cc,
             &attributes,

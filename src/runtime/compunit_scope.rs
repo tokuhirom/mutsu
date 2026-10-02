@@ -109,6 +109,15 @@ impl Interpreter {
         }
     }
 
+    /// Whether any prelude routine is registered, i.e. whether
+    /// [`Self::prelude_visible_here`] can ever answer `false` — and so whether
+    /// a routine's visibility depends on the executing compunit.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn has_prelude_functions(&self) -> bool {
+        !self.prelude_registered_functions.is_empty()
+    }
+
     /// Whether a routine registered under `key` is visible to the code that is
     /// running right now.
     ///

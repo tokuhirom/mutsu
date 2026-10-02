@@ -1912,6 +1912,7 @@ mod tests {
         registry.seed_builtin_method_entries();
         let seeded_generation = registry.method_generation;
         let method = MethodDef {
+            syms: Default::default(),
             lexical_package: crate::symbol::wk::global_package(),
             params: Vec::new(),
             param_defs: Vec::new(),

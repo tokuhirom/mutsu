@@ -101,6 +101,36 @@ pub(crate) fn with_amp_name<R>(name: &str, f: impl FnOnce(&str) -> R) -> R {
     )
 }
 
+/// The interned code-variable key `"&{name}"` for an interned `name`.
+///
+/// A call site's callee name is fixed at compile time, so its `&name` is too;
+/// the probes on every `CallFunc` used to rebuild and re-intern it per call
+/// (#10961). The answer is memoized per name id in a thread-local table
+/// indexed by [`Symbol::raw`] — no string is built or hashed after a name's
+/// first call. Symbols are global and append-only, so an entry never goes
+/// stale.
+// Cost: O(1) after a name's first call, which interns `&name` (O(len)).
+pub(crate) fn amp_sym(name: Symbol) -> Symbol {
+    thread_local! {
+        /// `name id -> (&name id) + 1`; 0 means not computed yet.
+        static AMP_SYMS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    }
+    let idx = name.raw() as usize;
+    let cached = AMP_SYMS.with(|c| c.borrow().get(idx).copied().unwrap_or(0));
+    if cached != 0 {
+        return Symbol::from_raw(cached - 1);
+    }
+    let sym = name.with_str(|n| with_amp_name(n, Symbol::intern));
+    AMP_SYMS.with(|c| {
+        let mut table = c.borrow_mut();
+        if table.len() <= idx {
+            table.resize(idx + 1, 0);
+        }
+        table[idx] = sym.raw() + 1;
+    });
+    sym
+}
+
 /// Look up `"{name}/{arity}"` (already package-qualified `name`).
 pub(crate) fn arity_lookup(name: &str, arity: usize) -> Option<Symbol> {
     with_key(
@@ -317,5 +347,18 @@ mod tests {
         assert_eq!(inner.get(), Some("Inner::name"));
         // And the buffer is usable again afterwards.
         assert_eq!(qualified_intern("After", "name").as_str(), "After::name");
+    }
+
+    #[test]
+    fn amp_sym_is_the_code_variable_key_and_is_memoized() {
+        let name = Symbol::intern("amp-sym-test-routine");
+        let amp = amp_sym(name);
+        assert_eq!(amp.as_str(), "&amp-sym-test-routine");
+        // The memoized answer is the same symbol, and a different name does
+        // not alias it.
+        assert_eq!(amp_sym(name), amp);
+        let other = amp_sym(Symbol::intern("amp-sym-test-other"));
+        assert_eq!(other.as_str(), "&amp-sym-test-other");
+        assert_ne!(other, amp);
     }
 }
