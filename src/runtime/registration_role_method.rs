@@ -305,6 +305,7 @@ impl Interpreter {
             crate::symbol::Symbol::intern(name)
         };
         let def = MethodDef {
+            syms: Default::default(),
             lexical_package,
             params: effective_params,
             param_defs: effective_param_defs,

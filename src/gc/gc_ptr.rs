@@ -924,7 +924,7 @@ pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
     // that only steers the ADR-0003 trigger point). Dead entries count too:
     // they occupied buffer slots until this drain.
     let removed = entries.len();
-    let _ = APPROX_BUFFERED.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+    let _ = APPROX_BUFFERED.try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(removed))
     });
     let mut drained = Vec::new();

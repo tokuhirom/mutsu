@@ -80,13 +80,7 @@ impl Interpreter {
             // for retirement) instead of the array's own embedded
             // `value_type`, which could diverge for a bound/aliased array
             // whose name carries no constraint of its own.
-            while !arr.is_empty() && arr.hole_at(arr.len() - 1) {
-                let idx = arr.len() - 1;
-                arr.pop();
-                if let Some(s) = arr.initialized.as_mut() {
-                    s.remove(&idx);
-                }
-            }
+            arr.trim_trailing_holes();
         });
     }
 
@@ -133,14 +127,6 @@ impl Interpreter {
             if self.container_type_metadata(&current).is_some() || self.is_readonly(var_name) {
                 return None;
             }
-        }
-        // A `:=`-bound-to-literal key must clear its read-only marker on delete;
-        // route it to the slow path (which calls `unmark_ro_indices`) so a later
-        // re-bind/assign of the same key is not stale.
-        if crate::env::elem_index_meta_possible()
-            && self.is_ro_index(var_name, &idx.to_string_value())
-        {
-            return None;
         }
         let env = self.env();
         match env.get(var_name).map(Value::view) {
@@ -818,9 +804,6 @@ impl Interpreter {
         self.mark_deleted_indices(&var_name, &idx_for_unmark);
         // Remove deleted indices from the bound-index tracking set to sever bindings.
         self.unmark_bound_indices(&var_name, &idx_for_unmark);
-        // Deleting a `:=`-bound-to-literal element frees its key: clear the RO
-        // marker so a later re-bind (or re-assign) of the same key is not stale.
-        self.unmark_ro_indices(&var_name, &idx_for_unmark);
         // Trim trailing holes from arrays after deletion.
         // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
         self.trim_trailing_array_holes(&var_name);
@@ -935,7 +918,6 @@ impl Interpreter {
         self.unmark_initialized_indices(var_name, &flat_idx);
         self.mark_deleted_indices(var_name, &flat_idx);
         self.unmark_bound_indices(var_name, &flat_idx);
-        self.unmark_ro_indices(var_name, &flat_idx);
         self.trim_trailing_array_holes(var_name);
         if let Some(container) = self.env().get(var_name).cloned() {
             self.write_local_slot_or_name(code, slot, var_name, container);

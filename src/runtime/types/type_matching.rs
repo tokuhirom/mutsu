@@ -506,7 +506,33 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) when the constraint matches or names no lexical type; the
+    // miss path adds one registry-name probe and, on a hit, a scan of the type
+    // tables.
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if self.type_matches_value_resolved(constraint, value) {
+            return true;
+        }
+        // A lexical type (`my role R` / `my class C`) is stored under
+        // `R\u{0}<decl-id>` and only its declaring scope's env maps the
+        // source spelling to that name. A multi candidate exported from a
+        // module is matched in the CALLER's env, where `R` names nothing, so
+        // the spelling is resolved against the registry instead -- but only
+        // when exactly one lexical type carries that name, since which of
+        // several same-named ones was meant is not recoverable here.
+        if constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+            || !self.registry().has_lexical_type_key_for(constraint)
+            || self.has_type_direct(constraint)
+        {
+            return false;
+        }
+        match self.unique_lexical_type_key(constraint) {
+            Some(key) => self.type_matches_value_resolved(&key, value),
+            None => false,
+        }
+    }
+
+    pub(crate) fn type_matches_value_resolved(&mut self, constraint: &str, value: &Value) -> bool {
         // A nested type declared with a compound name is referenced by its
         // leaf inside the declaring package. Resolve that package-scoped alias
         // before the fast tag checks and subset lookup; assignment/type-check

@@ -11,6 +11,25 @@
 use super::*;
 
 impl Interpreter {
+    /// #10986: arm `pending_skip_constraint_recheck` for a method winner that
+    /// `resolve_method_cached` just returned, right before it is handed to
+    /// `call_compiled_method`. A `multi` winner was matched against these
+    /// exact arguments: a candidate with a `where`/subset parameter is
+    /// value-dependent, so it is never served from the type-keyed multi
+    /// cache, and `pick_method_winner_from_sequence` returns a multi only out
+    /// of its `method_args_match_for_invocant` matches. The binder may trust
+    /// that verdict instead of running each predicate a second time.
+    /// `call_compiled_method` takes the flag at entry and hands it to its own
+    /// parameter bind only.
+    // Cost: O(p), p = the winner's parameter count.
+    pub(super) fn arm_multi_method_winner_trust(&mut self, def: &crate::runtime::MethodDef) {
+        self.pending_skip_constraint_recheck = def.is_multi
+            && def
+                .param_defs
+                .iter()
+                .any(|pd| self.param_runs_constraint_predicate(pd));
+    }
+
     /// Resolve the receiver's user method and dispatch it; failing that, the
     /// "lever A" native forks and finally the interpreter fallback.
     pub(super) fn compiled_mut_resolved_dispatch(
@@ -46,14 +65,9 @@ impl Interpreter {
                     ),
                 );
             }
-            if let Some(result) = self.check_method_wrap_chain(
-                cn,
-                owner_class.as_str(),
-                method,
-                &method_def,
-                &target,
-                &args,
-            ) {
+            if let Some(result) =
+                self.check_method_wrap_chain(cn, owner_class, method, &method_def, &target, &args)
+            {
                 return result;
             }
             // Resolve to a def carrying compiled bytecode, compiling on demand
@@ -101,10 +115,11 @@ impl Interpreter {
                 let invocant = Some(target);
                 let empty_fns = CompiledFns::default();
                 let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
+                self.arm_multi_method_winner_trust(&method_def);
                 let method_result = self.call_compiled_method(
                     cn,
-                    owner_class.as_str(),
-                    method,
+                    owner_class,
+                    method_sym,
                     &method_def,
                     &cc,
                     &attributes,

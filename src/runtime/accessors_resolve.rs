@@ -430,9 +430,21 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
+        self.resolve_code_var_scoped(name, true)
+    }
+
+    /// [`Self::resolve_code_var`] for a `&name` whose by-name env `&name`
+    /// entry is not this code's lexical: a caller's binding from another
+    /// compunit (`Interpreter::imported_amp_over_inherited`). The `&name` env
+    /// entry is skipped; every other tier resolves as usual.
+    pub(crate) fn resolve_code_var_unshadowed(&self, name: &str) -> Value {
+        self.resolve_code_var_scoped(name, false)
+    }
+
+    fn resolve_code_var_scoped(&self, name: &str, consult_env_amp: bool) -> Value {
         // `&Alias::sub` where `Alias` is a constant naming a package.
         if let Some(real) = self.resolve_package_alias_prefix(name) {
-            return self.resolve_code_var(&real);
+            return self.resolve_code_var_scoped(&real, consult_env_amp);
         }
         // Handle package-qualified names: strip pseudo-package prefixes and
         // resolve the bare function name.
@@ -576,7 +588,7 @@ impl Interpreter {
         }
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", bare_name);
-        if let Some(val) = self.env.get(&var_key) {
+        if consult_env_amp && let Some(val) = self.env.get(&var_key) {
             // An `&` lexical may be a shared cell (the unvouched-escaping
             // capture, ADR-0055 §7.3): read through it, never hand the cell to
             // a caller that expects a callable. Branch rather than calling

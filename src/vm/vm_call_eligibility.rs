@@ -405,7 +405,7 @@ impl Interpreter {
     /// value-dependent `multi` whose resolution just ran every one of its
     /// `where` clauses against these exact arguments (`where_verified`): the
     /// light bind never runs a `where`, and here none is left to run
-    /// (#8697's `pending_skip_where_recheck` is the general binder's
+    /// (#8697's `pending_skip_constraint_recheck` is the general binder's
     /// equivalent of the same trust).
     pub(super) fn is_positional_light_call_eligible_where(
         cf: &CompiledFunction,

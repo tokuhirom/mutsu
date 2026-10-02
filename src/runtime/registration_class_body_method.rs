@@ -174,6 +174,7 @@ impl Interpreter {
                 .remove(&(Symbol::intern(cx.name), index))
         });
         let def = MethodDef {
+            syms: Default::default(),
             lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
             params: effective_params.clone(),
             param_defs: effective_param_defs.clone(),

@@ -16,7 +16,7 @@
 # The final image contains NONE of the build toolchain or source tree.
 
 # ---- builder (build stage) --------------------------------------------------
-FROM rust:1.98-bookworm AS builder
+FROM rust:1.99-bookworm AS builder
 
 # libffi is built vendored and statically linked into the binary, so the build
 # needs no extra system package and the image no runtime one.

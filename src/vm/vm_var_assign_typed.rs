@@ -676,7 +676,26 @@ impl Interpreter {
         // coerce_numeric_bridge_value / exec_say_op).
         let caller_code = self.current_code;
         let mut result = crate::builtins::str_prim::Joiner::new();
+        // Whether any type declares a `^find_method`, the one hook below a
+        // plain `Str`/`Int` piece could still reach. Read once per op.
+        let plain_pieces_take_fast_path =
+            !crate::runtime::find_method_intercept::any_user_find_method();
         for v in values {
+            // A plain `Str` or `Int` piece (`"key-$_"`): none of the checks
+            // below applies to one -- it is not a Proxy, container, Seq,
+            // Failure, Rational, Nil, Regex, Buf, mixin, Instance, type object
+            // or list -- so it goes straight to the joiner. A role-mixed or
+            // subclassed value has its own representation and does not match.
+            if plain_pieces_take_fast_path {
+                if v.is_str_value() {
+                    result.push_value(&v);
+                    continue;
+                }
+                if let Some(i) = v.as_int() {
+                    result.push_int(i);
+                    continue;
+                }
+            }
             // Interpolation is a READ, so a `Proxy` FETCHes here exactly as it
             // does for `~` (`coerce_stringy_operand`) and `say`. Top-level
             // only; a `Proxy` nested in an interpolated container is
@@ -753,6 +772,12 @@ impl Interpreter {
             // composition's `Str` (see `mixin_user_stringifier`).
             if let Some(mixed) = self.mixin_user_stringifier(&v) {
                 result.push_str(&mixed?.to_string_value());
+                continue;
+            }
+            // A `Str` subclass interpolates its payload (`Str.Stringy` is
+            // `self`), not its own `Str` (#11026).
+            if let Some(payload) = self.str_subclass_stringy_payload(&v) {
+                result.push_value(&payload);
                 continue;
             }
             // A native `Str` beats the inherited default `Stringy`.

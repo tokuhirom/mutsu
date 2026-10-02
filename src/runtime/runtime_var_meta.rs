@@ -785,10 +785,12 @@ impl Interpreter {
                     self.eval_decl_trait_arg(&arg).ok()
                 });
             if let Some(def) = def
-                && let Some(val) = attributes.remove(key)
+                && let Some(val) = attributes.get(key).cloned()
             {
+                // Tagging re-shapes the attribute's own container: a seeded
+                // one stays seeded (`nqp::attrinited`).
                 let tagged = self.tag_container_default(val, def);
-                attributes.insert(key, tagged);
+                attributes.rewrite(key, tagged);
             }
         }
     }

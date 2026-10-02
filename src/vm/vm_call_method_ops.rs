@@ -385,7 +385,7 @@ impl Interpreter {
         // to the interpreter.
         let out = {
             let map = attributes.as_map();
-            match map.get(method) {
+            match map.get_vivify(method) {
                 Some(v) => Some(v.clone()),
                 None => map.get(format!("{}!", method).as_str()).cloned(),
             }
@@ -1090,7 +1090,8 @@ impl Interpreter {
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path, which is unaware of
-        // user-defined Bool.
+        // user-defined Bool. A type that defines `.so` / `.not` itself is left to
+        // full dispatch.
         if matches!(method, "so" | "not") && args.is_empty() {
             let user_bool_owner = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -1099,6 +1100,7 @@ impl Interpreter {
             };
             if let Some(cn) = user_bool_owner
                 && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, method, &[])).is_none()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethod",
@@ -1554,13 +1556,13 @@ impl Interpreter {
             // dispatch) — neither forces.
             && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
-            // `.cache`) returns an infinite pipe unchanged, but a FINITE pipe
-            // (one bottoming out in a `gather`/finite source) must reify — else
-            // `gather { … }.grep(…).List` yields an unforced `(...)` and `.flat`/
-            // `for` see nothing.
+            // `.cache`) returns an infinite or `lazy`-marked pipe unchanged, but
+            // an unmarked FINITE pipe (one bottoming out in a `gather`/finite
+            // source) must reify — else `gather { … }.grep(…).List` yields an
+            // unforced `(...)` and `.flat`/`for` see nothing.
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && Self::lazy_pipe_preserving_coercion(method)
-                && !ll.pipe_bottoms_out_finite())
+                && ll.coercion_keeps_pipe_lazy())
             // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked
             // (`lazy gather {…}`) list — the count/numeric coercions produce a
             // *soft* X::Cannot::Lazy Failure (recoverable with `//`), emitted by

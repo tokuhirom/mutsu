@@ -746,9 +746,16 @@ impl Interpreter {
         // A verdict that depends on a conditional `use` comes back as guards
         // that run right after the prologue, which decides the condition
         // (#10331).
-        match self.check_undeclared_routines_with_guards(&body_main) {
+        let begin_prologue = match self.check_undeclared_routines_with_guards(&body_main) {
             Ok(guards) => {
+                let end = prologue_len + guards.len();
                 body_main.splice(prologue_len..prologue_len, guards);
+                // Everything before this marker runs at BEGIN time in rakudo,
+                // while the unit is still being compiled (#10977).
+                if end > 0 {
+                    body_main.insert(end, Stmt::BeginPrologueEnd);
+                }
+                end > 0
             }
             Err(err) => {
                 if prologue_len > 0 {
@@ -756,7 +763,7 @@ impl Interpreter {
                 }
                 return Err(err);
             }
-        }
+        };
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
@@ -769,7 +776,18 @@ impl Interpreter {
         // CP-3 collapse: the Interpreter *is* the bytecode VM now, so run the
         // compiled mainline directly (outermost run → fresh registers) instead of
         // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.
+        let outer_prologue_pending =
+            std::mem::replace(&mut self.begin_prologue_pending, begin_prologue);
         let body_result = self.run_top(&code, &compiled_fns);
+        let failed_at_begin_time =
+            std::mem::replace(&mut self.begin_prologue_pending, outer_prologue_pending);
+        // An error the BEGIN prologue raised is a compile-time failure in
+        // rakudo: the unit never finished compiling, so neither its END
+        // phasers nor the rest of program exit run -- the same as the
+        // statically detected undeclared-routine error above (#10977).
+        if failed_at_begin_time && let Err(e) = body_result {
+            return Err(e);
+        }
         // A `when`/`default` succeed that reaches all the way out here has no
         // enclosing topicalizer, bare block, `if` branch, loop body, or sub
         // call left to absorb it (each of those already catches its own --
@@ -822,6 +840,7 @@ impl Interpreter {
         // the plan diagnostic after, so keep `finish()`'s side effects (the
         // diagnostics it writes and the exit code it sets) and drop its error.
         if let Err(e) = body_result {
+            self.report_uncaught_early(&e);
             let _ = self.finish();
             return Err(e);
         }

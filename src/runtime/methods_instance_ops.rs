@@ -212,6 +212,11 @@ impl Interpreter {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         if let Some(payload) = crate::builtins::numeric_subclass::numeric_payload_of(&attributes) {
+            if let Some(rendered) =
+                self.numeric_subclass_repr(target, &class_name.resolve(), &payload, method)
+            {
+                return Some(rendered);
+            }
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         // An `is Version` subclass (#8070) delegates any method it does not
@@ -2041,7 +2046,7 @@ impl Interpreter {
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            let stored = attributes.as_map().get(method).cloned();
+                            let stored = attributes.as_map().get_vivify(method).cloned();
                             let val = match stored {
                                 Some(val) => val,
                                 // A grammar cursor is minted without BUILD
@@ -2274,8 +2279,11 @@ impl Interpreter {
                 // An explicit `:scheduler` wins. Otherwise, Rakudo uses a
                 // user-defined dynamic `$*SCHEDULER`; built-in schedulers keep
                 // the shared timer path used below.
-                let scheduler =
-                    Self::named_value(&args, "scheduler").or_else(|| self.user_scheduler());
+                // A `CurrentThreadScheduler` cannot honour `:every`, so ticking
+                // through it makes the tap die exactly as Rakudo's does.
+                let scheduler = Self::named_value(&args, "scheduler")
+                    .or_else(|| self.user_scheduler())
+                    .or_else(|| self.current_thread_scheduler());
 
                 if let Some(sched) = scheduler {
                     // Scheduler-driven `Supply.interval`: the scheduler owns the
@@ -3023,6 +3031,14 @@ impl Interpreter {
                     } else {
                         self.warn_type_object_string_context(&n, false)
                     }
+                }
+                // `Str.Stringy` is `self`: a `Str` subclass answers with the
+                // instance itself even when it declares its own `Str` (#11026).
+                ValueView::Instance { .. }
+                    if method == "Stringy"
+                        && self.str_subclass_stringy_payload(&target).is_some() =>
+                {
+                    Ok(target.clone())
                 }
                 ValueView::Instance { class_name, .. } => {
                     // Stringy defaults to Str, but Str does not default back to
@@ -3816,7 +3832,9 @@ impl Interpreter {
             if !is_public {
                 continue;
             }
-            if let Some(val) = attributes.get(attr_name) {
+            // Reading the attribute to render it vivifies it, as Rakudo's
+            // `.raku` does through `Attribute.get_value` (#11003).
+            if let Some(val) = attributes.get_vivify(attr_name.as_str()) {
                 // Render what the slot holds, not the cell a `:=` bind or an
                 // `=` value share (Slice 2e) put around it.
                 let val = &val.deref_container();

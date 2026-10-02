@@ -19,6 +19,11 @@ pub(crate) type MultiCandidateList = std::sync::Arc<Vec<std::sync::Arc<FunctionD
 /// `(package, name, argument type keys)`.
 pub(crate) type FuncMultiResolveKey = (Symbol, Symbol, Vec<Symbol>);
 
+/// Key of the `CallMethodMut` plain-method lane (`plain_method_lane`):
+/// `(receiver class, method name, argument type keys)`, the last empty for a
+/// call without arguments. See `vm_call_method_plain_lane`.
+pub(crate) type PlainMethodLaneKey = (Symbol, Symbol, Vec<Symbol>);
+
 /// `is export`-ed regex declarator bodies, keyed by the module that declared
 /// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
 type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
@@ -60,6 +65,9 @@ use crate::value::{
     ArrayKind, AttrMap, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel,
     SharedPromise, Value, make_rat, take_pending_instance_destroys,
 };
+
+/// Callback printing an uncaught exception; see [`Interpreter::set_uncaught_reporter`].
+pub type UncaughtReporter = Box<dyn FnMut(&mut Interpreter, &RuntimeError) + Send>;
 
 /// The `X::Phaser::PrePost` a falsy `PRE`/`POST` phaser throws.
 ///
@@ -105,7 +113,7 @@ pub(crate) fn seed_native_subclass_payloads(
     args: &[Value],
     positional_args: &[Value],
 ) {
-    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD};
+    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD};
     if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
         attrs.insert(INT_PAYLOAD, Value::int(payload));
@@ -116,6 +124,11 @@ pub(crate) fn seed_native_subclass_payloads(
             crate::runtime::coerce_to_numeric(v.clone()).to_f64()
         });
         attrs.insert(NUM_PAYLOAD, Value::num(payload));
+    } else if class_mro.iter().any(|name| name == "Rat") && !attrs.contains_key(RAT_PAYLOAD) {
+        // raku: `Rat.new(\nu, \de)` boxes the reduced fraction into the
+        // subclass; no argument is `0/1`. The native constructor builds it.
+        let payload = Interpreter::build_native_rat_value(positional_args);
+        attrs.insert(RAT_PAYLOAD, payload);
     }
     if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
         let payload = args
@@ -611,6 +624,7 @@ mod control_inline;
 mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_reinstate;
+mod numeric_subclass_repr;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
@@ -628,6 +642,7 @@ mod builtins_system_run;
 mod builtins_unbase;
 mod call_helpers;
 mod calls;
+mod calls_static_refute;
 mod class;
 mod class_attr_table;
 mod class_dispatch;
@@ -659,6 +674,7 @@ pub(crate) mod decl_gate;
 mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
+mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) use self::decl_types::*;
@@ -723,6 +739,8 @@ mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
 mod main_args;
+mod main_usage;
+mod main_usage_program;
 pub(crate) mod mark_context;
 mod metamodel;
 mod metamodel_new_type;
@@ -766,6 +784,8 @@ mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
+mod str_subclass_stringy;
+pub(crate) use str_subclass_stringy::str_subclass_payload;
 mod methods_introspect;
 mod methods_io_dispatch;
 mod methods_list_view_default;
@@ -929,6 +949,7 @@ mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) mod return_target;
+mod routine_candidate_defs;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
@@ -1087,6 +1108,11 @@ pub(crate) struct ClassAttributeDef {
     /// allocation per attribute per clone (#10090).
     pub(crate) source_line: Option<i64>,
     pub(crate) source_file: Option<crate::symbol::Symbol>,
+    /// `default` is the seed the parser synthesizes for a typed scalar with
+    /// no initializer (`has Int $.x`), not one the source wrote: construction
+    /// stores it as the slot's seed, which `nqp::attrinited` reports as not
+    /// initialized (ADR-0121 D4).
+    pub(crate) default_is_seed: bool,
 }
 
 /// Attribute declarations with the same bare name but different sigils are
@@ -2215,6 +2241,11 @@ pub struct Interpreter {
     /// move (lever B). Access only through `self.tap`'s methods.
     tap: TapState,
     halted: bool,
+    /// Prints an uncaught mainline exception; `run` calls it before the END
+    /// phasers, as rakudo's top-level handler does. See [`Self::set_uncaught_reporter`].
+    uncaught_reporter: Option<UncaughtReporter>,
+    /// Set once `uncaught_reporter` has printed the error `run` returns.
+    uncaught_reported: bool,
     exit_code: i64,
     /// Set while the END phasers run for a program that is already exiting, and
     /// once any END phaser has itself called `exit`. A further `exit` still
@@ -2222,6 +2253,13 @@ pub struct Interpreter {
     /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
     /// exits 42. See `Interpreter::finish` and `builtin_exit`.
     exit_status_locked: bool,
+    /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
+    /// still running: `run` raises it before the mainline starts and the
+    /// `EndBeginPrologue` opcode lowers it once the prologue and its
+    /// undeclared-routine guards are done. An error that escapes the mainline
+    /// while it is still raised is a compile-time failure, so `run` skips the
+    /// END phasers for it (#10977).
+    pub(crate) begin_prologue_pending: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
@@ -2467,17 +2505,20 @@ pub struct Interpreter {
     /// dropped. Only genuine exceptions are recorded -- a control-flow signal
     /// (`return`/`next`/...) is not an exception and still reads as "no match".
     pub(crate) pending_where_exception: Option<Box<RuntimeError>>,
-    /// Set by `dispatch_func_call_inner` right before it binds the winning
-    /// candidate of a value-dependent `multi` (one carrying a `where` clause)
-    /// whose resolution it already ran fresh, against these exact arguments,
-    /// a few lines earlier ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)).
+    /// Set right before binding the winning candidate of a value-dependent
+    /// `multi` (one carrying a `where` clause or a user-subset-typed
+    /// parameter) whose resolution already ran fresh, against these exact
+    /// arguments: by `dispatch_func_call_inner` for a sub
+    /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)), and by
+    /// `compiled_mut_resolved_dispatch` → `call_compiled_method` for a method
+    /// ([#10986](https://github.com/tokuhirom/mutsu/issues/10986)).
     /// `bind_function_args_values_inner` takes (clears) it at entry into a
-    /// local, so a positional `where` post-constraint check can skip
-    /// re-evaluating a predicate resolution already proved true for this
-    /// call, instead of running the user's constraint a second time. Any
-    /// nested call the bind or the routine body itself makes reads it as
-    /// `false` again, since the flag is consumed before either runs.
-    pub(crate) pending_skip_where_recheck: bool,
+    /// local, so a positional parameter's `where` post-constraint and subset
+    /// predicate checks can skip re-evaluating a predicate resolution already
+    /// proved true for this call, instead of running the user's code a second
+    /// time. Any nested call the bind or the routine body itself makes reads
+    /// it as `false` again, since the flag is consumed before either runs.
+    pub(crate) pending_skip_constraint_recheck: bool,
     /// ADR-0067 slice 3b: the caller's container for the invocant of the method
     /// call currently being dispatched, staged by
     /// `Interpreter::arm_raw_invocant_arrival` and consumed by whichever of the
@@ -4732,17 +4773,17 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
-    /// #8880: `(receiver class, method name)` pairs whose `CallMethodMut`
-    /// dispatch has been observed to walk the entire pre-dispatch probe chain
-    /// without a single probe claiming the call, so the chain can be skipped.
-    /// Written only from the dispatch tail that proves it, and cleared with the
-    /// other method caches on a registry generation change. See
-    /// `vm_call_method_plain_lane`.
-    pub(crate) plain_method_lane: rustc_hash::FxHashSet<(Symbol, Symbol)>,
+    /// #8880: `(receiver class, method name, argument type keys)` triples
+    /// whose `CallMethodMut` dispatch has been observed to walk the entire
+    /// pre-dispatch probe chain without a single probe claiming the call, so
+    /// the chain can be skipped. Written only from the dispatch tail that
+    /// proves it, and cleared with the other method caches on a registry
+    /// generation change. See `vm_call_method_plain_lane`.
+    pub(crate) plain_method_lane: rustc_hash::FxHashSet<PlainMethodLaneKey>,
     /// The key the *current* `CallMethodMut` dispatch may install into
     /// [`Interpreter::plain_method_lane`]. Set (or cleared) by that opcode's
     /// gate on every dispatch, so it always describes the innermost one.
-    pub(crate) plain_method_lane_candidate: Option<(Symbol, Symbol)>,
+    pub(crate) plain_method_lane_candidate: Option<PlainMethodLaneKey>,
     /// One-shot flag handing a proven-inert dispatch straight to the
     /// user-method tail; consumed by
     /// `try_compiled_method_mut_or_interpret_sym`.
@@ -4873,6 +4914,12 @@ pub struct Interpreter {
         crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
         Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
     >,
+    /// `(operator, candidate, argument type keys) -> does the core candidate
+    /// set out-rank this user infix candidate` (#10111,
+    /// `native_infix_dispatch.rs`). The candidate's `Arc` is held so a hit can
+    /// be confirmed by identity.
+    pub(crate) core_infix_wins_cache:
+        GenCache<crate::runtime::native_infix_dispatch::CoreInfixWinsKey, (Arc<FunctionDef>, bool)>,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a

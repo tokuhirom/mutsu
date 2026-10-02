@@ -18,9 +18,14 @@
 //! to resolve the write target), matching what mutsu already does for the
 //! method-accessor form `$obj.attr++`.
 
+//!
+//! A name that resolves to no routine but to an `&`-variable holding a code
+//! object (`my &k = sub h($x is rw) is rw { $x }; k($v)++`) steps through that
+//! code object, the way `k($v) = 5` assigns through it (#10965).
+
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, SubData, Value, ValueView};
 
 /// The `X::Multi::NoMatch` Raku's `++`/`--` multi raises for an argument with
 /// no container to write: `op` is the routine (`postfix:<++>`, ...), `arg`
@@ -48,6 +53,38 @@ impl Interpreter {
             .is_some_and(|def| Self::routine_is_rw_capable(&def))
     }
 
+    /// [`Interpreter::routine_is_rw_capable`] asked of a routine code object
+    /// rather than its `FunctionDef`. A body-less code object (ADR-0019
+    /// C6e-3b) answers the `return-rw` question through its
+    /// `compiled_routine`, so it never has to be re-resolved by its declared
+    /// name — which may be lexical to another unit (an EVAL) or be the very
+    /// `&`-variable the call went through (#10965).
+    // Cost: O(1) for a declared rw / raw routine or a compiled routine;
+    // otherwise O(b), b = body AST nodes (the `return-rw` scan).
+    pub(crate) fn sub_is_rw_capable(data: &SubData) -> bool {
+        data.is_rw
+            || data.is_raw
+            || data
+                .compiled_routine
+                .as_ref()
+                .is_some_and(|cf| cf.returns_container())
+            || crate::opcode::body_uses_return_rw(&data.body)
+    }
+
+    /// The `&name` code object a call to `name` dispatches through when no
+    /// routine of that name resolves, if it is a rw-capable routine.
+    fn rw_capable_callable_var(&self, name: &str) -> Option<Value> {
+        let callable = self.env.get(&format!("&{name}"))?;
+        let rw = match callable.view() {
+            ValueView::Sub(data) => Self::sub_is_rw_capable(&data),
+            ValueView::WeakSub(weak) => weak
+                .upgrade()
+                .is_some_and(|strong| Self::sub_is_rw_capable(&strong)),
+            _ => false,
+        };
+        rw.then(|| callable.clone())
+    }
+
     /// `__mutsu_incdec_named_sub_lvalue(name, [args], op_label)`
     ///
     /// `op_label` is one of `prefix:<++>` / `prefix:<-->` / `postfix:<++>` /
@@ -70,7 +107,20 @@ impl Interpreter {
         let is_prefix = label.starts_with("prefix");
 
         if !self.named_sub_is_rw_capable(&name, &call_args) {
-            return self.builtin_incdec_nomatch(std::slice::from_ref(&op_label));
+            let Some(callable) = self.rw_capable_callable_var(&name) else {
+                return self.builtin_incdec_nomatch(std::slice::from_ref(&op_label));
+            };
+            let _ = self.take_pending_dispatch_error();
+            let old = self
+                .call_sub_value(callable.clone(), call_args.clone(), true)?
+                .deref_container();
+            let new = if is_inc {
+                self.increment_value_smart(&old)?
+            } else {
+                self.decrement_value_smart(&old)?
+            };
+            self.assign_callable_lvalue_with_values(callable, call_args, new.clone())?;
+            return Ok(if is_prefix { new } else { old });
         }
 
         // An rw routine whose tail is `return-rw @a[$i]` hands back the

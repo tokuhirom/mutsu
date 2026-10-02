@@ -1,3 +1,4 @@
+use super::vm_var_assign_hash_fast::PlainHashTarget;
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
@@ -237,10 +238,6 @@ impl Interpreter {
         _is_positional: bool,
         target_slot: Option<u32>,
     ) -> Option<Result<(), RuntimeError>> {
-        // Reject if there are any local bind pairs (`:=` bindings in scope)
-        if !self.local_bind_pairs.is_empty() {
-            return None;
-        }
         let var_name = Self::const_str(code, name_idx);
         // Only handle %-sigiled hash variables
         if !var_name.starts_with('%') {
@@ -289,86 +286,15 @@ impl Interpreter {
         if matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
-        // Check that no type constraints, key constraints, or defaults exist.
-        // ADR-0042 slice 1: reads the target hash's own embedded metadata
-        // (see the `try_shared_hash_element_assign` comment above for why
-        // `container_type_metadata` rather than `element_constraint_for`) —
-        // the `has_type_meta()` check further below is a second,
-        // container-only belt-and-suspenders check on the SAME embedded
-        // metadata, kept for its extra strong-count/local-slot bookkeeping.
-        //
-        // Scoped tightly in its own block: `current` clones the hash's Arc,
-        // and the `strong_count` check a few lines below (the "does an
-        // external binding exist" heuristic) counts EVERY live Arc clone —
-        // including this temporary one, if it were still alive. An
-        // unscoped `let current = ...` here made every hash-element
-        // assignment whose value's rvalue-itemization is observed by
-        // surrounding code (`my @z = (%a<x> = ...)`) see `strong_count == 3`
-        // instead of 2, permanently falling off the fast path and losing its
-        // itemization (`t/hash-key-single-itemize.t`).
-        {
-            let current = self.env().get_sym(var_sym).cloned().unwrap_or(Value::NIL);
-            if self.container_type_metadata(&current).is_some()
-                || self.var_default(var_name).is_some()
-                || self.is_readonly_sym(var_sym)
-            {
-                return None;
-            }
-        }
-        // Reject if any bound indices exist for this variable
-        // (e.g. `%h<a> := $foo` makes element writes propagate to $foo).
-        // Gated like the twin above: no bound element, no probe.
-        if crate::env::elem_index_meta_possible() {
-            let bound_key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-            if self.env().contains_key_sym(bound_key) {
-                return None;
-            }
-        }
-        // Reject if this key was `:=`-bound to an immutable literal (`%h<i> := 137`):
-        // the slow path must throw X::AdHoc / X::Assignment::RO, not overwrite it.
-        if crate::env::elem_index_meta_possible() {
-            let ro_key = self.stack[stack_len - 1].to_string_value();
-            if self.is_ro_index(var_name, &ro_key) {
-                return None;
-            }
-        }
-        // Check that the variable exists in env as a plain Hash
-        // and that it has no container type metadata
+        // The key the commit below stores under, stringified ONCE here and
+        // moved into the insert -- `%h{$k} = $v` used to build the same
+        // `String` twice per store.
+        let key = self.stack[stack_len - 1].to_string_value();
+        let target = self.plain_hash_lane_target(code, name_idx, target_slot)?;
         let env = self.env();
-        match env.get_sym(var_sym).map(Value::view) {
-            Some(ValueView::Hash(hash_arc)) => {
-                let strong_count = crate::gc::Gc::strong_count_of(&hash_arc);
-                // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
-                // strong_count == 1: only env holds it (no local slot)
-                // strong_count == 2: env + locals hold it (common case in for loops)
-                // strong_count > 2: external binding exists, fall through to slow path
-                if strong_count > 2 {
-                    return None;
-                }
-                let local_slot = if strong_count == 2 {
-                    // The extra ref should be from locals — verify.
-                    //
-                    // ADR-0039 slice 2: through the compiler-baked
-                    // `target_slot`, never a by-name search. `find_local_slot`
-                    // is a `position` over `code.locals`, so with a same-named
-                    // shadow (`code.locals == ["%h", "%h"]`) it answered the
-                    // OUTER binding's slot — which this path then nil'd and
-                    // re-seeded, corrupting a variable the store never touched.
-                    Some(self.resolve_local_slot(code, target_slot, var_name)?)
-                } else {
-                    None
-                };
-                // Reject if there's container type metadata
-                if hash_arc.has_type_meta()
-                    || loan_env!(self, var_type_constraint(var_name)).is_some()
-                {
-                    return None;
-                }
-                // Peek at the key to check if the existing element is a bound
-                // ref. This is the key the commit below stores under, so it is
-                // stringified ONCE here and moved into the insert -- `%h{$k} =
-                // $v` used to build the same `String` twice per store.
-                let key = self.stack[stack_len - 1].to_string_value();
+        match (target, env.get_sym(var_sym).map(Value::view)) {
+            (PlainHashTarget::Hash { local_slot }, Some(ValueView::Hash(hash_arc))) => {
+                // Peek at the existing element: a bound ref takes the slow path.
                 if let Some(existing) = hash_arc.get(&key) {
                     let is_bound = match existing.view() {
                         ValueView::HashEntryRef { .. } | ValueView::Scalar(..) => true,
@@ -402,50 +328,17 @@ impl Interpreter {
                 // the single `String` it built at the peek above.
                 #[cfg(not(target_family = "wasm"))]
                 let os_env_key = (var_name == "%*ENV").then(|| key.clone());
-                // When locals and env share the same Arc (strong_count == 2),
-                // drop the local ref first so Arc::make_mut can mutate in-place
-                // instead of cloning the entire HashMap (O(n) → O(1) per insert).
-                if let Some(slot) = local_slot {
-                    self.locals[slot] = Value::NIL;
-                }
-                if let Some(entry) = self.env_mut().get_mut_sym(var_sym) {
-                    entry.with_hash_mut(|hash| {
-                        // ADR-0040 slice 1: itemize the stored value, not the
-                        // rvalue pushed below (that push is a pre-existing,
-                        // separate scalar-context-itemization concern).
-                        Value::hash_insert_through(
-                            &mut crate::gc::Gc::make_mut(hash).map,
-                            key,
-                            Self::itemize_value_for_element_store(val.clone()),
-                        );
-                    });
-                }
-                // Restore the local slot to point to the (now mutated) env Arc
-                if let Some(slot) = local_slot
-                    && let Some(env_val) = self.env().get_sym(var_sym).cloned()
-                {
-                    self.locals[slot] = env_val;
-                }
-                // strong_count==1 divergence repair: a re-entrant call evaluated
-                // as the RHS (e.g. a `proto {*}` redispatch) can swap `self.env`
-                // out from under the block's local slot via
-                // `restore_env_preserving_existing`, leaving the slot pointing at
-                // a stale, detached Arc while env holds the live one (strong_count
-                // drops to 1). The assign above mutated only env, so a local slot
-                // that still exists is — by definition of strong_count==1 — a
-                // diverged copy. Mirror the live env value back to it to keep the
-                // dual store coherent, so a later `state`-var persist (which reads
-                // env first, then `sync_env_from_locals` flushes the slot) does not
-                // clobber the value with the stale slot. No-op for a genuine
-                // env-only hash (e.g. `%*ENV`) that has no local slot, and the
-                // default build's blanket reconcile makes it redundant (byte-
-                // identical) — it only matters on the single-store path.
-                if local_slot.is_none()
-                    && let Some(slot) = self.resolve_local_slot(code, target_slot, var_name)
-                    && let Some(env_val) = self.env().get_sym(var_sym).cloned()
-                {
-                    self.locals[slot] = env_val;
-                }
+                // ADR-0040 slice 1: itemize the stored value, not the rvalue
+                // pushed below (that push is a pre-existing, separate
+                // scalar-context-itemization concern).
+                self.commit_plain_hash_insert(
+                    code,
+                    name_idx,
+                    target_slot,
+                    local_slot,
+                    key,
+                    Self::itemize_value_for_element_store(val.clone()),
+                );
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
                 if let Some(key) = os_env_key {
@@ -474,7 +367,7 @@ impl Interpreter {
                 self.stack.push(Self::itemize_value(val));
                 Some(Ok(()))
             }
-            None => {
+            (PlainHashTarget::Absent, None) => {
                 // Hash doesn't exist yet — auto-vivify and insert
                 let idx = self.stack.pop().unwrap();
                 let val = self.stack.pop().unwrap();

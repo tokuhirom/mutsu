@@ -1886,7 +1886,14 @@ impl Interpreter {
                         }
                     }
                 }
-                let mut attrs = AttrMap::new();
+                // Laid out like every other construction path (ADR-0121 D2):
+                // the slots also record which attributes hold only their seed
+                // (`nqp::attrinited`, D4).
+                let mut attrs = AttrMap::with_layout(
+                    self.native_ctor_plan(Symbol::intern(class_key))
+                        .layout
+                        .clone(),
+                );
                 let mut positional_ctor_args: Vec<Value> = Vec::new();
                 let saved_default_env = self.env.clone();
                 let role_bindings = {
@@ -2119,7 +2126,12 @@ impl Interpreter {
                         return self.construct_baggy_instance(&cn, &args);
                     }
                     let accepts_positional = class_mro.iter().any(|n| {
-                        *n == "Array" || *n == "List" || n == "Int" || n == "Num" || n == "Hash"
+                        *n == "Array"
+                            || *n == "List"
+                            || n == "Int"
+                            || n == "Num"
+                            || n == "Rat"
+                            || n == "Hash"
                     });
                     if !accepts_positional {
                         return Err(constructor_positional_error(&class_name.resolve()));
@@ -2248,6 +2260,7 @@ impl Interpreter {
                         captured_unit,
                         declaring_package,
                         sigil,
+                        default_is_seed,
                         ..
                     } = attr;
                     let storage_key =
@@ -2255,6 +2268,7 @@ impl Interpreter {
                     if attrs.contains_key(storage_key) {
                         continue;
                     }
+                    let seeds = default.is_none() || default_is_seed;
                     // Clone the override out and drop the registry guard before
                     // call_sub_value re-enters user code (RwLock is not reentrant).
                     let build_override = self
@@ -2281,10 +2295,14 @@ impl Interpreter {
                             declaring_package,
                             build_override,
                             seed: seed.clone(),
+                            default_is_seed,
                         });
-                        attrs.insert(storage_key, seed);
+                        attrs.insert_seed(storage_key, seed);
                         continue;
                     }
+                    // An `is built(&code)` override is an initializer the
+                    // source wrote; only a missing or synthesized one seeds.
+                    let seeds = seeds && build_override.is_none();
                     let val = if let Some(build_override) = build_override {
                         let val = self.call_sub_value(build_override, Vec::new(), false)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
@@ -2329,7 +2347,11 @@ impl Interpreter {
                         val
                     };
                     let val = Self::itemize_attr_store_value(sigil, val);
-                    attrs.insert(storage_key, val);
+                    if seeds {
+                        attrs.insert_seed(storage_key, val);
+                    } else {
+                        attrs.insert(storage_key, val);
+                    }
                 }
                 // Embed `is default(...)` element defaults into `@`/`%` containers
                 // (evaluating any role-deferred expression while type params are

@@ -18,15 +18,6 @@ impl Interpreter {
         {
             self.reify_map_grep_seq(&top)?;
         }
-        // A whole `%`/`@` reassignment breaks every `:=`-bound element — drop the
-        // read-only-element markers so a later `%h<k> = v` is writable again.
-        if crate::env::elem_index_meta_possible() {
-            let name = &code.locals[idx];
-            if name.starts_with('%') || name.starts_with('@') {
-                let name = name.clone();
-                self.clear_all_ro_index(&name);
-            }
-        }
         // Slice 2a/2b: `$scalar = @arr` / chained `$r = $q` reassignment (the
         // VarDecl form goes through `exec_set_local_op`). Promote the source
         // container to a shared `ContainerRef` cell so structural mutation through

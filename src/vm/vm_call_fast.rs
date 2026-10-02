@@ -154,7 +154,7 @@ impl Interpreter {
         // path deliberately opens no frame, so save the kind and put it back on
         // the way out (every error arm above `break`s to that same tail).
         let saved_topic_readonly = cf.code.is_routine.then(|| {
-            let kind = self.readonly_kind("_");
+            let kind = self.readonly_kind_sym(crate::symbol::wk::topic());
             self.unmark_readonly_topic();
             kind
         });

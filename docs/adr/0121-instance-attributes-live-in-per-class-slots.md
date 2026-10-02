@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr`, `nqp::create`, default-construction and bareword-term parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr`, `nqp::create`, default-construction and bareword-term parts of D3, and D4, implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -177,6 +177,30 @@ probe and the lock.
 
 `attrinited` is implemented against D2's absent sentinel.
 
+**Amendment (2026-10-02, #10957).** D2 landed with eager seeding: by the time
+anyone can ask, every declared slot of a constructed object is present (an
+unpassed `$.x` holds `Any`, an `@.z` an empty `Array`). The absent state alone
+cannot answer `attrinited`, so a per-slot **seed bit** is kept beside the
+slots instead (option (b) of #10957, rather than not seeding and vivifying on
+read, which would touch every read path):
+
+- Construction stores an attribute that no initializer wrote -- no
+  initializer and no argument, the parser's synthesized type-object / native
+  zero default of a typed scalar (`HasDecl::default_is_seed`), an initializer
+  deferred until after BUILD -- with `AttrMap::insert_seed`, which sets the
+  bit. `nqp::create` / `CREATE` marks every slot of its template.
+- Every mutating access of the map (`insert`, `get_mut`, `slot_mut`, `entry`,
+  `remove`) clears the bit. A construction pass that only reshapes the value
+  it seeded (coercion, element-type tagging, `is default`) uses
+  `AttrMap::rewrite`, which keeps it.
+- A **user-level read** clears it too, as MoarVM vivifies a null slot on
+  `getattr`: `$!x` in a method (the site-cache and the general path), the
+  generated accessor (lane, fast path, interpreter path) and `nqp::getattr`
+  read through `get_vivify` / `slot_vivify`. The bits are atomics, so a
+  reader clears one under the read lock; a clear bit costs a load.
+- Internal reads (`.raku`, `.^attributes`' `get_value`, `eqv`) do not
+  vivify, where rakudo's do (#11003).
+
 ## 3. Consequences
 
 - **Scope.** Every OO program pays less per attribute access, not only `nqp::` code. D2 and D3
@@ -305,7 +329,11 @@ probe and the lock.
   `news/2026-09/bareword-type-names-resolve-once-per-generation.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
   the attribute ops, and `Array` / `Hash` `$!descriptor`.
-- **D4:** not started.
+- **D4 (landed).** A per-slot seed bit beside the slots, set by
+  construction for what no initializer wrote and cleared by every store and
+  every user-level read (see the D4 amendment). `nqp::attrinited` resolves
+  the attribute as a `$!name` access in a method of the class operand does.
+  See `news/2026-10/nqp-attrinited.md`.
 
 ## 6. Reproduction
 

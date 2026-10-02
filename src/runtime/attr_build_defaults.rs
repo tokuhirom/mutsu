@@ -76,6 +76,10 @@ pub(crate) struct DeferredAttrDefault {
     /// The value the slot was seeded with; the slot still holding it is half of
     /// the "BUILD left this alone" test (see the module docs).
     pub(crate) seed: Value,
+    /// `default` is the parser's synthesized type-object default
+    /// (`ClassAttributeDef::default_is_seed`), so applying it leaves the slot
+    /// seeded.
+    pub(crate) default_is_seed: bool,
 }
 
 impl Interpreter {
@@ -193,7 +197,11 @@ impl Interpreter {
                 val
             };
             let val = Self::itemize_attr_store_value(d.sigil, val);
-            cell.insert(key, val);
+            if d.default_is_seed {
+                cell.insert_seed(key, val);
+            } else {
+                cell.insert(key, val);
+            }
         }
         Ok(())
     }

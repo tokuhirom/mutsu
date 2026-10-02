@@ -439,9 +439,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // Shaped arrays join their rows with a newline (`say my @a[2,2]`
             // prints one row per line), matching the fast-path gist.
             let sep = if kind == crate::value::ArrayKind::Shaped
-                && items
-                    .iter()
-                    .any(|v| matches!(v.view(), ValueView::Array(..)))
+                && crate::runtime::utils::shaped_array_has_rows(value)
             {
                 "\n "
             } else {

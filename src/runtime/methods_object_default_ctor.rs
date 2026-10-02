@@ -223,13 +223,15 @@ impl Interpreter {
                 // Fast path: a literal default needs no evaluation or binding.
                 // The interpreter stores it without a type check, so we do too.
                 Some(lit_val) => {
-                    attrs.insert(
-                        attr_sym,
-                        Self::itemize_attr_store_value(
-                            *sigil,
-                            Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
-                        ),
+                    let val = Self::itemize_attr_store_value(
+                        *sigil,
+                        Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
                     );
+                    if attr.default_is_seed {
+                        attrs.insert_seed(attr_sym, val);
+                    } else {
+                        attrs.insert(attr_sym, val);
+                    }
                 }
                 None if default_expr.is_some() => {
                     let arg = default_expr.as_ref().unwrap();
@@ -275,13 +277,15 @@ impl Interpreter {
                         typed_default_mismatch = true;
                         break;
                     }
-                    attrs.insert(
-                        attr_sym,
-                        Self::itemize_attr_store_value(
-                            *sigil,
-                            Self::coerce_attr_value_by_sigil(val, *sigil),
-                        ),
+                    let val = Self::itemize_attr_store_value(
+                        *sigil,
+                        Self::coerce_attr_value_by_sigil(val, *sigil),
                     );
+                    if attr.default_is_seed {
+                        attrs.insert_seed(attr_sym, val);
+                    } else {
+                        attrs.insert(attr_sym, val);
+                    }
                 }
                 None => {
                     // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For
@@ -298,7 +302,7 @@ impl Interpreter {
                             None => Value::package(crate::symbol::wk::any()),
                         },
                     };
-                    attrs.insert(attr_sym, empty);
+                    attrs.insert_seed(attr_sym, empty);
                 }
             }
         }
@@ -327,10 +331,10 @@ impl Interpreter {
                 continue;
             };
             if Self::is_native_coercion_ctor_constraint(tc)
-                && let Some(val) = attrs.remove(attr_sym)
+                && let Some(val) = attrs.get(attr_sym).cloned()
             {
                 let coerced = self.coerce_value_for_constraint(tc, val);
-                attrs.insert(attr_sym, coerced);
+                attrs.rewrite(attr_sym, coerced);
             }
         }
         // Tag typed `@`/`%` attributes (`has Int @.nums`) with element-type
@@ -380,7 +384,7 @@ impl Interpreter {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
                     Ok(tagged) => {
-                        attrs.insert(attr_sym, tagged);
+                        attrs.rewrite(attr_sym, tagged);
                     }
                     Err(e) => return Some(Err(e)),
                 }

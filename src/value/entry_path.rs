@@ -1,7 +1,7 @@
 //! The step vocabulary of a deferred vivification path.
 //!
 //! A subscript chain that reaches a not-yet-existent element hands out a
-//! deferred [`ValueRepr::HashEntryRef`](crate::value::ValueRepr::HashEntryRef)
+//! deferred [`ValueRepr::HashEntryRef`]
 //! token instead of creating anything (so a *getter* built on the same routine
 //! does not vivify the path it is looking up). The token is a container root
 //! plus the path walked from it; the first write walk-creates that path.

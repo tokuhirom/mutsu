@@ -119,7 +119,7 @@ impl Interpreter {
         }
         // Each latch being true means a *name-keyed* side table may describe one
         // of the two elements this store walks through (`__mutsu_bound_index::`,
-        // `__mutsu_elem_share::`, `__mutsu_deleted_index::`, `__mutsu_ro_index::`,
+        // `__mutsu_elem_share::`, `__mutsu_deleted_index::`,
         // or a declared shape). This lane knows nothing about those.
         if crate::env::elem_index_meta_possible() || crate::env::shaped_array_dims_possible() {
             return None;

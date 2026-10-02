@@ -61,14 +61,9 @@ impl Interpreter {
         let method_sym = crate::symbol::Symbol::intern(method);
         let (owner_class, method_def) =
             self.resolve_method_cached(cn, method, class_sym, method_sym, args, target)?;
-        if let Some(result) = self.check_method_wrap_chain(
-            cn,
-            owner_class.as_str(),
-            method,
-            &method_def,
-            target,
-            args,
-        ) {
+        if let Some(result) =
+            self.check_method_wrap_chain(cn, owner_class, method, &method_def, target, args)
+        {
             return Some(result);
         }
         let (owner_class, method_def) = if method_def.compiled_code.is_some() {
@@ -97,8 +92,8 @@ impl Interpreter {
             .expect("compiled_code set above");
         Some(self.dispatch_compiled_method(
             cn,
-            owner_class.as_str(),
-            method,
+            owner_class,
+            method_sym,
             &method_def,
             &cc,
             target.clone(),
@@ -128,14 +123,9 @@ impl Interpreter {
         let method_sym = crate::symbol::Symbol::intern(method);
         let (owner_class, method_def) =
             self.resolve_method_cached(cn, method, class_sym, method_sym, args, target)?;
-        if let Some(result) = self.check_method_wrap_chain(
-            cn,
-            owner_class.as_str(),
-            method,
-            &method_def,
-            target,
-            args,
-        ) {
+        if let Some(result) =
+            self.check_method_wrap_chain(cn, owner_class, method, &method_def, target, args)
+        {
             return Some(result);
         }
         let (owner_class, method_def) = if method_def.compiled_code.is_some() {

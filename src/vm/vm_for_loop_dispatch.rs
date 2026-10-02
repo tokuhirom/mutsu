@@ -224,6 +224,15 @@ impl Interpreter {
             Some(ll) => Value::lazy_list(crate::gc::Gc::new(ll)),
             None => iterable,
         };
+        // `for |(lazy gather ...)`: `|` leaves a lazy list riding a one-item Slip
+        // (`exec_make_slip_op`); iterating the Slip would hand the loop that list
+        // as ONE item, so iterate the list itself.
+        if let ValueView::Slip(items) = iterable.view()
+            && let [only] = &items[..]
+            && matches!(only.view(), ValueView::LazyList(_))
+        {
+            iterable = only.clone();
+        }
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.

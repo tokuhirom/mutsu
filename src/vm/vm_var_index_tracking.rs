@@ -95,68 +95,6 @@ impl Interpreter {
         }
     }
 
-    /// Mark element `encoded` of `var_name` as read-only. Set when an element is
-    /// `:=`-bound to an immutable literal (`%h<i> := 137` / `@a[0] := 137`): a
-    /// later plain `=` assignment to that element must throw rather than write
-    /// through the shared cell. Parallel to `mark_bound_index` but a distinct
-    /// side-set (a `:=` bind to a *container source* is writable-through, so only
-    /// the literal-bind subset lands here). See PLAN.md §8.7.
-    pub(super) fn mark_ro_index(&mut self, var_name: &str, encoded: String) {
-        let key = MetaNs::RoIndex.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key)
-            && entry
-                .with_hash_mut(|map| {
-                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
-                })
-                .is_some()
-        {
-            return;
-        }
-        let mut map = ValueMap::default();
-        map.insert(encoded, Value::TRUE);
-        self.env_mut().insert_sym_noting(key, Value::hash(map));
-    }
-
-    pub(super) fn is_ro_index(&self, var_name: &str, encoded: &str) -> bool {
-        // Runs on every element write; see `is_bound_index` for the gate rationale.
-        if !crate::env::elem_index_meta_possible() {
-            return false;
-        }
-        let key = MetaNs::RoIndex.key_for_str(var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
-            map.contains_key(encoded)
-        } else {
-            false
-        }
-    }
-
-    /// Drop the entire read-only-index side table for `var_name` — used when the
-    /// whole `%`/`@` variable is reassigned (`%h = (...)`), which breaks every
-    /// element binding, so a later `%h<k> = v` must be writable again.
-    pub(super) fn clear_all_ro_index(&mut self, var_name: &str) {
-        if !crate::env::elem_index_meta_possible() {
-            return;
-        }
-        let key = MetaNs::RoIndex.key_for_str(var_name);
-        self.env_mut().remove_sym(key);
-    }
-
-    /// Remove a read-only-index marker for the indices addressed by `idx`
-    /// (scalar / slice / range). Mirror of `unmark_bound_indices`.
-    pub(super) fn unmark_ro_indices(&mut self, var_name: &str, idx: &Value) {
-        if !crate::env::elem_index_meta_possible() {
-            return;
-        }
-        let key = MetaNs::RoIndex.key_for_str(var_name);
-        let Some(entry) = self.env_mut().get_mut_sym(key) else {
-            return;
-        };
-        entry.with_hash_mut(|map| {
-            let m = crate::gc::Gc::make_mut(map);
-            Self::unmark_index_entries(m, idx);
-        });
-    }
-
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         if !crate::env::elem_index_meta_possible() {
@@ -408,24 +346,13 @@ impl Interpreter {
         }
     }
 
-    /// Whether element `idx` of `container` (the value held by `var_name`) has
-    /// no writable container: it was `:=`-bound to a bare value, recorded either
-    /// as a `__mutsu_ro_index` marker (`@a[i] := 42`) or as a read-only cell in
-    /// the slot (`.BIND-POS`/`.BIND-KEY`, `Value::bound_element`). An in-place
-    /// mutator (`++`, `--`) must refuse such an element (#10984).
-    // Cost: O(1) in a program with no element bind (two flag loads); else one
-    // env probe and one element/hash probe, plus O(k) to encode a k-index key.
-    pub(super) fn element_has_no_container(
-        &self,
-        var_name: &str,
-        container: Option<&Value>,
-        idx: &Value,
-    ) -> bool {
-        if crate::env::elem_index_meta_possible()
-            && self.is_ro_index(var_name, &Self::encode_bound_index(idx))
-        {
-            return true;
-        }
+    /// Whether element `idx` of `container` has no writable container: it was
+    /// `:=`-bound to a bare value (`@a[i] := 42`, `.BIND-POS`/`.BIND-KEY`), which
+    /// leaves a read-only cell in the slot (`Value::bound_element`). An
+    /// in-place mutator (`++`, `--`) must refuse such an element (#10984).
+    // Cost: O(1): one flag load in a program with no such bind; else one
+    // element/hash probe.
+    pub(super) fn element_has_no_container(container: Option<&Value>, idx: &Value) -> bool {
         if !crate::value::readonly_cells_possible() {
             return false;
         }

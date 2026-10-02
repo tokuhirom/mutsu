@@ -117,7 +117,7 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
-        let mut val = loan_env!(self, resolve_code_var(name));
+        let mut val = self.resolve_amp_var_for(code, name);
         // The same module-scope lexical the bare-call path consults (see
         // `lexical_amp_var_callable`): an imported CODE variable outlives its
         // `env` entry only in `module_scope_lexicals`, so `&f()` written in a

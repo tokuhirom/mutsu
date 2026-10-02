@@ -887,6 +887,9 @@ impl Compiler {
             Stmt::UndeclaredRoutine(call) => {
                 self.code.emit(OpCode::ThrowUndeclaredRoutine(call.clone()));
             }
+            Stmt::BeginPrologueEnd => {
+                self.code.emit(OpCode::EndBeginPrologue);
+            }
             Stmt::NestedMethodCapture {
                 index,
                 closure,
@@ -3047,37 +3050,36 @@ impl Compiler {
                 // the element value and tag the (container, index) source so the
                 // body's final `$_` is written back. `topic_readonly` is false.
                 let element_source = match topic {
-                    Expr::Index {
-                        target,
-                        index,
-                        is_positional,
-                    } => Self::container_var_name(target)
-                        // The element-source writeback optimization looks the
-                        // container up by name in the locals store. An instance
-                        // attribute (`%!h`, `@!a`, twigil `!`/`.`) lives in the
-                        // instance attribute store, not in locals, so the lookup
-                        // would read an empty container and bind `$_` to Nil.
-                        // Fall through to evaluating the element value directly
-                        // (read-only, but correct) for attribute containers.
-                        .filter(|c| {
-                            let after_sigil = c.strip_prefix(['$', '@', '%']).unwrap_or(c);
-                            !after_sigil.starts_with(['!', '.'])
-                        })
-                        .map(|c| (c, index, *is_positional)),
+                    Expr::Index { .. } => {
+                        let mut path = Vec::new();
+                        let root = topic.index_path(&mut path);
+                        Self::container_var_name(root).map(|c| (c, root, path))
+                    }
                     _ => None,
                 };
                 let topic_readonly;
                 let tagged_source;
-                if let Some((container, index, is_positional)) = element_source {
-                    if let Expr::Index { target, .. } = topic {
-                        self.compile_expr(target);
-                    }
-                    self.compile_expr(index);
+                if let Some((container, root, path)) = element_source {
                     let container_idx = self.code.add_constant(Value::str(container));
-                    self.code.emit(OpCode::TagElementSource {
-                        container_idx,
-                        positional: is_positional,
-                    });
+                    if path.len() == 1 {
+                        let (index, is_positional) = path[0];
+                        self.compile_expr(root);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::TagElementSource {
+                            container_idx,
+                            positional: is_positional,
+                        });
+                    } else {
+                        let positionals = path.iter().map(|(_, positional)| *positional).collect();
+                        self.compile_expr(root);
+                        for (index, _) in &path {
+                            self.compile_expr(index);
+                        }
+                        self.code.emit(OpCode::TagElementSourcePath {
+                            container_idx,
+                            positionals,
+                        });
+                    }
                     topic_readonly = false;
                     tagged_source = false;
                 } else {
@@ -4082,6 +4084,9 @@ impl Compiler {
                 // a by-name search over `code.locals`, which under shadow slots
                 // cannot tell one declaring scope's `$a` from another's.
                 let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
+                // #10960: bound this frame's env-sync set by what the bodies
+                // actually read by name, instead of every local.
+                let mut env_sync_plans = vec![idx];
                 // mutsu#9111: a sub declared inside a routine binds its free
                 // variables per activation of the routine. That holds for an
                 // `our` sub and a `multi` candidate too: both are one static
@@ -4103,6 +4108,7 @@ impl Compiler {
                         .position(|(n, f, _)| *n == *name && *f == fp)
                 {
                     let (_, _, hoisted_idx) = self.hoisted_sub_plans.remove(pos);
+                    env_sync_plans.push(hoisted_idx);
                     self.code.set_sub_decl_compiled_routine_keys(
                         hoisted_idx,
                         compiled_routine_keys.clone(),
@@ -4111,6 +4117,13 @@ impl Compiler {
                         .set_sub_decl_free_var_decl_slots(hoisted_idx, free_var_decl_slots.clone());
                     self.code
                         .set_sub_decl_lexsub_free_aliases(hoisted_idx, lexsub_free_aliases.clone());
+                }
+                if name_expr.is_none() {
+                    self.note_sub_decl_env_sync(
+                        &env_sync_plans,
+                        &compiled_routine_keys,
+                        1 + signature_alternates.len(),
+                    );
                 }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);

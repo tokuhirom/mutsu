@@ -744,10 +744,17 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        match Self::plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
-            Some(lane_key) if self.plain_method_lane_hit(lane_key) => {
+        match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
+            Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
                 self.plain_method_lane_candidate = None;
-                return self.run_plain_method_lane(code, target_name, target, method, method_sym);
+                return self.run_plain_method_lane(
+                    code,
+                    target_name,
+                    target,
+                    method,
+                    method_sym,
+                    args,
+                );
             }
             other => self.plain_method_lane_candidate = other,
         }
@@ -948,7 +955,8 @@ impl Interpreter {
         }
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
-        // .Bool) rather than the native truthiness fast path.
+        // .Bool) rather than the native truthiness fast path. A type that defines
+        // `.so` / `.not` itself is left to full dispatch.
         if matches!(method, "so" | "not") && args.is_empty() {
             let user_bool_owner = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -957,6 +965,7 @@ impl Interpreter {
             };
             if let Some(cn) = user_bool_owner
                 && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, method, &[])).is_none()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmut",
@@ -1747,12 +1756,6 @@ impl Interpreter {
                         // Write through the shared hash node, as BIND-KEY does,
                         // so an alias (`my %s := %!s; %s.ASSIGN-KEY(...)`) sees
                         // the store instead of a detached rebuild.
-                        //
-                        // A key bound by the subscript form (`%h<k> := 5`) is
-                        // recorded as a name-keyed read-only marker instead.
-                        if self.is_ro_index(target_name, &Self::encode_bound_index(&args[0])) {
-                            return Err(RuntimeError::immutable_value());
-                        }
                         if self.assign_key_in_place(target_name, &args[0], &value)? {
                             crate::vm::vm_stats::record_dispatch_entry_intercept(
                                 "callmethodmut",
@@ -2451,8 +2454,13 @@ impl Interpreter {
                     ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             // A `$` variable holds the vivified Array in its Scalar
-            // container (raku: `my $x; $x.push(1); $x.raku` is `$[1]`).
-            let empty_array = if target_name.starts_with(['@', '%', '&']) {
+            // container (raku: `my $x; $x.push(1); $x.raku` is `$[1]`), and so
+            // does a never-written package-qualified `@`/`%` slot, which reads
+            // as `Any` (`@GLOBAL::a.push(1); @GLOBAL::a.raku` is `$[1]`, #10962).
+            let target_sym = Symbol::intern(target_name);
+            let package_slot = crate::qualified::is_package_array(target_sym)
+                || crate::qualified::is_package_hash(target_sym);
+            let empty_array = if target_name.starts_with(['@', '%', '&']) && !package_slot {
                 Value::real_array(vec![])
             } else {
                 Value::real_array(vec![]).item()
@@ -2473,7 +2481,7 @@ impl Interpreter {
                 // vivified array in `our_vars` as `SetGlobal` and the
                 // read-modify-write store do (#10620). The two share one
                 // array, so the mutation below lands in both.
-                if crate::qualified::is_qualified(Symbol::intern(target_name)) {
+                if crate::qualified::is_qualified(target_sym) {
                     self.set_our_var(target_name.to_string(), empty_array.clone());
                 }
             }

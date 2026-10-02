@@ -454,7 +454,7 @@ impl Interpreter {
         if let Some(self_val) = self_val
             && let Some(found) =
                 self.with_self_attr(&self_val, site, bare, is_private, sigil, |_, map, key| {
-                    map.get(key).map(|v| v.deref_container())
+                    map.get_vivify(key).map(|v| v.deref_container())
                 })
         {
             return found;
@@ -859,11 +859,11 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Value> {
-        // A package-qualified hash is not an attribute; its element writes
-        // persist through `our_vars` instead (#10901).
+        // A package-qualified container is not an attribute; its element
+        // writes persist through `our_vars` instead (#10901, #11000).
         let sym = code.const_sym(name_idx);
-        if crate::qualified::is_package_hash(sym) {
-            return self.package_hash_elem_prologue(sym);
+        if crate::qualified::is_package_hash(sym) || crate::qualified::is_package_array(sym) {
+            return self.package_container_elem_prologue(sym);
         }
         self.attr_env_snapshot_matching(code, name_idx, Self::is_subscriptable_attr_twigil)
     }
@@ -941,8 +941,8 @@ impl Interpreter {
         pre: Option<Value>,
     ) {
         let sym = code.const_sym(name_idx);
-        if crate::qualified::is_package_hash(sym) {
-            self.package_hash_elem_epilogue(sym, pre);
+        if crate::qualified::is_package_hash(sym) || crate::qualified::is_package_array(sym) {
+            self.package_container_elem_epilogue(sym, pre);
             return;
         }
         self.mirror_attr_env_to_cell_matching(

@@ -1118,6 +1118,7 @@ mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod hoist_nested_types;
+mod lazy_body_env_sync;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
@@ -2466,6 +2467,8 @@ impl Compiler {
             .extend(self.local_map.keys().cloned());
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
+        sub.class_body_static_code_vars
+            .extend(self.class_body_static_code_vars.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
@@ -3693,6 +3696,43 @@ impl Compiler {
                     sub_params,
                     &mut bind_stmts,
                 );
+            }
+        }
+        // A type capture (`-> ::T $x`, `-> ::T`, `-> $a, ::T`) binds `T` to the
+        // type object of the value its parameter received, like `my \T = $x.WHAT`.
+        // A bare capture's parameter is named `__type_capture__T` by the parser.
+        let capture_bind = |var: &str, cap: &str| {
+            Stmt::SyntheticBlock(vec![
+                Stmt::MarkBind,
+                Stmt::VarDecl {
+                    name: cap.to_string(),
+                    expr: Expr::MethodCall {
+                        target: Box::new(Expr::Var(var.to_string())),
+                        name: Symbol::intern("WHAT"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    },
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: vec![("__has_initializer".to_string(), None)],
+                    where_constraint: None,
+                },
+                Stmt::MarkSigilless(cap.to_string()),
+            ])
+        };
+        if let (Some(name), Some(def)) = (param, param_def)
+            && let Some(cap) = &def.type_capture
+        {
+            bind_stmts.push(capture_bind(name, cap));
+        }
+        for (i, def) in params_def.iter().enumerate() {
+            if let (Some(cap), Some(name)) = (&def.type_capture, params.get(i)) {
+                bind_stmts.push(capture_bind(name.strip_prefix('\\').unwrap_or(name), cap));
             }
         }
         // Sigilless multi-params (`-> \k, \v`) are raw bindings that alias the

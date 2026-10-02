@@ -118,6 +118,7 @@ impl Interpreter {
         &mut self,
         pd: &ParamDef,
         binding_name: &str,
+        omitted: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
@@ -178,6 +179,7 @@ impl Interpreter {
             return Err(Self::parameter_where_binding_error(
                 pd,
                 &bound_val,
+                omitted,
                 Some(&*self),
             ));
         }
@@ -222,7 +224,12 @@ impl Interpreter {
             self.env.remove("_");
         }
         if !ok? {
-            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
+            return Err(Self::parameter_where_binding_error(
+                pd,
+                value,
+                false,
+                Some(&*self),
+            ));
         }
         Ok(())
     }
@@ -243,15 +250,18 @@ impl Interpreter {
     /// value-dependent `multi` whose resolution just ran this exact predicate
     /// against this exact value, a few lines up in the same call
     /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)) -- see
-    /// `pending_skip_where_recheck`'s doc comment for why that verdict may be
+    /// `pending_skip_constraint_recheck`'s doc comment for why that verdict may be
     /// trusted instead of re-running the constraint.
-    fn check_positional_param_where_constraint(
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::runtime) fn check_positional_param_where_constraint(
         &mut self,
         pd: &ParamDef,
         binding_name: &str,
         name_sym: Symbol,
         value: &Value,
         skip: bool,
+        record_free_var_writes: bool,
+        omitted: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
@@ -277,7 +287,9 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
+                let r = self
+                    .eval_param_where_value(pd, record_free_var_writes)
+                    .map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -288,10 +300,11 @@ impl Interpreter {
             // evaluate and check truthiness of the result, not smart-match.
             // `where .method: args` is equivalent to `where { .method: args }`.
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_param_where_value(pd, false).map(|v| v.truthy())
+                self.eval_param_where_value(pd, record_free_var_writes)
+                    .map(|v| v.truthy())
             }
             _ => self
-                .eval_param_where_value(pd, false)
+                .eval_param_where_value(pd, record_free_var_writes)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -307,7 +320,12 @@ impl Interpreter {
             }
         }
         if !ok? {
-            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
+            return Err(Self::parameter_where_binding_error(
+                pd,
+                value,
+                omitted,
+                Some(&*self),
+            ));
         }
         Ok(())
     }
@@ -360,13 +378,24 @@ impl Interpreter {
     /// not accept its bound value. Keep this in the binder rather than in the
     /// call-site formatter: the binder still has the actual value needed for
     /// Raku's `got TYPE (gist)` text.
+    /// `omitted` marks an unpassed optional whose implicit default was what
+    /// the constraint rejected; Rakudo then explains that in the message.
     fn parameter_where_binding_error(
         pd: &ParamDef,
         value: &Value,
+        omitted: bool,
         interp: Option<&Interpreter>,
     ) -> RuntimeError {
-        crate::runtime::utils::typecheck_binding_parameter_where(&param_display_name(pd), value)
-            .with_parameter_object(pd, interp)
+        let err = crate::runtime::utils::typecheck_binding_parameter_where(
+            &param_display_name(pd),
+            value,
+        )
+        .with_parameter_object(pd, interp);
+        if omitted {
+            err.with_omitted_optional_note()
+        } else {
+            err
+        }
     }
 
     /// Coerce a value which composes `PositionalBindFailover` before checking
@@ -494,12 +523,19 @@ impl Interpreter {
     /// binding.md`). `source_name`/`source_type_constraint` are only
     /// meaningful for the positional arm's typed-container diagnostics
     /// (`Array[Int] $x = @untyped`); pass `None` for a named param.
+    ///
+    /// `predicate_verified` is `true` only when multi dispatch has just
+    /// matched this exact value against this parameter to pick the winning
+    /// candidate (`pending_skip_constraint_recheck`): a user `subset`
+    /// constraint is then trusted instead of running its predicate a second
+    /// time (#10986).
     fn check_and_coerce_param_type(
         &mut self,
         pd: &ParamDef,
         mut value: Value,
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
+        predicate_verified: bool,
     ) -> Result<Value, RuntimeError> {
         // A non-slurpy `@`-sigil parameter binds directly to a Positional
         // argument, ignoring any `$`-itemization the caller's variable
@@ -572,7 +608,9 @@ impl Interpreter {
             self.bind_type_capture(captured_name, &value);
         }
         if let Some(constraint) = &pd.type_constraint
-            && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
+            && (pd.name != "__type_only__"
+                || (self.is_resolvable_type(constraint)
+                    && !self.type_only_enum_value_shadows_alias(pd, constraint)))
         {
             let resolved_constraint = self.resolved_type_capture_name(constraint);
             // For &-sigil parameters, the type constraint specifies the
@@ -656,7 +694,9 @@ impl Interpreter {
                     );
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
-            } else if !self.type_matches_value(&resolved_constraint, &value) {
+            } else if !(predicate_verified && self.constraint_is_user_subset(&resolved_constraint))
+                && !self.type_matches_value(&resolved_constraint, &value)
+            {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
                 let (base_type, smiley) =
                     crate::runtime::types::strip_type_smiley(&resolved_constraint);
@@ -688,8 +728,6 @@ impl Interpreter {
                 } else {
                     pd.name.clone()
                 };
-                let got = crate::runtime::utils::value_type_display_name(&value);
-                let got = got.as_str();
                 // A subset failure is a *constraint* failure in raku:
                 // "Constraint type check failed in binding to
                 // parameter '$x'; expected Even but got Int (3)".
@@ -715,20 +753,13 @@ impl Interpreter {
                 if let Some(refinee) = refinee
                     && self.type_matches_value(&refinee, &value)
                 {
-                    let param_display = param_display_name(pd);
-                    return Err(RuntimeError::typecheck_binding_parameter(
+                    return Err(self.subset_constraint_binding_error(
+                        pd,
                         &display_name,
                         &resolved_constraint,
-                        got,
-                        Some(format!(
-                            "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
-                            param_display,
-                            base,
-                            got,
-                            crate::runtime::utils::gist_value(&value)
-                        )),
-                    )
-                    .with_parameter_object(pd, Some(&*self)));
+                        base,
+                        &value,
+                    ));
                 }
                 // rakudo's wording for a runtime parameter binding failure is
                 // `Type check failed in binding to parameter '$y'; expected
@@ -981,8 +1012,8 @@ impl Interpreter {
         // call -- a nested call made while evaluating a default expression or
         // running the routine's own body sees the flag already back at
         // `false`, exactly like the other `pending_*` one-shot signals this
-        // struct carries (see its doc comment on `pending_skip_where_recheck`).
-        let skip_where_recheck = std::mem::take(&mut self.pending_skip_where_recheck);
+        // struct carries (see its doc comment on `pending_skip_constraint_recheck`).
+        let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         let FunctionBindingOptions {
             reads_args_array,
             reads_args_hash,
@@ -1820,6 +1851,7 @@ impl Interpreter {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &capture_value,
+                                false,
                                 Some(&*self),
                             ));
                         }
@@ -2215,6 +2247,7 @@ impl Interpreter {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &slurpy_value,
+                                false,
                                 Some(&*self),
                             ));
                         }
@@ -2333,8 +2366,13 @@ impl Interpreter {
                         // Checked against the raw passed value, before any
                         // container-sharing/rw promotion below.
                         if enforce_named_constraints {
-                            bound_value =
-                                self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                            bound_value = self.check_and_coerce_param_type(
+                                pd,
+                                bound_value,
+                                None,
+                                None,
+                                skip_constraint_recheck,
+                            )?;
                             // An untyped routine `:$x` is implicitly `Any`, as
                             // its positional counterpart is (#10878).
                             if crate::opcode::FastParamCheck::implicitly_any(pd)
@@ -2703,7 +2741,8 @@ impl Interpreter {
                     // pre-population is a BUILD/TWEAK submethod, whose attribute
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
-                    let value = Self::missing_optional_param_value(pd);
+                    let value = self.omitted_optional_param_value(pd);
+                    self.check_omitted_optional_subset(pd, &value)?;
                     // A named alias binds only its leaf variable (below); skip
                     // binding the parameter's own name in that form.
                     if !pd.named_alias {
@@ -2729,7 +2768,8 @@ impl Interpreter {
                 // is then the `Bool` type object, so `.so` is False and the candidate
                 // is rejected) -- gating this on `found` skipped that case.
                 if pd.where_constraint.is_some() {
-                    self.check_named_param_where_constraint(pd, binding_name)?;
+                    let omitted = !found && pd.default.is_none();
+                    self.check_named_param_where_constraint(pd, binding_name, omitted)?;
                 }
             } else if pd.is_capture_subsignature()
                 && let Some(sub_params) = &pd.sub_signature
@@ -3310,6 +3350,7 @@ impl Interpreter {
                         value,
                         source_name.as_deref(),
                         source_type_constraint.as_deref(),
+                        skip_constraint_recheck,
                     )?;
                     // A literal-value parameter (`sub f("a") {}`, `-> 'about' {}`)
                     // constrains the argument to equal that literal exactly, not
@@ -3417,7 +3458,9 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
+                        false,
+                        false,
                     )?;
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
@@ -3583,7 +3626,9 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
+                        false,
+                        false,
                     )?;
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
@@ -3629,7 +3674,8 @@ impl Interpreter {
                     )));
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
-                    let value = Self::missing_optional_param_value(pd);
+                    let value = self.omitted_optional_param_value(pd);
+                    self.check_omitted_optional_subset(pd, &value)?;
                     // An omitted optional still runs its `where` post-constraint,
                     // against the type object it would bind (#8089). An anonymous
                     // optional (`$? where { $*KERNEL.bits == 64 }`) binds nothing
@@ -3639,7 +3685,9 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
-                        skip_where_recheck,
+                        skip_constraint_recheck,
+                        false,
+                        true,
                     )?;
                     if !pd.name.is_empty() {
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);

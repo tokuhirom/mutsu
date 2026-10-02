@@ -50,7 +50,7 @@ impl Interpreter {
     #[cold]
     #[inline(never)]
     fn positional_light_arity_error(
-        &self,
+        &mut self,
         cf: &CompiledFunction,
         func_name: &str,
         args_base: usize,
@@ -65,7 +65,8 @@ impl Interpreter {
             if too_many { "many" } else { "few" },
             if expected == 1 { "" } else { "s" },
         ));
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+        let args = self.stack[args_base..].to_vec();
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
     }
 
     /// The error for a positional-light parameter whose argument failed its
@@ -93,7 +94,8 @@ impl Interpreter {
                 &val,
             )
             .with_parameter_object(pd, Some(&*self));
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+        let args = self.stack[args_base..].to_vec();
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
     }
 
     pub(super) fn call_compiled_function_positional_light(
@@ -1273,6 +1275,11 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> bool {
         use crate::opcode::FastParamType as T;
+        // An itemized value (`Scalar`) satisfies a nominal constraint exactly
+        // when what it holds does. A Bool stored into a real Hash element is
+        // itemized (`itemize_for_hash_element`), so `sub f(Bool $b)` called
+        // with `%h<k>` must see the Bool, not the item (#10638).
+        let val = val.descalarize();
         match val.view() {
             // Allomorphs and other mixins go through the full `isa_check`, as
             // in the by-name form: an `IntStr` satisfies both `Int` and `Str`.
@@ -1434,6 +1441,8 @@ impl Interpreter {
 
     /// Fast type check for common types.
     pub(super) fn fast_type_check(val: &Value, type_name: &str) -> bool {
+        // An itemized value is checked as what it holds; see the tagged form.
+        let val = val.descalarize();
         // Allomorphs (`IntStr`/`NumStr`/`RatStr`/...) and other mixed-in values
         // are `Mixin`s: an `IntStr` must satisfy `Int` (via its inner value) and
         // `Str` (via its mixin), just like `~~` does. Delegate to the full

@@ -249,7 +249,8 @@ impl Interpreter {
                     None => arr,
                 }
             };
-            attributes.insert(key, fresh);
+            // A fresh copy of the seed is still the seed.
+            attributes.rewrite(key, fresh);
         }
         if shape.associative {
             // An `is Hash`/`is Map` subclass stores its entries in a reserved

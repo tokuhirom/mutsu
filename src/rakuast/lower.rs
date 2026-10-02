@@ -666,7 +666,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents,
         class_is_rw,
         is_hidden: false,
-        is_lexical: false,
+        is_lexical: package_is_lexical(node)?,
         hidden_parents: Vec::new(),
         does_parents,
         repr,
@@ -676,12 +676,26 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: false,
         implicit_grammar_parent: false,
         is_grammar: false,
-        // A hand-built or lowered declaration has no parse-time site, which is
-        // exactly what `decl_id: 0` means.
-        decl_id: 0,
+        // Lowering is the parser's counterpart, so the declaration gets its
+        // own site id as a parsed one does: a lexical class is registered
+        // under a name mangled with it, which is what keeps it lexical.
+        decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     })
+}
+
+/// A package declaration's `scope`: `my` is lexical, `our` (the default,
+/// rendered as no field) is not; any other scope stays the boundary.
+fn package_is_lexical(node: &RakuAstNode) -> Result<bool, RuntimeError> {
+    match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => Ok(false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => Ok(true),
+            "our" => Ok(false),
+            _ => Err(unsupported(node)),
+        },
+    }
 }
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -693,7 +707,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents: vec!["Grammar".to_string()],
         class_is_rw: false,
         is_hidden: false,
-        is_lexical: false,
+        is_lexical: package_is_lexical(node)?,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
         repr: None,
@@ -703,7 +717,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: false,
         implicit_grammar_parent: true,
         is_grammar: true,
-        decl_id: 0,
+        decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     })
@@ -1629,11 +1643,16 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(Stmt::HasDecl {
         name: crate::symbol::Symbol::intern(&desigil),
         is_public,
-        // A typed attribute carries an implicit `BareWord(<TypeName>)` default
-        // in the internal AST; the parser plants it, and the converter skips it
-        // on the way out, so re-plant it here to keep the two sides symmetric.
-        default: initializer
-            .or_else(|| type_constraint.as_ref().map(|t| Expr::BareWord(t.clone()))),
+        // A typed attribute carries an implicit default in the internal AST
+        // (its type object, or a native type's zero); the parser plants it,
+        // and the converter skips it on the way out, so re-plant the same one
+        // here to keep the two sides symmetric.
+        default_is_seed: initializer.is_none() && type_constraint.is_some(),
+        default: initializer.or_else(|| {
+            type_constraint
+                .as_deref()
+                .map(crate::parser::auto_default_expr_for_type)
+        }),
         handles: Vec::new(),
         is_rw: traits.is_rw,
         is_readonly: traits.is_readonly,

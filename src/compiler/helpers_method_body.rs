@@ -80,6 +80,18 @@ impl Compiler {
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
+        // Only the enclosing `my &k` Callable containers are handed down (not the
+        // whole scope chain, design decision 2): `&k = ...` in a method body
+        // must assign through the outer container rather than being rejected as
+        // an assignment to a routine name.
+        method_compiler.enclosing_local_names.extend(
+            self.local_map
+                .keys()
+                .chain(self.enclosing_local_names.iter())
+                .filter(|n| n.starts_with('&'))
+                .cloned(),
+        );
+        method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.

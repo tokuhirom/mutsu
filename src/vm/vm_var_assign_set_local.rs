@@ -669,7 +669,11 @@ impl Interpreter {
         // backing array keeps its kind (the hyper-func-op writeback), everything
         // else gets the `$` container's itemization. The name half of
         // `itemize_scalar_store` is settled by `simple_scalar_locals`.
-        let val = if Self::is_identity_scalar_restore(&self.locals[idx], &v) {
+        // An `Int`/`Str`/... is kept as is by both steps; a tag probe settles
+        // that without the two `view()` matches.
+        let val = if v.is_inert_scalar_store_payload()
+            || Self::is_identity_scalar_restore(&self.locals[idx], &v)
+        {
             v
         } else {
             Self::itemize_scalar_store_value(v)
@@ -854,7 +858,7 @@ impl Interpreter {
                 // named `my` locals share one slot, so an unrelated sibling-block
                 // `my $a` reaches this same site and must not pollute the persisted
                 // map with its value.
-                self.box_decl_local_cell(code, idx as usize);
+                self.box_decl_local_cell_any_sigil(code, idx as usize);
             }
         }
         r
@@ -940,16 +944,6 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
-        // A whole `%`/`@` (re)assignment or rebind replaces the container, breaking
-        // every `:=`-bound element — drop the read-only-element markers so a later
-        // `%h<k> = v` is writable again (`%h<i> := 137; %h = (...)`).
-        if crate::env::elem_index_meta_possible() {
-            let name = &code.locals[idx];
-            if name.starts_with('%') || name.starts_with('@') {
-                let name = name.clone();
-                self.clear_all_ro_index(&name);
-            }
-        }
         let raw_popped = self.stack.pop().unwrap_or(Value::NIL);
         // Check if we're trying to write to a private instance attribute (!attr)
         // when self is a type object (not an instance). Raku says this should die.
