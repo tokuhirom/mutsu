@@ -54,6 +54,9 @@ pub(crate) fn hoist(body: &mut Vec<Stmt>) {
         for nested in nested_blocks_mut(stmt) {
             hoist_in_block(nested, &[], &mut hoisted);
         }
+        if let Some(routine_body) = routine_body_mut(stmt) {
+            hoist_in_block(routine_body, &[], &mut hoisted);
+        }
     }
     body.extend(hoisted);
 }
@@ -64,7 +67,14 @@ fn hoist_in_block(block: &mut [Stmt], outer_routines: &[Symbol], hoisted: &mut V
     let mut routines = outer_routines.to_vec();
     collect_block_routines(block, &mut routines);
     for stmt in block.iter_mut() {
+        hoist_proto_methods(stmt, hoisted);
         if is_has_scoped_method(stmt) {
+            // Its own body may declare methods too (they belong to the same
+            // package); rewrite it first so the capture closure and the
+            // hoisted copy share the rewritten body.
+            if let Some(routine_body) = routine_body_mut(stmt) {
+                hoist_in_block(routine_body, &routines, hoisted);
+            }
             let index = hoisted.len() as u32;
             let closure = capture_closure(stmt);
             let mut decl = std::mem::replace(
@@ -90,6 +100,75 @@ fn hoist_in_block(block: &mut [Stmt], outer_routines: &[Symbol], hoisted: &mut V
         }
         for nested in nested_blocks_mut(stmt) {
             hoist_in_block(nested, &routines, hoisted);
+        }
+        if let Some(routine_body) = routine_body_mut(stmt) {
+            hoist_in_block(routine_body, &routines, hoisted);
+        }
+    }
+}
+
+/// The body of a routine declared in the package body (at any depth): a
+/// `method` (`multi method handler` inside `method ^find_method`, the
+/// Object::Trampoline shape), a `sub` or a `proto`. A `method` declarator in
+/// it is still has-scoped to the package -- rakudo installs `class C { sub
+/// f { method m { } } }`'s `m` in `C` -- and closes over the routine's
+/// lexicals as of its latest invocation, which the in-body
+/// [`Stmt::NestedMethodCapture`] marker re-files on every call.
+fn routine_body_mut(stmt: &mut Stmt) -> Option<&mut Vec<Stmt>> {
+    match stmt {
+        Stmt::SubDecl { body, .. }
+        | Stmt::MethodDecl { body, .. }
+        | Stmt::ProtoDecl { body, .. } => Some(body),
+        _ => None,
+    }
+}
+
+/// A `proto method` in a nested block or routine body is has-scoped too, and
+/// so is one used as a term (`my constant &proto-handler = proto method
+/// handler(|) {*}`, Object::Trampoline): a copy is added to the package body
+/// so the package-body walk installs it as the dispatcher of the `multi
+/// method`s declared beside it. The declaration itself stays in place (its
+/// in-place registration is a no-op for a method proto) and, as a term,
+/// evaluates to that proto (`Compiler::compile_expr_do_stmt`). A proto's
+/// `{*}` body closes over nothing worth capturing, so the copy carries no
+/// capture index.
+fn hoist_proto_methods(stmt: &Stmt, hoisted: &mut Vec<Stmt>) {
+    struct Protos<'a> {
+        out: &'a mut Vec<Stmt>,
+        entered: bool,
+    }
+    impl<'ast> crate::ast_visit::Visit<'ast> for Protos<'_> {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            if let Expr::DoStmt(inner) = expr
+                && let Stmt::ProtoDecl {
+                    is_method: true, ..
+                } = inner.as_ref()
+            {
+                self.out.push(inner.as_ref().clone());
+                return;
+            }
+            crate::ast_visit::walk_expr(self, expr);
+        }
+        // Only `stmt`'s own expressions: the statements nested in it are
+        // scanned by the block walk itself, which knows the package and
+        // routine boundaries.
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if !std::mem::replace(&mut self.entered, true) {
+                crate::ast_visit::walk_stmt(self, stmt);
+            }
+        }
+    }
+    match stmt {
+        Stmt::ProtoDecl {
+            is_method: true, ..
+        } => hoisted.push(stmt.clone()),
+        Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } | Stmt::ProtoDecl { .. } => {}
+        _ => {
+            let mut visitor = Protos {
+                out: hoisted,
+                entered: false,
+            };
+            crate::ast_visit::Visit::visit_stmt(&mut visitor, stmt);
         }
     }
 }

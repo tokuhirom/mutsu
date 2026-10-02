@@ -280,6 +280,9 @@ impl Registry {
     /// (3)).
     pub(crate) fn set_user_methods(&mut self, owner: Symbol, name: Symbol, defs: Vec<MethodDef>) {
         self.note_raw_invocant_methods(&defs);
+        if !defs.is_empty() {
+            note_user_find_method_row(name);
+        }
         let live = !defs.is_empty();
         let key = MethodEntryKey { owner, name };
         let entry = self.method_entries.entry(key).or_default();
@@ -297,6 +300,7 @@ impl Registry {
     /// rather than replacing the row.
     pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) {
         self.note_raw_invocant_methods(std::slice::from_ref(&def));
+        note_user_find_method_row(name);
         let key = MethodEntryKey { owner, name };
         self.method_entries
             .entry(key)
@@ -480,3 +484,11 @@ impl Registry {
 #[cfg(test)]
 #[path = "registry_method_table_tests.rs"]
 mod tests;
+
+/// Raise the `find_method_intercept` gate when a `^find_method` metamethod is
+/// installed. Both method-table writers that add candidates call this.
+fn note_user_find_method_row(name: Symbol) {
+    if name.as_str() == crate::runtime::find_method_intercept::USER_FIND_METHOD {
+        crate::runtime::find_method_intercept::note_user_find_method();
+    }
+}
