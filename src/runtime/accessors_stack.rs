@@ -719,6 +719,16 @@ impl Interpreter {
                     self.gather_suspend_pending = true;
                     return Ok(());
                 }
+                if self.take_defer_to_op_end {
+                    // Inside an opcode that takes once per element (`@a».take`):
+                    // it cannot be resumed mid-iteration, so let it finish (its
+                    // iteration is finite) and suspend at its own end
+                    // (`suspend_after_take_deferring_op`). No overshoot
+                    // backstop: signalling here would drop the rest of its
+                    // elements (#9785).
+                    self.gather_suspend_pending = true;
+                    return Ok(());
+                }
                 if self.lazy_take_boundary_defer {
                     // Inside a condition-driven loop: defer the suspension to
                     // the loop's iteration boundary (`gather_suspend_pending`)

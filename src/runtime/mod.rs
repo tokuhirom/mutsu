@@ -5029,6 +5029,13 @@ pub struct Interpreter {
     /// and roast pins its side-effect timing (S04-statements/gather.t
     /// "gather is lazy"). Saved/restored on loop-op entry/exit.
     pub(crate) lazy_take_boundary_defer: bool,
+    /// True while an opcode that `take`s once per element of its own internal
+    /// loop (a hyper method call, `@a».take`) is executing in the current
+    /// frame. A take-limit hit then parks `gather_suspend_pending` instead of
+    /// signalling, and the op suspends after it completes — see
+    /// `vm/vm_take_deferring_op.rs` (#9785). Saved/cleared around each lazy
+    /// pull so a nested pull's own takes still suspend at the take.
+    pub(crate) take_defer_to_op_end: bool,
     /// Call-frame depth (`call_frames.len()`) at entry to the innermost active
     /// lazy-gather pull (`force_lazy_list_vm_n_inner`), `None` outside one.
     /// The pull driver can only snapshot/resume ITS OWN frame (ip, stack,

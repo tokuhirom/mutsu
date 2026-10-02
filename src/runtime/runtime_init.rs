@@ -3503,6 +3503,7 @@ impl Interpreter {
             gather_resume_body_ip: None,
             gather_suspend_pending: false,
             lazy_take_boundary_defer: false,
+            take_defer_to_op_end: false,
             lazy_pull_entry_call_depth: None,
             lazy_pull_entry_routine_depth: None,
             rw_map_topic_capture: None,

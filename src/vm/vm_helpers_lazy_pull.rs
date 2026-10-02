@@ -183,6 +183,9 @@ impl Interpreter {
         let saved_routine_depth = self
             .lazy_pull_entry_routine_depth
             .replace(self.routine_stack_len());
+        // An enclosing multi-take op's deferral belongs to the OUTER pull; this
+        // pull's own takes suspend normally.
+        let saved_take_defer_to_op_end = std::mem::replace(&mut self.take_defer_to_op_end, false);
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -231,6 +234,7 @@ impl Interpreter {
 
         self.lazy_pull_entry_call_depth = saved_pull_depth;
         self.lazy_pull_entry_routine_depth = saved_routine_depth;
+        self.take_defer_to_op_end = saved_take_defer_to_op_end;
         // The body may finish (or error) with the deferred-suspension flag
         // still set (straight-line takes, last iteration); it must not leak
         // into an unrelated later loop.
