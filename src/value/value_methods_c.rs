@@ -49,6 +49,7 @@ impl Value {
         cursor: Option<Value>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
+        let positional = &positional[..crate::runtime::PosSlot::bound_len(positional)];
         let has_children = !named.is_empty()
             || !positional.is_empty()
             || !regex_vars.is_empty()
@@ -73,7 +74,8 @@ impl Value {
         Value::lazy_match(std::sync::Arc::new(cap), target)
     }
 
-    /// Build a user-visible Match, omitting terminal alternation-only holes.
+    /// Build a user-visible Match, omitting terminal alternation-only holes
+    /// (and the unmatched optional captures `make_match_object_full` drops).
     /// The regex engine keeps those holes while matching so nested actions can
     /// still resolve their static `$N` capture numbers.
     pub(crate) fn make_match_object_full_visible(
@@ -83,10 +85,7 @@ impl Value {
         named: &crate::runtime::NamedCaptureMap,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        let visible_len = positional
-            .iter()
-            .rposition(|slot| !slot.alternation_padding)
-            .map_or(0, |idx| idx + 1);
+        let visible_len = crate::runtime::PosSlot::visible_len(positional);
         Self::make_match_object_full(from, to, &positional[..visible_len], named, target)
     }
 
