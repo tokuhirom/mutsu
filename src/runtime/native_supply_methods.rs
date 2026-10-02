@@ -92,8 +92,9 @@ impl Interpreter {
         }
         // When an on-demand supply with `whenever`s completes via `done` (an
         // explicit `done` in the block or a `done` inside a whenever body), the
-        // whole supply finishes: each whenever source's on-close callbacks run
-        // and the downstream `done` handler fires.
+        // whole supply finishes: its close callbacks (CLOSE phasers and each
+        // whenever source's on-close) run once and the downstream `done`
+        // handler fires.
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -102,8 +103,8 @@ impl Interpreter {
             && class_name == "__SupplyOnDemandComplete"
         {
             let attrs = attributes.as_map();
-            if let Some(ValueView::Array(on_close, ..)) = attrs.get("on_close").map(|v| v.view()) {
-                for cb in on_close.iter().cloned().collect::<Vec<_>>() {
+            if let Some(ValueView::Int(cid)) = attrs.get("close_supplier_id").map(|v| v.view()) {
+                for cb in take_supplier_close_callbacks(cid as u64) {
                     self.call_sub_value(cb, vec![], true)?;
                 }
             }
@@ -333,11 +334,14 @@ impl Interpreter {
     /// downstream done handler.
     pub(super) fn make_on_demand_complete_marker(
         done_cb: Option<Value>,
-        on_close: Vec<Value>,
+        close_supplier_id: u64,
         upstream_taps: Vec<Value>,
     ) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("on_close".to_string(), Value::array(on_close));
+        attrs.insert(
+            "close_supplier_id".to_string(),
+            Value::int(close_supplier_id as i64),
+        );
         if let Some(cb) = done_cb {
             attrs.insert("done_cb".to_string(), cb);
         }

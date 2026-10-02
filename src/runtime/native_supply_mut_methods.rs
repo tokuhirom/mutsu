@@ -490,9 +490,6 @@ impl Interpreter {
                     }
 
                     let mut plain_values = Vec::new();
-                    // on-close callbacks from each whenever source supply,
-                    // fired when the supply completes via `done`.
-                    let mut whenever_on_close: Vec<Value> = Vec::new();
                     // true when the block body itself ran `done`.
                     let body_done = body_ran_done;
                     for item in emitted {
@@ -651,14 +648,22 @@ impl Interpreter {
                                         Self::make_supply_close_marker(cid),
                                     );
                                 }
-                                // Collect this source's on-close callbacks so a
-                                // `done`-driven supply completion can fire them.
-                                if let Some(ValueView::Array(cbs, ..)) = inner_attrs
-                                    .as_map()
-                                    .get("on_close_callbacks")
-                                    .map(Value::view)
+                                // This source's `.on-close` callbacks run when
+                                // the block stops listening to it, which is
+                                // whenever the block ends: a tap close, a
+                                // normal termination or a `done`. Register them
+                                // beside the block's CLOSE phasers, whose list
+                                // every one of those paths takes, so they run
+                                // exactly once (#10833).
+                                if let Some(cid) = close_supplier_id
+                                    && let Some(ValueView::Array(cbs, ..)) = inner_attrs
+                                        .as_map()
+                                        .get("on_close_callbacks")
+                                        .map(Value::view)
                                 {
-                                    whenever_on_close.extend(cbs.iter().cloned());
+                                    for cb in cbs.iter() {
+                                        register_supplier_close_callback(cid, cb.clone());
+                                    }
                                 }
                                 // A Supplier::Preserving source that already
                                 // finished hands its terminal event to this
@@ -978,7 +983,8 @@ impl Interpreter {
                     self.arm_pending_promise_whenevers();
                     // A `done` that terminates the whole supply (an explicit
                     // `done` in the block body, or a `done` inside a whenever
-                    // body) fires every whenever source's on-close plus the
+                    // body) fires the block's close callbacks (its CLOSE
+                    // phasers and its whenever sources' on-close) plus the
                     // downstream done. If the body itself ran `done`, complete
                     // now; otherwise register the marker so a later `done`
                     // inside a whenever body (via the emitter's done) fires it.
@@ -987,7 +993,7 @@ impl Interpreter {
                     if whenever_supplier_count > 0 {
                         let complete_marker = Self::make_on_demand_complete_marker(
                             done_cb.clone(),
-                            std::mem::take(&mut whenever_on_close),
+                            emitter_supplier_id,
                             upstream_taps.clone(),
                         );
                         if body_done {
