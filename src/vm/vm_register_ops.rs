@@ -617,8 +617,12 @@ impl Interpreter {
                         .map(|(_, slot)| (*sym, *slot as usize))
                 })
                 .collect();
+            // A `&` code variable is boxed too: `my &k` is an ordinary
+            // Callable container, and a method that assigns it (`&k = ...`)
+            // must share one cell with the declaring frame, or either side's
+            // later store leaves the other reading a stale copy (#11046).
             for (_, slot) in &capture_slots {
-                self.box_decl_local_cell(code, *slot);
+                self.box_decl_local_cell_any_sigil(code, *slot);
             }
             let mut env = Env::new();
             // Declaration-time parameter expressions are evaluated from their

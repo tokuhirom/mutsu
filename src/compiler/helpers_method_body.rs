@@ -91,6 +91,12 @@ impl Compiler {
                 .filter(|n| n.starts_with('&'))
                 .cloned(),
         );
+        // ...and the same `&`-lexicals as `outer_code_var_names`, exactly as a
+        // nested named sub gets them, so `compute_free_vars` records a `&k`
+        // read (`GetCodeVar("k")`, a bare `k()`) as a free variable and the
+        // declared-method capture closes over the enclosing `my &k` instead of
+        // resolving the name against whichever frame calls the method (#11046).
+        self.inherit_outer_code_var_names(&mut method_compiler);
         method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
         // A role method's body sits inside the role's parameter scope, so a
