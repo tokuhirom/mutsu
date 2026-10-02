@@ -68,7 +68,8 @@ a separate decision when the first rewriting pass wants one.
 - **Compiler/VM helpers** (#10468): the compile-time body scans (`let`/`temp` frame, `state`
   reset, succeed barrier, topic rebind, block-local `my`, heredoc scope, `return-rw`, non-Nil
   `return`, OTF gates, native-map classifier, implicit `@_`/`%_`, LSP outline) ported, 71 → 39 in
-  the cluster; the shared "own scope" boundary is `compiler/scope_scan.rs`.
+  the cluster; the shared "own scope" boundary is `compiler/scope_scan.rs` (since moved to
+  `ast/scope_scan.rs`, #10779).
 - **Runtime registration and run** (#10468): the private-method and undeclared-attribute checks,
   the END pre-installation, the `$=pod` declarant collection, the grep `last` probe, the module
   export/`state`-sub scans, the slang declarator facts and the static-`require` scan ported

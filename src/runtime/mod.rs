@@ -978,7 +978,6 @@ mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
 mod test_module_predicates;
-pub(crate) mod thread_compat;
 mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
@@ -996,9 +995,6 @@ mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
-/// Cooperative scheduler standing in for OS threads in the browser.
-#[cfg(target_arch = "wasm32")]
-pub(crate) mod wasm_sched;
 mod which_identity;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod worker_pool;
@@ -3825,7 +3821,7 @@ pub struct Interpreter {
     /// taps for the rewritten subscription — see
     /// `Interpreter::normalize_promise_whenever_markers`.
     pub(crate) pending_promise_whenever_arms: Vec<(crate::value::SharedPromise, Value)>,
-    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::runtime::thread_compat::Instant)>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::thread_compat::Instant)>>,
     /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
     /// `react`. When a stream consumer is registered for an emitter's
     /// `supplier_id`, `emit` delivers the value to the consumer callback

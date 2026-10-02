@@ -3,11 +3,11 @@
 //! block: a `let`/`temp` save frame, a `state` reset, a succeed barrier, a
 //! block-local scope, a per-iteration topic scope.
 //!
-//! Where a scan stops is part of its answer; [`super::scope_scan`] holds the
+//! Where a scan stops is part of its answer; [`crate::ast::scope_scan`] holds the
 //! boundaries the scans share, and every other stop is an explicit hook arm
 //! with the reason next to it.
 
-use super::scope_scan::{
+use crate::ast::scope_scan::{
     is_code_object, is_scope_declaration, opens_own_scope, walk_control_header, walk_stmt_own_scope,
 };
 use crate::ast::{AssignOp, Expr, Stmt};

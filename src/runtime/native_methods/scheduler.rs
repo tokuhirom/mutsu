@@ -120,7 +120,7 @@ impl Interpreter {
         // Quiescent: a registered thread's raw sleep would starve a GC
         // stop-the-world rendezvous.
         crate::gc::block_quiescent(|| {
-            crate::runtime::thread_compat::sleep(interval_timer::clamp_delay_secs(delay))
+            crate::thread_compat::sleep(interval_timer::clamp_delay_secs(delay))
         });
         true
     }

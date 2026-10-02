@@ -6,7 +6,7 @@
 //   mv pkg site/pkg
 //
 // Browsers give a wasm module one thread, so `start`/`await`/`Thread`/timers run
-// on the cooperative scheduler in src/runtime/wasm_sched.rs rather than on OS
+// on the cooperative scheduler in src/wasm_sched.rs rather than on OS
 // threads. These are the cases that used to die with `RuntimeError: unreachable`
 // the moment anything called `std::thread::spawn`; the point of the file is that
 // the queue, the pump and the virtual clock keep producing the SAME answers a

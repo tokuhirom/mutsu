@@ -235,7 +235,7 @@ pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             // A nested routine, package or captured nested method binds its
             // own `@_`/`%_`.
-            if !crate::compiler::scope_scan::is_scope_declaration(stmt)
+            if !crate::ast::scope_scan::is_scope_declaration(stmt)
                 && !matches!(stmt, Stmt::NestedMethodCapture { .. })
             {
                 crate::ast_visit::walk_stmt(self, stmt);

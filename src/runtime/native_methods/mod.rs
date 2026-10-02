@@ -136,7 +136,7 @@ impl Interpreter {
 
     pub(super) fn sleep_for_supply_delay(delay_seconds: f64) {
         if delay_seconds > 0.0 {
-            crate::runtime::thread_compat::sleep(Duration::from_secs_f64(delay_seconds));
+            crate::thread_compat::sleep(Duration::from_secs_f64(delay_seconds));
         }
     }
 

@@ -38,6 +38,7 @@ use super::*;
 mod boxes;
 mod decode;
 mod encode;
+pub(crate) use encode::CONTAINER_CELLS;
 mod peek;
 #[cfg(test)]
 mod tests;

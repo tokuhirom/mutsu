@@ -201,7 +201,7 @@ trap. No lesson currently carries the flag.
 
 **Concurrency is not one of those cases.** `start`, `await`, `Promise`, `Channel`,
 `Thread`, `Supply.interval` and `sleep` all run in the browser, on the cooperative
-scheduler in `src/runtime/wasm_sched.rs`: a would-be thread becomes a task on a run
+scheduler in `src/wasm_sched.rs`: a would-be thread becomes a task on a run
 queue, and every point that would block on another thread pumps that queue instead.
 It is concurrency without parallelism — nothing runs at the same time as anything
 else, and a task that blocks midway on something only its waiter would do later

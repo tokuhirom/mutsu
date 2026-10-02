@@ -100,7 +100,7 @@ pub(crate) enum SupplyDrivePolicy {
     React,
     Promise {
         promise: crate::value::SharedPromise,
-        deadline: crate::runtime::thread_compat::Instant,
+        deadline: crate::thread_compat::Instant,
         last_value: Value,
         /// The supplier the `supply { ... }` body's `emit` writes to. A supply
         /// is done once all of its `whenever`s have completed, and Raku keeps

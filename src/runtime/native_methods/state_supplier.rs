@@ -9,7 +9,7 @@ struct UniqueFilterState {
     as_fn: Option<Value>,
     with_fn: Option<Value>,
     expires_seconds: Option<f64>,
-    seen: Vec<(Value, crate::runtime::thread_compat::Instant)>,
+    seen: Vec<(Value, crate::thread_compat::Instant)>,
     /// `Supply.unique`'s own derived supplier: every value that passes the
     /// filter is forwarded here, exactly as a `map`/`grep` transform tap
     /// forwards to its downstream -- making `unique` a real pipeline stage
@@ -32,7 +32,7 @@ struct ClassifyState {
 #[derive(Clone)]
 struct ElemsTraceState {
     interval_seconds: f64,
-    last_emit_at: Option<crate::runtime::thread_compat::Instant>,
+    last_emit_at: Option<crate::thread_compat::Instant>,
     emitted_count: i64,
     last_reported_count: i64,
     /// `Supply.elems`'s own derived supplier (issue #8474; see
@@ -1277,7 +1277,7 @@ fn supplier_emit_callbacks_inner(
             } else if let Some(ref mut uf) = tap.unique_filter {
                 // Expire old seen values if :expires is set
                 if let Some(expire_secs) = uf.expires_seconds {
-                    let now = crate::runtime::thread_compat::Instant::now();
+                    let now = crate::thread_compat::Instant::now();
                     uf.seen
                         .retain(|(_, ts)| now.duration_since(*ts).as_secs_f64() < expire_secs);
                 }
@@ -1298,10 +1298,8 @@ fn supplier_emit_callbacks_inner(
                         .iter()
                         .any(|(s, _)| values_identical(s, emitted_value));
                     if !already_seen {
-                        uf.seen.push((
-                            emitted_value.clone(),
-                            crate::runtime::thread_compat::Instant::now(),
-                        ));
+                        uf.seen
+                            .push((emitted_value.clone(), crate::thread_compat::Instant::now()));
                         actions.push(SupplierEmitAction::ForwardEmit {
                             downstream_supplier_id: uf.downstream_supplier_id,
                             value: emitted_value.clone(),
@@ -1315,7 +1313,7 @@ fn supplier_emit_callbacks_inner(
                 });
             } else if let Some(ref mut elems) = tap.elems_trace {
                 elems.emitted_count += 1;
-                let now = crate::runtime::thread_compat::Instant::now();
+                let now = crate::thread_compat::Instant::now();
                 let should_emit = if elems.interval_seconds <= 0.0 {
                     true
                 } else if let Some(last_emit) = elems.last_emit_at {
@@ -1465,8 +1463,7 @@ pub(in crate::runtime) fn supplier_unique_mark_seen(
         && let Some(tap) = subs.taps.get_mut(tap_index)
         && let Some(ref mut uf) = tap.unique_filter
     {
-        uf.seen
-            .push((key, crate::runtime::thread_compat::Instant::now()));
+        uf.seen.push((key, crate::thread_compat::Instant::now()));
     }
 }
 

@@ -2378,6 +2378,7 @@ pub(crate) use signature_decl::{
 };
 pub(crate) mod regex_placeholders;
 mod scope_members;
+pub(crate) mod scope_scan;
 mod tail;
 mod virtual_call;
 

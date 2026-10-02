@@ -83,21 +83,6 @@ pub(crate) fn note_user_infix_decl() {
     USER_INFIX_DECLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Process-wide, monotonic count of `ContainerRef` cell words ever packed
-/// (bumped at the single NaN-box encode chokepoint for `Kind::ContainerRef`).
-/// A statistic only (`MUTSU_VM_STATS`): a cell no longer spoils the `GetLocal`
-/// fast paths, which rely on the ADR-0097 §15 env/slot invariant instead — a
-/// slot holding a cell is refused by its own tag test, and no frame's env names
-/// a container its slot does not hold.
-pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0);
-
-/// Record one `ContainerRef` cell creation (see `CONTAINER_CELLS`).
-#[inline]
-pub(crate) fn note_container_cell() {
-    CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-}
-
 /// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
 /// aliases ever created (`Interpreter::var_bindings` inserts). Zero proves
 /// `resolve_binding` is a no-op everywhere, letting the Tier B inline

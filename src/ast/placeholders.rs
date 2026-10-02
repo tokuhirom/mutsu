@@ -20,9 +20,9 @@ use super::placeholder_kind::{
 use super::regex_placeholders::{
     placeholder_display_name, regex_literal_source, regex_source_placeholders,
 };
+use super::scope_scan::{is_scope_declaration, opens_own_scope, walk_control_header};
 use super::{Expr, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
-use crate::compiler::scope_scan::{is_scope_declaration, opens_own_scope, walk_control_header};
 use crate::regex_tree::RegexNode;
 
 /// A statement whose body is a `{ ... }` block (or a statement modifier's
