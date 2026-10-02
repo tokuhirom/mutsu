@@ -11,96 +11,22 @@ impl Interpreter {
         args: Vec<Value>,
         instance_attrs: &AttrMap,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        if let ValueView::Sub(data) = callback.view() {
-            // A Proxy callback is an ordinary escaping closure.  Its compiled
-            // body owns the lexical/upvalue bindings captured at construction;
-            // running the AST body below re-merges by name and can therefore
-            // replace a method-local capture with a same-named caller lexical.
-            // Keep the legacy path for uncompiled callbacks, but use the VM
-            // closure dispatcher whenever bytecode is available.
-            if let Some(compiled_code) = &data.compiled_code {
-                let empty_fns = crate::opcode::CompiledFns::default();
-                let compiled_fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
-                let result =
-                    self.call_compiled_closure(&data, compiled_code, args, compiled_fns)?;
-                return Ok((result, instance_attrs.clone()));
-            }
-            let saved_env = self.env.clone();
-            let mut new_env = saved_env.clone();
-            // Merge captured env. For user variables that already exist in the
-            // current env, prefer the current (live) value over the captured
-            // snapshot. This approximates Raku's shared-binding closure semantics
-            // for Proxy callbacks (FETCH should see changes made by STORE).
-            // Internal/special variables always use the captured value so that
-            // the callback's lexical context is properly restored.
-            for (k, v) in &data.env {
-                let is_user_var = !k.starts_with("!")
-                    && !k.starts_with(".")
-                    && !k.starts_with("*")
-                    && !k.starts_with("?")
-                    && !k.starts_with("__")
-                    && *k != "self"
-                    && *k != "_";
-                if is_user_var && new_env.contains_key_sym(*k) {
-                    // Keep current env value (live binding)
-                } else {
-                    new_env.insert_sym(*k, v.clone());
-                }
-            }
-            // Override !attr bindings with current instance attributes
-            for (attr_name, attr_val) in instance_attrs {
-                new_env.insert(format!("!{}", attr_name), attr_val.clone());
-                new_env.insert(format!(".{}", attr_name), attr_val.clone());
-            }
-            self.env = new_env;
-            if let Err(e) = self.bind_function_args_values(&data.param_defs, &data.params, &args) {
-                self.env = saved_env;
-                return Err(e);
-            }
-            let result = self.run_block(&data.body);
-            let implicit_return = self.env.get("_").cloned();
-            // Read back !attr changes
-            let mut updated_attrs = instance_attrs.clone();
-            for attr_name in instance_attrs.keys() {
-                if let Some(val) = self.env.get(&format!("!{}", attr_name)) {
-                    updated_attrs.insert(*attr_name, val.clone());
-                }
-            }
-            // Propagate outer variable changes (e.g., our variables, closured scalars).
-            // Only propagate values that were genuinely modified by the callback body,
-            // not values merely loaded from the captured env. This prevents stale
-            // captured env entries (e.g. an old instance snapshot) from overwriting
-            // current env values.
-            let mut restored = saved_env;
-            for (k, v) in &self.env {
-                if restored.contains_key_sym(*k)
-                    && !k.starts_with("!")
-                    && !k.starts_with(".")
-                    && *k != "self"
-                    && *k != "_"
-                {
-                    // Skip if the value is unchanged from the captured env —
-                    // it was merely loaded, not modified by the callback.
-                    if let Some(captured_v) = data.env.get_sym(*k)
-                        && v == captured_v
-                    {
-                        continue;
-                    }
-                    restored.insert_sym(*k, v.clone());
-                }
-            }
-            self.env = restored;
-            let value = match result {
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                Err(e) => Err(e),
-                Ok(()) => Ok(implicit_return.unwrap_or(Value::NIL)),
-            }?;
-            Ok((value, updated_attrs))
-        } else {
-            // Non-sub callback
-            let result = self.call_sub_value(callback.clone(), args, false)?;
-            Ok((result, instance_attrs.clone()))
+        // A Proxy callback is an ordinary escaping closure: its compiled body
+        // owns the lexical/upvalue bindings captured at construction.
+        if let ValueView::Sub(data) = callback.view()
+            && let Some(compiled_code) = &data.compiled_code
+        {
+            let empty_fns = crate::opcode::CompiledFns::default();
+            let compiled_fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
+            let result = self.call_compiled_closure(&data, compiled_code, args, compiled_fns)?;
+            return Ok((result, instance_attrs.clone()));
         }
+        // Anything else -- including a named `sub STORE(...)` passed as
+        // `:&STORE`, which carries no `compiled_code` of its own -- goes through
+        // the ordinary sub-call dispatch. A by-name AST re-run of the body here
+        // used to do nothing at all for the named-sub shape (#10811).
+        let result = self.call_sub_value(callback.clone(), args, false)?;
+        Ok((result, instance_attrs.clone()))
     }
 
     /// Call Proxy FETCH and return the fetched value, propagating attribute updates to the instance.
