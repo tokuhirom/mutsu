@@ -846,6 +846,7 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 // Native type-name predicates live below the parser (issue #10779).
 pub(crate) use crate::native_types;
+mod lazy_seq_raku;
 pub(crate) mod nativecall;
 #[cfg(feature = "libffi")]
 pub(crate) mod nativecall_callback;

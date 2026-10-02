@@ -784,6 +784,11 @@ impl Interpreter {
                 "callmethodmut",
                 "lazy-placeholder",
             );
+            if matches!(method, "raku" | "perl") && Interpreter::lazy_seq_raku_applies(&ll) {
+                let text = self.lazy_seq_raku(&ll)?;
+                self.stack.push(Value::str(text));
+                return Ok(());
+            }
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
                     method,

@@ -40,6 +40,12 @@ impl Interpreter {
     // `short_repr_of_raku`. Rakudo renders the whole `.raku` too.
     pub(crate) fn type_check_got_repr(&mut self, val: &Value) -> String {
         let val = &utils::decont_for_repr(val);
+        if let ValueView::LazyList(ll) = val.view()
+            && Self::lazy_seq_raku_applies(&ll)
+            && let Ok(text) = self.lazy_seq_raku(&ll)
+        {
+            return utils::short_repr_of_raku(&text);
+        }
         if !needs_raku_dispatch(val) && !container_needs_raku_dispatch(val) {
             return utils::value_short_repr(val);
         }
