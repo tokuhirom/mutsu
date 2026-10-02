@@ -592,6 +592,44 @@ impl Interpreter {
                                         ]));
                                     }
                                 }
+                                // A scheduler-driven `Supply.interval` source is
+                                // ticked by its Scheduler's `.cue`, which a plain
+                                // `register_supplier_tap` never calls. A scheduler
+                                // that refuses (`CurrentThreadScheduler` cannot
+                                // honour `:every`) quits this supply, as Rakudo's
+                                // does.
+                                if let Some(interval) = inner_attrs
+                                    .as_map()
+                                    .get("scheduler_interval")
+                                    .map(Value::to_f64)
+                                    && let Some(scheduler) =
+                                        inner_attrs.as_map().get("scheduler").cloned()
+                                {
+                                    let delay = inner_attrs
+                                        .as_map()
+                                        .get("scheduler_delay")
+                                        .map(Value::to_f64)
+                                        .unwrap_or(0.0);
+                                    if let Err(err) = self.cue_scheduler_interval(
+                                        scheduler, sid as u64, interval, delay,
+                                    ) {
+                                        let reason = err.exception_value();
+                                        if let Some(ref qf) = quit_cb {
+                                            self.call_supply_quit_handler(qf.clone(), reason)?;
+                                        } else {
+                                            return Err(Self::runtime_error_from_supply_reason(
+                                                reason,
+                                            ));
+                                        }
+                                        return Ok((
+                                            Value::make_instance(
+                                                Symbol::intern("Tap"),
+                                                HashMap::new(),
+                                            ),
+                                            attrs,
+                                        ));
+                                    }
+                                }
                                 // Supplier::Preserving source: replay the backlog
                                 // buffered before this whenever subscribed (after
                                 // the outer tap is wired, so the body's `emit`
@@ -599,6 +637,23 @@ impl Interpreter {
                                 if inner_attrs.as_map().contains_key("preserving") {
                                     for v in supplier_take_preserved_backlog(supplier_id) {
                                         self.call_sub_value(body_cb.clone(), vec![v], true)?;
+                                    }
+                                }
+                                // A non-live source can carry values seeded next
+                                // to its supplier (`Supply.merge` of a live and
+                                // a cold source); nothing will emit them to the
+                                // tap registered above, so deliver them now.
+                                if !inner_attrs.as_map().contains_key("preserving")
+                                    && !inner_attrs.as_map().get("live").is_some_and(Value::truthy)
+                                    && let Some(ValueView::Array(seeded, ..)) =
+                                        inner_attrs.as_map().get("values").map(Value::view)
+                                {
+                                    for v in seeded.iter() {
+                                        self.call_sub_value(
+                                            body_cb.clone(),
+                                            vec![v.clone()],
+                                            true,
+                                        )?;
                                     }
                                 }
                                 // ADR-0031: the tap's `quit =>` is registered
