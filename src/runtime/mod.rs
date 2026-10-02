@@ -1322,6 +1322,12 @@ impl ReadonlySet {
         self.map.is_empty()
     }
 
+    /// Every marked name with its kind, in no particular order.
+    // Cost: O(r), r = marked names.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (Symbol, ReadonlyKind)> + '_ {
+        self.map.iter().map(|(sym, kind)| (*sym, *kind))
+    }
+
     /// Is the topic `_` marked readonly? O(1), no hashing.
     #[inline]
     pub(crate) fn topic_marked(&self) -> bool {

@@ -416,6 +416,7 @@ impl Interpreter {
                     source_file: self.current_source_file(),
                     role_param_bindings: None,
                     nested_capture_index: None,
+                    captured_readonly: None,
                 };
                 let owner = crate::symbol::Symbol::intern(&class_name);
                 let method_sym = crate::symbol::Symbol::intern(&resolved_method_name);

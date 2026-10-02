@@ -218,6 +218,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
+            captured_readonly: Some(self.capture_declaring_readonly_state()),
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.

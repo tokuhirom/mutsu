@@ -247,6 +247,12 @@ pub(crate) struct MethodDef {
     /// at every composition, so its methods carry this into the composing
     /// class to receive that composition's capture.
     pub(crate) nested_capture_index: Option<u32>,
+    /// The readonly marks of the frame this method's declaration registered
+    /// in, so method entry can undo a caller's same-named readonly parameter
+    /// on an outer variable the body writes (#11054). `None` (synthetic
+    /// methods) leaves the registry alone. See
+    /// `Interpreter::reconcile_method_readonly`.
+    pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
     /// The parameter names and source file above, interned on first dispatch
     /// (see [`super::method_def_syms`]).
     pub(crate) syms: super::method_def_syms::MethodDefSyms,

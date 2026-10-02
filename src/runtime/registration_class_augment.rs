@@ -284,6 +284,7 @@ impl Interpreter {
                         source_file: self.current_source_file(),
                         role_param_bindings: None,
                         nested_capture_index: None,
+                        captured_readonly: Some(self.capture_declaring_readonly_state()),
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,

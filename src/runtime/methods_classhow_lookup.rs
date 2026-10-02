@@ -187,6 +187,7 @@ impl Interpreter {
                         source_file: proto.source_file,
                         role_param_bindings: None,
                         nested_capture_index: None,
+                        captured_readonly: None,
                     }]
                 } else {
                     continue;
