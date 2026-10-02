@@ -865,7 +865,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     class: RakuAstClass::Grammar,
                     fields: vec![
                         node_field(Some("name"), name_from_identifier(&name.resolve())),
-                        node_field(Some("body"), block_node(body)?),
+                        node_field(
+                            Some("body"),
+                            block_node(&crate::parser::unhoist_nested_methods(body))?,
+                        ),
                     ],
                 })));
             }
@@ -899,7 +902,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     value: RakuAstFieldValue::List(traits),
                 });
             }
-            fields.push(node_field(Some("body"), block_node(body)?));
+            fields.push(node_field(
+                Some("body"),
+                block_node(&crate::parser::unhoist_nested_methods(body))?,
+            ));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
                 fields,
@@ -972,7 +978,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 class,
                 fields: vec![
                     node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(Some("body"), block_node(body)?),
+                    node_field(
+                        Some("body"),
+                        block_node(&crate::parser::unhoist_nested_methods(body))?,
+                    ),
                 ],
             })))
         }
@@ -1042,7 +1051,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
             let role_body = RakuAstNode {
                 class: RakuAstClass::RoleBody,
-                fields: vec![node_field(Some("body"), blockoid(body)?)],
+                fields: vec![node_field(
+                    Some("body"),
+                    blockoid(&crate::parser::unhoist_nested_methods(body))?,
+                )],
             };
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Role,

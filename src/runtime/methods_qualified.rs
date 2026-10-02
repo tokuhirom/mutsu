@@ -516,7 +516,11 @@ impl Interpreter {
             if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
                 None
             } else {
-                self.resolve_method_with_owner(qualifier, actual_method, &args)
+                // With the invocant, so its `:D`/`:U` constraint takes part
+                // in picking the candidate: `Foo.^lookup('h')($obj, 2)` over
+                // `multi method h(Foo:U: $x)` / `multi method h(Foo:D: $x)`
+                // is the `:D` one.
+                self.resolve_method_with_owner_invocant(qualifier, actual_method, &args, target)
             };
         // ADR-0019 Phase E box E7 (second consumer family, qualified dispatch —
         // see `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"):

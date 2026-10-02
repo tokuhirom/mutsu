@@ -3,6 +3,29 @@ use super::*;
 impl Compiler {
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         match stmt {
+            // `proto method NAME(...) {*}` as a term (`my constant
+            // &proto-handler = proto method handler(|) {*}`,
+            // Object::Trampoline). The parser hoisted a copy into the package
+            // body (`nested_block_methods`), which installed it as the
+            // dispatcher of the package's `NAME` candidates; the term's value
+            // is that proto, read back as `::?CLASS.^lookup('NAME')` (which,
+            // unlike `.^find_method`, a user `method ^find_method` does not
+            // override).
+            Stmt::ProtoDecl {
+                name,
+                is_method: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                let lookup = Expr::MethodCall {
+                    target: Box::new(Expr::Var("?CLASS".to_string())),
+                    name: crate::symbol::Symbol::intern("lookup"),
+                    args: vec![Expr::Literal(Value::str(name.resolve()))],
+                    modifier: Some('^'),
+                    quoted: false,
+                };
+                self.compile_expr(&lookup);
+            }
             // A sigil-less constant in expression position (`f((constant
             // FOO = EXPR))`, a block-final `constant FOO = EXPR`) is stored in
             // the term namespace (#9962), which only the statement-position

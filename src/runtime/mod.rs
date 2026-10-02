@@ -783,6 +783,7 @@ mod methods_object_attr_constraints;
 pub(crate) mod multi_dispatch_plan;
 pub(crate) mod multi_dispatch_program;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
+pub(crate) mod find_method_intercept;
 mod methods_dispatcher_raku;
 mod methods_object_default_ctor;
 mod methods_object_dispatch_new;

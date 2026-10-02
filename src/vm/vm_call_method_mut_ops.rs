@@ -273,6 +273,7 @@ impl Interpreter {
             && modifier_idx.is_none()
             && !quoted
             && !self.accessor_ref_pending
+            && !crate::runtime::find_method_intercept::any_user_find_method()
             && let Some(val) = self.try_accessor_lane(name.sym)
         {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
@@ -365,6 +366,21 @@ impl Interpreter {
         } else {
             target
         };
+        // A user `method ^find_method` answers every call on its type
+        // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
+        // A raw invocant (`multi method handler(Object::Trampoline:D \SELF:
+        // |args)`) receives the named receiver's container, as on the
+        // ordinary dispatch below.
+        if matches!(modifier, None | Some("?"))
+            && let Some(found) = self.user_find_method_lookup(&target, method)
+        {
+            let found = found?;
+            let armed = self.arm_raw_invocant_for_found_method(code, target_name, &target, &found);
+            let result = self.invoke_user_found_method(found, &target, &args);
+            self.disarm_raw_invocant_arrival(armed);
+            self.stack.push(result?);
+            return Ok(());
+        }
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
         {

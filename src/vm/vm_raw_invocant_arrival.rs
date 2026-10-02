@@ -138,6 +138,43 @@ impl Interpreter {
         result
     }
 
+    /// Arm the channel for the Method object a user `^find_method` answered
+    /// for `$name.method(...)` (`find_method_intercept`), when one of its
+    /// candidates binds the invocant raw. Returns whether anything was armed.
+    // Cost: O(1) when no method anywhere binds its invocant raw; otherwise
+    // O(c) for the candidate check plus the cell capture.
+    pub(super) fn arm_raw_invocant_for_found_method(
+        &mut self,
+        code: &CompiledCode,
+        target_name: &str,
+        target: &Value,
+        found: &Value,
+    ) -> bool {
+        if target_name.is_empty()
+            || !crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+        {
+            return false;
+        }
+        let Some(method) = self.found_method_raw_invocant_name(found) else {
+            return false;
+        };
+        let cell = if target.is_container_ref() {
+            target.clone()
+        } else {
+            match self.capture_lvalue_invocant_cell(code, target_name, target.clone(), None) {
+                Some(cell) => cell,
+                None => return false,
+            }
+        };
+        self.pending_raw_invocant = Some(Box::new(PendingRawInvocant {
+            method,
+            cell,
+            raw_parameter: true,
+            implicit_self: false,
+        }));
+        true
+    }
+
     /// Disarm the channel after the dispatch returns. Unconditional on the
     /// `armed` path so a callee that never reached a compiled binder (a native
     /// fallback, an error) cannot leave the cell visible to the next call.

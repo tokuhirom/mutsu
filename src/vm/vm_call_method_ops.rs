@@ -755,6 +755,14 @@ impl Interpreter {
             None => target,
         };
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // A user `method ^find_method` answers every call on its type
+        // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
+        if matches!(modifier, None | Some("?"))
+            && let Some(result) = self.try_user_find_method_dispatch(&target, method, &args)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         if method == "message"
             && args.is_empty()
             && let ValueView::Instance { attributes, .. } = target.view()

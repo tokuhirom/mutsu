@@ -146,6 +146,25 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
                 true
             }
+            // nqp::assign($var, value) — store into the variable's container,
+            // exactly `$var = value` (rakudo's `nqp::assign` is the Scalar
+            // STORE that `=` performs, minus the type check). A sigilless
+            // name bound to a container (`\SELF`, a raw invocant) writes
+            // through to the caller's variable, which is how
+            // Object::Trampoline replaces itself with the real object.
+            // Cost: O(1) (compiles to the assignment).
+            "nqp::assign" if args.len() == 2 => {
+                let name = match &args[0] {
+                    Expr::Var(name) | Expr::BareWord(name) => name.clone(),
+                    _ => return false,
+                };
+                self.compile_expr(&Expr::AssignExpr {
+                    name,
+                    expr: Box::new(args[1].clone()),
+                    is_bind: false,
+                });
+                true
+            }
             // nqp::where(obj) — the object's identity integer. It is `.WHERE`
             // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
             // that method rather than keeping a second identity scheme (#9346).

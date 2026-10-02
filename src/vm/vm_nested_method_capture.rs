@@ -18,9 +18,11 @@ use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 impl Interpreter {
-    // Cost: O(e + f + n * r), e = the closure's env entries, f = the body's
-    // free variables, n = the enclosing blocks' routines, r = the cost of one
-    // `&name` resolution (`resolve_code_var`).
+    // Cost: O(e + f + n * r + m), e = the closure's env entries, f = the
+    // body's free variables, n = the enclosing blocks' routines, r = the cost
+    // of one `&name` resolution (`resolve_code_var`), m = the package's
+    // methods (only when the marker runs in a routine body, not the package
+    // body).
     pub(super) fn exec_capture_nested_method_env_op(&mut self, spec: &NestedMethodCaptureSpec) {
         let Some(closure) = self.stack.pop() else {
             return;
@@ -64,11 +66,21 @@ impl Interpreter {
             Symbol::intern("__mutsu_declared_method_capture"),
             Value::int(1),
         );
-        let owner = self
-            .nested_capture_owners
-            .last()
-            .copied()
-            .unwrap_or_else(|| self.current_package_sym());
+        let Some(owner) = self.nested_capture_owners.last().copied() else {
+            // Not a package-body walk: the marker sits in the body of a
+            // routine of the package (`method ^find_method { multi method
+            // handler { ... $name ... } }`), and this is one of its calls.
+            // The hoisted method is installed already; like rakudo, it closes
+            // over the routine's latest invocation, so give it this capture.
+            let owner = self.lexical_closure_package_sym();
+            let index = spec.index;
+            self.registry_mut().map_user_methods_in_place(owner, |def| {
+                if def.nested_capture_index == Some(index) && def.role_origin.is_none() {
+                    def.captured_env = Some(env.clone());
+                }
+            });
+            return;
+        };
         self.nested_method_captures.insert((owner, spec.index), env);
     }
 
