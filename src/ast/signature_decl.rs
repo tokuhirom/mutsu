@@ -5,7 +5,7 @@
 //! expansion is all the compiler needs, but it is not what the source said:
 //! RakuAST models the declaration as one `VarDeclaration::Signature` node
 //! (ADR-10723 Stage 1). So the expansion carries this record, as a
-//! [`Stmt::SourceForm`](super::Stmt::SourceForm) marker that is its first
+//! [`Stmt::SourceForm`] marker that is its first
 //! statement, and the RakuAST layer reads the declaration from it instead of
 //! reverse-engineering the expansion; `rakuast::lower` hands it back to the same
 //! expansion function the parser uses.
