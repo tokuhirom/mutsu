@@ -17,7 +17,7 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) use crate::value::numeric_payload::{
-    INT_PAYLOAD, NUM_PAYLOAD, numeric_payload_of, numeric_subclass_payload,
+    INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD, numeric_payload_of, numeric_subclass_payload,
 };
 
 /// Methods whose answer is about the subclass instance itself (its type,
@@ -65,10 +65,10 @@ pub(crate) fn dispatch(
         return None;
     }
     let payload = numeric_subclass_payload(target)?;
-    let own_coercer = if matches!(payload.view(), ValueView::Num(_)) {
-        "Num"
-    } else {
-        "Int"
+    let own_coercer = match payload.view() {
+        ValueView::Num(_) => "Num",
+        ValueView::Rat(..) | ValueView::BigRat(..) => "Rat",
+        _ => "Int",
     };
     match args {
         [] => match method {
