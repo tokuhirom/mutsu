@@ -140,11 +140,12 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
             }
         }
         // A group declaration `my ($a, @b);` splits member by member.
-        Stmt::SyntheticBlock(inner)
-            if !inner.is_empty() && inner.iter().all(|s| matches!(s, Stmt::VarDecl { .. })) =>
-        {
+        Stmt::SyntheticBlock(inner) if crate::ast::is_group_declaration(&inner) => {
             for member in inner {
-                split_body_stmt(member, decls, runtime);
+                // The source-form record goes with the group it described.
+                if !matches!(member, Stmt::SourceForm(_)) {
+                    split_body_stmt(member, decls, runtime);
+                }
             }
         }
         Stmt::ClassDecl { .. } | Stmt::Package { .. } | Stmt::SyntheticBlock(_) => {
@@ -160,6 +161,7 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
 /// Whether `stmt` contributes anything to a body's run-time part.
 fn has_runtime_part(stmt: &Stmt) -> bool {
     match stmt {
+        Stmt::SourceForm(_) => false,
         Stmt::VarDecl { custom_traits, .. } => {
             splittable_var_decl(stmt)
                 && custom_traits
@@ -171,7 +173,7 @@ fn has_runtime_part(stmt: &Stmt) -> bool {
         }
         // Mirrors `split_body_stmt`: a group declaration splits member by
         // member, and any other block only splits the types it declares.
-        Stmt::SyntheticBlock(inner) if inner.iter().all(|s| matches!(s, Stmt::VarDecl { .. })) => {
+        Stmt::SyntheticBlock(inner) if crate::ast::is_group_declaration(inner) => {
             inner.iter().any(has_runtime_part)
         }
         Stmt::SyntheticBlock(inner) => inner.iter().any(|s| {

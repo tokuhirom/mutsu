@@ -2331,6 +2331,11 @@ pub(crate) enum Stmt {
         method_args: Vec<Expr>,
         value: Expr,
     },
+    /// The source form of the parser expansion this statement opens (see
+    /// `ast::signature_decl`): a record for the RakuAST layer, not code. It
+    /// is the first statement of the `SyntheticBlock` that holds the
+    /// expansion, and the compiler emits nothing for it.
+    SourceForm(Box<SourceForm>),
     /// Set the current source line number (for deprecation tracking, etc.).
     SetLine(i64),
     /// The `use trace` pragma's per-statement hook: write
@@ -2373,6 +2378,10 @@ mod chains;
 mod lvalue;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+pub(crate) mod signature_decl;
+pub(crate) use signature_decl::{
+    ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm, is_group_declaration,
+};
 pub(crate) mod regex_placeholders;
 mod scope_members;
 mod tail;

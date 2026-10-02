@@ -179,6 +179,7 @@ t/concurrency/promise/start-block-inline-arg-locals-clobber.t
 t/concurrency/promise/start-block-keeps-distinct-aggregate-param-bindings.t
 t/concurrency/promise/start-block-tap-output-order.t
 t/concurrency/recursive-start-await.t
+t/concurrency/supply/channel-supply-competing-consumers.t
 t/concurrency/supply/channel-supply-tap-completion.t
 t/concurrency/supply/live-supplier-list-waits-for-done.t
 t/concurrency/supply/supplier-emit-tap-error-propagates.t
@@ -403,6 +404,7 @@ t/lang/quoting/quote-doubled-delimiter-interpolation.t
 t/lang/quoting/quote-doubled-delimiter.t
 t/lang/quoting/qx-quote.t
 t/lang/scalar-deref-syntax.t
+t/lang/scalar-item-assign-precedence.t
 t/lang/sigil-contextualizer-circumfix.t
 t/lang/sigil-contextualizer-stacked-slip.t
 t/lang/string-comparison.t
@@ -416,6 +418,7 @@ t/lang/zprintf-g-strip-zeros.t
 t/modules/batteries/digest-battery.t
 t/modules/batteries/json-strict-parse.t
 t/modules/begin-once-in-module-routine.t
+t/modules/begin-package-dynvar.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
 t/modules/classhow-set-name-package.t
@@ -428,6 +431,7 @@ t/modules/compunit/precompilation.t
 t/modules/compunit/require-toplevel-routine-scoped-to-compunit.t
 t/modules/compunit/resources-outside-distribution-is-nil.t
 t/modules/core-skip-list.t
+t/modules/eval-module-lexical-subs.t
 t/modules/gather-module-lexical-helper.t
 t/modules/import-export/augment-in-export-hook-runs-once.t
 t/modules/import-export/custom-export-hoisted-inner-use.t
@@ -463,6 +467,8 @@ t/modules/import-export/module-inner-export-sub.t
 t/modules/import-export/module-tagged-export-default.t
 t/modules/import-export/multi-export-rerun-dispatches-by-args.t
 t/modules/import-export/nested-export-sub-scoping.t
+t/modules/import-export/nested-routine-export-out-of-extent.t
+t/modules/import-export/nested-routine-sub-is-export.t
 t/modules/import-export/nested-unit-dependency-export.t
 t/modules/import-export/proto-export-tag.t
 t/modules/import-export/reimport-tagged-export-after-plain-use.t
@@ -486,6 +492,7 @@ t/modules/import-export/use-block-scope-reimport.t
 t/modules/import-export/use-colon-ver-selector.t
 t/modules/import-export/use-dist-selectors.t
 t/modules/import-export/use-in-block-env-scope.t
+t/modules/import-export/use-in-do-block-is-scoped.t
 t/modules/import-export/use-lib-dynamic-sibling-path.t
 t/modules/import-export/use-multiple-export-args.t
 t/modules/import-export/use-newline.t
@@ -582,6 +589,7 @@ t/oo/class/c3-mro-long-chain.t
 t/oo/class/class-allomorph-inheritance.t
 t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-static-compound-assignment.t
+t/oo/class/class-body-sub-forward-ref.t
 t/oo/class/classify-bucket-itemized.t
 t/oo/class/classify-pair-iteration.t
 t/oo/class/classify-whatever-identity.t
@@ -610,6 +618,7 @@ t/oo/issue-7771-unhandled-start.t
 t/oo/issue-7779-clone-type-object.t
 t/oo/method/add-method-pointy-invocant.t
 t/oo/method/callframe-code-name-method-unit.t
+t/oo/method/class-body-write-to-method-captured-lexical.t
 t/oo/method/colon-method-arg-loose-ops.t
 t/oo/method/hyper-hash-method-scalar.t
 t/oo/method/indirect-method-notation.t
@@ -814,9 +823,11 @@ t/routines/callable-can-list.t
 t/routines/callable-set-subset-operators.t
 t/routines/closure/closure-arg-shares-its-captured-container.t
 t/routines/closure/closure-attr-element-write.t
+t/routines/closure/closure-calls-routine-nested-sub.t
 t/routines/closure/closure-capture-named-arg-imported-callee.t
 t/routines/closure/closure-captured-state.t
 t/routines/closure/closure-captured-var-writeback-coherence.t
+t/routines/closure/closure-container-capture.t
 t/routines/closure/closure-literal-ends-statement.t
 t/routines/closure/closure-map-block-free-var-capture.t
 t/routines/closure/closure-selective-env-sync.t
@@ -853,6 +864,8 @@ t/routines/dispatch/sprintf-user-str-dispatch.t
 t/routines/dispatch/whatevercode-multiarg-subscript.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/gather-infinite-coroutine.t
+t/routines/inner-sub-same-name-across-routines.t
+t/routines/keyword-named-subs.t
 t/routines/lexical-amp-binding-shadows-a-routine.t
 t/routines/misc-builtins.t
 t/routines/more-functions.t
@@ -861,13 +874,17 @@ t/routines/nested-sub-reregistration.t
 t/routines/os-functions.t
 t/routines/placeholder-bare-alias-callback.t
 t/routines/placeholder-in-nested-whatevercode.t
+t/routines/placeholder-outer-alias-writeback.t
+t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-topic-is-fresh-any-not-caller.t
+t/routines/routine-value-self-recursion-after-import-scope-pop.t
 t/routines/signature/array-param-positional-bind-failover.t
 t/routines/signature/block-topic-explicit-params.t
 t/routines/signature/builtin-shadow-default-param.t
 t/routines/signature/captured-param-cell-not-in-shared-vars-lane.t
 t/routines/signature/closure-captured-bang-var-through-code-param.t
 t/routines/signature/cro-client-nested-param-shadow.t
+t/routines/signature/for-loop-param-getupvalue-hijack.t
 t/routines/signature/hash-parametric-keyof.t
 t/routines/signature/implicit-topic-block-signature-gist.t
 t/routines/signature/named-params.t
@@ -875,8 +892,10 @@ t/routines/signature/nested-any-type-constraint.t
 t/routines/signature/nonconst-param-default-full-arity-light.t
 t/routines/signature/param-default-keeps-code-lexicals.t
 t/routines/signature/parameterized-call.t
+t/routines/signature/positional-param-deitemizes.t
 t/routines/signature/readonly-param-mark-panic-unwind.t
 t/routines/signature/signature-builtin-code-var.t
+t/routines/signature/signature-declaration-initializer-self-scope.t
 t/routines/signature/signature-parameter-object-identity.t
 t/routines/signature/signature-return-only-space.t
 t/routines/signature/signature-return-type-comment.t
@@ -1074,11 +1093,14 @@ t/vm/gate-b-carrier-aggregate-clobber.t
 t/vm/gate-b-doblock-exit-slot-authoritative.t
 t/vm/hyper-reflection-env.t
 t/vm/identity-eq.t
+t/vm/nested-frame-container-mutation-reaches-owner.t
 t/vm/nqp-file-ops.t
 t/vm/nqp-isfalse.t
 t/vm/nqp-sha1.t
+t/vm/protect-block-redeclared-aggregate.t
 t/vm/scope/caller-lexical-pseudostash.t
 t/vm/scope/dynamic-codevar-chdir.t
+t/vm/scope/dynamic-scope-pragma.t
 t/vm/scope/dynamic-var-read-not-found.t
 t/vm/scope/eval-read-caller-lexicals.t
 t/vm/scope/lexical-shadow-slots.t

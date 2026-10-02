@@ -1,5 +1,5 @@
 mod constant_subset;
-mod destructure;
+pub(crate) mod destructure;
 mod enum_decl;
 mod enum_decl_traits;
 mod handles;

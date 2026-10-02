@@ -38,6 +38,11 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
                 v.visit_expr(e);
             }
         }
+        // Not code: the expansion that follows the record holds the same
+        // expressions, and visiting the record's copies too would show an
+        // analysis every source expression twice, ahead of the declarations
+        // the expansion makes (see `ast::signature_decl`).
+        Stmt::SourceForm(_) => {}
         Stmt::MarkReadonly(name, _) => v.visit_name(name, NameKind::MarkReadonly),
         Stmt::MarkBoundContainer(name) => v.visit_name(name, NameKind::MarkBoundContainer),
         Stmt::MarkBind

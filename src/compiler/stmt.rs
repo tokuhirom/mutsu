@@ -868,6 +868,9 @@ impl Compiler {
         }
         self.note_construct_body_block(stmt);
         match stmt {
+            // A record for the RakuAST layer (`ast::signature_decl`); the
+            // expansion that follows it is the code.
+            Stmt::SourceForm(_) => {}
             Stmt::NestedTypeShells(shells) => {
                 for shell in shells {
                     self.emit_nested_type_shell(shell);

@@ -431,15 +431,13 @@ impl Compiler {
         if matches!(meta, "X" | "Z")
             && let Expr::DoStmt(stmt) = left
             && let Stmt::SyntheticBlock(stmts) = stmt.as_ref()
-            && !stmts.is_empty()
-            && stmts
-                .iter()
-                .all(|stmt| matches!(stmt, Stmt::VarDecl { .. }))
+            && crate::ast::is_group_declaration(stmts)
         {
             let mut targets = Vec::with_capacity(stmts.len());
             for stmt in stmts {
                 let Stmt::VarDecl { name, .. } = stmt else {
-                    unreachable!();
+                    // The expansion's source-form record emits nothing.
+                    continue;
                 };
                 self.compile_stmt(stmt);
                 targets.push(if let Some(name) = name.strip_prefix('@') {

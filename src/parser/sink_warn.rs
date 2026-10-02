@@ -166,8 +166,11 @@ pub(crate) fn is_destructure_block(body: &[Stmt]) -> bool {
     }
     // Plain targets are predeclared (default-initialized) ahead of the temp so
     // the RHS sees them; skip those leading declarations.
-    let is_predecl =
-        |s: &Stmt| matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"));
+    // The source-form record (`Stmt::SourceForm`) is not a statement either.
+    let is_predecl = |s: &Stmt| {
+        matches!(s, Stmt::SourceForm(_))
+            || matches!(s, Stmt::VarDecl { name, .. } if !name.contains("__destructure_tmp__"))
+    };
     match body.iter().find(|s| !is_predecl(s)) {
         Some(Stmt::SyntheticBlock(inner)) => {
             matches!(inner.as_slice(), [Stmt::MarkBind, decl] if is_tmp_decl(decl))
