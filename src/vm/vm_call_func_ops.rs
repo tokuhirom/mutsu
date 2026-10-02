@@ -1755,7 +1755,7 @@ impl Interpreter {
             .map(Value::into_deref)
             .unwrap_or(Value::NIL);
         if target.is_nil() {
-            target = loan_env!(self, resolve_code_var(&name));
+            target = self.resolve_amp_var_for(code, &name);
         }
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
         // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,

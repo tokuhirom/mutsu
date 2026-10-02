@@ -122,6 +122,7 @@ macro_rules! loan_env {
     }};
 }
 
+mod vm_amp_var_scope;
 mod vm_arith_int_ops;
 mod vm_arith_ops;
 mod vm_baggy_subclass_delegate;
