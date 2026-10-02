@@ -7,7 +7,7 @@
 //! silently-wrong node.
 
 use super::{
-    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, name_parts,
+    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, decl_traits, name_parts,
     routine_traits,
 };
 use crate::ast::{
@@ -364,7 +364,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if custom_traits.iter().any(|(n, _)| n == "__constant") {
                 return constant_declaration(name, expr, custom_traits, type_constraint, *is_our);
             }
-            if custom_traits.iter().any(|(n, _)| n != "__has_initializer") {
+            if custom_traits
+                .iter()
+                .any(|(n, arg)| n != "__has_initializer" && !decl_traits::is_rendered(n, arg))
+            {
                 return Err(unsupported("declaration with traits"));
             }
             // build_type_node validates simple/definite and defers the rest.
@@ -380,9 +383,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 .iter()
                 .any(|(name, _)| name == "__has_initializer");
             let init = has_initializer.then_some(expr);
-            Ok(Some(statement_expression(var_declaration(
-                name, init, scope, type_name, None, None,
-            )?)))
+            let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
+            decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
+            Ok(Some(statement_expression(decl)))
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
@@ -1440,7 +1443,7 @@ fn split_sigil(name: &str) -> (&str, &str) {
     }
 }
 
-fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
+pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::StatementExpression,
         fields: vec![node_field(Some("expression"), expr)],
