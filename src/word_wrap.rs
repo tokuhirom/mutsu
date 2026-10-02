@@ -66,6 +66,9 @@ mod tests {
     #[test]
     fn an_overlong_word_on_an_empty_line_stands_alone() {
         let long = "w".repeat(80);
-        assert_eq!(naive_word_wrap(&format!("{long} x"), 72), format!("{long}\nx"));
+        assert_eq!(
+            naive_word_wrap(&format!("{long} x"), 72),
+            format!("{long}\nx")
+        );
     }
 }
