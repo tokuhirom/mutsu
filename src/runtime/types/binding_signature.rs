@@ -526,11 +526,16 @@ impl Interpreter {
         // to an @ parameter must keep the source pullable. A List-context view
         // lets a bounded index fetch only the prefix it needs.
         // A Seq's List view similarly shares its deferred SeqBody.
+        // `bound_from_seq` keeps the caller's Seq so a failed constraint check
+        // below reports (and carries in `.got`) the Seq the caller passed, not
+        // the List view it was rebound to (#10921).
+        let mut bound_from_seq: Option<Value> = None;
         let seq_list_array_context = if pd.name.starts_with('@') {
             if let ValueView::LazyList(list) = value.view()
                 && (list.is_genuinely_lazy() || list.is_from_gather())
             {
                 let list = list.with_list_context();
+                bound_from_seq = Some(value.clone());
                 value = Value::lazy_list(crate::gc::Gc::new(list));
                 true
             } else if let ValueView::Seq(body) = value.view() {
@@ -539,6 +544,7 @@ impl Interpreter {
                 // reified once and kept, so the callee may read it any number
                 // of times instead of the first consuming method stealing it.
                 body.mark_cache_requested();
+                bound_from_seq = Some(value.clone());
                 value = Value::seq_list_view(&body);
                 true
             } else {
@@ -646,7 +652,7 @@ impl Interpreter {
                     let err = self.typecheck_binding_parameter_failure(
                         &param_display_name(pd),
                         &expected,
-                        &value,
+                        bound_from_seq.as_ref().unwrap_or(&value),
                     );
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
