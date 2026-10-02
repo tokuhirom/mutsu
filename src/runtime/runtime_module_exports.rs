@@ -1535,7 +1535,9 @@ impl Interpreter {
         // explicitly, since an enclosing compunit-repository load may have
         // set it.
         let saved = std::mem::replace(&mut self.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.loading_without_import, true);
         let result = self.load_module(module);
+        self.loading_without_import = saved_no_import;
         self.suppress_exports = saved;
         self.module_load_stack.pop();
         if result.is_ok() {

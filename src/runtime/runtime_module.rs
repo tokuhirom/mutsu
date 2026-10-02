@@ -601,7 +601,9 @@ impl Interpreter {
         // always wants ordinary export semantics regardless of an ambient
         // `need`, so suspend the flag for exactly this nested load.
         let saved_suppress_exports = std::mem::replace(&mut self.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.loading_without_import, false);
         let result = self.use_module_with_tags_inner(module, tags, import);
+        self.loading_without_import = saved_no_import;
         self.suppress_exports = saved_suppress_exports;
         self.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue

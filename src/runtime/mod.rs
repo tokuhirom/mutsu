@@ -3252,6 +3252,10 @@ pub struct Interpreter {
     /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
     /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
+    /// True while a `need` (or an empty-import `use Mod ()`) loads a module:
+    /// its exports are registered but imported nowhere, so an exported
+    /// `MAIN` must not become the program's MAIN.
+    pub(crate) loading_without_import: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a bare block is evaluating the tail of an `is rw` routine

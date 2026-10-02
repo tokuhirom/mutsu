@@ -1457,7 +1457,10 @@ impl Interpreter {
             // may hand the routine over itself (`"&MAIN" => &MAIN`), which
             // needs the candidates still registered while the hook runs and
             // keeps them as the program's MAIN afterwards.
-            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"))
+            // A `need` imports nothing, so an exported MAIN stays the
+            // module's own (`use Mod ()` must not dispatch it).
+            let main_exported = (!self.loading_without_import
+                && self.exported_subs.values().any(|m| m.contains_key("MAIN")))
                 || self.env.get("&MAIN").is_some_and(|v| {
                     matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
                 });
