@@ -202,11 +202,13 @@ pub(crate) fn multidim_assign_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        if data
-            .get(i)
-            .is_some_and(|v| matches!(v.view(), ValueView::Scalar(_)))
-        {
-            return Err(RuntimeError::assignment_ro(None));
+        match data.get(i).map(Value::view) {
+            Some(ValueView::Scalar(_)) => return Err(RuntimeError::assignment_ro(None)),
+            // A slot `BIND-POS`-bound to a bare value (#10924).
+            Some(ValueView::ContainerRef(cell)) if cell.is_readonly() => {
+                return Err(RuntimeError::immutable_value());
+            }
+            _ => {}
         }
         data.store_element(i, value);
         return Ok(());
@@ -216,7 +218,7 @@ pub(crate) fn multidim_assign_pos(
 }
 
 /// `BIND-POS` with several indices: bind the innermost slot (stored as
-/// `Value::scalar(value)`, which marks it bound/immutable), in place through
+/// `Value::bound_element(value)`, a read-only cell for a bare value), in place through
 /// each level's shared node like [`multidim_assign_pos`].
 // Cost: O(d), d = indices (amortized; growing a level is O(i - e) there).
 pub(crate) fn multidim_bind_pos(
@@ -237,7 +239,7 @@ pub(crate) fn multidim_bind_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        data.store_element(i, Value::scalar(value));
+        data.store_element(i, Value::bound_element(value));
         return Ok(());
     }
     let child = multidim_child_for_store(data, i);
