@@ -546,6 +546,22 @@ jobs:
           MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
 
+      - name: RakuAST round-trip frontend ratchet
+        # ADR-10723 Stage 0 (#10733): every t/ file listed in
+        # ci/rakuast-frontend-passing.txt must still pass when its program
+        # units run as `parse -> RakuAST -> lower` (MUTSU_RAKUAST=1). The
+        # list only grows (`scripts/rakuast-frontend.sh update`); a listed file
+        # that fails here is a regression in the RakuAST layer, fixed in the
+        # same PR rather than dropped from the list. Same per-file wrapper,
+        # timeout and -j4 as the TAP step above.
+        run: |
+          mkdir -p tmp
+          scripts/rakuast-frontend.sh check
+        env:
+          MUTSU_BIN: target/release/mutsu
+          MUTSU_T_TIMEOUT: "45"
+          JOBS: "4"
+
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the site (landing highlights +
         # tutorial lessons) runs under mutsu here and must match the output

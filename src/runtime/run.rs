@@ -616,7 +616,10 @@ impl Interpreter {
         // the parser's scalar-var twigil handling); for the mainline that is the
         // script itself.
         let saved_source_file = crate::parser::set_parser_source_file(Some(source_file));
-        let parse_result = crate::parse_dispatch::parse_compilation_unit(&preprocessed);
+        let parse_result = crate::parse_dispatch::parse_compilation_unit_of(
+            &preprocessed,
+            crate::rakuast::frontend::Unit::Mainline,
+        );
         let unit_docs = crate::parser::decl_doc::take_unit_docs();
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();

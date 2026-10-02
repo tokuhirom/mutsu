@@ -92,6 +92,17 @@ impl Interpreter {
             &user_value_term_names,
         );
         crate::parser::clear_parser_lib_paths();
+        // ADR-10723 Stage 0: under `MUTSU_RAKUAST=1` an EVAL string runs as
+        // its RakuAST round trip, like every other compilation unit.
+        let parse_result = parse_result.and_then(|(stmts, finish)| {
+            Ok((
+                crate::rakuast::frontend::round_trip_if_enabled(
+                    stmts,
+                    crate::rakuast::frontend::Unit::Eval,
+                )?,
+                finish,
+            ))
+        });
         match parse_result {
             Ok((stmts, _)) => {
                 // EVAL is its own compilation unit, so its `$=pod` must be

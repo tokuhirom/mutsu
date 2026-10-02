@@ -1,8 +1,7 @@
 # ADR-10723: RakuAST is mutsu's frontend IR — the parser emits RakuAST, the internal AST becomes the lowered form
 
 - **Status**: Proposed (2026-10-02). Supersedes [ADR-0011](0011-rakuast-model-layer-and-phasing.md)
-  once accepted. Stage 0 (the round-trip frontend mode and its pass-count metric) is the first
-  slice; nothing below it has started.
+  once accepted. Stage 0's mode and CI ratchet have landed (§6); Stages 1–4 have not started.
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -225,3 +224,22 @@ before the flip, not after.
 - **Compile directly from RakuAST and delete `Expr`/`Stmt`.** Rejected: it rewrites the compiler,
   TRIR, the JIT inputs and every analysis for no user-visible gain. Rakudo itself does not compile
   RakuAST directly either — it lowers to QAST.
+
+## 6. Implementation status
+
+### Stage 0 (2026-10-02, [#10733](https://github.com/tokuhirom/mutsu/issues/10733))
+
+- `use` / `no` / `use v6.d`, statement-level calls and statement-position bare blocks cross the
+  boundary (`src/rakuast/use_stmt.rs`; `news/2026-10/rakuast-use-statements-and-bare-blocks.md`).
+  Before that, `use Test;` alone stopped all but 1 of 5638 `t/` files.
+- The mode is `src/rakuast/frontend.rs`, with one refinement of §2.2: it has two levels.
+  `MUTSU_RAKUAST=1` round-trips the program's own units (the main program and every `EVAL`
+  string); `MUTSU_RAKUAST=all` also round-trips every `use`d module and `require`d file. A module
+  is shared by every program that loads it, so while the bundled `Test.rakumod` does not
+  round-trip, `all` fails every test file at its first line and says nothing about the files.
+  `1` is the level the metric counts; `all` becomes the metric once the bundled modules pass.
+- The ratchet: `ci/rakuast-frontend-passing.txt` lists the `t/` files that pass under
+  `MUTSU_RAKUAST=1`; `scripts/rakuast-frontend.sh check` runs them in CI's `test-suites` job, and
+  `update` grows the list (never shrinks it). First count: **984 / 5696** `t/` files.
+- Not yet counted: whitelisted roast files, and the `all` level.
+
