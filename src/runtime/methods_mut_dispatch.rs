@@ -2464,7 +2464,7 @@ impl Interpreter {
                     index,
                     &args,
                     items.len(),
-                ) {
+                )? {
                     items = more;
                     updated.insert("items".to_string(), Value::array(items.clone()));
                 }

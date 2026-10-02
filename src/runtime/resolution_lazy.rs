@@ -53,6 +53,15 @@ impl Interpreter {
         if list.has_finite_closure_endpoint() {
             return self.extend_closure_sequence(list, usize::MAX);
         }
+        // A sequence-spec list is infinite, and its cache holds only the
+        // prefix generated so far: a strict force cannot complete. Same
+        // verdict as `force_lazy_list_vm` (#10846).
+        if list.sequence_spec.is_some() {
+            return Err(RuntimeError::typed_msg(
+                "X::Cannot::Lazy",
+                "Cannot coerce an infinite lazy list to a strict list",
+            ));
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }

@@ -208,6 +208,20 @@ impl Interpreter {
             .checked_sub(arity as usize + 1)
             .and_then(|i| self.stack.get(i))
             .is_some_and(Value::is_nil);
+        // A front mutation of a lazy `@`-array over an infinite sequence runs on
+        // a reified prefix and is stitched back in front of the live tail
+        // afterwards (see `vm_lazy_front_mutate`).
+        let front_mutation = if modifier_idx.is_none() {
+            self.lazy_seq_front_mutation_prepare(
+                code,
+                name.raw,
+                arity,
+                Self::const_str(code, target_name_idx),
+            )
+            .transpose()?
+        } else {
+            None
+        };
         let result = self.exec_call_method_mut_op_impl(
             code,
             name,
@@ -217,6 +231,15 @@ impl Interpreter {
             quoted,
             arg_sources_idx,
         );
+        if let Some(pending) = front_mutation
+            && result.is_ok()
+        {
+            self.lazy_seq_front_mutation_finish(
+                code,
+                Self::const_str(code, target_name_idx),
+                pending,
+            );
+        }
         // Nil absorbs a method it does not define (raku's `Nil.FALLBACK`), the
         // same verdict the scalar `CallMethod` opcode and the hyper path reach.
         // This opcode -- a method call on a *named* receiver -- never applied
@@ -633,9 +656,11 @@ impl Interpreter {
         // Mutating a lazy `@`-array (infinite source). raku rejects operations
         // that touch the (non-existent) end — push/pop/append — with
         // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/
-        // splice), which reify the cached prefix to a real Array first
-        // (no worse than the pre-L2 capped Array). Restricted to cache-backed
-        // specs so the reify never runs user code or hangs. (L2)
+        // splice). A sequence-spec array keeps its laziness across those
+        // (`vm_lazy_front_mutate`, run before this impl); the remaining
+        // cache-backed specs below still reify the cached prefix to a real
+        // Array first. Restricted to specs whose reify never runs user code or
+        // hangs. (L2)
         if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
@@ -654,8 +679,7 @@ impl Interpreter {
         }
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
-            && (ll.sequence_spec.is_some()
-                || ll.closure_seq.is_some()
+            && (ll.closure_seq.is_some()
                 || ll.scan_spec.is_some()
                 // A `lazy`-marked list that is known finite and runs no user
                 // code to reify (`my @a = lazy <b c d>`, `my @a = <a>, |lazy

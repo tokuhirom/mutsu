@@ -165,6 +165,11 @@ impl crate::Interpreter {
     /// actually needs, so an infinite source stays lazy.
     ///
     /// Returns the topped-up items, or `None` when there was nothing to do.
+    ///
+    /// A source that cannot be forced propagates its error: draining an
+    /// infinite source (`push-all` / `sink-all` over an infinite sequence or
+    /// pipe) answers X::Cannot::Lazy rather than appending whatever prefix
+    /// happened to be pulled and reporting the source as exhausted (#10846).
     pub(crate) fn iterator_topup_from_lazy_source(
         &mut self,
         source: Option<&Value>,
@@ -172,19 +177,16 @@ impl crate::Interpreter {
         index: usize,
         args: &[Value],
         have: usize,
-    ) -> Option<Vec<Value>> {
-        let ValueView::LazyList(list) = source?.view() else {
-            return None;
+    ) -> Result<Option<Vec<Value>>, crate::value::RuntimeError> {
+        let Some(ValueView::LazyList(list)) = source.map(Value::view) else {
+            return Ok(None);
         };
         let pulled = match needed_len(method, index, args) {
-            Some(need) if need <= have => return None,
-            Some(need) => self.force_lazy_list_vm_n(&list, need),
-            None => self.force_lazy_list_vm(&list),
+            Some(need) if need <= have => return Ok(None),
+            Some(need) => self.force_lazy_list_vm_n(&list, need)?,
+            None => self.force_lazy_list_vm(&list)?,
         };
-        // A source that cannot be forced (an infinite pipe answers
-        // X::Cannot::Lazy) leaves the prefix as it was; the step then reports
-        // exhaustion exactly as before.
-        pulled.ok().filter(|items| items.len() > have)
+        Ok(Some(pulled).filter(|items| items.len() > have))
     }
 
     /// The elements a built-in `Iterator` instance has left from its cursor on,
@@ -194,7 +196,10 @@ impl crate::Interpreter {
     /// first, as `push-all` does.
     ///
     /// Cost: O(n), n = remaining elements (plus forcing the lazy source).
-    pub(crate) fn iterator_remaining_items(&mut self, attrs: &crate::value::AttrMap) -> Vec<Value> {
+    pub(crate) fn iterator_remaining_items(
+        &mut self,
+        attrs: &crate::value::AttrMap,
+    ) -> Result<Vec<Value>, crate::value::RuntimeError> {
         let mut all = match attrs.get("items").map(Value::view) {
             Some(ValueView::Array(values, ..)) => values.to_vec(),
             _ => Vec::new(),
@@ -209,11 +214,11 @@ impl crate::Interpreter {
             index,
             &[],
             all.len(),
-        ) {
+        )? {
             all = more;
         }
         let index = index.min(all.len());
-        all.split_off(index)
+        Ok(all.split_off(index))
     }
 
     /// Append `vals` to the array passed as the `push-*` family's first

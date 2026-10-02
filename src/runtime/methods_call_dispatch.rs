@@ -974,7 +974,7 @@ impl Interpreter {
                 if let Some(rest) = self.map_grep_stream_drain(&attributes) {
                     rest?
                 } else {
-                    self.iterator_remaining_items(&attributes.as_map())
+                    self.iterator_remaining_items(&attributes.as_map())?
                 }
             } else if user_iterator {
                 // A user-defined `does Iterator` instance: drive its `pull-one`
@@ -1872,7 +1872,7 @@ impl Interpreter {
                 index,
                 &args,
                 items.len(),
-            ) {
+            )? {
                 items = more;
                 topped_up = true;
             }
