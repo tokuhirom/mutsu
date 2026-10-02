@@ -662,11 +662,15 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload crash reports
+        # Only `*.txt` at the top level: report-crash-reports.sh moves the
+        # allowlisted (deliberately provoked) reports into tmp/crash/expected/,
+        # so this artifact exists only when an unexpected crash happened. The
+        # four stress-job uploads below follow the same rule.
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: crash-reports
-          path: tmp/crash/
+          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -1232,7 +1236,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gc-stress-tap-crash-reports
-          path: tmp/crash/
+          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -1361,7 +1365,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gc-stress-roast-crash-reports
-          path: tmp/crash/
+          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -1530,7 +1534,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jit-stress-tap-crash-reports
-          path: tmp/crash/
+          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -1631,7 +1635,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jit-stress-roast-crash-reports
-          path: tmp/crash/
+          path: tmp/crash/*.txt
           retention-days: 7
           if-no-files-found: ignore
 
