@@ -2574,9 +2574,11 @@ impl Interpreter {
             // this frame reaches only by name, already celled by the frame that
             // owns it: a class body's `my $w := $z` runs as its own chunk, and
             // the class registration boxes the declaring frame's `$z` before
-            // the body runs. Binding to that cell keeps `$w`, `$z` and the
-            // methods that capture `$w` on one container (#10682); the by-name
-            // alias fallback only forwarded writes and left reads stale.
+            // the body runs; a role body's is deferred to composition, and the
+            // role registration boxed `$z` at declaration time. Binding to that
+            // cell keeps `$w`, `$z` and the methods that capture `$w` on one
+            // container (#10682, #11087); the by-name alias fallback only
+            // forwarded writes and left reads stale.
             let env_source_cell = !source_in_same_scope
                 && val_is_simple_scalar
                 && !is_percall_pseudo_var
