@@ -21,6 +21,7 @@ mod regex_ltm_fate;
 mod regex_ltm_litend;
 pub(crate) mod regex_ltm_nfa;
 mod regex_ltm_nfa_build;
+mod regex_ltm_nfa_guard;
 mod regex_ltm_nfa_run;
 mod regex_ltm_nfa_scratch;
 mod regex_ltm_rank;

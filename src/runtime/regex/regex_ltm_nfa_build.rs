@@ -91,11 +91,7 @@ impl<'a> NfaBuilder<'a> {
     ) -> LtmNfa {
         let accept = self.push(NfaNode::Accept);
         let start = self.build_pattern(pattern, pkg, inherited_ic, true, accept);
-        LtmNfa {
-            nodes: self.nodes,
-            start,
-            roots: Vec::new(),
-        }
+        LtmNfa::new(self.nodes, start, Vec::new())
     }
 
     /// One NFA for all of a proto's `candidates`, the way Rakudo builds one for
@@ -139,11 +135,7 @@ impl<'a> NfaBuilder<'a> {
             let entry = self.build_pattern(parsed, sub_pkg, false, true, ret);
             roots.push(NfaRoot { entry, accept });
         }
-        LtmNfa {
-            nodes: self.nodes,
-            start: 0,
-            roots,
-        }
+        LtmNfa::new(self.nodes, 0, roots)
     }
 
     fn push(&mut self, node: NfaNode) -> u32 {

@@ -118,6 +118,23 @@ pub(crate) struct LtmNfa {
     /// run measures every candidate at once and keeps their results apart
     /// (`NfaRun::origins`). Empty for any other NFA.
     pub(super) roots: Vec<NfaRoot>,
+    /// Per node, what a thread arriving there at a character the guard rejects
+    /// cannot go on from (`regex_ltm_nfa_guard`): the run drops it unasked.
+    pub(super) guards: Vec<Option<super::regex_prefilter_firstset::FirstSet>>,
+}
+
+impl LtmNfa {
+    /// An NFA of `nodes`, with the guards its nodes have.
+    // Cost: O(s), s = nodes.
+    pub(super) fn new(nodes: Vec<NfaNode>, start: u32, roots: Vec<NfaRoot>) -> Self {
+        let guards = super::regex_ltm_nfa_guard::node_guards(&nodes);
+        LtmNfa {
+            nodes,
+            start,
+            roots,
+            guards,
+        }
+    }
 }
 
 /// One candidate of a proto's NFA.
