@@ -687,7 +687,7 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
 
 **INIT and CHECK in a class declared inside code, whatever they read — implemented**
 (#10711, `src/runtime/begin_prologue/nested/phasers.rs`,
-`t/routines/init-check-class-in-code-timing.t`).
+`t/control/init-check-class-in-code-timing.t`).
 
 - **The gap.** Every `INIT`/`CHECK` of a class declared inside a routine or block
   (in its body or in a method) ran when the enclosing code ran the declaration:
