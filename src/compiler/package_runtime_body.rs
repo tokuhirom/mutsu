@@ -72,7 +72,7 @@ impl Compiler {
     /// for [`Compiler::package_body_lexicals`].
     pub(crate) fn package_body_lexical_names(body: &[Stmt]) -> HashSet<String> {
         let mut names = HashSet::new();
-        for stmt in body {
+        for stmt in crate::ast::scope_members(body) {
             match stmt {
                 Stmt::VarDecl {
                     name,
@@ -84,9 +84,6 @@ impl Compiler {
                     && !custom_traits.iter().any(|(t, _)| t == "__constant") =>
                 {
                     names.insert(name.clone());
-                }
-                Stmt::SyntheticBlock(inner) => {
-                    names.extend(Self::package_body_lexical_names(inner))
                 }
                 _ => {}
             }

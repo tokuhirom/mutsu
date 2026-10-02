@@ -24,18 +24,18 @@ use std::collections::HashMap;
 /// Only a *unit-scope* `EXPORT` counts: that is the only place rakudo looks for
 /// the hook, so a `sub EXPORT` nested inside a class body is an ordinary
 /// routine and says nothing about how the module exports.
+// Cost: O(n), n = number of statements in the unit's own scope.
 pub(super) fn declares_export_sub(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(|stmt| match stmt {
+    unit_scope(stmts).any(|stmt| match stmt {
         Stmt::SubDecl { name, .. } | Stmt::ProtoDecl { name, .. } => name.resolve() == "EXPORT",
-        // `unit module Foo;` wraps the rest of the file, but its declarations
-        // are still the compunit's own unit scope.
-        Stmt::Package {
-            body,
-            is_unit: true,
-            ..
-        } => declares_export_sub(body),
         _ => false,
     })
+}
+
+/// The compunit's own unit scope. `unit module Foo;` wraps the rest of the
+/// file, but its declarations are still the compunit's unit-scope ones.
+fn unit_scope(stmts: &[Stmt]) -> impl Iterator<Item = &Stmt> {
+    crate::ast::scope_members(stmts).through_unit_package()
 }
 
 /// Approximate the export set of a `sub EXPORT` module with the routines it
@@ -60,7 +60,7 @@ pub(super) fn collect_unit_scope_routines(
     stmts: &[Stmt],
     out: &mut HashMap<String, InlineModuleExport>,
 ) {
-    for stmt in stmts {
+    for stmt in unit_scope(stmts) {
         match stmt {
             Stmt::SubDecl { name, .. } | Stmt::ProtoDecl { name, .. } => {
                 let resolved = name.resolve();
@@ -77,28 +77,41 @@ pub(super) fn collect_unit_scope_routines(
                     is_test_assertion: false,
                 });
             }
-            Stmt::Package {
-                body,
-                is_unit: true,
-                ..
-            } => collect_unit_scope_routines(body, out),
             _ => {}
         }
     }
 }
 
 /// The unit-scope `sub EXPORT`'s own body, if this module declares one —
-/// same descent through a `unit module Foo;` wrapper as [`declares_export_sub`].
+/// same unit scope as [`declares_export_sub`].
 fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
-    stmts.iter().find_map(|stmt| match stmt {
+    unit_scope(stmts).find_map(|stmt| match stmt {
         Stmt::SubDecl { name, body, .. } if name.resolve() == "EXPORT" => Some(body.as_slice()),
-        Stmt::Package {
-            body,
-            is_unit: true,
-            ..
-        } => find_export_sub_body(body),
         _ => None,
     })
+}
+
+/// The declarations whose values an `EXPORT` hook's body can hand out: the
+/// members of the body's own scope and, when the scope ends in a bare block —
+/// whose value is the hook's return value — that block's members too, and so
+/// on. An earlier bare block is a scope of its own that ends before the
+/// returned `Map` is built, so nothing declared in it can be exported.
+// Cost: O(n), n = number of statements in those scopes.
+fn export_body_members(body: &[Stmt]) -> Vec<&Stmt> {
+    let mut out = Vec::new();
+    let mut scope = body;
+    loop {
+        let start = out.len();
+        out.extend(crate::ast::scope_members(scope));
+        let tail = out[start..]
+            .iter()
+            .rev()
+            .find(|s| !matches!(s, Stmt::SetLine(_)));
+        match tail {
+            Some(Stmt::Block(inner)) => scope = inner,
+            _ => return out,
+        }
+    }
 }
 
 /// A second idiom `sub EXPORT` modules use, distinct from the `UNIT::`-grep
@@ -121,24 +134,20 @@ fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
 ///
 /// `my \x = ...` compiles to a `VarDecl` immediately followed by a sibling
 /// `MarkSigillessReadonly` naming the same variable (the parser's marker for
-/// a sigilless declaration); this walks the hook's body — including into the
-/// `SyntheticBlock`/`Block` wrapper such a pair is nested in — collecting
+/// a sigilless declaration); this walks the hook's body
+/// ([`export_body_members`]: through the `SyntheticBlock` such a pair is
+/// nested in, and into a bare block that ends the body) collecting
 /// every one it finds, so the importer's parse learns `vrai` is a term with
 /// no arguments to swallow, the same way an exported `constant` already does.
 fn collect_export_body_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
-    for (i, stmt) in stmts.iter().enumerate() {
-        match stmt {
-            Stmt::VarDecl { name, .. } => {
-                if let Some(Stmt::MarkSigillessReadonly(marked)) = stmts.get(i + 1)
-                    && marked == name
-                {
-                    out.push(name.clone());
-                }
-            }
-            Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {
-                collect_export_body_value_terms(inner, out);
-            }
-            _ => {}
+    for pair in export_body_members(stmts).windows(2) {
+        if let [
+            Stmt::VarDecl { name, .. },
+            Stmt::MarkSigillessReadonly(marked),
+        ] = pair
+            && marked == name
+        {
+            out.push(name.clone());
         }
     }
 }
@@ -176,7 +185,7 @@ pub(super) fn collect_export_hook_operator_subs(
 }
 
 fn collect_operator_subs_in(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
-    for stmt in stmts {
+    for stmt in export_body_members(stmts) {
         match stmt {
             Stmt::SubDecl {
                 name,
@@ -210,9 +219,6 @@ fn collect_operator_subs_in(stmts: &[Stmt], exports: &mut HashMap<String, Inline
                 exports.entry(resolved.to_string()).or_insert_with(|| {
                     super::sub_export_entry(resolved.to_string(), None, None, false)
                 });
-            }
-            Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {
-                collect_operator_subs_in(inner, exports);
             }
             _ => {}
         }

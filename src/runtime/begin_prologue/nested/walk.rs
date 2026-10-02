@@ -157,7 +157,7 @@ impl Walker<'_> {
             // The members of a grouped declaration are bound opaquely and not
             // walked: their initializers belong to the destructuring.
             Stmt::SyntheticBlock(inner) => {
-                for member in inner.iter_mut() {
+                for member in crate::ast::scope_members_mut(inner) {
                     match member {
                         Stmt::VarDecl { name, .. } => self.bind_opaque(name.clone()),
                         // An exported type is its declaration plus a marker.

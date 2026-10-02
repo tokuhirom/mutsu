@@ -69,6 +69,21 @@ impl Interpreter {
                 | Stmt::SubsetDecl { .. } => {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
+                // A sigilless or bind declaration arrives as the group
+                // `role_body_plan` keeps whole.
+                Stmt::SyntheticBlock(inner)
+                    if crate::ast::scope_members(inner).any(|s| {
+                        matches!(
+                            s,
+                            Stmt::VarDecl {
+                                is_export: true,
+                                ..
+                            }
+                        )
+                    }) =>
+                {
+                    !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
+                }
                 _ => false,
             };
             if !eager {

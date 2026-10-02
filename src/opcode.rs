@@ -5195,12 +5195,7 @@ fn collect_nested_has_decl_names(stmts: &[Stmt], out: &mut Vec<Symbol>) {
 /// Precomputed once at plan lowering instead of re-walked on every
 /// registration.
 fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
-    let mut names: Vec<Symbol> = body
-        .iter()
-        .flat_map(|s| match s {
-            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-            other => vec![other],
-        })
+    let mut names: Vec<Symbol> = crate::ast::scope_members(body)
         .filter_map(|stmt| match stmt {
             Stmt::HasDecl {
                 name,
@@ -5267,11 +5262,7 @@ fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
     let mut own_attribute_names = Vec::new();
     let mut used_modules = Vec::new();
     let mut declared_types = Vec::new();
-    let flattened = body.iter().flat_map(|s| match s {
-        Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-        other => vec![other],
-    });
-    for stmt in flattened {
+    for stmt in crate::ast::scope_members(body) {
         match stmt {
             Stmt::HasDecl { name, .. } => own_attribute_names.push(*name),
             Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
@@ -5309,11 +5300,7 @@ fn role_body_is_stub(body: &[Stmt]) -> bool {
 /// `register_role_decl` raises `X::Declaration::OurScopeInRole` from this
 /// fact instead of constructing it inline.
 fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
-    let flattened = body.iter().flat_map(|s| match s {
-        Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-        other => vec![other],
-    });
-    for stmt in flattened {
+    for stmt in crate::ast::scope_members(body) {
         let declaration = match stmt {
             // A `my class`/`my subset`/`my enum`/`my role` inside a role is
             // lexically scoped and private to the role body, which is
@@ -5374,11 +5361,7 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
 /// re-run for a class declared inside a loop or a repeatedly-called sub) to
 /// "once, at compile time".
 fn compile_method_decls(body: &[Stmt]) -> Vec<CompiledMethodDecl> {
-    body.iter()
-        .flat_map(|s| match s {
-            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-            other => vec![other],
-        })
+    crate::ast::scope_members(body)
         .filter_map(|stmt| match stmt {
             Stmt::MethodDecl { .. } => Some(CompiledMethodDecl::from_stmt(stmt)),
             _ => None,
@@ -5583,7 +5566,8 @@ pub(crate) enum ClassBodyOp {
 }
 
 /// Lower a class body into its ordered, typed op mirror (ADR-0019 D6-3a):
-/// `SyntheticBlock`-flatten the top level, classify each statement, then
+/// take the body's scope members ([`crate::ast::scope_members`], keeping a
+/// bind group whole), classify each statement, then
 /// append nested-sub `has` declarations as more `Attr` ops. Since D6-4,
 /// this is the sole source `run_class_body` walks — there is no separate
 /// runtime-side flatten/append pass to mirror any more.
@@ -5594,14 +5578,8 @@ pub(crate) enum ClassBodyOp {
 /// line of its own (see [`CompiledTokenDeclPlan::source_line`]), only the
 /// `SetLine` marker immediately preceding it in the body does.
 pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
-    let mut flattened: Vec<&Stmt> = body
-        .iter()
-        .flat_map(|s| match s {
-            Stmt::SyntheticBlock(inner) if !synthetic_block_needs_atomic_compile(inner) => {
-                inner.iter().collect::<Vec<_>>()
-            }
-            other => vec![other],
-        })
+    let mut flattened: Vec<&Stmt> = crate::ast::scope_members(body)
+        .keep_whole(synthetic_block_needs_atomic_compile)
         .collect();
     collect_nested_has_decl_stmts(body, &mut flattened);
     let mut decl_line: Option<i64> = None;
@@ -5663,7 +5641,7 @@ fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
 /// it). Never descends into a nested `class`/`role`, which owns its own
 /// attribute scope.
 pub(crate) fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-    for s in stmts {
+    for s in crate::ast::scope_members(stmts) {
         match s {
             Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
             Stmt::SubDecl { body, .. } | Stmt::MethodDecl { body, .. } => {
@@ -5679,19 +5657,12 @@ pub(crate) fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec
 }
 
 /// A `has`-attribute scan of one `sub`/`method`/control-flow BODY already
-/// entered by [`collect_nested_has_decl_stmts`]: every direct `HasDecl`
-/// (including one from a flattened `has ($a, $b)` list form's own
-/// `SyntheticBlock` — nothing else has pre-flattened this body, unlike the
-/// class's own top level), plus a further recursive descent via
+/// entered by [`collect_nested_has_decl_stmts`]: every `HasDecl` of the
+/// body's own scope (including one from a `has ($a, $b)` list form's
+/// `SyntheticBlock`), plus a further recursive descent via
 /// [`collect_nested_has_decl_stmts`] for anything nested deeper still.
 fn collect_has_decls_in_scope<'a>(body: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-    for inner in body {
-        match inner {
-            Stmt::HasDecl { .. } => out.push(inner),
-            Stmt::SyntheticBlock(list) => collect_has_decls_in_scope(list, out),
-            _ => {}
-        }
-    }
+    out.extend(crate::ast::scope_members(body).filter(|s| matches!(s, Stmt::HasDecl { .. })));
     collect_nested_has_decl_stmts(body, out);
 }
 
@@ -5699,9 +5670,9 @@ fn collect_has_decls_in_scope<'a>(body: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
 /// enclosing routine's attribute/package scope — a Raku block does not open a
 /// new package — i.e. everything [`collect_nested_has_decl_stmts`] should
 /// look inside without treating it as a `sub`/`method` boundary of its own.
-/// Deliberately excludes `Stmt::SyntheticBlock`: that one is unwrapped
-/// directly by [`collect_has_decls_in_scope`] instead, so it is not a
-/// container this list needs to name.
+/// Deliberately excludes `Stmt::SyntheticBlock`: its callers already look
+/// through it with [`crate::ast::scope_members`], so it is not a container
+/// this list needs to name.
 fn nested_scope_bodies(stmt: &Stmt) -> Vec<&[Stmt]> {
     match stmt {
         Stmt::Block(body)
@@ -5886,16 +5857,15 @@ pub(crate) enum RoleBodyOp {
 }
 
 /// Lower a role body into its ordered, typed op mirror (ADR-0019 D7-4),
-/// matching `walk_role_body`'s own dispatch loop exactly: a single-level
-/// `SyntheticBlock`-flatten (roles have no nested-sub `has` collection —
-/// `walk_role_body`'s own comment confirms it), classifying each statement
-/// the same way the runtime match does.
+/// matching `walk_role_body`'s own dispatch loop exactly: the body's scope
+/// members, with a bind group kept whole as in [`class_body_plan`] (a deferred
+/// statement runs on its own, so a split group loses its bind context; roles
+/// have no nested-sub `has` collection — `walk_role_body`'s own comment
+/// confirms it), classifying each statement the same way the runtime match
+/// does.
 pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
-    body.iter()
-        .flat_map(|s| match s {
-            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-            other => vec![other],
-        })
+    crate::ast::scope_members(body)
+        .keep_whole(synthetic_block_needs_atomic_compile)
         .map(classify_role_body_stmt)
         .collect()
 }
@@ -5998,16 +5968,21 @@ pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind 
     }
 }
 
+/// The plain lexicals a deferred role-body statement declares: a `VarDecl`,
+/// or the ones in a bind group [`role_body_plan`] keeps whole.
+// Cost: O(n), n = number of statements in `stmt`'s group.
 pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
-    match stmt {
-        Stmt::VarDecl {
-            name,
-            is_our: false,
-            is_dynamic: false,
-            ..
-        } => vec![Symbol::intern(name)],
-        _ => Vec::new(),
-    }
+    crate::ast::scope_members(std::slice::from_ref(stmt))
+        .filter_map(|s| match s {
+            Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                ..
+            } => Some(Symbol::intern(name)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -6067,7 +6042,7 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// (ADR-0019 D7-3), one per `DoesDecl` statement in source order; see
     /// [`RoleParentOp`].
     pub(crate) parent_ops: Vec<RoleParentOp>,
-    /// Ordered, typed mirror of the (single-level flattened) role body
+    /// Ordered, typed mirror of the (scope-member flattened) role body
     /// (ADR-0019 D7-4), one op per statement — the sole driver of
     /// `walk_role_body`'s dispatch loop since D9. See [`RoleBodyOp`].
     pub(crate) body_plan: Vec<RoleBodyOp>,

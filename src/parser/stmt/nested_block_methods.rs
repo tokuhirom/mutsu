@@ -97,7 +97,7 @@ fn hoist_in_block(block: &mut [Stmt], outer_routines: &[Symbol], hoisted: &mut V
 /// The names of the `sub`s and `proto`s `block` itself declares (a
 /// `SyntheticBlock` shares its scope), added to `out` once each.
 fn collect_block_routines(block: &[Stmt], out: &mut Vec<Symbol>) {
-    for stmt in block {
+    for stmt in crate::ast::scope_members(block) {
         match stmt {
             Stmt::SubDecl {
                 name,
@@ -108,12 +108,7 @@ fn collect_block_routines(block: &[Stmt], out: &mut Vec<Symbol>) {
                 name,
                 is_method: false,
                 ..
-            } => {
-                if !out.contains(name) {
-                    out.push(*name);
-                }
-            }
-            Stmt::SyntheticBlock(inner) => collect_block_routines(inner, out),
+            } if !out.contains(name) => out.push(*name),
             _ => {}
         }
     }

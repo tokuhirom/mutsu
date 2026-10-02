@@ -505,6 +505,8 @@ mod declaration_plan_tests {
                 proto method p(|) {*}
                 my $will-be-static will leave { 1 } = 1;
                 sub f { has $.w }
+                method g() { if True { has $.v } }
+                my ($p, $q) := (1, 2);
             }
             "#,
         )
@@ -516,43 +518,6 @@ mod declaration_plan_tests {
             .iter()
             .find(|plan| plan.name.as_str() == "A")
             .expect("class A declaration plan");
-
-        // Independently re-derive the flattened statement count (same
-        // transform `class_body_plan` applies) straight from the AST, so
-        // the length check does not hardcode a count sensitive to the
-        // parser's own `SetLine` insertion behavior.
-        let Stmt::ClassDecl { body, .. } = stmts
-            .iter()
-            .find(|s| matches!(s, Stmt::ClassDecl { name, .. } if name.as_str() == "A"))
-            .expect("class A declaration statement")
-        else {
-            unreachable!()
-        };
-        let mut flattened: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
-        fn collect_nested_has<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-            for s in stmts {
-                match s {
-                    Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-                    Stmt::SubDecl { body, .. } => {
-                        for inner in body {
-                            if matches!(inner, Stmt::HasDecl { .. }) {
-                                out.push(inner);
-                            }
-                        }
-                        collect_nested_has(body, out);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        collect_nested_has(body, &mut flattened);
-        assert_eq!(plan_a.body_plan.len(), flattened.len());
 
         // Every `Other` op (the `SetLine` markers and the `my`-lexical
         // statement, matching `declared_static_names`'s own separate
@@ -571,7 +536,7 @@ mod declaration_plan_tests {
             .iter()
             .filter(|op| !matches!(op, ClassBodyOp::Other { .. }))
             .collect();
-        assert_eq!(typed.len(), 9, "typed ops: {typed:?}");
+        assert_eq!(typed.len(), 11, "typed ops: {typed:?}");
         assert!(matches!(
             typed[0],
             ClassBodyOp::Attr { name, .. } if name.as_str() == "x"
@@ -608,10 +573,34 @@ mod declaration_plan_tests {
             typed[7],
             ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "f"
         ));
+        assert!(matches!(typed[8], ClassBodyOp::Method));
+        // The nested `has` are found in a `sub` and in a method's control-flow
+        // block alike (#8441), in source order.
         assert!(matches!(
-            typed[8],
+            typed[9],
             ClassBodyOp::Attr { name, .. } if name.as_str() == "w"
         ));
+        assert!(matches!(
+            typed[10],
+            ClassBodyOp::Attr { name, .. } if name.as_str() == "v"
+        ));
+        // `my ($p, $q) := ...` nests its `MarkBind` group inside the outer
+        // destructuring `SyntheticBlock`: the outer one is looked through, the
+        // bind group stays one `Other` op so it compiles with its context.
+        let bind_groups = plan_a
+            .body_plan
+            .iter()
+            .filter(|op| {
+                matches!(op, ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
+                    if matches!(inner.first(), Some(Stmt::MarkBind)))
+            })
+            .count();
+        assert_eq!(bind_groups, 1);
+        assert!(!plan_a.body_plan.iter().any(|op| matches!(
+            op,
+            ClassBodyOp::Other { raw: Stmt::SyntheticBlock(inner), .. }
+                if !matches!(inner.first(), Some(Stmt::MarkBind))
+        )));
     }
 
     /// ADR-0019 F7 slice 2: `token`/`rule` declarations inside a class body
@@ -849,7 +838,7 @@ mod declaration_plan_tests {
     }
 
     /// ADR-0019 D7-4: a role's `body_plan` is an ordered, typed mirror of
-    /// its (single-level flattened) body, one op per statement
+    /// its body's scope members, one op per statement
     /// `walk_role_body`'s dispatch loop visits — the role-side twin of
     /// D6-3a's class `body_plan`.
     #[test]
@@ -872,26 +861,6 @@ mod declaration_plan_tests {
             .iter()
             .find(|plan| plan.name.as_str() == "R")
             .expect("role R declaration plan");
-
-        // Independently re-derive the flattened statement count (same
-        // single-level transform `role_body_plan` applies), so the length
-        // check does not hardcode a count sensitive to the parser's own
-        // `SetLine` insertion behavior.
-        let Stmt::RoleDecl { body, .. } = stmts
-            .iter()
-            .find(|s| matches!(s, Stmt::RoleDecl { name, .. } if name.as_str() == "R"))
-            .expect("role R declaration statement")
-        else {
-            unreachable!()
-        };
-        let flattened: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
-        assert_eq!(plan_r.body_plan.len(), flattened.len());
 
         // Filtering out `Deferred` ops (the `SetLine` markers and the `say`
         // statement) leaves exactly the typed arms, in source order. The

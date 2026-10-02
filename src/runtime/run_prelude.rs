@@ -132,13 +132,9 @@ impl Interpreter {
     /// (`__our_scoped`, `__lexical_hoist`) so registration can tell them from a
     /// user trait and never tries to apply one as a role.
     pub(super) fn mark_prelude_subs(stmts: &mut [Stmt]) {
-        for stmt in stmts {
-            match stmt {
-                Stmt::SubDecl { custom_traits, .. } => {
-                    custom_traits.push((crate::runtime::PRELUDE_SUB_TRAIT.to_string(), None));
-                }
-                Stmt::SyntheticBlock(inner) => Self::mark_prelude_subs(inner),
-                _ => {}
+        for stmt in crate::ast::scope_members_mut(stmts) {
+            if let Stmt::SubDecl { custom_traits, .. } = stmt {
+                custom_traits.push((crate::runtime::PRELUDE_SUB_TRAIT.to_string(), None));
             }
         }
     }
@@ -149,15 +145,23 @@ impl Interpreter {
     /// Asked of the parsed statements rather than of the source text: a
     /// `source.contains("sub refresh")` check also matches the phrase in a
     /// comment, and a file *documenting* what it exercises then silently lost
-    /// the routine it was testing. Only the top level is considered (descending
-    /// one `SyntheticBlock`, which carries grouped declarations), because that is
-    /// the only scope an injected top-level `our sub` can clash with.
+    /// the routine it was testing. Only the unit's own scope is considered
+    /// (through `SyntheticBlock` groups and a `unit module` wrapper), because
+    /// that is the only scope an injected top-level `our sub` can clash with. A
+    /// `proto sub` declares the name as much as a `sub` does.
+    // Cost: O(n), n = number of statements in the unit's own scope.
     fn declares_toplevel_sub(stmts: &[Stmt], name: &str) -> bool {
-        stmts.iter().any(|s| match s {
-            Stmt::SubDecl { name: n, .. } => n.resolve() == name,
-            Stmt::SyntheticBlock(inner) => Self::declares_toplevel_sub(inner, name),
-            _ => false,
-        })
+        crate::ast::scope_members(stmts)
+            .through_unit_package()
+            .any(|s| match s {
+                Stmt::SubDecl { name: n, .. }
+                | Stmt::ProtoDecl {
+                    name: n,
+                    is_method: false,
+                    ..
+                } => n.resolve() == name,
+                _ => false,
+            })
     }
 
     /// Prepend the builtin `IO::Socket` role when a module/program composes it
@@ -693,5 +697,23 @@ mod tests {
             "preregistration must attach compiled bytecode instead of leaving \
              the first call to compile the body on demand"
         );
+    }
+
+    /// The prelude clash check reads the unit's own scope: through a
+    /// `unit module` wrapper and a `SyntheticBlock` group, never into a block
+    /// (where a routine is a lexical of its own and cannot clash), and a
+    /// `proto sub` declares the name too.
+    #[test]
+    fn declares_toplevel_sub_reads_the_unit_scope() {
+        let declares = |src: &str| {
+            let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("parse");
+            Interpreter::declares_toplevel_sub(&stmts, "refresh")
+        };
+        assert!(declares("sub refresh($x) { $x }"));
+        assert!(declares("unit module Foo; sub refresh($x) { $x }"));
+        assert!(declares("proto sub refresh(|) {*}"));
+        assert!(declares("sub refresh($x) { $x }(1);"));
+        assert!(!declares("{ sub refresh($x) { $x } }"));
+        assert!(!declares("module Foo { sub refresh($x) { $x } }"));
     }
 }

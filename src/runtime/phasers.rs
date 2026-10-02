@@ -500,11 +500,7 @@ fn is_empty_vardecl_init(expr: &Expr) -> bool {
 /// True if a statement declares a variable, either directly (`VarDecl`) or
 /// nested inside a `SyntheticBlock` (as produced by `will <phaser>` traits).
 fn stmt_declares_var(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::VarDecl { .. } => true,
-        Stmt::SyntheticBlock(inner) => inner.iter().any(stmt_declares_var),
-        _ => false,
-    }
+    crate::ast::scope_members(std::slice::from_ref(stmt)).any(|s| matches!(s, Stmt::VarDecl { .. }))
 }
 
 fn stmt_has_phaser_expr(stmt: &Stmt) -> bool {
