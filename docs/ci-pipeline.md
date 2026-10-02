@@ -13,6 +13,10 @@ CI does not invoke `make test`; it runs the steps individually, and **one `build
 
 If you add a new documentation directory, add it to the allowlist in that script, extend its `--self-test` cases, and add it to `bench.yml`'s `paths-ignore`. The reverse direction is enforced for you: `scripts/ci-docs-only.sh --check-inputs` (a `changes`-job step) scans the Makefile and `ci.yml` for every repository path they name and fails if any of them is on the allowlist, so wiring an allowlisted file into the build can no longer make an untested change look like documentation.
 
+## Runner labels are pinned
+
+Every workflow names an explicit runner image (`ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-26`), never a floating `ubuntu-latest` / `macos-latest`. GitHub re-points a `-latest` alias to a new OS image on its own schedule, which changes the toolchain, the glibc the release tarballs link against, the preinstalled apt packages and the core count under an unchanged commit; a red run then looks like a regression in whatever PR was open. Moving to a newer image is a deliberate edit of the pin, reviewed and run through CI like any other change. `make check-runner-pins` (`scripts/check-runner-pins.sh`) rejects a `-latest` label; it runs in the always-on `changes` job, because a PR that edits only a workflow other than `ci.yml` is docs-only and skips `test-check`.
+
 ## Cancelled runs show up as red aggregators
 
 A push to a PR branch cancels the previous commit's in-flight run. The aggregator jobs then see

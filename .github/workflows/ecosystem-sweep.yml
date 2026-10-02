@@ -130,7 +130,7 @@ jobs:
   # Plan the matrix and produce the two things every shard must share: one mutsu
   # binary and one pinned rakudo release.
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       chunks: ${{ steps.plan.outputs.chunks }}
@@ -268,7 +268,7 @@ jobs:
 
   sweep:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A shard of the corpus can legitimately run for hours (its own suites, on
     # both interpreters, with retries). Well under the 6h job ceiling, which is
     # why the corpus fans out across 27 jobs instead of running as one.
@@ -445,7 +445,7 @@ jobs:
     if: >-
       always() && needs.build.result == 'success'
       && needs.sweep.result != 'cancelled' && needs.sweep.result != 'skipped'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       # A pull request opened with the default GITHUB_TOKEN does not start CI --

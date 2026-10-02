@@ -12,7 +12,7 @@ SHELL := /bin/bash
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
 
-# Parallelism for the roast suite. CI runners (GitHub ubuntu-latest) have 4
+# Parallelism for the roast suite. CI runners (GitHub ubuntu-24.04) have 4
 # cores, so -j4 is the default. Going higher oversubscribes the CPU and makes
 # the timing-sensitive S17 concurrency tests (scheduler/promise/supply) flake
 # on their wall-clock assertions, so do not raise this above the core count.
@@ -60,7 +60,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
 # and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-bench-det check-prims check-dev check-adr
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-bench-det check-prims check-dev check-adr check-runner-pins
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -174,6 +174,14 @@ check-dev:
 check-adr:
 	scripts/adr.sh --self-test
 	scripts/adr.sh check
+
+# .github/workflows: every runner label names an OS version, never a floating
+# `*-latest` alias that GitHub re-points to a new image under an unchanged
+# commit. CI runs it in the always-on `changes` job, because a PR that edits
+# only a non-ci.yml workflow is docs-only and skips `test-check`.
+check-runner-pins:
+	scripts/check-runner-pins.sh --self-test
+	scripts/check-runner-pins.sh
 
 adr-index:
 	@scripts/adr.sh index
