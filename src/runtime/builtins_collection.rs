@@ -182,8 +182,9 @@ impl Interpreter {
                         insert_value(item, &mut elems, &mut original_keys);
                     }
                 }
-                // Hashes are decomposed into their pairs
-                ValueView::Hash(map) => {
+                // A bare hash is decomposed into its pairs; an itemized one
+                // (`$(%h)`, `%h.item`) is a single element, like `$[...]` above
+                ValueView::Hash(map) if !arg.hash_is_itemized() => {
                     for (k, v) in map.iter() {
                         // ADR-0021 I2: data-minted pairs default positional.
                         let pair = Value::value_pair(Value::str(k.clone()), v.clone());
@@ -287,8 +288,9 @@ impl Interpreter {
                         add_item(&mut counts, &mut original_keys, item);
                     }
                 }
-                // Hashes are flattened into their pairs (each pair is a single element)
-                ValueView::Hash(map) => {
+                // A bare hash is flattened into its pairs (each pair is a single
+                // element); an itemized one is a single element
+                ValueView::Hash(map) if !arg.hash_is_itemized() => {
                     for (k, v) in map.iter() {
                         // ADR-0021 I2: data-minted pairs default positional.
                         let pair = Value::value_pair(Value::str(k.clone()), v.clone());
@@ -347,8 +349,9 @@ impl Interpreter {
                         insert_value(item, &mut weights, &mut original_keys);
                     }
                 }
-                // Hashes are flattened into their pairs; each pair becomes a key
-                ValueView::Hash(map) => {
+                // A bare hash is flattened into its pairs (each pair becomes a key);
+                // an itemized one is a single element
+                ValueView::Hash(map) if !arg.hash_is_itemized() => {
                     for (k, v) in map.iter() {
                         // ADR-0021 I2: data-minted pairs default positional.
                         let pair = Value::value_pair(Value::str(k.clone()), v.clone());
