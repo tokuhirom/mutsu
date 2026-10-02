@@ -9,4 +9,4 @@ matches a grapheme of several codepoints. The class's other items (`\w`,
 `\s`, `<:L>`, ...) still test its base character. So `<-[a..z]>` matches
 `x́`, `<[\w]>` still matches it, and `<[a..z\s]>` does not. The rule applies to
 plain classes and to class arithmetic (`<-[\w] + [x]>`), and the scan
-prefilter's first-character set now admits such clusters (#10748).
+prefilter now always offers a position that starts such a cluster (#10748).

@@ -182,15 +182,6 @@ fn narrow_by_negatives(an: &mut Analyzer, set: &mut FirstSet, negative: &[ClassI
         if is_name_regex_item(item) {
             continue;
         }
-        // An enumerated character or range never rejects a grapheme of
-        // several codepoints (`"x\x[301]"` is not `x`), and a scan position
-        // is tested by its leading codepoint only, so it proves nothing.
-        if matches!(
-            item,
-            ClassItem::Char(_) | ClassItem::Range(..) | ClassItem::Grapheme(_)
-        ) {
-            continue;
-        }
         if let ClassItem::NamedBuiltin(name) = item {
             let Some(interp) = an.interp.as_deref_mut() else {
                 continue;
