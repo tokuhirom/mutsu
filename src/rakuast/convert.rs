@@ -1301,33 +1301,32 @@ fn var_declaration(
     })
 }
 
-/// A `Name.from-identifier("<s>")` node.
+/// The `Name` for an identifier. A `::`-qualified one (`A::B`) is stored as
+/// simple name parts, which Rakudo renders as
+/// `Name.from-identifier-parts("A","B")` — for a declaration's name, a type,
+/// a call or a regex subrule alike (measured on 2026.09); retaining one opaque
+/// `A::B` string would lose observable RakuAST structure. Anything else,
+/// including an operator name that merely contains `::` (`infix:<::=>`),
+/// stays one `Name.from-identifier("<s>")` string.
 fn name_from_identifier(s: &str) -> RakuAstNode {
+    let mut segments = name_parts::identifier_segments(s);
+    let qualified = segments.clone().nth(1).is_some()
+        && segments.all(|seg| {
+            !seg.is_empty()
+                && seg
+                    .chars()
+                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+        });
+    if qualified {
+        return name_parts::name_from_parts(
+            name_parts::identifier_segments(s)
+                .map(name_parts::simple_part)
+                .collect(),
+        );
+    }
     RakuAstNode {
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str(s.to_string()))],
-    }
-}
-
-/// A qualified identifier is represented by simple name-part nodes. Rakudo's
-/// renderer exposes the segment boundary through
-/// `Name.from-identifier-parts(...)`, so retaining one opaque `G::foo` string
-/// would lose observable RakuAST structure.
-fn name_from_identifier_parts(s: &str) -> RakuAstNode {
-    name_parts::name_from_parts(
-        name_parts::identifier_segments(s)
-            .map(name_parts::simple_part)
-            .collect(),
-    )
-}
-
-/// The `Name` for a possibly qualified identifier: `from-identifier` for a
-/// plain one, the segmented parts for a `::`-qualified one.
-fn name_from_possibly_qualified(name: &str) -> RakuAstNode {
-    if name_parts::identifier_segments(name).nth(1).is_some() {
-        name_from_identifier_parts(name)
-    } else {
-        name_from_identifier(name)
     }
 }
 
@@ -2485,7 +2484,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             args,
             ..
         } => {
-            let name_node = name_from_possibly_qualified(name);
+            let name_node = name_from_identifier(name);
             let mut fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
@@ -2510,7 +2509,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             capturing,
             args,
         } => {
-            let name_node = name_from_possibly_qualified(name);
+            let name_node = name_from_identifier(name);
             let mut assertion_fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
