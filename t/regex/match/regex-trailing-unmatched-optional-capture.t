@@ -4,7 +4,7 @@ use Test;
 # its index, but raku's capture list only extends to the last bound slot: a
 # trailing unmatched optional is not an element (#10650).
 
-plan 16;
+plan 20;
 
 {
     my $m = "12" ~~ / (\d) (y)? /;
@@ -40,4 +40,15 @@ is ("aa" ~~ / [ (a) (b)? ]+ /).list.elems, 2, 'a zero-iteration quantified slot 
     my @seen;
     "1,2" ~~ / [ (\d) ] +% ',' [ (y)? { @seen.push: $/.list.elems } ] /;
     is @seen[*-1], 1, 'trailing (y)? after a quantifier is not listed mid-match';
+}
+
+# `$N` for a dropped trailing slot is undefined, not the empty string.
+{
+    "1" ~~ /^ (\d+) ["-" [(\d+) || ("*")]]? $/;
+    nok $1.defined, '$1 of a dropped trailing slot is undefined';
+    is ($1 // "none"), "none", '... so // falls through';
+    "1-3" ~~ /^ (\d+) ["-" [(\d+) || ("*")]]? $/;
+    is ~$1, "3", '$1 bound when the optional group matched';
+    "2" ~~ /^ (\d+) ["-" (\d+)]? $/;
+    nok $1.defined, 'a stale $1 from the previous match is cleared';
 }

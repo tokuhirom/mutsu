@@ -1048,9 +1048,12 @@ impl Interpreter {
                 if let Some(mut captures) = match_result {
                     // Reset stale numeric/named capture vars from any previous match.
                     self.reset_capture_env_vars();
-                    // Set positional captures as strings first (needed by code blocks)
+                    // Set positional captures as strings first (needed by code blocks).
+                    // An unbound slot (alternation padding, unmatched `(x)?`) has
+                    // no text: it stays Nil, and the Match upgrade below may never
+                    // visit it once trailing unbound slots are dropped.
                     for (i, v) in captures.positional.iter().enumerate() {
-                        if v.alternation_padding {
+                        if v.nil {
                             continue;
                         }
                         self.env.insert_sym(
