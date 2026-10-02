@@ -437,6 +437,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             is_built: None,
             unknown_traits: Vec::new(),
             default_is_bind,
+            default_is_seed: false,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt).map(Some);

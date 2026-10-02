@@ -372,6 +372,23 @@ impl Interpreter {
                 let value = Self::nqp_attr_value(obj, &name);
                 Ok(super::nqp_attr::NqpAttrConv::of_op(op).read(value))
             }
+            // nqp::attrinited($obj, $class, '$!name'): whether the attribute
+            // holds something a store or a read put there, rather than only
+            // the seed construction gave it (ADR-0121 D4).
+            // Cost: O(1).
+            "attrinited" => {
+                let nil = Value::NIL;
+                let obj = args.first().unwrap_or(&nil);
+                let name = args
+                    .get(2)
+                    .map(|v| v.string_value_cow())
+                    .unwrap_or_default();
+                Ok(Value::int(i64::from(Self::nqp_attr_inited(
+                    obj,
+                    args.get(1),
+                    &name,
+                ))))
+            }
             // nqp::setelems($buf, $n): resize a buffer to `$n` elements, the
             // extra ones zero. `NativeHelpers::Blob`'s `blob-allocate` is
             // `blob.new` followed by this, so a `Buf` out-parameter of a native
@@ -494,6 +511,32 @@ impl Interpreter {
             .unwrap_or(name)
     }
 
+    /// `nqp::attrinited`. An instance's attribute is resolved the way a
+    /// `$!name` access in a method of `class` resolves it (the class-qualified
+    /// private key first, then the bare and sigil-prefixed keys) and answers
+    /// from its slot's seed bit ([`crate::value::AttrMap::is_inited`]). Any
+    /// other receiver has no seeded slots: an attribute `nqp::getattr` can
+    /// read counts as initialized.
+    // Cost: O(1), a few attribute-map probes.
+    pub(super) fn nqp_attr_inited(obj: &Value, class: Option<&Value>, name: &str) -> bool {
+        let Some(attributes) = Self::self_instance_attrs(obj) else {
+            return Self::nqp_attr_value(obj, name).is_some();
+        };
+        let bare_str = Self::nqp_attr_bare(name);
+        let sigil = crate::value::attr_twigil_sigil(name).unwrap_or('$');
+        let owner = class.and_then(|c| match c.view() {
+            ValueView::Package(sym) => Some(sym),
+            _ => None,
+        });
+        let map = attributes.as_map();
+        let key = Symbol::lookup(bare_str)
+            .and_then(|bare| {
+                Self::attr_key_in_map(owner, bare, bare_str != name, sigil, &map)
+            })
+            .or_else(|| Symbol::lookup(name).filter(|key| map.contains_key(*key)));
+        key.is_some_and(|key| map.is_inited(key))
+    }
+
     pub(super) fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
         // `nqp::getattr($map, Map, '$!storage')` reaches for the hash a Map
         // wraps, so that nqp's bindkey/deletekey can build it in place. In
@@ -563,8 +606,8 @@ impl Interpreter {
             return Some(storage.clone());
         }
         attrs
-            .get(bare)
-            .or_else(|| if bare == name { None } else { attrs.get(name) })
+            .get_vivify(bare)
+            .or_else(|| if bare == name { None } else { attrs.get_vivify(name) })
             .cloned()
     }
 }

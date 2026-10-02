@@ -498,6 +498,9 @@ pub(crate) struct CompiledAttrDecl {
     /// registration path stores the right-hand container itself instead of a
     /// copy. See `Stmt::HasDecl::default_is_bind`.
     pub(crate) default_is_bind: bool,
+    /// `default` is the parser's synthesized seed, not a written initializer.
+    /// See `Stmt::HasDecl::default_is_seed`.
+    pub(crate) default_is_seed: bool,
     /// The line the `has` keyword sits on, filled in by the class-body walk
     /// (`Compiler::compile_class_attr_decls`) that tracks `Stmt::SetLine`
     /// markers as it visits each declaration -- `from_stmt` itself has no
@@ -543,6 +546,7 @@ impl CompiledAttrDecl {
             is_built,
             unknown_traits,
             default_is_bind,
+            default_is_seed,
         } = stmt
         else {
             unreachable!("CompiledAttrDecl::from_stmt called on a non-HasDecl statement");
@@ -582,6 +586,7 @@ impl CompiledAttrDecl {
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
+            default_is_seed: *default_is_seed,
             decl_line: None,
         }
     }

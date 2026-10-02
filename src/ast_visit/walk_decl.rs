@@ -68,6 +68,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             is_built: _,
             unknown_traits,
             default_is_bind: _,
+            default_is_seed: _,
         } => {
             v.visit_name(name.as_str(), NameKind::Attribute);
             for e in [default, is_default].into_iter().flatten() {

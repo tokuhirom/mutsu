@@ -235,12 +235,12 @@ impl Interpreter {
             let attrs = attributes.as_map();
             if !attrs.contains_key(crate::value::match_view::cursor_match_marker()) {
                 return attrs
-                    .get(name.read_key)
+                    .get_vivify(name.read_key)
                     .or_else(|| {
                         if name.read_key == name.name {
                             None
                         } else {
-                            attrs.get(name.name)
+                            attrs.get_vivify(name.name)
                         }
                     })
                     .cloned();

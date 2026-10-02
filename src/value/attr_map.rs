@@ -24,6 +24,7 @@ use crate::value::ValueMap;
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Anything usable as an attribute key. `Symbol` is the native (hot) form; the
 /// string forms intern on the fly for cold call sites.
@@ -260,6 +261,94 @@ pub(crate) struct AttrMap {
     layout: Option<Arc<ClassLayout>>,
     slots: Vec<Option<Value>>,
     extra: FxHashMap<Symbol, Value>,
+    /// The declared slots that hold only what construction seeded them with
+    /// and that nothing has stored into or read since (`nqp::attrinited`,
+    /// ADR-0121 D4). See [`PristineSlots`].
+    pristine: PristineSlots,
+}
+
+/// One bit per declared slot: set while the slot holds only the value
+/// construction seeded it with (`has $.x` with no initializer and no
+/// argument, an empty `@`/`%`, every slot of an `nqp::create`d object), and
+/// cleared for good by the first store into the slot or the first user-level
+/// read of it.
+///
+/// That is rakudo's notion of an initialized attribute. MoarVM leaves such a
+/// slot null and vivifies its container on the first `getattr`, so
+/// `nqp::attrinited` is false exactly until something stores into the slot
+/// or reads it. mutsu seeds the slot eagerly (every reader sees the
+/// vivified value), so the "still null" state is kept on the side here.
+///
+/// A read only holds the map's read lock, so the bits are atomics: clearing
+/// one is a relaxed `fetch_and`, taken only when the bit is still set.
+/// Slots past the first 64 live in `hi`, allocated only for a class that
+/// declares that many attributes.
+#[derive(Debug, Default)]
+struct PristineSlots {
+    lo: AtomicU64,
+    hi: Option<Box<[AtomicU64]>>,
+}
+
+impl Clone for PristineSlots {
+    fn clone(&self) -> Self {
+        Self {
+            lo: AtomicU64::new(self.lo.load(Ordering::Relaxed)),
+            hi: self.hi.as_ref().map(|hi| {
+                hi.iter()
+                    .map(|w| AtomicU64::new(w.load(Ordering::Relaxed)))
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl PristineSlots {
+    /// The word holding `slot`'s bit and the bit's mask, `None` for a slot
+    /// past what `hi` was sized for (never set, so never pristine).
+    #[inline]
+    fn word(&self, slot: usize) -> Option<(&AtomicU64, u64)> {
+        let mask = 1u64 << (slot % 64);
+        match slot / 64 {
+            0 => Some((&self.lo, mask)),
+            w => self.hi.as_ref()?.get(w - 1).map(|word| (word, mask)),
+        }
+    }
+
+    // Cost: O(1); O(s / 64) the first time a slot past 64 is set, s = slots.
+    fn set(&mut self, slot: usize, slots: usize) {
+        if slot >= 64 && self.hi.is_none() {
+            self.hi = Some((0..slots.div_ceil(64) - 1).map(|_| AtomicU64::new(0)).collect());
+        }
+        if let Some((word, mask)) = self.word(slot) {
+            word.fetch_or(mask, Ordering::Relaxed);
+        }
+    }
+
+    // Cost: O(1).
+    #[inline]
+    fn get(&self, slot: usize) -> bool {
+        self.word(slot)
+            .is_some_and(|(word, mask)| word.load(Ordering::Relaxed) & mask != 0)
+    }
+
+    /// Clear `slot`'s bit. Only a load when it is already clear, which is the
+    /// state of nearly every slot of nearly every object.
+    // Cost: O(1).
+    #[inline]
+    fn clear(&self, slot: usize) {
+        if let Some((word, mask)) = self.word(slot)
+            && word.load(Ordering::Relaxed) & mask != 0
+        {
+            word.fetch_and(!mask, Ordering::Relaxed);
+        }
+    }
+
+    // Cost: O(s / 64), s = slots.
+    fn clear_all(&mut self) {
+        *self.lo.get_mut() = 0;
+        self.hi = None;
+    }
+
 }
 
 impl PartialEq for AttrMap {
@@ -303,6 +392,93 @@ impl AttrMap {
             slots: vec![None; layout.len()],
             layout: Some(layout),
             extra: FxHashMap::default(),
+            pristine: PristineSlots::default(),
+        }
+    }
+
+    /// Store `value` as `key`'s construction seed: the value an attribute
+    /// with no initializer and no argument starts with. Until something
+    /// stores into it or reads it, the slot reports as not initialized
+    /// ([`Self::is_inited`]). A key outside the layout is stored as by
+    /// [`Self::insert`].
+    // Cost: O(1).
+    pub(crate) fn insert_seed<K: AttrKey>(&mut self, key: K, value: Value) {
+        let sym = key.into_symbol();
+        match self.slot_index(sym) {
+            Some(slot) => {
+                self.slots[slot] = Some(value);
+                let len = self.slots.len();
+                self.pristine.set(slot, len);
+            }
+            None => {
+                self.extra.insert(sym, value);
+            }
+        }
+    }
+
+    /// Mark every present declared slot as holding only its seed: what an
+    /// `nqp::create`d object, which runs no initializer at all, starts with.
+    // Cost: O(s), s = declared slots.
+    pub(crate) fn mark_all_seeded(&mut self) {
+        let len = self.slots.len();
+        for slot in 0..len {
+            if self.slots[slot].is_some() {
+                self.pristine.set(slot, len);
+            }
+        }
+    }
+
+    /// `nqp::attrinited`: whether `key` is present and something has stored
+    /// into it or read it since construction seeded it (see
+    /// [`PristineSlots`]). An undeclared key counts as initialized when
+    /// present: it only exists because something stored it.
+    // Cost: O(1).
+    pub(crate) fn is_inited<K: AttrKey>(&self, key: K) -> bool {
+        let Some(sym) = key.lookup_symbol() else {
+            return false;
+        };
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot].is_some() && !self.pristine.get(slot),
+            None => self.extra.contains_key(&sym),
+        }
+    }
+
+    /// [`Self::get`] for a user-level read of the attribute (`$!x` in a
+    /// method, an accessor, `nqp::getattr`): like MoarVM's vivification of a
+    /// null slot on `getattr`, the read makes the attribute initialized.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn get_vivify<K: AttrKey>(&self, key: K) -> Option<&Value> {
+        let sym = key.lookup_symbol()?;
+        match self.slot_index(sym) {
+            Some(slot) => self.slot_vivify(slot),
+            None => self.extra.get(&sym),
+        }
+    }
+
+    /// [`Self::slot`] for a user-level read; see [`Self::get_vivify`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn slot_vivify(&self, slot: usize) -> Option<&Value> {
+        let value = self.slots.get(slot)?.as_ref()?;
+        self.pristine.clear(slot);
+        Some(value)
+    }
+
+    /// Store `value` under `key` as a transformation of what the slot
+    /// already holds (a coercion, element-type tagging of a seeded container)
+    /// rather than a new store: a seeded slot stays seeded. A construction
+    /// pass that rewrites every attribute uses this, so it does not erase the
+    /// difference between an attribute that was given a value and one that
+    /// was not.
+    // Cost: O(1).
+    pub(crate) fn rewrite<K: AttrKey>(&mut self, key: K, value: Value) {
+        let sym = key.into_symbol();
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot] = Some(value),
+            None => {
+                self.extra.insert(sym, value);
+            }
         }
     }
 
@@ -329,6 +505,7 @@ impl AttrMap {
     /// Mutable form of [`Self::slot`].
     #[inline]
     pub(crate) fn slot_mut(&mut self, slot: usize) -> Option<&mut Value> {
+        self.pristine.clear(slot);
         self.slots.get_mut(slot).and_then(Option::as_mut)
     }
 
@@ -362,7 +539,10 @@ impl AttrMap {
     pub(crate) fn get_mut<K: AttrKey>(&mut self, key: K) -> Option<&mut Value> {
         let sym = key.lookup_symbol()?;
         match self.slot_index(sym) {
-            Some(slot) => self.slots[slot].as_mut(),
+            Some(slot) => {
+                self.pristine.clear(slot);
+                self.slots[slot].as_mut()
+            }
             None => self.extra.get_mut(&sym),
         }
     }
@@ -376,7 +556,10 @@ impl AttrMap {
     pub(crate) fn insert<K: AttrKey>(&mut self, key: K, value: Value) -> Option<Value> {
         let sym = key.into_symbol();
         match self.slot_index(sym) {
-            Some(slot) => self.slots[slot].replace(value),
+            Some(slot) => {
+                self.pristine.clear(slot);
+                self.slots[slot].replace(value)
+            }
             None => self.extra.insert(sym, value),
         }
     }
@@ -385,7 +568,10 @@ impl AttrMap {
     pub(crate) fn remove<K: AttrKey>(&mut self, key: K) -> Option<Value> {
         let sym = key.lookup_symbol()?;
         match self.slot_index(sym) {
-            Some(slot) => self.slots[slot].take(),
+            Some(slot) => {
+                self.pristine.clear(slot);
+                self.slots[slot].take()
+            }
             None => self.extra.remove(&sym),
         }
     }
@@ -394,7 +580,10 @@ impl AttrMap {
     pub(crate) fn entry<K: AttrKey>(&mut self, key: K) -> AttrEntry<'_> {
         let key = key.into_symbol();
         match self.slot_index(key) {
-            Some(slot) => AttrEntry::Slot(&mut self.slots[slot]),
+            Some(slot) => {
+                self.pristine.clear(slot);
+                AttrEntry::Slot(&mut self.slots[slot])
+            }
             None => AttrEntry::Extra(self.extra.entry(key)),
         }
     }
@@ -413,6 +602,7 @@ impl AttrMap {
     pub(crate) fn clear(&mut self) {
         self.slots.iter_mut().for_each(|v| *v = None);
         self.extra.clear();
+        self.pristine.clear_all();
     }
 
     /// The present attributes: declared slots in layout order, then the

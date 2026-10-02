@@ -1090,6 +1090,11 @@ pub(crate) struct ClassAttributeDef {
     /// allocation per attribute per clone (#10090).
     pub(crate) source_line: Option<i64>,
     pub(crate) source_file: Option<crate::symbol::Symbol>,
+    /// `default` is the seed the parser synthesizes for a typed scalar with
+    /// no initializer (`has Int $.x`), not one the source wrote: construction
+    /// stores it as the slot's seed, which `nqp::attrinited` reports as not
+    /// initialized (ADR-0121 D4).
+    pub(crate) default_is_seed: bool,
 }
 
 /// Attribute declarations with the same bare name but different sigils are

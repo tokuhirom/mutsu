@@ -76,6 +76,7 @@ fn has_decl_list(
         } else {
             None
         };
+        let default_is_seed = default.is_some();
         stmts.push(Stmt::HasDecl {
             name: Symbol::intern(&name),
             is_public,
@@ -100,6 +101,7 @@ fn has_decl_list(
             // `has @.x := ...` is refused outright, so a `has` declaration's
             // initializer is always an assignment.
             default_is_bind: false,
+            default_is_seed,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -1167,12 +1169,14 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     // Auto-default: typed scalar attribute with no explicit default → use type object
     // Native types (int, atomicint, num, str, etc.) get zero/empty defaults.
+    let mut default_is_seed = false;
     if !has_explicit_default
         && is_required.is_none()
         && sigil == b'$'
         && let Some(ref tc) = type_constraint
     {
         default = Some(auto_default_expr_for_type(tc));
+        default_is_seed = true;
     }
 
     // A shaped array attribute (`has @.a[3, 3]`) still builds its container at
@@ -1278,6 +1282,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         unknown_traits,
         // As above: only the `my`/`our` class-level spellings can bind.
         default_is_bind: false,
+        default_is_seed,
     };
     // Splice `has $!g //= EXPR;` into `has $!g; $!g //= EXPR;` (#8441 gap 2)
     // — the declared variable's own read expression, matching exactly how

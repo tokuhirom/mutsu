@@ -1632,6 +1632,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // A typed attribute carries an implicit `BareWord(<TypeName>)` default
         // in the internal AST; the parser plants it, and the converter skips it
         // on the way out, so re-plant it here to keep the two sides symmetric.
+        default_is_seed: initializer.is_none() && type_constraint.is_some(),
         default: initializer
             .or_else(|| type_constraint.as_ref().map(|t| Expr::BareWord(t.clone()))),
         handles: Vec::new(),
