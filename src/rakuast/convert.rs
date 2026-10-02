@@ -58,6 +58,9 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
+/// The parser's `custom_traits` marker for an `our sub`.
+pub(super) const OUR_SCOPED: &str = "__our_scoped";
+
 /// What a bareword naming something the same compilation unit declared means.
 ///
 /// raku resolves such a name at parse time, so `class C { }; C.new` renders `C`
@@ -734,15 +737,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || associativity.is_some()
                 || precedence_trait.is_some()
                 || !signature_alternates.is_empty()
-                || *is_rw
-                || *is_raw
-                || *is_export
-                || !export_tags.is_empty()
+                || *is_export != !export_tags.is_empty()
                 || *is_test_assertion
                 || *supersede
                 || custom_traits
                     .iter()
-                    .any(|(t, _)| !is_return_spelling_marker(t))
+                    .any(|(t, _)| !is_return_spelling_marker(t) && t != OUR_SCOPED)
             {
                 return Err(unsupported("sub with traits / multi / export"));
             }
@@ -758,10 +758,21 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
-            if *multi {
-                // `multiness` precedes `name` in raku's field order.
+            routine_traits::add_flags(
+                &mut node,
+                *multi,
+                false,
+                &routine_traits::IsTraits {
+                    is_rw: *is_rw,
+                    is_raw: *is_raw,
+                    export_tags: export_tags.clone(),
+                },
+            )?;
+            if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
+                // `scope => "our"` leads the node; `my` is the default scope
+                // and renders no field.
                 node.fields
-                    .insert(0, leaf_field(Some("multiness"), Value::str_from("multi")));
+                    .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
             }
             Ok(Some(statement_expression(node)))
         }
@@ -783,6 +794,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             deprecated_message,
             handles,
             custom_traits,
+            is_export,
+            export_tags,
             ..
         } => {
             // Plain `method NAME (params) { body }` and `submethod NAME (…) { … }`,
@@ -801,6 +814,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // submethod that flag carries no RakuAST shape of its own.
             let declared_my = *is_my && !*is_submethod;
             if name_expr.is_some()
+                || *is_export != !export_tags.is_empty()
                 || *is_our
                 || declared_my
                 || *our_variable_form
@@ -831,13 +845,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
-            routine_traits::add_method_flags(
+            routine_traits::add_flags(
                 &mut node,
                 *multi,
                 *is_private,
-                routine_traits::IsTraits {
+                &routine_traits::IsTraits {
                     is_rw: *is_rw,
                     is_raw: *is_raw,
+                    export_tags: export_tags.clone(),
                 },
             )?;
             Ok(Some(statement_expression(node)))

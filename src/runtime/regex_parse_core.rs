@@ -616,35 +616,29 @@ impl Interpreter {
         crate::runtime::regex::regex_arg_purity::note_opaque_read();
     }
 
-    /// The call spelling a sigil alias on `<$var>` (`$<a>=<$var>`,
-    /// `@<a>=<$var>`, `$0=<$var>`) becomes, else `None`.
+    /// The `<alias=$var>` spelling of a scalar sigil alias (`$<alias>=<$var>`)
+    /// on a call of a Regex-valued variable, else `None`.
     ///
-    /// Rakudo's `subrule_alias` renames a subrule call under any sigil alias,
-    /// so the alias names the called regex's own Match, with its nested
-    /// captures. The plain `<$var>` path wraps the parsed regex in a
-    /// capture-isolated group, which discards those captures and leaves the
-    /// alias only the matched span. So:
-    ///
-    /// - a Regex-valued variable becomes the non-capturing call `<&$var>`, and
-    ///   the alias stays on the token, which keeps its sigil (a forced List,
-    ///   a positional slot) and is filed by both engines alike;
-    /// - a Str-valued variable under a scalar named alias becomes `<a=$var>`,
-    ///   whose match-time lookup compiles the string as a pattern
-    ///   (`lookup_lexical_regex`). `<&$var>` cannot serve it: rakudo refuses
-    ///   to call a Str there.
-    ///
-    /// The returned flag says whether the alias moved into the call (`true`,
-    /// the `<a=$var>` form) or stays on the token.
+    /// Rakudo's `subrule_alias` renames a subrule call under a sigil alias, so
+    /// `$<a>=<$re>` is `<a=$re>`: `a` holds the called regex's own Match, with
+    /// its nested captures. The plain `<$var>` path wraps the parsed regex in a
+    /// capture-isolated group, which discards those captures, so the alias would
+    /// only see the matched span. A numbered alias (`$0=`) is positional, and a
+    /// non-Regex value (a Str pattern) keeps the textual path, which the
+    /// match-time lookup of `<a=$var>` does not serve.
     // Cost: O(1) env lookup; the call spelling is not rescanned.
-    fn sigil_aliased_regex_call(
-        &self,
-        alias: &str,
-        alias_is_array: bool,
-        call: &str,
-    ) -> Option<(String, bool)> {
+    fn sigil_aliased_regex_call(&self, alias: &str, call: &str) -> Option<String> {
         let call = call.trim();
         let var_name = call.strip_prefix('$')?;
-        if !Self::is_interpolated_alias_target(call) {
+        if !Self::is_interpolated_alias_target(call)
+            || !alias
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            || !alias
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+        {
             return None;
         }
         // Reads the variable's VALUE at parse time, like the `<$var>` arm.
@@ -655,24 +649,11 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.env.get(&format!("${var_name}")).cloned())?
             .into_deref();
-        match value.view() {
-            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
-                Some((format!("&{call}"), false))
-            }
-            ValueView::Str(_)
-                if !alias_is_array
-                    && alias
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_alphabetic() || c == '_')
-                    && alias
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'') =>
-            {
-                Some((format!("{alias}={call}"), true))
-            }
-            _ => None,
-        }
+        matches!(
+            value.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        )
+        .then(|| format!("{alias}={call}"))
     }
 
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
@@ -3397,28 +3378,22 @@ impl Interpreter {
                                             }
                                         }
                                     }
-                                    // A sigil alias on a call of a variable (`$<a>=<$re>`,
-                                    // `@<a>=<$re>`, `$0=<$re>`) names the called regex's
-                                    // Match: see `sigil_aliased_regex_call`.
+                                    // A scalar sigil alias (`$<a>=<$re>`) on a call of a
+                                    // Regex-valued variable is `<a=$re>`: see
+                                    // `sigil_aliased_regex_call`.
+                                    // TODO: `@<a>=<$re>` (a forced List) stays on the
+                                    // isolated path: the compiled matcher only files an
+                                    // alias that sits on the token, not one on the
+                                    // subrule's own spec, so the list marking is lost.
                                     if mode != RegexParseMode::Validate
                                         && !pending_named_capture_is_angle_alias
+                                        && !pending_named_capture_is_array
                                         && let Some(alias) = pending_named_capture.as_deref()
-                                        && let Some((call, alias_moved)) = self
-                                            .sigil_aliased_regex_call(
-                                                alias,
-                                                pending_named_capture_is_array,
-                                                &name,
-                                            )
+                                        && let Some(call) =
+                                            self.sigil_aliased_regex_call(alias, &name)
                                     {
                                         name = call;
-                                        if alias_moved {
-                                            pending_named_capture = None;
-                                        } else {
-                                            // The alias renames the call, so a
-                                            // quantifier repeats it per iteration
-                                            // and `@<a>=` lists it, as for `$<a>=<rule>`.
-                                            aliased_subrule_call = true;
-                                        }
+                                        pending_named_capture = None;
                                     }
                                     // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
                                     // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>

@@ -600,7 +600,6 @@ delegated to CI per the project's standing policy, not run locally.
   `news/2026-08/is-raw-param-container-identity.md`.
 - **Probe `X`** needs its own design (see the ticket above); it is not a
   small extension of D1-D3.
-- The §8 note is done: `docs/captured-outer-cell-sharing.md` §11 describes
-  the generalized container-capture edge (D1-D4, the two false-positive
-  exclusions, and how it relates to the write-driven cell detectors)
-  ([#9931](https://github.com/tokuhirom/mutsu/issues/9931)).
+- The §8 note (add a `docs/captured-outer-cell-sharing.md` section on the
+  generalized container-capture edge) is still open — left for a follow-up
+  docs-only pass rather than expanding this already-large PR further.

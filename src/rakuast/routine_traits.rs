@@ -1,5 +1,5 @@
-//! A method's `multi`, `!private`, `is rw` and `is raw` across the RakuAST
-//! boundary.
+//! A routine's `multi`, `!private`, `is rw`, `is raw` and `is export` across
+//! the RakuAST boundary.
 //!
 //! Measured against rakudo 2026.09, `multi method !p() is rw { … }` is
 //!
@@ -8,54 +8,195 @@
 //!        traits => (Trait::Is(name => Name.from-identifier("rw")),), body => …)
 //! ```
 //!
+//! and `sub f() is export(:a, :b) { … }` is a `Sub` whose trait carries
+//! `argument => Circumfix::Parentheses(SemiList(Statement::Expression(
+//! ApplyListInfix(",", ColonPair::True("a"), ColonPair::True("b")))))`; a single
+//! tag is the bare `ColonPair::True`, and a bare `is export` has no argument.
+//!
 //! `multiness` and `private` precede `name`; a trait sits in `traits` before
-//! `body`. The parser keeps `is rw` / `is raw` as flags beside the return-type
-//! trait, not in source order, so a method carrying more than one of
-//! `is rw`, `is raw` and `returns`/`of` is refused rather than rendered in an
-//! invented order.
+//! `body`. The parser keeps these traits as flags beside the return-type trait,
+//! not in source order, so a routine carrying more than one of them is refused
+//! rather than rendered in an invented order. The parser records a bare
+//! `is export` as the `DEFAULT` tag, which renders bare: `is export(:DEFAULT)`
+//! means the same and comes back in that spelling.
 
-use super::convert::{leaf_field, name_from_identifier, node_field, unsupported};
+use super::convert::{
+    leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
+};
+use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
-/// The flag-valued `is` traits a method can carry.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+/// The tag a bare `is export` exports under.
+const DEFAULT_TAG: &str = "DEFAULT";
+
+/// The flag-valued `is` traits a routine can carry.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(super) struct IsTraits {
     pub(super) is_rw: bool,
     pub(super) is_raw: bool,
+    /// `is export`'s tags; empty when not exported.
+    pub(super) export_tags: Vec<String>,
 }
 
 impl IsTraits {
-    /// The trait name of `Trait::Is(name => …)` this flag set is, if any.
-    pub(super) fn set_name(&mut self, name: &str) -> bool {
-        let flag = match name {
-            "rw" => &mut self.is_rw,
-            "raw" => &mut self.is_raw,
-            _ => return false,
+    /// Read one `Trait::Is` into the flags; `false` for a trait this set does
+    /// not model.
+    // Cost: O(a), a = size of the trait's argument.
+    pub(super) fn read(&mut self, t: &RakuAstNode) -> Result<bool, RuntimeError> {
+        let name = positional_leaf(named_child(t, "name")?)?;
+        let ValueView::Str(name) = name.view() else {
+            return Ok(false);
         };
-        *flag = true;
-        true
+        let argument = named_child(t, "argument").ok();
+        match (name.as_str(), argument) {
+            ("rw", None) if t.fields.len() == 1 => self.is_rw = true,
+            ("raw", None) if t.fields.len() == 1 => self.is_raw = true,
+            ("export", None) if t.fields.len() == 1 => {
+                self.export_tags = vec![DEFAULT_TAG.to_string()];
+            }
+            ("export", Some(argument)) if t.fields.len() == 2 => {
+                let Some(tags) = export_tags(argument)? else {
+                    return Ok(false);
+                };
+                self.export_tags = tags;
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// The written flag traits, as `Trait::Is` nodes.
+    fn nodes(&self) -> Vec<RakuAstNode> {
+        let mut nodes = Vec::new();
+        for (on, name) in [(self.is_rw, "rw"), (self.is_raw, "raw")] {
+            if on {
+                nodes.push(trait_is(name, None));
+            }
+        }
+        if !self.export_tags.is_empty() {
+            nodes.push(trait_is("export", export_argument(&self.export_tags)));
+        }
+        nodes
     }
 }
 
-/// Add a method's `multiness`, `private` and flag traits to the routine node
+fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode {
+    let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+    if let Some(argument) = argument {
+        fields.push(node_field(Some("argument"), argument));
+    }
+    RakuAstNode {
+        class: RakuAstClass::TraitIs,
+        fields,
+    }
+}
+
+fn colon_pair_true(tag: &str) -> Value {
+    Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::ColonPairTrue,
+        fields: vec![leaf_field(None, Value::str(tag.to_string()))],
+    }))
+}
+
+/// `(:a)` / `(:a, :b)` for `is export`'s tags; `None` for the bare form.
+fn export_argument(tags: &[String]) -> Option<RakuAstNode> {
+    let expression = match tags {
+        [only] if only == DEFAULT_TAG => return None,
+        [only] => match colon_pair_true(only).view() {
+            ValueView::RakuAst(node) => (*node).clone(),
+            _ => unreachable!("colon_pair_true builds a node"),
+        },
+        _ => RakuAstNode {
+            class: RakuAstClass::ApplyListInfix,
+            fields: vec![
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Infix,
+                        fields: vec![leaf_field(None, Value::str_from(","))],
+                    },
+                ),
+                RakuAstField {
+                    name: Some("operands"),
+                    value: RakuAstFieldValue::List(
+                        tags.iter().map(|t| colon_pair_true(t)).collect(),
+                    ),
+                },
+            ],
+        },
+    };
+    let semilist = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(expression))],
+    };
+    Some(RakuAstNode {
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(None, semilist)],
+    })
+}
+
+/// The tags of an `is export(…)` argument, or `None` for a shape other than
+/// `:TAG` colonpairs.
+fn export_tags(argument: &RakuAstNode) -> Result<Option<Vec<String>>, RuntimeError> {
+    if argument.class != RakuAstClass::CircumfixParentheses {
+        return Ok(None);
+    }
+    let statement = named_child_or_positional(named_child_or_positional(argument)?)?;
+    if statement.class != RakuAstClass::StatementExpression {
+        return Ok(None);
+    }
+    let expression = named_child(statement, "expression")?;
+    let pairs: Vec<&RakuAstNode> = match expression.class {
+        RakuAstClass::ColonPairTrue => vec![expression],
+        RakuAstClass::ApplyListInfix => {
+            let Some(RakuAstFieldValue::List(items)) = expression
+                .fields
+                .iter()
+                .find(|f| f.name == Some("operands"))
+                .map(|f| &f.value)
+            else {
+                return Ok(None);
+            };
+            let mut pairs = Vec::with_capacity(items.len());
+            for item in items {
+                let ValueView::RakuAst(node) = item.view() else {
+                    return Ok(None);
+                };
+                pairs.push(node);
+            }
+            pairs
+        }
+        _ => return Ok(None),
+    };
+    let mut tags = Vec::with_capacity(pairs.len());
+    for pair in pairs {
+        if pair.class != RakuAstClass::ColonPairTrue {
+            return Ok(None);
+        }
+        match positional_leaf(pair)?.view() {
+            ValueView::Str(tag) => tags.push(tag.to_string()),
+            _ => return Ok(None),
+        }
+    }
+    Ok(Some(tags))
+}
+
+/// Add a routine's `multiness`, `private` and flag traits to the node
 /// `routine_node` built.
-// Cost: O(f), f = fields of `node`.
-pub(super) fn add_method_flags(
+// Cost: O(f + t), f = fields of `node`, t = export tags.
+pub(super) fn add_flags(
     node: &mut RakuAstNode,
     multi: bool,
     private: bool,
-    traits: IsTraits,
+    traits: &IsTraits,
 ) -> Result<(), RuntimeError> {
-    let written: Vec<&str> = [(traits.is_rw, "rw"), (traits.is_raw, "raw")]
-        .into_iter()
-        .filter_map(|(on, name)| on.then_some(name))
-        .collect();
-    if let Some(name) = written.first() {
+    let written = traits.nodes();
+    if !written.is_empty() {
         let has_traits = node.fields.iter().any(|f| f.name == Some("traits"));
         if written.len() > 1 || has_traits {
             return Err(unsupported(
-                "method with several traits (their source order is not kept)",
+                "routine with several traits (their source order is not kept)",
             ));
         }
         let at = node
@@ -63,15 +204,16 @@ pub(super) fn add_method_flags(
             .iter()
             .position(|f| f.name == Some("body"))
             .unwrap_or(node.fields.len());
-        let trait_node = RakuAstNode {
-            class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("name"), name_from_identifier(name))],
-        };
         node.fields.insert(
             at,
             RakuAstField {
                 name: Some("traits"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
+                value: RakuAstFieldValue::List(
+                    written
+                        .into_iter()
+                        .map(|t| Value::rakuast(Box::new(t)))
+                        .collect(),
+                ),
             },
         );
     }
