@@ -19,7 +19,11 @@ impl Interpreter {
     /// O(1) amortized: a local-slot probe plus registry probes (the
     /// proto/multi probes are memoized).
     fn inherited_amp_shadow(&mut self, code: &CompiledCode, name: &str) -> bool {
-        if name.contains("::") || name.contains(":<") || name.starts_with(['!', '?', '*', '.']) {
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym)
+            || name.contains(":<")
+            || name.starts_with(['!', '?', '*', '.'])
+        {
             return false;
         }
         let Some(val) =
@@ -40,7 +44,6 @@ impl Interpreter {
         if self.find_local_slot(code, &format!("&{name}")).is_some() {
             return false;
         }
-        let name_sym = Symbol::intern(name);
         !(self.export_amp_override_names.contains(&name_sym)
             && !Self::callable_declared_in_unit_of(&val, code))
     }
