@@ -878,19 +878,33 @@ impl Interpreter {
         }
         // The Hash half of the same rule. An itemized Hash carries its
         // itemization as a bool on the repr rather than as an `ArrayKind`, so
-        // it needs its own arm: `.VAR` on `$(%h)` is `Scalar` either way, but
+        // it needs its own arm. `.VAR` on `$(%h)` is `Scalar` either way, but
         // only the `ValueView::Scalar` spelling was covered. Reachable since
         // ADR-0040 slice 4 started itemizing chained-subscript stores, which
         // produce the flag form (`my %g; %g<a>[0]<k> = 5; %g<a>[0].VAR.^name`).
-        // Only `.VAR` is redirected: unlike the Array case there is nothing to
-        // decontainerize for other methods -- an itemized Hash is still a Hash,
-        // and `hash_is_itemized` is already consulted by the renderers and the
-        // flattening chokepoints.
-        if method == "VAR"
-            && matches!(target.view(), ValueView::Hash(_))
-            && target.hash_is_itemized()
-        {
-            return Ok(Value::package(Symbol::intern("Scalar")));
+        //
+        // Every other method is decontainerized too, exactly as for an Array:
+        // the renderers and the element-flattening chokepoints consult
+        // `hash_is_itemized`, but a method that decomposes its RECEIVER through
+        // `value_to_list(target)` (that function answers "does this flatten as
+        // an ELEMENT of another container", ADR-0040) saw the whole hash as one
+        // opaque item -- `$s.tail`, `.reverse`, `.unique`, `.squish`, `.rotor`,
+        // `.Seq`, `.minmax`, `.reduce`, ... (#10744). Clearing the flag keeps the
+        // SAME `HashData` `Gc`, so mutators (`.push`, `:delete`) still write
+        // through.
+        if matches!(target.view(), ValueView::Hash(_)) && target.hash_is_itemized() {
+            if method == "VAR" {
+                return Ok(Value::package(Symbol::intern("Scalar")));
+            }
+            // These observe the itemized container itself (the `$` sigil / the
+            // itemization is the point), as in the Array arm above.
+            if !matches!(method, "raku" | "perl" | "item" | "self") {
+                return self.call_method_with_values(
+                    target.clone().with_hash_itemized(false),
+                    method,
+                    args,
+                );
+            }
         }
         // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
         // `.raku`/`.gist`. A user `.raku` wraps its body in

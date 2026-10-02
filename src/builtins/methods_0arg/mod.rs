@@ -310,6 +310,19 @@ pub(crate) fn native_method_0arg(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
+    // A method call decontainerizes its invocant, so an itemized Hash receiver
+    // (a `$`-held hash, an element read out of an Array/Hash, `.item`, `$(%h)`)
+    // is just the hash here: `$s.cache` / `.permutations` operate on its Pairs,
+    // not on the hash as ONE item (#10744). Every VM call op and the interpreter
+    // reach this one entry, so it is settled once rather than per op. The flag
+    // is cleared over the SAME `HashData` `Gc`; `raku`/`perl`/`item`/`self`
+    // observe the container itself (as in the Array arm of
+    // `Interpreter::call_method_with_values`) and `VAR` is never a native call.
+    // Cost: O(1), a tag probe (`hash_is_itemized` is false for every non-Hash).
+    if target.hash_is_itemized() && !matches!(method, "raku" | "perl" | "item" | "self" | "VAR") {
+        return native_method_0arg(&target.clone().with_hash_itemized(false), method_sym);
+    }
+
     // Cost: O(1), one lookup in the Attribute metadata map.
     if method == "DEPRECATED"
         && let ValueView::Instance {
