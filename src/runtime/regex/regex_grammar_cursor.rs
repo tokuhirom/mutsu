@@ -45,7 +45,6 @@ impl Interpreter {
         pkg: Symbol,
     ) -> bool {
         !spec.token_lookup
-            && spec.arg_exprs.is_empty()
             && !pkg.is_empty()
             && self.grammar_has_user_method_sym(pkg.as_str(), spec.lookup_sym)
             && !spec.lookup_name.is_empty()

@@ -553,6 +553,9 @@ impl Interpreter {
                     "__mutsu_derive_done",
                     "__mutsu_derive_quit",
                     "__mutsu_derive_close",
+                    "__mutsu_promise_emit",
+                    "__mutsu_promise_done",
+                    "__mutsu_promise_quit",
                 ]
                 .iter()
                 .map(|s| s.to_string())

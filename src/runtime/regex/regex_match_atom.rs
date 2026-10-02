@@ -65,6 +65,18 @@ impl Interpreter {
             )
     }
 
+    /// A branch that is only a call of a grammar METHOD (`<.panic('...')>`):
+    /// like a code block, running it has side effects (it usually `die`s), so
+    /// once an earlier `||` branch matched it must not be run.
+    // Cost: O(1) expected, see `subrule_names_user_method`.
+    pub(super) fn is_method_subrule_alt(&mut self, alt: &RegexPattern, pkg: Symbol) -> bool {
+        alt.tokens.len() == 1
+            && matches!(alt.tokens[0].quant, RegexQuant::One)
+            && alt.tokens[0].separator.is_none()
+            && matches!(&alt.tokens[0].atom, RegexAtom::Named(name)
+                if self.subrule_names_user_method(name.spec(), pkg))
+    }
+
     /// Try to match `branch` starting at `pos` such that it ends exactly at
     /// `target_end`. Returns the branch's own captures (relative to an empty
     /// baseline) on success. Used by conjunction (`&` / `&&`) matching, where
@@ -421,7 +433,9 @@ impl Interpreter {
                 // token walk drives the alternation itself
                 // (`walk_seq_alternation`) a later branch is never reached at
                 // all unless raku's cursor would reach it.
-                if Self::is_pure_code_block_alt(alt) && earlier_matched {
+                if earlier_matched
+                    && (Self::is_pure_code_block_alt(alt) || self.is_method_subrule_alt(alt, pkg))
+                {
                     groups.push(Vec::new());
                     continue;
                 }
@@ -664,7 +678,8 @@ impl Interpreter {
             // `die` inside the method) must propagate out of the parse rather than
             // being swallowed as a silent non-match.
             if raw_empty
-                && let Some(result) = self.try_regex_subrule_as_method(&spec, chars, pos, pkg)
+                && let Some(result) =
+                    self.try_regex_subrule_as_method(&spec, chars, pos, pkg, &arg_values)
             {
                 return result;
             }
@@ -1096,6 +1111,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         pkg: Symbol,
+        args: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         // The cursor the engine published for this one call, if any: taken at
         // once so a call nested inside the method never sees it.
@@ -1134,7 +1150,7 @@ impl Interpreter {
             None => self.new_grammar_cursor(chars, pos, pkg),
         };
         let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
-            interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
+            interp.call_method_with_values(invocant, &spec.lookup_name, args.to_vec())
         });
         match called {
             Err(e) => {
