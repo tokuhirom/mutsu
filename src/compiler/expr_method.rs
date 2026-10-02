@@ -380,7 +380,8 @@ impl Compiler {
         // so they benefit from the Nil dispatch path in CallMethod. `$/` is
         // the same: a method call on it (`$/.subst(...)`) must not write the
         // env `$/` a nested match/subst produced back over a `$/` parameter.
-        if target_name == "!" || target_name == "/" {
+        // `.VAR` still needs the variable's name (its container metadata).
+        if target_name == "!" || (target_name == "/" && name.resolve() != "VAR") {
             self.code.emit(OpCode::CallMethod {
                 name_idx,
                 arity,
