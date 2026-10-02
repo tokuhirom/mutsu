@@ -4295,6 +4295,10 @@ pub(crate) enum OpCode {
     /// method with the same index to take when the package-body walk installs
     /// it (`class_body_method_decl`).
     CaptureNestedMethodEnv(Box<NestedMethodCaptureSpec>),
+    /// Throw the CHECK-time "Undeclared routine" error described by the
+    /// operand (`Stmt::UndeclaredRoutine`). Stack: `[] → []`; never falls
+    /// through.
+    ThrowUndeclaredRoutine(Box<crate::ast::UndeclaredRoutineCall>),
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
@@ -12301,6 +12305,13 @@ pub(crate) enum FastParamCheck {
     /// itself requires a `Callable` argument (rakudo: `sub g(&c) {}; g(1)`
     /// dies with "expected Callable but got Int", #10640).
     ImplicitCallable,
+    /// A parameter whose nominal type is `Any`: an explicit `Any $x`, or an
+    /// untyped routine `$x` / `\x` (implicitly `Any`). Every value the light
+    /// paths see is `Any` except a `Mu`-only one — the `Mu` type object, or a
+    /// class that `is Mu` — which rakudo rejects ("expected Any but got Mu",
+    /// #10878). A block's untyped parameter is implicitly `Mu` and stays
+    /// [`Self::Unconstrained`].
+    RequiresAny,
     /// Check `kind`; `name_sym` is the constraint name pre-interned, so the
     /// bare-type-object case (`sub f(Int $a); f(Int)`) compares two `Symbol`s
     /// instead of resolving one to a `&str` and comparing bytes.
@@ -12317,7 +12328,22 @@ impl FastParamCheck {
         if pd.type_constraint.is_none() && pd.name.starts_with('&') && !pd.slurpy {
             return Some(Self::ImplicitCallable);
         }
+        if Self::implicitly_any(pd) || pd.type_constraint.as_deref() == Some("Any") {
+            return Some(Self::RequiresAny);
+        }
         Self::of(pd.type_constraint.as_ref())
+    }
+
+    /// Is `pd` an untyped parameter whose implicit nominal type is `Any`? The
+    /// general binder's rule (`bind_function_args_values`): a routine's `$x` /
+    /// `\x` / `:$x`, but not a block's (implicitly `Mu`), and not one whose
+    /// `where` clause takes over the check or whose sigil has its own.
+    pub(crate) fn implicitly_any(pd: &ParamDef) -> bool {
+        pd.type_constraint.is_none()
+            && pd.where_constraint.is_none()
+            && !pd.block_param
+            && !pd.slurpy
+            && !pd.name.starts_with(['@', '%', '&'])
     }
 
     /// The plan for a `type_constraint` field, or `None` when the constraint is

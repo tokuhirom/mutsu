@@ -223,8 +223,9 @@ impl Interpreter {
     /// `run` does not move `self.interpreter` out (the caller must always get the
     /// interpreter back, even on panic).
     // Cost: O(L) entry (env->locals seeding, L = the chunk's own locals; label
-    // validation is O(1) amortized) and exit (state/env sync), then O(1) per dispatched op: one cached `vm_poll::armed()`
-    // load (a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
+    // validation is O(1) amortized) and exit (state/env sync), then O(1) per dispatched op:
+    // an `ip` compare (a poll only at entry and on a backward transfer, or every op while
+    // the profiler is armed; a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
     fn run_inner(
         &mut self,
         code: &CompiledCode,
@@ -258,19 +259,16 @@ impl Interpreter {
         // entry depth rather than by the phaser depth.
         let entry_begin_time_depth = self.begin_time_hidden.len() as u32;
         let mut ip = 0;
+        // VM poll (design doc §1.2): between instructions no container borrow
+        // is live, so a cycle collect may run here. Fires on worker threads
+        // too: the dead sweep runs while other mutators are live, the cycle
+        // scan first stops the world (`gc::stw`, design §6.1). Placement —
+        // entry and backward transfers only, unless the profiler is armed —
+        // and its stop-the-world bound: `vm_poll::DispatchPolls`.
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let mut poll_due = true;
         while ip < code.ops.len() {
-            // VM poll (design doc §1.2): the dispatch backward edge holds no
-            // container borrow, so a cycle collect may run here.
-            // `vm_poll::armed()` is a single cached load (false only with
-            // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
-            // the work by thread-safety — the dead sweep (refcount-dead
-            // candidates, plain `Arc` drops) runs even while other mutators are
-            // live, while the trial-deletion cycle scan first brings them to
-            // quiescence via the cooperative stop-the-world (`gc::stw`, design
-            // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
-            // the candidate buffer — and their dead snapshots' memory —
-            // unboundedly until the post-join collect.
-            if crate::vm::vm_poll::armed() {
+            if polls.due(poll_due) {
                 crate::vm::vm_poll::poll_code(
                     crate::gc::SafepointKind::Backedge,
                     ip as u32,
@@ -278,12 +276,14 @@ impl Interpreter {
                     self,
                 );
             }
+            let op_ip = ip;
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
                 {
                     ip = target_ip;
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 if e.is_warn() && self.control_handler_depth == 0 {
@@ -294,6 +294,7 @@ impl Interpreter {
                         self.stack.push(v);
                     }
                     ip += 1;
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 self.sync_state_locals(code);
@@ -338,6 +339,7 @@ impl Interpreter {
                 self.begin_time_unwind_to(entry_begin_time_depth);
                 return Err(e);
             }
+            poll_due = ip <= op_ip;
             if self.is_halted() {
                 break;
             }
@@ -621,19 +623,16 @@ impl Interpreter {
         let root_once_scope = self.next_once_scope_id();
         self.push_once_scope(root_once_scope);
         let mut ip = 0;
+        // VM poll (design doc §1.2): between instructions no container borrow
+        // is live, so a cycle collect may run here. Fires on worker threads
+        // too: the dead sweep runs while other mutators are live, the cycle
+        // scan first stops the world (`gc::stw`, design §6.1). Placement —
+        // entry and backward transfers only, unless the profiler is armed —
+        // and its stop-the-world bound: `vm_poll::DispatchPolls`.
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let mut poll_due = true;
         while ip < code.ops.len() {
-            // VM poll (design doc §1.2): the dispatch backward edge holds no
-            // container borrow, so a cycle collect may run here.
-            // `vm_poll::armed()` is a single cached load (false only with
-            // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
-            // the work by thread-safety — the dead sweep (refcount-dead
-            // candidates, plain `Arc` drops) runs even while other mutators are
-            // live, while the trial-deletion cycle scan first brings them to
-            // quiescence via the cooperative stop-the-world (`gc::stw`, design
-            // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
-            // the candidate buffer — and their dead snapshots' memory —
-            // unboundedly until the post-join collect.
-            if crate::vm::vm_poll::armed() {
+            if polls.due(poll_due) {
                 crate::vm::vm_poll::poll_code(
                     crate::gc::SafepointKind::Backedge,
                     ip as u32,
@@ -641,12 +640,14 @@ impl Interpreter {
                     self,
                 );
             }
+            let op_ip = ip;
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
                 {
                     ip = target_ip;
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 if e.is_warn() && self.control_handler_depth == 0 {
@@ -657,12 +658,14 @@ impl Interpreter {
                         self.stack.push(v);
                     }
                     ip += 1;
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 self.sync_state_locals(code);
                 self.pop_once_scope();
                 return Err(e);
             }
+            poll_due = ip <= op_ip;
             if self.is_halted() {
                 break;
             }
@@ -897,6 +900,51 @@ impl Interpreter {
         end: usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // The per-iteration poll of a compound loop (`vm_poll::DispatchPolls`):
+        // each iteration enters its body here, and the poll is taken at the
+        // range's first op whether it then runs natively or interpreted.
+        self.run_range_polled(code, start, end, compiled_fns, true)
+    }
+
+    /// [`Self::run_range`] without its entry poll, for a loop's condition and
+    /// step ranges: every iteration that runs one of them also runs the body
+    /// through `run_range`, which polls, so a second poll per iteration buys
+    /// no bound the first does not already give. The range's own back-edges
+    /// still poll.
+    // Cost: as `run_range`.
+    pub(crate) fn run_range_unpolled(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        self.run_range_polled(code, start, end, compiled_fns, false)
+    }
+
+    // Cost: as `run_range`.
+    fn run_range_polled(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+        compiled_fns: &CompiledFns,
+        entry_poll: bool,
+    ) -> Result<(), RuntimeError> {
+        if start >= end {
+            // An empty body still has to poll: `while $cond {}` repeats through
+            // its (unpolled) condition range and this body alone. A profile
+            // run needs nothing here: the condition's ops poll one by one.
+            if crate::vm::vm_poll::DispatchPolls::current().due_without_ops(entry_poll) {
+                crate::vm::vm_poll::poll_code(
+                    crate::gc::SafepointKind::Backedge,
+                    start as u32,
+                    code,
+                    self,
+                );
+            }
+            return Ok(());
+        }
         // Hot-loop entry (ADR-0004 J4b): compound-loop bodies/conds call
         // run_range once per iteration, so a hot sub-range gets JIT-compiled
         // and runs natively. On a native-body error, the two signals the
@@ -906,7 +954,9 @@ impl Interpreter {
         // exactly what the interpreter would have done); everything else
         // (control signals, exceptions) propagates to the caller unchanged.
         #[cfg(feature = "jit")]
-        if let Some(r) = crate::vm::vm_jit::try_enter_range(self, code, start, end, compiled_fns) {
+        if let Some(r) =
+            crate::vm::vm_jit::try_enter_range(self, code, start, end, compiled_fns, entry_poll)
+        {
             match r {
                 Ok(()) => return Ok(()),
                 Err(e) => {
@@ -915,7 +965,14 @@ impl Interpreter {
                         && let Some(target_ip) = self.find_label_target(code, label)
                         && (start..end).contains(&target_ip)
                     {
-                        return self.run_range_from(code, target_ip, start, end, compiled_fns);
+                        return self.run_range_from(
+                            code,
+                            target_ip,
+                            start,
+                            end,
+                            compiled_fns,
+                            false,
+                        );
                     }
                     if e.is_warn() && self.control_handler_depth == 0 {
                         if !self.warning_suppressed() {
@@ -935,6 +992,7 @@ impl Interpreter {
                                 start,
                                 end,
                                 compiled_fns,
+                                false,
                             );
                         }
                     }
@@ -942,12 +1000,12 @@ impl Interpreter {
                 }
             }
         }
-        self.run_range_from(code, start, start, end, compiled_fns)
+        self.run_range_from(code, start, start, end, compiled_fns, entry_poll)
     }
 
     /// The interpreter loop of [`Self::run_range`], entered at `from` (== `start`
     /// except when resuming mid-range after a JIT'd body's goto/warn).
-    // Cost: O(1) per dispatched op (cached safepoint-poll load plus `exec_one`); a `goto`
+    // Cost: O(1) per dispatched op (an `ip` compare for the back-edge poll plus `exec_one`); a `goto`
     // pays `find_label_target`, O(p), p = ops of the chunk.
     fn run_range_from(
         &mut self,
@@ -956,17 +1014,16 @@ impl Interpreter {
         start: usize,
         end: usize,
         compiled_fns: &CompiledFns,
+        entry_poll: bool,
     ) -> Result<(), RuntimeError> {
         let mut ip = from;
+        // Same poll placement as the outer loop (`vm_poll::DispatchPolls`);
+        // `entry_poll` is false for a loop's condition/step range and when
+        // resuming mid-range after a native body, whose entry already polled.
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let mut poll_due = entry_poll;
         while ip < end {
-            // VM poll on the inner dispatch backedge too: compound-loop
-            // ops (for/while bodies) iterate entirely inside ONE `exec_one` of
-            // the outer `run` loop, so without this a tight loop never reaches
-            // a safepoint and candidate-triggered collects (and the dead sweep
-            // that bounds buffer memory) defer to the loop's end. Same borrow
-            // argument as the outer site: between instructions no container
-            // borrow is live (design doc §1.2).
-            if crate::vm::vm_poll::armed() {
+            if polls.due(poll_due) {
                 crate::vm::vm_poll::poll_code(
                     crate::gc::SafepointKind::Backedge,
                     ip as u32,
@@ -974,6 +1031,7 @@ impl Interpreter {
                     self,
                 );
             }
+            let op_ip = ip;
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
@@ -981,6 +1039,7 @@ impl Interpreter {
                     && (start..end).contains(&target_ip)
                 {
                     ip = target_ip;
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
@@ -1000,10 +1059,12 @@ impl Interpreter {
                     } else {
                         ip += 1;
                     }
+                    poll_due = ip <= op_ip;
                     continue;
                 }
                 return Err(e);
             }
+            poll_due = ip <= op_ip;
             if self.is_halted() {
                 break;
             }
@@ -1053,7 +1114,7 @@ impl Interpreter {
                 }
                 _ => {
                     // Non-guarded code before the first guard; run normally
-                    self.exec_one(code, &mut ip, compiled_fns)?;
+                    self.exec_one_backedge_polled(code, &mut ip, compiled_fns)?;
                 }
             }
         }

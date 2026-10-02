@@ -58,21 +58,6 @@ pub(crate) fn mul(a: f64, b: f64) -> f64 {
     combine(a, b, crate::builtins::arith::arith_mul, |x, y| x * y)
 }
 
-/// How a weight is shown beside its key by `.Str` and `.gist`: `None` when the
-/// weight is exactly 1, which Rakudo prints as the bare key (`Mix(a b(2))`).
-///
-/// Both renderers call this so a weight is *printed* the way it is *read back*.
-/// They each used to carry their own copy of the rule, whose `w as i64`
-/// shortcut for whole weights saturated: `(a => 2e300).Mix` printed
-/// `Mix(a(9223372036854775807))`.
-pub(crate) fn render(w: f64) -> Option<String> {
-    if (w - 1.0).abs() < f64::EPSILON {
-        None
-    } else {
-        Some(mix_weight_to_value(w).to_string_value())
-    }
-}
-
 /// Sum a run of weights left to right. Used by `Mix.total`; the caller orders
 /// the weights first so a `Num` operand (whose addition is not associative)
 /// cannot make the result depend on hash iteration order.

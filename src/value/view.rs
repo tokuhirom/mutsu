@@ -335,6 +335,19 @@ impl Value {
         Value::ContainerRef(cell)
     }
 
+    /// What an element `BIND-POS`/`BIND-KEY`-bound to `value` holds: a
+    /// container `value` already is (an `is rw` return, a variable's cell) is
+    /// shared as is; any other value has no container of its own, so it goes in
+    /// a read-only cell and a later assignment to the element dies with "Cannot
+    /// assign to an immutable value" (`ContainerCell::new_readonly`).
+    // Cost: O(1).
+    pub(crate) fn bound_element(value: Value) -> Self {
+        if matches!(value.view(), ValueView::ContainerRef(_)) {
+            return value;
+        }
+        Value::container_ref(Gc::new(crate::value::ContainerCell::new_readonly(value)))
+    }
+
     /// Construct an itemized `ContainerRef` holder from an existing cell.
     #[inline]
     pub(crate) fn container_ref_itemized(cell: Gc<crate::value::ContainerCell>) -> Self {

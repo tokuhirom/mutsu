@@ -574,6 +574,7 @@ mod accessors_state;
 mod any_cool_method_gate;
 mod attr_build_defaults;
 mod builtins;
+mod builtins_accessor_elem_in_place;
 mod builtins_atomic;
 mod builtins_atomic_cas;
 mod builtins_atomic_cas_code;
@@ -722,6 +723,8 @@ mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
 mod main_args;
+mod main_usage;
+mod main_usage_program;
 pub(crate) mod mark_context;
 mod metamodel;
 mod metamodel_new_type;
@@ -928,6 +931,7 @@ mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) mod return_target;
+mod routine_candidate_defs;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
@@ -3249,8 +3253,13 @@ pub struct Interpreter {
     /// dependencies are not. The load stack lets registration attribute the
     /// type to the correct compunit while nested modules are loading.
     pub(crate) module_owned_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
-    /// When true, `is export` trait is ignored (used by `need` to load without importing).
+    /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
+    /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
+    /// True while a `need` (or an empty-import `use Mod ()`) loads a module:
+    /// its exports are registered but imported nowhere, so an exported
+    /// `MAIN` must not become the program's MAIN.
+    pub(crate) loading_without_import: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a bare block is evaluating the tail of an `is rw` routine

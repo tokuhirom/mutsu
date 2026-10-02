@@ -138,7 +138,7 @@ pub(crate) fn try_reserve(size: usize) -> Option<StackReservation> {
         return Some(StackReservation { size });
     };
     RESERVED
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
             cur.checked_add(size).filter(|next| *next <= limit)
         })
         .ok()

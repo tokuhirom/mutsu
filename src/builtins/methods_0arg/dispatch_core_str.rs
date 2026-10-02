@@ -180,6 +180,16 @@ pub(super) fn dispatch(
                         },
                     )))));
                 }
+                // An unbounded range is lazy already, but `.lazy` still makes
+                // it a `Seq` (`(1..*).lazy.raku` is `(1, 2, ...).lazy.Seq`).
+                if crate::runtime::unbounded_range::first(target).is_some() {
+                    return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                        crate::value::LazyList::new_index_pipe(
+                            target.clone(),
+                            crate::value::IndexTransform::Identity,
+                        ),
+                    )))));
+                }
                 return Some(Some(Ok(target.clone())));
             }
             let items = if let Some(items) = target.as_list_items() {

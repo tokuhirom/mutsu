@@ -131,7 +131,10 @@ impl Interpreter {
             return Ok(Some(count.clone()));
         }
         if Self::iterator_is_unpredictive_lazy(attributes) {
-            return Err(RuntimeError::method_not_found("count-only", "Iterator"));
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                "count-only",
+                "Iterator",
+            ));
         }
         if let Some(ValueView::Array(items, ..)) = attributes.get("items").map(Value::view) {
             let index = match attributes.get("index").map(Value::view) {
@@ -448,10 +451,10 @@ impl Interpreter {
                 _ => 0,
             }
         };
-        let start = (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
+        let start = (args.first().map(resolve).unwrap_or(0).max(0) as usize).min(len);
         let count = args
             .get(1)
-            .map(&resolve)
+            .map(resolve)
             .unwrap_or((len - start) as i64)
             .max(0) as usize;
         let end = (start + count).min(len);

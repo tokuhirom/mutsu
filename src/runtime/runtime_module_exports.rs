@@ -1514,6 +1514,7 @@ impl Interpreter {
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         let is_nested_need = !self.module_load_stack.is_empty();
         if self.loaded_modules.contains(module) {
+            self.replay_module_visibility_grant(module);
             return Ok(());
         }
         if self.module_load_stack.iter().any(|m| m == module) {
@@ -1527,9 +1528,16 @@ impl Interpreter {
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
-        let saved = self.suppress_exports;
-        self.suppress_exports = true;
+        // `need` withholds only the *import* into the caller's lexical
+        // scope: the module's `is export` routines are still registered, so
+        // its own `Mod::EXPORT::<tag>` stashes are populated as in Rakudo
+        // (a `sub EXPORT` hook re-exports them, #10683). Clear the flag
+        // explicitly, since an enclosing compunit-repository load may have
+        // set it.
+        let saved = std::mem::replace(&mut self.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.loading_without_import, true);
         let result = self.load_module(module);
+        self.loading_without_import = saved_no_import;
         self.suppress_exports = saved;
         self.module_load_stack.pop();
         if result.is_ok() {

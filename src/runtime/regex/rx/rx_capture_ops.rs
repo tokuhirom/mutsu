@@ -341,7 +341,6 @@ fn walk_leaf_use(atom: &RegexAtom) {
         RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => (WalkUse::Leaf, "backref"),
         RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => (WalkUse::Leaf, "marker"),
         RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
-        RegexAtom::WsRule => (WalkUse::Leaf, "ws-rule"),
         RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
         RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
         _ => (WalkUse::Leaf, "other"),

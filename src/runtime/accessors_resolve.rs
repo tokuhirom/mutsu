@@ -434,15 +434,18 @@ impl Interpreter {
     }
 
     /// [`Self::resolve_code_var`] for a `&name` whose by-name env `&name`
-    /// entry is not this code's lexical: an inherited caller binding that
-    /// shadows a package sub the reading routine did not capture
-    /// (`Interpreter::inherited_amp_shadow`). The `&name` env entry is
-    /// skipped; every other tier resolves as usual.
+    /// entry is not this code's lexical: a caller's binding from another
+    /// compunit (`Interpreter::imported_amp_over_inherited`). The `&name` env
+    /// entry is skipped; every other tier resolves as usual.
     pub(crate) fn resolve_code_var_unshadowed(&self, name: &str) -> Value {
         self.resolve_code_var_scoped(name, false)
     }
 
     fn resolve_code_var_scoped(&self, name: &str, consult_env_amp: bool) -> Value {
+        // `&Alias::sub` where `Alias` is a constant naming a package.
+        if let Some(real) = self.resolve_package_alias_prefix(name) {
+            return self.resolve_code_var_scoped(&real, consult_env_amp);
+        }
         // Handle package-qualified names: strip pseudo-package prefixes and
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);

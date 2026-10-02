@@ -251,7 +251,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // Raise here rather than returning None: the slow-path `.hash`
                     // would take over and report the "Odd number of elements" error
                     // instead of the missing method.
-                    "Mu" => Some(Err(RuntimeError::method_not_found("hash", "Mu"))),
+                    "Mu" => Some(Err(crate::runtime::did_you_mean::method_not_found(
+                        "hash", "Mu",
+                    ))),
                     // An Associative's `.hash` is itself, and the Hash *type object*
                     // is no exception (`Hash.hash` is `Hash`, not `{}`).
                     "Hash" => Some(Ok(target.clone())),

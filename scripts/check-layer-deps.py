@@ -48,6 +48,8 @@ LOWER = [
     # tables the parser reads.
     "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs",
     "native_types.rs", "term_names.rs", "ucd", "stats_gate.rs",
+    # The built-in types' static MRO/roles catalog (ADR-0051).
+    "builtin_types",
     # Platform shims: thread/clock abstraction and the wasm32 cooperative
     # scheduler.
     "thread_compat.rs", "wasm_sched.rs",

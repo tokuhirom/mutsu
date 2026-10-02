@@ -75,6 +75,13 @@ impl Interpreter {
         } else {
             source_name
         };
+        // A readonly name (bound straight to a value, sigilless, a non-`is rw`
+        // parameter) has no container for a raw invocant to bind: boxing one
+        // here would silently turn the binding writable. Leave the value bare
+        // so the method's own write refuses it (#10893).
+        if self.name_is_readonly_binding_for(name.trim_start_matches('$'), None) {
+            return;
+        }
         let method = args[1].to_string_value();
         let method_args = Self::lvalue_method_args(&args[2]);
         if !self.lvalue_call_boxes_invocant(&inner, &method, &method_args) {

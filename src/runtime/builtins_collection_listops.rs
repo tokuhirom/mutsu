@@ -286,7 +286,7 @@ impl Interpreter {
                 ValueView::Slip(elems) => items.extend(elems.iter().cloned()),
                 ValueView::LazyList(ll) => {
                     if ll.scan_spec.is_some() {
-                        items.extend(ll.force_scan_to(200_000));
+                        items.extend(crate::builtins::lazy_scan::force_scan_to(&ll, 200_000));
                     } else {
                         let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
                         items.extend(cached);

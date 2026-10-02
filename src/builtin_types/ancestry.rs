@@ -1,4 +1,4 @@
-//! Ancestry queries derived from [`crate::builtins::builtin_type_catalog`]
+//! Ancestry queries derived from [`crate::builtin_types::catalog`]
 //! (ADR-0051 P2).
 //!
 //! The catalog keeps a type's class chain (`mro`) and the roles it composes
@@ -12,7 +12,7 @@
 //!   candidate-distance walk — [`builtin_type_narrowness_chain`], which places
 //!   every role right after the last class in the MRO that composes it.
 
-use super::builtin_type_catalog::{builtin_type_has_role, builtin_type_info};
+use super::catalog::{builtin_type_has_role, builtin_type_info};
 use rustc_hash::FxHashMap;
 use std::sync::OnceLock;
 
@@ -50,7 +50,7 @@ pub(crate) fn builtin_type_is_a(type_name: &str, ancestor: &str) -> bool {
 pub(crate) fn builtin_type_narrowness_chain(type_name: &str) -> Option<&'static [&'static str]> {
     static CHAINS: OnceLock<FxHashMap<&'static str, Box<[&'static str]>>> = OnceLock::new();
     let chains = CHAINS.get_or_init(|| {
-        super::builtin_type_catalog::all_builtin_type_names()
+        super::catalog::all_builtin_type_names()
             .map(|name| (name, narrowness_chain_of(name)))
             .collect()
     });

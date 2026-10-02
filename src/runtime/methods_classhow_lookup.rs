@@ -626,7 +626,7 @@ impl Interpreter {
     /// "Pair cannot int8" pin).
     // Cost: O(d * m), d = ancestors, m = MRO length of a catalog ancestor.
     fn builtin_method_ancestors(&self, type_name: &str) -> Vec<String> {
-        use crate::builtins::builtin_type_catalog::builtin_type_info;
+        use crate::builtin_types::catalog::builtin_type_info;
         let own: Vec<String> = match builtin_type_info(type_name) {
             Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),
             None => self.mro_readonly(type_name),

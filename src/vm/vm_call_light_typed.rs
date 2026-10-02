@@ -210,9 +210,20 @@ impl Interpreter {
                     if positional_idx < args.len() {
                         let val = deref_arg(&args[positional_idx]).clone();
                         positional_idx += 1;
-                        if let Some(ref tc) = cf.param_defs[i].type_constraint
-                            && !Self::fast_type_check(&val, tc)
-                        {
+                        // The declared constraint, or the `Any` an untyped
+                        // routine parameter or an `Any $x` requires (#10878).
+                        let failed = match cf.param_defs[i].type_constraint.as_deref() {
+                            Some(tc) if !Self::fast_type_check(&val, tc) => Some(tc),
+                            _ if matches!(
+                                cf.param_fast_types.get(i),
+                                Some(crate::opcode::FastParamCheck::RequiresAny)
+                            ) && !self.light_arg_is_any(&val) =>
+                            {
+                                Some("Any")
+                            }
+                            _ => None,
+                        };
+                        if let Some(tc) = failed {
                             // A sized native-int parameter only reaches this
                             // path since #9506; keep the general binder's error
                             // for it.
@@ -394,7 +405,25 @@ impl Interpreter {
                 bind_value!(npb.slot, true, seed);
                 continue;
             };
-            let v = Self::bind_itemize_param(cf, i, v.clone());
+            let v = v.clone();
+            // An untyped named parameter is implicitly `Any` too (#10878).
+            if matches!(
+                cf.param_fast_types.get(i),
+                Some(crate::opcode::FastParamCheck::RequiresAny)
+            ) && !self.light_arg_is_any(&v)
+            {
+                let pd = &cf.param_defs[i];
+                bind_err = Some(
+                    self.typecheck_binding_parameter_failure(
+                        &crate::runtime::types::param_display_name(pd),
+                        "Any",
+                        &v,
+                    )
+                    .with_parameter_object(pd, Some(&*self)),
+                );
+                break 'bind;
+            }
+            let v = Self::bind_itemize_param(cf, i, v);
             // A sub_signature rename (`:color(:$colour)`) binds every inner
             // name to the value as well.
             for (alias_name, alias_slot) in &npb.alias_binds {
@@ -635,7 +664,7 @@ impl Interpreter {
                     ip = cf.code.ops.len();
                     r
                 } else {
-                    self.exec_one(&cf.code, &mut ip, compiled_fns)
+                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns)
                 };
                 match step {
                     Ok(()) => {}

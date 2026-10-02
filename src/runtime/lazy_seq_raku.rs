@@ -20,7 +20,8 @@ impl Interpreter {
     }
 
     /// The `.raku` text of a lazy bare `Seq`: its first 100 elements, `...`
-    /// when more remain, then `.lazy.Seq`.
+    /// when more remain, then `.lazy.Seq` (a finite one renders every element,
+    /// a single one without a trailing comma: `(5).lazy.Seq`).
     // Cost: O(p) plus the cost of pulling the prefix, p = LAZY_SEQ_RAKU_PREFIX
     // (a constant 100) elements; the whole sequence is never reified.
     pub(crate) fn lazy_seq_raku(
@@ -35,9 +36,13 @@ impl Interpreter {
             .map(|item| self.raku_element_repr(item))
             .collect::<Vec<_>>()
             .join(", ");
-        Ok(format!(
-            "({body}{}).lazy.Seq",
-            if more { "..." } else { "" }
-        ))
+        let text = format!("({body}{}).lazy.Seq", if more { "..." } else { "" });
+        // A `$`-held Seq renders itemized, as a non-lazy one does:
+        // `my $s = (1, 2).lazy; $s.raku` is `$((1, 2).lazy.Seq)`.
+        Ok(if ll.is_itemized() {
+            format!("$({text})")
+        } else {
+            text
+        })
     }
 }

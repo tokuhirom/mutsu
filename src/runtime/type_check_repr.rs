@@ -35,11 +35,15 @@ impl Interpreter {
     /// `value_short_repr`; an `Instance` is asked for its `.raku`, and a `Sub` or
     /// a container holding an object goes through the same leaf dispatch `.raku`
     /// itself uses (`raku_element_repr`).
-    // Cost: O(t) plus the cost of the dispatched `.raku` calls, t = length of the
-    // value's `.raku` text; the text kept is cut to a constant length by
+    // Cost: O(t) plus the cost of the dispatched `.raku` calls (and of running an
+    // unrun `.map`/`.grep` callback), t = length of the value's `.raku` text; the text kept is cut to a constant length by
     // `short_repr_of_raku`. Rakudo renders the whole `.raku` too.
     pub(crate) fn type_check_got_repr(&mut self, val: &Value) -> String {
         let val = &utils::decont_for_repr(val);
+        // A not-yet-run `.map`/`.grep` Seq reads as its empty seed until it is
+        // pulled (ADR-0058); `.raku` reifies it, so the message does too. A
+        // callback that dies leaves the seed, which is still a valid repr.
+        let _ = self.reify_map_grep_seq(val);
         if let ValueView::LazyList(ll) = val.view()
             && Self::lazy_seq_raku_applies(&ll)
             && let Ok(text) = self.lazy_seq_raku(&ll)
@@ -141,7 +145,9 @@ impl Interpreter {
             self.type_check_got_repr(value)
         };
         let hint = self.container_binding_hint(expected, expected_is, value);
-        RuntimeError::typecheck_binding_parameter_with_hint(param, expected, value, &repr, hint)
+        crate::runtime::utils::typecheck_binding_parameter_with_hint(
+            param, expected, value, &repr, hint,
+        )
     }
 
     /// Whether the expected type (a type name as a type-check message spells

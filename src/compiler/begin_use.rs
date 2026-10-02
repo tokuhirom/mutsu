@@ -104,6 +104,7 @@ pub(crate) fn preloadable_module(stmt: &Stmt) -> Option<&str> {
             tags,
             condition,
             arg,
+            ..
         } => preloadable_module_name(module, tags, condition.as_deref(), arg.as_ref()),
         _ => None,
     }
@@ -238,6 +239,7 @@ mod tests {
             arg: None,
             tags: Vec::new(),
             condition: None,
+            if_imports: Vec::new(),
         }
     }
 

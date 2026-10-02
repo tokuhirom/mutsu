@@ -101,6 +101,38 @@ impl Interpreter {
         .unwrap_or(Ok(false))
     }
 
+    /// Whether `@name[idx] = v` targets an element bound to a bare value
+    /// (`@a.BIND-POS($i, 42)`, #10924) — the positional twin of
+    /// [`Self::hash_element_is_readonly_bound`].
+    ///
+    // Cost: O(1) (one flag load in the common program; else one env probe and
+    // one element read).
+    pub(crate) fn array_element_is_readonly_bound(&self, var_name: &str, idx: &Value) -> bool {
+        if !crate::value::readonly_cells_possible() || !var_name.starts_with('@') {
+            return false;
+        }
+        let Some(container) = self.env().get(var_name).map(Value::deref_container) else {
+            return false;
+        };
+        let ValueView::Array(items, _) = container.view() else {
+            return false;
+        };
+        let idx = match idx.view() {
+            ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+            _ => idx.clone(),
+        };
+        let Some(i) = (match idx.view() {
+            ValueView::Int(i) => usize::try_from(i).ok(),
+            _ => None,
+        }) else {
+            return false;
+        };
+        matches!(
+            items.get(i).map(Value::view),
+            Some(ValueView::ContainerRef(cell)) if cell.is_readonly()
+        )
+    }
+
     /// Whether `%name{idx} = v` targets an entry bound to a bare value
     /// (`%h.BIND-KEY($k, 42)`), which raku refuses with "Cannot assign to an
     /// immutable value".

@@ -1498,7 +1498,7 @@ impl Interpreter {
         // lazy index-pipe stage instead of forcing (mirrors the CallMethodMut
         // fast-path so a chained `.pairs` stays lazy too).
         if args.is_empty()
-            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, true)
+            && let Some(pipe) = crate::builtins::lazy_scan::index_pipe_method(&target, method, true)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-index-pipe");
             self.stack.push(pipe);
@@ -1552,8 +1552,7 @@ impl Interpreter {
             // (and its trailing side effects) instead of pulling on demand.
             // Laziness-preserving coercions return the list unchanged (native
             // dispatch) — neither forces.
-            && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
             // `.cache`) returns an infinite pipe unchanged, but a FINITE pipe
             // (one bottoming out in a `gather`/finite source) must reify — else
@@ -1593,11 +1592,7 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            if ll.in_list_context() {
-                Value::array(items)
-            } else {
-                Value::seq(items)
-            }
+            ll.reified_value(items)
         } else {
             target
         };

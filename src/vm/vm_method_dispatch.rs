@@ -192,6 +192,14 @@ impl Interpreter {
             // param shares the caller's container (slow-path ContainerRef
             // promotion + exit writeback) — keep such calls on the full path
             // (mirrors the sub side's named-share gate).
+            // A `Mu`-only named argument (`:x(Mu)`) fails an untyped `:$x`'s
+            // implicit `Any` (#10878): the full binder raises that, so such a
+            // call keeps the full path.
+            let named_mu_only_arg = has_named_args
+                && args.iter().any(|a| match a.unwrap_varref().view() {
+                    ValueView::Pair(_, v) => !self.light_arg_is_any(v),
+                    _ => false,
+                });
             let named_container_share = has_named_args
                 && self.method_shares_container_into_named_scalar_param(method_def, &args);
             // Every named argument must have somewhere to land: a named slurpy
@@ -302,6 +310,7 @@ impl Interpreter {
                 && named_params_fast_ok
                 && named_args_all_land
                 && !named_container_share
+                && !named_mu_only_arg
                 && !has_missing_required
                 && !has_invocant_constraint
                 && !has_type_capture
@@ -926,7 +935,7 @@ impl Interpreter {
                 ip = cc.ops.len();
                 r
             } else {
-                self.exec_one(cc, &mut ip, compiled_fns)
+                self.exec_one_backedge_polled(cc, &mut ip, compiled_fns)
             };
             match step {
                 Ok(()) => {}
@@ -1950,7 +1959,16 @@ impl Interpreter {
                 if pd.is_some_and(|pd| pd.traits.iter().any(|t| t == "copy")) {
                     val = val.detach_shared_container();
                 }
-                if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref()) {
+                // An untyped parameter is implicitly `Any` (#10878): a
+                // `Mu`-only argument takes the typed check below, which fails.
+                let implicit_any_fail = pd
+                    .is_some_and(|pd| pd.type_constraint.is_none() && !pd.is_invocant)
+                    && pd.is_some_and(crate::opcode::FastParamCheck::implicitly_any)
+                    && !self.light_arg_is_any(&val);
+                if let Some(constraint) = pd
+                    .and_then(|pd| pd.type_constraint.as_deref())
+                    .or(implicit_any_fail.then_some("Any"))
+                {
                     let resolved_constraint = self.resolved_type_capture_name(constraint);
                     // A native-int parameter binds the coerced value -- the
                     // same unbox/wrap the sub binders apply (#9533): an
@@ -2349,7 +2367,7 @@ impl Interpreter {
                 ip = cc.ops.len();
                 r
             } else {
-                self.exec_one(cc, &mut ip, compiled_fns)
+                self.exec_one_backedge_polled(cc, &mut ip, compiled_fns)
             };
             match step {
                 Ok(()) => {}

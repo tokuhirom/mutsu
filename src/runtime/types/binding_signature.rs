@@ -365,7 +365,7 @@ impl Interpreter {
         value: &Value,
         interp: Option<&Interpreter>,
     ) -> RuntimeError {
-        RuntimeError::typecheck_binding_parameter_where(&param_display_name(pd), value)
+        crate::runtime::utils::typecheck_binding_parameter_where(&param_display_name(pd), value)
             .with_parameter_object(pd, interp)
     }
 
@@ -526,11 +526,16 @@ impl Interpreter {
         // to an @ parameter must keep the source pullable. A List-context view
         // lets a bounded index fetch only the prefix it needs.
         // A Seq's List view similarly shares its deferred SeqBody.
+        // `bound_from_seq` keeps the caller's Seq so a failed constraint check
+        // below reports (and carries in `.got`) the Seq the caller passed, not
+        // the List view it was rebound to (#10921).
+        let mut bound_from_seq: Option<Value> = None;
         let seq_list_array_context = if pd.name.starts_with('@') {
             if let ValueView::LazyList(list) = value.view()
                 && (list.is_genuinely_lazy() || list.is_from_gather())
             {
                 let list = list.with_list_context();
+                bound_from_seq = Some(value.clone());
                 value = Value::lazy_list(crate::gc::Gc::new(list));
                 true
             } else if let ValueView::Seq(body) = value.view() {
@@ -539,6 +544,7 @@ impl Interpreter {
                 // reified once and kept, so the callee may read it any number
                 // of times instead of the first consuming method stealing it.
                 body.mark_cache_requested();
+                bound_from_seq = Some(value.clone());
                 value = Value::seq_list_view(&body);
                 true
             } else {
@@ -646,7 +652,7 @@ impl Interpreter {
                     let err = self.typecheck_binding_parameter_failure(
                         &param_display_name(pd),
                         &expected,
-                        &value,
+                        bound_from_seq.as_ref().unwrap_or(&value),
                     );
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
@@ -2329,6 +2335,19 @@ impl Interpreter {
                         if enforce_named_constraints {
                             bound_value =
                                 self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                            // An untyped routine `:$x` is implicitly `Any`, as
+                            // its positional counterpart is (#10878).
+                            if crate::opcode::FastParamCheck::implicitly_any(pd)
+                                && !self.light_arg_is_any(&bound_value)
+                            {
+                                return Err(self
+                                    .typecheck_binding_parameter_failure(
+                                        &param_display_name(pd),
+                                        "Any",
+                                        &bound_value,
+                                    )
+                                    .with_parameter_object(pd, Some(&*self)));
+                            }
                         }
                         // A named hash parameter (`:%params`) collects the
                         // entries nested in its named argument into a Hash.
@@ -2500,7 +2519,7 @@ impl Interpreter {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
                             } else if named_is_rw {
-                                return Err(RuntimeError::parameter_rw_not_container(
+                                return Err(crate::runtime::utils::parameter_rw_not_container(
                                     &param_display_name(pd),
                                     &bound_value,
                                 ));
@@ -2979,7 +2998,7 @@ impl Interpreter {
                             // ADR-0059 Slice 3): the first write creates the
                             // element.
                         } else if is_rw {
-                            return Err(RuntimeError::parameter_rw_not_container(
+                            return Err(crate::runtime::utils::parameter_rw_not_container(
                                 &param_display_name(pd),
                                 &args[positional_idx],
                             ));
@@ -3305,7 +3324,7 @@ impl Interpreter {
                     if let Some(lit) = &pd.literal_value
                         && &value != lit
                     {
-                        return Err(RuntimeError::typecheck_binding_parameter_literal(
+                        return Err(crate::runtime::utils::typecheck_binding_parameter_literal(
                             lit, &value,
                         ));
                     }

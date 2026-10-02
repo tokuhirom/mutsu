@@ -497,6 +497,11 @@ impl Interpreter {
             let is_native_int;
             let ok = match cf.param_fast_types.get(param_idx) {
                 Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
+                Some(crate::opcode::FastParamCheck::RequiresAny) => {
+                    is_native_int = false;
+                    let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
+                    self.light_arg_is_any(&val)
+                }
                 Some(crate::opcode::FastParamCheck::ImplicitCallable) => {
                     is_native_int = false;
                     let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
@@ -562,11 +567,17 @@ impl Interpreter {
             }
         }
         if let Some(param_idx) = type_failure {
-            // An untyped `&c` failed its implicit `Callable` constraint.
-            let tc = cf.param_defs[param_idx]
+            // An untyped `&c` failed its implicit `Callable` constraint, any
+            // other untyped parameter its implicit `Any`.
+            let pd = &cf.param_defs[param_idx];
+            let tc = pd
                 .type_constraint
                 .as_deref()
-                .unwrap_or("Callable");
+                .unwrap_or(if pd.name.starts_with('&') {
+                    "Callable"
+                } else {
+                    "Any"
+                });
             // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
             match caller_env {
                 Some(caller_env) => self.set_env(caller_env),
@@ -879,7 +890,7 @@ impl Interpreter {
                     ip = cf.code.ops.len();
                     r
                 } else {
-                    self.exec_one(&cf.code, &mut ip, compiled_fns)
+                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns)
                 };
                 match step {
                     Ok(()) => {}
@@ -1334,6 +1345,22 @@ impl Interpreter {
             // name that, on this path, is always one of the five concrete
             // types above, so it can only be false.
             _ => kind == T::Wild,
+        }
+    }
+
+    /// Does `val` satisfy a parameter's `Any` constraint
+    /// ([`crate::opcode::FastParamCheck::RequiresAny`])? Only a type object or
+    /// an object of a user class can be `Mu`-only; every other value shape is
+    /// `Any` without a lookup.
+    // Cost: O(1) for a builtin value; O(m) for a type object or an instance,
+    // m = its class's MRO (`type_matches_value`).
+    #[inline]
+    pub(crate) fn light_arg_is_any(&mut self, val: &Value) -> bool {
+        match val.view() {
+            ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..) => {
+                self.type_matches_value("Any", val)
+            }
+            _ => true,
         }
     }
 

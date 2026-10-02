@@ -254,7 +254,7 @@ impl Interpreter {
                 // (only on List/Array/Buf), so a non-Iterable invocant is a
                 // method-not-found error, not a silent `Nil`.
                 _ => {
-                    return Err(RuntimeError::method_not_found(
+                    return Err(crate::runtime::did_you_mean::method_not_found(
                         "rotate",
                         &crate::value::types::what_type_name(&target),
                     ));

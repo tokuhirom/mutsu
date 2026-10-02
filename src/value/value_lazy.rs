@@ -372,6 +372,18 @@ impl LazyList {
         )
     }
 
+    /// Whether `.map`/`.grep` on this list appends a lazy pipe stage
+    /// (`is_lazy_pipe_source`) rather than forcing the list first: a pipe, an
+    /// infinite spec, a gather, a cat pull, or an explicitly `.lazy` finite
+    /// list, whose map is still a lazy Seq in Rakudo (#10918).
+    pub(crate) fn map_grep_appends_stage(&self) -> bool {
+        self.lazy_pipe.is_some()
+            || self.is_infinite_spec()
+            || self.is_from_gather()
+            || self.cat_pull.is_some()
+            || (self.is_lazy_marked() && self.is_cache_only())
+    }
+
     /// Whether this list has no generator at all -- its elements are exactly
     /// its cache (`lazy <b c d>`) -- and so is finite.
     pub(crate) fn is_cache_only(&self) -> bool {
@@ -383,6 +395,7 @@ impl LazyList {
             && self.lazy_pipe.is_none()
             && self.closure_seq.is_none()
             && self.cat_pull.is_none()
+            && self.walk_pending.is_none()
             && self.elems_count.is_none()
             && self
                 .cache
@@ -415,9 +428,12 @@ impl LazyList {
 
     /// Return a clone of this list tagged as a `.List`-coerced list. Preserves
     /// laziness (the generator is untouched) while making `.WHAT` report `List`.
+    /// The coercion's result is a fresh value, outside the source scalar's
+    /// container; a later scalar assignment may itemize that result again.
     pub(crate) fn with_list_context(&self) -> Self {
         let mut cloned = self.clone();
         cloned.list_context = true;
+        cloned.itemized = false;
         cloned
     }
 
@@ -446,6 +462,21 @@ impl LazyList {
         let mut cloned = self.clone();
         cloned.itemized = true;
         cloned
+    }
+
+    /// Keep the List view and scalar container when a deferred list is reified.
+    /// The pull itself is performed by the caller before constructing this value.
+    pub(crate) fn reified_value(&self, items: Vec<Value>) -> Value {
+        if self.in_list_context() {
+            let list = Value::array(items);
+            if self.is_itemized() {
+                list.item()
+            } else {
+                list
+            }
+        } else {
+            Value::seq(items)
+        }
     }
 
     /// The shared `.cache` `LazyList` arm: a genuinely-lazy list (infinite

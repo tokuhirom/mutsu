@@ -309,22 +309,21 @@ impl Interpreter {
                 // match — a successful match returns this def, and a failed match
                 // falls through to the same def via `first_visible_non_multi`.
                 // Skip the match (env snapshot + speculative binding) entirely.
-                // Excluded: params carrying a `where` clause (user code whose
-                // dynamic-variable writes are observable side effects of the
-                // match), a type constraint (a subset's predicate is user code
-                // too), or a sub-signature. This is the hot shape of every
-                // BUILD/TWEAK construction dispatch.
+                // That includes a `where` clause or a subset-typed parameter:
+                // its predicate is user code, and running it here as well as in
+                // the binder would make its side effects happen twice per call
+                // (#10935). A sub-signature is still matched here: the binder does
+                // not yet run the `where` clauses nested in a slurpy's
+                // sub-signature, so this match is their only check (#10989).
+                // This is the hot shape of every BUILD/TWEAK
+                // construction dispatch.
                 if !any_multi && all_matches.is_empty() {
                     let mut visible = overloads
                         .iter()
                         .filter(|d| !(d.is_private || (d.is_my && is_ancestor)));
                     if let Some(only) = visible.next()
                         && visible.next().is_none()
-                        && only.param_defs.iter().all(|pd| {
-                            pd.where_constraint.is_none()
-                                && pd.type_constraint.is_none()
-                                && pd.sub_signature.is_none()
-                        })
+                        && only.param_defs.iter().all(|pd| pd.sub_signature.is_none())
                     {
                         return Some((*cn, only.clone()));
                     }
@@ -681,8 +680,8 @@ impl Interpreter {
     /// multi-sub dispatch also uses and has no such special case) since this
     /// is a method-dispatch-specific fix.
     fn nil_type_distance(constraint: &str) -> usize {
-        let nil_mro = crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain("Nil")
-            .unwrap_or(&[]);
+        let nil_mro =
+            crate::builtin_types::ancestry::builtin_type_narrowness_chain("Nil").unwrap_or(&[]);
         for (i, &ancestor) in nil_mro.iter().enumerate() {
             if ancestor == constraint {
                 return i;

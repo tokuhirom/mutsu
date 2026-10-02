@@ -723,11 +723,10 @@ pub(super) fn dispatch(
             // A hole gists as the container's `is default(...)` value, not the
             // `Any` marker the slot holds (`ArrayData::items_with_default`).
             let items = items.items_with_default();
-            // Shaped arrays: format with newlines between rows
+            // Only an actual multidimensional shape has rows. A 1-D shaped
+            // array may hold an Array as one of its leaf values.
             if kind == crate::value::ArrayKind::Shaped
-                && items
-                    .iter()
-                    .any(|v| matches!(v.view(), ValueView::Array(..)))
+                && crate::runtime::utils::shaped_array_has_rows(target)
             {
                 let rows: Vec<String> = items.iter().map(elem_render).collect();
                 let inner = rows.join("\n ");

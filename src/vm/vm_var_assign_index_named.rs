@@ -1559,6 +1559,10 @@ impl Interpreter {
         if !bind_mode && !is_positional && self.hash_element_is_readonly_bound(&var_name, &idx) {
             return Err(RuntimeError::immutable_value());
         }
+        // And for an element `@a.BIND-POS($i, 42)` bound (#10924).
+        if !bind_mode && is_positional && self.array_element_is_readonly_bound(&var_name, &idx) {
+            return Err(RuntimeError::immutable_value());
+        }
         // Native typed arrays store unboxed scalars and cannot bind containers to
         // their elements: `my num @a; @a[0] := $x` is illegal.
         if bind_mode

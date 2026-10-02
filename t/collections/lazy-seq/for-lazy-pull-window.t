@@ -6,7 +6,7 @@ use Test;
 # that the windowed pull must keep: interleaving, chunking, the cache that
 # later reads see, and error / override handling.
 
-plan 14;
+plan 18;
 
 {
     my @log;
@@ -31,6 +31,20 @@ plan 14;
     try { for gather { take 1; take 2; die "boom"; take 3 } { @seen.push($_) } }
     is @seen.join(' '), '1 2', 'elements before a die in the gather body are seen';
     is $!.message, 'boom', 'the die propagates out of the loop';
+}
+{
+    my @seen;
+    my $g = gather { take 1; take 2; die "boom"; take 3 };
+    try { for $g.list { @seen.push($_) } }
+    is @seen.join(' '), '1 2', 'a stored gather .list is pulled as the loop runs';
+    is $!.message, 'boom', 'the later die follows the earlier loop iterations';
+}
+{
+    my @seen;
+    my $g = gather { take 1; take 2; die "boom"; take 3 };
+    try { for $g<> { @seen.push($_) } }
+    is @seen.join(' '), '1 2', 'the angle list view of a stored gather also pulls lazily';
+    is $!.message, 'boom', 'the angle view propagates the later die';
 }
 {
     my @seen;

@@ -41,8 +41,12 @@ impl Compiler {
             // zero-argument sub call parses, so only a name the parser
             // registered as a type, or a core type, counts. A definite-type
             // object (`Str:D`) is a run-time check in rakudo.
+            // `Mu` is a supertype of every parameter type, so no binding of it
+            // can be refuted at compile time: rakudo raises the binder's
+            // run-time error (`sub f(Int $x) {}; f(Mu)`, #10878).
             Expr::BareWord(name) => {
-                !name.contains(':')
+                name != "Mu"
+                    && !name.contains(':')
                     && (crate::parser::is_user_declared_type(name)
                         || crate::runtime::utils::is_known_type_constraint(name))
             }

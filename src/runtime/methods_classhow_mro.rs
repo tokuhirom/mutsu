@@ -29,7 +29,7 @@ impl Interpreter {
             // full chain up to and including `Any`/`Mu` (the unconditional
             // append below is a no-op for a catalog hit -- it only fires for a
             // name the catalog does not model).
-            match crate::builtins::builtin_type_catalog::builtin_type_info(class_name.as_str()) {
+            match crate::builtin_types::catalog::builtin_type_info(class_name.as_str()) {
                 Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),
                 None => {
                     // A parametrized builtin type object (for example,
@@ -39,8 +39,7 @@ impl Interpreter {
                     // classifier already model it.
                     if let Some((base, _)) = class_name.split_once('[')
                         && class_name.ends_with(']')
-                        && let Some(info) =
-                            crate::builtins::builtin_type_catalog::builtin_type_info(base)
+                        && let Some(info) = crate::builtin_types::catalog::builtin_type_info(base)
                     {
                         let mut mro = vec![class_name.clone()];
                         mro.extend(info.mro.iter().map(|s| s.to_string()));

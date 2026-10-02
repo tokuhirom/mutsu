@@ -177,6 +177,8 @@ mod flags {
     pub(super) const ROUTINE_SCOPED: u8 = 1 << 2;
     /// An `@` variable addressed through a real package stash.
     pub(super) const PACKAGE_ARRAY: u8 = 1 << 3;
+    /// A `%` variable addressed through a real package stash.
+    pub(super) const PACKAGE_HASH: u8 = 1 << 4;
 
     pub(super) fn of(sym: Symbol) -> u8 {
         thread_local! {
@@ -193,25 +195,10 @@ mod flags {
         if text.contains("::") {
             f |= QUALIFIED;
         }
-        if let Some(rest) = text.strip_prefix('@')
-            && let Some((head, tail)) = rest.split_once("::")
-            && (tail.contains("::")
-                || !matches!(
-                    head,
-                    "SETTING"
-                        | "CALLER"
-                        | "CALLERS"
-                        | "OUTER"
-                        | "OUTERS"
-                        | "CORE"
-                        | "MY"
-                        | "DYNAMIC"
-                        | "UNIT"
-                        | "LEXICAL"
-                        | "CLIENT"
-                ))
-        {
-            f |= PACKAGE_ARRAY;
+        match text.split_at_checked(1) {
+            Some(("@", rest)) if names_package_stash(rest) => f |= PACKAGE_ARRAY,
+            Some(("%", rest)) if names_package_stash(rest) => f |= PACKAGE_HASH,
+            _ => {}
         }
         if crate::str_scan::has_routine_scope_marker(text) {
             f |= ROUTINE_SCOPED;
@@ -225,6 +212,29 @@ mod flags {
         });
         f
     }
+
+    /// Whether a sigil-stripped `Pkg::name` addresses a real package stash,
+    /// not a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...).
+    fn names_package_stash(rest: &str) -> bool {
+        let Some((head, tail)) = rest.split_once("::") else {
+            return false;
+        };
+        tail.contains("::")
+            || !matches!(
+                head,
+                "SETTING"
+                    | "CALLER"
+                    | "CALLERS"
+                    | "OUTER"
+                    | "OUTERS"
+                    | "CORE"
+                    | "MY"
+                    | "DYNAMIC"
+                    | "UNIT"
+                    | "LEXICAL"
+                    | "CLIENT"
+            )
+    }
 }
 
 /// Whether `name` carries a `::` qualifier, decided once per symbol.
@@ -235,6 +245,11 @@ pub(crate) fn is_qualified(name: Symbol) -> bool {
 /// Whether an `@` name addresses a package stash rather than a lexical pseudo-stash.
 pub(crate) fn is_package_array(name: Symbol) -> bool {
     flags::of(name) & flags::PACKAGE_ARRAY != 0
+}
+
+/// Whether a `%` name addresses a package stash rather than a lexical pseudo-stash.
+pub(crate) fn is_package_hash(name: Symbol) -> bool {
+    flags::of(name) & flags::PACKAGE_HASH != 0
 }
 
 /// Whether `pkg` is a routine-scope mangled package name (`Pkg::&sub/arity`,
@@ -316,6 +331,16 @@ mod tests {
             "$P::a",
         ] {
             assert!(!is_package_array(Symbol::intern(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn package_hashes_exclude_lexical_pseudo_stashes() {
+        for name in ["%GLOBAL::h", "%OUR::h", "%P::h", "%CORE::P::h"] {
+            assert!(is_package_hash(Symbol::intern(name)), "{name}");
+        }
+        for name in ["%MY::h", "%OUTER::h", "%CALLER::h", "%h", "@P::h", "$P::h"] {
+            assert!(!is_package_hash(Symbol::intern(name)), "{name}");
         }
     }
 

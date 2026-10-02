@@ -413,10 +413,15 @@ impl Interpreter {
         Some(())
     }
 
+    // Cost: O(n), n = number of hash elements (one pass; at most one cell
+    // allocation per element, plus one key copy each for `.kv`/`.pairs`).
     fn hash_element_producer(&mut self, target: &Value, method: &str) -> Option<Value> {
-        // Key order is taken from the same `items.iter()` the pure-value
-        // producer uses, so the container-aware path yields the same order.
-        let keys: Vec<String> = match target.view() {
+        // `.values`, `.kv` and `.pairs` reach here; `.reverse`/`.sort` are
+        // array-only.
+        if !matches!(method, "values" | "kv" | "pairs") {
+            return None;
+        }
+        match target.view() {
             ValueView::Hash(data) => {
                 // An immutable `Map`'s elements are not assignable, so promoting
                 // one would offer an alias that must not exist.
@@ -428,45 +433,39 @@ impl Interpreter {
                 if data.declared_type.as_deref() == Some("Map") || data.bare_values {
                     return None;
                 }
-                data.keys().cloned().collect()
             }
             _ => return None,
-        };
-        // `.values`, `.kv` and `.pairs` reach here; `.reverse`/`.sort` are
-        // array-only. `.kv` and `.pairs` share the `hash_typed_key` path below,
-        // because both hand the key back to the program; `.values` does not.
-        if !matches!(method, "values" | "kv" | "pairs") {
-            return None;
         }
-        let typed_keys = method != "values" && crate::runtime::utils::hash_uses_typed_keys(target);
-        let mut out: Vec<Value> = Vec::with_capacity(keys.len() * 2);
-        for k in &keys {
-            let cell = target.hash_slot_ref(k, true)?;
-            // A missing key hands back a lazy `HashEntryRef` path token rather
-            // than an alias; these keys came from the map, so that cannot
-            // happen — but decline rather than hand out a path if it ever does.
-            if !matches!(cell.view(), ValueView::ContainerRef(_)) {
-                return None;
+        // Key order is the map's own iteration order — the order the pure-value
+        // producer's `keys()` walk yields — so the container-aware path yields
+        // the same order.
+        if method == "values" {
+            return Some(Value::seq_element_containers(
+                target.hash_element_cells(|_, cell| cell)?,
+            ));
+        }
+        // `.kv` and `.pairs` hand the key back to the program, through
+        // `hash_typed_key`, which reads the hash -- so the keys are copied out
+        // of the promotion pass and decoded after it.
+        let cells = target.hash_element_cells(|k, cell| (k.to_string(), cell))?;
+        let typed_keys = crate::runtime::utils::hash_uses_typed_keys(target);
+        let decode = |k: &str| {
+            if typed_keys {
+                crate::runtime::utils::hash_typed_key(target, k)
+            } else {
+                Value::hash_key_decode(k)
             }
+        };
+        let mut out: Vec<Value> = Vec::with_capacity(cells.len() * 2);
+        for (k, cell) in cells {
             if method == "pairs" {
-                let key = if typed_keys {
-                    crate::runtime::utils::hash_typed_key(target, k)
-                } else {
-                    Value::hash_key_decode(k)
-                };
-                out.push(Value::value_pair(key, cell));
-                continue;
+                out.push(Value::value_pair(decode(&k), cell));
+            } else {
+                // `.kv`: the key is NOT a container -- only the value is (the
+                // same asymmetry that keeps `.antipairs` off this path).
+                out.push(decode(&k));
+                out.push(cell);
             }
-            if method == "kv" {
-                // The key is NOT a container -- only the value is (the same
-                // asymmetry that keeps `.antipairs` off this path).
-                out.push(if typed_keys {
-                    crate::runtime::utils::hash_typed_key(target, k)
-                } else {
-                    Value::hash_key_decode(k)
-                });
-            }
-            out.push(cell);
         }
         Some(Value::seq_element_containers(out))
     }

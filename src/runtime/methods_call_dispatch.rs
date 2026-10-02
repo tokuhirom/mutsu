@@ -3296,9 +3296,7 @@ impl Interpreter {
                         // the pure fast path (`say my @a[2,2]` is one row per
                         // line even when cells are type objects).
                         let sep = if kind == ArrayKind::Shaped
-                            && items
-                                .iter()
-                                .any(|v| matches!(v.view(), ValueView::Array(..)))
+                            && crate::runtime::utils::shaped_array_has_rows(value)
                         {
                             "\n "
                         } else {
@@ -3594,11 +3592,15 @@ impl Interpreter {
                             index, shape[0]
                         )));
                     }
-                    if matches!(
-                        items.get(index).map(Value::view),
-                        Some(ValueView::Scalar(_))
-                    ) {
-                        return Err(RuntimeError::assignment_ro(None));
+                    match items.get(index).map(Value::view) {
+                        Some(ValueView::Scalar(_)) => {
+                            return Err(RuntimeError::assignment_ro(None));
+                        }
+                        // An element `BIND-POS`-bound to a bare value (#10924).
+                        Some(ValueView::ContainerRef(cell)) if cell.is_readonly() => {
+                            return Err(RuntimeError::immutable_value());
+                        }
+                        _ => {}
                     }
                     // In place through the shared node, with the same store the
                     // `[]=` opcode uses: every holder of the array sees the write
@@ -3625,7 +3627,7 @@ impl Interpreter {
                     // SAFETY: audited aliased in-place container write (see
                     // value::aliased_mut); no borrow into the node is live.
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.store_element(index, Value::scalar(value.clone()));
+                    data.store_element(index, Value::bound_element(value.clone()));
                     return Ok(value.clone());
                 }
                 // Cost: O(1) amortized (in place through the shared node; plus the
@@ -4469,7 +4471,8 @@ impl Interpreter {
         // lazy index-pipe stage instead of forcing the source (mirrors the
         // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
         if args.is_empty()
-            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, false)
+            && let Some(pipe) =
+                crate::builtins::lazy_scan::index_pipe_method(&target, method, false)
         {
             return Ok(pipe);
         }
@@ -4517,8 +4520,7 @@ impl Interpreter {
             // stage (`dispatch_map_method`/`dispatch_grep` via
             // `is_lazy_pipe_source`); a laziness-preserving coercion returns the
             // list unchanged. Neither forces the (possibly infinite) sequence (L2b).
-            && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
         {

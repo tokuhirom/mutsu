@@ -395,14 +395,14 @@ mod tests {
         // name.
         let known = |name: &str| {
             matches!(name, "Cool" | "Map" | "Any" | "Mu")
-                || crate::builtins::builtin_type_catalog::builtin_type_info(name).is_some()
+                || crate::builtin_types::catalog::builtin_type_info(name).is_some()
                 || !builtin_type_method_names(name).is_empty()
         };
         for ty in [
             "Int", "Num", "Rat", "FatRat", "Complex", "Str", "Bool", "Array", "List", "Hash",
             "Map", "Range", "Seq", "Pair",
         ] {
-            let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(ty) else {
+            let Some(info) = crate::builtin_types::catalog::builtin_type_info(ty) else {
                 continue;
             };
             for parent in info.mro {

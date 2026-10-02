@@ -784,6 +784,7 @@ impl Interpreter {
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,
+            loading_without_import: false,
             in_lvalue_assignment: false,
             rw_return_context: false,
             in_does_rhs: false,

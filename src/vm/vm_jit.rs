@@ -297,6 +297,7 @@ pub(crate) fn try_enter_range(
     start: usize,
     end: usize,
     compiled_fns: &CompiledFns,
+    entry_poll: bool,
 ) -> Option<Result<(), RuntimeError>> {
     use std::sync::atomic::Ordering;
     if !jit_enabled() || start >= end || end > code.ops.len() {
@@ -364,15 +365,18 @@ pub(crate) fn try_enter_range(
         }
     };
     crate::vm::vm_stats::record_jit_entry();
-    // The interpreter loop polls the VM network once per opcode; a native
-    // body polls only its own backedges. The enclosing compound loop's
-    // per-iteration poll therefore lands here, before each native body run.
-    crate::vm::vm_poll::poll_code(
-        crate::gc::SafepointKind::Backedge,
-        start as u32,
-        code,
-        interp,
-    );
+    // A native body polls only its own backedges, so the enclosing compound
+    // loop's per-iteration poll lands here, before each native body run —
+    // the same entry poll `run_range_from` takes for an interpreted body
+    // (`vm_poll::DispatchPolls`; skipped for a loop's condition/step range).
+    if crate::vm::vm_poll::DispatchPolls::current().due(entry_poll) {
+        crate::vm::vm_poll::poll_code(
+            crate::gc::SafepointKind::Backedge,
+            start as u32,
+            code,
+            interp,
+        );
+    }
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
     match status {

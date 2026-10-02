@@ -202,11 +202,13 @@ pub(crate) fn multidim_assign_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        if data
-            .get(i)
-            .is_some_and(|v| matches!(v.view(), ValueView::Scalar(_)))
-        {
-            return Err(RuntimeError::assignment_ro(None));
+        match data.get(i).map(Value::view) {
+            Some(ValueView::Scalar(_)) => return Err(RuntimeError::assignment_ro(None)),
+            // A slot `BIND-POS`-bound to a bare value (#10924).
+            Some(ValueView::ContainerRef(cell)) if cell.is_readonly() => {
+                return Err(RuntimeError::immutable_value());
+            }
+            _ => {}
         }
         data.store_element(i, value);
         return Ok(());
@@ -216,7 +218,7 @@ pub(crate) fn multidim_assign_pos(
 }
 
 /// `BIND-POS` with several indices: bind the innermost slot (stored as
-/// `Value::scalar(value)`, which marks it bound/immutable), in place through
+/// `Value::bound_element(value)`, a read-only cell for a bare value), in place through
 /// each level's shared node like [`multidim_assign_pos`].
 // Cost: O(d), d = indices (amortized; growing a level is O(i - e) there).
 pub(crate) fn multidim_bind_pos(
@@ -237,7 +239,7 @@ pub(crate) fn multidim_bind_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        data.store_element(i, Value::scalar(value));
+        data.store_element(i, Value::bound_element(value));
         return Ok(());
     }
     let child = multidim_child_for_store(data, i);
@@ -268,22 +270,9 @@ pub(crate) fn multidim_delete_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        // ADR-0049 slice 5: the vacated slot gets the standard
-        // `Package("Any")` gap marker and leaves `initialized` -- `Nil` is no
-        // longer a hole sentinel (mirrors the single-dimension `.DELETE-POS`,
-        // `array_delete_pos_value` in methods_subscript_protocol.rs).
-        let len = data.len();
-        data.initialized
-            .get_or_insert_with(|| (0..len).collect())
-            .remove(&i);
-        let old = std::mem::replace(
-            &mut data.live_mut()[i],
-            Value::package(crate::symbol::wk::any()),
-        );
-        return Ok(match old.view() {
-            ValueView::Scalar(inner) => inner.clone(),
-            _ => old,
-        });
+        // The innermost level deletes like the single-dimension form, trailing
+        // holes trimmed included (#10926).
+        return Ok(Interpreter::delete_pos_in_array_data(data, i));
     }
     let child = multidim_level(&data[i]);
     multidim_delete_pos(&child, &indices[1..])

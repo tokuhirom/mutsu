@@ -265,6 +265,7 @@ t/concurrency/thread-lock/thread.t
 t/control/bare-block-caller-topic-rw.t
 t/control/begin-forward-call-undeclared.t
 t/control/begin-prologue-no-strict-auto-declared.t
+t/control/begin-time-region-unwind.t
 t/control/block-scope-recursion-decl-leak.t
 t/control/do-block-newline-then-loop-keyword.t
 t/control/eval-begin-phaser.t
@@ -537,6 +538,7 @@ t/lang/pod-table-equals-separator.t
 t/lang/pod-table.t
 t/lang/quoting/backslash-unrecognized.t
 t/lang/quoting/embedded-qqw-qw-escape.t
+t/lang/quoting/escaped-our-sub-incdec.t
 t/lang/quoting/heredoc.t
 t/lang/quoting/interp-unicode-var-name.t
 t/lang/quoting/interpolate-code-call-postfix.t
@@ -599,10 +601,13 @@ t/modules/import-export/custom-export-lowercase-all.t
 t/modules/import-export/custom-export-sub-wraps-same-name.t
 t/modules/import-export/custom-export-tagged-stash-pairs.t
 t/modules/import-export/custom-export-use-args-not-tags.t
+t/modules/import-export/export-bareword-tag-undeclared.t
+t/modules/import-export/export-convention.t
 t/modules/import-export/export-from-unit-role.t
 t/modules/import-export/export-hook-local-prefix-operator.t
 t/modules/import-export/export-hook-multi-named-args.t
 t/modules/import-export/export-hook-reexport-over-own-import.t
+t/modules/import-export/export-nameclash.t
 t/modules/import-export/export-own-subs-with-reexported-stash.t
 t/modules/import-export/export-stash-keyed-multi-loop.t
 t/modules/import-export/export-stash-manual-our-proto.t
@@ -668,6 +673,7 @@ t/modules/module-file-scope-lexical.t
 t/modules/module-file-scope-type-object-lexical.t
 t/modules/module-file-var-and-callframe.t
 t/modules/module-first-loaded-in-eval-keeps-own-package-name.t
+t/modules/module-lexical-rw-arg.t
 t/modules/module-lexical-writeback-shadow.t
 t/modules/module-loaded-in-eval-keeps-imports.t
 t/modules/module-loaded-in-eval-keeps-my-roles.t
@@ -680,6 +686,7 @@ t/modules/module-sub-otf-lexical-scope.t
 t/modules/module-sub-otf-trait-params.t
 t/modules/module-sub-package-visibility.t
 t/modules/module-sub-return-type-otf.t
+t/modules/module-subset-same-leaf-signature.t
 t/modules/module-warning-location-misattributed.t
 t/modules/name-package-only-on-code.t
 t/modules/nested-module-package-vars.t
@@ -688,16 +695,22 @@ t/modules/our-bare-scalar-default-in-module.t
 t/modules/our-container-bare-name-resolution.t
 t/modules/our-container-decl-preserves-value.t
 t/modules/our-in-dead-branch-is-installed.t
+t/modules/our-sub-closes-over-for-param.t
+t/modules/our-sub-sibling-block-redeclaration.t
 t/modules/package-array-push-vivify.t
 t/modules/package-block-my-sub-hoist.t
 t/modules/package-main-lexical-capture.t
+t/modules/package-quote-language-names.t
 t/modules/package-scope-outer-lexical-preserved.t
 t/modules/package-stash-sigiled-entry-not-itemized.t
+t/modules/package-sub-lexical-mutation.t
+t/modules/panic-recovery-package-state.t
 t/modules/proto-package-qualified-visibility.t
 t/modules/resources-second-use-module.t
 t/modules/role-body-use-module-imports-own-operator.t
 t/modules/strict-module-scope.t
 t/modules/test-assertion-module-otf.t
+t/modules/typed-decl-package-qualified-constraint.t
 t/modules/x-pseudo-package-in-declaration.t
 t/nativecall/bool-native-int-unbox.t
 t/nativecall/classhow-native-method-signature-default.t
@@ -931,6 +944,7 @@ t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/runtime-trait-persistence.t
 t/oo/user-group-dynamic-vars.t
+t/oo/user-prefix-does-not-shadow-pointy-lambda.t
 t/rakuast/rakuast-absent-field-accessors.t
 t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-anon-sub-signature.t
@@ -1126,6 +1140,7 @@ t/regex/unterminated-regex.t
 t/routines/amp-what-callable.t
 t/routines/block-local-routine-scope.t
 t/routines/builtin-routine-type-identity.t
+t/routines/call/call-inline-cache.t
 t/routines/call/call-me-not-found.t
 t/routines/call/call-on-vm.t
 t/routines/call/captured-outer-cell-sharing.t
@@ -1492,6 +1507,7 @@ t/vm/binding/declarator-trailing-after-earlier-sub.t
 t/vm/binding/declared-constraint-incdec-bake.t
 t/vm/binding/declared-constraint-slot-bake.t
 t/vm/binding/expr-decl-stale-type-constraint.t
+t/vm/binding/rw-sub-proxy-fetch-otf.t
 t/vm/binding/var-name.t
 t/vm/binding/var-on-literal-index.t
 t/vm/code-object-gist-in-container.t
@@ -1525,9 +1541,11 @@ t/vm/nqp-repeat-loops.t
 t/vm/nqp-sha1.t
 t/vm/protect-block-redeclared-aggregate.t
 t/vm/scope/caller-lexical-pseudostash.t
+t/vm/scope/declaration-scope.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-scope-pragma.t
 t/vm/scope/dynamic-var-read-not-found.t
+t/vm/scope/escaped-our-sub-lexical-write.t
 t/vm/scope/eval-read-caller-lexicals.t
 t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t
 t/vm/scope/lexical-shadow-slots.t
@@ -1553,6 +1571,7 @@ t/vm/scope/shadow-slot-outer-var.t
 t/vm/scope/shadow-slots-default.t
 t/vm/scope/sibling-block-code-var-name-leak.t
 t/vm/scope/stash-bind-key.t
+t/vm/scope/stash-exists-key.t
 t/vm/scope/stash-literal-key-assign.t
 t/vm/scope/state-aggregate-shared-cell.t
 t/vm/scope/state-in-loop-body-accumulates.t

@@ -571,11 +571,15 @@ mod match_lazy;
 pub(crate) mod match_view;
 pub(crate) mod which_id;
 pub(crate) use match_lazy::MatchNode;
+mod mix_weight;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
+pub(crate) use mix_weight::mix_weight_render;
+pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
+pub(crate) mod shaped_array;
 pub(crate) use nanbox::CONTAINER_CELLS;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
@@ -621,6 +625,7 @@ pub(crate) use map_grep_items::MapGrepItems;
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;
+mod hash_slot;
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
@@ -1832,39 +1837,6 @@ pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
     } else {
         Value::bigfatrat(n, d)
     }
-}
-
-/// Convert a Mix/MixHash weight (f64) back to a Raku Value.
-/// Returns Int for whole numbers, Rat for representable fractions, Num otherwise.
-pub fn mix_weight_to_value(w: f64) -> Value {
-    if w.is_nan() || w.is_infinite() {
-        return Value::Num(w);
-    }
-    // Check for exact integer
-    if w == (w as i64 as f64) && w.abs() < i64::MAX as f64 {
-        return Value::Int(w as i64);
-    }
-    // Try to reconstruct as Rat: use the decimal representation to find
-    // a rational number. Multiply by powers of 10 to clear the decimal.
-    // This works for values like 42.1, 1.5, 3.14 etc.
-    let s = format!("{}", w);
-    if let Some(dot_pos) = s.find('.') {
-        let decimals = s.len() - dot_pos - 1;
-        if decimals <= 15 {
-            let denom = 10i64.checked_pow(decimals as u32);
-            if let Some(d) = denom {
-                // Parse the string without the dot as numerator
-                let without_dot: String = s.chars().filter(|c| *c != '.').collect();
-                if let Ok(n) = without_dot.parse::<i64>() {
-                    // Verify round-trip: n/d as f64 == w
-                    if (n as f64 / d as f64 - w).abs() < f64::EPSILON * w.abs().max(1.0) {
-                        return make_rat(n, d);
-                    }
-                }
-            }
-        }
-    }
-    Value::Num(w)
 }
 
 /// Convert a BigInt ratio n/d to f64 with correct rounding.
@@ -3184,6 +3156,9 @@ pub(crate) enum IndexTransform {
     AntiPairs,
     /// `.kv`: element `i` → two flat outputs `i, elem`.
     Kv,
+    /// `.lazy` over an unbounded range (`(1..*).lazy`): each element passes
+    /// through unchanged, so the result is a lazy `Seq` rather than the Range.
+    Identity,
     /// `flat`: each pulled element is flattened (`flat_val` in List context),
     /// so `flat [2,3,4], 10, 11 ... *` spills the nested array's elements
     /// while the sequence stays lazy. The index is unused.

@@ -11,7 +11,7 @@
 //! catalog). The rest of ADR-0051 P2 (#9948) re-pointed the `Cool` allowlist,
 //! `isa_check`'s variant table, `is_supertype_of`, `are()`'s `Cool` denylist and
 //! the multi-dispatch narrowness chains at this catalog, through the derived
-//! queries in `crate::builtins::builtin_type_ancestry`.
+//! queries in `crate::builtin_types::ancestry`.
 //!
 //! **Authority is raku, not the union of the legacy tables.** Every row below
 //! was captured from `raku -e 'say <Type>.^mro.map(*.^name); say <Type>.^roles.map(*.^name)'`
@@ -704,7 +704,7 @@ pub(crate) fn builtin_type_mro_ids(name: &str) -> Option<&'static [crate::type_i
 }
 
 /// Every catalog row's name, for tables derived from the catalog once per
-/// process (`crate::builtins::builtin_type_ancestry`).
+/// process (`crate::builtin_types::ancestry`).
 pub(crate) fn all_builtin_type_names() -> impl Iterator<Item = &'static str> {
     CATALOG.iter().map(|row| row.name)
 }

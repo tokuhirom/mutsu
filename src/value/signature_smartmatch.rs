@@ -229,6 +229,6 @@ fn is_supertype_of(t1: &str, t2: &str) -> bool {
         _ if t1 == t2 => true,
         "Mu" => true,
         "Any" => t2 != "Mu" && t2 != "Junction",
-        _ => crate::builtins::builtin_type_ancestry::builtin_type_is_a(t2, t1),
+        _ => crate::builtin_types::ancestry::builtin_type_is_a(t2, t1),
     }
 }

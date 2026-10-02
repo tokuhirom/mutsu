@@ -53,6 +53,12 @@ impl Interpreter {
                 return Ok(None);
             }
         }
+        // A list with no generator (`(5,).lazy`, `lazy <b c d>`) is exactly
+        // its cache, however short; running its empty body through the
+        // prefix bridge below answered `()` and lost the elements (#10918).
+        if list.is_cache_only() {
+            return Ok(None);
+        }
 
         // A triangle reduce (`[\op] SOURCE`) produces its elements through its
         // own accumulator walk, not through any of the pull shapes below —
@@ -238,7 +244,7 @@ impl Interpreter {
         let mut body_finished = false;
 
         while ip < cc.ops.len() {
-            match self.exec_one(&cc, &mut ip, run_fns) {
+            match self.exec_one_backedge_polled(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
                 Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
@@ -469,6 +475,7 @@ impl Interpreter {
                             vec![Value::value_pair(elem, idx)]
                         }
                         crate::value::IndexTransform::Kv => vec![idx, elem],
+                        crate::value::IndexTransform::Identity => vec![elem],
                         crate::value::IndexTransform::Flat => {
                             let mut out = Vec::new();
                             crate::builtins::flat_val(&elem, &mut out, true);

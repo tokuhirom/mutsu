@@ -20,7 +20,7 @@ authoritative by construction:
       NaN-boxed `Value` word can carry, and whether its payload is inline, an
       `Arc<T>`, a cycle-collected `Gc<T>` or a `WeakGc<T>` -- read from the
       match that actually bumps and releases it, not from a comment;
-    - src/builtins/builtin_type_catalog.rs, `CATALOG`: the built-in types'
+    - src/builtin_types/catalog.rs, `CATALOG`: the built-in types'
       MROs and roles, captured from Rakudo's own `.^mro`.
 
 Neither output is committed (both are git-ignored, like content/stats.json).
@@ -48,7 +48,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPCODE_RS = "src/opcode.rs"
 DISPATCH_RS = "src/vm/vm_exec_dispatch.rs"
 NANBOX_RS = "src/value/nanbox/mod.rs"
-CATALOG_RS = "src/builtins/builtin_type_catalog.rs"
+CATALOG_RS = "src/builtin_types/catalog.rs"
 CONTENT_DIR = os.path.join(REPO_ROOT, "site", "content")
 ISSUES_URL = "https://github.com/tokuhirom/mutsu/issues"
 

@@ -220,7 +220,7 @@ impl Interpreter {
         // catalog's role names record, so it is left to the callers that
         // compare the type arguments.
         if !has_bracket(constraint)
-            && crate::builtins::builtin_type_ancestry::builtin_type_is_a(value_type, constraint)
+            && crate::builtin_types::ancestry::builtin_type_is_a(value_type, constraint)
         {
             return true;
         }

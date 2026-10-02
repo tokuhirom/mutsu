@@ -59,6 +59,9 @@ pub(super) enum RxOp {
         max: u32,
         possessive: bool,
     },
+    /// The built-in `<.ws>` that `:sigspace` inserts (`RegexAtom::WsRule`):
+    /// advance past its one, committed end (`rx_ws_at`).
+    Ws,
     /// Test the zero-width assertion `atoms[i]` at `pos`.
     Assert(u32),
     /// `pos` is the start of the subject (a nested pattern's leading `^`).
