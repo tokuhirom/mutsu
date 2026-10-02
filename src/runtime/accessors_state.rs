@@ -144,6 +144,12 @@ impl Interpreter {
             crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
                 .insert(sym.resolve());
         }
+        for sym in &code.escaping_our_env_params {
+            crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+                .insert(sym.resolve());
+            crate::runtime::cow_table_mut(&mut self.escaping_our_env_param_names)
+                .insert(sym.resolve());
+        }
         for nested in &code.closure_compiled_codes {
             self.collect_escaping_our_lexical_names(nested);
         }

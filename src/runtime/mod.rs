@@ -3514,6 +3514,10 @@ pub struct Interpreter {
     /// a read before the block correctly yields the undefined value (the cell is not
     /// recorded yet). Empty for ordinary programs: zero cost.
     pub(crate) escaping_our_lexical_names: std::sync::Arc<std::collections::HashSet<String>>,
+    /// The subset of `escaping_our_lexical_names` that are slotless `for`
+    /// parameters (`CompiledCode::escaping_our_env_params`): `RegisterSub`
+    /// boxes their env binding itself, as there is no declaration to do it.
+    pub(crate) escaping_our_env_param_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Names of the `our`-scoped subs declared in bare blocks (the subs whose
     /// free-variable reads/writes may resolve through `escaped_our_lexical_cells`).
     /// The cell resolution fires ONLY while the innermost named routine frame is

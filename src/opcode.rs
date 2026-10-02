@@ -6859,6 +6859,12 @@ pub(crate) struct CompiledCode {
     /// ancestor that declares the local folds it into its own
     /// `needs_cell_escaping_our_sub` (mirrors `needs_cell_named_sub_free`).
     pub(crate) needs_cell_escaping_our_sub_free: Vec<Symbol>,
+    /// Slotless `for` parameters (`for ... -> $i`, bound by name in this
+    /// frame's env, so never a declaration to box) captured by a nested
+    /// `our` sub of a `GLOBAL` mainline block. `RegisterSub` boxes the env
+    /// binding in place and persists it like a `needs_cell_escaping_our_sub`
+    /// local (mutsu#10647).
+    pub(crate) escaping_our_env_params: Vec<Symbol>,
     /// Own locals that are BOTH captured by a nested closure AND mutated after
     /// their declaration (reassigned/inc-dec in this scope, or written from
     /// inside a nested closure). Such a local must be a shared container so the
@@ -7776,6 +7782,7 @@ impl CompiledCode {
             escaping_our_sub_captures: Vec::new(),
             needs_cell_escaping_our_sub: Vec::new(),
             needs_cell_escaping_our_sub_free: Vec::new(),
+            escaping_our_env_params: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_unvouched_locals: Vec::new(),
