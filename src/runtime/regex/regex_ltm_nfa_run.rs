@@ -224,7 +224,15 @@ impl LtmNfa {
         }
         let mut pos = start;
         loop {
+            let here = chars.get(pos).copied();
             while let Some((node, stack)) = work.pop() {
+                // A node that can only go on from a character `here` is not:
+                // the thread dies here, as it would in the matcher.
+                if let Some(guard) = &self.guards[node as usize]
+                    && !here.is_some_and(|c| guard.contains(c))
+                {
+                    continue;
+                }
                 if !seen.insert(node, stack) {
                     continue;
                 }
