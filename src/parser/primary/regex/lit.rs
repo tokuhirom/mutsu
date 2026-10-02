@@ -58,8 +58,16 @@ fn parse_stub_message(r: &str) -> PResult<'_, Expr> {
     expression_no_word_logical(r)
 }
 
-fn static_regex_expr(value: Value, source: &str, declaration: bool) -> Expr {
-    match RegexTree::parse_static(source, declaration) {
+/// `origin` is the regex's text in the unit being parsed; `source` is that
+/// text, possibly behind a prefix of inline adverbs (`:i `). Knowing where it
+/// starts lets the code blocks' statements be numbered for `use trace`.
+fn static_regex_expr(value: Value, source: &str, origin: &str, declaration: bool) -> Expr {
+    let unit_base = source
+        .ends_with(origin)
+        .then(|| crate::parser::primary::fragment_attempts::unit_offset(origin))
+        .flatten()
+        .and_then(|offset| offset.checked_sub(source.len() - origin.len()));
+    match RegexTree::parse_static_at(source, declaration, unit_base) {
         Some(tree) => Expr::RegexLiteral {
             value: value.with_regex_source_tree(tree.clone()),
             tree,
@@ -269,12 +277,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             // `:ignoremark`/`:m` on `rx//` — was silently dropped, so
             // `rx:ignoremark /ä/` compiled to a bare `ä` and lost its mark
             // insensitivity (the `m:ignoremark` form already prepends `:m`).
+            let origin = pattern;
             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
             return Ok((
                 rest,
                 static_regex_expr(
                     build_regex_with_adverbs(pattern.clone(), &adverbs),
                     &pattern,
+                    origin,
                     false,
                 ),
             ));
@@ -945,6 +955,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     // Detect obsolete Perl 5 trailing modifiers (e.g., m/pattern/i)
                     reject_trailing_p5_modifiers(rest)?;
                     let source_pattern = pattern.to_string();
+                    let unit_base = crate::parser::primary::fragment_attempts::unit_offset(pattern);
                     let pattern = apply_inline_match_adverbs(source_pattern.clone(), &adverbs);
                     validate_regex_pattern_or_perror(&pattern)?;
                     // m// always matches against $_ (unlike rx//)
@@ -958,7 +969,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             && matches!(name.as_str(), "i" | "ignorecase" | "g" | "global")
                     });
                     if rakuast_adverbs
-                        && let Some(mut tree) = RegexTree::parse_static(&source_pattern, false)
+                        && let Some(mut tree) =
+                            RegexTree::parse_static_at(&source_pattern, false, unit_base)
                     {
                         tree.match_immediately = true;
                         tree.adverbs = adverbs
@@ -1003,7 +1015,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             Some((pattern, rest)) if !pattern.is_empty() => {
                 validate_regex_pattern_or_perror(pattern)?;
                 let value = Value::regex(pattern.to_string());
-                return Ok((rest, static_regex_expr(value, pattern, false)));
+                return Ok((rest, static_regex_expr(value, pattern, pattern, false)));
             }
             // `regex_lit` is only reached in *term* position, where a leading
             // `/` cannot be division — so running off the end of the input here
