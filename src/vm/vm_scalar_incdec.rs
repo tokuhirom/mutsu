@@ -170,13 +170,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // A binding cell (ADR-0097 §14) holds the variable's container, not its
         // value: step the container at the end of the chain, or the step would
-        // replace the binding with a bare value.
-        if let Some(cell) = Self::binding_cell_of(&Value::container_ref(arc.clone()))
-            && let ValueView::ContainerRef(inner) =
-                Self::innermost_container(Value::container_ref(cell)).view()
-        {
-            return self.incdec_through_cell(&inner, name, name_sym, k);
-        }
+        // replace the binding with a bare value (#10826).
+        let arc = &Self::value_cell_of(arc);
         if self.atomic_container_incdec(arc, name, k.increment, !k.prefix)? {
             return Ok(());
         }

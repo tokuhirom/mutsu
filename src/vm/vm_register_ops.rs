@@ -1405,6 +1405,29 @@ impl Interpreter {
         }
     }
 
+    /// The cell that holds the VALUE behind `cell`: `cell` itself, or -- when
+    /// it is a binding cell (see [`Self::binding_cell_of`]) -- the container at
+    /// the end of its chain. A read-modify-write (`$x++`, `$x += 1`) steps this
+    /// cell; stepping a binding cell instead would overwrite the binding with
+    /// a bare value and cut the variable loose from its container (#10826).
+    // Cost: O(c), c = binding cells chained in front of the value cell (1 in
+    // practice).
+    pub(crate) fn value_cell_of(
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    ) -> crate::gc::Gc<crate::value::ContainerCell> {
+        let mut cell = cell.clone();
+        loop {
+            let inner = cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            match inner.view() {
+                ValueView::ContainerRef(next) => cell = next.clone(),
+                _ => return cell,
+            }
+        }
+    }
+
     /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
     /// cell — see [`Self::binding_cell_of`].
     pub(crate) fn wrap_in_binding_cell(container: Value) -> Value {
