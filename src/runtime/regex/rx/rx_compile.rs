@@ -641,7 +641,7 @@ impl Compiler {
         );
         let plan = self.zero_arms.len() as u32;
         self.zero_arms.push(super::ZeroArmPlan {
-            flags: super::super::regex_helpers::capture_group_list_flags(token, false)
+            flags: super::super::regex_helpers::capture_group_list_flags(&token.atom, false)
                 .into_boxed_slice(),
             list_names: sorted_symbols(list_names),
             named_zero_capture: !matches!(
@@ -801,7 +801,7 @@ impl Compiler {
         let alt_body = atom_contains_alternation(&token.atom);
         // Code in the body sees the iterations so far folded.
         let iter_level =
-            fold.filter(|_| plain_iter_needs_view(&token.atom, count_capture_groups(token)));
+            fold.filter(|_| plain_iter_needs_view(&token.atom, count_capture_groups(&token.atom)));
         if let Some((pos_base, tok)) = iter_level {
             self.ops.push(RxOp::OpenPlainIter { tok, pos_base });
         }

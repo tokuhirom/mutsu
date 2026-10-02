@@ -121,7 +121,7 @@ impl Interpreter {
         let view = sep_chain_view(enclosing, folded());
         let _capture_scope = InlineCaptureScope::enter(
             sep_iteration_slot(enclosing, 0),
-            super::regex_helpers::count_capture_groups(token),
+            super::regex_helpers::count_capture_groups(&token.atom),
         );
         self.regex_match_atom_all_with_capture_in_pkg(
             &token.atom,

@@ -3651,7 +3651,20 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::RatLiteral,
             fields: vec![leaf_field(None, v.clone())],
         }),
+        ValueView::Num(_) => Ok(RakuAstNode {
+            class: RakuAstClass::NumLiteral,
+            fields: vec![leaf_field(None, v.clone())],
+        }),
         ValueView::Str(_) => Ok(quoted_string(v.clone())),
+        // A type the parser resolved to its type object (`Any`) is the same
+        // `Type::Simple` an unresolved bareword type (`Int`) renders as.
+        ValueView::Package(name) => Ok(simple_type_node(&name.resolve())),
+        // The parser folds the term `Empty` to the empty Slip it denotes;
+        // raku keeps the name.
+        ValueView::Slip(items) if items.is_empty() => Ok(RakuAstNode {
+            class: RakuAstClass::TermName,
+            fields: vec![node_field(None, name_from_identifier("Empty"))],
+        }),
         // `True`/`False` are enum values: `Term::Enum.from-identifier('True')`.
         ValueView::Bool(b) => Ok(RakuAstNode {
             class: RakuAstClass::TermEnum,

@@ -885,7 +885,7 @@ impl Interpreter {
                 // (`(a)?(b)` → $0=Nil,$1=b) — a `true` entry (the slot sits
                 // under a nested list quantifier) reserves an empty list
                 // instead of Nil, same as `zo_list_names` does for names.
-                let zo_flags = capture_group_list_flags(token, false);
+                let zo_flags = capture_group_list_flags(&token.atom, false);
                 // Names under a nested list quantifier render as empty lists
                 // even when this `?` group matches zero times (see
                 // `collect_nested_list_quantified_names`).
@@ -1147,7 +1147,7 @@ impl Interpreter {
         let flags = alternation_list_flags(alternatives);
         let zero_or_one = matches!(token.quant, RegexQuant::ZeroOrOne);
         let zo_flags = if zero_or_one {
-            capture_group_list_flags(token, false)
+            capture_group_list_flags(&token.atom, false)
         } else {
             Vec::new()
         };
@@ -1332,7 +1332,7 @@ impl Interpreter {
             &token.atom,
             store.caps(),
             pos_base,
-            count_capture_groups(token),
+            count_capture_groups(&token.atom),
         );
         let matched = self.regex_match_atom_with_capture_in_pkg(
             &token.atom,
@@ -1403,7 +1403,7 @@ impl Interpreter {
             );
         }
         let pos_base = store.caps().positional.len();
-        let stride = count_capture_groups(token);
+        let stride = count_capture_groups(&token.atom);
         let m_quant = store.mark();
         for n in Self::collect_quantified_names_for_token(token) {
             store.insert_named_quantified(n);
@@ -1542,7 +1542,7 @@ impl Interpreter {
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let pos_base = store.caps().positional.len();
-        let stride = count_capture_groups(token);
+        let stride = count_capture_groups(&token.atom);
         let mark = store.mark();
         for name in Self::collect_quantified_names_for_token(token) {
             store.insert_named_quantified(name);

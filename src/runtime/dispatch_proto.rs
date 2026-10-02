@@ -205,16 +205,16 @@ impl Interpreter {
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
-        self.push_proto_dispatch_frame(proto_name.to_string(), args.to_vec(), None);
-        let result = if def.body.is_empty()
-            || super::dispatch_proto_rewrite::is_only_star_block(&def.body)
-        {
-            // A bodyless or `{*}`-bodied proto dispatches implicitly.
+        self.proto_dispatch_stack
+            .push((proto_name.to_string(), args.to_vec(), None));
+        let result = if def.body.is_empty() {
+            // Bodyless proto behaves as implicit {*} dispatch.
             self.call_proto_dispatch()
         } else {
-            self.eval_block_value(&def.body)
+            let rewritten = Self::rewrite_proto_dispatch_stmts(&def.body);
+            self.eval_block_value(&rewritten)
         };
-        self.pop_proto_dispatch_frame();
+        self.proto_dispatch_stack.pop();
         self.routine_stack.pop();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
@@ -260,20 +260,12 @@ impl Interpreter {
         args: Vec<Value>,
         proto: FunctionDef,
     ) -> Result<Value, RuntimeError> {
+        let rewritten = Self::rewrite_proto_dispatch_stmts(&proto.body);
         let mut method_def = MethodDef {
             lexical_package: proto.package,
             params: proto.params.clone(),
             param_defs: proto.param_defs.clone(),
-            // A `{*}`-only body is the routine-level onlystar: the bare `*`
-            // in it is the dispatch (the onlystar *term* in a longer body is
-            // parsed into the dispatch call already, #10746).
-            body: std::sync::Arc::new(
-                if super::dispatch_proto_rewrite::is_only_star_block(&proto.body) {
-                    vec![Stmt::Expr(Expr::onlystar_dispatch())]
-                } else {
-                    proto.body.clone()
-                },
-            ),
+            body: std::sync::Arc::new(rewritten),
             is_rw: false,
             is_raw: false,
             is_private: false,
@@ -321,14 +313,14 @@ impl Interpreter {
             _ => crate::value::AttrMap::new(),
         };
         let call_arg_sources = self.pending_call_arg_sources().cloned();
-        self.push_proto_dispatch_frame(
+        self.proto_dispatch_stack.push((
             method_name.to_string(),
             args.clone(),
             Some(ProtoMethodCtx {
                 invocant: invocant.clone(),
                 call_arg_sources,
             }),
-        );
+        ));
         let result = self.run_resolved_method_compiled_or_treewalk(
             receiver_class,
             owner_class,
@@ -338,7 +330,7 @@ impl Interpreter {
             args,
             Some(invocant),
         );
-        self.pop_proto_dispatch_frame();
+        self.proto_dispatch_stack.pop();
         result.map(|(v, _)| v)
     }
 

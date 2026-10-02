@@ -60,12 +60,15 @@ fn format_bigrat_decimal_exact(n: &num_bigint::BigInt, d: &num_bigint::BigInt) -
     format!("{}{}.{}", prefix, quotient, frac_digits)
 }
 
-/// Format a finite f64 in Raku's Num.raku style: always includes 'e'.
-/// Raku's approach: use the shortest natural string representation,
-/// then ensure 'e' is present (append 'e0' if not).
+/// Format an f64 in Raku's Num.raku style: a finite value always includes
+/// 'e' -- the shortest natural string representation, then 'e0' appended if
+/// it has no exponent -- while `NaN`, `Inf` and `-Inf` are spelled bare.
 /// Examples: 42e0 → "42e0", 1.5e0 → "1.5e0", 0.1e0 → "0.1e0",
-///           2.026887777243374e-48 → "2.026887777243374e-48"
+///           2.026887777243374e-48 → "2.026887777243374e-48", Inf → "Inf"
 pub(crate) fn format_num_raku(f: f64) -> String {
+    if !f.is_finite() {
+        return format_num_str(f);
+    }
     if f == 0.0 {
         return if f.is_sign_negative() {
             "-0e0".to_string()

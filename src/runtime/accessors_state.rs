@@ -1561,6 +1561,27 @@ impl Interpreter {
         self.multi_dispatch_stack.pop();
     }
 
+    /// Push a proto-sub dispatch frame so a compiled proto body's `{*}`
+    /// (`__PROTO_DISPATCH__`) can read the original proto args when it
+    /// redispatches to the winning multi candidate (ledger §D).
+    pub(crate) fn push_proto_dispatch_frame(&mut self, name: String, args: Vec<Value>) {
+        self.proto_dispatch_stack.push((name, args, None));
+    }
+
+    /// Pop the proto-sub dispatch frame pushed by `push_proto_dispatch_frame`.
+    pub(crate) fn pop_proto_dispatch_frame(&mut self) {
+        self.proto_dispatch_stack.pop();
+    }
+
+    /// Clone of the current proto-dispatch frame `(name, args, method_ctx)`, read
+    /// by the VM-native `{*}` redispatch handler. `None` outside a proto body.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn proto_dispatch_last(
+        &self,
+    ) -> Option<(String, Vec<Value>, Option<super::ProtoMethodCtx>)> {
+        self.proto_dispatch_stack.last().cloned()
+    }
+
     /// Push a samewith context (ADR-0019 E9c-1: the single push/pop helper
     /// pair every call site funnels through, so `samewith_context_stack`'s
     /// `args` can never desync from `name`/`invocant` the way the former

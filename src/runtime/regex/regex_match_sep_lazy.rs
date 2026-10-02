@@ -106,7 +106,7 @@ impl Interpreter {
         let mut walk = SepChainWalk {
             min,
             max,
-            atom_stride: count_capture_groups(token),
+            atom_stride: count_capture_groups(&token.atom),
             sep_stride,
             names: Self::collect_quantified_names_for_token(token),
             atom_caps: Vec::new(),

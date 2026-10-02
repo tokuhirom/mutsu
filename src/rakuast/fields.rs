@@ -90,7 +90,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
                 Absent::TypeObject("RakuAST::StatementModifier::Loop"),
             ),
         ],
-        IntLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
+        IntLiteral | NumLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
         VarLexical => &[("name", Absent::Required)],
         VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
         Name => &[("parts", Absent::EmptyList)],
@@ -255,7 +255,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
 pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     use RakuAstClass::*;
     Some(match class {
-        IntLiteral | RatLiteral | StrLiteral => "value",
+        IntLiteral | NumLiteral | RatLiteral | StrLiteral => "value",
         FunctionInfix => "function",
         VarLexical => "name",
         NamePartSimple => "name",

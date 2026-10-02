@@ -58,6 +58,7 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     IntLiteral,
+    NumLiteral,
     RatLiteral,
     StrLiteral,
     QuotedString,
@@ -302,6 +303,7 @@ impl RakuAstClass {
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
             IntLiteral => "RakuAST::IntLiteral",
+            NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
@@ -540,6 +542,7 @@ impl RakuAstClass {
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
             IntLiteral
+            | NumLiteral
             | RatLiteral
             | StrLiteral
             | QuotedString
@@ -714,6 +717,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
     const EXPR: &[&str] = &["RakuAST::Expression"];
     match class_name {
         "RakuAST::IntLiteral"
+        | "RakuAST::NumLiteral"
         | "RakuAST::RatLiteral"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
@@ -847,6 +851,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
     RakuAstClass::IntLiteral,
+    RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
@@ -2395,6 +2400,7 @@ fn normalize_slurpy_marker(value: Value) -> Result<Value, RuntimeError> {
 fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
         ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
+        ("RakuAST::NumLiteral", "new") => RakuAstClass::NumLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
@@ -2665,6 +2671,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::SemiList
             | RakuAstClass::StatementList
             | RakuAstClass::IntLiteral
+            | RakuAstClass::NumLiteral
             | RakuAstClass::RatLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix

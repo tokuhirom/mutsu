@@ -1,14 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    /// Force `list` whole. Its body runs inside the list's iteration, which
-    /// is a method call however late it is forced: a `{*}` in it is `Nil`
-    /// (#10746).
     pub(super) fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
-        self.in_method_call(|interp| interp.force_lazy_list_body(list))
-    }
-
-    fn force_lazy_list_body(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
         // A lazy map/grep pipeline is rooted at an infinite source. It can still
         // terminate when the callback runs `last`; attempt a bounded force and
         // return the result if the pipe became `done`, otherwise throw

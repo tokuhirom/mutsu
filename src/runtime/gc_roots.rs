@@ -204,9 +204,9 @@ impl Interpreter {
                 visitor.visit_value(calc);
             }
         }
-        for frame in &self.proto_dispatch_stack {
-            visit_slice(visitor, &frame.args);
-            if let Some(ctx) = &frame.method_ctx {
+        for (_, args, proto_ctx) in &self.proto_dispatch_stack {
+            visit_slice(visitor, args);
+            if let Some(ctx) = proto_ctx {
                 visitor.visit_value(&ctx.invocant);
             }
         }
