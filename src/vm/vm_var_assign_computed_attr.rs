@@ -454,7 +454,7 @@ impl Interpreter {
         if let Some(self_val) = self_val
             && let Some(found) =
                 self.with_self_attr(&self_val, site, bare, is_private, sigil, |_, map, key| {
-                    map.get(key).map(|v| v.deref_container())
+                    map.get_vivify(key).map(|v| v.deref_container())
                 })
         {
             return found;

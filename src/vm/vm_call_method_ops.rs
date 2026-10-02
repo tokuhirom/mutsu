@@ -385,7 +385,7 @@ impl Interpreter {
         // to the interpreter.
         let out = {
             let map = attributes.as_map();
-            match map.get(method) {
+            match map.get_vivify(method) {
                 Some(v) => Some(v.clone()),
                 None => map.get(format!("{}!", method).as_str()).cloned(),
             }

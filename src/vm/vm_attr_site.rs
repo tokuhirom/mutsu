@@ -43,7 +43,7 @@ impl Interpreter {
         if map.layout()?.id() != layout_id || map.has_undeclared() {
             return None;
         }
-        map.slot(slot).map(Value::deref_container)
+        map.slot_vivify(slot).map(Value::deref_container)
     }
 
     /// Store `val` into the attribute accessed at local slot `idx` of `code`

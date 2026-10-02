@@ -606,6 +606,7 @@ impl Interpreter {
                             declared_shape,
                             source_line: None,
                             source_file: None,
+                            default_is_seed: decl.default_is_seed,
                         });
                         if decl.where_constraint.is_some() {
                             Self::mark_attr_where_constraint_seen();

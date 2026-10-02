@@ -404,6 +404,7 @@ impl Interpreter {
                     declared_shape: None,
                     source_line: None,
                     source_file: None,
+                    default_is_seed: false,
                 }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));
@@ -881,6 +882,7 @@ impl Interpreter {
                     declared_shape: None,
                     source_line: None,
                     source_file: None,
+                    default_is_seed: false,
                 }],
                 native_methods: [
                     "path",
@@ -1515,6 +1517,7 @@ impl Interpreter {
                             declared_shape: None,
                             source_line: None,
                             source_file: None,
+                            default_is_seed: false,
                         })
                         .collect(),
                     native_methods: HashSet::new(),

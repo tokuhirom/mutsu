@@ -1134,6 +1134,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             deprecated_message,
             unknown_traits,
             is_built,
+            default_is_seed,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
@@ -1145,11 +1146,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // `is required` are `Trait::Is` (`rakuast::attribute`); other
             // traits, type smileys, `where`, aliases and `my`/`our`
             // attributes are deferred.
-            let explicit_default = match default {
-                None => None,
-                Some(Expr::BareWord(w)) if type_constraint.as_deref() == Some(w.as_str()) => None,
-                Some(e) => Some(e),
-            };
+            let explicit_default = default.as_ref().filter(|_| !*default_is_seed);
             if !handles.is_empty()
                 || type_smiley.is_some()
                 || matches!(is_required, Some(Some(_)))

@@ -2158,6 +2158,13 @@ pub(crate) enum Stmt {
         /// is an assignment and must copy it (#8150).
         #[serde(default)]
         default_is_bind: bool,
+        /// `default` is the value the parser synthesizes for a typed scalar
+        /// with no initializer (`has Int $.x` -> `Int`, `has int $.n` -> `0`),
+        /// not one the source wrote. Construction stores it as the slot's
+        /// seed, so `nqp::attrinited` keeps reporting the attribute as not
+        /// initialized (ADR-0121 D4).
+        #[serde(default)]
+        default_is_seed: bool,
     },
     MethodDecl {
         name: Symbol,
