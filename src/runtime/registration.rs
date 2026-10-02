@@ -730,7 +730,7 @@ impl Interpreter {
             return false;
         };
         if self.has_multi_function(name) {
-            self.args_match_multi_candidate_in_package(args, &def.param_defs, def.package)
+            self.args_match_multi_candidate_in_scope(args, &def)
         } else {
             self.args_match_param_types(args, &def.param_defs)
         }

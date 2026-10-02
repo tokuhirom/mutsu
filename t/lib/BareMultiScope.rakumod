@@ -16,3 +16,9 @@ sub bms-private-block() is export { -> $x { bms-private($x) } }
 class BmsBox is export {
     method go($x) { bms-private($x) }
 }
+
+# A candidate whose typed named default is computed at BEGIN time; it cannot
+# be picked by a plain trial bind from another compunit.
+proto sub bms-digest($, :$seed) is export {*}
+multi sub bms-digest(Str $s) { samewith $s.encode }
+multi sub bms-digest(blob8 $b, blob32 :$seed = BEGIN blob32.new(7)) { "digest:{$b.elems}:{$seed[0]}" }

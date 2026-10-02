@@ -125,6 +125,18 @@ not only imported operators:
   (`X::Undeclared::Symbols`), not declared but uncallable. Their caches are
   keyed without the unit, so they are bypassed for a scoped name.
 
+Two supporting changes keep a scoped family callable where it should be:
+
+- A candidate is matched in its declaring compunit as well as its package
+  (`args_match_multi_candidate_in_scope`, `with_candidate_scope`). Its `where`
+  clauses and defaults are that unit's code, so they see the families that unit
+  imported, whoever is calling.
+- A `&name` code value of a multi carries its captured candidates. When the
+  calling unit cannot see the family by name (a module invoking a `&sha256` its
+  importer passed in), the value dispatches it from the candidates' declaring
+  unit. Before, it fell back to a first-that-binds trial over the captured
+  list, without ranking.
+
 **Consequences.** A module's unexported family is no longer callable from
 outside the module, and a family a module imported is not visible to that
 module's own importer. Both match Rakudo. Candidates the *main script*
