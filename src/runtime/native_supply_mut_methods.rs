@@ -677,10 +677,6 @@ impl Interpreter {
                                         }
                                     }
                                 }
-                                // A `.share`d source this whenever is the first
-                                // consumer of: run its block now that the body
-                                // listens on the shared supplier (#10740).
-                                self.start_shared_supply_if_pending(&inner_attrs.as_map())?;
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
@@ -1318,6 +1314,12 @@ impl Interpreter {
                         {
                             self.record_eager_block_free_var_writeback(&code, &data.params);
                         }
+                    } else if shared_on_demand && let Some(sid) = supplier_id_from_attrs(&attrs) {
+                        // `.share` starting the block with no consumer yet:
+                        // raku's share taps with `quit => { $sup.quit(...) }`,
+                        // so the failure quits the shared supplier instead of
+                        // throwing out of `.share`.
+                        supplier_quit(sid, quit_reason);
                     } else {
                         return Err(Self::runtime_error_from_supply_reason(quit_reason));
                     }

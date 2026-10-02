@@ -20,8 +20,8 @@ impl Interpreter {
                 // returned Supply observes the same emissions. A
                 // Supplier-backed source can use the existing forward-tap
                 // pipeline directly; an on-demand source carries a marker so
-                // `native_supply_mut` runs its callback once on the shared
-                // supplier and registers later taps on that same supplier.
+                // `native_supply_mut` registers every tap on the shared
+                // supplier instead of running the block again.
                 if attributes.contains_key("shared_on_demand") {
                     return Ok(Value::make_instance_with_id(
                         Symbol::intern("Supply"),
@@ -42,7 +42,15 @@ impl Interpreter {
                     if let Some(on_close) = attributes.get("on_close_callbacks") {
                         shared_attrs.insert("on_close_callbacks".to_string(), on_close.clone());
                     }
-                    return Ok(Value::make_instance(Symbol::intern("Supply"), shared_attrs));
+                    let shared = Value::make_instance(Symbol::intern("Supply"), shared_attrs);
+                    // raku's `share` taps its source right here, so the block
+                    // runs now, not on the first consumer's tap: what it emits
+                    // before anyone taps the shared Supply is lost, and its side
+                    // effects happen at `.share` time (#10839).
+                    if let ValueView::Instance { attributes, .. } = shared.view() {
+                        self.start_shared_supply(&attributes.as_map())?;
+                    }
+                    return Ok(shared);
                 }
 
                 if let Some(source_id) =
@@ -514,7 +522,6 @@ impl Interpreter {
                 let promise = self.new_bound_promise(Symbol::intern("Promise"), None);
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_register_promise(supplier_id, promise.clone());
-                    self.start_shared_supply_if_pending(attributes)?;
                 } else if let Some(reason) = attributes.get("quit_reason").cloned() {
                     promise.break_with(reason, String::new(), String::new());
                 } else if attributes.contains_key("derived_on_demand") {
