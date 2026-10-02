@@ -25,7 +25,7 @@ impl MapGrepItems {
     pub(crate) fn of(target: &Value, snapshot: impl FnOnce() -> Vec<Value>) -> Self {
         match target.view() {
             crate::value::ValueView::Array(_, kind)
-                if !kind.is_itemized() && !crate::runtime::utils::is_shaped_array(target) =>
+                if !kind.is_itemized() && !super::shaped_array::is_shaped_array(target) =>
             {
                 MapGrepItems::Live(target.clone())
             }

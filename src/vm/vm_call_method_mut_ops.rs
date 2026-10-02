@@ -811,7 +811,7 @@ impl Interpreter {
         // lazy index-pipe stage instead of forcing the (possibly infinite)
         // source. Matches Rakudo where these are `.is-lazy` over a lazy list.
         if args.is_empty()
-            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, true)
+            && let Some(pipe) = crate::builtins::lazy_scan::index_pipe_method(&target, method, true)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",

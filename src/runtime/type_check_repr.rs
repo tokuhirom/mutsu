@@ -141,7 +141,9 @@ impl Interpreter {
             self.type_check_got_repr(value)
         };
         let hint = self.container_binding_hint(expected, expected_is, value);
-        RuntimeError::typecheck_binding_parameter_with_hint(param, expected, value, &repr, hint)
+        crate::runtime::utils::typecheck_binding_parameter_with_hint(
+            param, expected, value, &repr, hint,
+        )
     }
 
     /// Whether the expected type (a type name as a type-check message spells

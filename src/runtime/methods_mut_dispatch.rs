@@ -2494,7 +2494,9 @@ impl Interpreter {
                 let unpredictive = known_count.is_none() && updated.contains_key("lazy_source");
                 let ret = match method {
                     "count-only" | "bool-only" if unpredictive => {
-                        return Err(RuntimeError::method_not_found(method, "Iterator"));
+                        return Err(crate::runtime::did_you_mean::method_not_found(
+                            method, "Iterator",
+                        ));
                     }
                     "count-only" => {
                         known_count.unwrap_or_else(|| Value::int(len.saturating_sub(index) as i64))

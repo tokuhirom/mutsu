@@ -681,8 +681,8 @@ impl Interpreter {
     /// multi-sub dispatch also uses and has no such special case) since this
     /// is a method-dispatch-specific fix.
     fn nil_type_distance(constraint: &str) -> usize {
-        let nil_mro = crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain("Nil")
-            .unwrap_or(&[]);
+        let nil_mro =
+            crate::builtin_types::ancestry::builtin_type_narrowness_chain("Nil").unwrap_or(&[]);
         for (i, &ancestor) in nil_mro.iter().enumerate() {
             if ancestor == constraint {
                 return i;

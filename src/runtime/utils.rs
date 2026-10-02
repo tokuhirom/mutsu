@@ -477,6 +477,7 @@ pub(crate) fn version_cmp(
     }
 }
 
+mod binding_errors;
 mod char_cursor;
 mod coerce_containers;
 mod compare;
@@ -498,6 +499,7 @@ mod type_constraints;
 mod type_misc;
 mod zero_denominator;
 
+pub(crate) use binding_errors::*;
 pub(crate) use char_cursor::*;
 pub(crate) use coerce_containers::*;
 pub(crate) use compare::*;
@@ -519,6 +521,7 @@ pub(crate) use shaped::*;
 pub(crate) use crate::str_scan::*;
 pub(crate) use crate::value::buf_class_names::*;
 pub(crate) use crate::value::numeric_coerce::*;
+pub(crate) use crate::value::shaped_array::*;
 pub(crate) use crate::value::type_name::value_type_name;
 pub(crate) use type_check_errors::*;
 pub(crate) use type_constraints::*;

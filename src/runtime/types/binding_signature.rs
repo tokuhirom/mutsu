@@ -365,7 +365,7 @@ impl Interpreter {
         value: &Value,
         interp: Option<&Interpreter>,
     ) -> RuntimeError {
-        RuntimeError::typecheck_binding_parameter_where(&param_display_name(pd), value)
+        crate::runtime::utils::typecheck_binding_parameter_where(&param_display_name(pd), value)
             .with_parameter_object(pd, interp)
     }
 
@@ -2500,7 +2500,7 @@ impl Interpreter {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
                             } else if named_is_rw {
-                                return Err(RuntimeError::parameter_rw_not_container(
+                                return Err(crate::runtime::utils::parameter_rw_not_container(
                                     &param_display_name(pd),
                                     &bound_value,
                                 ));
@@ -2979,7 +2979,7 @@ impl Interpreter {
                             // ADR-0059 Slice 3): the first write creates the
                             // element.
                         } else if is_rw {
-                            return Err(RuntimeError::parameter_rw_not_container(
+                            return Err(crate::runtime::utils::parameter_rw_not_container(
                                 &param_display_name(pd),
                                 &args[positional_idx],
                             ));
@@ -3305,7 +3305,7 @@ impl Interpreter {
                     if let Some(lit) = &pd.literal_value
                         && &value != lit
                     {
-                        return Err(RuntimeError::typecheck_binding_parameter_literal(
+                        return Err(crate::runtime::utils::typecheck_binding_parameter_literal(
                             lit, &value,
                         ));
                     }

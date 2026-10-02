@@ -123,10 +123,7 @@ impl Compiler {
         };
         // Check type hierarchy (Int matches Numeric, Cool, Any, ...) against
         // the builtin type catalog, the one ancestry oracle (ADR-0051).
-        if crate::builtins::builtin_type_ancestry::builtin_type_is_a(
-            value_type,
-            effective_constraint,
-        ) {
+        if crate::builtin_types::ancestry::builtin_type_is_a(value_type, effective_constraint) {
             None
         } else {
             Some(match expr {

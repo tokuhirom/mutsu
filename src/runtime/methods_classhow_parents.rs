@@ -149,7 +149,7 @@ impl Interpreter {
         // A built-in type's roles are catalog data (ADR-0051: one ancestry
         // oracle), e.g. `Distribution::Path` does `Distribution` and
         // `Promise` does `Awaitable` without either being an MRO ancestor.
-        if crate::builtins::builtin_type_catalog::builtin_type_has_role(class_name, role) {
+        if crate::builtin_types::catalog::builtin_type_has_role(class_name, role) {
             return true;
         }
         self.collect_roles_for_class(class_name, false, false, false)
@@ -389,7 +389,7 @@ impl Interpreter {
         if !matches!(base, "Promise" | "Channel" | "Date" | "DateTime") {
             return Vec::new();
         }
-        crate::builtins::builtin_type_catalog::builtin_type_info(base)
+        crate::builtin_types::catalog::builtin_type_info(base)
             .map(|info| info.roles.iter().map(|role| (*role).to_string()).collect())
             .unwrap_or_default()
     }

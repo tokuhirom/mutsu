@@ -1,6 +1,13 @@
 use super::*;
 use crate::meta_ns::MetaNs;
 
+/// The instance-attribute key a native-scalar-backed class instance carries
+/// its coerced built-in payload under. Never user-visible (it is not a
+/// declared `has`, so `.^attributes` does not list it) and deliberately not
+/// the generic `"value"` name, which a class inheriting `Str` remains free to
+/// declare as its own public attribute.
+pub(crate) const NATIVE_BACKING_ATTR: &str = "__mutsu_native_backing";
+
 /// Marks a `Mixin` overrides map produced by `but`/`does` with a *concrete
 /// value* on the right (`1 but "hi"`, `$obj does 42`, `Method but True`)
 /// rather than by role composition or by allomorph construction. See

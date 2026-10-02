@@ -861,7 +861,9 @@ impl Interpreter {
             {
                 let display = Self::for_param_display_name(name);
                 self.unmask_for_params(&masked_params);
-                return Err(RuntimeError::parameter_rw_not_container(&display, &item));
+                return Err(crate::runtime::utils::parameter_rw_not_container(
+                    &display, &item,
+                ));
             }
             // The multi-parameter form of the same rejection, decided per chunk
             // slot: a slot holding a container (`($a, $b)`, a producer's cell)
@@ -892,7 +894,9 @@ impl Interpreter {
                     }
                     let display = Self::for_param_display_name(name);
                     self.unmask_for_params(&masked_params);
-                    return Err(RuntimeError::parameter_rw_not_container(&display, slot));
+                    return Err(crate::runtime::utils::parameter_rw_not_container(
+                        &display, slot,
+                    ));
                 }
             }
             // ADR-0045 slices 1-3: promote this element to its own container
@@ -951,7 +955,9 @@ impl Interpreter {
             {
                 let display = Self::for_param_display_name(name);
                 self.unmask_for_params(&masked_params);
-                return Err(RuntimeError::parameter_rw_not_container(&display, &item));
+                return Err(crate::runtime::utils::parameter_rw_not_container(
+                    &display, &item,
+                ));
             }
             // A cell handed out by a container-aware producer (`.values`,
             // `.reverse`, `.sort`) carries its container's element constraint

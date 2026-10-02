@@ -17,13 +17,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
-
-/// The instance-attribute key a native-scalar-backed class instance carries
-/// its coerced built-in payload under. Never user-visible (it is not a
-/// declared `has`, so `.^attributes` does not list it) and deliberately not
-/// the generic `"value"` name, which a class inheriting `Str` remains free to
-/// declare as its own public attribute.
-pub(crate) const NATIVE_BACKING_ATTR: &str = "__mutsu_native_backing";
+use crate::value::types::NATIVE_BACKING_ATTR;
 
 /// Built-in SCALAR types whose payload an `Instance` can box this way.
 /// Container built-ins (`is Array`/`is Hash`/`is List`) already have their

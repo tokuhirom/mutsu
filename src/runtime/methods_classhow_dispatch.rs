@@ -535,7 +535,9 @@ impl Interpreter {
                         ValueView::Instance { class_name, .. } => class_name.resolve(),
                         _ => "Mu".to_string(),
                     };
-                    return Err(RuntimeError::method_not_found("refinee", &how_name));
+                    return Err(crate::runtime::did_you_mean::method_not_found(
+                        "refinee", &how_name,
+                    ));
                 };
                 Ok(Value::package(Symbol::intern(&base)))
             }
@@ -755,7 +757,7 @@ impl Interpreter {
                         ValueView::Instance { class_name, .. } => class_name.resolve(),
                         _ => "Mu".to_string(),
                     };
-                    return Err(RuntimeError::method_not_found(
+                    return Err(crate::runtime::did_you_mean::method_not_found(
                         "pretending_to_be",
                         &how_name,
                     ));
@@ -881,7 +883,10 @@ impl Interpreter {
                             })
                         }));
                 if !supported {
-                    return Err(RuntimeError::method_not_found("declares_method", &how_name));
+                    return Err(crate::runtime::did_you_mean::method_not_found(
+                        "declares_method",
+                        &how_name,
+                    ));
                 }
 
                 let owner = self.mop_receiver_owner(target);

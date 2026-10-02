@@ -650,7 +650,7 @@ impl Interpreter {
         // computed before the sigil is looked at), to decide whether a
         // non-Positional `@` argument needs coercing first. Only `Seq`/
         // `HyperSeq`/`RaceSeq` and a user class that explicitly composes the
-        // role can ever satisfy it (`builtin_type_catalog.rs`); none of
+        // role can ever satisfy it (`builtin_types/catalog.rs`); none of
         // these plain value shapes can, by construction, so this rejects
         // them in one match instead of walking the ~30-branch string
         // gauntlet in `type_matches` down to the final `dispatch_mro`
@@ -1579,7 +1579,7 @@ impl Interpreter {
             }
             // A built-in type's composed roles are catalog data (ADR-0051 P2):
             // `Distribution::Path` does `Distribution` without inheriting it.
-            if crate::builtins::builtin_type_catalog::builtin_type_has_role(
+            if crate::builtin_types::catalog::builtin_type_has_role(
                 &registry_key,
                 effective_constraint,
             ) {
@@ -1792,7 +1792,7 @@ impl Interpreter {
             }
             // Catalog roles of a built-in class (ADR-0051 P2), see the
             // type-object twin above.
-            if crate::builtins::builtin_type_catalog::builtin_type_has_role(cn, constraint) {
+            if crate::builtin_types::catalog::builtin_type_has_role(cn, constraint) {
                 return true;
             }
             // Check composed roles for the instance's class (and its MRO),

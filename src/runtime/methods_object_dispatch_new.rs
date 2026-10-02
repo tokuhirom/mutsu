@@ -2845,7 +2845,9 @@ impl Interpreter {
                                 self.no_such_qualified_symbol(pkg_prefix.as_str(), short.as_str())
                             );
                         }
-                        Err(RuntimeError::method_not_found("new", &resolved))
+                        Err(crate::runtime::did_you_mean::method_not_found(
+                            "new", &resolved,
+                        ))
                     }
                 }
             }
@@ -2867,7 +2869,11 @@ impl Interpreter {
                     .clone()
                     .unwrap_or_else(|| if mutable { "SetHash" } else { "Set" }.to_string());
                 self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
-                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
+                    .unwrap_or_else(|| {
+                        Err(crate::runtime::did_you_mean::method_not_found(
+                            "new", &type_name,
+                        ))
+                    })
             }
             ValueView::Bag(data, mutable) => {
                 let type_name = data
@@ -2875,7 +2881,11 @@ impl Interpreter {
                     .clone()
                     .unwrap_or_else(|| if mutable { "BagHash" } else { "Bag" }.to_string());
                 self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
-                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
+                    .unwrap_or_else(|| {
+                        Err(crate::runtime::did_you_mean::method_not_found(
+                            "new", &type_name,
+                        ))
+                    })
             }
             ValueView::Mix(data, mutable) => {
                 let type_name = data
@@ -2883,7 +2893,11 @@ impl Interpreter {
                     .clone()
                     .unwrap_or_else(|| if mutable { "MixHash" } else { "Mix" }.to_string());
                 self.try_native_quanthash_construct_for_package(Symbol::intern(&type_name), &args)
-                    .unwrap_or_else(|| Err(RuntimeError::method_not_found("new", &type_name)))
+                    .unwrap_or_else(|| {
+                        Err(crate::runtime::did_you_mean::method_not_found(
+                            "new", &type_name,
+                        ))
+                    })
             }
             _ => Err(super::methods_signature_errors::method_not_found_for_value(
                 "new", &target,

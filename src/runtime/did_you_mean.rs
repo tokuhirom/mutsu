@@ -1,3 +1,5 @@
+use crate::value::{RuntimeError, Value, ValueMap};
+
 /// Levenshtein edit distance between two strings.
 pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_len = a.len();
@@ -359,6 +361,25 @@ pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str]
             "sort", "flat", "head", "tail",
         ],
     }
+}
+
+/// X::Method::NotFound - No such method
+pub(crate) fn method_not_found(method: &str, typename: &str) -> RuntimeError {
+    let mut msg = format!(
+        "No such method '{}' for invocant of type '{}'",
+        method, typename
+    );
+
+    let candidates = known_methods_for_type(typename);
+    if let Some(suggestion) = suggest_method(method, candidates) {
+        msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
+    }
+
+    let mut attrs = ValueMap::default();
+    attrs.insert("method".to_string(), Value::str(method.to_string()));
+    attrs.insert("typename".to_string(), Value::str(typename.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    RuntimeError::typed("X::Method::NotFound", attrs)
 }
 
 #[cfg(test)]

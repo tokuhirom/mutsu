@@ -106,7 +106,7 @@ reference pages whose data is read out of the source at deploy time by
 | Page | Data | Read from |
 | --- | --- | --- |
 | `opcodes.html` | `content/opcodes.json` | `enum OpCode` in `src/opcode.rs` (operands, `///` docs, `// -- Section --` families) and the `// Cost:` line above each arm of `exec_one_dispatch` in `src/vm/vm_exec_dispatch.rs` |
-| `types.html` | `content/types.json` | `enum Kind` + `payload_op` in `src/value/nanbox/mod.rs` (each kind's payload and whether it is inline, `Arc`, `Gc` or `WeakGc`) and `CATALOG` in `src/builtins/builtin_type_catalog.rs` (MROs and roles) |
+| `types.html` | `content/types.json` | `enum Kind` + `payload_op` in `src/value/nanbox/mod.rs` (each kind's payload and whether it is inline, `Arc`, `Gc` or `WeakGc`) and `CATALOG` in `src/builtin_types/catalog.rs` (MROs and roles) |
 
 Both JSON files are git-ignored, like `stats.json`: `pages.yml` generates them
 for the deploy and ci.yml's `wasm-e2e` job generates them before the e2e test,
