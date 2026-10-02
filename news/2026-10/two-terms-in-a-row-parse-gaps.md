@@ -1,9 +1,9 @@
-# Seventeen statement shapes that stopped parsing halfway now parse whole
+# Nineteen statement shapes that stopped parsing halfway now parse whole
 
 The ecosystem ledger's largest parse-failure cluster (#7988) had become
 `Confused. Two terms in a row`. That is the check that refuses to split a
 statement silently when the parser stopped short of its end. Behind the one
-message were seventeen distinct constructs, each found in a real
+message were nineteen distinct constructs, each found in a real
 distribution, that rakudo parses and mutsu did not:
 
 - `(0 xx 2) ++ @a` and `1 -- 2`: a spaced doubled operator is the infix
