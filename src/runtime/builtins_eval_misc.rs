@@ -2,12 +2,40 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    // Cost: O(a), a = arguments.
     pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = if args.len() > 1 {
-            Value::slip_arc(std::sync::Arc::new(args.to_vec()))
-        } else {
-            args.first().cloned().unwrap_or(Value::NIL)
-        };
+        // `make` is `sub make(Mu \made)`: exactly one positional, no nameds.
+        // A named argument reaches here as a plain `Pair` (the call site
+        // turns every positional Pair into a `ValuePair`, ADR-0021), so
+        // `make :s(1)` is a call with no positional at all, as in rakudo.
+        let mut positional: Option<&Value> = None;
+        let mut positional_count = 0usize;
+        let mut first_named: Option<String> = None;
+        for arg in args {
+            if arg.is_string_pair_value() {
+                if first_named.is_none()
+                    && let ValueView::Pair(key, _) = arg.view()
+                {
+                    first_named = Some(key.to_string());
+                }
+            } else {
+                positional_count += 1;
+                positional.get_or_insert(arg);
+            }
+        }
+        if positional_count != 1 {
+            return Err(RuntimeError::new(format!(
+                "Too {} positionals passed; expected 1 argument but got {}",
+                if positional_count == 0 { "few" } else { "many" },
+                positional_count
+            )));
+        }
+        if let Some(key) = first_named {
+            return Err(RuntimeError::new(format!(
+                "Unexpected named argument '{key}' passed"
+            )));
+        }
+        let value = positional.cloned().unwrap_or(Value::NIL);
         self.env.insert("made".to_string(), value.clone());
         self.action_made = Some(value.clone());
         Ok(value)
