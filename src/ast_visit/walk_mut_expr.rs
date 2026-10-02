@@ -23,7 +23,8 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         | Expr::Eager(inner)
         | Expr::Itemize(inner)
         | Expr::DeitemizeForBind(inner)
-        | Expr::IndirectTypeLookup(inner) => v.visit_expr_mut(inner),
+        | Expr::IndirectTypeLookup(inner)
+        | Expr::IndirectTypeLookupTail { head: inner, .. } => v.visit_expr_mut(inner),
         Expr::Whatever
         | Expr::WhateverArg
         | Expr::HyperWhatever

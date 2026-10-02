@@ -1479,6 +1479,28 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, name)],
             })
         }
+        // `::(EXPR)::A::B` / `::(EXPR)::` -> the indirect name above followed
+        // by its static parts and, for a trailing `::`, the `Part::Empty` type
+        // object (measured on 2026.09).
+        Expr::IndirectTypeLookupTail {
+            head,
+            tail,
+            trailing,
+        } => {
+            let part = RakuAstNode {
+                class: RakuAstClass::NamePartExpression,
+                fields: vec![node_field(None, convert_expr(head)?)],
+            };
+            let mut parts = vec![name_parts::leading_empty(), Value::rakuast(Box::new(part))];
+            parts.extend(name_parts::tail_parts(tail));
+            if *trailing {
+                parts.push(name_parts::trailing_empty());
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::TermName,
+                fields: vec![node_field(None, name_parts::name_from_parts(parts))],
+            })
+        }
         // A stash lookup `Foo::` / `MY::` / `::` -> a `Name` ending in the
         // `Part::Empty` type object. Rakudo wraps it in a `Term::Name` when the
         // package resolves at parse time and in an argument-less `Call::Name`

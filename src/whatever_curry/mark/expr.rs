@@ -322,7 +322,8 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         | Expr::Eager(inner)
         | Expr::Itemize(inner)
         | Expr::DeitemizeForBind(inner)
-        | Expr::IndirectTypeLookup(inner) => mark_expr(inner),
+        | Expr::IndirectTypeLookup(inner)
+        | Expr::IndirectTypeLookupTail { head: inner, .. } => mark_expr(inner),
         Expr::IndirectCodeLookup { package, .. } => mark_expr(package),
         Expr::SymbolicDeref { expr, .. } => mark_expr(expr),
         Expr::SymbolicDerefAssign { expr, value, .. } => {
