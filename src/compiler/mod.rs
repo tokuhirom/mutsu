@@ -4258,6 +4258,10 @@ impl Compiler {
         // A placeholder variable ($^x, @_, ...) directly in the mainline is
         // outside any sub or block -> X::Placeholder::Mainline. Emit the Die
         // first so it fires before any other statement runs.
+        if self.is_mainline && self.emit_regex_code_block_placeholder_die(stmts) {
+            self.code.compute_needs_env_sync();
+            return (self.code, self.compiled_functions);
+        }
         if self.is_mainline
             && let Some(ph) = crate::ast::collect_unattached_placeholders(stmts)
                 .into_iter()

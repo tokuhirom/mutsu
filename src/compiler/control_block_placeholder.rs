@@ -98,4 +98,21 @@ impl Compiler {
         self.code.emit(OpCode::Die { user_throw: false });
         true
     }
+
+    /// A placeholder inside a regex code block (`/<?{ $^a }>/`) anywhere in
+    /// the unit is one in a block that takes no signature: emit the
+    /// `X::Placeholder::Block` die rakudo raises at compile time, ahead of
+    /// every statement, and return true (mutsu#10542).
+    // Cost: O(n), n = size of `stmts`' subtree plus its regex sources.
+    pub(super) fn emit_regex_code_block_placeholder_die(&mut self, stmts: &[Stmt]) -> bool {
+        let Some(ph) = crate::ast::regex_placeholders::find_regex_code_block_placeholder(stmts)
+        else {
+            return false;
+        };
+        let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
+        let idx = self.code.add_constant(err);
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.emit(OpCode::Die { user_throw: false });
+        true
+    }
 }

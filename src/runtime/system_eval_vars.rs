@@ -13,6 +13,20 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // A placeholder inside a regex code block takes no signature at all
+        // (mutsu#10542).
+        if let Some(ph) = crate::ast::regex_placeholders::find_regex_code_block_placeholder(stmts) {
+            let mut attrs = ValueMap::default();
+            attrs.insert("placeholder".to_string(), Value::str(ph.clone()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Placeholder variable '{ph}' may not be used here because the \
+                     surrounding block does not take a signature."
+                )),
+            );
+            return Err(RuntimeError::typed("X::Placeholder::Block", attrs));
+        }
         if let Some(ph) = crate::ast::collect_unattached_placeholders(stmts)
             .into_iter()
             .next()

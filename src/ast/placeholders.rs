@@ -17,6 +17,9 @@
 use super::placeholder_kind::{
     PlaceholderBodyKind, placeholder_body_kind, placeholder_body_kind_expr,
 };
+use super::regex_placeholders::{
+    placeholder_display_name, regex_literal_source, regex_source_placeholders,
+};
 use super::{Expr, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use crate::compiler::scope_scan::{is_scope_declaration, opens_own_scope, walk_control_header};
@@ -255,17 +258,25 @@ impl<'ast> Visit<'ast> for PlaceholderCollector {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        // A placeholder interpolated into a regex (`/$^a/`) belongs to the
+        // enclosing block; the literal keeps only its source (mutsu#10542).
+        if self.reads
+            && let Some(src) = regex_literal_source(expr)
+        {
+            for key in regex_source_placeholders(&src).interpolated {
+                push_unique(key, &mut self.out);
+            }
+        }
         match self.scope {
             Scope::Own => walk_expr_placeholder_scope(self, expr),
             Scope::Deep => walk_expr(self, expr),
         }
     }
 
-    // A regex is a code object of its own: rakudo rejects a placeholder in a
-    // regex code block (`/<?{ $^a }>/`). A placeholder *interpolated* into a
-    // regex (`/$^a/`) belongs to the enclosing block, but mutsu keeps that
-    // regex as a pre-parsed literal whose source the AST does not expose.
-    // TODO(#10542): report regex interpolations once the regex literal carries its tree.
+    // A regex code block (`/<?{ $^a }>/`) is a block of its own that takes no
+    // signature (the compiler rejects a placeholder there), and the regex's
+    // interpolations are read from its source in `visit_expr`, so its tree
+    // adds nothing.
     fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
@@ -345,6 +356,11 @@ impl<'ast> Visit<'ast> for UnattachedCollector {
         );
         if opens_own_scope(expr) && !whatever_code {
             return;
+        }
+        if let Some(src) = regex_literal_source(expr) {
+            for key in regex_source_placeholders(&src).interpolated {
+                push_unique(placeholder_display_name(key), &mut self.out);
+            }
         }
         walk_expr(self, expr);
     }
