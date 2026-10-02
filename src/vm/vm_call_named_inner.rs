@@ -242,7 +242,7 @@ impl Interpreter {
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     *self.env_mut() = frame.saved_env;
-                    return Err(Interpreter::enhance_binding_error(
+                    return Err(self.enhance_binding_error_at_site(
                         e,
                         fn_name,
                         &cf.param_defs,
@@ -251,6 +251,9 @@ impl Interpreter {
                 }
             }
         };
+        // The binding is done: the call site's `static_arg_types` must not
+        // reach a call the body makes through a route that publishes none.
+        self.static_call_args = false;
         // A parameter is a fresh per-invocation binding, exactly like the `my`
         // that `exec_set_var_dynamic_op` marks: while the cross-thread shared
         // store is active its writes must stay thread-local instead of leaking

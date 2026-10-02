@@ -210,6 +210,7 @@ impl Compiler {
                     arity: 1,
                     arg_sources_idx: None,
                     literal_native_args: 0,
+                    static_arg_types: false,
                 });
             }
         }

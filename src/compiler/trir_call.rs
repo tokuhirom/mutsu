@@ -91,6 +91,7 @@ impl Compiler {
             link,
             name: *name,
             arg_slots,
+            static_arg_types: self.static_arg_types(args),
         });
         self.code.emit(OpCode::CallTrir {
             site: site_idx,

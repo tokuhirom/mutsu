@@ -801,7 +801,7 @@ impl Interpreter {
                     if suppress_bind_enhance {
                         return Err(e);
                     }
-                    return Err(Interpreter::enhance_binding_error(
+                    return Err(self.enhance_binding_error_at_site(
                         e,
                         &data.name.resolve(),
                         &data.param_defs,
@@ -810,6 +810,9 @@ impl Interpreter {
                 }
             }
         };
+        // The binding is done: the call site's `static_arg_types` must not
+        // reach a call the body makes through a route that publishes none.
+        self.static_call_args = false;
 
         // Placeholder parameters (`{ $^x = ... }`) are readonly aliases in
         // Raku, just like ordinary non-rw scalar parameters. They use the

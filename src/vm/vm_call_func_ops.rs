@@ -353,9 +353,11 @@ impl Interpreter {
         spec_idx: u32,
         arg_sources_idx: Option<u32>,
         literal_native_args: u32,
+        static_arg_types: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
         let r = self.exec_call_func_named_op_inner(
             code,
             name_idx,
@@ -365,6 +367,7 @@ impl Interpreter {
             compiled_fns,
         );
         self.literal_native_args = saved;
+        self.static_call_args = saved_static;
         r
     }
 
@@ -465,12 +468,14 @@ impl Interpreter {
         self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, true, compiled_fns)
     }
 
-    /// Publish the call site's literal-argument mask for the duration of the
-    /// call, so multi-candidate ranking can give a literal the native
+    /// Publish the call site's literal-argument mask (and its
+    /// `static_arg_types` flag, see `Interpreter::static_call_args`) for the
+    /// duration of the call, so multi-candidate ranking can give a literal the native
     /// `var_type` a source variable would have carried (see the opcode field's
     /// doc and `unwrap_varref_for_dispatch`). Save/restore rather than a Drop
     /// guard: the guard would hold a `&mut self` borrow the whole body needs,
     /// and the wrapper restores on the error path too.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -478,9 +483,11 @@ impl Interpreter {
         arity: u32,
         arg_sources_idx: Option<u32>,
         literal_native_args: u32,
+        static_arg_types: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
         let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
         let r = self.exec_call_func_op_inner(
             code,
@@ -491,6 +498,7 @@ impl Interpreter {
             compiled_fns,
         );
         self.literal_native_args = saved;
+        self.static_call_args = saved_static;
         r
     }
 

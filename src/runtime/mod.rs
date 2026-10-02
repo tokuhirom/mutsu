@@ -2525,6 +2525,13 @@ pub struct Interpreter {
     /// does. Zero for every call site with no literal argument, which is the
     /// common case and costs one `u32` store per call.
     pub(crate) literal_native_args: u32,
+    /// The CURRENT call site's `OpCode::CallFunc::static_arg_types`, published
+    /// by `exec_call_func_op` and restored when that call returns. The callee's
+    /// binder TAKES it (resetting it to `false`, so a call its body makes
+    /// through any other route never inherits it) and reports a binding
+    /// failure as the compile-time `X::TypeCheck::Argument` only when it was
+    /// set (#10640; see `Interpreter::enhance_binding_error`).
+    pub(crate) static_call_args: bool,
     /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
     /// time (clobber-safe: before the callee body runs) from
     /// `pending_call_arg_source_slots`. The value also records the call-frame depth

@@ -1130,6 +1130,7 @@ mod param_chunks;
 mod regex_qq_thunks;
 pub(crate) mod routine_scans;
 pub(crate) mod scope_scan;
+mod static_call_args;
 mod stmt;
 mod subst_thunk;
 mod term_constants;

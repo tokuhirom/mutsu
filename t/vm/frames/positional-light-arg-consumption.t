@@ -34,10 +34,10 @@ try {
     CATCH { default { $err = $_ } }
 }
 ok $err.defined, 'a failing type check throws';
-is $err.message, 'Type check failed in binding $b: expected Int, got Str',
+is $err.message, q{Type check failed in binding to parameter '$b'; expected Int but got Str ("x")},
     'the message names the failing parameter';
-is-deeply $err.arguments.List, ('Int', 'Str'),
-    'the argument list still holds the already-bound first argument';
+is $err.got, 'x',
+    'the exception holds the failing argument itself';
 
 # 3. The stack is unwound on the error path too: a later call in the same
 #    scope still sees a balanced stack.

@@ -82,8 +82,10 @@ impl CompiledFunction {
         // binds its own (undefined) type object, which `:D` refuses. Rakudo
         // rejects that signature outright; mutsu just keeps it on the general
         // binder rather than deciding the question here.
-        match FastParamCheck::of(pd.type_constraint.as_ref()) {
+        match FastParamCheck::of_param(pd) {
             Some(FastParamCheck::Unconstrained) => Some(value),
+            // A filled `&c?` would need the general binder's `Callable` check.
+            Some(FastParamCheck::ImplicitCallable) => None,
             Some(FastParamCheck::Fast { kind, name_sym }) => {
                 match crate::runtime::Interpreter::fast_type_check_tagged(&value, kind, name_sym) {
                     true => Some(value),

@@ -42,6 +42,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
                 literal_native_args,
+                static_arg_types,
             } => {
                 // `use fatal`: explode an unhandled Failure produced by one of
                 // this call's argument expressions before the callee runs.
@@ -56,6 +57,7 @@ impl Interpreter {
                     *arity,
                     *arg_sources_idx,
                     *literal_native_args,
+                    *static_arg_types,
                     compiled_fns,
                 )
             }
@@ -65,6 +67,7 @@ impl Interpreter {
                 spec_idx,
                 arg_sources_idx,
                 literal_native_args,
+                static_arg_types,
             } => {
                 self.explode_if_fatal_failure_in_call_args(
                     Self::const_str(code, *name_idx),
@@ -77,6 +80,7 @@ impl Interpreter {
                     *spec_idx,
                     *arg_sources_idx,
                     *literal_native_args,
+                    *static_arg_types,
                     compiled_fns,
                 )
             }

@@ -694,7 +694,7 @@ impl Interpreter {
                         self.env = saved_env;
                         self.exit_readonly_frame(saved_readonly);
                         self.pop_samewith_context();
-                        return Err(Self::enhance_binding_error(
+                        return Err(self.enhance_binding_error_at_site(
                             e,
                             &def.name.resolve(),
                             &def.param_defs,
@@ -702,6 +702,9 @@ impl Interpreter {
                         ));
                     }
                 };
+            // The binding is done: the call site's `static_arg_types` must not
+            // reach a call the body makes through a route that publishes none.
+            self.static_call_args = false;
             let sub_val = Value::make_sub_for_routine(
                 def.package,
                 def.name,

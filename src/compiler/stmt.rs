@@ -372,6 +372,7 @@ impl Compiler {
                 arity: 1,
                 arg_sources_idx: None,
                 literal_native_args: 0,
+                static_arg_types: false,
             });
             self.code.emit(OpCode::SinkPop(false, true));
         }
@@ -4285,6 +4286,7 @@ impl Compiler {
                         arity: 1,
                         arg_sources_idx: None,
                         literal_native_args: 0,
+                        static_arg_types: false,
                     });
                     self.code.emit(OpCode::SinkPop(false, true));
                 }

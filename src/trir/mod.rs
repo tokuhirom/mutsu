@@ -211,6 +211,10 @@ pub(crate) struct TrCallSite {
     /// order. A call site whose arguments are not all plain caller lexicals is
     /// not compiled to a `CallTrir` at all.
     pub(crate) arg_slots: Vec<u32>,
+    /// The replaced `CallFunc`'s `static_arg_types` (every argument is a
+    /// variable declared with a type): published by the by-name fallback so a
+    /// binding failure reports the same exception the untyped call would.
+    pub(crate) static_arg_types: bool,
 }
 
 /// A routine compiled to TRIR.

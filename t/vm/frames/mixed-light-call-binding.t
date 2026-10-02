@@ -19,13 +19,16 @@ my @seen;
 for ^3 { @seen.push(f($_, :c(9))) }
 is-deeply @seen, ["0/9", "1/9", "2/9"], 'cached mixed calls bind fresh each time';
 
-# Arity errors survive the cached fast path.
+# Arity errors survive the cached fast path. A named or variable argument
+# keeps them run-time errors (a literal-only call is rakudo's compile-time
+# "Calling f() will never work ..."), so both implementations reach the binder.
 my $too-few;
-{ f(); CATCH { default { $too-few = $_ } } }
+{ f(:c(1)); CATCH { default { $too-few = $_ } } }
 ok $too-few.defined && $too-few.message.contains('Too few positionals'),
     'missing required positional is an arity error';
 my $too-many;
-{ f(1, 2); CATCH { default { $too-many = $_ } } }
+my $two = 2;
+{ f(1, $two); CATCH { default { $too-many = $_ } } }
 ok $too-many.defined && $too-many.message.contains('Too many positionals'),
     'surplus positional is an arity error';
 

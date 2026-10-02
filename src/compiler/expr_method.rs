@@ -135,6 +135,7 @@ impl Compiler {
                 arity: 2,
                 arg_sources_idx: None,
                 literal_native_args: 0,
+                static_arg_types: false,
             });
             return;
         }
@@ -167,6 +168,7 @@ impl Compiler {
                 arity: 2,
                 arg_sources_idx: None,
                 literal_native_args: 0,
+                static_arg_types: false,
             });
         }
     }
