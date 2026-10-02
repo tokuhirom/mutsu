@@ -10,15 +10,14 @@
 #   1. per-test failure tally, split by "job spread"
 #   2. the quarantine-relevant subset (single-job and/or push:main failures)
 #
-# Why the job spread matters: every PR runs the same suite three times, in three
-# configurations (default, GC on, JIT hot). Since ci.yml split each of those
-# into a TAP half and a roast half, the three jobs that run a given file are
-# `test-suites` / `gc-stress-tap` / `jit-stress-tap` for a t/ file and
-# `test-suites` / `gc-stress-roast` / `jit-stress-roast` for a roast file. A
-# genuine regression fails in all three (the code is broken in every
-# configuration). A test that fails in only ONE of the three, with the other two
-# green on the same commit, is by construction non-deterministic -- the binary
-# and the inputs were identical.
+# Why the job spread matters: every PR runs the t/ suite twice, in
+# `test-suites` (release binary) and `debug-tap` (debug binary). A genuine
+# regression fails in both (the code is broken in every configuration). A test
+# that fails in only ONE of them, with the other green on the same commit, is
+# most likely non-deterministic -- same source, same inputs. (Runs from before
+# ADR-10738 also carry `gc-stress-tap` / `jit-stress-tap` and the two stress
+# roast halves; roast files now run in one PR job only, so their spread is
+# always 1 and only the MAIN-PUSH column says anything about them.)
 # A failure on a `push: main` run is an even stronger signal: main is protected,
 # so that exact tree already passed the full suite on its PR minutes earlier.
 #
@@ -57,7 +56,8 @@ while IFS=$'\t' read -r run_id event branch; do
   while IFS=$'\t' read -r job_id job_name; do
     case "$job_name" in
       test | gc-stress | jit-stress)
-        # Aggregator jobs (see ci.yml): they run no tests and go red only to
+        # Aggregator jobs (see ci.yml; the last two only in runs from before
+        # ADR-10738): they run no tests and go red only to
         # mirror a half that did. Their logs contain no failure of their own,
         # so counting them would add a phantom "(no test-level failure found)"
         # row to every genuine failure.
@@ -109,7 +109,7 @@ awk -F'\t' '
   seen[key] = 1
 }
 END {
-  # For each (test, run) pair count how many of the three jobs saw the failure.
+  # For each (test, run) pair count how many of the jobs saw the failure.
   for (rk in runs) {
     split(rk, a, "\x1f"); key = a[1]; run = a[2]
     n = 0
@@ -130,7 +130,7 @@ END {
 
 echo
 echo "Legend:"
-echo "  1-JOB     failed in exactly one of the three configurations on that run"
+echo "  1-JOB     failed in exactly one of the jobs that ran it on that run"
 echo "            -> same binary, same inputs, different verdict = non-deterministic"
 echo "  N-JOB     failed in several jobs of the same run -> almost always a real regression"
 echo "  MAIN-PUSH failed on a push to main, i.e. on a tree that had just passed CI"

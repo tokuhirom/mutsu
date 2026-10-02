@@ -1058,9 +1058,9 @@ pub(crate) fn gc_finalize(node: &ErasedGc) {
 /// ON in production builds, OFF in the crate's own unit-test build
 /// (`cfg!(test)`) — `cargo test` runs tests on parallel threads that share
 /// the process-global collector state, so in-process safepoint collects
-/// cross-talk between tests (see `gc::test_support`); the CI gc-stress job
-/// still exercises GC-on unit tests by setting `MUTSU_GC=on` explicitly and
-/// running single-threaded. Subprocess-based integration tests
+/// cross-talk between tests (see `gc::test_support`). CI's `test-check` job and
+/// `make test` run the unit tests GC-on by setting `MUTSU_GC=on` explicitly and
+/// running single-threaded, which removes that cross-talk (ADR-10738). Subprocess-based integration tests
 /// (`tests/gc_stress.rs`) spawn the real (default-on) binary.
 ///
 /// Cached in a tri-state atomic rather than the `OnceLock` alone: this sits on
@@ -1622,7 +1622,7 @@ mod tests {
     // drainer is a race *hammer*, and Miri interprets every one of those steps
     // — it does not finish in any useful time. The property it defends
     // (counter ordering) is also not the one the Miri gate is for (aliased-write
-    // provenance, ADR-0013), and gc-stress still runs it natively on every PR.
+    // provenance, ADR-0013), and `cargo test` still runs it natively on every PR.
     #[cfg_attr(miri, ignore)]
     fn concurrent_buffer_and_drain_never_wraps_the_approx_count() {
         let _serial = lock_buffer_tests();

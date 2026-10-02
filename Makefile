@@ -23,10 +23,11 @@ PROVE_JOBS ?= 4
 # process-global, so a collect on one test thread trips
 # `debug_assert!(!collecting())` inside an unrelated test running concurrently
 # (observed twice on main as
-# gc::gc_ptr::tests::arc_and_gc_strong_counts_stay_in_lockstep). The gc-stress
-# CI job has serialized its `cargo test` for this reason since the GC landed;
-# do the same everywhere instead of leaving the default-config runs to chance.
-# Costs ~1s.
+# gc::gc_ptr::tests::arc_and_gc_strong_counts_stay_in_lockstep). Costs ~1s.
+#
+# `MUTSU_GC=on`: the unit-test build defaults the collector off only so that
+# PARALLEL test threads do not cross-talk; serialized, the tests run under the
+# configuration that ships, matching CI's `Unit tests` step (ADR-10738).
 #
 # `cargo test -p mutsu-lsp`: the language server is a separate workspace member
 # (ADR-0065 D7), so the root `cargo test` -- which builds `default-members`, the
@@ -43,7 +44,7 @@ PROVE_JOBS ?= 4
 # `MUTSU_BIN=.../release/mutsu`: run t/ on the RELEASE binary, the same one
 # `make roast` uses, matching CI's TAP step. `cargo test` still builds and runs
 # the Rust unit tests in debug, so `debug_assert!` keeps its coverage there, and
-# the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
+# CI's `debug-tap` job keeps running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
 #
@@ -54,7 +55,7 @@ PROVE_JOBS ?= 4
 # (`named_call_intern_budget`, found by the first `scripts/dev gate` run).
 test: checks
 	@mkdir -p tmp
-	(cargo build --release && RUST_MIN_STACK=8388608 cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build --release && RUST_MIN_STACK=8388608 MUTSU_GC=on cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 # The static guards: no build, seconds in total. `make test` depends on them,
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
