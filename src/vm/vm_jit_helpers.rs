@@ -141,6 +141,41 @@ pub(super) unsafe extern "C" fn meta_assign_identity(
         .exec_meta_assign_identity_op(crate::token_kind::MetaAssignIdentity::from_u32(identity));
 }
 
+/// `OpCode::MarkArrayShareSource` — infallible, so a void shim with no status
+/// check, instead of a generic `step` through `exec_one` (#10955).
+pub(super) unsafe extern "C" fn mark_array_share_source(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    name_idx: u32,
+) {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    interp.exec_mark_array_share_source_op(code, name_idx);
+}
+
+/// `OpCode::CheckReadOnly` at `op_idx` — a dedicated shim instead of a generic
+/// `step`: it runs on every whole-variable assignment (#10955). The result goes
+/// through the same [`Interpreter::finish_op_result`] `exec_one` applies, so an
+/// error is located and backtraced exactly as on the interpreter path.
+pub(super) unsafe extern "C" fn check_read_only(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    name_idx: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    panic_boundary(|| {
+        match interp.exec_check_read_only_op(code, name_idx) {
+            // `finish_op_result` would return this `Ok` unchanged: it only acts
+            // on an error or a pending `where` exception.
+            Ok(()) if interp.pending_where_exception.is_none() => JIT_STATUS_OK,
+            r => match interp.finish_op_result(code, op_idx as usize, r) {
+                Ok(()) => JIT_STATUS_OK,
+                Err(e) => park_err(interp, e),
+            },
+        }
+    })
+}
+
 /// The fallible half: `/=` and `%=` have no zero-argument meaning, so seeding an
 /// undefined container throws.
 pub(super) unsafe extern "C" fn meta_assign_identity_fallible(

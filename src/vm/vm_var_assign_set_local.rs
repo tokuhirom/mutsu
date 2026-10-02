@@ -669,7 +669,11 @@ impl Interpreter {
         // backing array keeps its kind (the hyper-func-op writeback), everything
         // else gets the `$` container's itemization. The name half of
         // `itemize_scalar_store` is settled by `simple_scalar_locals`.
-        let val = if Self::is_identity_scalar_restore(&self.locals[idx], &v) {
+        // An `Int`/`Str`/... is kept as is by both steps; a tag probe settles
+        // that without the two `view()` matches.
+        let val = if v.is_inert_scalar_store_payload()
+            || Self::is_identity_scalar_restore(&self.locals[idx], &v)
+        {
             v
         } else {
             Self::itemize_scalar_store_value(v)

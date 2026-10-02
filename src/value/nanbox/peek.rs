@@ -627,6 +627,23 @@ impl NanBox {
     // Cost: O(1).
     #[inline]
     pub(in crate::value) fn is_never_array_share_source(&self) -> bool {
+        self.is_inert_scalar_store_payload()
+            || matches!(
+                classify(self.0.get()),
+                Classified::Kind(
+                    Kind::Range | Kind::RangeExcl | Kind::RangeExclStart | Kind::RangeExclBoth
+                )
+            )
+    }
+
+    /// Whether a `$` scalar store keeps this word exactly as it is: it is not
+    /// an aggregate, wrapper, range or lazy value, so the store's itemization
+    /// (`Interpreter::itemize_scalar_store_value`) returns it unchanged and it
+    /// cannot be an identity re-store of an array. An allowlist, for the same
+    /// reason as [`Self::is_never_array_share_source`].
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn is_inert_scalar_store_payload(&self) -> bool {
         match classify(self.0.get()) {
             Classified::Int(_) | Classified::Num(_) => true,
             Classified::Kind(k) => matches!(
@@ -642,10 +659,6 @@ impl NanBox {
                     | Kind::Package
                     | Kind::Pair
                     | Kind::ValuePair
-                    | Kind::Range
-                    | Kind::RangeExcl
-                    | Kind::RangeExclStart
-                    | Kind::RangeExclBoth
             ),
         }
     }
