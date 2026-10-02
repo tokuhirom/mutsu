@@ -81,7 +81,7 @@ impl Interpreter {
                 ));
             }
             self.loop_cond_active = true;
-            let cond_res = self.run_range(code, cond_start, body_start, compiled_fns);
+            let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
             self.loop_cond_active = false;
             if let Err(e) = cond_res {
                 self.pop_loop_local_scope(code);
@@ -186,7 +186,7 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
-            if let Err(e) = self.run_range(code, step_begin, loop_end, compiled_fns) {
+            if let Err(e) = self.run_range_unpolled(code, step_begin, loop_end, compiled_fns) {
                 self.pop_loop_local_scope(code);
                 return Err(e);
             }
@@ -259,7 +259,7 @@ impl Interpreter {
         'repeat_loop: loop {
             if !first {
                 self.loop_cond_active = true;
-                let cond_res = self.run_range(code, cond_start, loop_end, compiled_fns);
+                let cond_res = self.run_range_unpolled(code, cond_start, loop_end, compiled_fns);
                 self.loop_cond_active = false;
                 if let Err(e) = cond_res {
                     self.pop_loop_local_scope(code);

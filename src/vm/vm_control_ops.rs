@@ -530,7 +530,7 @@ impl Interpreter {
                 ));
             }
             self.loop_cond_active = true;
-            let cond_res = self.run_range(code, cond_start, body_start, compiled_fns);
+            let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
             self.loop_cond_active = false;
             if let Err(e) = cond_res {
                 self.pop_loop_local_scope(code);

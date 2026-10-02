@@ -398,8 +398,10 @@ pub(crate) fn note_candidate_push() {
 /// is armed. Keeping the gate outside this function lets `vm_poll` make one
 /// composite cached-load decision for GC and the profiler.
 ///
-/// This runs on **every executed opcode** in a default (GC-on) run, so what it
-/// costs to *decline* is what the whole VM pays for the safepoint's existence.
+/// This runs on every dispatch-loop back-edge, compound-loop iteration and
+/// call in a default (GC-on) run — every executed opcode before #8821 moved
+/// the polls (`vm_poll::DispatchPolls`) — so what it costs to *decline* is
+/// still a large share of what the VM pays for the safepoint's existence.
 /// It used to cost ~31 instructions there: an out-of-line call, a `park`
 /// helper, an `OnceLock` deref for [`triggers`], and a four-term disjunction.
 /// Everything a decline actually depends on is now three relaxed-ish loads,
@@ -452,6 +454,27 @@ fn gc_safepoint_armed_slow(kind: SafepointKind) {
             collect_cycles_at(kind.name())
         });
     }
+}
+
+/// `$*VM.request-garbage-collection`: "perform a garbage collect run when
+/// possible" (raku-doc `Type/VM`). A native method body holds no container
+/// borrow, so it is possible right here: run the collect now, the same one a
+/// firing safepoint runs, after parking for any stop-the-world another thread
+/// has requested. A no-op with `MUTSU_GC=off`.
+///
+/// Before #8821 the call got its collect for free from the per-opcode poll
+/// that preceded it under `MUTSU_GC_EVERY_SAFEPOINT`; with polls on back-edges
+/// and calls only, an explicit request has to be honoured explicitly.
+// Cost: one cycle collect, O(s) in the suspects reachable from the candidate
+// buffer.
+pub(crate) fn collect_on_request() {
+    if !gc_enabled() {
+        return;
+    }
+    super::stw::park_at_safepoint();
+    crate::profile::exclude_non_raku(crate::profile::Region::Gc, || {
+        collect_cycles_at(SafepointKind::Manual.name())
+    });
 }
 
 /// `MUTSU_GC_COLLECT_NOW=1`: one collect right at program start (design §9.2).

@@ -635,7 +635,7 @@ impl Interpreter {
                     ip = cf.code.ops.len();
                     r
                 } else {
-                    self.exec_one(&cf.code, &mut ip, compiled_fns)
+                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns)
                 };
                 match step {
                     Ok(()) => {}

@@ -255,7 +255,7 @@ impl Interpreter {
 
         let mut inner_ip = body_start;
         while inner_ip < end {
-            if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
+            if let Err(e) = self.exec_one_backedge_polled(code, &mut inner_ip, compiled_fns) {
                 if e.is_succeed() {
                     self.stack.truncate(stack_base);
                     // A statement `given` always yields exactly one stack value

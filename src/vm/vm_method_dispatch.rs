@@ -926,7 +926,7 @@ impl Interpreter {
                 ip = cc.ops.len();
                 r
             } else {
-                self.exec_one(cc, &mut ip, compiled_fns)
+                self.exec_one_backedge_polled(cc, &mut ip, compiled_fns)
             };
             match step {
                 Ok(()) => {}
@@ -2349,7 +2349,7 @@ impl Interpreter {
                 ip = cc.ops.len();
                 r
             } else {
-                self.exec_one(cc, &mut ip, compiled_fns)
+                self.exec_one_backedge_polled(cc, &mut ip, compiled_fns)
             };
             match step {
                 Ok(()) => {}

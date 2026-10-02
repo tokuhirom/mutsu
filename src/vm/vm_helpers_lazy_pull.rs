@@ -238,7 +238,7 @@ impl Interpreter {
         let mut body_finished = false;
 
         while ip < cc.ops.len() {
-            match self.exec_one(&cc, &mut ip, run_fns) {
+            match self.exec_one_backedge_polled(&cc, &mut ip, run_fns) {
                 Ok(()) => {}
                 Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
