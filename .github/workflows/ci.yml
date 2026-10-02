@@ -1123,8 +1123,11 @@ jobs:
       # level), so this job still checks exactly what it exists to check, but
       # runs the suite ~3.4x faster -- 951 sampled t/ files took 74s at
       # opt-level 0 and 22s at 1 (4-core box, -j4). At 0 this job was the
-      # workflow's critical path (14 min, 12 of them `prove`). The dependency
-      # cache is per opt level, hence its own rust-cache key below.
+      # workflow's critical path (14 min, 12 of them `prove`). The price is
+      # compile time: the mutsu crate alone took 366s at opt-level 1 against
+      # 102s at 0 (same box, CARGO_INCREMENTAL=0), so the job trades ~4 min of
+      # build for ~8 min of `prove`. The dependency cache is per opt level,
+      # hence its own rust-cache key below.
       # `line-tables-only` keeps file:line in a panic backtrace and drops the
       # rest of the debuginfo nobody reads here (a 600 MB binary to link).
       CARGO_PROFILE_DEV_OPT_LEVEL: "1"
