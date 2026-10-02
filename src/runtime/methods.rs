@@ -237,7 +237,7 @@ pub(crate) fn multidim_bind_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        data.store_element(i, Value::scalar(value));
+        data.store_element(i, Value::bound_element(value));
         return Ok(());
     }
     let child = multidim_child_for_store(data, i);

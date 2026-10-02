@@ -3594,11 +3594,15 @@ impl Interpreter {
                             index, shape[0]
                         )));
                     }
-                    if matches!(
-                        items.get(index).map(Value::view),
-                        Some(ValueView::Scalar(_))
-                    ) {
-                        return Err(RuntimeError::assignment_ro(None));
+                    match items.get(index).map(Value::view) {
+                        Some(ValueView::Scalar(_)) => {
+                            return Err(RuntimeError::assignment_ro(None));
+                        }
+                        // An element `BIND-POS`-bound to a bare value (#10924).
+                        Some(ValueView::ContainerRef(cell)) if cell.is_readonly() => {
+                            return Err(RuntimeError::immutable_value());
+                        }
+                        _ => {}
                     }
                     // In place through the shared node, with the same store the
                     // `[]=` opcode uses: every holder of the array sees the write
@@ -3625,7 +3629,7 @@ impl Interpreter {
                     // SAFETY: audited aliased in-place container write (see
                     // value::aliased_mut); no borrow into the node is live.
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.store_element(index, Value::scalar(value.clone()));
+                    data.store_element(index, Value::bound_element(value.clone()));
                     return Ok(value.clone());
                 }
                 // Cost: O(1) amortized (in place through the shared node; plus the
