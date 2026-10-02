@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 23;
 
 # X::Redeclaration::Outer for references in positions the scope walk reaches
 # since it runs on the exhaustive mutable AST visitor (ADR-10499). Each
@@ -29,6 +29,16 @@ throws-like { EVAL q/my $y = 1; { my $z where $y; my $y = 2 }/ },
 throws-like { EVAL q/my $y = 1; { $_ = "a"; s[a] = $y; my $y = 2 }/ },
     X::Redeclaration::Outer, 'assignment-form substitution thunk';
 
+# The replacement of a quote-form substitution is `qq` text, not a tree.
+throws-like { EVAL q{my $y = "a"; { $_ = "a"; s/a/$y/; my $y = 2 }} },
+    X::Redeclaration::Outer, 'quote-form substitution replacement';
+
+throws-like { EVAL q{my $y = "a"; { $_ = "a"; S/a/$y/; my $y = 2 }} },
+    X::Redeclaration::Outer, 'quote-form non-destructive substitution replacement';
+
+throws-like { EVAL q{my @y = <a>; { $_ = "a"; s/a/@y[0]/; my @y = 2 }} },
+    X::Redeclaration::Outer, 'an array element read in a replacement';
+
 throws-like { EVAL q/my $y = 1; { subset S of Int where $y; my $y = 2 }/ },
     X::Redeclaration::Outer, 'subset where thunk';
 
@@ -52,6 +62,18 @@ lives-ok { EVAL q/my $y = 1; sub f(&c:(Int $ = $y)) { my $y = 2 }/ },
 lives-ok {
     EVAL q/my $y = 1; react { whenever Supply.from-list(1) -> $y { my $r = $y; my $y } }/
 }, 'whenever parameters are the block\'s own lexicals';
+
+lives-ok { EVAL q{my $y = "a"; { my $y = 2; $_ = "a"; s/a/$y/ }} },
+    'a replacement read of a variable declared first in the scope is local';
+
+lives-ok { EVAL q{my $y = "a"; { $_ = "a"; s/a/$_/; my $y = 2 }} },
+    'a replacement that reads only the topic names no outer variable';
+
+lives-ok { EVAL q{my $y = "a"; { $_ = "a"; s/a/\$y/; my $y = 2 }} },
+    'an escaped sigil in a replacement is text';
+
+lives-ok { EVAL q{my $y = "a"; { $_ = "a"; s/a/{$y}/; my $y = 2 }} },
+    'a code block in a replacement is a nested code object';
 
 # --- the self-initializer check reaches the same positions ---
 

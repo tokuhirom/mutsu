@@ -37,6 +37,19 @@ impl Ctx {
             self.reference(k);
         }
     }
+
+    /// Registers the reads of a `qq` source text kept as a string (the
+    /// replacement of a quote-form `s///`), in the current scope. The text is
+    /// parsed the way the runtime parses it; the parse only feeds this check.
+    fn read_qq_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let mut parsed = vec![Stmt::Expr(crate::parse_dispatch::parse_qq_interpolation(
+            text,
+        ))];
+        self.visit_stmts_mut(&mut parsed);
+    }
 }
 
 impl VisitMut for Ctx {
@@ -161,6 +174,24 @@ impl VisitMut for Ctx {
             Expr::AssignExpr { name, .. } => {
                 let key = name.clone();
                 self.reference_decl_name(&key);
+                walk_expr_mut(self, expr);
+            }
+            // The replacement of a quote-form `s/pat/repl/` is kept as `qq`
+            // source text, parsed again where the substitution runs, so its
+            // variable reads are not in the tree. Read them from a parse of
+            // the same text, in this scope (rakudo counts `s/a/$y/; my $y` as
+            // a reference of the outer `$y`).
+            Expr::Subst {
+                replacement,
+                replacement_thunk: None,
+                ..
+            }
+            | Expr::NonDestructiveSubst {
+                replacement,
+                replacement_thunk: None,
+                ..
+            } => {
+                self.read_qq_text(replacement);
                 walk_expr_mut(self, expr);
             }
             // Body-bearing expressions open a new nested lexical scope.
