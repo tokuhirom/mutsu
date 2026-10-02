@@ -7,7 +7,7 @@ use Test;
 # through, and no dispatcher at all dies. Each expectation was checked
 # against rakudo.
 
-plan 30;
+plan 36;
 
 proto p-say($) { say {*} }
 multi p-say(1) { 42 }
@@ -98,6 +98,33 @@ is $!.^name ~ ': ' ~ $!.message,
 
 try { my $x = {*} }
 isa-ok $!, X::NoDispatcher, 'a {*} in the mainline dies too';
+
+# The error names the innermost code object that was called (#10786): an
+# inlined block (`if`, a bare block, a loop body) is no frame of its own, a
+# called block or closure has no name (the mainline is `<unit>`).
+sub ns-if { if 1 { {*} } }
+try ns-if();
+is $!.message, 'ns-if is not in the dynamic scope of a dispatcher',
+    'an inlined if body names the enclosing routine';
+sub ns-bare { { {*} } }
+try ns-bare();
+is $!.message, 'ns-bare is not in the dynamic scope of a dispatcher',
+    'so does an inlined bare block';
+sub ns-for { for 1 { {*} } }
+try ns-for();
+is $!.message, 'ns-for is not in the dynamic scope of a dispatcher',
+    'and a loop body';
+sub ns-closure { my &b = { {*} }; b() }
+try ns-closure();
+is $!.message, ' is not in the dynamic scope of a dispatcher',
+    'a called closure block has an empty name';
+sub ns-pointy { -> $a { {*} }(1) }
+try ns-pointy();
+is $!.message, ' is not in the dynamic scope of a dispatcher',
+    'so does a called pointy block';
+try { {*} };
+is $!.message, ' is not in the dynamic scope of a dispatcher',
+    'a try block is a called block';
 
 proto p-kept-closure($) { my &c = { {*} }; [1].map(&c).eager }
 multi p-kept-closure(1) { 42 }

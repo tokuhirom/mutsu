@@ -1877,6 +1877,11 @@ pub(crate) struct RoutineFrame {
     pub is_submethod: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
+    /// Whether this block frame is an *inlined* bare block (a statement-level
+    /// `{ ... }` run in place), not a code object that was called. Rakudo
+    /// inlines such a block, so it is no frame of its own for a `{*}`'s
+    /// `X::NoDispatcher` name (#10786); a backtrace still shows it.
+    pub is_inlined_block: bool,
     /// Whether this routine carries `is hidden-from-backtrace`.
     pub is_hidden_from_backtrace: bool,
     /// The file this routine's BODY lives in (None = same as the caller /
