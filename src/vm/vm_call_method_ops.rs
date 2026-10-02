@@ -1090,7 +1090,8 @@ impl Interpreter {
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path, which is unaware of
-        // user-defined Bool.
+        // user-defined Bool. A type that defines `.so` / `.not` itself is left to
+        // full dispatch.
         if matches!(method, "so" | "not") && args.is_empty() {
             let user_bool_owner = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -1099,6 +1100,7 @@ impl Interpreter {
             };
             if let Some(cn) = user_bool_owner
                 && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, method, &[])).is_none()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethod",

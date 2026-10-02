@@ -463,7 +463,7 @@ impl Interpreter {
         package.strip_suffix("::EXPORT")
     }
 
-    pub(super) fn qualify_stash_name(package: &str, symbol: &str) -> String {
+    pub(crate) fn qualify_stash_name(package: &str, symbol: &str) -> String {
         let package = package.trim_end_matches("::");
         if package.is_empty() || package == "GLOBAL" {
             symbol.to_string()

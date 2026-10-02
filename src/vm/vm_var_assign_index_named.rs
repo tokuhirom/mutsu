@@ -5714,22 +5714,21 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 if !package.is_empty() {
-                    let key_name = if key.starts_with('$')
-                        || key.starts_with('@')
-                        || key.starts_with('%')
-                        || key.starts_with('&')
-                    {
-                        key
-                    } else {
-                        format!("${key}")
+                    // The same symbol `bind_stash_key` installs: the qualified
+                    // name in the env *and* the `our` store, so a read from
+                    // another frame (a method, a sub) still finds the entry.
+                    let pkg = Self::normalize_stash_package(&package);
+                    let (sigil, bare) = match key.chars().next() {
+                        Some(sigil @ ('$' | '@' | '%' | '&')) => (Some(sigil), &key[1..]),
+                        _ => (None, key.as_str()),
                     };
-                    let pkg = package.trim_end_matches("::");
-                    let fq = if pkg.is_empty() || pkg == "GLOBAL" {
-                        key_name
-                    } else {
-                        format!("{pkg}::{key_name}")
+                    let qualified = Self::qualify_stash_name(&pkg, bare);
+                    let fq = match sigil {
+                        Some('$') | None => qualified,
+                        Some(sigil) => format!("{sigil}{qualified}"),
                     };
-                    self.env_mut().insert(fq, val.clone());
+                    self.env_mut().insert(fq.clone(), val.clone());
+                    self.set_our_var(fq, val.clone());
                 }
                 self.stack.push(val);
             }
