@@ -430,6 +430,10 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
+        // `&Alias::sub` where `Alias` is a constant naming a package.
+        if let Some(real) = self.resolve_package_alias_prefix(name) {
+            return self.resolve_code_var(&real);
+        }
         // Handle package-qualified names: strip pseudo-package prefixes and
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
