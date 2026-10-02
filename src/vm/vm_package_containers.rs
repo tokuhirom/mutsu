@@ -25,6 +25,20 @@ impl Interpreter {
         name.to_string()
     }
 
+    /// The name a whole-container store to `name` lands on: the bare
+    /// spelling when `name` is a pseudo-package-qualified `@`/`%` variable
+    /// (`@GLOBAL::d`) whose only declaration is a bare `our @d`, else `name`.
+    // Cost: O(1) hash probes; only a `::`-qualified `@`/`%` name probes at all.
+    pub(crate) fn package_container_store_name(&self, name_sym: Symbol) -> String {
+        let name = name_sym.as_str();
+        if crate::qualified::is_package_array(name_sym)
+            || crate::qualified::is_package_hash(name_sym)
+        {
+            return self.package_container_key(name);
+        }
+        name.to_string()
+    }
+
     /// Whether `val` is the plain container a declared `our @a` / `our %h`
     /// holds, as opposed to the content of an auto-created Scalar slot.
     fn is_declared_package_container(val: &Value, positional: bool) -> bool {
