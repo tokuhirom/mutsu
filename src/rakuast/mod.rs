@@ -14,10 +14,12 @@ mod convert;
 mod fields;
 mod formatter;
 mod lower;
+mod name_parts;
 mod render;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;
+pub(crate) use name_parts::{is_name_part, is_name_part_class};
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -104,6 +106,12 @@ pub enum RakuAstClass {
     // Rakudo, but it is carried by the same model value here so the immutable
     // tree can retain the exact Name shape.
     NamePartExpression,
+    // The empty edge of a name: the leading `::` of `::Foo` / `::($x)` and the
+    // trailing `::` of a stash lookup `Foo::`. Rakudo 2026.09 spells it
+    // `Name::Part::Empty`; rakudo/rakudo#6771 renames it to
+    // `Name::Part::EmptyEdge`, so both spellings are modelled and accepted.
+    NamePartEmpty,
+    NamePartEmptyEdge,
     ArgList,
     // Phase 2: variables, declarations, operators.
     VarLexical,
@@ -334,6 +342,8 @@ impl RakuAstClass {
             Name => "RakuAST::Name",
             NamePartSimple => "RakuAST::Name::Part::Simple",
             NamePartExpression => "RakuAST::Name::Part::Expression",
+            NamePartEmpty => "RakuAST::Name::Part::Empty",
+            NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
@@ -473,6 +483,8 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorEndOfString
                 | RakuAstClass::RegexAnchorEndOfLine
                 | RakuAstClass::RegexCharClassDigit
+                | RakuAstClass::NamePartEmpty
+                | RakuAstClass::NamePartEmptyEdge
         )
     }
 
@@ -612,12 +624,15 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     if !is_registered_type_object(actual) || !is_registered_type_object(expected) {
         return false;
     }
-    if actual == expected
-        || (expected == "RakuAST::Node" && actual != "RakuAST::Name::Part::Expression")
-    {
+    // A `Name::Part` is not a `RakuAST::Node` in Rakudo (its MRO is
+    // `(Simple) (Part) (Any) (Mu)`), nor a `RakuAST::Name` despite the
+    // `RakuAST::Name::` namespace prefix.
+    let is_name_part =
+        actual == "RakuAST::Name::Part" || actual.starts_with("RakuAST::Name::Part::");
+    if actual == expected || (expected == "RakuAST::Node" && !is_name_part) {
         return true;
     }
-    if actual == "RakuAST::Name::Part::Expression" && expected == "RakuAST::Name" {
+    if is_name_part && expected == "RakuAST::Name" {
         return false;
     }
     if let Some(rest) = actual.strip_prefix(expected)
@@ -865,6 +880,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Name,
     RakuAstClass::NamePartSimple,
     RakuAstClass::NamePartExpression,
+    RakuAstClass::NamePartEmpty,
+    RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
     RakuAstClass::VarDeclarationSimple,
@@ -1106,6 +1123,58 @@ pub fn construct(
                     value: RakuAstFieldValue::Node(term),
                 },
             ],
+        }))));
+    }
+    // `RakuAST::Call::Name.new(name => ..., args => ...)`; `args` is optional
+    // and, like the read direction, omitted when absent.
+    if matches!(
+        class_name,
+        "RakuAST::Call::Name" | "RakuAST::Call::Name::WithoutParentheses"
+    ) && method == "new"
+    {
+        let class = class_from_name(class_name).expect("registered Call::Name class");
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `name`")))?;
+        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Call::Name.new")?;
+        let mut fields = vec![RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(name),
+        }];
+        if let Some(arg_list) = named_arg(args, "args") {
+            require_rakuast_class(&arg_list, RakuAstClass::ArgList, "RakuAST::Call::Name.new")?;
+            fields.push(RakuAstField {
+                name: Some("args"),
+                value: RakuAstFieldValue::Node(arg_list),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+        }))));
+    }
+    // `RakuAST::Name.new(*@parts)`: the general constructor, needed for any
+    // name with a non-identifier part — the empty edge of `::Foo` / `Foo::`
+    // or the expression of `::($x)`. An all-identifier name is the same node
+    // `from-identifier-parts` builds; the renderer picks the spelling.
+    if class_name == "RakuAST::Name" && method == "new" {
+        let parts = args
+            .iter()
+            .map(|part| {
+                if is_name_part(part) {
+                    Ok(part.clone())
+                } else {
+                    Err(RuntimeError::new(
+                        "RakuAST::Name.new expects RakuAST::Name::Part arguments",
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Name,
+            fields: vec![RakuAstField {
+                name: Some("parts"),
+                value: RakuAstFieldValue::List(parts),
+            }],
         }))));
     }
     if class_name == "RakuAST::Name" && method == "from-identifier-parts" {
@@ -2315,6 +2384,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
+        ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
@@ -2404,6 +2474,8 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Regex::Anchor::EndOfString", "new") => RakuAstClass::RegexAnchorEndOfString,
         ("RakuAST::Regex::Anchor::EndOfLine", "new") => RakuAstClass::RegexAnchorEndOfLine,
         ("RakuAST::Regex::CharClass::Digit", "new") => RakuAstClass::RegexCharClassDigit,
+        ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
+        ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
         _ => return None,
     })
 }
@@ -2516,6 +2588,7 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             names.push("from-identifier");
             if class == RakuAstClass::Name {
                 names.push("from-identifier-parts");
+                names.push("new");
             }
         }
         Constructor::New if constructor_is_supported(class) => names.push("new"),
@@ -2647,6 +2720,11 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Grammar
             | RakuAstClass::NamePartSimple
             | RakuAstClass::NamePartExpression
+            | RakuAstClass::NamePartEmpty
+            | RakuAstClass::NamePartEmptyEdge
+            | RakuAstClass::TermName
+            | RakuAstClass::CallName
+            | RakuAstClass::CallNameWithoutParentheses
             | RakuAstClass::Pragma
     )
 }

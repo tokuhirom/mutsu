@@ -215,12 +215,13 @@ impl Value {
         // ancestors (`RakuAST::Term`/`RakuAST::Expression`) whose names are not
         // part of the printed class name.
         if let ValueView::RakuAst(node) = self.view() {
+            // A `Name::Part` is neither a `RakuAST::Node` nor a `RakuAST::Name`
+            // in Rakudo, whatever its namespace prefix suggests.
+            let is_name_part = crate::rakuast::is_name_part_class(node.class);
             if type_name == "RakuAST::Node" {
-                return node.class != crate::rakuast::RakuAstClass::NamePartExpression;
+                return !is_name_part;
             }
-            if node.class == crate::rakuast::RakuAstClass::NamePartExpression
-                && type_name == "RakuAST::Name"
-            {
+            if is_name_part && type_name == "RakuAST::Name" {
                 return false;
             }
             if let Some(rest) = my_type.strip_prefix(type_name)

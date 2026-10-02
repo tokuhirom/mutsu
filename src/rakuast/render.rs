@@ -14,7 +14,7 @@ use crate::value::{Value, ValueView};
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     let name = node.class.printed_name();
     if node.class == RakuAstClass::Name
-        && let Some(rendered) = render_identifier_parts(node)
+        && let Some(rendered) = render_name_parts(node, indent)
     {
         return rendered;
     }
@@ -23,17 +23,9 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     if node.class.renders_bare() {
         return name.to_string();
     }
-    let ctor = if node.class == RakuAstClass::Name
-        && node.fields.iter().any(|field| {
-            matches!(&field.value, RakuAstFieldValue::Node(v) if matches!(v.view(), ValueView::RakuAst(_)))
-        })
-    {
-        "new"
-    } else {
-        match node.class.constructor() {
-            Constructor::New => "new",
-            Constructor::FromIdentifier => "from-identifier",
-        }
+    let ctor = match node.class.constructor() {
+        Constructor::New => "new",
+        Constructor::FromIdentifier => "from-identifier",
     };
 
     // A class-specific gist quirk: raku's `Assignment` list form omits even the
@@ -85,10 +77,12 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s
 }
 
-/// Render the qualified-name constructor form. Qualified names are stored as
-/// `Name::Part::Simple` children so `.parts` remains walkable, but Rakudo uses
-/// the dedicated `from-identifier-parts` constructor in `.gist`/`.raku`.
-fn render_identifier_parts(node: &RakuAstNode) -> Option<String> {
+/// Render a `RakuAST::Name` built from a `parts` list, picking the spelling
+/// Rakudo's `.raku` uses: `from-identifier("x")` for one identifier part,
+/// `from-identifier-parts("A","B")` (no space after the comma) for several,
+/// and the general `Name.new(part, ...)` as soon as any part is not an
+/// identifier — the empty edge of `::Foo` / `Foo::` or a `::(...)` expression.
+fn render_name_parts(node: &RakuAstNode, indent: usize) -> Option<String> {
     let field = node
         .fields
         .iter()
@@ -96,32 +90,59 @@ fn render_identifier_parts(node: &RakuAstNode) -> Option<String> {
     let RakuAstFieldValue::List(parts) = &field.value else {
         return None;
     };
-    if parts.len() < 2 {
-        return None;
+    if parts.is_empty() {
+        return Some("RakuAST::Name.new()".to_string());
     }
     let identifiers = parts
         .iter()
+        .map(simple_part_identifier)
+        .collect::<Option<Vec<_>>>();
+    if let Some(identifiers) = identifiers {
+        return Some(if let [only] = identifiers.as_slice() {
+            format!("RakuAST::Name.from-identifier({only})")
+        } else {
+            format!(
+                "RakuAST::Name.from-identifier-parts({})",
+                identifiers.join(",")
+            )
+        });
+    }
+    let child_indent = indent + 2;
+    let pad = " ".repeat(child_indent);
+    let rendered = parts
+        .iter()
         .map(|part| {
-            let ValueView::RakuAst(part) = part.view() else {
-                return None;
+            let part = match part.view() {
+                ValueView::RakuAst(part) => render_node(part, child_indent),
+                _ => render_leaf(part),
             };
-            if part.class != RakuAstClass::NamePartSimple {
-                return None;
-            }
-            let field = part.fields.first()?;
-            if field.name.is_some() {
-                return None;
-            }
-            let RakuAstFieldValue::Node(value) = &field.value else {
-                return None;
-            };
-            matches!(value.view(), ValueView::Str(_)).then(|| render_leaf(value))
+            format!("{pad}{part}")
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     Some(format!(
-        "RakuAST::Name.from-identifier-parts({})",
-        identifiers.join(", ")
+        "RakuAST::Name.new(\n{}\n{})",
+        rendered.join(",\n"),
+        " ".repeat(indent)
     ))
+}
+
+/// The rendered string literal of a `Name::Part::Simple`, or `None` for any
+/// other part.
+fn simple_part_identifier(part: &Value) -> Option<String> {
+    let ValueView::RakuAst(part) = part.view() else {
+        return None;
+    };
+    if part.class != RakuAstClass::NamePartSimple {
+        return None;
+    }
+    let field = part.fields.first()?;
+    if field.name.is_some() {
+        return None;
+    }
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    matches!(value.view(), ValueView::Str(_)).then(|| render_leaf(value))
 }
 
 /// Rakudo keeps `Regex::NamedCapture.array` observable through its accessor,
