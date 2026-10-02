@@ -1607,6 +1607,12 @@ impl Interpreter {
             crate::vm::vm_stats::record_regex_parse_cache(true);
             return Some(cached);
         }
+        // A pattern that splices a Regex value (`<$rx>`) is stored keyed by the
+        // value's identity as well (`regex_value_keyed_parse`).
+        if let Some(cached) = self.value_keyed_parse_lookup(package, &interpolated, tok_gen) {
+            crate::vm::vm_stats::record_regex_parse_cache(true);
+            return Some(cached);
+        }
         crate::vm::vm_stats::record_regex_parse_cache(false);
 
         // The ambient-read flag belongs to one top-level parse. Clear a flag
@@ -1614,12 +1620,18 @@ impl Interpreter {
         // consume this parse's result so an impure pattern does not disable
         // caching for all later independent patterns.
         crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|flag| flag.set(false));
+        let enclosing = super::regex_value_keyed_parse::begin_window();
         let parsed = self
             .parse_regex_uncached_interpolated(&interpolated, RegexParseMode::Match)
             .map(std::sync::Arc::new);
+        let reads = super::regex_value_keyed_parse::end_window(enclosing);
         let ambient_read = crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE
             .with(|flag| flag.replace(false));
-        if !ambient_read && let Some(ref p) = parsed {
+        if ambient_read {
+            if let Some(ref p) = parsed {
+                Self::value_keyed_parse_store(package, interpolated, tok_gen, reads, p);
+            }
+        } else if let Some(ref p) = parsed {
             crate::runtime::regex_parse::REGEX_INTERPOLATED_PARSE_CACHE.with(|c| {
                 let mut cache = c.borrow_mut();
                 let bucket = cache.entry(package).or_default();
@@ -1664,10 +1676,10 @@ impl Interpreter {
         // regex. Do not cache that plan by source tree alone: the lexical may
         // be reassigned to a different aggregate, string, Regex, or other
         // value before the next match.
+        // `parse_regex` keys such a plan by the values it read
+        // (`regex_value_keyed_parse`), so a rebound lexical re-parses.
         if tree.contains_regex_value_interpolation() {
-            return self
-                .parse_regex_uncached(&pattern, RegexParseMode::Match)
-                .map(std::sync::Arc::new);
+            return self.parse_regex(&pattern);
         }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
