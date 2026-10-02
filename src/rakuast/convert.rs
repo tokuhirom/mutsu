@@ -58,6 +58,17 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
+/// The leading `scope => "my"` of a lexical package declaration (`my class`),
+/// measured on rakudo 2026.09; a package's default scope is `our`, which
+/// renders no field.
+fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
+    if is_lexical {
+        vec![leaf_field(Some("scope"), Value::str_from("my"))]
+    } else {
+        Vec::new()
+    }
+}
+
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
 
@@ -879,7 +890,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if name_expr.is_some()
                     || *class_is_rw
                     || *is_hidden
-                    || *is_lexical
                     || !hidden_parents.is_empty()
                     || !does_parents.is_empty()
                     || repr.is_some()
@@ -890,24 +900,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 {
                     return Err(unsupported("grammar with inheritance / scope / traits"));
                 }
+                let mut fields = lexical_scope_field(*is_lexical);
+                fields.push(node_field(
+                    Some("name"),
+                    name_from_identifier(&name.resolve()),
+                ));
+                fields.push(node_field(
+                    Some("body"),
+                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                ));
                 return Ok(Some(statement_expression(RakuAstNode {
                     class: RakuAstClass::Grammar,
-                    fields: vec![
-                        node_field(Some("name"), name_from_identifier(&name.resolve())),
-                        node_field(
-                            Some("body"),
-                            block_node(&crate::parser::unhoist_nested_methods(body))?,
-                        ),
-                    ],
+                    fields,
                 })));
             }
             // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
             // Inheritance and `rw` are `traits`, the repr is its own leaf field.
-            // `my`/unit scope, `hides`, computed names and user traits carry
-            // extra RakuAST shape, deferred.
+            // A `my` class leads with `scope => "my"` (`our` is the default
+            // and renders none). Unit scope, `hides`, computed names and user
+            // traits carry extra RakuAST shape, deferred.
             if name_expr.is_some()
                 || *is_hidden
-                || *is_lexical
                 || !hidden_parents.is_empty()
                 || !custom_traits.is_empty()
                 || *is_unit
@@ -916,10 +929,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "class with inheritance / scope / repr / traits",
                 ));
             }
-            let mut fields = vec![node_field(
+            let mut fields = lexical_scope_field(*is_lexical);
+            fields.push(node_field(
                 Some("name"),
                 name_from_identifier(&name.resolve()),
-            )];
+            ));
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
