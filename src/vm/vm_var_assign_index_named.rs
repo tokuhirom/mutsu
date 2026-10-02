@@ -2251,6 +2251,20 @@ impl Interpreter {
                 } else {
                     None
                 };
+                // A `$` alias of an object hash (`my $t := $obj.attr-hash`)
+                // carries no declared constraint of its own; the key type is
+                // embedded in the hash it holds.
+                // A `%` name keeps the declared-constraint rule (a destructured
+                // `%a is raw` parameter keys by display string), as `++` does.
+                let key_constraint = key_constraint.or_else(|| {
+                    if var_name.starts_with('%') {
+                        return None;
+                    }
+                    match index_target_deref.as_ref().map(Value::view) {
+                        Some(ValueView::Hash(h)) => h.key_type.clone(),
+                        _ => None,
+                    }
+                });
                 let is_object_hash = key_constraint.is_some();
                 // A parameterized *mutable* QuantHash (`SetHash[Int()]`, ...)
                 // coerces its keys the same way an object hash does. An immutable
@@ -5676,7 +5690,19 @@ impl Interpreter {
                 // SAFETY: aliased in-place mutation of a shared hash so the change
                 // is visible to all holders of the same Arc; see `gc_contents_mut`.
                 let hd = unsafe { crate::value::gc_contents_mut(&arc) };
-                Value::hash_insert_through(&mut hd.map, key.clone(), stored);
+                // An object hash (`%.u{Str:D}`) is `.WHICH`-keyed and records the
+                // key object in `original_keys`. A raw stringified key here landed
+                // beside the `.WHICH`-keyed entry the named store writes, so a
+                // write through an alias and one through the accessor diverged.
+                if hd.key_type.is_some() {
+                    let which = self.which_key(&idx);
+                    hd.original_keys
+                        .get_or_insert_with(ValueMap::default)
+                        .insert(which.clone(), Self::object_hash_key_value(&idx));
+                    Value::hash_insert_through(&mut hd.map, which, stored);
+                } else {
+                    Value::hash_insert_through(&mut hd.map, key.clone(), stored);
+                }
                 // For a fresh-cell bind, write the cell back to the source var
                 // so both sides alias the same container.
                 if let Some((Some(src), cell)) = &bind_cell {
