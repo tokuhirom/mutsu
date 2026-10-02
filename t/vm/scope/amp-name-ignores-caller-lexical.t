@@ -1,46 +1,35 @@
 use v6;
+use lib 't/lib';
 use Test;
 
-# `&name` inside a routine names the routine visible where that routine was
-# written, not a same-named `my &name` of whoever called it. A caller's
-# `my &tab-up = -> |c { $obj.tab-up(|c) }` made `method tab-up(|c) { &tab-up(|c) }`
-# call itself until the stack ran out (Template::HAML's direct-emit helpers,
-# #10638). A bare `name()` call already got this right.
+# `&name` inside a module's routine names what that module imported, not a
+# same-named `my &name` of whoever called it. Template::HAML's EVAL'd template
+# code binds `my &tab-up = -> |c { $ctx.tab-up(|c) }`, and the context's
+# `method tab-up(|c) { &tab-up(|c) }` (whose module imports `sub tab-up`) read
+# that caller binding and called itself until the stack ran out (#10638).
 
-plan 9;
+use AmpScope::Ctx;
 
-sub g() { 'sub' }
+plan 7;
 
-sub call-amp() { &g() }
-sub read-amp() { &g.name }
-sub call-bare() { g() }
+my $ctx = AmpScope::Ctx.new;
 
-{
-    my &g = sub lexical() { 'lexical' };
-    is call-amp(), 'sub', '&g() in a routine ignores the caller lexical';
-    is read-amp(), 'g', '&g in a routine ignores the caller lexical';
-    is call-bare(), 'sub', 'bare g() (already right)';
-    is &g(), 'lexical', 'the lexical is still seen where it is in scope';
-    is (-> { &g() })(), 'lexical', 'and from a closure that captured it';
-}
-
-class C {
-    method g() { &g() }
-}
-{
-    my $c = C.new;
-    my &g = -> { $c.g };
-    is g(), 'sub', 'method delegating to the same-named sub does not recurse';
-}
-
-sub with-param(&g) { &g() }
-is with-param(sub param() { 'param' }), 'param', 'a &g parameter wins';
-
-sub with-named(:&g) { &g() }
-is with-named(g => sub named() { 'named' }), 'named', 'a :&g parameter wins';
+is $ctx.tab-up, 'sub:1', 'no caller binding: the imported sub';
 
 {
-    my &g = sub lexical() { 'lexical' };
-    sub inner() { &g() }
-    is inner(), 'lexical', 'a routine declared inside the lexical scope sees it';
+    my &tab-up = -> |c { $ctx.tab-up(|c) };
+    is tab-up(), 'sub:1', '&tab-up() in the method ignores the caller binding';
+    is tab-up(3), 'sub:3', '... with arguments';
+    is $ctx.tab-up-ref, 'tab-up', '&tab-up as a value ignores it too';
+}
+
+{
+    my $code = EVAL q[my &tab-up = -> |c { $ctx.tab-up(|c) }; -> { tab-up(2) }];
+    is $code(), 'sub:2', 'from EVAL-compiled caller code';
+}
+
+{
+    my &tab-up = sub lexical(|c) { 'lexical' };
+    is &tab-up(), 'lexical', 'the caller binding still answers in its own scope';
+    is (-> { &tab-up() })(), 'lexical', 'and in a closure that captured it';
 }

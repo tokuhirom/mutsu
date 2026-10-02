@@ -1,6 +1,6 @@
-# Template::HAML: four scoping and container fixes
+# Template::HAML: five scoping, container and regex fixes
 
-Working Template::HAML's suite (#10638) turned up four general interpreter bugs,
+Working Template::HAML's suite (#10638) turned up five general interpreter bugs,
 each now fixed with a regression test:
 
 - **A user class named like a 6.e builtin owns its methods.** `class Formatter`
@@ -17,9 +17,13 @@ each now fixed with a regression test:
   source's container, so `@!a.push` also grew `@e` (and two attributes assigned
   from the same list were one container). The attribute store now detaches a
   shared container, as `my @a = @e` does; `:=` still aliases.
-- **`&name` is lexical.** Inside a routine, `&name` / `&name(...)` read a
-  same-named `my &name` of the *caller* when the routine had not captured one,
-  so `method tab-up(|c) { &tab-up(|c) }` called through a caller's
-  `my &tab-up = -> |c { $obj.tab-up(|c) }` recursed until the stack ran out. The
-  routine's own import or the package sub now wins, the rule a bare `name()`
-  call already followed.
+- **`&name` names the module's import.** Inside a module's routine,
+  `&name` / `&name(...)` read a same-named `my &name` of a *caller* in another
+  compunit, so `method tab-up(|c) { &tab-up(|c) }` (whose module imports
+  `sub tab-up`) called through EVAL'd template code's
+  `my &tab-up = -> |c { $obj.tab-up(|c) }` recursed until the stack ran out.
+  A caller binding from another compunit that the routine did not capture now
+  yields to the routine's import (or the registered routine).
+- **A quoted `<` in a regex no longer hides the next variable.** The scalar
+  interpolation pass skipped `'<'` as the start of an angle construct, so
+  `/ '<' $tag /` swallowed `$tag` and never matched.
