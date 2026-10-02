@@ -400,7 +400,10 @@ impl std::fmt::Debug for Tier {
 // Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
 #[inline(always)]
 fn note_alias_entry(key: Symbol, value: &Value) {
-    if value.as_str().is_some() && key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
+    // Test the key flag first: `as_str()` on a lazy strand string (ADR-0120)
+    // flattens it, so probing every stored value would materialize each
+    // `"a" x 2**32-1` the moment it is bound to a variable.
+    if key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
         crate::sigilless_alias_index::note_alias_entry(key, value);
     }
 }

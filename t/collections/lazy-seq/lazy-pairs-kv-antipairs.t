@@ -4,7 +4,7 @@ use Test;
 # (not force the source). Regression pin for S02-types/lazy-lists.t 24-26.
 # Also verifies the produced values match the eager equivalents.
 
-plan 18;
+plan 21;
 
 my $was-lazy;
 sub make-lazy-list($num) { gather { take $_ for 0 ..^ $num; $was-lazy = 0 }.lazy };
@@ -66,3 +66,10 @@ is @e.elems, 3, 'non-lazy gather pairs has all elements';
 # antipairs values where the element is a string (positional ValuePair form).
 is make-lazy-list(3).map({ "v$_" }).antipairs.eager, ("v0" => 0, "v1" => 1, "v2" => 2),
     'antipairs keeps element as key for strings';
+
+# An infinite integer range is lazy through these methods too, rather than
+# being reified as a 100k-element prefix first.
+ok (1 .. *).pairs.is-lazy, 'pairs over an infinite range reports is-lazy True';
+ok (^Inf).kv.is-lazy, 'kv over ^Inf reports is-lazy True';
+is (5 .. *).antipairs.head(2).List, (5 => 0, 6 => 1),
+    'antipairs over an infinite range starting past zero';

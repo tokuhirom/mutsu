@@ -5,6 +5,40 @@ use super::*;
 // methods) to keep both files under the repo's 500-line-per-file convention.
 
 impl LazyList {
+    /// A zero-argument `.pairs`/`.antipairs`/`.kv` over a lazy invocant, as a
+    /// lazy index-pipe stage instead of a forced (possibly infinite) source;
+    /// `None` for any other method or a non-lazy invocant. The invocant is a
+    /// genuinely-lazy `LazyList` (also `needs_vm_lazy_dispatch` when
+    /// `vm_dispatch`), or an infinite integer range (`1..*`, `^Inf`), which
+    /// Rakudo also reports `.is-lazy` through these methods.
+    ///
+    /// Cost: O(1) — builds the stage only; elements are pulled on demand.
+    pub(crate) fn index_pipe_method(
+        target: &Value,
+        method: &str,
+        vm_dispatch: bool,
+    ) -> Option<Value> {
+        let transform = match method {
+            "pairs" => IndexTransform::Pairs,
+            "antipairs" => IndexTransform::AntiPairs,
+            "kv" => IndexTransform::Kv,
+            _ => return None,
+        };
+        let source = match target.view() {
+            ValueView::LazyList(ll)
+                if ll.is_genuinely_lazy() && (!vm_dispatch || ll.needs_vm_lazy_dispatch()) =>
+            {
+                target.clone()
+            }
+            _ => Value::lazy_list(crate::gc::Gc::new(
+                crate::runtime::utils::infinite_int_range_sequence(target)?,
+            )),
+        };
+        Some(Value::lazy_list(crate::gc::Gc::new(
+            LazyList::new_index_pipe(source, transform),
+        )))
+    }
+
     /// Create a pre-cached lazy list (no body to evaluate).
     pub(crate) fn new_cached(items: Vec<Value>) -> Self {
         Self {

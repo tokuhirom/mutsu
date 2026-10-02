@@ -763,24 +763,13 @@ impl Interpreter {
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the (possibly infinite)
         // source. Matches Rakudo where these are `.is-lazy` over a lazy list.
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.needs_vm_lazy_dispatch()
-            && ll.is_genuinely_lazy()
-            && args.is_empty()
-            && matches!(method, "kv" | "pairs" | "antipairs")
+        if args.is_empty()
+            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, true)
         {
-            let transform = match method {
-                "pairs" => crate::value::IndexTransform::Pairs,
-                "antipairs" => crate::value::IndexTransform::AntiPairs,
-                _ => crate::value::IndexTransform::Kv,
-            };
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "lazy-index-pipe",
             );
-            let pipe = Value::lazy_list(crate::gc::Gc::new(
-                crate::value::LazyList::new_index_pipe(target.clone(), transform),
-            ));
             self.stack.push(pipe);
             return Ok(());
         }
