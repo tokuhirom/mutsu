@@ -83,8 +83,8 @@ impl Interpreter {
         ) = (cursor.view(), invocant.view())
         {
             for (name, value) in built.to_map() {
-                if !attributes.contains_key(&name) {
-                    attributes.insert(&name, value);
+                if !attributes.contains_key(name.as_str()) {
+                    attributes.insert(name.as_str(), value);
                 }
             }
         }
