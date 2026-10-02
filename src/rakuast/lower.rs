@@ -570,6 +570,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: Vec::new(),
         custom_traits: vec![
             ("__constant".to_string(), None),
+            ("__has_initializer".to_string(), None),
             (
                 "__constant_sigil".to_string(),
                 Some(Expr::Literal(Value::str_from(""))),

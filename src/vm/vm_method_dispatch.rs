@@ -955,7 +955,11 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
-                Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                Err(e)
+                    if e.return_value.is_some()
+                        && !e.is_yield_signal()
+                        && !cc.lets_succeed_through(&e) =>
+                {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this method is the target.
                     if let Some(target_id) = e.return_target_callable_id()
@@ -1279,12 +1283,20 @@ impl Interpreter {
         };
 
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
-        let final_result = if let Some(ref effective_return_spec) = effective_return_spec {
+        // A `succeed` unwinding past this method is not its return value, so
+        // it skips the return-spec finalization as well.
+        let final_result = if let Some(ref effective_return_spec) = effective_return_spec
+            && !matches!(&final_result, Err(e) if cc.lets_succeed_through(e))
+        {
             self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {
             match final_result {
                 Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() && e.return_target_callable_id().is_none() => {
+                Err(e)
+                    if e.return_value.is_some()
+                        && e.return_target_callable_id().is_none()
+                        && !cc.lets_succeed_through(&e) =>
+                {
                     Ok(e.return_value.unwrap())
                 }
                 Err(e) => Err(e),
@@ -2365,7 +2377,11 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
-                Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                Err(e)
+                    if e.return_value.is_some()
+                        && !e.is_yield_signal()
+                        && !cc.lets_succeed_through(&e) =>
+                {
                     if let Some(target_id) = e.return_target_callable_id()
                         && target_id != method_callable_id
                     {
@@ -2588,12 +2604,20 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        let final_result = if let Some(ref effective_return_spec) = effective_return_spec {
+        // A `succeed` unwinding past this method is not its return value, so
+        // it skips the return-spec finalization as well.
+        let final_result = if let Some(ref effective_return_spec) = effective_return_spec
+            && !matches!(&final_result, Err(e) if cc.lets_succeed_through(e))
+        {
             self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {
             match final_result {
                 Ok(v) => Ok(v),
-                Err(e) if e.return_value.is_some() && e.return_target_callable_id().is_none() => {
+                Err(e)
+                    if e.return_value.is_some()
+                        && e.return_target_callable_id().is_none()
+                        && !cc.lets_succeed_through(&e) =>
+                {
                     Ok(e.return_value.unwrap())
                 }
                 Err(e) => Err(e),

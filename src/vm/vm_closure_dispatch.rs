@@ -1221,9 +1221,12 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
-                Err(e) if e.is_succeed() => {
+                Err(e) if e.is_succeed() && !cc.lets_succeed_through(&e) => {
                     // `when`/`default` succeed signals are caught at the
-                    // enclosing block boundary (sub, method, or pointy block).
+                    // enclosing block boundary (sub, method, or pointy block)
+                    // that lexically contains the `when`; any other body lets
+                    // the signal reach the caller's `given` (see
+                    // `CompiledCode::succeed_passes_through`).
                     let ret_val = e.return_value.unwrap_or(Value::NIL);
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
@@ -1252,7 +1255,11 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(mut e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                Err(mut e)
+                    if e.return_value.is_some()
+                        && !e.is_yield_signal()
+                        && !cc.lets_succeed_through(&e) =>
+                {
                     // Non-routine closures (bare blocks, pointy blocks) are NOT
                     // return boundaries.  `return` inside them propagates up to
                     // the lexically enclosing routine (sub/method).

@@ -603,6 +603,7 @@ impl Compiler {
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
         sub_compiler.code.declared_in_routine = self.is_routine || self.lexically_in_routine;
+        sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
@@ -1744,6 +1745,7 @@ impl Compiler {
         sub_compiler.code.compiled_fns =
             (!own_compiled_fns.is_empty()).then(|| std::sync::Arc::new(own_compiled_fns));
         sub_compiler.code.is_routine = is_routine;
+        sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // Use the sub_compiler's source line if a SetLine was processed
         // within the body, otherwise fall back to the parent compiler's
         // last_source_line.

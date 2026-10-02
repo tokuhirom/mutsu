@@ -125,7 +125,10 @@ fn build_sigilless_bind_stmt(
         is_dynamic: false,
         is_export: false,
         export_tags: Vec::new(),
-        custom_traits: Vec::new(),
+        // A sigilless term always carries a user-written initializer, so an
+        // explicit `Nil` RHS (`my \x = Nil`) must not be mistaken for the
+        // synthesized default and re-seeded as `Any`.
+        custom_traits: vec![("__has_initializer".to_string(), None)],
         where_constraint: None,
     };
     if binds_a_container {
