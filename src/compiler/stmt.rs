@@ -4710,19 +4710,37 @@ impl Compiler {
                 undefine_first,
                 nested_lvalue,
             } => {
-                // A multi-level element temp (`temp $t[1]<k>[1] = v`): `value` is
-                // the whole element assignment; temporize the element it targets.
-                if *nested_lvalue
-                    && let Some(assign) = value.as_deref()
-                    && let Expr::IndexAssign {
-                        target,
-                        index: key,
-                        is_positional,
-                        ..
-                    } = assign
-                {
-                    self.compile_let_save_elem(target, key, *is_positional, *is_temp, Some(assign));
-                    return;
+                // A compound element temp (`temp $t[1]<k>[1] = v`,
+                // `temp (@a)[0] = v`): `value` is the whole element assignment;
+                // temporize the element it targets. A bare one (`temp (@a)[0]`)
+                // carries just the element and only saves it.
+                if *nested_lvalue && let Some(elem) = value.as_deref() {
+                    match elem {
+                        Expr::IndexAssign {
+                            target,
+                            index: key,
+                            is_positional,
+                            ..
+                        } => {
+                            self.compile_let_save_elem(
+                                target,
+                                key,
+                                *is_positional,
+                                *is_temp,
+                                Some(elem),
+                            );
+                            return;
+                        }
+                        Expr::Index {
+                            target,
+                            index: key,
+                            is_positional,
+                        } => {
+                            self.compile_let_save_elem(target, key, *is_positional, *is_temp, None);
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
                 // A single-level element temp (`temp @a[i] = v`, `let %h<k>`):
                 // temporize that element, then assign it.

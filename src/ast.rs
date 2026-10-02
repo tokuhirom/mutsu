@@ -2317,10 +2317,12 @@ pub(crate) enum Stmt {
         value: Option<Box<Expr>>,
         is_temp: bool,
         undefine_first: bool,
-        /// A *multi-level* element `temp` (`temp $s[1]<k>[1] = v`): `value` is
-        /// then the whole element assignment (an `Expr::IndexAssign`), and the
-        /// element its target names is what gets saved and restored -- `name`
-        /// is only the base variable.
+        /// A *compound* element `temp` -- multi-level (`temp $s[1]<k>[1] = v`)
+        /// or over a parenthesized container (`temp (@a)[0] = v`): `value` is
+        /// then the whole element assignment (an `Expr::IndexAssign`), or the
+        /// bare element (an `Expr::Index`) when nothing is assigned, and the
+        /// element it names is what gets saved and restored -- `name` is only
+        /// the base variable.
         nested_lvalue: bool,
     },
     TempMethodAssign {
