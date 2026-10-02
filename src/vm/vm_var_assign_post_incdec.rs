@@ -749,11 +749,16 @@ impl Interpreter {
             // Container identity (§3): write through the shared backing node.
             if updated
                 .with_hash_mut(|h| {
-                    Value::hash_insert_through(
-                        &mut crate::value::gc_data_mut(h).map,
-                        key.clone(),
-                        new_val.clone(),
-                    );
+                    let data = crate::value::gc_data_mut(h);
+                    // Object hash: remember the key object under its `.WHICH`
+                    // store key, as the uncelled writeback does, so a celled
+                    // `%h{1}++` still reports an `Int` key from `.keys`.
+                    if object_hash_key_type.is_some() {
+                        data.original_keys
+                            .get_or_insert_with(ValueMap::default)
+                            .insert(key.clone(), Self::object_hash_key_value(&idx_val));
+                    }
+                    Value::hash_insert_through(&mut data.map, key.clone(), new_val.clone());
                 })
                 .is_none()
                 && let Some(arr_result) =
