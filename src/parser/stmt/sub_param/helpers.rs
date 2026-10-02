@@ -197,6 +197,12 @@ pub(crate) fn type_only_param(
         p.where_constraint = Some(Box::new(constraint));
         r = r2;
     }
+    if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
+        let (r2, _) = ws(&r[1..])?;
+        let (r2, default) = parse_param_default_expr(r2)?;
+        p.default = Some(default);
+        r = r2;
+    }
     Ok((r, p))
 }
 

@@ -351,7 +351,15 @@ pub(crate) fn parse_elsif_chain(
                         .unwrap_or(r_after_sigil.len());
                     let name = &r_after_sigil[..end];
                     let r2 = &r_after_sigil[end..];
-                    let (r2, _) = ws(r2)?;
+                    let (mut r2, _) = ws(r2)?;
+                    // `-> $start is copy` (REPL): the bind below is already a
+                    // fresh variable, which is what `is copy` asks for.
+                    while let Some(after_is) = keyword("is", r2)
+                        && let Ok((after_ws, _)) = ws1(after_is)
+                        && let Some(after_trait) = keyword("copy", after_ws)
+                    {
+                        r2 = ws(after_trait)?.0;
+                    }
                     let decl_name = if sig == '$' {
                         name.to_string()
                     } else {

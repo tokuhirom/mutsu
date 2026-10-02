@@ -47,38 +47,22 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
 
     // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
     // or `class Name ...` (named class in expression context)
-    let (rest, name, parents, does_roles) = if let Some(r) = rest.strip_prefix("::") {
+    let (rest, name, clauses) = if let Some(r) = rest.strip_prefix("::") {
         // Skip `::` (anonymous name placeholder)
         let (r, _) = ws(r)?;
         // Parse `is Parent` / `does Role` clauses
-        let mut parents = Vec::new();
-        let mut does_roles: Vec<String> = Vec::new();
-        let mut r = r;
-        loop {
-            if let Some(r2) = keyword("is", r) {
-                let (r2, _) = ws1(r2)?;
-                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
-                parents.push(parent);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-            } else if let Some(r2) = keyword("does", r) {
-                let (r2, _) = ws1(r2)?;
-                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
-                parents.push(role.clone());
-                does_roles.push(role);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-            } else {
-                break;
-            }
-        }
+        let (r, clauses) = parse_anon_class_clauses(r)?;
         let id =
             crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
-        (r, format!("__ANON_CLASS_{id}__"), parents, does_roles)
+        (r, format!("__ANON_CLASS_{id}__"), clauses)
     } else if rest.starts_with('{') {
         let id =
             crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
-        (rest, format!("__ANON_CLASS_{id}__"), Vec::new(), Vec::new())
+        (
+            rest,
+            format!("__ANON_CLASS_{id}__"),
+            AnonClassClauses::default(),
+        )
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Named class in expression context: `class Foo { ... }`. The name may
         // be QUALIFIED — `class X::Foo is Exception {}.new.throw` is the shape
@@ -88,28 +72,8 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         let (r, class_name) = parse_qualified_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         // Parse optional `is Parent` / `does Role` clauses
-        let mut parents = Vec::new();
-        let mut does_roles: Vec<String> = Vec::new();
-        let mut r = r;
-        loop {
-            if let Some(r2) = keyword("is", r) {
-                let (r2, _) = ws1(r2)?;
-                let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
-                parents.push(parent);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-            } else if let Some(r2) = keyword("does", r) {
-                let (r2, _) = ws1(r2)?;
-                let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
-                parents.push(role.clone());
-                does_roles.push(role);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-            } else {
-                break;
-            }
-        }
-        (r, class_name, parents, does_roles)
+        let (r, clauses) = parse_anon_class_clauses(r)?;
+        (r, class_name, clauses)
     } else {
         return Err(PError::expected("'{' for anonymous class"));
     };
@@ -120,8 +84,14 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
 
     let (rest, mut body) = parse_block_body_no_self(rest)?;
     crate::parser::stmt::nested_block_methods::hoist(&mut body);
+    let AnonClassClauses {
+        parents,
+        does_roles,
+        parent_args,
+    } = clauses;
     // Insert DoesDecl statements at the beginning of the body for `does` clauses
-    for role_name in does_roles.iter().rev() {
+    // (a parameterized one composes through `parent_args`, as a named class's does)
+    for role_name in does_roles.iter().rev().filter(|r| !r.contains('[')) {
         body.insert(
             0,
             Stmt::DoesDecl {
@@ -150,10 +120,50 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             implicit_grammar_parent: false,
             is_grammar: false,
             decl_id: crate::ast::next_class_decl_id(),
-            parent_args: Vec::new(),
+            parent_args,
             body_parents: Vec::new(),
         })),
     ))
+}
+
+/// The `is Parent` / `does Role[...]` clauses of a class expression.
+#[derive(Default)]
+struct AnonClassClauses {
+    parents: Vec<String>,
+    does_roles: Vec<String>,
+    parent_args: Vec<(String, Vec<Expr>)>,
+}
+
+/// Parse the `is` / `does` clauses after a class expression's name (or `::`).
+/// A parameterized role keeps its `[...]` arguments the way the statement
+/// form does: `class :: does DB::Xoos::SQL[{ :placeholder<$> }] { }.new`.
+fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
+    use crate::parser::stmt::class::{parse_bracket_arg_exprs, parse_optional_bracket_suffix};
+    let mut clauses = AnonClassClauses::default();
+    loop {
+        if let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
+            clauses.parents.push(parent);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        } else if let Some(r2) = keyword("does", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, role) = parse_qualified_ident_with_hyphens(r2)?;
+            let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+            let role = format!("{role}{bracket_suffix}");
+            if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
+                clauses.parent_args.push((role.clone(), exprs));
+            }
+            clauses.parents.push(role.clone());
+            clauses.does_roles.push(role);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        } else {
+            break;
+        }
+    }
+    Ok((r, clauses))
 }
 
 /// Parse a grammar expression: `grammar { ... }`, `grammar :: { ... }`, or the

@@ -238,6 +238,15 @@ pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
     }
 }
 
+/// Whether a doubled `++` / `--` in infix position is the additive infix
+/// followed by a prefix operator: `(0 xx 2) ++ @a` is `(0 xx 2) + +@a` and
+/// `1 -- 2` is `1 - -2` (rakudo agrees). Neither is an infix itself, and the
+/// postfix `++` / `--` only attaches without whitespace, so it has already
+/// been taken by the time the infix loop sees this.
+fn infix_followed_by_prefix(r: &str) -> bool {
+    parse_prefix_unary_op(&r[1..]).is_some()
+}
+
 pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
     // A block's `}` ending the previous line ended the statement: an
     // operator spelled here starts a new one (`parser::stmt_ending_brace`).
@@ -261,7 +270,7 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
     } else if r.starts_with("~^") && !r.starts_with("~^=") {
         Some((AdditiveOp::StrBitXor, 2))
     } else if r.starts_with('+')
-        && !r.starts_with("++")
+        && (!r.starts_with("++") || infix_followed_by_prefix(r))
         && !r.starts_with("+=")
         && !r.starts_with("+<")
         && !r.starts_with("+>")
@@ -273,7 +282,7 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
     {
         Some((AdditiveOp::Add, 1))
     } else if r.starts_with('-')
-        && !r.starts_with("--")
+        && (!r.starts_with("--") || infix_followed_by_prefix(r))
         && !r.starts_with("-=")
         && !r.starts_with("->")
     {

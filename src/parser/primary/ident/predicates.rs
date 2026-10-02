@@ -601,12 +601,17 @@ pub(crate) fn is_stmt_modifier_ahead(input: &str) -> bool {
     // keyword, so the argument parser tried to read `unless $driver` as one
     // more argument.
     let input = crate::parser::helpers::ws(input).map_or(input, |(r, ())| r);
-    for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
+    // `with` / `without` too: `output-w with $w-first;` (Compress::LZString).
+    // A modifier word followed by `=>` is a pair key (`foo with => 1`).
+    for kw in &[
+        "if", "unless", "for", "while", "until", "given", "when", "with", "without",
+    ] {
         if input.starts_with(kw)
             && !input
                 .as_bytes()
                 .get(kw.len())
                 .is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+            && !input[kw.len()..].trim_start().starts_with("=>")
         {
             return true;
         }

@@ -128,6 +128,12 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         let (rest, expr) = expression(after_slip)?;
         specs.push(HandleSpec::Expr(Box::new(expr)));
         *rest_out = rest;
+    } else if r.starts_with(['$', '@', '%']) {
+        // A variable holding the names: `handles @coercers` (Config::BINDish
+        // fills `our @coercers` in a BEGIN block).
+        let (rest, expr) = expression(r)?;
+        specs.push(HandleSpec::Expr(Box::new(expr)));
+        *rest_out = rest;
     } else if let Some(r_inner) = r.strip_prefix('<') {
         // Word list: <a b c>
         let mut cursor = r_inner;

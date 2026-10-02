@@ -106,6 +106,11 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     // my Array enum Foo <...>  (typed enum — base type is accepted but currently ignored)
     if let Some(r) = keyword("enum", rest) {
         let (r, _) = ws1(r)?;
+        // `my enum <lx ly ux uy>` is an anonymous enum: no name to scope,
+        // so it is the plain anonymous declaration (PDF::Content, LibXML).
+        if r.starts_with(['<', '(', '\u{ab}']) || r.starts_with("::") {
+            return super::enum_decl::enum_decl(rest);
+        }
         return super::enum_decl::parse_enum_decl_body(r, !is_our);
     }
     // Check for `my <Type> enum <Name> ...` (e.g., `my Array enum PageSizes «...»`)
@@ -605,7 +610,8 @@ fn parse_variable_traits<'a>(
                 r = r2;
             } else if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
-                let (r3, trait_arg) = expression(r3)?;
+                // The argument is a whole list: `is env(:sep<:>, :kvsep<=>)`.
+                let (r3, trait_arg) = crate::parser::stmt::assign::parse_comma_or_expr(r3)?;
                 let (r3, _) = ws(r3)?;
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;
@@ -720,7 +726,8 @@ fn parse_variable_traits<'a>(
             let (r2, _) = ws(r2)?;
             if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
-                let (r3, trait_arg) = expression(r3)?;
+                // The argument is a whole list: `is env(:sep<:>, :kvsep<=>)`.
+                let (r3, trait_arg) = crate::parser::stmt::assign::parse_comma_or_expr(r3)?;
                 let (r3, _) = ws(r3)?;
                 let (r3, _) = parse_char(r3, ')')?;
                 let (r3, _) = ws(r3)?;

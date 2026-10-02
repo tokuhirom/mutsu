@@ -114,6 +114,14 @@ fn has_call_args(input: &str) -> bool {
     input.starts_with('(') && consume_empty_call_parens(input).len() == input.len()
 }
 
+/// Whether `rest` (after `kw` and whitespace) opens a listop argument
+/// (`last $res`), which is the routine form rather than the statement.
+fn has_listop_arg(input: &str, kw: &str, rest: &str) -> bool {
+    keyword(kw, input).is_some_and(|after_kw| {
+        crate::parser::primary::ident::loop_control_listop_arg_start(after_kw, rest)
+    })
+}
+
 fn consume_empty_call_parens(input: &str) -> &str {
     let Some(after_paren) = input.strip_prefix('(') else {
         return input;
@@ -133,7 +141,7 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // `last |c` passes a slipped argument list and `last(LABEL)` a `Label`
     // value: the expression form owns both.
-    if rest.starts_with('|') || has_call_args(rest) {
+    if rest.starts_with('|') || has_call_args(rest) || has_listop_arg(input, "last", rest) {
         return Err(PError::expected("last statement"));
     }
     // Check for label: last LABEL
@@ -152,7 +160,7 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // `next |c` passes a slipped argument list and `next(LABEL)` a `Label`
     // value: the expression form owns both.
-    if rest.starts_with('|') || has_call_args(rest) {
+    if rest.starts_with('|') || has_call_args(rest) || has_listop_arg(input, "next", rest) {
         return Err(PError::expected("next statement"));
     }
     // Check for label: next LABEL
@@ -171,7 +179,7 @@ pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // `redo |c` passes a slipped argument list and `redo(LABEL)` a `Label`
     // value: the expression form owns both.
-    if rest.starts_with('|') || has_call_args(rest) {
+    if rest.starts_with('|') || has_call_args(rest) || has_listop_arg(input, "redo", rest) {
         return Err(PError::expected("redo statement"));
     }
     // Check for label: redo LABEL
@@ -851,8 +859,10 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let mut args = args;
     // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
-    // arguments and be mistaken for an expression prefix. Keep them as calls.
-    if !is_test_assertion_callable(&name)
+    // arguments and be mistaken for an expression prefix. Keep them as calls —
+    // unless the arguments were parenthesized, which delimits them: then
+    // `nok($x) xx 2` (Terminal::LineEditor) is an expression like any other.
+    if (!is_test_assertion_callable(&name) || is_paren_call)
         && (KNOWN_CALLS.contains(&name.as_str()) || is_imported_function(&name))
         && known_call_is_expression_prefix(input, rest)
     {

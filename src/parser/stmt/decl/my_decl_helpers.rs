@@ -412,6 +412,33 @@ pub(super) fn try_dot_twigil_attr<'a>(
                 expression(r)?
             };
             (r, Some(expr), false)
+        } else if let Some(r) = after_name.strip_prefix(".=") {
+            // `my RPi::Device::ST7036::Setup $.DOGM081_3_3V .= new(...)`: the
+            // initializer is a method call on the declared type (on `Any`
+            // when there is none), as for an ordinary `my T $x .= new(...)`.
+            let (r, _) = ws(r)?;
+            let (r, method) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+            let (r, args) = if let Some(r) = r.strip_prefix('(') {
+                let (r, _) = ws(r)?;
+                let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = crate::parser::parse_result::parse_char(r, ')')?;
+                (r, args)
+            } else {
+                (r, Vec::new())
+            };
+            let invocant = attr_type
+                .as_deref()
+                .map_or("Any", super::strip_type_smiley_suffix);
+            let expr = Expr::MethodCall {
+                target: Box::new(Expr::BareWord(invocant.to_string())),
+                name: Symbol::intern(method),
+                args,
+                modifier: None,
+                quoted: false,
+            };
+            (r, Some(expr), false)
         } else {
             (after_name, None, false)
         };

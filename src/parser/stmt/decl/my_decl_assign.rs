@@ -775,13 +775,13 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             quoted: false,
         },
     };
-    // A postfix chain after the indirect call (`my $x .= $m.actions.new`)
-    // applies to the declared variable's new value and is sunk, as in Rakudo.
+    // A postfix chain after the call (`my $x .= $m.actions.new`,
+    // `my DateTime $d .= new($s).later: :days(2)`) applies to the declared
+    // variable's new value and is sunk, as in Rakudo: `.=` binds tighter than
+    // the chain, so the variable keeps the `.=` result.
     let chain_base = (rest.starts_with('.') && !rest.starts_with(".."))
         .then(|| Expr::Var(s.name.clone()))
-        .filter(|_| {
-            matches!(expr, Expr::DynamicMethodCall { .. }) && !s.name.starts_with(['@', '%', '&'])
-        });
+        .filter(|_| !s.name.starts_with(['@', '%', '&']));
     let stmt = Stmt::VarDecl {
         name: s.name,
         expr,

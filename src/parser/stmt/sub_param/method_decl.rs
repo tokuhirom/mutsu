@@ -27,6 +27,15 @@ fn skip_only_declarator<'a>(input: &'a str, kw: &str) -> &'a str {
     input
 }
 
+/// The whitespace between `method` and its name, which a private (`!`) or
+/// meta (`^`) name may omit: `method!sjn { ... }` (Manifest::StopWar).
+fn ws_before_method_name(r: &str) -> PResult<'_, ()> {
+    if r.starts_with(['!', '^']) {
+        return Ok((r, ()));
+    }
+    ws1(r)
+}
+
 /// Parse `method` declaration.
 pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
     let input = skip_only_declarator(input, "method");
@@ -34,12 +43,12 @@ pub(crate) fn method_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("method", r)
             .ok_or_else(|| PError::expected("method declaration"))?;
-        let (r, _) = ws1(r)?;
+        let (r, _) = ws_before_method_name(r)?;
         (r, true)
     } else {
         let r = super::super::keyword("method", input)
             .ok_or_else(|| PError::expected("method declaration"))?;
-        let (r, _) = ws1(r)?;
+        let (r, _) = ws_before_method_name(r)?;
         (r, false)
     };
     method_decl_body(rest, multi, false)
@@ -53,12 +62,12 @@ pub(crate) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let r = super::super::keyword("submethod", r)
             .ok_or_else(|| PError::expected("submethod declaration"))?;
-        let (r, _) = ws1(r)?;
+        let (r, _) = ws_before_method_name(r)?;
         (r, true)
     } else {
         let r = super::super::keyword("submethod", input)
             .ok_or_else(|| PError::expected("submethod declaration"))?;
-        let (r, _) = ws1(r)?;
+        let (r, _) = ws_before_method_name(r)?;
         (r, false)
     };
     method_decl_body_with_my(r, multi, false, true, true)
