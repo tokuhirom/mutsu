@@ -1,7 +1,5 @@
 use crate::ast::Expr;
-use crate::parser::expr::{
-    call_arg_expr, expression, expression_no_sequence, extend_listop_arg_list_infix,
-};
+use crate::parser::expr::{call_arg_expr, expression, extend_listop_arg_list_infix};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, merge_expected_messages};
 use crate::parser::primary::current_line_number;
@@ -95,17 +93,6 @@ pub(crate) fn export_term_or_call(name: &str, call: Expr) -> Expr {
 /// Parse expression listop arguments: comma-separated full expressions.
 /// Stops at statement modifiers, semicolons, and closing brackets.
 pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
-    if name == "make" {
-        // Use expression_no_sequence so that `make X => Y` parses the entire
-        // Pair as the argument (fat-arrow has lower precedence than or_expr).
-        let (r, arg) = expression_no_sequence(input).map_err(|err| PError {
-            messages: merge_expected_messages("expected listop argument expression", &err.messages),
-            remaining_len: err.remaining_len.or(Some(input.len())),
-            exception: None,
-        })?;
-        return Ok((r, make_call_expr(name, input, vec![arg])));
-    }
-
     // Raku listop `slip ...` takes a single expression argument, which may
     // itself be a comma expression (e.g. `slip (2,3), 4`).
     if name == "slip" {
