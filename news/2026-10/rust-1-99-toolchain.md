@@ -8,7 +8,7 @@ tag-release, stress, ecosystem sweep), `.mise.toml`, the Docker builder image
 `rustc-too-old` skill. The remote-session start hook reads `rust-version` from
 `Cargo.toml`, so new sessions install 1.99.0 automatically.
 
-The new toolchain raised four warnings, all fixed:
+The new toolchain raised six lint failures, all fixed:
 
 - `Atomic*::fetch_update` is deprecated in 1.99, renamed to `try_update` with the same
   signature and semantics. Both callers now use `try_update`: the stack-budget
@@ -17,6 +17,9 @@ The new toolchain raised four warnings, all fixed:
 - Clippy 1.99 newly reports `needless_borrows_for_generic_args` on `Option::map(&closure)`:
   two such calls in `splice` argument resolution
   (`src/runtime/methods_call_helpers.rs`) now pass the closure by value.
+- rustdoc 1.99's `redundant_explicit_links` now resolves a module's inner `//!` docs
+  together with the outer doc on its `mod` declaration, and it found two links whose
+  explicit target repeated the label (`src/value/entry_path.rs`, `src/value/hash_key.rs`).
 
 The release's one compatibility note warns against turning a `Box::leak`ed reference
 back into a `Box`. It does not affect mutsu, which never calls `Box::from_raw`.

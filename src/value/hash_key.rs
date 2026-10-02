@@ -2,7 +2,7 @@
 //!
 //! Step 1 of [#7549](https://github.com/tokuhirom/mutsu/issues/7549). This
 //! module introduces the type and nothing else: `HashData::map` is still
-//! `String`-keyed (a [`ValueMap`](crate::value::ValueMap)), so landing this
+//! `String`-keyed (a [`ValueMap`]), so landing this
 //! changes no behavior. Switching the two maps over is the separate step that
 //! the issue's measurement gates.
 //!
