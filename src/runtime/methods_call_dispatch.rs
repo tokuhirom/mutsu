@@ -3296,9 +3296,7 @@ impl Interpreter {
                         // the pure fast path (`say my @a[2,2]` is one row per
                         // line even when cells are type objects).
                         let sep = if kind == ArrayKind::Shaped
-                            && items
-                                .iter()
-                                .any(|v| matches!(v.view(), ValueView::Array(..)))
+                            && crate::runtime::utils::shaped_array_has_rows(value)
                         {
                             "\n "
                         } else {
