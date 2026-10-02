@@ -84,6 +84,15 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // An unbounded Range (`|(1..*)`, `|("a"..*)`) rides the Slip the same
+        // way, as its `.succ`-stepping LazyList: flattening it here reified a
+        // 1M-element prefix and made `(0, |(1..*))` a finite, non-lazy list
+        // (#10862).
+        if let Some(ll) = crate::runtime::unbounded_range::lazy_list(&val) {
+            let ll = Value::lazy_list(crate::gc::Gc::new(ll));
+            self.stack.push(Value::slip(vec![ll]));
+            return Ok(());
+        }
         let items = match val.view() {
             // ADR-0021 I4: `|@l` / `|$list` produce POSITIONAL arguments even
             // when an element happens to be a Pair (e.g. a literal `x => 1`
