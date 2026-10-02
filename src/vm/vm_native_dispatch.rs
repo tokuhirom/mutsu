@@ -218,7 +218,7 @@ impl Interpreter {
         if target.is_lazy_list_value()
             && let ValueView::LazyList(ll) = target.view()
             && ll.lazy_pipe.is_some()
-            && ll.pipe_bottoms_out_finite()
+            && !ll.coercion_keeps_pipe_lazy()
             && method_name == "cache"
         {
             // `.cache` is a strict Seq-to-List coercion. Keeping a finite pipe
@@ -233,8 +233,9 @@ impl Interpreter {
             // A pipe with a finite source must reify for strict coercions such
             // as `.cache`. In particular, Test.rakumod's Seq `is-deeply`
             // candidate recursively calls `.cache`; returning the same finite
-            // Seq here reselects that candidate forever.
-            && !ll.pipe_bottoms_out_finite()
+            // Seq here reselects that candidate forever. A `lazy`-marked pipe
+            // stays lazy even when finite, as in Rakudo.
+            && ll.coercion_keeps_pipe_lazy()
         {
             // The pipeline stays pullable, but `.List`/`.Array`/`.cache` change
             // the reported type immediately (Rakudo: type changes, laziness
