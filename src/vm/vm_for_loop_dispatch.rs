@@ -237,6 +237,9 @@ impl Interpreter {
                 || ll.closure_seq.is_some()
                 || ll.lazy_pipe.is_some()
                 || ll.walk_pending.is_some()
+                // A triangle reduce (`for [\+] (1..*).map(...) { }`): its
+                // strict force throws X::Cannot::Lazy, so it is pulled too.
+                || ll.scan_spec.is_some()
                 // `for $cat.lines` / `for $cat.handles`: pull one element per
                 // iteration so `on-switch` fires and `.path` tracks the current
                 // handle inside the loop body (Rakudo's lazy semantics).

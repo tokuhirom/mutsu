@@ -61,6 +61,24 @@ impl LazyList {
         self.array_context
     }
 
+    /// A copy of the reified elements `from..to` (clamped to what the cache
+    /// holds). Forcing code fills the cache first and then reads only the
+    /// window its caller asked for, so a consumer that walks the list one
+    /// element at a time copies each element once instead of the whole
+    /// prefix on every step (#10780).
+    // Cost: O(k), k = to - from (clamped to the cached length).
+    pub(crate) fn cache_window(&self, from: usize, to: usize) -> Vec<Value> {
+        let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(cached) = cache.as_ref() else {
+            return Vec::new();
+        };
+        let to = to.min(cached.len());
+        if from >= to {
+            return Vec::new();
+        }
+        cached[from..to].to_vec()
+    }
+
     /// True when this list is genuinely lazy (`.is-lazy`), so gist/Str/raku
     /// render a placeholder instead of materializing it. CatHandle pullers
     /// are intentionally excluded: their backing iterator is lazy internally,

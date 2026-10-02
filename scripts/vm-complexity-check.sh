@@ -81,6 +81,11 @@ CASES=(
     # compile of the enlarged chunk lands inside the timed body.
     'ResetStateLocals vs loop body size|500|1|my $never = 0; my $s = 0;|for ^20000 { for ^1 { state $x = 1; $s += $x; if $never { STMTS } } }'
     'map callback vs frame locals|1000|1|LOCALS my $s = 0;|for ^20 { $s += (1..2000).map({ $_ + 1 }).elems }'
+    # #10780: a lazy `for` pulls one element per iteration; each pull copies
+    # only that element, not the whole reified prefix.
+    'for over lazy .map pipe, NN iterations|20000|2||for (1..*).map(*+0) { last if $_ > NN }'
+    'for over lazy gather, NN iterations|20000|2||for gather { my $i = 0; loop { take $i++ } } { last if $_ > NN }'
+    'for over closure sequence, NN iterations|20000|2||for (1, 2, * + 1 ... *) { last if $_ > NN }'
     'declaring a chain of NN classes|200|4|use MONKEY-SEE-NO-EVAL; my $src = "class D0 \{ \}; " ~ (1..NN).map({ "class D$_ is D{$_ - 1} \{ \}; " }).join;|EVAL $src'
 )
 
