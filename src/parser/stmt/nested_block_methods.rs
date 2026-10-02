@@ -57,6 +57,7 @@ pub(crate) fn hoist(body: &mut Vec<Stmt>) {
         if let Some(routine_body) = routine_body_mut(stmt) {
             hoist_in_block(routine_body, &[], &mut hoisted);
         }
+        hoist_in_closures(stmt, &[], &mut hoisted);
     }
     body.extend(hoisted);
 }
@@ -104,7 +105,69 @@ fn hoist_in_block(block: &mut [Stmt], outer_routines: &[Symbol], hoisted: &mut V
         if let Some(routine_body) = routine_body_mut(stmt) {
             hoist_in_block(routine_body, &routines, hoisted);
         }
+        hoist_in_closures(stmt, &routines, hoisted);
     }
+}
+
+/// The bodies of the closures `stmt`'s own expressions build -- a pointy
+/// block, an anonymous `sub`/`method`, a bare `{ }` term, `do { }`, `try`,
+/// `gather`, `once` -- are scanned like nested blocks (#10820): a `method`
+/// declared in `class C { method m { my $c = -> { method pm { } } } }` is
+/// `C`'s, closing over the closure's latest run.
+fn hoist_in_closures(stmt: &mut Stmt, routines: &[Symbol], hoisted: &mut Vec<Stmt>) {
+    struct Closures<'a> {
+        routines: &'a [Symbol],
+        hoisted: &'a mut Vec<Stmt>,
+        entered: bool,
+    }
+    impl crate::ast_visit::VisitMut for Closures<'_> {
+        // Only `stmt`'s own expressions: the statements nested in it are
+        // scanned by the block walk itself.
+        fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+            if !std::mem::replace(&mut self.entered, true) {
+                crate::ast_visit::walk_stmt_mut(self, stmt);
+            }
+        }
+        fn visit_expr_mut(&mut self, expr: &mut Expr) {
+            match expr {
+                Expr::Block(body)
+                | Expr::AnonSub { body, .. }
+                | Expr::AnonSubParams { body, .. }
+                | Expr::Lambda { body, .. }
+                | Expr::Gather(body)
+                | Expr::Once { body }
+                | Expr::DoBlock {
+                    body,
+                    origin: DoBlockOrigin::SourceBlock,
+                    ..
+                } => hoist_in_block(body, self.routines, self.hoisted),
+                Expr::Try { body, catch } => {
+                    hoist_in_block(body, self.routines, self.hoisted);
+                    if let Some(catch) = catch {
+                        hoist_in_block(catch, self.routines, self.hoisted);
+                    }
+                }
+                _ => crate::ast_visit::walk_expr_mut(self, expr),
+            }
+        }
+    }
+    // A marker's closure is the hoisted method's own body, scanned already;
+    // a nested package scans its own body.
+    if matches!(
+        stmt,
+        Stmt::NestedMethodCapture { .. }
+            | Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::Package { .. }
+    ) {
+        return;
+    }
+    let mut visitor = Closures {
+        routines,
+        hoisted,
+        entered: false,
+    };
+    crate::ast_visit::VisitMut::visit_stmt_mut(&mut visitor, stmt);
 }
 
 /// The body of a routine declared in the package body (at any depth): a
@@ -227,11 +290,8 @@ fn nested_blocks_mut(stmt: &mut Stmt) -> Vec<&mut Vec<Stmt>> {
             else_branch,
             ..
         } => vec![then_branch, else_branch],
-        Stmt::Expr(Expr::DoBlock {
-            body,
-            origin: DoBlockOrigin::SourceBlock,
-            ..
-        }) => vec![body],
+        // A `do { }` statement is a closure term, scanned by
+        // `hoist_in_closures`.
         _ => Vec::new(),
     }
 }
