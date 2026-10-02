@@ -14,7 +14,10 @@ use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 /// does. Nested blocks, loop bodies and expressions (`say my $x = 1`) are
 /// walked — a `my` there is EVAL-scoped too — but routine, package and
 /// closure bodies are not: their lexicals live in their own frame and never
-/// reach the caller's pad by this route.
+/// reach the caller's pad by this route. The names of the lexically scoped
+/// types the snippet declares (`my class`, `my package`, `my role`) are
+/// included, spelled as the environment binds them (type names are not
+/// sigiled or lowercased).
 // Cost: O(n), n = size of the snippet's AST.
 pub(super) fn eval_declared_lexical_keys(stmts: &[Stmt]) -> HashSet<String> {
     let mut scan = EvalLexicalKeys::default();
@@ -34,6 +37,21 @@ fn env_key(name: &str) -> Option<String> {
     crate::env::is_plain_user_lexical(key).then(|| key.to_string())
 }
 
+impl EvalLexicalKeys {
+    /// Record the env keys a lexical type declared as `name` binds: the name
+    /// itself and, for a compound name, its last segment.
+    fn insert_type_keys(&mut self, name: crate::symbol::Symbol) {
+        if crate::qualified::is_qualified(name) {
+            self.keys.insert(
+                crate::qualified::unqualified_part(name)
+                    .as_str()
+                    .to_string(),
+            );
+        }
+        self.keys.insert(name.as_str().to_string());
+    }
+}
+
 impl Visit for EvalLexicalKeys {
     fn visit_stmt(&mut self, stmt: &Stmt) {
         match stmt {
@@ -48,6 +66,26 @@ impl Visit for EvalLexicalKeys {
                     self.keys.insert(key);
                 }
                 walk_stmt(self, stmt);
+            }
+            // A lexically scoped type is bound in the snippet's pad like a `my`
+            // variable: its bare name shadows (and, once the snippet returns,
+            // must give back) a caller binding of the same name. Both the
+            // written name and its last segment are bound (`my class A::B`
+            // also binds `B`). The body runs in a frame of its own.
+            Stmt::ClassDecl {
+                name,
+                is_lexical: true,
+                ..
+            }
+            | Stmt::Package {
+                name, is_my: true, ..
+            } => self.insert_type_keys(*name),
+            Stmt::RoleDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__my_scoped") => {
+                self.insert_type_keys(*name)
             }
             // Routine, package and phaser bodies run in a frame of their own
             // (a phaser at another time), so their `my`s never shadow the

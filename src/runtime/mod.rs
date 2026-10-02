@@ -761,6 +761,7 @@ mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
 mod methods_grammar_action_env;
+mod methods_grammar_deferred_repeats;
 mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
@@ -974,6 +975,7 @@ mod system_introspect;
 mod tap_state;
 mod test_module_predicates;
 pub(crate) mod thread_compat;
+mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.

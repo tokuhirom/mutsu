@@ -213,6 +213,9 @@ pub(crate) fn any_regex_capture_reader_lowered() -> bool {
 pub(crate) struct OuterCapsSeed {
     prev: Option<std::sync::Arc<OuterBackrefCaps>>,
     armed: bool,
+    /// The quantifier fold this atom consumed (`consume_capture_scope`),
+    /// restored when the atom's match is done.
+    _scope: Option<InlineCaptureScope>,
 }
 
 impl OuterCapsSeed {
@@ -220,7 +223,23 @@ impl OuterCapsSeed {
     /// level) for the nested stores this atom's match is about to build.
     pub(crate) fn arm(next: Option<std::sync::Arc<OuterBackrefCaps>>) -> Self {
         let prev = INLINE_OUTER_CAPS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
-        OuterCapsSeed { prev, armed: true }
+        OuterCapsSeed {
+            prev,
+            armed: true,
+            _scope: None,
+        }
+    }
+
+    /// Withdraw the [`INLINE_CAPTURE_SCOPE`] fold for as long as this atom
+    /// matches. The fold names the slots of the one atom an iteration of a
+    /// quantifier is matching, and that atom's seed (built before this call)
+    /// already carries it as `merge_positional`; a sub-pattern nested deeper
+    /// in the atom, or the rest of the pattern a lazily driven candidate
+    /// continues into, is not that atom and must not fold into those slots.
+    // Cost: O(1).
+    pub(crate) fn consume_capture_scope(mut self) -> Self {
+        self._scope = InlineCaptureScope::suspend();
+        self
     }
 
     /// Leave the enclosing atom's seed in place untouched.
@@ -229,6 +248,7 @@ impl OuterCapsSeed {
         OuterCapsSeed {
             prev: None,
             armed: false,
+            _scope: None,
         }
     }
 }
@@ -264,6 +284,16 @@ impl InlineCaptureScope {
     pub(crate) fn enter(start: usize, stride: usize) -> Self {
         let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.replace(Some((start, stride))));
         Self { previous }
+    }
+
+    /// Clear the fold until the guard drops; `None` (nothing to restore) when
+    /// no fold is armed.
+    // Cost: O(1).
+    pub(crate) fn suspend() -> Option<Self> {
+        let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.take())?;
+        Some(Self {
+            previous: Some(previous),
+        })
     }
 }
 

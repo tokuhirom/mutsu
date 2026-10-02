@@ -18,6 +18,7 @@ impl Interpreter {
         if !Self::is_unresolved_symbol(&self.resolve_indirect_type_name(name)) {
             return;
         }
+        self.save_lexical_type_binding_for_scope_exit(name);
         self.env
             .insert(name.to_string(), Value::package(Symbol::intern(name)));
         self.register_lexical_class(name.to_string());

@@ -304,11 +304,7 @@ impl Interpreter {
                     val = Value::package(Symbol::intern(&nominal));
                 }
             } else if !self.type_matches_value(&constraint, &val) {
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    name,
-                    &constraint,
-                    &val,
-                ));
+                return Err(self.type_check_assignment_failure(name, &constraint, &val));
             }
             if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
                 val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;

@@ -297,7 +297,7 @@ impl Interpreter {
                     // smiley (`Str:D`), which the constraint map drops.
                     let reported =
                         self.attribute_reported_constraint(class_name, attr_name, &constraint);
-                    return Err(crate::runtime::utils::type_check_assignment_typed_error(
+                    return Err(self.type_check_assignment_failure(
                         &format!("$!{}", attr_name),
                         &reported,
                         value,
@@ -459,7 +459,7 @@ impl Interpreter {
                     }
                     for element in elements {
                         if !self.type_matches_value(&constraint, &element) {
-                            return Err(crate::runtime::utils::type_check_element_typed_error(
+                            return Err(self.type_check_element_failure(
                                 &display,
                                 &constraint,
                                 &element,

@@ -278,6 +278,39 @@ impl Interpreter {
         }
     }
 
+    /// Record the env binding `name` holds BEFORE a lexical type declaration
+    /// (`my class`/`my package`/`my role`, a `require` stub) overwrites it, in
+    /// the innermost branch/loop-body scope, so `pop_loop_local_scope` puts it
+    /// back -- or removes it -- when that body exits (#10594).
+    ///
+    /// A bare `{ ... }` block and an `EVAL` have scope exits of their own that
+    /// take the bare-name binding away (`register_lexical_class` enrolls the
+    /// name in `block_declared_vars`); an `if`/`unless`/`given`/`when` branch and a
+    /// loop body only have the shadow-only restore of `loop_local_saved_env`,
+    /// which is keyed by name and records a binding when it is first
+    /// overwritten. A type name is bound by its declaring op rather than by a
+    /// `SetLocalDecl`, so that op has to ask for the save itself, before its
+    /// first env write -- the same ordering constraint as
+    /// `save_type_meta_for_scope_exit`.
+    ///
+    /// First write wins, so a loop body that re-declares on every iteration
+    /// still restores the value from before the loop. A no-op outside a
+    /// branch/loop scope of the executing routine.
+    // Cost: O(1) amortized (one set probe, plus one env probe and a name copy
+    // the first time this scope sees `name`).
+    pub(crate) fn save_lexical_type_binding_for_scope_exit(&mut self, name: &str) {
+        let Some(scope) = self.loop_local_saved_env.last() else {
+            return;
+        };
+        if scope.contains_key(name) {
+            return;
+        }
+        let prev = self.env().get(name).cloned();
+        if let Some(scope) = self.loop_local_saved_env.last_mut() {
+            scope.insert(name.to_string(), prev);
+        }
+    }
+
     /// Resolve a parent type reference (`is Foo`) through the current lexical env.
     /// A lexical parent may live in the registry under a mangled storage name; the
     /// env binds the bare name to that storage name, so `is Foo` links to the Foo

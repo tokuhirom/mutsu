@@ -73,6 +73,16 @@ impl Walker<'_> {
         *list = head;
     }
 
+    /// Record that the phaser statement at `index` was lifted out: it leaves
+    /// its scope, or, when it ends the scope, stands for its value there.
+    fn edit_lifted(&mut self, index: usize, slot: Option<String>) {
+        let edit = match slot {
+            Some(slot) => Edit::Replace(Box::new(Stmt::Expr(slot_read(slot)))),
+            None => Edit::Remove,
+        };
+        self.current_frame().edits.push((index, edit));
+    }
+
     fn params_frame(names: impl IntoIterator<Item = String>) -> Frame {
         Frame {
             bindings: names
@@ -99,15 +109,31 @@ impl Walker<'_> {
                 let (Some((index, is_tail)), false) = (loc, self.frames.is_empty()) else {
                     return;
                 };
+                // A BEGIN in a package body is not lifted.
+                if self.in_package() {
+                    return;
+                }
                 // A BEGIN that ends its block is the block's value.
                 let slot = is_tail.then(|| next_slot("__begin_value_"));
-                if self.lift(body, slot.as_deref()) {
-                    let edit = match slot {
-                        Some(slot) => Edit::Replace(Box::new(Stmt::Expr(slot_read(slot)))),
-                        None => Edit::Remove,
-                    };
-                    self.current_frame().edits.push((index, edit));
+                if self.lift(body, slot.as_deref(), &PhaserKind::Begin) {
+                    self.edit_lifted(index, slot);
                 }
+            }
+            // An INIT or CHECK that reads a lexical of the scope it is written
+            // in is lifted to the unit's own sequence of them (#10562).
+            Stmt::Phaser {
+                kind: kind @ (PhaserKind::Init | PhaserKind::Check),
+                body,
+                ..
+            } => {
+                if let Some((index, is_tail)) = loc {
+                    let slot = is_tail.then(|| next_slot("__init_value_"));
+                    if self.lift(body, slot.as_deref(), &kind.clone()) {
+                        self.edit_lifted(index, slot);
+                        return;
+                    }
+                }
+                walk_stmt_mut(self, stmt);
             }
             Stmt::VarDecl {
                 expr,
@@ -115,7 +141,7 @@ impl Walker<'_> {
                 where_constraint,
                 ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                if custom_traits.iter().any(|(t, _)| t == "__constant") && !self.in_package() {
                     self.lift_constant_initializer(expr);
                 } else {
                     self.visit_expr_mut(expr);
@@ -131,9 +157,14 @@ impl Walker<'_> {
             // The members of a grouped declaration are bound opaquely and not
             // walked: their initializers belong to the destructuring.
             Stmt::SyntheticBlock(inner) => {
-                for member in inner.iter() {
+                for member in inner.iter_mut() {
                     match member {
                         Stmt::VarDecl { name, .. } => self.bind_opaque(name.clone()),
+                        // An exported type is its declaration plus a marker.
+                        Stmt::ClassDecl { .. } | Stmt::Package { .. } if self.frames.is_empty() => {
+                            self.walk_package(member)
+                        }
+                        Stmt::RoleDecl { .. } if self.frames.is_empty() => self.walk_role(member),
                         // A nested `will begin` trait is a BEGIN-time effect
                         // this slice does not lift. A top-level one is split
                         // by the unit partition itself.
@@ -191,14 +222,50 @@ impl Walker<'_> {
                         w.visit_expr_mut(e);
                     }
                 });
-                self.declare_routine(stmt);
+                // A package's routines are reached through the package.
+                if !self.in_package() {
+                    self.declare_routine(stmt);
+                }
+            }
+            // A method of a package body: only an INIT or CHECK in it is
+            // lifted, to the unit's own sequence of them, which re-enters the
+            // package (#10562).
+            Stmt::MethodDecl {
+                name_expr,
+                params,
+                param_defs,
+                custom_traits,
+                body,
+                ..
+            } if self.directly_in_package() => {
+                let frame = Self::params_frame(params.iter().cloned());
+                self.walk_list(body, frame, |w| {
+                    if let Some(e) = name_expr {
+                        w.visit_expr_mut(e);
+                    }
+                    w.visit_params(param_defs);
+                    for e in custom_traits.iter_mut().filter_map(|(_, a)| a.as_mut()) {
+                        w.visit_expr_mut(e);
+                    }
+                });
             }
             Stmt::Use {
                 module,
                 arg: Some(_),
                 condition: None,
                 ..
-            } if module == "lib" && !self.frames.is_empty() => self.lift_use_lib(stmt, loc),
+            } if module == "lib" && !self.frames.is_empty() && !self.in_package() => {
+                self.lift_use_lib(stmt, loc)
+            }
+            // The routines of a class or package at the unit's level are
+            // walked for their INIT and CHECK phasers; its BEGINs are not
+            // lifted.
+            Stmt::ClassDecl { .. } | Stmt::Package { .. }
+                if self.frames.iter().all(|f| f.package.is_some()) =>
+            {
+                self.walk_package(stmt)
+            }
+            Stmt::RoleDecl { .. } if self.frames.is_empty() => self.walk_role(stmt),
             // A BEGIN in a package or type body is not lifted: the declaration
             // is recorded and its body left alone.
             Stmt::ClassDecl { .. }
@@ -233,9 +300,23 @@ impl Walker<'_> {
                 kind: PhaserKind::Begin,
                 body,
             } => {
+                if self.in_package() {
+                    return;
+                }
                 let slot = next_slot("__begin_value_");
-                if self.lift(body, Some(&slot)) {
+                if self.lift(body, Some(&slot), &PhaserKind::Begin) {
                     *expr = slot_read(slot);
+                }
+            }
+            Expr::PhaserExpr {
+                kind: kind @ (PhaserKind::Init | PhaserKind::Check),
+                body,
+            } => {
+                let slot = next_slot("__init_value_");
+                if self.lift(body, Some(&slot), &kind.clone()) {
+                    *expr = slot_read(slot);
+                } else {
+                    walk_expr_mut(self, expr);
                 }
             }
             Expr::AnonSubParams {

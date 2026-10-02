@@ -170,10 +170,14 @@ impl PosSlot {
     /// (`[ [ (\d) ]+ ]+`) contributes each of its entries, not one entry for
     /// itself: a capture group under nested quantifiers is one flat list in
     /// raku, because the groups around it do not capture.
+    /// An iteration whose `(x)?` did not match (a Nil slot) contributes
+    /// nothing: raku's list holds only the matches (`[ (\d)? x ]+` on "x1xx"
+    /// binds `$0` to the one digit).
     // Cost: O(e), e = the entries the slot already holds (one when it holds none).
     pub(crate) fn push_entries_to(&self, list: &mut Vec<QuantifiedCaptureEntry>) {
         match &self.quantified {
             Some(inner) => list.extend(inner.iter().cloned()),
+            None if self.nil => {}
             None => list.push((self.from, self.to, self.subcap.clone())),
         }
     }

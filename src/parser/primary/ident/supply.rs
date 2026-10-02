@@ -1,5 +1,7 @@
 use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::ast_visit::{VisitMut, walk_expr_mut, walk_stmt_mut, walk_stmts_mut};
 use crate::parser::stmt::simple::is_user_declared_sub;
+use crate::regex_tree::RegexNode;
 use crate::symbol::Symbol;
 
 static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -60,25 +62,170 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
     }
 }
 
-pub(super) fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
-    // Phasers are set up at block entry, not when control textually reaches them.
-    // Hoist top-level CLOSE phaser registrations to the front of the body so a
-    // CLOSE that appears after a (potentially non-terminating) loop is still
+/// Rewrites a `supply { ... }` body for the on-demand lambda whose parameter
+/// is `emitter_name`: `emit`/`done` become calls on that emitter, and a CLOSE
+/// phaser becomes its registration, hoisted to the head of its block.
+// Cost: O(n), n = size of the body's subtree.
+fn rewrite_supply_body(mut stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
+    SupplyBody {
+        emitter: emitter_name,
+    }
+    .visit_stmts_mut(&mut stmts);
+    stmts
+}
+
+/// The supply-body rewrite, on the mutable AST visitor (ADR-10499). It covers
+/// everything that runs in the supply block's own frame: statements,
+/// conditions, operands, inline and `do` blocks, phaser bodies and `whenever`
+/// bodies. It stops where code runs elsewhere:
+///
+/// - a closure the body merely *builds* (`AnonSub`, `Lambda`,
+///   `AnonSubParams`, a `gather`) runs wherever it is later called, which is
+///   what the dynamic emitter stack is for;
+/// - a nested routine or type declaration. TODO: compile to bytecode /
+///   capture. `emit`/`done` inside a nested `my sub` defined within the supply
+///   body (`supply { my sub relay($s) { whenever $s { emit … } }; relay(…) }`,
+///   e.g. IO::Notification::Recursive) should forward to this supply's
+///   emitter, but rewriting the sub body to `$emitter.emit(...)` surfaces a
+///   closure-capture gap (the nested sub does not capture the on-demand
+///   Lambda's emitter parameter), so it is left unrewritten for now — such
+///   code parses (the whenever-scope check accepts it) but its nested-sub
+///   `emit` is a runtime no-op;
+/// - a `try` body (see the hook);
+/// - a regex tree, a copy of the regex a match runs (#10550).
+struct SupplyBody<'a> {
+    emitter: &'a str,
+}
+
+impl SupplyBody<'_> {
+    /// `$emitter.NAME(ARGS)`.
+    fn emitter_call(&self, name: &str, args: Vec<Expr>) -> Expr {
+        Expr::MethodCall {
+            target: Box::new(Expr::Var(self.emitter.to_string())),
+            name: Symbol::intern(name),
+            args,
+            modifier: None,
+            quoted: false,
+        }
+    }
+}
+
+fn is_builtin_emit(name: &Symbol) -> bool {
+    name.resolve().as_str() == "emit" && !is_user_declared_sub("emit")
+}
+
+impl VisitMut for SupplyBody<'_> {
+    // Phasers are set up at block entry, not when control textually reaches
+    // them. Hoist the CLOSE phaser registrations of each block to its front so
+    // a CLOSE that appears after a (potentially non-terminating) loop is still
     // registered before the loop runs — e.g.
     //   supply { until my $done { emit(...) } CLOSE { $done = True } }
     // relies on the CLOSE phaser being able to break the loop.
-    let mut closes = Vec::new();
-    let mut rest = Vec::new();
-    for stmt in stmts {
-        let lowered = rewrite_supply_stmt(stmt, emitter_name);
-        if is_close_registration(&lowered) {
-            closes.push(lowered);
-        } else {
-            rest.push(lowered);
+    fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        walk_stmts_mut(self, body);
+        let (mut closes, rest): (Vec<Stmt>, Vec<Stmt>) = std::mem::take(body)
+            .into_iter()
+            .partition(is_close_registration);
+        closes.extend(rest);
+        *body = closes;
+    }
+
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        match stmt {
+            // `.emit` (topic method call) inside a supply block is
+            // `$emitter.emit($_)` — emit the current topic value.
+            Stmt::Expr(Expr::MethodCall {
+                target, name, args, ..
+            }) if matches!(target.as_ref(), Expr::Var(n) if n == "_")
+                && name.resolve().as_str() == "emit"
+                && args.is_empty()
+                && !is_user_declared_sub("emit") =>
+            {
+                *stmt = Stmt::Expr(self.emitter_call("emit", vec![Expr::Var("_".to_string())]));
+            }
+            // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
+            Stmt::Call { name, args } if is_builtin_emit(name) => {
+                let mut positional: Vec<Expr> = std::mem::take(args)
+                    .into_iter()
+                    .filter_map(|arg| match arg {
+                        crate::ast::CallArg::Positional(expr) => Some(expr),
+                        _ => None,
+                    })
+                    .collect();
+                for e in &mut positional {
+                    walk_expr_mut(self, e);
+                }
+                *stmt = Stmt::Expr(self.emitter_call("emit", positional));
+            }
+            Stmt::ReactDone => {
+                *stmt = Stmt::SyntheticBlock(vec![
+                    Stmt::Expr(self.emitter_call("done", Vec::new())),
+                    // Not `Stmt::Return`: a routine-return signal raised from a
+                    // closure created inside a *method* gets stamped with that
+                    // method's callable id and escapes past the (long-returned)
+                    // method frame to the tap as an uncaught `CX::Return` —
+                    // see todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md.
+                    // `SupplyBodyDone` is always caught at the raising
+                    // closure's own frame boundary regardless of nesting.
+                    Stmt::SupplyBodyDone,
+                ]);
+            }
+            // A CLOSE phaser in a `supply { ... }` block registers its body as
+            // a close callback on the emitter, to run when the tap is closed
+            // or the supply terminates. Rewrite it to a registration call so it
+            // survives as a value (a bare phaser compiles to a no-op).
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Close,
+                body,
+                ..
+            } => {
+                let mut body = std::mem::take(body);
+                self.visit_stmts_mut(&mut body);
+                let register = vec![make_anon_sub(body)];
+                *stmt = Stmt::Expr(self.emitter_call("__mutsu_register_close_phaser", register));
+            }
+            // See the type doc: a nested routine or type keeps its `emit`s.
+            Stmt::SubDecl { .. }
+            | Stmt::MethodDecl { .. }
+            | Stmt::ProtoDecl { .. }
+            | Stmt::TokenDecl { .. }
+            | Stmt::RuleDecl { .. }
+            | Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::Package { .. }
+            | Stmt::AugmentClass { .. } => {}
+            _ => walk_stmt_mut(self, stmt),
         }
     }
-    closes.extend(rest);
-    closes
+
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        match expr {
+            // `emit` within an expression — the ternary
+            // `$x ~~ T ?? emit($x) !! die "…"` that Cro's middleware role uses.
+            // Leaving it bare fell back to the dynamic emitter stack, which in
+            // a pipeline is a neighbouring stage's emitter.
+            Expr::Call { name, .. } if is_builtin_emit(name) => {
+                walk_expr_mut(self, expr);
+                if let Expr::Call { args, .. } = expr {
+                    let args = std::mem::take(args);
+                    *expr = self.emitter_call("emit", args);
+                }
+            }
+            // See the type doc: these run where they are later called.
+            Expr::AnonSub { .. }
+            | Expr::AnonSubParams { .. }
+            | Expr::Lambda { .. }
+            | Expr::Gather(_) => {}
+            // A rewritten `done` ends with `SupplyBodyDone`, which the `try`'s
+            // own frame would catch, so the supply would keep running; a bare
+            // `done` in a `try` reaches the drive loop through the dynamic
+            // path instead.
+            Expr::Try { .. } => {}
+            _ => walk_expr_mut(self, expr),
+        }
+    }
+
+    fn visit_regex_node_mut(&mut self, _node: &mut RegexNode) {}
 }
 
 /// True if `stmt` is the registration call a CLOSE phaser is lowered to.
@@ -88,240 +235,4 @@ fn is_close_registration(stmt: &Stmt) -> bool {
         Stmt::Expr(Expr::MethodCall { name, .. })
             if name.resolve().as_str() == "__mutsu_register_close_phaser"
     )
-}
-
-fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
-    // TODO: compile to bytecode / capture. `emit`/`done` inside a nested `my sub`
-    // defined within the supply body (`supply { my sub relay($s) { whenever $s {
-    // emit … } }; relay(…) }`, e.g. IO::Notification::Recursive) should forward to
-    // this supply's emitter, but rewriting the sub body to `$emitter.emit(...)`
-    // surfaces a closure-capture gap (the nested sub does not capture the on-demand
-    // Lambda's emitter parameter), so it is left unrewritten for now — such code
-    // parses (the whenever-scope check accepts it) but its nested-sub `emit` is a
-    // runtime no-op. Direct `supply { whenever … { emit } }` and the `supply
-    // whenever …` shorthand work.
-    match stmt {
-        Stmt::Expr(expr) => {
-            if let Expr::Call { name, args } = &expr
-                && name.resolve().as_str() == "emit"
-                && !is_user_declared_sub("emit")
-            {
-                return Stmt::Expr(Expr::MethodCall {
-                    target: Box::new(Expr::Var(emitter_name.to_string())),
-                    name: Symbol::intern("emit"),
-                    args: args.clone(),
-                    modifier: None,
-                    quoted: false,
-                });
-            }
-            // `.emit` (topic method call) inside a supply block is
-            // `$emitter.emit($_)` — emit the current topic value.
-            if let Expr::MethodCall {
-                target, name, args, ..
-            } = &expr
-                && matches!(target.as_ref(), Expr::Var(n) if n == "_")
-                && name.resolve().as_str() == "emit"
-                && args.is_empty()
-                && !is_user_declared_sub("emit")
-            {
-                return Stmt::Expr(Expr::MethodCall {
-                    target: Box::new(Expr::Var(emitter_name.to_string())),
-                    name: Symbol::intern("emit"),
-                    args: vec![Expr::Var("_".to_string())],
-                    modifier: None,
-                    quoted: false,
-                });
-            }
-            // `emit` can also appear *within* an expression — the ternary
-            // `$x ~~ T ?? emit($x) !! die "…"` that Cro's middleware role uses.
-            // Leaving it bare fell back to the dynamic emitter stack, which in a
-            // pipeline is a neighbouring stage's emitter.
-            Stmt::Expr(super::supply_emit_expr::rewrite_expr(expr, emitter_name))
-        }
-        Stmt::Call { name, args }
-            if name.resolve().as_str() == "emit" && !is_user_declared_sub("emit") =>
-        {
-            // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
-            let positional_args: Vec<Expr> = args
-                .into_iter()
-                .filter_map(|arg| match arg {
-                    crate::ast::CallArg::Positional(expr) => Some(expr),
-                    _ => None,
-                })
-                .collect();
-            Stmt::Expr(Expr::MethodCall {
-                target: Box::new(Expr::Var(emitter_name.to_string())),
-                name: Symbol::intern("emit"),
-                args: positional_args,
-                modifier: None,
-                quoted: false,
-            })
-        }
-        Stmt::ReactDone => Stmt::SyntheticBlock(vec![
-            Stmt::Expr(Expr::MethodCall {
-                target: Box::new(Expr::Var(emitter_name.to_string())),
-                name: Symbol::intern("done"),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            }),
-            // Not `Stmt::Return`: a routine-return signal raised from a closure
-            // created inside a *method* gets stamped with that method's
-            // callable id and escapes past the (long-returned) method frame to
-            // the tap as an uncaught `CX::Return` — see
-            // todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md.
-            // `SupplyBodyDone` is always caught at the raising closure's own
-            // frame boundary regardless of nesting.
-            Stmt::SupplyBodyDone,
-        ]),
-        Stmt::Block(stmts) => Stmt::Block(rewrite_supply_body(stmts, emitter_name)),
-        Stmt::SyntheticBlock(stmts) => {
-            Stmt::SyntheticBlock(rewrite_supply_body(stmts, emitter_name))
-        }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            binding_var,
-            is_statement_modifier,
-            is_unless,
-            with_kind,
-        } => Stmt::If {
-            is_statement_modifier,
-            is_unless,
-            with_kind,
-            cond,
-            then_branch: rewrite_supply_body(then_branch, emitter_name),
-            else_branch: rewrite_supply_body(else_branch, emitter_name),
-            binding_var,
-        },
-        Stmt::While {
-            cond,
-            body,
-            label,
-            is_statement_modifier,
-            is_until,
-        } => Stmt::While {
-            cond,
-            body: rewrite_supply_body(body, emitter_name),
-            label,
-            is_statement_modifier,
-            is_until,
-        },
-        Stmt::Loop {
-            init,
-            cond,
-            step,
-            body,
-            repeat,
-            label,
-            is_until,
-        } => Stmt::Loop {
-            init: init.map(|boxed| Box::new(rewrite_supply_stmt(*boxed, emitter_name))),
-            cond,
-            step,
-            body: rewrite_supply_body(body, emitter_name),
-            repeat,
-            label,
-            is_until,
-        },
-        Stmt::For {
-            iterable,
-            param,
-            param_def,
-            params,
-            params_def,
-            body,
-            label,
-            mode,
-            rw_block,
-            explicit_zero_params,
-            is_statement_modifier,
-            uses_block_magic,
-        } => Stmt::For {
-            iterable,
-            param,
-            param_def,
-            params,
-            params_def,
-            body: rewrite_supply_body(body, emitter_name),
-            label,
-            mode,
-            rw_block,
-            explicit_zero_params,
-            is_statement_modifier,
-            uses_block_magic,
-        },
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier,
-            with_kind,
-        } => Stmt::Given {
-            topic,
-            body: rewrite_supply_body(body, emitter_name),
-            is_statement_modifier,
-            with_kind,
-        },
-        Stmt::When {
-            cond,
-            body,
-            is_statement_modifier,
-        } => Stmt::When {
-            cond,
-            body: rewrite_supply_body(body, emitter_name),
-            is_statement_modifier,
-        },
-        Stmt::Default(body) => Stmt::Default(rewrite_supply_body(body, emitter_name)),
-        Stmt::Catch(body) => Stmt::Catch(rewrite_supply_body(body, emitter_name)),
-        Stmt::Control(body) => Stmt::Control(rewrite_supply_body(body, emitter_name)),
-        Stmt::React { body } => Stmt::React {
-            body: rewrite_supply_body(body, emitter_name),
-        },
-        Stmt::Whenever {
-            supply,
-            params,
-            param_defs,
-            body,
-        } => Stmt::Whenever {
-            supply,
-            params,
-            param_defs,
-            body: rewrite_supply_body(body, emitter_name),
-        },
-        // A CLOSE phaser in a `supply { ... }` block registers its body as a
-        // close callback on the emitter, to run when the tap is closed or the
-        // supply terminates. Rewrite it to a registration call so it survives
-        // as a value (a bare phaser compiles to a no-op).
-        Stmt::Phaser {
-            kind: crate::ast::PhaserKind::Close,
-            body,
-            ..
-        } => Stmt::Expr(Expr::MethodCall {
-            target: Box::new(Expr::Var(emitter_name.to_string())),
-            name: Symbol::intern("__mutsu_register_close_phaser"),
-            args: vec![make_anon_sub(rewrite_supply_body(body, emitter_name))],
-            modifier: None,
-            quoted: false,
-        }),
-        // Phaser bodies (LAST/QUIT/FIRST/NEXT/...) inside a supply/whenever
-        // can also `emit`/`done`; rewrite them to the emitter just like the
-        // main body so e.g. `LAST { emit "done" }` forwards to the supply.
-        Stmt::Phaser {
-            kind,
-            body,
-            condition,
-            end_index,
-        } => Stmt::Phaser {
-            kind,
-            body: rewrite_supply_body(body, emitter_name),
-            condition,
-            end_index,
-        },
-        Stmt::Label { name, stmt } => Stmt::Label {
-            name,
-            stmt: Box::new(rewrite_supply_stmt(*stmt, emitter_name)),
-        },
-        other => other,
-    }
 }

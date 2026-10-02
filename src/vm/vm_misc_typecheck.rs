@@ -367,10 +367,7 @@ impl Interpreter {
                     return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
                 }
                 if bind_mode {
-                    return Err(crate::runtime::utils::type_check_binding_typed_error(
-                        base_constraint,
-                        &value,
-                    ));
+                    return Err(self.type_check_binding_failure(base_constraint, &value));
                 }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
@@ -390,12 +387,10 @@ impl Interpreter {
                                 var_name, constraint, &value,
                             )
                         } else {
-                            crate::runtime::utils::type_check_assignment_typed_error(
-                                var_name, constraint, &value,
-                            )
+                            self.type_check_assignment_failure(var_name, constraint, &value)
                         }
                     } else {
-                        RuntimeError::typecheck_assignment(constraint, &value, None)
+                        self.typecheck_assignment_failure(constraint, &value, None)
                     });
                 }
             }
@@ -482,13 +477,9 @@ impl Interpreter {
             // the constraint unchanged when no capture of that name is bound.
             let reported = self.resolved_type_capture_name(constraint);
             if bind_mode {
-                return Err(crate::runtime::utils::type_check_binding_typed_error(
-                    &reported, &value,
-                ));
+                return Err(self.type_check_binding_failure(&reported, &value));
             }
-            return Err(RuntimeError::typecheck_assignment(
-                &reported, &value, var_name,
-            ));
+            return Err(self.typecheck_assignment_failure(&reported, &value, var_name));
         }
         if !value.is_nil() {
             let coerced = loan_env!(

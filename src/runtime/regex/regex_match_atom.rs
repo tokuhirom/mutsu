@@ -793,26 +793,14 @@ impl Interpreter {
                         // proto entry point rank by; declaration order comes free
                         // from a stable sort over `candidates`, which is already
                         // in declaration order.
-                        let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
-                        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
-                            let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
-                            let (plen, stopped) = (measured.len, measured.stopped);
-                            // ADR-0022 §4.1's contract: `(None, false)` is a sound
-                            // "this candidate cannot match here" verdict and may
-                            // filter; `(None, true)` only means the measurement was
-                            // cut short, so the candidate is kept, ranked at 0.
-                            if plen.is_none() && !stopped {
-                                continue;
-                            }
-                            ranked.push((idx, (plen.unwrap_or(0), measured.litlen)));
-                        }
-                        ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+                        let (mut keys, mut ranked) = (Vec::new(), Vec::new());
+                        self.ltm_rank_proto(&candidates, chars, pos, &mut keys, &mut ranked);
                         // Attempt the ranked candidates in order and stop at the
                         // first that actually matches — Rakudo tries the NFA's
                         // fates in order and commits to the first that succeeds,
                         // without backtracking into a later fate when what FOLLOWS
                         // the subrule call fails (verified against `raku`).
-                        for (idx, _) in ranked {
+                        for idx in ranked {
                             let (parsed, sub_pkg, sym_key) = &candidates[idx];
                             let sym_key = sym_key.clone();
                             let all_matches = self.subrule_candidate_ends_with_frame(

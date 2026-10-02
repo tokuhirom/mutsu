@@ -88,7 +88,7 @@ impl super::Walker<'_> {
     pub(super) fn lift_use_lib(&mut self, stmt: &Stmt, loc: Option<(usize, bool)>) {
         let body = [stmt.clone()];
         match loc {
-            Some((index, _)) if self.lift(&body, None) => {
+            Some((index, _)) if self.lift(&body, None, &crate::ast::PhaserKind::Begin) => {
                 self.current_frame()
                     .edits
                     .push((index, super::Edit::Remove));

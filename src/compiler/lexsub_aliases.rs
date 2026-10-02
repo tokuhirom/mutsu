@@ -94,7 +94,10 @@ impl Compiler {
                 continue;
             }
             let var_slot = self.local_map.get(&var_name).copied();
-            if var_slot.is_none() && !self.enclosing_local_names.contains(&var_name) {
+            // A single `for ... -> $i` parameter has no slot: the `ForLoop`
+            // opcode binds it by name in this frame's env (mutsu#10512).
+            let env_param = var_slot.is_none() && self.for_param_names.contains(&var_name);
+            if var_slot.is_none() && !env_param && !self.enclosing_local_names.contains(&var_name) {
                 continue;
             }
             let alias_name = format!("{LEXSUB_ALIAS_PREFIX}{tag:x}_{serial}_{name}_{var_name}");
@@ -102,6 +105,7 @@ impl Compiler {
             out.push(LexSubFreeAlias {
                 var,
                 var_slot,
+                env_param,
                 alias: Symbol::intern(&alias_name),
                 alias_slot,
             });

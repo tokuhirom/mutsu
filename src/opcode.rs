@@ -4978,10 +4978,13 @@ pub(crate) struct CompiledSubDeclPlan {
 /// `$p`, `@a` for `@a`); `var_slot` is the declaring frame's own slot for it,
 /// or `None` when it belongs to an enclosing frame and reaches this one as a
 /// captured binding; `alias` / `alias_slot` name the hidden local.
+/// `env_param` marks a slotless variable the declaring frame itself binds by
+/// name in its env: a single `for ... -> $i` loop parameter (mutsu#10512).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LexSubFreeAlias {
     pub(crate) var: Symbol,
     pub(crate) var_slot: Option<u32>,
+    pub(crate) env_param: bool,
     pub(crate) alias: Symbol,
     pub(crate) alias_slot: u32,
 }
@@ -12681,6 +12684,20 @@ impl CompiledFunction {
                     }
                     for name in &spec.multi_param_names {
                         declared.insert(name.clone());
+                    }
+                }
+                // A `my package` and the stub package of a `require` bind their
+                // name lexically in the routine's own scope, so the call's
+                // return merge must not carry the binding to the caller (#10594).
+                OpCode::RegisterPackageMy { name_idx }
+                | OpCode::DeclareRequireStub { name_idx } => {
+                    if let Some(crate::value::ValueView::Str(name)) = self
+                        .code
+                        .constants
+                        .get(*name_idx as usize)
+                        .map(crate::value::Value::view)
+                    {
+                        declared.insert(name.to_string());
                     }
                 }
                 _ => {}

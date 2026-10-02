@@ -114,9 +114,7 @@ impl Interpreter {
         if self.check_attribute_where_constraint(&pred, val, scope) {
             return Ok(());
         }
-        Err(crate::runtime::utils::type_check_assignment_typed_error(
-            name, "<anon>", val,
-        ))
+        Err(self.type_check_assignment_failure(name, "<anon>", val))
     }
 
     fn wrap_in_begin_time(inner: RuntimeError, phaser: &str) -> RuntimeError {

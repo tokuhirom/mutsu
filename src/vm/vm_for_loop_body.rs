@@ -817,9 +817,7 @@ impl Interpreter {
                 {
                     let display = Self::for_param_display_name(name);
                     self.unmask_for_params(&masked_params);
-                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                        &display, tc, &item,
-                    ));
+                    return Err(self.typecheck_binding_parameter_failure(&display, tc, &item));
                 }
             } else if !spec.multi_param_type_constraints.is_empty()
                 && let ValueView::Array(chunk, ..) = item.view()
@@ -836,9 +834,7 @@ impl Interpreter {
                             .map(|n| Self::for_param_display_name(n))
                             .unwrap_or_default();
                         self.unmask_for_params(&masked_params);
-                        return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                            &display, tc, v,
-                        ));
+                        return Err(self.typecheck_binding_parameter_failure(&display, tc, v));
                     }
                 }
             }

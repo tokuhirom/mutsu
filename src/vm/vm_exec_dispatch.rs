@@ -2013,7 +2013,7 @@ impl Interpreter {
                             {
                                 return Err(err);
                             }
-                            return Err(runtime::utils::type_check_assignment_typed_error(
+                            return Err(self.type_check_assignment_failure(
                                 &name,
                                 &constraint,
                                 &val,
@@ -5906,6 +5906,9 @@ impl Interpreter {
             // and one probe of the chunk's name index. One-shot per declaration.
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                // Before the binding below overwrites an enclosing same-named one:
+                // a branch/loop body gives it back on exit (#10594).
+                self.save_lexical_type_binding_for_scope_exit(&name);
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());

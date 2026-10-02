@@ -317,6 +317,14 @@ impl Walker<'_> {
         }
         match self.find_binding(&name, scope) {
             Some((frame, binding)) => {
+                // A package body's `my` variable is reached through the
+                // package, which a lifted phaser re-enters.
+                if matches!(
+                    self.frames[frame].bindings[binding].kind,
+                    BindingKind::PackageLexical
+                ) {
+                    return Some(());
+                }
                 let access = self.access_of(frame, binding)?;
                 deps.bindings.entry((frame, binding)).or_insert(access);
             }
@@ -369,7 +377,7 @@ impl Walker<'_> {
             }
             BindingKind::Our(decl) => Access::CopyIn(decl.clone()),
             BindingKind::Local { .. } => Access::Cell,
-            BindingKind::Opaque => return None,
+            BindingKind::Opaque | BindingKind::PackageLexical => return None,
         })
     }
 

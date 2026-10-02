@@ -452,9 +452,11 @@ impl Interpreter {
                     .filter(|p| {
                         // Positional params only, like the sub dispatch's
                         // `constrained_count`: a named param's constraint
-                        // decides applicability, not narrowness.
+                        // decides applicability, not narrowness, and a
+                        // `where` on a slurpy ranks with the named bind
+                        // check below instead (#10519).
                         !p.named
-                            && (p.where_constraint.is_some()
+                            && ((p.where_constraint.is_some() && !p.is_variadic())
                                 || p.type_constraint.as_deref().is_some_and(|tc| {
                                     self.constraint_is_subset(Self::constraint_base_for_distance(
                                         tc,
@@ -499,13 +501,18 @@ impl Interpreter {
                 best_idx = i;
             }
             // Explicit-named preference (rakudo): among otherwise-tied
-            // candidates, one that declares an explicit (non-slurpy) named
-            // parameter is narrower than one that does not — `(Int $a, :$x)`
-            // beats `(Int $a)` for `f(1)` regardless of declaration order.
+            // candidates, one that needs a named bind check — it declares an
+            // explicit (non-slurpy) named parameter, or puts a `where` on a
+            // slurpy — is narrower than one that does not: `(Int $a, :$x)`
+            // beats `(Int $a)` for `f(1)` regardless of declaration order,
+            // while `(:x($y)!)` and `(*%m where .elems == 1)` tie and the
+            // first declared wins (#10519). Mirrors the sub dispatch's
+            // `candidate_needs_named_bind_check`.
             let has_explicit_named = |def: &MethodDef| -> bool {
-                def.param_defs
-                    .iter()
-                    .any(|p| p.named && !p.slurpy && !p.double_slurpy)
+                def.param_defs.iter().any(|p| {
+                    (p.named && !p.slurpy && !p.double_slurpy)
+                        || (!p.is_invocant && p.is_variadic() && p.where_constraint.is_some())
+                })
             };
             if narrowed
                 .iter()

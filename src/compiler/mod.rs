@@ -1117,6 +1117,7 @@ mod control_for_tail;
 mod control_if;
 mod decl_plan;
 mod decl_reset;
+mod enter_phaser_exprs;
 mod expr;
 mod expr_binary;
 mod expr_block;

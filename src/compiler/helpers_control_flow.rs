@@ -598,9 +598,17 @@ impl Compiler {
     /// introduce their own scopes (`body_scans::declares_block_local`).
     /// `state`/`our`/dynamic declarations are excluded: they are not plain
     /// lexical shadows and have their own scoping/restore rules.
+    ///
+    /// A lexically scoped type (`my class`, `my package`, `my role`) and the
+    /// stub package a statically named `require` declares count too: they are
+    /// bound in the branch's env like a `my` variable and must not outlive it
+    /// (#10594).
     // Cost: O(n), n = size of the part of `stmts` in the branch's own scope.
     pub(super) fn branch_declares_block_local(stmts: &[Stmt]) -> bool {
         super::body_scans::declares_block_local(stmts)
+            // A statically named `require` binds a lexical stub package (see
+            // `require_stubs.rs`), which the branch must take away again.
+            || !super::require_stubs::static_require_targets(stmts).is_empty()
     }
 
     /// Compile an `if`/`unless`/`else` branch body wrapped in a `BlockLocalScope`
@@ -1160,6 +1168,19 @@ impl Compiler {
             //   sub f { CATCH { default { } }; 42 }; say f();   # 42  (phaser before)
             // So the sink applies only when `phaser_is_last_in_body` is true.
             let discards_tail_value = phaser_is_last_in_body;
+            // A braced `try { ... }` is a scope, but it only owns the lexical
+            // type names it binds if something takes them away on exit: the
+            // stub package of a `require` (declared at the head of the body, as
+            // a branch's would be) and a `my class`/`my package`/`my role`
+            // (#10594). The ordinary `my` variables of the body need no help.
+            let own_scope = (traps && Self::try_body_binds_lexical_types(body)).then(|| {
+                let idx = self.code.emit(OpCode::BlockLocalScope {
+                    body_end: 0,
+                    succeed_boundary: false,
+                });
+                self.hoist_require_stubs(&main_stmts);
+                idx
+            });
             for (i, stmt) in main_stmts.iter().enumerate() {
                 let is_last = i == main_stmts.len() - 1 && !discards_tail_value;
                 // Keep the final expression's value on the stack so the try
@@ -1204,6 +1225,9 @@ impl Compiler {
                 if Self::stmt_nets_a_stack_value(stmt) {
                     self.code.emit(OpCode::Pop);
                 }
+            }
+            if let Some(idx) = own_scope {
+                self.code.patch_block_local_body_end(idx);
             }
         }
         if !main_leaves_value {

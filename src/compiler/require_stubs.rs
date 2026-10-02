@@ -39,6 +39,14 @@ pub(crate) fn static_require_targets(stmts: &[Stmt]) -> Vec<String> {
     scan.targets
 }
 
+/// Whether `body` is the body of a statement-prefix `try STMT`. That form
+/// carries its statement as the one bare `Stmt::Expr` and opens no scope; a
+/// braced `try { ... }` is a block of its own, whose statements start with a
+/// line marker.
+pub(crate) fn is_prefix_try_body(body: &[Stmt]) -> bool {
+    matches!(body, [Stmt::Expr(_)])
+}
+
 /// The walk of [`static_require_targets`] (ADR-0137 visitor).
 #[derive(Default)]
 struct ScopeRequires {
@@ -97,13 +105,7 @@ impl Visit for ScopeRequires {
                 self.targets.push(module);
             }
         }
-        // `try STMT` carries its statement as the one bare `Stmt::Expr` of the
-        // body. A braced `try { ... }` is a block of its own: its statements
-        // start with a line marker.
-        self.prefix_stmt = matches!(
-            expr,
-            Expr::Try { body, .. } if matches!(body.as_slice(), [Stmt::Expr(_)])
-        );
+        self.prefix_stmt = matches!(expr, Expr::Try { body, .. } if is_prefix_try_body(body));
         self.expr_depth += 1;
         walk_expr(self, expr);
         self.expr_depth -= 1;
@@ -122,6 +124,19 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(target));
             self.code.emit(OpCode::DeclareRequireStub { name_idx });
         }
+    }
+
+    /// Whether the body of a `try` owes a scope of its own for the lexical type
+    /// names it binds: a braced `try { ... }` that declares a `my class`/`my
+    /// package`/`my role`, or makes a statically named `require` (whose stub
+    /// [`Compiler::hoist_require_stubs`] declares on entry). A statement-prefix
+    /// `try STMT` opens no scope, so its `require` belongs to the enclosing one.
+    // Cost: O(n), n = size of the body's own statements (nested scopes
+    // excluded).
+    pub(super) fn try_body_binds_lexical_types(body: &[Stmt]) -> bool {
+        !is_prefix_try_body(body)
+            && (super::body_scans::declares_lexical_type(body)
+                || !static_require_targets(body).is_empty())
     }
 }
 

@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use super::super::regex_lr_state::lr_name_active;
-use super::super::regex_token_resolve::ParsedTokenCandidate;
+use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
 use super::rx_entry::program_for;
 use crate::runtime::Interpreter;
@@ -43,7 +43,7 @@ pub(super) enum CallTarget {
     Plain(Arc<RxProgram>, Symbol),
     /// A proto: the `:sym<…>` candidates, ranked at the call by the walk's own
     /// LTM measurement (ADR-0046), of which the first that matches wins.
-    Proto(Arc<Vec<ParsedTokenCandidate>>),
+    Proto(Arc<TokenCandidates>),
     /// No rule of that name: a builtin (`<.ws>`, `<wb>`, `<alpha>`, …) the walk's
     /// single-candidate arm decides, with at most one end.
     Single,
@@ -202,7 +202,7 @@ impl Interpreter {
         name: &NamedAtom,
         pkg: Symbol,
         ic: bool,
-        candidates: Arc<Vec<ParsedTokenCandidate>>,
+        candidates: Arc<TokenCandidates>,
     ) -> CallVerdict {
         let spec = name.spec();
         if candidates.is_empty() {
@@ -245,37 +245,5 @@ impl Interpreter {
             Arc::clone(program_for(parsed).ok_or("callee-declined")?),
             *sub_pkg,
         ))
-    }
-
-    /// The indexes of a proto's candidates in the order the call tries them:
-    /// the walk's rank-then-match dispatch (ADR-0046), written to `out`.
-    /// Ranking measures each candidate's declarative prefix, so it runs nothing
-    /// (ADR-0009); a candidate that cannot match here is left out, and ties
-    /// keep declaration order. `keys` is scratch (the run's, reused per call).
-    // Cost: O(c·m + c log c), c = the candidates, m = one LTM measurement.
-    pub(super) fn rx_rank_proto(
-        &mut self,
-        candidates: &[ParsedTokenCandidate],
-        chars: &[char],
-        pos: usize,
-        keys: &mut Vec<(usize, (usize, usize))>,
-        out: &mut Vec<usize>,
-    ) {
-        keys.clear();
-        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
-            let measured = self.ltm_measure(parsed, chars, pos, *sub_pkg);
-            let (plen, stopped) = (measured.len, measured.stopped);
-            // ADR-0022 §4.1's contract: `(None, false)` is a sound "this
-            // candidate cannot match here" verdict and may filter; `(None,
-            // true)` only means the measurement was cut short, so the
-            // candidate is kept, ranked at 0.
-            if plen.is_none() && !stopped {
-                continue;
-            }
-            keys.push((idx, (plen.unwrap_or(0), measured.litlen)));
-        }
-        keys.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
-        out.clear();
-        out.extend(keys.iter().map(|(idx, _)| *idx));
     }
 }

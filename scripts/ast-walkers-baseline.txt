@@ -20,7 +20,6 @@ src/compiler/helpers_ast_utils.rs                     5  # lvalue-to-assignment 
 src/compiler/helpers_call_args.rs                     5  # 2 codegen (compile_*) + 3 value-path spines (needs_decont, bind_target_returns_aggregate*: statement tail)
 src/compiler/helpers_control_flow.rs                  1  # control_block_is_resume_safe: shape classifier over a CONTROL block's arms (single-default delegation)
 src/compiler/helpers_do_expr.rs                       1  # do_if_branch_supported: shape gate over if-branch nesting only
-src/compiler/helpers_phasers.rs                       2
 src/compiler/helpers_sub_body.rs                      1  # recursion over ParamDef sub-signatures; the Vec<Stmt> is its output, not an AST walk
 src/compiler/mod.rs                                   8  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and 2 name spines
 src/compiler/package_runtime_body.rs                  1  # top-level lexical names of a package body: descends only into SyntheticBlock groups, not nested scopes
@@ -38,7 +37,6 @@ src/parser/expr/precedence_meta_ops/hyper_concat.rs   2  # 2 lowerings of a hype
 src/parser/expr/whatever.rs                           2  # contains_whatever/contains_xx_with_bare_whatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/parser/expr/whatever_wrap.rs                      2  # 2 parser rewrites: `o` composition operands and method-call chains wrapped as WhateverCode
 src/parser/primary/container/meta_ops.rs              3  # X/Z meta-op operand-chain spines and the chained-zip normalization rewrite
-src/parser/primary/ident/supply.rs                    1
 src/parser/primary/misc/colonpair.rs                  1  # render_signature_item: renders a signature item back to source text
 src/parser/primary/misc/hash.rs                       1  # hash_pair_from_expr: shape match of one hash-literal entry (through pair markers)
 src/parser/sink_warn.rs                               5  # sink-context propagation: visits only sink positions, by design
@@ -60,13 +58,11 @@ src/runtime/begin_prologue/mod.rs                     4  # partition_stmt/partit
 src/runtime/begin_prologue/nested/decls.rs            2  # classifies a type body's members (is_pure_member): must not descend into method bodies
 src/runtime/begin_prologue/package_body.rs            3  # splits a package body's statement list into BEGIN-time and run-time halves: a transform, and only over top-level members
 src/runtime/begin_prologue/package_phasers.rs         2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
-src/runtime/dispatch_proto_rewrite.rs                 2
 src/runtime/phasers.rs                                1  # stmt_declares_var looks at one scope's statement list only, through the transparent SyntheticBlock grouping
 src/runtime/run.rs                                    3  # 3 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue / expr_is_fresh_rvalue follow the last statement only): stays hand-rolled
-src/runtime/run_prelude.rs                            2  # mark_prelude_subs mutates; declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
+src/runtime/run_prelude.rs                            2  # mark_prelude_subs tags the unit's top-level subs (through SyntheticBlock only; one scope, not a tree rewrite); declares_toplevel_sub asks about the unit's top-level statement list only (through SyntheticBlock), the one scope an injected prelude sub can clash with
 src/runtime/types/mod.rs                              1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                              3
 src/whatever_curry/build.rs                           3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
-src/whatever_curry/mark/stmt.rs                       1
-src/whatever_curry/replace.rs                         2
+src/whatever_curry/replace.rs                         1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design
 src/with_desugar.rs                                   1  # flatten_index_source: spine of an index chain to its root

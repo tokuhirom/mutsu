@@ -1,7 +1,7 @@
 # ADR-10499: Rewriting passes walk the AST through one exhaustive mutable visitor
 
-- **Status**: Accepted (maintainer decision, 2026-10-01; `VisitMut` implemented, the rewriting
-  passes are being ported — see "Implementation status")
+- **Status**: Accepted (maintainer decision, 2026-10-01; implemented — see "Implementation
+  status")
 - **Date**: 2026-10-01
 - **Related**: [ADR-0137](0137-typed-ast-visitor-for-analyses.md) (the read-only visitor, which
   deferred this decision), [ADR-0133](0133-no-per-call-ast-compile-at-runtime.md) (`ParamCode`),
@@ -86,3 +86,13 @@ by field.
   (`runtime/phasers/lift.rs`); 176 → 166 walkers. Copies of executed code are skipped by every
   lift: the `target`/`rhs` of a `CompoundAssign` (a model-layer copy of `expanded`), and a regex
   tree (#10550).
+- **Slice 2**: the rest of the rewriting passes. The WhateverCode leaf classifier's statement
+  walk (`whatever_curry/mark/stmt.rs`); the placeholder replacement (`whatever_curry/replace.rs`,
+  by value → clone + `VisitMut`, the numbered and `$_` forms unified); the proto `{*}` rewrite
+  (`runtime/dispatch_proto_rewrite.rs`, by value → clone + `VisitMut`); the supply-body
+  `emit`/`done` rewrite (`parser/primary/ident/supply.rs`, merged with its expression twin);
+  the ENTER-expression hoist (`compiler/enter_phaser_exprs.rs`); the static loop-exit wrapping
+  was retired meanwhile by the dynamic `LoopExitGuard` (#10566). 137 → 130 walkers. What stays hand-rolled in the baseline is code generation, lowerings,
+  single-path spines, one-scope statement-list transforms (the BEGIN prologue partition, the
+  prelude tagging) and `replace.rs`'s priming-scope spine, each with its note. The parser-side
+  `nested_block_methods.rs` hoist is left to the parser cluster of #10468.

@@ -315,9 +315,7 @@ impl Interpreter {
             && !new_val.is_nil()
             && !self.type_matches_value(constraint, new_val)
         {
-            return Err(runtime::utils::type_check_element_typed_error(
-                name, constraint, new_val,
-            ));
+            return Err(self.type_check_element_failure(name, constraint, new_val));
         }
         Ok(())
     }
