@@ -116,8 +116,13 @@ not only imported operators:
   is the module) gets an `operator_import_units[name][module unit]` record with
   **no importers**. `MAIN`, prelude splices and `our` routines are excluded.
   They keep their own handling.
+- A family whose name the module also declares inside a package (`module M
+  { ... }`) is skipped. Its `GLOBAL::` entry is an export alias of the package
+  routine, not a package-less declaration.
 - `import_module` adds the importing unit to a family that already has a
   record. An operator family still gets a record when it is first imported.
+  A custom `sub EXPORT` that hands back a `&name` grants the importer the
+  families of that value's candidates (`grant_scoped_family_import`).
 - The candidate walks that already filter with this gate need no change. The
   name probes (`has_proto`, `has_multi_candidates`, `has_multi_function`), the
   bare proto lookup and the `&name` candidate gather filter on it too. A family

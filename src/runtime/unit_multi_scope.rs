@@ -43,36 +43,51 @@ impl Interpreter {
     pub(crate) fn scope_unit_multi_families(&mut self, source_path: &str) {
         let decl_unit = self.unit_of_source(Some(source_path));
         let mut names: HashSet<Symbol> = HashSet::new();
+        // Names this unit declared inside a package (`module M { ... }`, a
+        // namespaced `unit module`). Their `GLOBAL::` entries are export
+        // aliases of a package routine (`register_proto_decl_as_global`), not
+        // package-less declarations, and keep their existing import handling.
+        let mut packaged: HashSet<Symbol> = HashSet::new();
         {
             let registry = self.registry();
-            for (key, def) in registry.functions.iter() {
+            let routines = registry
+                .functions
+                .iter()
+                .map(|(key, def)| (key, def, true))
+                .chain(
+                    registry
+                        .proto_functions
+                        .iter()
+                        .map(|(key, def)| (key, def, false)),
+                );
+            for (key, def, is_candidate_map) in routines {
+                if self.unit_of_source(def.source_file.as_deref()) != decl_unit {
+                    continue;
+                }
                 let ks = key.as_str();
-                let Some(tail) = ks.strip_prefix("GLOBAL::") else {
-                    continue;
-                };
                 let base = function_key_base_name(ks);
-                // A package-less candidate key is `GLOBAL::<base>/<sig>`.
-                if !tail
-                    .strip_prefix(base)
-                    .is_some_and(|rest| rest.starts_with('/'))
-                {
-                    continue;
-                }
-                if self.unit_of_source(def.source_file.as_deref()) != decl_unit {
-                    continue;
-                }
-                names.insert(Symbol::intern(base));
-            }
-            for (key, def) in registry.proto_functions.iter() {
-                let Some(name) = Self::toplevel_global_routine_name(key.as_str()) else {
+                let Some(tail) = ks.strip_prefix("GLOBAL::") else {
+                    // The `EXPORT::<tag>::` stash aliases of a package-less
+                    // export are not a package declaration.
+                    if !ks.starts_with("EXPORT::") && !ks.contains("::EXPORT::") {
+                        packaged.insert(Symbol::intern(base));
+                    }
                     continue;
                 };
-                if self.unit_of_source(def.source_file.as_deref()) != decl_unit {
-                    continue;
+                let package_less = if is_candidate_map {
+                    // A package-less candidate key is `GLOBAL::<base>/<sig>`.
+                    tail.strip_prefix(base)
+                        .is_some_and(|rest| rest.starts_with('/'))
+                        && crate::qualified::is_global_package(def.package)
+                } else {
+                    Self::toplevel_global_routine_name(ks).is_some()
+                };
+                if package_less {
+                    names.insert(Symbol::intern(base));
                 }
-                names.insert(Symbol::intern(name));
             }
         }
+        names.retain(|name| !packaged.contains(name));
         names.retain(|name| {
             let name_str = name.as_str();
             name_str != "MAIN"
@@ -141,5 +156,61 @@ impl Interpreter {
                 .and_then(|key| registry.proto_functions.get(&key))
                 .is_some_and(|def| self.operator_candidate_visible(name_sym, def))
         })
+    }
+
+    /// Make the scoped families of `name` that `value` (a routine a custom
+    /// `sub EXPORT` hands the importer) belongs to visible to the importing
+    /// unit. A dispatcher names its captured candidates' units and a plain
+    /// code object its own; a by-name routine reference names none, and then
+    /// every family of `name` is granted.
+    // Cost: O(c + f), c = the value's captured candidates, f = families of
+    // `name`; O(1) when `name` is not scoped.
+    pub(crate) fn grant_scoped_family_import(&mut self, name: &str, value: &Value) {
+        let Some(name_sym) = Symbol::lookup(name) else {
+            return;
+        };
+        if !self.operator_has_import_scope_sym(name_sym) {
+            return;
+        }
+        let mut units: HashSet<Symbol> = HashSet::new();
+        if let ValueView::Sub(data) = value.view() {
+            match data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
+            {
+                Some(ValueView::Array(cands, _)) => {
+                    for cand in cands.iter() {
+                        if let ValueView::Sub(cd) = cand.view() {
+                            units.insert(self.unit_of_source(cd.source_file.as_deref()));
+                        }
+                    }
+                }
+                _ => {
+                    units.insert(self.unit_of_source(data.source_file.as_deref()));
+                }
+            }
+        }
+        let importer = self.current_unit;
+        let Some(families) = self.operator_import_units.get(&name_sym) else {
+            return;
+        };
+        let grant: Vec<Symbol> = families
+            .iter()
+            .filter(|(unit, importers)| {
+                (units.is_empty() || units.contains(*unit)) && !importers.contains(&importer)
+            })
+            .map(|(unit, _)| *unit)
+            .collect();
+        if grant.is_empty() {
+            return;
+        }
+        let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
+        if let Some(families) = table.get_mut(&name_sym) {
+            for unit in grant {
+                families.entry(unit).or_default().insert(importer);
+            }
+        }
+        self.operator_import_gen += 1;
     }
 }

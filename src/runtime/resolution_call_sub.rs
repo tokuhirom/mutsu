@@ -610,9 +610,15 @@ impl Interpreter {
                         })
                     {
                         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
-                        let result = self.call_function(&name, call_args);
+                        // Only when the name really is that family there; a
+                        // dispatcher whose candidates no name reaches keeps
+                        // the captured-candidate walk below.
+                        if !self.resolve_all_multi_candidates(&name).is_empty() {
+                            let result = self.call_function(&name, call_args);
+                            self.current_unit = saved_unit;
+                            return result;
+                        }
                         self.current_unit = saved_unit;
-                        return result;
                     }
                 }
                 // Candidates are out of scope -- dispatch through captured Subs

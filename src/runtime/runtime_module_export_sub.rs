@@ -341,6 +341,9 @@ impl Interpreter {
             }
             // Exported: visible in the importing unit, and only there (#9944).
             self.record_infix_import_gate(&normalized_op);
+            // A compunit-scoped family the value belongs to becomes visible
+            // to the importing unit, as an `is export` import makes it (#11004).
+            self.grant_scoped_family_import(&normalized_op, &value);
         }
         // Install into env under the key the reader looks up. A `$scalar` read
         // compiles to a bare (sigil-stripped) `GetGlobal` — the same key an
