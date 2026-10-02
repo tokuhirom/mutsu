@@ -926,13 +926,26 @@ impl Interpreter {
         // This is the same aggregate exclusion `exec_attr_container_ref_op`
         // makes, for the same reason: an `@`/`%`-shaped value is already a
         // shared container and a scalar cell would disagree with that storage.
+        //
+        // A slot that already holds a cell is a different case: an `is rw`
+        // parameter bound to a `$` argument holding a Hash (`f($h)`, #11077)
+        // carries the caller's Scalar there, and `return-rw $p` must hand out
+        // that container, not the aggregate inside it.
+        let slot_hint = val.varref_slot();
+        if let Some(hint) = slot_hint
+            && let Some(slot_val) = self.locals.get(hint as usize)
+            && slot_val.is_container_ref()
+            && code.locals.get(hint as usize) == Some(&source_name)
+        {
+            self.stack.push(slot_val.clone());
+            return;
+        }
         if matches!(inner.view(), ValueView::Hash(..))
             || matches!(inner.view(), ValueView::Array(_, kind) if kind.is_real_array())
         {
             self.stack.push(inner);
             return;
         }
-        let slot_hint = val.varref_slot();
         let (captured, has_slot) =
             self.capture_var_cell_located(code, &source_name, inner.clone(), true, slot_hint);
         // A local holding a reference value (a List, an object) is handed back
