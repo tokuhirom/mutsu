@@ -5,4 +5,4 @@
 `type_matches("Any", "F")`, which answers True for every name. For a user class
 the check now consults the MRO, which has no `Any` for a class declared `is Mu`.
 Rakudo agrees: `F.new ~~ Any` is False and `f(F.new)` fails the implicit-`Any`
-binding check. Pinned in `t/types/is-mu-class-not-any.t`.
+binding check. Pinned in `t/types/mu-class-not-any.t`.
