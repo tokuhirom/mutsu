@@ -4246,8 +4246,12 @@ impl Interpreter {
                         // lexicals, so leaving `@a[$i] = gather ... for ...;`
                         // unreified until first access would read the captures'
                         // final values (gather.t 31-32). Reifying here matches
-                        // the pre-SinkPopAssign behavior exactly.
-                        ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+                        // the pre-SinkPopAssign behavior exactly. A lazy
+                        // `@`-array is an Array, whose `sink` is a no-op, the
+                        // same exemption `SinkPop` makes: sinking `%h<f> :=
+                        // @fib` must not force an infinite sequence (#10861).
+                        ValueView::LazyList(list)
+                            if list.is_cached_no_sink() || list.in_array_context() => {}
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }
