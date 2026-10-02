@@ -968,8 +968,8 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == crate::builtins::label::LABEL_CLASS => {
-                crate::builtins::label::label_str(&attributes.as_map())
+            } if class_name == crate::value::label::LABEL_CLASS => {
+                crate::value::label::label_str(&attributes.as_map())
             }
             ValueView::Instance {
                 class_name,

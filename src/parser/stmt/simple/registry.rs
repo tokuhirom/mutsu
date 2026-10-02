@@ -40,7 +40,7 @@ pub(crate) fn register_loop_label(name: &str, at: &str) {
         .chars()
         .take(20)
         .collect();
-    let label = crate::builtins::label::make_label(name, &file, line, &prematch, &postmatch);
+    let label = crate::value::label::make_label(name, &file, line, &prematch, &postmatch);
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
         let current = scopes
