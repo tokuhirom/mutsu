@@ -4689,6 +4689,8 @@ impl Compiler {
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_role_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
+                // #11078: the role twin of the class arm's env-sync bound.
+                self.note_role_decl_env_sync(idx);
             }
             Stmt::SubsetDecl { .. } => self.emit_register_subset(stmt.clone()),
             Stmt::Whenever {

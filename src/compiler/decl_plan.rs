@@ -108,7 +108,7 @@ impl Compiler {
     /// (LEAVE is normally driven by the enclosing `BlockScope` registering
     /// a callback, not by direct statement compilation), which would make
     /// the chunk silently empty.
-    fn compile_decl_stmts_chunk_in_package(
+    pub(super) fn compile_decl_stmts_chunk_in_package(
         &self,
         stmts: &[Stmt],
         package: &str,
