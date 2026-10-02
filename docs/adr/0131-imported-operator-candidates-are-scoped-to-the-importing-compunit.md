@@ -94,3 +94,39 @@ Three supporting changes make the importing unit and scope correct:
 - **Compile-time binding of the operator's candidate family.** mutsu loads
   modules at runtime, after the consuming unit is compiled, so the family is
   not known at compile time.
+
+## Amendment (2026-10-02): package-less multi/proto families of a loaded module (#11004)
+
+**Context.** A module with no package of its own (a bare file, or the top level
+of a file whose `unit module` mutsu still registers under `GLOBAL`) registers
+its `multi` candidates and `proto` under the shared `GLOBAL::name/<sig>` and
+`GLOBAL::name` keys. Raku makes them lexicals of that compunit. `is export` only
+puts them in the `EXPORT` stash, and only an import makes them visible to
+another compunit. The per-name seclusion of private `sub`s
+(`unit_private_routines.rs`, #7558) cannot move them, because it holds one
+routine per name and multi candidates are additive across compunits. So
+`need`, `CompUnit::Repository.need` and an unexported multi family all leaked
+into the loading scope.
+
+**Decision.** The candidate-level gate of this ADR now covers those families,
+not only imported operators:
+
+- After a module load (`load_module_inner`, `require`), each package-less
+  family the module itself declared (a candidate or proto whose `source_file`
+  is the module) gets an `operator_import_units[name][module unit]` record with
+  **no importers**. `MAIN`, prelude splices and `our` routines are excluded.
+  They keep their own handling.
+- `import_module` adds the importing unit to a family that already has a
+  record. An operator family still gets a record when it is first imported.
+- The candidate walks that already filter with this gate need no change. The
+  name probes (`has_proto`, `has_multi_candidates`, `has_multi_function`), the
+  bare proto lookup and the `&name` candidate gather filter on it too. A family
+  that only another compunit can see is then *undeclared* here
+  (`X::Undeclared::Symbols`), not declared but uncallable. Their caches are
+  keyed without the unit, so they are bypassed for a scoped name.
+
+**Consequences.** A module's unexported family is no longer callable from
+outside the module, and a family a module imported is not visible to that
+module's own importer. Both match Rakudo. Candidates the *main script*
+declares are still unscoped. A module whose family shares a name with them
+still sees the script's candidates (#11004 follow-up).
