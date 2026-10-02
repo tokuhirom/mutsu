@@ -202,41 +202,26 @@ impl Interpreter {
                 }
                 return seq;
             }
-            // mutsu's OWN built-in `Iterator` (from `.iterator`) is an eager
-            // representation: its `items` attribute already holds the full
-            // materialized contents, so return them directly. This shortcut is
-            // keyed strictly on the built-in `Iterator` class — a user
-            // `does Iterator` class must NOT hit it (its `pull-one` is the source
-            // of truth and may transform/generate elements the way raku expects),
-            // so those fall through to the deferred-pull path below.
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = iterator.view()
-                && class_name == "Iterator"
-                // A `.map`/`.grep` stream holds only a window; the deferred
-                // Seq below pulls it on demand.
-                && !attributes.contains_key(
-                    crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR,
-                )
-                // An iterator over a lazy source holds only the prefix pulled
-                // so far; the deferred Seq pulls the rest on demand.
-                && !attributes.contains_key("lazy_source")
-            {
-                let map = attributes.as_map();
-                if let Some(ValueView::Array(items, ..)) = map
-                    .get("items")
-                    .or_else(|| map.get("stuff"))
-                    .map(Value::view)
-                {
-                    return Value::seq(items.to_vec());
-                }
-            }
+            // Every iterator — mutsu's built-in `Iterator` included — is pulled
+            // on demand from its CURRENT cursor. Copying a built-in iterator's
+            // whole `items` array here replayed the elements an earlier
+            // `pull-one`/`skip-one` had already consumed (#10845), and decoupled
+            // the Seq from the iterator it was given.
+            //
             // Store the iterator without pulling eagerly. Raku's
             // Seq.new(iterator) creates a lazy Seq; pulling happens only
             // when the Seq is actually consumed/iterated (ADR-0034).
-            return Value::seq_deferred(crate::value::SeqSource::Iterator(iterator.clone()));
+            let body = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(
+                iterator.clone(),
+            ));
+            // A Seq's `is-lazy` is its iterator's, so `say` renders an
+            // infinite one as `(...)` instead of pulling forever.
+            if matches!(iterator.view(), ValueView::Instance { class_name, attributes, .. }
+                if class_name == "Iterator" && attributes.contains_key("is_lazy"))
+            {
+                body.mark_lazy();
+            }
+            return Value::seq_body(body);
         }
         // Seq.new() with no args creates a pre-consumed Seq.
         // This matches Raku: Seq.new() has no iterator, so it's

@@ -749,6 +749,11 @@ pub(super) fn dispatch(
             };
             Some(Ok(Value::str(gist_array_wrap(&inner, kind))))
         }
+        // A lazy, not-yet-pulled iterator Seq (`Seq.new($lazy-iterator)`,
+        // `Seq.from-loop`) gists as Rakudo's placeholder without being pulled.
+        ValueView::Seq(body) if method == "gist" && body.gists_as_lazy_placeholder() => Some(Ok(
+            Value::str(crate::value::lazy_list_placeholder("gist", false)),
+        )),
         ValueView::Seq(_) | ValueView::Slip(_) if method == "gist" => {
             let items: Vec<Value> = match target.view() {
                 ValueView::Seq(i) => i.to_vec(),

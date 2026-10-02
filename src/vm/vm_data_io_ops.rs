@@ -37,6 +37,12 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // these through the native `.gist` dispatch instead of the fast
         // string-value fallback used by the output op.
         ValueView::Sub(..) | ValueView::WeakSub(..) | ValueView::Routine { .. } => true,
+        // A Seq whose source is still to be pulled (`Seq.new($iterator)`, an
+        // `IO::Handle.lines` read) holds no elements yet, so the pure renderer
+        // would print `()`; `.gist` dispatch pulls it first (#10845).
+        ValueView::Seq(body) if body.has_deferred_source() && !body.gists_as_lazy_placeholder() => {
+            true
+        }
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.

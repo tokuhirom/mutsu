@@ -834,6 +834,15 @@ impl SeqBody {
         self.core.state.lock().unwrap().lazy
     }
 
+    /// Whether `.gist` renders this body as Rakudo's `(...)` placeholder: a
+    /// lazy body whose iterator (`Seq.new($lazy-iterator)`, `Seq.from-loop`)
+    /// has not been pulled yet, so reifying it to render could run forever.
+    // Cost: O(1).
+    pub(crate) fn gists_as_lazy_placeholder(&self) -> bool {
+        let state = self.core.state.lock().unwrap();
+        state.lazy && matches!(state.source, SeqSource::Iterator(_))
+    }
+
     /// Whether the source has already been handed away (and never reified in
     /// between) — a later `reify`/`take` on this body will throw.
     pub(crate) fn is_consumed(&self) -> bool {

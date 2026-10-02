@@ -405,6 +405,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // rather than materializing its capped backing (Rakudo: `[...]`).
             "[...]".to_string()
         }
+        ValueView::Seq(body) if body.gists_as_lazy_placeholder() => {
+            crate::value::lazy_list_placeholder("gist", false)
+        }
         ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
             // A genuinely-lazy list renders raku's placeholder without forcing:
             // `[...]` held in `@` array context, `(...)` for a bare Seq.

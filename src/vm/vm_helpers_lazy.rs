@@ -488,6 +488,11 @@ impl Interpreter {
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }
+        // A lazy, not-yet-pulled iterator Seq gists as `(...)` without being
+        // pulled (`gist_value`), as Rakudo's does.
+        if method == "gist" && body.gists_as_lazy_placeholder() {
+            return Ok(target);
+        }
         let body = Arc::clone(&body);
         // `Seq.new($predictiveIterator)` (`try_native_seq_construct`) builds
         // an EMPTY already-`Reified` body and tracks its iterator out of
