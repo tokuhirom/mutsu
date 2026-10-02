@@ -882,6 +882,12 @@ impl Interpreter {
                             Ok(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(name),
                             ))
+                        } else if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
+                            // A package-qualified slot nobody has written is
+                            // an empty Scalar in raku (`@GLOBAL::nv.raku` is
+                            // `Any`); a write stores an itemized Array there
+                            // (#10962).
+                            Ok(Value::package(crate::symbol::wk::any()))
                         } else {
                             // An undeclared plain `@`-sigil variable defaults to
                             // an empty Array (raku auto-declares it as Array
@@ -1059,6 +1065,10 @@ impl Interpreter {
                             self.stack.push(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(name),
                             ));
+                        } else if crate::qualified::is_package_hash(name_sym) {
+                            // A never-written package-qualified slot: see the
+                            // `GetArrayVar` twin (#10962).
+                            self.stack.push(Value::package(crate::symbol::wk::any()));
                         } else {
                             // An undeclared plain `%`-sigil variable defaults to
                             // an empty Hash (raku auto-declares it as Hash under
