@@ -3229,8 +3229,9 @@ fn signature(
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
     if pd.onearg
         || pd.literal_value.is_some()
-        || !pd.traits.is_empty()
-        || pd.optional_marker
+        || !pd.trait_args.is_empty()
+        || !pd.traits.iter().all(|t| is_parameter_is_trait(t))
+        || (pd.optional_marker && (pd.named || pd.default.is_some()))
         || pd.is_invocant
         || pd.shape_constraints.is_some()
         || pd.code_signature.is_some()
@@ -3315,13 +3316,44 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         node.fields
             .insert(target_index, type_captures_field(type_capture));
     }
+    // `$x?`: rakudo's `optional => True`, where a plain positional has False.
+    if pd.optional_marker {
+        for field in &mut node.fields {
+            if field.name == Some("optional") {
+                field.value = RakuAstFieldValue::Node(Value::truth(true));
+            }
+        }
+    }
     if let Some(sub_params) = &pd.sub_signature {
         node.fields.push(node_field(
             Some("sub-signature"),
             signature(sub_params, type_setting, None)?,
         ));
     }
+    // `$x is copy` -> `traits => (Trait::Is(name => Name.from-identifier("copy")),)`,
+    // after every other field (measured on 2026.09).
+    if !pd.traits.is_empty() {
+        let traits = pd
+            .traits
+            .iter()
+            .map(|t| {
+                Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitIs,
+                    fields: vec![node_field(Some("name"), name_from_identifier(t))],
+                }))
+            })
+            .collect();
+        node.fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(traits),
+        });
+    }
     Ok(node)
+}
+
+/// The built-in parameter traits that take no argument.
+fn is_parameter_is_trait(name: &str) -> bool {
+    matches!(name, "copy" | "rw" | "raw" | "readonly")
 }
 
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather

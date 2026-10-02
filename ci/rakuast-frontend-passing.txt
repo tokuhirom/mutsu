@@ -5,6 +5,7 @@
 t/collections/array/array-index-inf.t
 t/collections/array/array-itemized-tree-and-hyper-list.t
 t/collections/array/array-list-preserves-any-after-assignment.t
+t/collections/array/array-literal-eager-gather.t
 t/collections/array/array-literal-type-not-reduction.t
 t/collections/array/array-map-seq.t
 t/collections/array/array-methods.t
@@ -108,6 +109,7 @@ t/collections/set-bag-mix/setbagmix-raku-repr.t
 t/collections/set-bag-mix/setbagmix-sort.t
 t/collections/subscript/angle-subscript-word-chars.t
 t/collections/subscript/array-empty-semicolon-slices.t
+t/collections/subscript/at-pos-call-rw-argument.t
 t/collections/subscript/buf-index-slice-assign.t
 t/collections/subscript/computed-index-single-itemize.t
 t/collections/subscript/computed-slice-result.t
@@ -124,6 +126,7 @@ t/collections/subscript/modifier-subscript-brace-newline.t
 t/collections/subscript/nested-angle-subscript-key.t
 t/collections/subscript/nested-whatever-index-assign.t
 t/collections/subscript/positional-index-on-any.t
+t/collections/subscript/rw-slice-arg-is-not-a-container.t
 t/collections/subscript/slice-assign-one-element-rvalue.t
 t/collections/subscript/slice-range-args.t
 t/collections/subscript/slice-single-element-itemize.t
@@ -151,6 +154,7 @@ t/collections/transform/map-imported-named-tail-call.t
 t/collections/transform/map-nested-call-rw-writeback-slot.t
 t/collections/transform/map-returns-seq.t
 t/collections/transform/map-rw-tail-call-named-arg.t
+t/collections/transform/map-sub-return-index-rw.t
 t/collections/transform/min-max-undefined-operand.t
 t/collections/transform/pack-unpack.t
 t/collections/transform/permutations-function.t
@@ -212,11 +216,13 @@ t/concurrency/thread-lock/scheduler-cancellation-state.t
 t/concurrency/thread-lock/scheduler-cue-times.t
 t/concurrency/thread-lock/scheduler-max-threads.t
 t/concurrency/thread-lock/then-captured-lexical-cross-thread.t
+t/concurrency/thread-lock/thread-callee-param-does-not-clobber-caller.t
 t/concurrency/thread-lock/thread-deep-stack.t
 t/concurrency/thread-lock/thread-escaping-container-capture-is-lexical.t
 t/concurrency/thread-lock/thread-param-mask-panic-unwind.t
 t/concurrency/thread-lock/thread-start-join.t
 t/concurrency/thread-lock/thread.t
+t/control/bare-block-caller-topic-rw.t
 t/control/begin-prologue-no-strict-auto-declared.t
 t/control/block-scope-recursion-decl-leak.t
 t/control/eval-begin-phaser.t
@@ -239,6 +245,7 @@ t/control/repeat-loop.t
 t/control/sink-tail-failure.t
 t/control/statement-modifier-sequence.t
 t/control/ternary-call-arg.t
+t/control/topic-assign-in-nested-block.t
 t/control/undo-phaser-writeback-coherence.t
 t/control/whatever-code-topic.t
 t/control/whatevercode-outer-topic.t
@@ -319,6 +326,7 @@ t/io/seq-cache-makes-io-lines-repeatable.t
 t/io/slurp-spurt-io-path-captured-cwd.t
 t/io/slurp-spurt.t
 t/io/slurpy-builtin-arity.t
+t/io/slurpy-is-raw.t
 t/io/slurpy-nested-array.t
 t/io/slurpy-param-does-not-leak-to-caller.t
 t/io/slurpy-param-nested-start-sequential-calls.t
@@ -614,6 +622,7 @@ t/oo/construct/parameter-signature-new-construction.t
 t/oo/construct/set-quant-family-and-constructors.t
 t/oo/construct/tweak-fail-returns-failure.t
 t/oo/forward-declaration.t
+t/oo/given-readonly-topic-does-not-leak-into-routine.t
 t/oo/issue-7771-unhandled-start.t
 t/oo/issue-7779-clone-type-object.t
 t/oo/method/add-method-pointy-invocant.t
@@ -630,6 +639,7 @@ t/oo/method/method-captured-var-writeback-coherence.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-leave-tail-if-value.t
 t/oo/method/method-lookup-signature-parameter-identity.t
+t/oo/method/method-param-array-hash-alias.t
 t/oo/method/method-postcircumfix-operator.t
 t/oo/method/mixin-method-compiled.t
 t/oo/method/mut-method-receiver-writeback-coherence.t
@@ -666,6 +676,7 @@ t/oo/role/run-nested-role-body.t
 t/oo/role/seq-does-sequence-role.t
 t/oo/self-referential-element-store.t
 t/oo/subset-refinee.t
+t/oo/trait/anon-param-trait.t
 t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/runtime-trait-persistence.t
@@ -825,6 +836,7 @@ t/routines/closure/closure-arg-shares-its-captured-container.t
 t/routines/closure/closure-attr-element-write.t
 t/routines/closure/closure-calls-routine-nested-sub.t
 t/routines/closure/closure-capture-named-arg-imported-callee.t
+t/routines/closure/closure-capture-sub-valued-cell.t
 t/routines/closure/closure-captured-state.t
 t/routines/closure/closure-captured-var-writeback-coherence.t
 t/routines/closure/closure-container-capture.t
@@ -852,9 +864,11 @@ t/routines/dispatch/listop-multi-extends-core.t
 t/routines/dispatch/multi-aggregate-rejects-nil.t
 t/routines/dispatch/multi-dispatch-positional-pair.t
 t/routines/dispatch/multi-flexible-arity-beats-untyped-catchall.t
+t/routines/dispatch/multi-frame-accumulation-coherence.t
 t/routines/dispatch/multi-function-resolution-cache.t
 t/routines/dispatch/multi-nonconstant-default-no-spurious-warn.t
 t/routines/dispatch/multi-ref-dispatch.t
+t/routines/dispatch/multi-where-runs-once-when-nothing-binds.t
 t/routines/dispatch/multi-where-subset-tie.t
 t/routines/dispatch/multiline-pod-declarator.t
 t/routines/dispatch/nontrivial-proto-body-nested-sub-compiled.t
@@ -884,16 +898,22 @@ t/routines/signature/builtin-shadow-default-param.t
 t/routines/signature/captured-param-cell-not-in-shared-vars-lane.t
 t/routines/signature/closure-captured-bang-var-through-code-param.t
 t/routines/signature/cro-client-nested-param-shadow.t
+t/routines/signature/defaulted-param-positional-light.t
 t/routines/signature/for-loop-param-getupvalue-hijack.t
 t/routines/signature/hash-parametric-keyof.t
 t/routines/signature/implicit-topic-block-signature-gist.t
+t/routines/signature/map-array-optional-trailing-param.t
+t/routines/signature/named-hash-param.t
 t/routines/signature/named-params.t
 t/routines/signature/nested-any-type-constraint.t
 t/routines/signature/nonconst-param-default-full-arity-light.t
+t/routines/signature/optional-param-where-runs-when-omitted.t
 t/routines/signature/param-default-keeps-code-lexicals.t
 t/routines/signature/parameterized-call.t
 t/routines/signature/positional-param-deitemizes.t
 t/routines/signature/readonly-param-mark-panic-unwind.t
+t/routines/signature/recursive-sub-trailing-comma-array-param.t
+t/routines/signature/rw-param-buf-element-assign.t
 t/routines/signature/signature-builtin-code-var.t
 t/routines/signature/signature-declaration-initializer-self-scope.t
 t/routines/signature/signature-parameter-object-identity.t
@@ -1111,6 +1131,7 @@ t/vm/scope/named-sub-lexical-scope.t
 t/vm/scope/process-stash-compound-assign.t
 t/vm/scope/process-stash-visible-across-sub-boundary.t
 t/vm/scope/pseudo-core-stash.t
+t/vm/scope/pseudo-stash-my-nested-block.t
 t/vm/scope/pseudostash-type.t
 t/vm/scope/shadow-slot-outer-var.t
 t/vm/scope/shadow-slots-default.t

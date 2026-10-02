@@ -1146,6 +1146,30 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         def.required = !is_optional;
         def.optional_marker = is_optional;
     }
+    // `$x is copy` / `is rw` / `is raw` / `is readonly`: argument-less
+    // `Trait::Is` nodes, kept by name as the parser keeps them.
+    if let Some(traits) = parameter.fields.iter().find(|f| f.name == Some("traits")) {
+        let RakuAstFieldValue::List(items) = &traits.value else {
+            return Err(unsupported(owner));
+        };
+        for item in items {
+            let ValueView::RakuAst(t) = item.view() else {
+                return Err(unsupported(owner));
+            };
+            if t.class != RakuAstClass::TraitIs {
+                return Err(unsupported(owner));
+            }
+            let name = positional_leaf(named_child(t, "name")?)?;
+            let name = match name.view() {
+                ValueView::Str(name) => name.to_string(),
+                _ => return Err(unsupported(owner)),
+            };
+            if !matches!(name.as_str(), "copy" | "rw" | "raw" | "readonly") {
+                return Err(unsupported(owner));
+            }
+            def.traits.push(name);
+        }
+    }
     // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker: the
     // `RakuAST::Parameter::Slurpy::*` type object, as rakudo stores it (a node
     // of the same class is accepted too -- see `slurpy_marker_class`).
@@ -2549,8 +2573,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
+                // Only a plain parameter fits `Lambda`; an optional (`$p?`) or
+                // trait-carrying one keeps its `ParamDef`, as the parser does.
                 1 if param_defs.first().is_some_and(|param| {
-                    !param.named && param.type_constraint.is_none() && param.default.is_none()
+                    !param.named
+                        && param.type_constraint.is_none()
+                        && param.default.is_none()
+                        && !param.optional_marker
+                        && param.traits.is_empty()
                 }) =>
                 {
                     Ok(Expr::Lambda {
