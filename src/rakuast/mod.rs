@@ -12,6 +12,7 @@
 
 mod attribute;
 mod convert;
+mod core_type_names;
 mod decl_traits;
 mod fields;
 mod formatter;
