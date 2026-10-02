@@ -13,8 +13,7 @@ impl Interpreter {
         &mut self,
         f: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        let (left, right) = self.pop_set_operands()?;
         let result = self.eval_binary_with_junctions(left, right, f)?;
         self.stack.push(result);
         Ok(())

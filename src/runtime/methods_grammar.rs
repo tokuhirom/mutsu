@@ -147,6 +147,24 @@ impl Interpreter {
             // before the rule body can see it.  Evaluate the same declaration as
             // a persistent `my` binding and let this frame's saved environment
             // restore it when the rule invocation ends.
+            //
+            // A bare `temp @*x` keeps the variable's current value (raku's
+            // `temp` only restores on scope exit), so it is bound to a copy of
+            // the value it shadows rather than to a fresh empty container.
+            let bare_temp = decl
+                .strip_prefix("temp ")
+                .map(str::trim)
+                .filter(|rest| !rest.contains('='));
+            let copy = bare_temp.and_then(|name| {
+                let (stmts, id) =
+                    self.parse_regex_code_cached_with_id(&format!("{name}.clone;"))?;
+                self.eval_block_value_cached(&stmts, id).ok()
+            });
+            if let (Some(copy), Some(name)) = (copy, bare_temp) {
+                let key = Self::grammar_dynvar_env_keys(name).remove(0);
+                self.env.insert(key, copy);
+                continue;
+            }
             let eval_decl = decl
                 .strip_prefix("temp ")
                 .map(|rest| format!("my {rest}"))
