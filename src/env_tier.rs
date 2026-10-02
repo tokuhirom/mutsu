@@ -393,10 +393,10 @@ impl std::fmt::Debug for Tier {
     }
 }
 
-/// Feed a string-valued `__mutsu_sigilless_alias::` entry to
-/// [`crate::sigilless_alias_index`]. The tag test comes first, so an insert
-/// of any non-string value (nearly all of them) costs one branch; a string
-/// value adds one memoized flag load for the key.
+/// Feed a `__mutsu_sigilless_alias::` entry to [`crate::sigilless_alias_index`]:
+/// its key bit for every value, its target for a string value. The key flag
+/// test comes first, so an insert of any other key costs one memoized flag
+/// load.
 // Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
 #[inline(always)]
 fn note_alias_entry(key: Symbol, value: &Value) {
@@ -404,6 +404,7 @@ fn note_alias_entry(key: Symbol, value: &Value) {
     // flattens it, so probing every stored value would materialize each
     // `"a" x 2**32-1` the moment it is bound to a variable.
     if key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
+        crate::sigilless_alias_index::note_alias_key(key);
         crate::sigilless_alias_index::note_alias_entry(key, value);
     }
 }
