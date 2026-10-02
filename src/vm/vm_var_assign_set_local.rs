@@ -1997,6 +1997,15 @@ impl Interpreter {
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
+        } else if val.is_nil()
+            && !is_bind
+            && !is_rebind
+            && let Some(def) = Self::container_cell_default(&self.locals[idx])
+        {
+            // The slot is an alias of another container (an `is rw` parameter,
+            // a `for` alias, a `:=` binding): the `Nil` decays to THAT
+            // container's default, which the cell carries (#9831).
+            val = def;
         }
         // For array variables with `is default(X)`, replace Nil elements
         // with the default value (Raku container semantics).
@@ -2648,6 +2657,9 @@ impl Interpreter {
                                 format!("${}", resolved_source)
                             };
                             crate::value::register_container_constraint_named(&arc, &ty, &display);
+                        }
+                        if let ValueView::ContainerRef(arc) = fresh.view() {
+                            self.register_container_cell_default_for_name(&arc, &resolved_source);
                         }
                         fresh
                     }

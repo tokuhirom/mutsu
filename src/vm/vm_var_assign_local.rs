@@ -268,6 +268,13 @@ impl Interpreter {
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
+        } else if val.is_nil()
+            && !name.starts_with(['@', '%', '&'])
+            && let Some(def) = Self::container_cell_default(&self.locals[idx])
+        {
+            // An alias of another container: its default, carried on the cell,
+            // is what the Nil decays to (#9831).
+            val = def;
         }
         if name.starts_with('@') || name.starts_with('%') {
             val = self.coerce_typed_container_assignment(name, val, false)?;

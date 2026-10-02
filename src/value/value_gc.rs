@@ -482,6 +482,11 @@ impl Trace for super::ContainerCell {
         {
             weight.key.gc_trace(visit);
         }
+        if let Ok(d) = self.default.lock()
+            && let Some(d) = d.as_ref()
+        {
+            d.gc_trace(visit);
+        }
     }
 
     fn drop_gc_edges(&mut self) {
@@ -491,6 +496,9 @@ impl Trace for super::ContainerCell {
         }
         if let Ok(weight) = self.quanthash_weight.get_mut() {
             *weight = None;
+        }
+        if let Ok(d) = self.default.get_mut() {
+            *d = None;
         }
     }
 }

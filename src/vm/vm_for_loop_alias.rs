@@ -455,7 +455,9 @@ impl Interpreter {
     /// same rule the `:=` bind promotion applies (ADR-0042: the constraint
     /// belongs to the container, not to a name) -- from here on the cell is what
     /// every write to either the loop parameter or the variable reaches, so a
-    /// name-keyed check would never run again.
+    /// name-keyed check would never run again. Its `is default(...)` travels
+    /// the same way, so a `Nil` stored through the parameter decays to it
+    /// (#9831).
     fn scalar_var_container(&mut self, source: &str, slot: Option<u32>) -> Option<Value> {
         let bare = source.strip_prefix('$').unwrap_or(source);
         let raw = slot
@@ -472,6 +474,7 @@ impl Interpreter {
             let display = format!("${bare}");
             crate::value::register_container_constraint_named(&cell, &ty, &display);
         }
+        self.register_container_cell_default_for_name(&cell, bare);
         let container = Value::container_ref(cell);
         // The variable IS the cell now, so a direct write to it and a write
         // through the loop parameter reach the same container.

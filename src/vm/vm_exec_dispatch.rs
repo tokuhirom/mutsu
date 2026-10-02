@@ -2027,6 +2027,20 @@ impl Interpreter {
                     && let Some(def) = self.var_default(&name)
                 {
                     val = def.clone();
+                } else if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(def) = self
+                        .env()
+                        .get_sym(name_sym)
+                        .and_then(Self::container_cell_default)
+                {
+                    // The name is an alias of another container (a `for`
+                    // parameter or topic bound to an element or a variable):
+                    // the Nil decays to that container's default (#9831).
+                    val = def;
                 }
                 // Hoisted from the write-throughs below, which read it too: an
                 // expression-position `my` declares a NEW variable, so it is
