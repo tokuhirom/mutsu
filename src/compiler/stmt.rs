@@ -1751,6 +1751,7 @@ impl Compiler {
                 let is_native_type = type_constraint
                     .as_ref()
                     .is_some_and(|tc| self.is_native_type_constraint(tc));
+                let mut deferred_bind_type_check = None;
                 if let Some(tc) = type_constraint
                     && !is_hash
                     && !has_default_trait
@@ -1772,8 +1773,16 @@ impl Compiler {
                     // A `:=` bind to a typed scalar reports X::TypeCheck::Binding
                     // on mismatch (e.g. `my Str $x := 3`), not Assignment.
                     if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%') {
-                        self.code
-                            .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                        if *is_state {
+                            self.code
+                                .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                        } else {
+                            // MarkVarDeclContext clears the checked mark. Emit
+                            // the bind check after that mark so the store can
+                            // reuse its result, including a side-effecting
+                            // `where` predicate.
+                            deferred_bind_type_check = Some((tc_idx, var_name_idx));
+                        }
                     } else {
                         self.code.emit(OpCode::TypeCheck(
                             tc_idx,
@@ -1960,6 +1969,10 @@ impl Compiler {
                         // when the local slot is reused across loop iterations.
                         if !preapply_container_default {
                             self.code.emit(OpCode::MarkVarDeclContext);
+                        }
+                        if let Some((tc_idx, var_name_idx)) = deferred_bind_type_check {
+                            self.code
+                                .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                         }
                         // A shaped declaration (`my @a[5] = ...`) keeps its declared
                         // shape; mark it so SetLocal does not strip the shape the way

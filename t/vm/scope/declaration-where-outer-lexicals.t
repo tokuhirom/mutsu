@@ -6,7 +6,7 @@ use Test;
 # The checks are counted through a container the predicate pushes to: a
 # predicate's plain scalar *write* to an outer lexical is a separate gap.
 
-plan 13;
+plan 15;
 
 my $y = 2;
 my @a = 1, 2, 3;
@@ -63,3 +63,11 @@ is g(), 1, 'inside a routine, the initializer is checked once';
 
 my $b where { $_ > 0 } := 7;
 is $b, 7, 'a bound where-constrained declaration';
+
+my @bound_checks;
+my $bound where { @bound_checks.push($_); True } := 7;
+is-deeply @bound_checks, [7], 'a bound declaration checks its where once';
+
+my @typed_bound_checks;
+my Int $typed_bound where { @typed_bound_checks.push($_); True } := 8;
+is-deeply @typed_bound_checks, [8], 'a typed bound declaration also checks once';
