@@ -163,6 +163,27 @@ impl VisitMut for Ctx {
                 self.reference_decl_name(&key);
                 walk_expr_mut(self, expr);
             }
+            // The replacement of a quote-form `s/pat/repl/` is kept as `qq`
+            // source text, parsed again where the substitution runs, so its
+            // variable reads are not in the tree. Read them from a parse of
+            // the same text, in this scope (rakudo counts `s/a/$y/; my $y` as
+            // a reference of the outer `$y`).
+            Expr::Subst {
+                replacement,
+                replacement_thunk: None,
+                ..
+            }
+            | Expr::NonDestructiveSubst {
+                replacement,
+                replacement_thunk: None,
+                ..
+            } => {
+                if !replacement.is_empty() {
+                    let mut parsed = crate::parse_dispatch::parse_qq_interpolation(replacement);
+                    self.visit_expr_mut(&mut parsed);
+                }
+                walk_expr_mut(self, expr);
+            }
             // Body-bearing expressions open a new nested lexical scope.
             Expr::Block(_)
             | Expr::Gather(_)

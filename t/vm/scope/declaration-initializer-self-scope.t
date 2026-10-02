@@ -1,6 +1,6 @@
 use Test;
 
-plan 17;
+plan 24;
 
 # A declared variable is already in scope for its own initializer (#9770).
 # Reading it directly there is a compile-time error; a nested code object
@@ -48,3 +48,17 @@ throws-like 'my @foo := 1..3, (@foo Z+ 100)', X::Syntax::Variable::Initializer,
     is f(), 1, 'a dynamic declaration reads its own fresh binding';
     is $*X, 5, 'and leaves the caller\'s binding alone';
 }
+
+# The `where` clause of a declaration is parsed before the variable exists, so
+# reading the variable there names no binding -- a compile-time error (rakudo
+# 2026.07 says X::Undeclared, 2026.09 X::Syntax::Variable::Initializer; both are
+# X::Comp) -- unless an enclosing scope declares one, or the clause itself does.
+for 'my $x where { $x > 0 } = 5', 'my Int $x where { $x > 0 } = 5',
+    'my @a where { @a.elems } = 1, 2', 'my $x where $x > 0 = 5' -> $code {
+    throws-like $code, X::Comp, "rejected: $code";
+}
+
+is EVAL(q/my $x where { $_ > 0 } = 5; $x/), 5, 'a where block that reads the topic is fine';
+is EVAL(q/my $x where { my $x = 3; $x > 0 } = 5; $x/), 5,
+    'a where block that declares its own variable is fine';
+is EVAL(q/my $x where { True } = 5; $x/), 5, 'a where block that reads nothing is fine';

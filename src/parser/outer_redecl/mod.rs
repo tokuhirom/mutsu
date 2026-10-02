@@ -97,6 +97,8 @@ struct Ctx {
     line: i64,
     /// Declarations whose initializer is being walked, innermost last.
     initializing: Vec<Initializing>,
+    /// The keys whose own `where` clause is being walked, innermost last.
+    declaring_where: Vec<String>,
     /// The first offense found, if any.
     found: Option<ScopeDiagnostic>,
 }
@@ -108,6 +110,17 @@ impl Ctx {
     fn reference(&mut self, key: String) {
         let depth = self.scopes.len();
         if depth == 0 {
+            return;
+        }
+        // The `where` clause of `my $x where { $x ... }` is parsed before `$x`
+        // exists, so a read of it there names no binding at all -- rakudo
+        // rejects it at compile time -- unless an enclosing scope (or a scope
+        // of the clause itself) declares one.
+        if self.found.is_none()
+            && self.declaring_where.contains(&key)
+            && !self.scopes.iter().any(|s| s.declared.contains(&key))
+        {
+            self.found = Some(ScopeDiagnostic::SelfInitializer(key, self.line));
             return;
         }
         if let Some(init) = self.initializing.iter_mut().rev().find(|i| i.key == key) {
@@ -212,6 +225,7 @@ pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnosti
         scopes: vec![Scope::new()],
         line: 0,
         initializing: Vec::new(),
+        declaring_where: Vec::new(),
         found: None,
     };
     walk_list(stmts, &mut ctx);
@@ -276,13 +290,18 @@ fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     else {
         return;
     };
+    let key = decl_key(name);
     // A `where` clause is parsed before the variable is introduced (rakudo
     // reports `my $x where $x` as an undeclared `$x`), so it reads the
-    // enclosing bindings.
+    // enclosing bindings -- and a read of the variable itself, with no
+    // enclosing binding of that name, is that error.
     if let Some(e) = where_constraint {
+        let armed = key.clone().inspect(|k| ctx.declaring_where.push(k.clone()));
         ctx.visit_expr_mut(e);
+        if armed.is_some() {
+            ctx.declaring_where.pop();
+        }
     }
-    let key = decl_key(name);
     if let Some(key) = &key {
         if *is_our {
             // `our` is package-scoped and not subject to the outer-binding
