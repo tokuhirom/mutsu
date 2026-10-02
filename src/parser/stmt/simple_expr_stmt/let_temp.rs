@@ -206,9 +206,27 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
 /// key used by `LetSave` for that variable (scalars drop their `$` sigil;
 /// arrays/hashes keep their `@`/`%`). Returns `None` for non-variable bases
 /// (e.g. a method call), which the multi-level `temp` lowering cannot save.
-// Cost: O(d + |name|), d = subscript depth.
+///
+/// Parentheses are transparent here: `temp (@a)[0]` and `temp ((@a)[0])[1]`
+/// name elements of `@a` exactly as `temp @a[0]` does (#10581).
+// Cost: O(d + |name|), d = subscript and paren depth.
 fn lvalue_base_name(expr: &Expr) -> Option<String> {
-    expr.index_root().container_var_key()
+    let mut expr = expr;
+    loop {
+        match expr {
+            Expr::Index { target, .. } | Expr::Grouped(target) => expr = target,
+            other => return other.container_var_key(),
+        }
+    }
+}
+
+/// Whether an element lvalue's container is anything other than a plain
+/// variable — a further subscript (`$s[1]<k>`) or a parenthesized operand
+/// (`(@a)[0]`). Those are the shapes the single-level `let_subscript_stmt`
+/// path below cannot spell, so they go through the nested-lvalue lowering.
+// Cost: O(1).
+fn is_compound_elem_container(target: &Expr) -> bool {
+    matches!(target, Expr::Index { .. } | Expr::Grouped(_))
 }
 
 /// Parse a variable from `undefine(...)` or `undefine $var` inside a `temp` context.
@@ -290,7 +308,26 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // chain, so the `Let` carries the whole assignment as its value and the
         // compiler temporizes the element that assignment's target names.
         if let Expr::IndexAssign { target, .. } = &expr
-            && matches!(target.as_ref(), Expr::Index { .. })
+            && is_compound_elem_container(target)
+            && let Some(save_name) = lvalue_base_name(target)
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::Let {
+                    name: save_name,
+                    index: None,
+                    value: Some(Box::new(expr)),
+                    is_temp: true,
+                    undefine_first: false,
+                    nested_lvalue: true,
+                },
+            );
+        }
+        // A bare element temp with no assignment over the same compound
+        // shapes: `temp (@a)[0];`, `temp $s[1]<k>;`. The `Let` carries the
+        // element expression itself and the compiler saves that element.
+        if let Expr::Index { target, .. } = &expr
+            && is_compound_elem_container(target)
             && let Some(save_name) = lvalue_base_name(target)
         {
             return parse_statement_modifier(
