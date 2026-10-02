@@ -135,7 +135,9 @@ impl Interpreter {
         // ContainerRef cell: atomic RMW under the cell lock so concurrent
         // `start { $shared += n }` blocks don't lose updates (Track C).
         if let ValueView::ContainerRef(arc) = raw_val.view() {
-            let arc = arc.clone();
+            // A binding cell (a lexical rebound after a closure captured it,
+            // #9237) holds the variable's container: operate on that (#10826).
+            let arc = Self::value_cell_of(&arc);
             // Hold the cell lock across the whole read-modify-write so concurrent
             // threads can't interleave and lose updates. `rhs` was already popped
             // (a concrete value), and the base op operates only on `old`/`rhs`, so
