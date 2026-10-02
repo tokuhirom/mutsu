@@ -5215,16 +5215,12 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostIncrementIndex(name_idx, slot) => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_increment_index_op(code, *name_idx, *slot)?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, false)?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostDecrementIndex(name_idx, slot) => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_decrement_index_op(code, *name_idx, *slot)?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, false)?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -5399,20 +5395,12 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreIncrementIndex(name_idx, slot) => {
-                // Same attribute-element mirroring as the postfix forms: `++@!a[0]`
-                // must reach the attribute's cell exactly as `@!a[0]++` does.
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_pre_increment_index_op(code, *name_idx, *slot)?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, true)?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreDecrementIndex(name_idx, slot) => {
-                // Same attribute-element mirroring as the postfix forms: `++@!a[0]`
-                // must reach the attribute's cell exactly as `@!a[0]++` does.
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_pre_decrement_index_op(code, *name_idx, *slot)?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, true)?;
                 *ip += 1;
             }
 
