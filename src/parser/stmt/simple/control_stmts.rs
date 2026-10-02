@@ -595,6 +595,11 @@ fn starts_with_infix_operand_marker(input: &str) -> bool {
 /// If the block is followed by `.method(...)`, treat it as a block expression
 /// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
+    // The onlystar term `{*}` is an expression (a dispatch call), not a bare
+    // block: leave it to the expression statement (#10746).
+    if input.starts_with("{*}") {
+        return Err(PError::expected("statement ({*} is a term)"));
+    }
     // Try to parse as a hash expression first (e.g. `{:a(4)}`, `{a => 1}`)
     if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
         && matches!(hash_expr, Expr::Hash(_))
@@ -659,21 +664,7 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     // `{ ... }` as a term via `block_or_hash_expr` and continues into the
     // infix expression.
     let ws_before_next = &rest[..rest.len() - r_ws.len()];
-    // `{*}` is the proto "onlystar" term (`{*} + 7`): a symbolic infix after
-    // it always continues the expression, as nothing else can follow a `{*}`
-    // statement on the same line.
-    let only_star_operand = {
-        let mut stmts = body.iter().filter(|s| !s.is_marker());
-        matches!(
-            (stmts.next(), stmts.next()),
-            (Some(Stmt::Expr(Expr::Whatever)), None)
-        )
-    } && r_ws.starts_with([
-        '+', '-', '*', '/', '~', '%', '<', '>', '=', '&', '|', '^', '?',
-    ]);
-    if !ws_before_next.contains('\n')
-        && (only_star_operand || starts_with_infix_operand_marker(r_ws))
-    {
+    if !ws_before_next.contains('\n') && starts_with_infix_operand_marker(r_ws) {
         return Err(PError::expected("statement (block is an infix operand)"));
     }
     parse_statement_modifier(rest, Stmt::Block(body))

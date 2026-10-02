@@ -1050,7 +1050,11 @@ impl Interpreter {
         let saved_package = self.enter_gather_package(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let mut r = self.with_catch_marker(|this| this.force_lazy_list_vm_inner(list));
+        // The body runs inside the list's iteration, which is a method call
+        // however late it is forced: a `{*}` in it is `Nil` (#10746).
+        let mut r = self.with_catch_marker(|this| {
+            this.in_method_call(|this| this.force_lazy_list_vm_inner(list))
+        });
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }
@@ -1442,7 +1446,10 @@ impl Interpreter {
         let saved_package = self.enter_gather_package(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let r = self.with_catch_marker(|this| this.force_lazy_list_vm_n_inner(list, needed));
+        // A method call, as in `force_lazy_list_vm` (#10746).
+        let r = self.with_catch_marker(|this| {
+            this.in_method_call(|this| this.force_lazy_list_vm_n_inner(list, needed))
+        });
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }

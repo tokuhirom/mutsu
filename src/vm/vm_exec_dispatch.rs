@@ -4681,13 +4681,17 @@ impl Interpreter {
                 // ADR-0067's raw-invocant arrival (`@a[0]."$name"()`) is armed
                 // by the `CallMethod` body this delegates to, once the name is
                 // resolved.
-                match self.exec_call_method_dynamic_op(
-                    code,
-                    *arity,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                ) {
+                // A method call, for `resolve_onlystar` (#10746).
+                let result = self.in_method_call(|vm| {
+                    vm.exec_call_method_dynamic_op(
+                        code,
+                        *arity,
+                        *modifier_idx,
+                        *quoted,
+                        *arg_sources_idx,
+                    )
+                });
+                match result {
                     Ok(()) => {}
                     Err(e) => {
                         // Record a resume point so a method that raises a
@@ -6016,15 +6020,19 @@ impl Interpreter {
                 // the shared `arity` extra-args applied to every element. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                match self.exec_hyper_method_call_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *modifier_idx,
-                    *quoted,
-                    *target_name_idx,
-                    *arg_sources_idx,
-                ) {
+                // A method call, for `resolve_onlystar` (#10746).
+                let result = self.in_method_call(|vm| {
+                    vm.exec_hyper_method_call_op(
+                        code,
+                        *name_idx,
+                        *arity,
+                        *modifier_idx,
+                        *quoted,
+                        *target_name_idx,
+                        *arg_sources_idx,
+                    )
+                });
+                match result {
                     Ok(()) => {}
                     Err(e) => {
                         // A per-element method may raise a resumable warn (the
@@ -6048,12 +6056,16 @@ impl Interpreter {
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                match self.exec_hyper_method_call_dynamic_op(
-                    code,
-                    *arity,
-                    *modifier_idx,
-                    *arg_sources_idx,
-                ) {
+                // A method call, for `resolve_onlystar` (#10746).
+                let result = self.in_method_call(|vm| {
+                    vm.exec_hyper_method_call_dynamic_op(
+                        code,
+                        *arity,
+                        *modifier_idx,
+                        *arg_sources_idx,
+                    )
+                });
+                match result {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {

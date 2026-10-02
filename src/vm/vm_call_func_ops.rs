@@ -1897,8 +1897,8 @@ impl Interpreter {
             }
         }
         if name == "__PROTO_DISPATCH__" {
-            // `{*}` inside a compiled proto body (ledger §D): the proto-dispatch
-            // marker rewritten by `rewrite_proto_dispatch_stmts`. Resolve and run
+            // `{*}` (ledger §D): the parser emits this call for the onlystar
+            // term wherever it is written (#10746). Resolve and run
             // the winning multi candidate VM-natively (compiled bytecode) instead
             // of bouncing through interpreter `call_proto_dispatch` + `run_block`.
             return self.vm_call_proto_dispatch(code, compiled_fns);
@@ -2732,21 +2732,14 @@ impl Interpreter {
             // non-trivial package proto sub is plan-derived once C8 is complete,
             // but this keeps the OTF-compile path available for any def built
             // outside declaration-plan registration (e.g. a hand-built
-            // `FunctionDef`). Rewrite `{*}` -> `__PROTO_DISPATCH__()` and
-            // require the resulting body + the proto's own signature to be
-            // OTF-compilable.
-            let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
-            let mut proto_def = proto.clone();
-            proto_def.body = rewritten;
-            // The clone carried the ORIGINAL body's memoized identity; the rewrite
-            // gave this def a different body, so drop it.
-            proto_def.invalidate_body_fingerprint();
-            if !Self::def_is_otf_compilable(&proto_def) {
+            // `FunctionDef`). The body and the proto's own signature must be
+            // OTF-compilable; its `{*}`s were parsed as `__PROTO_DISPATCH__()`
+            // calls already (#10746).
+            if !Self::def_is_otf_compilable(&proto) {
                 return None;
             }
-            let cf = self.otf_compile_function_def(&proto_def);
-            let pkg_sym = proto_def.package;
-            (cf, pkg_sym)
+            let cf = self.otf_compile_function_def(&proto);
+            (cf, proto.package)
         };
         // `{*}` redispatch reads the args from `proto_dispatch_stack` (the
         // ORIGINAL proto args, matching the interpreter's
@@ -2755,7 +2748,7 @@ impl Interpreter {
         // — it is the dispatcher, not a candidate; the candidate's own
         // `nextsame` frame is set up by the proto-dispatch handler when `{*}`
         // runs.
-        self.push_proto_dispatch_frame(name.to_string(), args.clone());
+        self.push_proto_dispatch_frame(name.to_string(), args.clone(), None);
         // Prefer the proto body's own nested-sub table over the caller's
         // (ADR-0019 C6e-3c, mirrors `call_shared_state_body`): a proto body
         // that declares its own nested sub/multi/proto must resolve its own
@@ -2790,16 +2783,34 @@ impl Interpreter {
         code: &CompiledCode,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        let Some((proto_name, args, method_ctx)) = self.proto_dispatch_last() else {
-            // `{*}` outside a proto — let the interpreter raise the proper error.
-            return self.loan_env_for(|i| i.call_proto_dispatch());
+        // `{*}` is resolved from the callers (#10746): `Nil` when a method,
+        // multi candidate or wrapper sits between it and the innermost proto
+        // body, `X::NoDispatcher` when no caller has a dispatcher at all.
+        let Some(frame) = self.resolve_onlystar()? else {
+            return Ok(Value::NIL);
         };
         // `proto method` redispatch needs the invocant + the boundary-resolved
         // dispatch (ADR-0019 E9c-2) the interpreter owns; only proto *subs* run
         // compiled here.
-        if method_ctx.is_some() {
+        if frame.method_ctx.is_some() {
             return self.loan_env_for(|i| i.call_proto_dispatch());
         }
+        // The winning candidate runs as a method call: a `{*}` inside it finds
+        // the candidate's own dispatcher, not this proto body again.
+        self.enter_method_call();
+        let result = self.vm_dispatch_proto_frame(code, compiled_fns, frame);
+        self.leave_method_call();
+        result
+    }
+
+    fn vm_dispatch_proto_frame(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        frame: crate::runtime::ProtoDispatchFrame,
+    ) -> Result<Value, RuntimeError> {
+        let proto_name = frame.name.clone();
+        let args = frame.args.clone();
         // Clear any stale pending dispatch error (mirrors the trivial-proto fork)
         // so a prior call's ambiguity can't leak into this resolution.
         let _ = self.take_pending_dispatch_error();
@@ -2850,7 +2861,7 @@ impl Interpreter {
         if had_rw_sources {
             self.set_pending_call_arg_sources(None);
         }
-        self.loan_env_for(|i| i.call_proto_dispatch())
+        self.loan_env_for(|i| i.dispatch_proto_frame(frame))
     }
 
     /// `{*}` rw-redispatch helper (ledger §D, multi-dispatch VM-ization): Rakudo

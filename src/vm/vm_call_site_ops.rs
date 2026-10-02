@@ -118,14 +118,19 @@ impl Interpreter {
         let throw_base = self
             .method_name_is_resumable_throw(code, *name_idx)
             .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
-        match self.exec_call_method_op(
-            code,
-            *name_idx,
-            *arity,
-            *modifier_idx,
-            *quoted,
-            *arg_sources_idx,
-        ) {
+        // A method has a dispatcher of its own: a `{*}` reached from inside
+        // it does not see an enclosing proto body (#10746).
+        let result = self.in_method_call(|vm| {
+            vm.exec_call_method_op(
+                code,
+                *name_idx,
+                *arity,
+                *modifier_idx,
+                *quoted,
+                *arg_sources_idx,
+            )
+        });
+        match result {
             Ok(()) => {}
             Err(e) if throw_base.is_some() && !e.is_resume() => match self.try_catch_inline(e) {
                 Ok(v) => {
@@ -156,6 +161,15 @@ impl Interpreter {
     /// `OpCode::CallMethodMut` / `OpCode::CallMethodDynamicMut` at
     /// `code.ops[ip]`.
     pub(super) fn exec_call_method_mut_site(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+    ) -> Result<(), RuntimeError> {
+        // A method call, for `resolve_onlystar` (#10746).
+        self.in_method_call(|vm| vm.exec_call_method_mut_site_inner(code, ip))
+    }
+
+    fn exec_call_method_mut_site_inner(
         &mut self,
         code: &CompiledCode,
         ip: usize,
