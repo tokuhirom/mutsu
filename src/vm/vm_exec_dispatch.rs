@@ -1051,6 +1051,11 @@ impl Interpreter {
             // p = packages on the bare-name search path (each probe formats a qualified key);
             // independent of the registry size (measured).
             OpCode::GetBareWord(name_idx) => {
+                // A bare word may resolve to a zero-arg routine call, whose
+                // frame records this line as its call-site. A callsite line
+                // left pending by an earlier call must not override it.
+                self.sync_source_line(code, *ip);
+                self.test_pending_callsite_line = None;
                 self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
                 // Slice F: a bareword that resolved to a qualified/`our` sub call
                 // (`M::foo`) may have recorded captured-outer writes; drain them

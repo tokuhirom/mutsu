@@ -38,7 +38,13 @@ pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<E
             right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
         });
     }
-    if name == "callframe" || name == "caller" {
+    // `caller` is not a Raku core routine (mutsu's native one is an
+    // extension), so a user-declared or imported `caller` (P5caller) takes
+    // over the call and must not receive the internal call-site argument.
+    let user_caller = name == "caller"
+        && (crate::parser::stmt::simple::is_imported_function(name)
+            || crate::parser::stmt::simple::is_user_declared_sub(name));
+    if (name == "callframe" || name == "caller") && !user_caller {
         args.push(Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
@@ -50,10 +56,11 @@ pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<E
 
 pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     let call_args = attach_test_callsite_line(&name, input, args);
-    if matches!(
+    if (matches!(
         name.as_str(),
         "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-    ) && (crate::parser::stmt::simple::is_imported_function(&name)
+    ) || name == "caller")
+        && (crate::parser::stmt::simple::is_imported_function(&name)
         || crate::parser::stmt::simple::is_user_declared_sub(&name))
     {
         return Expr::UserRoutineCall {
