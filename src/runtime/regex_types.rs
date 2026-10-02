@@ -97,7 +97,7 @@ pub(crate) struct PatternDerived {
     /// one entry per package it was ranked from. Building one resolves rule
     /// names, so, like `prefilter_in_pkg`, the entries are keyed by package
     /// and `TOKEN_DEFS_GEN`.
-    pub(crate) ltm_nfa: std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
+    pub(crate) ltm_nfa: crate::runtime::regex::regex_ltm_nfa::LtmNfaSlots,
     /// The pattern compiled to a flat backtracking program (ADR-0135), or
     /// `None` when it holds a construct the compiled engine does not cover
     /// yet and keeps the tree walk. A pure function of the pattern: a subrule

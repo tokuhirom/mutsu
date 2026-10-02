@@ -10,7 +10,8 @@ use crate::symbol::Symbol;
 impl Interpreter {
     /// Fill `order` with `table`'s branch indexes, best-ranked first; ties
     /// keep declaration order, as `drive_alternation_candidates` sorts them.
-    // Cost: O(b·m + b log b), b = the branches, m = one LTM measurement.
+    // Cost: O(n * t + b log b): one run of the branches' NFA (see
+    // `ltm_rank_alternation`), b = the branches.
     pub(super) fn rx_ltm_order(
         &mut self,
         program: &RxProgram,
@@ -23,11 +24,6 @@ impl Interpreter {
         let RegexAtom::Alternation(alts) = &program.toks[table.tok as usize].atom else {
             unreachable!("an LtmAlt table names an alternation token");
         };
-        order.clear();
-        for (i, alt) in alts.iter().enumerate() {
-            let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
-            order.push((i, rank));
-        }
-        order.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+        self.ltm_rank_alternation(&table.nfa, alts, chars, pos, pkg, order);
     }
 }

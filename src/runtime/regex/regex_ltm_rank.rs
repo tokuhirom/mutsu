@@ -185,16 +185,7 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (usize, usize) {
-        let measured = self.ltm_measure(alt, chars, pos, pkg);
-        let (plen, litlen) = (measured.len, measured.litlen);
-        // A nested sequential alternation can expose its epsilon bypass to the
-        // prefix measurement even when its first branch has already consumed a
-        // declarative literal. `litlen` still records that consumed literal, so
-        // keep the two measurements ordered consistently. Otherwise a later
-        // branch with a directly visible literal (for example `atom` after a
-        // nested `func` subrule) outranks the earlier branch despite both
-        // matching the same full text.
-        (plen.unwrap_or(0).max(litlen), litlen)
+        self.ltm_measure(alt, chars, pos, pkg).branch_rank()
     }
 
     /// ADR-0046 Decision 1, mechanism 1: rank one proto-token candidate that is

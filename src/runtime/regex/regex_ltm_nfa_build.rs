@@ -99,23 +99,44 @@ impl<'a> NfaBuilder<'a> {
     }
 
     /// One NFA for all of a proto's `candidates`, the way Rakudo builds one for
-    /// the proto (#9643): each candidate is compiled as `build` compiles a
-    /// pattern measured on its own, so the proto's measurement of a candidate
-    /// is that candidate's own. The rules the candidates call are compiled
-    /// once for all of them, which is what keeps this NFA the size of the
-    /// grammar and not the number of candidates times it.
+    /// the proto (#9643): see [`Self::build_roots`].
+    // Cost: as `build_roots`.
+    pub(super) fn build_proto(self, candidates: &[ParsedTokenCandidate]) -> LtmNfa {
+        self.build_roots(
+            candidates
+                .iter()
+                .map(|(parsed, sub_pkg, _)| (&**parsed, *sub_pkg)),
+        )
+    }
+
+    /// One NFA for all the branches of a `|`, walked in `pkg`: see
+    /// [`Self::build_roots`].
+    // Cost: as `build_roots`.
+    pub(super) fn build_alternation(self, branches: &[RegexPattern], pkg: Symbol) -> LtmNfa {
+        self.build_roots(branches.iter().map(|branch| (branch, pkg)))
+    }
+
+    /// One NFA for several patterns that are measured side by side, each with
+    /// the package it is walked in: every one is compiled as `build` compiles a
+    /// pattern measured on its own, so the NFA's measurement of a root is that
+    /// pattern's own. The rules the roots call are compiled once for all of
+    /// them, which is what keeps this NFA the size of the grammar and not the
+    /// number of roots times it.
     // Cost: O(s), s = nodes of the result, plus one candidate resolution per
     // distinct rule it can call.
-    pub(super) fn build_proto(mut self, candidates: &[ParsedTokenCandidate]) -> LtmNfa {
-        let mut roots = Vec::with_capacity(candidates.len());
-        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
+    fn build_roots<'p>(
+        mut self,
+        patterns: impl ExactSizeIterator<Item = (&'p RegexPattern, Symbol)>,
+    ) -> LtmNfa {
+        let mut roots = Vec::with_capacity(patterns.len());
+        for (idx, (parsed, sub_pkg)) in patterns.enumerate() {
             let accept = self.push(NfaNode::AcceptAt(idx as u32));
             // A candidate ends in a `Return` of its own, which pops its root
             // frame and lands on `accept`: threads of different candidates
             // then never meet at one node (a node reached with several stacks
             // in one position is the slow case of `Seen`).
             let ret = self.push(NfaNode::Return);
-            let entry = self.build_pattern(parsed, *sub_pkg, false, true, ret);
+            let entry = self.build_pattern(parsed, sub_pkg, false, true, ret);
             roots.push(NfaRoot { entry, accept });
         }
         LtmNfa {
