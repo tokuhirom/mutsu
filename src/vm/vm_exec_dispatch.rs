@@ -2026,6 +2026,22 @@ impl Interpreter {
                         // Wrap native integer values on assignment (overflow wrapping)
                         val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                     }
+                } else if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !was_scalar_bind
+                    && !was_param_raw_bind
+                    && bind_source.is_none()
+                    && !is_internal_temp
+                    && !self.vardecl_context().get()
+                {
+                    // An untyped scalar reached by name (a routine or closure
+                    // writing a captured `$x`, `our $x`, the run-time half of a
+                    // package body the BEGIN prologue split, #10608): assigning
+                    // Nil resets it to Any, as the SetLocal store does. Binds,
+                    // raw parameter stores and declarations keep their value.
+                    val = self.reset_nil_untyped_scalar(&name, val);
                 }
                 if self.fatal_mode
                     && !name.contains("__mutsu_")

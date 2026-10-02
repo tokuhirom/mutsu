@@ -21,7 +21,9 @@ sub reduce-capture-nil() {
     [1, 2].reduce: { $captured = Nil; $^a + $^b };
     $captured;
 }
-is reduce-capture-nil(), Nil, 'reduce callback write of Nil to a captured outer var lands immediately';
+# Assigning Nil to an untyped scalar resets it to Any (#10608); the point
+# here is that the write lands at all ('unset' is the value before it).
+ok reduce-capture-nil() === Any, 'reduce callback write of Nil to a captured outer var lands immediately';
 
 {
     my @seen;

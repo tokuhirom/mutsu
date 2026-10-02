@@ -1329,6 +1329,9 @@ impl Interpreter {
             && !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
+            // `$/` and `$!` default to Nil, not Any.
+            && name != "/"
+            && name != "!"
             && !name.contains("__mutsu")
             && self.var_default(name).is_none()
         {
