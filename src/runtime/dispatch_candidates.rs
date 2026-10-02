@@ -1152,7 +1152,7 @@ impl Interpreter {
         // this -- `types::role_mixin_class` reblesses it into a real
         // `C+{R}` class whose MRO the walk below already follows.)
         if let ValueView::Mixin(inner, mixins) = value.view() {
-            if mixins.contains_key(crate::runtime::meta_ns::MetaNs::Role.str_key_for_str(base)) {
+            if mixins.contains_key(crate::meta_ns::MetaNs::Role.str_key_for_str(base)) {
                 return 0;
             }
             // A role the mixed-in one itself composes is still nearer than the
@@ -1160,7 +1160,7 @@ impl Interpreter {
             if self.has_role(base)
                 && mixins.keys().any(|key| {
                     key.as_str()
-                        .strip_prefix(crate::runtime::meta_ns::MetaNs::Role.prefix())
+                        .strip_prefix(crate::meta_ns::MetaNs::Role.prefix())
                         .is_some_and(|role| self.role_is_descendant_of(role, base))
                 })
             {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 /// The "no such method" answer of `Metamodel::MethodContainer`'s `.^lookup`

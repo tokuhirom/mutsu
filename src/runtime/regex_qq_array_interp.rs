@@ -5,7 +5,7 @@
 //! what `interpolate_regex_scalars`' `@` arm does.
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use std::cell::Cell;
 
 impl Interpreter {

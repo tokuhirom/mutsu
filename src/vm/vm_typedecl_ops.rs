@@ -1,6 +1,6 @@
 //! Type-declaration registration ops: enum / class / augment / role / subset.
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 fn source_compound_name(

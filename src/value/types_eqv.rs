@@ -666,7 +666,7 @@ impl Value {
                     None if !a.eqv_inner(b, seen) => return false,
                     None => {}
                 }
-                let attr_prefix = crate::runtime::meta_ns::MetaNs::Attr.prefix();
+                let attr_prefix = crate::meta_ns::MetaNs::Attr.prefix();
                 // Compare mixin maps (e.g. Str part of allomorphs), ignoring the
                 // `__mutsu_role_seq__` application-order and
                 // `__mutsu_role_group__` application-grouping bookkeeping

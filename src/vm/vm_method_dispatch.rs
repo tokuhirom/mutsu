@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::AttrMap;
 
 pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
@@ -2875,7 +2875,7 @@ fn merge_method_env(
                     // `$!` is scoped per routine: the method frame reset it to
                     // Nil on entry, so merging it back would wipe the caller's
                     // error variable (`$!.message; $!.rc` must both see it).
-                    || crate::runtime::utils::is_routine_scoped_implicit_var(s)
+                    || crate::symbol::is_routine_scoped_implicit_var(s)
                     // Per-frame non-local-return target marker: writing the
                     // callee's id back would retarget blocks the caller creates
                     // afterwards (a later closure's `return` then escapes its

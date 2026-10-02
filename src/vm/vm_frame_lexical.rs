@@ -110,7 +110,7 @@ impl Interpreter {
     /// own callable identity, as a registration would: every `&name` read
     /// until the declaration runs again denotes the same routine object.
     fn mint_frame_lexical_callable_id(&mut self, package: Symbol, name: Symbol) {
-        let key = crate::runtime::meta_ns::MetaNs::CallableId.key_pair(package, name);
+        let key = crate::meta_ns::MetaNs::CallableId.key_pair(package, name);
         self.env_mut()
             .insert_sym_noting(key, Value::int(crate::value::next_instance_id() as i64));
     }

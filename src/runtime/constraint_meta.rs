@@ -18,7 +18,7 @@
 //! built once per *spelling* and every later registration is an `Arc` refcount
 //! bump.
 //!
-//! This is the same memoization [`crate::runtime::meta_ns::MetaNs`] applies to
+//! This is the same memoization [`crate::meta_ns::MetaNs`] applies to
 //! the metadata *key*; this module does it for the metadata *value*.
 //!
 //! # Why it is sound

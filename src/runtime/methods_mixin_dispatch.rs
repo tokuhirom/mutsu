@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {

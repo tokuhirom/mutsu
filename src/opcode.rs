@@ -12439,7 +12439,7 @@ impl CompiledFunction {
     pub(crate) fn package_is_routine_scoped(&self) -> bool {
         *self
             .package_routine_scoped_cache
-            .get_or_init(|| crate::runtime::utils::has_routine_scope_marker(&self.package))
+            .get_or_init(|| crate::str_scan::has_routine_scope_marker(&self.package))
     }
 
     /// The declaring source file as a `Symbol` (`None` = main script),

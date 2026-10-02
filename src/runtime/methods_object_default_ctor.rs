@@ -391,7 +391,7 @@ impl Interpreter {
         // Add alias metadata for `has $x` (no twigil) attributes
         for attr_name in plan.alias_attributes.iter() {
             attrs.insert(
-                crate::runtime::meta_ns::MetaNs::AttrAlias.owned_key_for_str(attr_name),
+                crate::meta_ns::MetaNs::AttrAlias.owned_key_for_str(attr_name),
                 Value::str(attr_name.clone()),
             );
         }

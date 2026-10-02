@@ -21,7 +21,7 @@
 //! this one role peeled back out of its mixin map.
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// The role whose presence turns on the wrapper rendering.
 pub(crate) const PROMISE_BROKEN_ROLE: &str = "X::Promise::Broken";

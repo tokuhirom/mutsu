@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// The name of the type object a bareword that `has_type`/`is_builtin_type`

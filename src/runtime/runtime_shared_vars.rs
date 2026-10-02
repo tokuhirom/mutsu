@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::value::ValueView;
 

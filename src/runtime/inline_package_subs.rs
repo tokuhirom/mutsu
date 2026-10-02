@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Register the routines declared by an inline package before CHECK
