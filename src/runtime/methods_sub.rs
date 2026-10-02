@@ -209,7 +209,7 @@ impl Interpreter {
                     .map(|()| target.clone()),
             );
         }
-        if method == "candidates" && args.is_empty() {
+        if matches!(method, "candidates" | "dispatchees") && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
         }
         if matches!(method, "rw" | "readonly") && args.is_empty() {
@@ -270,6 +270,9 @@ impl Interpreter {
                 .resolve_all_matching_candidates(name, &call_args)
                 .into_iter()
                 .map(|def| {
+                    if let Some(code) = &def.dispatchee {
+                        return code.clone();
+                    }
                     let compiled_routine = def.compiled.clone();
                     Value::make_sub_for_routine(
                         def.package,
@@ -819,7 +822,7 @@ impl Interpreter {
                     .map(|()| target.clone()),
             );
         }
-        if method == "candidates" && args.is_empty() {
+        if matches!(method, "candidates" | "dispatchees") && args.is_empty() {
             // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)
             if let Some(ValueView::Str(disp_name)) =
                 data.env.get("__mutsu_multi_dispatch_name").map(Value::view)

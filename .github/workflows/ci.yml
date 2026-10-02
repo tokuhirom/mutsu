@@ -778,6 +778,14 @@ jobs:
         env:
           MUTSU_BIN: target/release/mutsu
           BATTERY_SRC_CACHE: tmp/battery-src-cache
+          # Its own log, so this report counts only the gate's retries.
+          FLAKY_RETRY_LOG: tmp/flaky-retries-battery.log
+
+      - name: Battery quarantine retries used
+        if: always()
+        run: scripts/report-flaky-retries.sh
+        env:
+          FLAKY_RETRY_LOG: tmp/flaky-retries-battery.log
 
       # Saved even when the gate itself fails (a regression, or one upstream
       # host being down, is not a reason to throw away the checkouts that were

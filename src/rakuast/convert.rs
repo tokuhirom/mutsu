@@ -1696,6 +1696,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }),
         // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
+        // A type the CORE setting declares (`X::AdHoc`, `IO::Path`), which raku
+        // resolves at parse time the same way.
+        Expr::BareWord(name) if super::core_type_names::contains(name) => {
+            Ok(simple_type_node(name))
+        }
         // A name the same compilation unit declared. raku resolves it at parse
         // time: a type name renders exactly like a builtin one, a constant
         // renders as a `Term::Name`. Any other bareword stays the boundary.

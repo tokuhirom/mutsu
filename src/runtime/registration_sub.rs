@@ -1258,6 +1258,7 @@ impl Interpreter {
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            dispatchee: None,
             // Seed the structural fingerprint eagerly from the plan (ADR-0019
             // C6e-3): the lazy fill re-hashes `def.body` on a miss, which a
             // body-less plan-derived def will not be able to serve once
@@ -2100,6 +2101,7 @@ impl Interpreter {
             source_line,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
@@ -2296,6 +2298,7 @@ impl Interpreter {
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: compiled.cloned().map(std::sync::Arc::new),
+                dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
             }),
@@ -2371,6 +2374,7 @@ impl Interpreter {
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: compiled.cloned().map(std::sync::Arc::new),
+                dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
             }),

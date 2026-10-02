@@ -229,6 +229,49 @@ pub(crate) fn unwrap_varref_value(value: Value) -> Value {
 /// A **List** (uncontainerized -- `(1,(2,3))`, Seq, Slip, Range) flattens
 /// fully, recursively. An itemized container (`$(...)`, `$[...]`) is
 /// preserved as a single element.
+/// Collect one `*@` argument that is genuinely lazy into `items`, noting its
+/// index in `lazy_slots`, and answer whether it was one. A Slip contributes
+/// its elements, each checked the same way (`g(0, |(1 ... *))`); a lazy
+/// list or an unbounded Range is kept whole as a lazy part. Anything else is
+/// left to [`flatten_into_slurpy`].
+///
+/// Cost: O(k), k = elements of a Slip argument; O(1) otherwise.
+pub(crate) fn collect_lazy_slurpy_arg(
+    arg: &Value,
+    items: &mut Vec<Value>,
+    lazy_slots: &mut Vec<usize>,
+) -> bool {
+    let lazy_part = |v: &Value| -> Option<Value> {
+        match v.view() {
+            ValueView::LazyList(ll) if ll.renders_lazy_placeholder() => Some(v.clone()),
+            _ => crate::runtime::unbounded_range::lazy_list(v)
+                .map(|ll| Value::lazy_list(crate::gc::Gc::new(ll))),
+        }
+    };
+    if let ValueView::Slip(elems) = arg.view() {
+        if !elems.iter().any(|e| lazy_part(e).is_some()) {
+            return false;
+        }
+        for elem in elems.iter() {
+            if let Some(part) = lazy_part(elem) {
+                lazy_slots.push(items.len());
+                items.push(part);
+            } else {
+                flatten_into_slurpy(std::slice::from_ref(elem), items);
+            }
+        }
+        return true;
+    }
+    match lazy_part(arg) {
+        Some(part) => {
+            lazy_slots.push(items.len());
+            items.push(part);
+            true
+        }
+        None => false,
+    }
+}
+
 pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
     for val in values {
         match val.view() {

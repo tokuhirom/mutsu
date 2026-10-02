@@ -119,7 +119,7 @@ impl Interpreter {
     /// Rakudo keeps such a literal lazy (`.is-lazy` is True) and reifies only
     /// what is read.
     // Cost: O(e), e = elements of the literal.
-    pub(super) fn lazy_literal_with_slipped_tail(
+    pub(crate) fn lazy_literal_with_slipped_tail(
         elems: Vec<Value>,
         lazy_slots: &[usize],
         is_real_array: bool,

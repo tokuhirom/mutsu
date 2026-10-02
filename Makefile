@@ -88,6 +88,7 @@ check-value-wall:
 	scripts/check-value-wall.sh
 
 check-flaky-list:
+	scripts/check-flaky-list.sh --self-test
 	scripts/check-flaky-list.sh
 
 check-t-layout:

@@ -671,6 +671,7 @@ mod dispatch_narrow;
 mod dispatch_proto;
 mod dispatch_proto_call;
 mod dispatch_proto_candidates;
+mod dispatch_proto_dispatchee;
 mod dispatch_proto_rewrite;
 pub(crate) mod dispatch_resolve;
 mod end_phasers;

@@ -559,6 +559,14 @@ pub(crate) struct FunctionDef {
     /// candidate. Temporary ADR-0019 adapter; skipped by the AST/precomp format.
     #[serde(skip)]
     pub(crate) compiled: Option<std::sync::Arc<crate::opcode::CompiledFunction>>,
+    /// The code VALUE this candidate stands for, when `Routine.add_dispatchee`
+    /// added an anonymous or closure-carrying sub to a proto (#10929). The
+    /// row takes part in candidate selection by its signature like any other;
+    /// running it calls this value, so the candidate keeps its captured
+    /// lexicals instead of resolving them against its caller. `None` for every
+    /// declared routine.
+    #[serde(skip)]
+    pub(crate) dispatchee: Option<Value>,
     /// Memoized [`Self::body_fingerprint`]. Derived state, so it is neither
     /// serialized nor part of the declaration; a deserialized or cloned def
     /// simply recomputes it on first use.

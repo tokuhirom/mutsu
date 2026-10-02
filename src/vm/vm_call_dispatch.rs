@@ -437,6 +437,9 @@ impl Interpreter {
         caller: Option<(&CompiledCode, &[Value])>,
         resolved_by_bare_name: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Some(code) = &def.dispatchee {
+            return self.call_value_dispatchee_def(def, code.clone(), args, compiled_fns);
+        }
         // Use the pending callsite line for deprecation tracking,
         // since ?LINE in env may not reflect the call site yet.
         let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
@@ -610,6 +613,37 @@ impl Interpreter {
         result
     }
 
+    /// Run the resolved winner `def` that stands for the `add_dispatchee` code
+    /// value `code` (#10929): the value runs as itself, with its captures,
+    /// inside the same samewith and multi-dispatch frames a declared winner
+    /// gets, so `callsame`/`nextsame` in it reach the remaining candidates.
+    // Cost: O(c) plus the callee's body, c = candidates of the routine (the dispatch frame).
+    fn call_value_dispatchee_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        code: Value,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let name = def.name.resolve();
+        self.push_samewith_context(&name, None, None);
+        let pushed_dispatch = loan_env!(
+            self,
+            push_multi_dispatch_frame_with_winner_sym(&name, def.name, &args, Some(def))
+        );
+        // The call site's argument sources stay pending for the value's own
+        // binder (an `is rw` parameter), as `call_lexical_callable_with_sources`
+        // leaves them, and are cleared after it so no nested call binds
+        // against them (mutsu#10520).
+        let result = self.vm_call_on_value(code, args, Some(compiled_fns));
+        self.set_pending_call_arg_sources(None);
+        self.pop_samewith_context();
+        if pushed_dispatch {
+            self.pop_multi_dispatch();
+        }
+        result
+    }
+
     /// Call an *already resolved* routine definition as bytecode, from a runtime
     /// caller that owns no `CompiledFns` table of its own — a user-defined
     /// operator, a reduce or hyper step over one, or `MAIN`.
@@ -633,6 +667,10 @@ impl Interpreter {
         def: &crate::ast::FunctionDef,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // An `add_dispatchee` code value runs as itself, with its captures.
+        if let Some(code) = &def.dispatchee {
+            return self.vm_call_on_value(code.clone(), args, None);
+        }
         let cf = match &def.compiled {
             Some(compiled) => Arc::clone(compiled),
             None => self.otf_compile_function_def(def),

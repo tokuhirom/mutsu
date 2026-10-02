@@ -35,6 +35,12 @@
 //! - A triangle reduce keeps its accumulator and source position in its
 //!   `ScanSpec`, which the stitch does not touch either; `force_scan_lazy_list`
 //!   walks the source from that position, not from the cache length.
+//!
+//! A lazy pipe or `gather` array (`my @a = (1..*).map(* + 1)`, a lazy `*@`
+//! slurpy over `0, 1..*`) has no cache it can rewrite like that, so its
+//! rebuilt list is a lazy concatenation of the mutated prefix and the source
+//! with its first `k` elements skipped (a `.skip(k)` adaptor stage, which
+//! streams).
 
 use super::*;
 
@@ -44,11 +50,14 @@ pub(super) struct LazySeqFrontMutation {
     source: crate::gc::Gc<LazyList>,
     prefix_len: usize,
     returns_self: bool,
+    /// Rebuild by concatenating the prefix with the skipped source (a lazy
+    /// pipe or `gather`) rather than by restitching the generator's cache.
+    streamed: bool,
 }
 
 impl Interpreter {
     /// Step 1 (see the module docs). `None` when the call is not a front
-    /// mutation of an infinite-generator lazy `@`-array; `Some(Err)` when it is one
+    /// mutation of an infinite-generator, lazy-pipe or `gather` lazy `@`-array; `Some(Err)` when it is one
     /// that would have to reach the (non-existent) end of the list.
     ///
     /// Cost: O(k) generator steps, k = the number of leading elements the call
@@ -74,9 +83,12 @@ impl Interpreter {
             .closure_seq
             .as_ref()
             .is_some_and(|state| state.lock().unwrap().endpoint.is_none());
-        if !ll.in_array_context()
-            || !(ll.sequence_spec.is_some() || unbounded_closure_seq || ll.scan_spec.is_some())
-        {
+        let restitched =
+            ll.sequence_spec.is_some() || unbounded_closure_seq || ll.scan_spec.is_some();
+        let streamed = !restitched
+            && (ll.lazy_pipe.is_some() || ll.coroutine.is_some())
+            && ll.is_genuinely_lazy();
+        if !ll.in_array_context() || !(restitched || streamed) {
             return None;
         }
         let args = &self.stack[target_idx + 1..];
@@ -101,6 +113,7 @@ impl Interpreter {
             None if unbounded_closure_seq => {
                 self.extend_closure_sequence(&ll, prefix_len.saturating_add(1))
             }
+            None if streamed => self.force_lazy_list_vm_n(&ll, prefix_len.saturating_add(1)),
             None => self.force_scan_lazy_list(&ll, prefix_len.saturating_add(1)),
         };
         let mut items = match reified {
@@ -117,6 +130,7 @@ impl Interpreter {
             source: ll,
             prefix_len,
             returns_self: matches!(method, "unshift" | "prepend"),
+            streamed,
         }))
     }
 
@@ -138,7 +152,8 @@ impl Interpreter {
     /// Step 3 (see the module docs): rebuild the lazy array from the mutated
     /// prefix the Array method left in `target_name` and the source's tail.
     ///
-    /// Cost: O(c), c = elements the source has cached so far.
+    /// Cost: O(c) for a generator shape, c = elements the source has cached
+    /// so far; O(r) for a streamed source, r = the rebuilt finite run.
     pub(super) fn lazy_seq_front_mutation_finish(
         &mut self,
         code: &CompiledCode,
@@ -152,8 +167,35 @@ impl Interpreter {
             return;
         };
         let prefix = prefix.to_vec();
-        let rebuilt = LazyList::clone(&pending.source);
         let k = pending.prefix_len;
+        let restored = if pending.streamed {
+            let (mut elems, tail) = Self::streamed_rest(&pending.source, k);
+            let mut all = prefix;
+            all.append(&mut elems);
+            let slot = all.len();
+            all.push(tail);
+            Self::lazy_literal_with_slipped_tail(all, &[slot], true)
+        } else {
+            Self::restitch_generator(&pending.source, prefix, k)
+        };
+        self.env_mut()
+            .insert(target_name.to_string(), restored.clone());
+        self.locals_set_by_name(code, target_name, restored.clone());
+        // `unshift` / `prepend` answer the array itself, which is now the lazy
+        // list rather than the temporary prefix.
+        if pending.returns_self
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = restored;
+        }
+    }
+
+    /// The generator-shape rebuild: the cache (and, for a sequence spec, the
+    /// generator history) becomes `prefix ++ old[k..]` (see the module docs).
+    ///
+    /// Cost: O(c), c = elements the source has cached so far.
+    fn restitch_generator(source: &LazyList, prefix: Vec<Value>, k: usize) -> Value {
+        let rebuilt = LazyList::clone(source);
         let restitch = |slot: &mut Option<Vec<Value>>| {
             let old = slot.take().unwrap_or_default();
             let mut next = prefix.clone();
@@ -166,16 +208,91 @@ impl Interpreter {
         if rebuilt.sequence_spec.is_some() {
             restitch(&mut rebuilt.generation_state.lock().unwrap());
         }
-        let restored = Value::lazy_list(crate::gc::Gc::new(rebuilt));
-        self.env_mut()
-            .insert(target_name.to_string(), restored.clone());
-        self.locals_set_by_name(code, target_name, restored.clone());
-        // `unshift` / `prepend` answer the array itself, which is now the lazy
-        // list rather than the temporary prefix.
-        if pending.returns_self
-            && let Some(top) = self.stack.last_mut()
-        {
-            *top = restored;
+        Value::lazy_list(crate::gc::Gc::new(rebuilt))
+    }
+
+    /// The part of the streamed lazy list `source` after its first `k`
+    /// elements, as a finite run of already-known elements plus a lazy tail.
+    ///
+    /// A list this module rebuilt before is `[finite run, lazy tail]`; it is
+    /// taken apart rather than nested, and a skip over a skip of the same
+    /// source becomes one skip, so a loop of `shift`s keeps a constant-depth
+    /// list instead of a chain of `n` stages.
+    ///
+    /// Cost: O(r), r = the finite run's length.
+    fn streamed_rest(source: &crate::gc::Gc<LazyList>, k: usize) -> (Vec<Value>, Value) {
+        if let Some((run, tail)) = Self::front_mutated_parts(source) {
+            if k <= run.len() {
+                return (run[k..].to_vec(), tail);
+            }
+            return (Vec::new(), Self::skip_stream(tail, k - run.len()));
         }
+        (
+            Vec::new(),
+            Self::skip_stream(Value::lazy_list(source.clone()), k),
+        )
+    }
+
+    /// `[finite run, lazy tail]` when `list` is a lazy concatenation of that
+    /// shape (what `lazy_literal_with_slipped_tail` builds for one lazy slot
+    /// at the end).
+    ///
+    /// Cost: O(r), r = the finite run's length.
+    fn front_mutated_parts(list: &LazyList) -> Option<(Vec<Value>, Value)> {
+        let pipe = list.lazy_pipe.as_ref()?.lock().unwrap();
+        let Some(crate::value::PipeAdaptor::Concat { parts, .. }) = pipe.adaptor.as_deref() else {
+            return None;
+        };
+        match parts.as_slice() {
+            [run, tail] if matches!(tail.view(), ValueView::LazyList(_)) => match run.view() {
+                ValueView::Array(items, _) => Some((items.to_vec(), tail.clone())),
+                _ => None,
+            },
+            [tail] if matches!(tail.view(), ValueView::LazyList(_)) => {
+                Some((Vec::new(), tail.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `source` without its first `n` elements, as a `.skip(n)` stage. A
+    /// source that is itself a plain skip stage is skipped further on its own
+    /// source instead of being wrapped again.
+    ///
+    /// Cost: O(1).
+    fn skip_stream(source: Value, n: usize) -> Value {
+        if n == 0 {
+            return source;
+        }
+        let (root, already) = match source.view() {
+            ValueView::LazyList(ll) => match Self::plain_skip_stage(&ll) {
+                Some(found) => found,
+                None => (source.clone(), 0),
+            },
+            _ => (source.clone(), 0),
+        };
+        Value::lazy_list(crate::gc::Gc::new(LazyList::new_adaptor_pipe(
+            root,
+            Value::NIL,
+            crate::value::PipeAdaptor::Skip {
+                remaining: already + n,
+            },
+        )))
+    }
+
+    /// The source and total skip count of a `.skip(n)` stage. Every source
+    /// element it has pulled was either skipped or emitted into its cache, so
+    /// the count it started with is what is left to skip plus what it pulled
+    /// beyond its output.
+    ///
+    /// Cost: O(1).
+    fn plain_skip_stage(list: &LazyList) -> Option<(Value, usize)> {
+        let pipe = list.lazy_pipe.as_ref()?.lock().unwrap();
+        let Some(crate::value::PipeAdaptor::Skip { remaining }) = pipe.adaptor.as_deref() else {
+            return None;
+        };
+        let emitted = list.cache.lock().unwrap().as_ref().map_or(0, Vec::len);
+        let skipped = pipe.source_idx.saturating_sub(emitted);
+        Some((pipe.source.clone(), remaining + skipped))
     }
 }
