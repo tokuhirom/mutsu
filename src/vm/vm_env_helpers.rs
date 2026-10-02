@@ -1327,7 +1327,7 @@ impl Interpreter {
     /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a
     /// sigiled variable name, returning the bare variable name.
     /// e.g. "$GLOBAL::x" → Some("x"), "$OUR::x" → Some("x")
-    fn pseudo_package_unqualified_name(name: &str) -> Option<String> {
+    pub(super) fn pseudo_package_unqualified_name(name: &str) -> Option<String> {
         // The pseudo-package prefixes are constants -- match them directly
         // rather than re-formatting `"{pkg}::"` on every variable access.
         const PSEUDO: [&str; 3] = ["GLOBAL::", "OUR::", "MY::"];

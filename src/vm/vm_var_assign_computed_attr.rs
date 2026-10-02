@@ -859,6 +859,12 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Value> {
+        // A package-qualified hash is not an attribute; its element writes
+        // persist through `our_vars` instead (#10901).
+        let sym = code.const_sym(name_idx);
+        if crate::qualified::is_package_hash(sym) {
+            return self.package_hash_elem_prologue(sym);
+        }
         self.attr_env_snapshot_matching(code, name_idx, Self::is_subscriptable_attr_twigil)
     }
 
@@ -929,11 +935,16 @@ impl Interpreter {
     /// [`Self::mirror_attr_env_to_cell`] for the subscript ops, which also cover
     /// a scalar attribute holding a container (`$!h<k> = v`).
     pub(super) fn mirror_attr_elem_env_to_cell(
-        &self,
+        &mut self,
         code: &CompiledCode,
         name_idx: u32,
         pre: Option<Value>,
     ) {
+        let sym = code.const_sym(name_idx);
+        if crate::qualified::is_package_hash(sym) {
+            self.package_hash_elem_epilogue(sym, pre);
+            return;
+        }
         self.mirror_attr_env_to_cell_matching(
             code,
             name_idx,
