@@ -5,7 +5,7 @@ use Test;
 # ever written), not whenever any bind exists anywhere. The probe still has to
 # fire for a name that really is aliased, however the alias was made.
 
-plan 8;
+plan 9;
 
 # An unrelated bind leaves plain stores alone.
 {
@@ -61,4 +61,16 @@ plan 8;
     my $t := $total;
     $t = $t + $_ for 1..4;
     is $total, 10, 'repeated stores through an alias all land';
+}
+
+# The alias appears mid-loop, after the slot's fast stores already ran with
+# its key bit clear: the stores after the bind must see it.
+{
+    my $src = 0;
+    my $alias = 0;
+    for 1..6 -> $i {
+        $alias := $src if $i == 3;
+        $alias = $i;
+    }
+    is $src, 6, 'an alias made after earlier stores is honoured by later ones';
 }
