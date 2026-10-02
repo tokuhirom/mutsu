@@ -361,6 +361,16 @@ impl LazyList {
             || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
     }
 
+    /// Whether a laziness-preserving coercion (`.List`/`.Array`/`.list`/
+    /// `.values`/`.cache`) keeps this map/grep pipe lazy instead of reifying it.
+    /// Rakudo keeps any `.is-lazy` Seq lazy whether or not it is finite, so an
+    /// explicitly `lazy`-marked pipe (`(1..3).lazy.map(* + 1).List` is `(...)`)
+    /// stays lazy; an unmarked pipe over a finite source (`gather { … }.grep(…)`,
+    /// which is not `.is-lazy`) reifies.
+    pub(crate) fn coercion_keeps_pipe_lazy(&self) -> bool {
+        !self.pipe_bottoms_out_finite() || self.is_lazy_marked()
+    }
+
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
     /// statement prefix / `.lazy` method).
     pub(crate) fn is_lazy_marked(&self) -> bool {

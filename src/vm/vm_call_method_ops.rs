@@ -1554,13 +1554,13 @@ impl Interpreter {
             // dispatch) — neither forces.
             && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
-            // `.cache`) returns an infinite pipe unchanged, but a FINITE pipe
-            // (one bottoming out in a `gather`/finite source) must reify — else
-            // `gather { … }.grep(…).List` yields an unforced `(...)` and `.flat`/
-            // `for` see nothing.
+            // `.cache`) returns an infinite or `lazy`-marked pipe unchanged, but
+            // an unmarked FINITE pipe (one bottoming out in a `gather`/finite
+            // source) must reify — else `gather { … }.grep(…).List` yields an
+            // unforced `(...)` and `.flat`/`for` see nothing.
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && Self::lazy_pipe_preserving_coercion(method)
-                && !ll.pipe_bottoms_out_finite())
+                && ll.coercion_keeps_pipe_lazy())
             // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked
             // (`lazy gather {…}`) list — the count/numeric coercions produce a
             // *soft* X::Cannot::Lazy Failure (recoverable with `//`), emitted by
