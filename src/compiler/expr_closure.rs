@@ -686,6 +686,21 @@ impl Compiler {
                 });
                 return true;
             }
+            // `Pkg::<@a> := v` / `Pkg::<%h> := v`: the stash spelling of
+            // `@Pkg::a := v`, which rebinds the package variable (#10546).
+            if let Some(Expr::Call { name, args }) = Some(value)
+                && *name == "__mutsu_bind_index_value"
+                && let Some(sigil) = key.chars().next().filter(|c| matches!(c, '@' | '%'))
+                && key[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+            {
+                let rhs = args.first().cloned().unwrap_or(Expr::Literal(Value::NIL));
+                self.compile_expr(&Expr::AssignExpr {
+                    name: format!("{sigil}{stash_name}{}", &key[1..]),
+                    expr: Box::new(rhs),
+                    is_bind: true,
+                });
+                return true;
+            }
             let Some(bare) = key
                 .strip_prefix('$')
                 .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
