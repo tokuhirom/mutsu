@@ -83,7 +83,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn call_proto_function(
+    pub(crate) fn call_proto_function(
         &mut self,
         proto_name: &str,
         def: &FunctionDef,
