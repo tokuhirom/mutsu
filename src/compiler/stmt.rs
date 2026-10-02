@@ -4082,6 +4082,9 @@ impl Compiler {
                 // a by-name search over `code.locals`, which under shadow slots
                 // cannot tell one declaring scope's `$a` from another's.
                 let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
+                // #10960: bound this frame's env-sync set by what the bodies
+                // actually read by name, instead of every local.
+                let mut env_sync_plans = vec![idx];
                 // mutsu#9111: a sub declared inside a routine binds its free
                 // variables per activation of the routine. That holds for an
                 // `our` sub and a `multi` candidate too: both are one static
@@ -4103,6 +4106,7 @@ impl Compiler {
                         .position(|(n, f, _)| *n == *name && *f == fp)
                 {
                     let (_, _, hoisted_idx) = self.hoisted_sub_plans.remove(pos);
+                    env_sync_plans.push(hoisted_idx);
                     self.code.set_sub_decl_compiled_routine_keys(
                         hoisted_idx,
                         compiled_routine_keys.clone(),
@@ -4111,6 +4115,13 @@ impl Compiler {
                         .set_sub_decl_free_var_decl_slots(hoisted_idx, free_var_decl_slots.clone());
                     self.code
                         .set_sub_decl_lexsub_free_aliases(hoisted_idx, lexsub_free_aliases.clone());
+                }
+                if name_expr.is_none() {
+                    self.note_sub_decl_env_sync(
+                        &env_sync_plans,
+                        &compiled_routine_keys,
+                        1 + signature_alternates.len(),
+                    );
                 }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);

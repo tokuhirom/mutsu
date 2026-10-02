@@ -1118,6 +1118,7 @@ mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod hoist_nested_types;
+mod lazy_body_env_sync;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;

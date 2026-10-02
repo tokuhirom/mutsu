@@ -6932,6 +6932,13 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/nested-named-sub-free-var-capture.md` and
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
+    /// Sub-declaration plans (`sub_decl_plans` indices) whose compiled bodies'
+    /// by-name reads are all folded into [`Self::lazy_body_env_sync_slots`], so
+    /// their `RegisterDecl` does not force `compute_needs_env_sync`'s
+    /// every-local fold (#10960; see `compiler/lazy_body_env_sync.rs`).
+    pub(crate) bounded_lazy_sub_plans: Vec<u32>,
+    /// This frame's local slots a bounded named sub's body reads by name.
+    pub(crate) lazy_body_env_sync_slots: Vec<u32>,
     /// The variables each lexically visible nested sub called (or fetched as
     /// `&name`) from this code WRITES, one entry per call site. Kept apart from
     /// `nested_routine_free_reads` (reads and writes together) and from
@@ -7910,6 +7917,8 @@ impl CompiledCode {
             amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
+            bounded_lazy_sub_plans: Vec::new(),
+            lazy_body_env_sync_slots: Vec::new(),
             nested_routine_free_writes: Vec::new(),
             nested_sub_written_free: Vec::new(),
             needs_cell_named_sub: Vec::new(),
@@ -8986,34 +8995,38 @@ impl CompiledCode {
                 }
             }
             // A NAMED sub (`sub f { ... }`) is not embedded in
-            // `closure_compiled_codes` — it is registered from `stmt_pool` via a
-            // `RegisterSub` op and compiled lazily, so this frame cannot see which
-            // enclosing lexicals its body reads by name. Such a sub reads an outer
-            // lexical (`my $base = 100; sub f { $base + 1 }`) from this frame's env
-            // by name at call time, which the gate would leave stale. A class/role
-            // METHOD body captures an outer lexical the same way (`my $base = 100;
-            // class T { method calc($n) { $base + $n } }`) and is likewise compiled
-            // lazily off the class/role registration op, invisible here. Without the
-            // body's free-var set available, conservatively keep every local of a
-            // frame that defines a named sub or a class/role env-synced. Gate-ON
-            // only, so the default build is byte-identical/perf-neutral; the
-            // top-level/main frame (the usual definer) is never a hot arithmetic
-            // loop.
-            let defines_lazy_body = self.ops.iter().any(|op| {
-                matches!(
-                    op,
-                    OpCode::RegisterDecl(_)
-                        // A deferred END body (`PhaserEnd`, run after the frame
-                        // exits) and a compile-time BEGIN/CHECK body (`CheckPhaser`)
-                        // reconstruct the installing frame's lexicals BY NAME from
-                        // env, not from `self.locals` — exactly like a lazy sub
-                        // body. Under the gate a top-level `my $hist` mutated only
-                        // through these phasers skips its env mirror, so each phaser
-                        // reads a stale value and the accumulation is lost (roast
-                        // S04-phasers/interpolate.t: END sees `E`, not `BCIE`).
-                        | OpCode::PhaserEnd { .. }
-                        | OpCode::CheckPhaser { .. }
-                )
+            // `closure_compiled_codes` — it is registered from its plan via a
+            // `RegisterDecl` op, so its body reads an enclosing lexical
+            // (`my $base = 100; sub f { $base + 1 }`) from this frame's env by
+            // name at call time. Its body is compiled at the declaration,
+            // though, so the compiler resolves that body's by-name reads to
+            // this frame's slots (`lazy_body_env_sync_slots`) and marks the plan
+            // bounded (#10960, `compiler/lazy_body_env_sync.rs`); fold just
+            // those slots. Any other registration — a class/role (whose method
+            // bodies and body statements capture the same way), a body that
+            // failed to compile or reads names no scan can bound — still
+            // conservatively keeps every local of the frame env-synced.
+            for &slot in &self.lazy_body_env_sync_slots {
+                if let Some(b) = self.needs_env_sync.get_mut(slot as usize) {
+                    *b = true;
+                }
+            }
+            let defines_lazy_body = self.ops.iter().any(|op| match op {
+                OpCode::RegisterDecl(idx) => !matches!(
+                    self.decl_plans.get(*idx as usize),
+                    Some(CompiledDeclPlanRef::Sub(plan))
+                        if self.bounded_lazy_sub_plans.contains(plan)
+                ),
+                // A deferred END body (`PhaserEnd`, run after the frame
+                // exits) and a compile-time BEGIN/CHECK body (`CheckPhaser`)
+                // reconstruct the installing frame's lexicals BY NAME from
+                // env, not from `self.locals` — exactly like a lazy sub
+                // body. Under the gate a top-level `my $hist` mutated only
+                // through these phasers skips its env mirror, so each phaser
+                // reads a stale value and the accumulation is lost (roast
+                // S04-phasers/interpolate.t: END sees `E`, not `BCIE`).
+                OpCode::PhaserEnd { .. } | OpCode::CheckPhaser { .. } => true,
+                _ => false,
             });
             // A frame that installs a CONTROL handler (every one runs INLINE at a
             // deep `warn` raise site since #9510,
@@ -9048,57 +9061,14 @@ impl CompiledCode {
                     } if catch_start < control_start
                 )
             });
-            // A frame that constructs a regex value which interpolates a lexical
-            // (`/ ... $script ... /`) may have that regex matched in a DIFFERENT
-            // frame — e.g. `like $err, / ... $script ... /` matches inside `like`,
-            // whose `interpolate_regex_scalars` resolves `$script` from the
-            // name-keyed env (the cross-frame store), not this frame's slots. Under
-            // the gate a plain `my $script = ...` skips its env mirror, so the
-            // interpolation reads a stale/empty value. Keep every local of a frame
-            // that holds an interpolating regex constant env-synced (gate-ON only;
-            // the pattern is checked with the same conservative `regex_pattern_is_
-            // static` used for the match cache, so a static regex folds nothing).
-            let holds_interpolating_regex = self.constants.iter().any(|c| {
-                matches!(
-                    c.view(),
-                    ValueView::Regex(p)
-                        if !crate::runtime::regex_parse::regex_pattern_is_static(p.as_str())
-                )
-            });
-            // A frame that runs a substitution with a DYNAMIC replacement
-            // (`s/^(.)/{ $a++ }/`, `s/x/$a/`) re-entrantly evaluates that
-            // replacement, which reads/writes the referenced lexicals BY NAME from
-            // the env (the closure-carried cross-frame store), not this frame's
-            // slots. `holds_interpolating_regex` only catches a dynamic *pattern*;
-            // a static pattern with a code/interpolated replacement slips past it.
-            // Under the gate a `state $a = 0` (or plain `my`) in this frame skips
-            // its env mirror, so the replacement reads a stale value and the
-            // closure's state save-back stores it back (roast S04-declarations/
-            // state.t: `state $a` bumped inside `s///` stays 0). Keep every local
-            // of such a frame env-synced (gate-ON only; a substitution frame is not
-            // a hot arithmetic loop). A purely literal replacement folds nothing.
-            let holds_dynamic_substitution = self.ops.iter().any(|op| {
-                let repl_idx = match op {
-                    OpCode::Subst {
-                        replacement_idx, ..
-                    }
-                    | OpCode::NonDestructiveSubst {
-                        replacement_idx, ..
-                    } => *replacement_idx,
-                    _ => return false,
-                };
-                self.constants
-                    .get(repl_idx as usize)
-                    .map(|c| match c.view() {
-                        ValueView::Str(s) => s.contains(['$', '@', '%', '&', '{']),
-                        _ => true,
-                    })
-                    .unwrap_or(false)
-            });
+            // A frame holding an interpolating regex or a dynamic substitution
+            // replacement reads its locals by name from env in another frame or
+            // re-entrantly; see `holds_interpolating_regex` /
+            // `holds_dynamic_substitution`.
             if defines_lazy_body
                 || installs_resume_control
-                || holds_interpolating_regex
-                || holds_dynamic_substitution
+                || self.holds_interpolating_regex()
+                || self.holds_dynamic_substitution()
                 || self.holds_indirect_regex_lookup()
             {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
@@ -9218,6 +9188,61 @@ impl CompiledCode {
         self.needs_reflective_capture |= own_reflective || self.chunk_reflective_capture_traits();
     }
 
+    /// A frame that constructs a regex value which interpolates a lexical
+    /// (`/ ... $script ... /`) may have that regex matched in a DIFFERENT
+    /// frame — e.g. `like $err, / ... $script ... /` matches inside `like`,
+    /// whose `interpolate_regex_scalars` resolves `$script` from the
+    /// name-keyed env (the cross-frame store), not this frame's slots. Under
+    /// the gate a plain `my $script = ...` skips its env mirror, so the
+    /// interpolation reads a stale/empty value. Keep every local of a frame
+    /// that holds an interpolating regex constant env-synced (gate-ON only;
+    /// the pattern is checked with the same conservative `regex_pattern_is_
+    /// static` used for the match cache, so a static regex folds nothing).
+    // Cost: O(c), c = constants of this chunk (plus pattern length per regex).
+    pub(crate) fn holds_interpolating_regex(&self) -> bool {
+        self.constants.iter().any(|c| {
+            matches!(
+                c.view(),
+                ValueView::Regex(p)
+                    if !crate::runtime::regex_parse::regex_pattern_is_static(p.as_str())
+            )
+        })
+    }
+
+    /// A frame that runs a substitution with a DYNAMIC replacement
+    /// (`s/^(.)/{ $a++ }/`, `s/x/$a/`) re-entrantly evaluates that
+    /// replacement, which reads/writes the referenced lexicals BY NAME from
+    /// the env (the closure-carried cross-frame store), not this frame's
+    /// slots. `holds_interpolating_regex` only catches a dynamic *pattern*;
+    /// a static pattern with a code/interpolated replacement slips past it.
+    /// Under the gate a `state $a = 0` (or plain `my`) in this frame skips
+    /// its env mirror, so the replacement reads a stale value and the
+    /// closure's state save-back stores it back (roast S04-declarations/
+    /// state.t: `state $a` bumped inside `s///` stays 0). Keep every local
+    /// of such a frame env-synced (gate-ON only; a substitution frame is not
+    /// a hot arithmetic loop). A purely literal replacement folds nothing.
+    // Cost: O(n), n = ops of this chunk.
+    pub(crate) fn holds_dynamic_substitution(&self) -> bool {
+        self.ops.iter().any(|op| {
+            let repl_idx = match op {
+                OpCode::Subst {
+                    replacement_idx, ..
+                }
+                | OpCode::NonDestructiveSubst {
+                    replacement_idx, ..
+                } => *replacement_idx,
+                _ => return false,
+            };
+            self.constants
+                .get(repl_idx as usize)
+                .map(|c| match c.view() {
+                    ValueView::Str(s) => s.contains(['$', '@', '%', '&', '{']),
+                    _ => true,
+                })
+                .unwrap_or(false)
+        })
+    }
+
     /// Whether a regex literal or a substitution of this chunk embeds code that
     /// looks a name up indirectly (`EVAL`, `::($n)`, a pseudo-package), which
     /// no scan of its text can bound. Such a chunk is reflective: its locals
@@ -9225,7 +9250,7 @@ impl CompiledCode {
     /// `~~` op no longer publishes the whole frame for them).
     // Cost: O(c + p), c = constants and ops of this chunk, p = total source
     // length of its code-bearing regexes and replacements.
-    fn holds_indirect_regex_lookup(&self) -> bool {
+    pub(crate) fn holds_indirect_regex_lookup(&self) -> bool {
         use crate::vm::vm_smartmatch_sync::regex_source_has_indirect_lookup as indirect;
         let in_constants = self.constants.iter().any(|c| match c.view() {
             ValueView::Regex(p) => indirect(p.as_str(), false),
@@ -9443,7 +9468,7 @@ impl CompiledCode {
     /// are deliberately excluded from `op_name_write_const_idx` (they are not
     /// `SetGlobal` name rebinds); the caller filters for non-own `@`/`%` names and
     /// records them in `free_var_container_writes` to drive cell boxing.
-    fn op_container_mutate_const_idx(&self, op: &OpCode) -> Option<u32> {
+    pub(crate) fn op_container_mutate_const_idx(&self, op: &OpCode) -> Option<u32> {
         match op {
             OpCode::IndexAssignExprNamed { name_idx, .. }
             | OpCode::IndexAssignExprNested { name_idx, .. }
