@@ -256,6 +256,29 @@ pub(crate) struct ProtoMethodCtx {
     pub(crate) call_arg_sources: Option<Vec<Option<String>>>,
 }
 
+/// One active proto body: the frame a `{*}` dispatches from (#10746).
+///
+/// A `{*}` is resolved from the dynamic call chain, not from where it is
+/// written: it reaches the innermost proto frame only when no routine that has
+/// a dispatcher of its own -- a method call (`method_depth`), a multi
+/// candidate or a wrapper (a deferral frame with a later `dispatch_token`) --
+/// sits between that proto body and the `{*}`. A plain `sub` or a block is
+/// transparent. See `Interpreter::resolve_onlystar`.
+#[derive(Debug, Clone)]
+pub(crate) struct ProtoDispatchFrame {
+    pub(crate) name: String,
+    /// The proto's original arguments, which `{*}` redispatches with.
+    pub(crate) args: Vec<Value>,
+    /// `Some` for a `proto method` body: `{*}` then redispatches to a multi
+    /// *method* candidate on the invocant rather than a proto sub candidate.
+    pub(crate) method_ctx: Option<ProtoMethodCtx>,
+    /// The push-order token minted when the proto body was entered; a
+    /// multi/wrap deferral frame with a higher token was entered after it.
+    pub(crate) dispatch_token: u64,
+    /// `Interpreter::method_call_depth` when the proto body was entered.
+    pub(crate) method_depth: u32,
+}
+
 /// The deferral chain of a `multi_dispatch_stack` frame: the candidates
 /// `callsame`/`nextsame`/`nextcallee` may still defer to.
 ///

@@ -2,12 +2,28 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// `{*}`: resolved from the callers (`resolve_onlystar`, #10746); a
+    /// reachable proto body has its winning candidate run as a method call, so
+    /// a `{*}` inside that candidate finds the candidate's own dispatcher.
     pub(crate) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
-        let (proto_name, args, method_ctx) = self
-            .proto_dispatch_stack
-            .last()
-            .cloned()
-            .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
+        let Some(frame) = self.resolve_onlystar()? else {
+            return Ok(Value::NIL);
+        };
+        self.in_method_call(|interp| interp.dispatch_proto_frame(frame))
+    }
+
+    /// Run `frame`'s winning candidate; the caller has resolved the `{*}` to
+    /// `frame` and opened the method call the candidate runs as.
+    pub(crate) fn dispatch_proto_frame(
+        &mut self,
+        frame: ProtoDispatchFrame,
+    ) -> Result<Value, RuntimeError> {
+        let ProtoDispatchFrame {
+            name: proto_name,
+            args,
+            method_ctx,
+            ..
+        } = frame;
         // `proto method` body: `{*}` redispatches to the matching multi *method*
         // candidate on the invocant.
         //
@@ -288,10 +304,6 @@ impl Interpreter {
             remaining.push(cand.clone());
         }
         remaining
-    }
-
-    pub(crate) fn rewrite_proto_dispatch_stmts(body: &[Stmt]) -> Vec<Stmt> {
-        body.iter().map(Self::rewrite_proto_dispatch_stmt).collect()
     }
 
     pub(crate) fn resolve_proto_candidate_with_types(

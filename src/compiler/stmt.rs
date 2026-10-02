@@ -4243,13 +4243,12 @@ impl Compiler {
                     || (significant.len() == 1
                         && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
                 if !*is_method && !trivial {
-                    let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(body);
                     let compiled_routine_key = self.compile_sub_body(
                         &name.resolve(),
                         params,
                         param_defs,
                         return_type.as_ref(),
-                        &rewritten,
+                        body,
                         false,
                         None,
                         false,
