@@ -47,7 +47,7 @@ LOWER = [
     # sigil-less constant term keys), native type names, and the Unicode
     # tables the parser reads.
     "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs",
-    "native_types.rs", "term_names.rs", "ucd",
+    "native_types.rs", "term_names.rs", "ucd", "stats_gate.rs",
 ]
 # Modules above every lower layer. `crate::Interpreter` is lib.rs's re-export.
 UPPER = ["runtime", "vm", "compiler", "builtins", "trir", "interpreter", "Interpreter"]

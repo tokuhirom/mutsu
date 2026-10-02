@@ -903,7 +903,7 @@ impl Value {
     /// Build an `Instant` from a POSIX timestamp (seconds). Used by IO::Path's
     /// `.modified`/`.accessed`/`.changed`, which return an `Instant` in Raku.
     pub(crate) fn make_instant_from_posix(posix: f64) -> Self {
-        let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(posix);
+        let tai = crate::value::temporal_core::posix_to_instant(posix);
         let mut attrs = HashMap::new();
         attrs.insert("value".to_string(), Value::Num(tai));
         Value::make_instance(Symbol::intern("Instant"), attrs)
@@ -919,7 +919,7 @@ impl Value {
         to: i64,
         positional_texts: &[String],
         named: &HashMap<String, Vec<String>>,
-        target: crate::runtime::MatchTarget,
+        target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
         let m = Self::make_match_object_full(from, to, &[], &Default::default(), target.clone());
         if positional_texts.is_empty() && named.is_empty() {

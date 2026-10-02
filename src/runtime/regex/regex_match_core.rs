@@ -347,7 +347,8 @@ impl Interpreter {
 
             // Direct internal callers outside a public match target retain the
             // old local-coordinate fallback.
-            use super::regex_helpers::{strip_marks_pattern, strip_marks_text};
+            use super::regex_helpers::strip_marks_pattern;
+            use crate::value::regex_caps::strip_marks_text;
             let text_slice = &chars[start..];
             let (stripped_chars, pos_map) = strip_marks_text(text_slice);
             let stripped_pattern = strip_marks_pattern(pattern);
