@@ -310,6 +310,9 @@ impl Interpreter {
                                 head_limit,
                                 ..ReactSubscription::new(callback)
                             });
+                            // A `.share`d source this react is the first
+                            // consumer of runs its block now (#10740).
+                            self.start_shared_supply_if_pending(&attributes.as_map())?;
                             continue;
                         }
                         // Handle on-demand supplies: execute the callback to produce values

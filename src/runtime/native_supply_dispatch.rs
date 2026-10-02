@@ -38,7 +38,6 @@ impl Interpreter {
                     shared_attrs.insert("live".to_string(), Value::TRUE);
                     shared_attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
                     shared_attrs.insert("shared_on_demand".to_string(), Value::TRUE);
-                    shared_attrs.insert("shared_started".to_string(), Value::FALSE);
                     shared_attrs.insert("on_demand_callback".to_string(), callback.clone());
                     if let Some(on_close) = attributes.get("on_close_callbacks") {
                         shared_attrs.insert("on_close_callbacks".to_string(), on_close.clone());
@@ -469,6 +468,16 @@ impl Interpreter {
                 ) {
                     return Ok(live);
                 }
+                // A `.share`d source must stay one shared run: copying its
+                // block below would run it again per tap of the `do` supply.
+                if attributes.contains_key("shared_on_demand") {
+                    let attrs_map: ValueMap = attributes.into();
+                    return Ok(Self::make_on_demand_derived_supply(
+                        Value::make_instance(Symbol::intern("Supply"), attrs_map),
+                        crate::runtime::native_methods::TransformMode::Do,
+                        callback,
+                    ));
+                }
                 let live = attributes.get("live").cloned().unwrap_or(Value::FALSE);
                 let mut new_attrs = HashMap::new();
                 if let Some(on_demand_cb) = attributes.get("on_demand_callback").cloned() {
@@ -505,6 +514,7 @@ impl Interpreter {
                 let promise = self.new_bound_promise(Symbol::intern("Promise"), None);
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_register_promise(supplier_id, promise.clone());
+                    self.start_shared_supply_if_pending(attributes)?;
                 } else if let Some(reason) = attributes.get("quit_reason").cloned() {
                     promise.break_with(reason, String::new(), String::new());
                 } else if attributes.contains_key("derived_on_demand") {
@@ -746,7 +756,11 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(items, attributes))
             }
             "head" => {
-                let has_supplier = attributes.get("supplier_id").is_some();
+                // A `.share`d on-demand supply is headed like any on-demand
+                // one: its supplier only carries values once a tap started
+                // the shared block, which the derived head's tap does.
+                let has_supplier = attributes.get("supplier_id").is_some()
+                    && !attributes.contains_key("shared_on_demand");
                 // A channel-backed live Supply (`Supply.interval` without
                 // `:scheduler`, `Proc::Async` output, an async socket, or a
                 // `.lines`-style Supply derived from one) carries a

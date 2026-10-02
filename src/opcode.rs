@@ -3552,6 +3552,13 @@ pub(crate) enum OpCode {
         /// parser emits a synthetic bound declaration at the body head and the
         /// compiler records the declared name here. `None` for non-pointy `given`.
         pointy_param_idx: Option<u32>,
+        /// Whether the topic expression ends in a `TagContainerRef` naming
+        /// the topic's source variable. Only then does this op take the
+        /// container-ref register; otherwise it discards whatever an earlier
+        /// expression-context assignment left there (`while foo() -> $x`
+        /// lowers to `while ($x = foo())`), which would make a pointy body's
+        /// final parameter value write back into that unrelated variable.
+        tagged_source: bool,
     },
     /// `when MATCHER { ... }` as one compound op. Stack: `[matcher] → [v]`
     /// on the non-matching and `proceed` paths; a matching clause exits by

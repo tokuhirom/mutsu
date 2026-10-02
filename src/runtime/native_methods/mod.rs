@@ -16,6 +16,7 @@ pub(crate) mod state;
 pub(crate) mod state_lock;
 pub(crate) mod state_scheduled_pump;
 pub(crate) mod state_scheduler;
+mod state_shared_supply;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
@@ -64,6 +65,7 @@ pub(in crate::runtime) use state_lock::next_semaphore_id;
 pub(in crate::runtime) use state_lock::register_act_loop_close;
 pub(in crate::runtime) use state_scheduled_pump::register_scheduled_pump;
 pub(in crate::runtime) use state_scheduler::{fake_scheduler_init, next_fake_scheduler_id};
+pub(in crate::runtime) use state_shared_supply::shared_supply_claim_start;
 pub(in crate::runtime) use state_supplier::{
     SupplierEmitAction, TransformMode, ZipAction, acquire_supply_serialize,
     bump_supplier_done_count, close_all_supplier_taps, close_supplier_channel_taps,

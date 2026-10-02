@@ -5450,8 +5450,15 @@ impl Interpreter {
                 body_end,
                 topic_readonly,
                 pointy_param_idx,
+                tagged_source,
             } => {
                 self.sync_source_line(code, *ip);
+                // A tag the topic did not set is a stale one from an earlier
+                // assignment expression: drop it so the body's writeback
+                // cannot target that unrelated variable.
+                if !*tagged_source {
+                    self.container_ref_var = None;
+                }
                 self.exec_given_op(
                     code,
                     *body_end,

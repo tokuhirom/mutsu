@@ -560,6 +560,13 @@ impl Interpreter {
         callable: Value,
         mode: crate::runtime::native_methods::TransformMode,
     ) -> Option<Value> {
+        // A `.share`d on-demand supply has a supplier too, but its block only
+        // runs once something taps it: a transform registered on the
+        // supplier now would never start it (#10740). Its callers derive an
+        // on-demand supply instead, whose tap taps the shared one.
+        if attributes.contains_key("shared_on_demand") {
+            return None;
+        }
         let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
         let downstream_sid = crate::runtime::native_methods::next_supplier_id();
         crate::runtime::native_methods::register_supplier_transform_tap(
