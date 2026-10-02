@@ -1,6 +1,6 @@
 use v6.d;
 use Test;
-use lib $?FILE.IO.parent(2).add('lib');
+use lib 't/lib';
 
 # Distribution: Dist::META (t/00-sanity.t reads its file-scope `constant %phases-eq`).
 plan 6;
