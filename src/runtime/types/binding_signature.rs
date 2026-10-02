@@ -118,6 +118,7 @@ impl Interpreter {
         &mut self,
         pd: &ParamDef,
         binding_name: &str,
+        omitted: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
@@ -178,6 +179,7 @@ impl Interpreter {
             return Err(Self::parameter_where_binding_error(
                 pd,
                 &bound_val,
+                omitted,
                 Some(&*self),
             ));
         }
@@ -222,7 +224,12 @@ impl Interpreter {
             self.env.remove("_");
         }
         if !ok? {
-            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
+            return Err(Self::parameter_where_binding_error(
+                pd,
+                value,
+                false,
+                Some(&*self),
+            ));
         }
         Ok(())
     }
@@ -253,6 +260,7 @@ impl Interpreter {
         value: &Value,
         skip: bool,
         record_free_var_writes: bool,
+        omitted: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
@@ -311,7 +319,12 @@ impl Interpreter {
             }
         }
         if !ok? {
-            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
+            return Err(Self::parameter_where_binding_error(
+                pd,
+                value,
+                omitted,
+                Some(&*self),
+            ));
         }
         Ok(())
     }
@@ -364,13 +377,24 @@ impl Interpreter {
     /// not accept its bound value. Keep this in the binder rather than in the
     /// call-site formatter: the binder still has the actual value needed for
     /// Raku's `got TYPE (gist)` text.
+    /// `omitted` marks an unpassed optional whose implicit default was what
+    /// the constraint rejected; Rakudo then explains that in the message.
     fn parameter_where_binding_error(
         pd: &ParamDef,
         value: &Value,
+        omitted: bool,
         interp: Option<&Interpreter>,
     ) -> RuntimeError {
-        crate::runtime::utils::typecheck_binding_parameter_where(&param_display_name(pd), value)
-            .with_parameter_object(pd, interp)
+        let err = crate::runtime::utils::typecheck_binding_parameter_where(
+            &param_display_name(pd),
+            value,
+        )
+        .with_parameter_object(pd, interp);
+        if omitted {
+            err.with_omitted_optional_note()
+        } else {
+            err
+        }
     }
 
     /// Coerce a value which composes `PositionalBindFailover` before checking
@@ -692,8 +716,6 @@ impl Interpreter {
                 } else {
                     pd.name.clone()
                 };
-                let got = crate::runtime::utils::value_type_display_name(&value);
-                let got = got.as_str();
                 // A subset failure is a *constraint* failure in raku:
                 // "Constraint type check failed in binding to
                 // parameter '$x'; expected Even but got Int (3)".
@@ -719,20 +741,13 @@ impl Interpreter {
                 if let Some(refinee) = refinee
                     && self.type_matches_value(&refinee, &value)
                 {
-                    let param_display = param_display_name(pd);
-                    return Err(RuntimeError::typecheck_binding_parameter(
+                    return Err(self.subset_constraint_binding_error(
+                        pd,
                         &display_name,
                         &resolved_constraint,
-                        got,
-                        Some(format!(
-                            "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
-                            param_display,
-                            base,
-                            got,
-                            crate::runtime::utils::gist_value(&value)
-                        )),
-                    )
-                    .with_parameter_object(pd, Some(&*self)));
+                        base,
+                        &value,
+                    ));
                 }
                 // rakudo's wording for a runtime parameter binding failure is
                 // `Type check failed in binding to parameter '$y'; expected
@@ -1824,6 +1839,7 @@ impl Interpreter {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &capture_value,
+                                false,
                                 Some(&*self),
                             ));
                         }
@@ -2219,6 +2235,7 @@ impl Interpreter {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &slurpy_value,
+                                false,
                                 Some(&*self),
                             ));
                         }
@@ -2707,7 +2724,8 @@ impl Interpreter {
                     // pre-population is a BUILD/TWEAK submethod, whose attribute
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
-                    let value = Self::missing_optional_param_value(pd);
+                    let value = self.omitted_optional_param_value(pd);
+                    self.check_omitted_optional_subset(pd, &value)?;
                     // A named alias binds only its leaf variable (below); skip
                     // binding the parameter's own name in that form.
                     if !pd.named_alias {
@@ -2733,7 +2751,8 @@ impl Interpreter {
                 // is then the `Bool` type object, so `.so` is False and the candidate
                 // is rejected) -- gating this on `found` skipped that case.
                 if pd.where_constraint.is_some() {
-                    self.check_named_param_where_constraint(pd, binding_name)?;
+                    let omitted = !found && pd.default.is_none();
+                    self.check_named_param_where_constraint(pd, binding_name, omitted)?;
                 }
             } else if pd.is_capture_subsignature()
                 && let Some(sub_params) = &pd.sub_signature
@@ -3423,6 +3442,7 @@ impl Interpreter {
                         &value,
                         skip_where_recheck,
                         false,
+                        false,
                     )?;
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
@@ -3590,6 +3610,7 @@ impl Interpreter {
                         &value,
                         skip_where_recheck,
                         false,
+                        false,
                     )?;
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
@@ -3635,7 +3656,8 @@ impl Interpreter {
                     )));
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
-                    let value = Self::missing_optional_param_value(pd);
+                    let value = self.omitted_optional_param_value(pd);
+                    self.check_omitted_optional_subset(pd, &value)?;
                     // An omitted optional still runs its `where` post-constraint,
                     // against the type object it would bind (#8089). An anonymous
                     // optional (`$? where { $*KERNEL.bits == 64 }`) binds nothing
@@ -3647,6 +3669,7 @@ impl Interpreter {
                         &value,
                         skip_where_recheck,
                         false,
+                        true,
                     )?;
                     if !pd.name.is_empty() {
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);

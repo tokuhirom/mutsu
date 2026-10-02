@@ -1217,6 +1217,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 &candidate,
                 false,
                 true,
+                false,
             )?;
         }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);

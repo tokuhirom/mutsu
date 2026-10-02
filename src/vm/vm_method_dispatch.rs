@@ -1848,6 +1848,26 @@ impl Interpreter {
         // the invocant's live attribute cell exactly like `bind_param_value`.
         crate::alloc_scope_end!(_sc_pro);
         crate::alloc_scope_named!(_sc_bind, "mfast:param-bind");
+        // Undo the frame/package/env setup above when binding fails, before
+        // the binding error is returned.
+        macro_rules! unwind_fast_bind {
+            () => {{
+                self.restore_var_bindings(saved_var_bindings);
+                if cc.uses_dispatcher {
+                    self.pop_method_samewith_context();
+                }
+                self.pop_method_class();
+                if let Some(pkg) = saved_package {
+                    self.set_current_package(pkg);
+                }
+                self.stack.truncate(saved_stack_depth);
+                if pushed_caller {
+                    self.pop_caller_env();
+                }
+                let frame = self.pop_call_frame();
+                self.set_env(frame.saved_env);
+            }};
+        }
         // (name, interned name, value): the name for matching against the
         // body's local names, the symbol for the env insert.
         let mut param_values: Vec<(&str, Symbol, Value)> = Vec::new();
@@ -2018,20 +2038,7 @@ impl Interpreter {
                         resolved_constraint.as_str()
                     };
                     // Type mismatch — fall back to slow path for proper error
-                    self.restore_var_bindings(saved_var_bindings);
-                    if cc.uses_dispatcher {
-                        self.pop_method_samewith_context();
-                    }
-                    self.pop_method_class();
-                    if let Some(pkg) = saved_package {
-                        self.set_current_package(pkg);
-                    }
-                    self.stack.truncate(saved_stack_depth);
-                    if pushed_caller {
-                        self.pop_caller_env();
-                    }
-                    let frame = self.pop_call_frame();
-                    self.set_env(frame.saved_env);
+                    unwind_fast_bind!();
                     if let Some(e) = native_err {
                         return Err(e);
                     }
@@ -2056,11 +2063,14 @@ impl Interpreter {
                 param_values.push((binding_name, binding_sym, val));
                 arg_idx += 1;
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
-                param_values.push((
-                    binding_name,
-                    binding_sym,
-                    Self::missing_optional_param_value(pd),
-                ));
+                // An omitted optional's implicit default still has to satisfy
+                // a subset constraint (`method m(S $s?)`), as in the slow binder.
+                let val = self.omitted_optional_param_value(pd);
+                if let Err(e) = self.check_omitted_optional_subset(pd, &val) {
+                    unwind_fast_bind!();
+                    return Err(e);
+                }
+                param_values.push((binding_name, binding_sym, val));
             }
         }
 
