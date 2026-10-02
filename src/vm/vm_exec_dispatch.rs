@@ -1315,6 +1315,16 @@ impl Interpreter {
                 {
                     self.reify_map_grep_seq(&top)?;
                 }
+                // `@GLOBAL::u = 1, 2` on a slot no `our` declared is an item
+                // assignment into rakudo's auto-created Scalar (#11000).
+                if !is_bind_ctx
+                    && !is_rebind
+                    && !raw_mode
+                    && self.package_container_item_assign(code, code.const_sym(*name_idx))
+                {
+                    *ip += 1;
+                    return Ok(());
+                }
                 // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
                 // `__ANON_STATE__` is a synthetic internal name that can never be a
                 // private attribute, package/class, sigilless-bound alias, or strict-
