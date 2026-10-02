@@ -2279,8 +2279,11 @@ impl Interpreter {
                 // An explicit `:scheduler` wins. Otherwise, Rakudo uses a
                 // user-defined dynamic `$*SCHEDULER`; built-in schedulers keep
                 // the shared timer path used below.
-                let scheduler =
-                    Self::named_value(&args, "scheduler").or_else(|| self.user_scheduler());
+                // A `CurrentThreadScheduler` cannot honour `:every`, so ticking
+                // through it makes the tap die exactly as Rakudo's does.
+                let scheduler = Self::named_value(&args, "scheduler")
+                    .or_else(|| self.user_scheduler())
+                    .or_else(|| self.current_thread_scheduler());
 
                 if let Some(sched) = scheduler {
                     // Scheduler-driven `Supply.interval`: the scheduler owns the

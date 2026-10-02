@@ -572,14 +572,40 @@ impl Interpreter {
         crate::runtime::native_methods::register_supplier_transform_tap(
             source_sid,
             downstream_sid,
-            callable,
+            callable.clone(),
             mode,
         );
+        // A non-live source can carry values seeded next to its supplier
+        // (`Supply.merge` of a live and a cold source): run them through the
+        // transform now, since nothing will ever emit them to the tap above.
+        let mut seeded_out = Vec::new();
+        if !attributes.get("live").is_some_and(Value::truthy)
+            && let Some(ValueView::Array(seeded, ..)) = attributes.get("values").map(Value::view)
+            && !seeded.is_empty()
+        {
+            for value in seeded.iter() {
+                let _ = self.handle_supply_transform_emit(
+                    downstream_sid,
+                    callable.clone(),
+                    mode,
+                    value.clone(),
+                );
+            }
+            seeded_out = crate::runtime::native_methods::supplier_snapshot(downstream_sid).0;
+        }
+        let has_seeded = !seeded_out.is_empty();
         let mut new_attrs = HashMap::new();
-        new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("values".to_string(), Value::array(seeded_out));
         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
-        new_attrs.insert("live".to_string(), Value::TRUE);
+        new_attrs.insert(
+            "live".to_string(),
+            if has_seeded {
+                Value::FALSE
+            } else {
+                Value::TRUE
+            },
+        );
         // ADR-0028 Slice 2 / ADR-0043: the transform registers immediately,
         // but the *user's tap* on this derived Supply still reaches the
         // "tap"|"act" chokepoint through the ordinary path — copy

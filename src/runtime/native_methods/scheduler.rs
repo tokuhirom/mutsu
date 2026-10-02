@@ -341,7 +341,7 @@ impl Interpreter {
                 }
                 if is_current_thread && has_every {
                     return Err(RuntimeError::new(
-                        "Cannot specify :every in a CurrentThreadScheduler",
+                        "Cannot specify :every in CurrentThreadScheduler",
                     ));
                 }
                 let callback = args.first().cloned().unwrap_or(Value::NIL);
