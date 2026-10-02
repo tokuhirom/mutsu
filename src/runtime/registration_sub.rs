@@ -234,7 +234,7 @@ impl Interpreter {
     /// `match self.registry_mut().functions.entry(..) { Occupied => self.registry_mut()... }`
     /// shape acquired a second write lock inside the arm and deadlocked (the
     /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
-    fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
+    pub(super) fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
         let def = std::sync::Arc::new(def);
         {
             let mut registry = self.registry_mut();

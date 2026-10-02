@@ -203,6 +203,12 @@ impl Interpreter {
             }
             return Some(Ok(Value::sub_value(crate::gc::Gc::new(sub_data))));
         }
+        if method == "add_dispatchee" && args.len() == 1 {
+            return Some(
+                self.add_routine_dispatchee(package, name, &args[0])
+                    .map(|()| target.clone()),
+            );
+        }
         if method == "candidates" && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
         }
@@ -805,6 +811,13 @@ impl Interpreter {
                 }
             }
             return Some(Ok(Value::sub_value(crate::gc::Gc::new(next))));
+        }
+        if method == "add_dispatchee" && args.len() == 1 {
+            let (package, name) = (data.package.resolve(), data.name.resolve());
+            return Some(
+                self.add_routine_dispatchee(&package, &name, &args[0])
+                    .map(|()| target.clone()),
+            );
         }
         if method == "candidates" && args.is_empty() {
             // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)
