@@ -2870,8 +2870,11 @@ impl Interpreter {
                 let ValueView::Sub(data) = target.view() else {
                     unreachable!()
                 };
+                // A `multi sub`'s dispatcher is the Sub carrying its captured
+                // candidates; each `.candidates` entry carries none.
                 Ok(Value::truth(
-                    Self::sub_multi_method_dispatcher_name(&data).is_some(),
+                    Self::sub_multi_method_dispatcher_name(&data).is_some()
+                        || data.env.contains_key("__mutsu_multi_dispatch_candidates"),
                 ))
             }
             // `.dispatcher` on a multi candidate is the proto that dispatches
