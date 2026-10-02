@@ -410,6 +410,9 @@ impl Interpreter {
         None
     }
 
+    // Cost: O(n) in the number of searched elements, n = elements across the
+    // flattened list arguments (they are gathered into one Vec before the scan,
+    // so a match near the front still pays for the gather).
     pub(super) fn builtin_first(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
@@ -515,8 +518,27 @@ impl Interpreter {
             return self.call_method_with_values(args[1].clone(), "first", method_args);
         }
         let mut list_items = Vec::new();
+        // `first(&test, +values)` slurps under the single-argument rule, the
+        // same as `map`/`grep` above: exactly one list argument is flattened
+        // into its elements, while two or more are each ONE element of their
+        // own (`first { True }, (1,2), (3,4)` answers `(1, 2)`, not `1`).
+        let single_arg_rule = positional.len() <= 2;
         for arg in positional.iter().skip(1) {
+            // A `Slip` always flattens into a slurpy list, whatever the arity
+            // (see the identical note in `builtin_grep`).
+            if let ValueView::Slip(items) = arg.view() {
+                list_items.extend(items.iter().cloned());
+                continue;
+            }
+            if !single_arg_rule {
+                list_items.push(arg.clone());
+                continue;
+            }
             match arg.view() {
+                // An itemized Array/List (`$[1,2]`, `$(1,2)`, `.item`, or an
+                // element read out of an Array, which stores it itemized) is
+                // ONE item of the list `first` searches, as in `map`/`grep`.
+                ValueView::Array(_, kind) if kind.is_itemized() => list_items.push(arg.clone()),
                 ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
                 // A `Seq` always flattens into the list `first` searches, the
                 // same as `map`/`grep` (see the identical arm there): a sole
@@ -527,7 +549,6 @@ impl Interpreter {
                 // the predicate ran on it -- exactly the shape zef's CLI uses
                 // to pick an install target (`Zef/CLI.rakumod`'s `str2cur`).
                 ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
-                ValueView::Slip(items) => list_items.extend(items.iter().cloned()),
                 // A bare hash flattens to its pairs; an itemized one (`$(%h)`,
                 // `%h.item`) is one item, as in `map`/`grep` above.
                 ValueView::Hash(map) if !arg.hash_is_itemized() => {
