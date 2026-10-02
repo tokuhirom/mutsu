@@ -165,7 +165,7 @@ impl Mentions {
 
 /// The names a type or package declaration installs, or `None` when they are
 /// not known statically (`class ::($name)`, a `unit` declarator).
-fn declared_names(decl: &Stmt) -> Option<Vec<String>> {
+pub(super) fn declared_names(decl: &Stmt) -> Option<Vec<String>> {
     let name = match decl {
         Stmt::ClassDecl {
             name,
@@ -312,6 +312,15 @@ impl Walker<'_> {
             .then(|| decl.clone());
         let frame = self.frames.last_mut().expect("checked above");
         frame.types.push(TypeDecl { names, copy });
+    }
+
+    /// Note that the current scope declares a type a lifted body cannot be
+    /// given: it has no copy ([`TypeDecl`]), so a body that names it is not
+    /// lifted.
+    pub(super) fn declare_unavailable_type(&mut self, names: Vec<String>) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.types.push(TypeDecl { names, copy: None });
+        }
     }
 
     /// Whether a call of `name` reaches a type, enum key or package an inner

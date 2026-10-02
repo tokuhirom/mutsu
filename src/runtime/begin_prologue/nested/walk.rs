@@ -127,6 +127,8 @@ impl Walker<'_> {
                 ..
             } => {
                 if let Some((index, is_tail)) = loc {
+                    // The value of a type's body is not observable.
+                    let is_tail = is_tail && !self.directly_in_package();
                     let slot = is_tail.then(|| next_slot("__init_value_"));
                     if self.lift(body, slot.as_deref(), &kind.clone()) {
                         self.edit_lifted(index, slot);
@@ -224,8 +226,10 @@ impl Walker<'_> {
                         w.visit_expr_mut(e);
                     }
                 });
-                // A package's routines are reached through the package.
-                if !self.in_package() {
+                // A package's own routines are reached through the package,
+                // which a lifted phaser re-enters. Any other scope's are
+                // copied into the lifted body.
+                if !self.directly_in_real_package() {
                     self.declare_routine(stmt);
                 }
             }

@@ -681,8 +681,34 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   a symbolic name, or a `$?` compile-time variable, while the scope's own
   declarations are opaque bindings, so a body that reads one is left where it is.
   A class nested in such a type is walked the same way.
-- **What it does not cover.** A phaser of such a class that reads nothing of its
-  method is not lifted (`needs_scope`), so it still runs when the enclosing code
-  runs the declaration, and not at all when that code never runs. That needs a
-  decision on how a unit-level phaser reaches a lexical class, and is
-  [#10711](https://github.com/tokuhirom/mutsu/issues/10711).
+- **What it did not cover.** A phaser of such a class that reads nothing of its
+  method was not lifted (`needs_scope`), so it still ran when the enclosing code
+  ran the declaration, and not at all when that code never ran (#10711, below).
+
+**INIT and CHECK in a class declared inside code, whatever they read — implemented**
+(#10711, `src/runtime/begin_prologue/nested/phasers.rs`,
+`t/routines/init-check-class-in-code-timing.t`).
+
+- **The gap.** Every `INIT`/`CHECK` of a class declared inside a routine or block
+  (in its body or in a method) ran when the enclosing code ran the declaration:
+  never, if that code never ran, and otherwise at that call and not at program
+  start.
+- **The decision.** The earlier section's observation holds for every such
+  phaser: one that reads nothing of the class needs no package either. What it
+  may still read of the class is its own scope, so the body of a class declared
+  inside code is walked like a routine's body (`walk_list`), not as an opaque set
+  of members: its `my` lexicals get static cells (the class declaration runs its
+  body each time the code runs, as a block does), and a routine its body declares
+  is copied into the lifted phaser (a `sub` of a package, by contrast, is reached
+  by re-entering the package). A phaser in such a class is lifted whether or not
+  it reads something of an inner scope (`needs_scope` is waived in a detached
+  type), since the per-level handling it replaces is wrong for all of them.
+- **What stays.** The class itself does not exist at the unit's level, so a phaser
+  that names it keeps the per-level handling (the class is a type with no copy,
+  `TypeDecl::copy`, in its own scope). So does a phaser in a class whose body
+  declares a `token`, `rule` or `proto` (a grammar), which blocks the scope, and
+  `BEGIN` in the body of a class declared inside code, which was never lifted.
+- **A fix on the way.** A `sub` declared in a *method* of a package class was not
+  recorded as a routine of that scope (the walk skipped every routine inside a
+  package), so an `INIT` of the method that called it failed with `Unknown
+  function`. Only the routines a package's own body declares are skipped now.

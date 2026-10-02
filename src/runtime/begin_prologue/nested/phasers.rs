@@ -34,10 +34,17 @@
 //! A type a phaser cannot re-enter is walked without a package: a role (it has
 //! no store, and runs once per composition), and a class declared inside code,
 //! which does not exist at the unit's level until that code runs (#10645). A
-//! phaser lifted from a method of one runs in no package, so it reads nothing
-//! the type declares or takes as a parameter, which is all it needs when it only
-//! reads the method's own lexicals. Whatever else such a phaser does, in a class
-//! declared inside code, still runs when that code runs (#10711).
+//! phaser lifted from one of them runs in no package.
+//!
+//! - A role's body declares nothing a lifted phaser can reach, so a phaser that
+//!   reads one of its names, or takes a role parameter, stays where it is.
+//! - A class declared inside code runs its body each time the code runs, so its
+//!   body is a scope like a routine's (#10711): its lexicals get static cells and
+//!   its routines are copied into the lifted body. Every phaser in it, in the
+//!   body or in a method, is lifted, because the per-level handling runs it when
+//!   the code runs the declaration, and never if that code never runs. A phaser
+//!   that names the class itself (which does not exist at the unit's level) stays
+//!   where it is.
 
 use super::routines::{Dependencies, FrameBlock};
 use super::{Binding, BindingKind, Frame, Walker};
@@ -69,6 +76,20 @@ impl Walker<'_> {
         self.frames
             .iter()
             .any(|f| f.package.is_some() || f.role.is_some())
+    }
+
+    /// Whether the innermost scope is the body of a package a lifted phaser
+    /// re-enters, which reaches the package's own routines by name.
+    pub(super) fn directly_in_real_package(&self) -> bool {
+        self.frames.last().is_some_and(|f| f.package.is_some())
+    }
+
+    /// Whether some scope around the current statement is the body of a type
+    /// the phaser cannot re-enter ([`Walker::walk_detached`]). Every phaser
+    /// lifted from one runs at the unit's level, where the type's own
+    /// declaration has not run.
+    pub(super) fn in_detached_type(&self) -> bool {
+        self.frames.iter().any(|f| f.role.is_some())
     }
 
     /// Whether the innermost scope is a package or role body, so a method
@@ -135,43 +156,59 @@ impl Walker<'_> {
         );
     }
 
-    /// Walk the routines of a type a lifted phaser cannot re-enter: a role
-    /// (its body runs once per composition, and has no store of its own), and
-    /// a class declared inside code (it does not exist at the unit's level
-    /// until the code runs, so there is no package to re-enter by name). A
-    /// phaser lifted from one of their routines runs in no package, so it
-    /// reads nothing the type declares or takes as a parameter.
+    /// Walk a type a lifted phaser cannot re-enter: a role (its body runs once
+    /// per composition, and has no store of its own), and a class declared
+    /// inside code (it does not exist at the unit's level until the code runs,
+    /// so there is no package to re-enter by name). A phaser lifted from one of
+    /// them runs in no package. A role's routines are walked, and a phaser that
+    /// reads what the role declares stays put. A class's body is walked as a
+    /// scope of its own.
     pub(super) fn walk_detached(&mut self, stmt: &mut Stmt) {
         if !has_init_or_check(stmt) {
             return;
         }
-        let (params, body) = match stmt {
+        let names = super::decls::declared_names(stmt);
+        match stmt {
             Stmt::RoleDecl {
                 type_params, body, ..
-            } => (
-                type_params
+            } => {
+                let params = type_params
                     .iter()
                     .map(|p| p.trim_start_matches(['$', '@', '%', '&']).to_string())
-                    .collect(),
-                body,
-            ),
+                    .collect();
+                let bindings = declared_bindings(body, &[]);
+                self.walk_members(
+                    body,
+                    Frame {
+                        bindings,
+                        role: Some(params),
+                        ..Frame::default()
+                    },
+                );
+            }
+            // A class declared in code runs its body each time the code runs,
+            // so its body is a scope like a routine's: its lexicals get static
+            // cells, and its routines are copied into a lifted phaser.
             Stmt::ClassDecl {
                 name_expr: None,
                 is_unit: false,
                 body,
                 ..
-            } => (Vec::new(), body),
-            _ => return,
-        };
-        let bindings = declared_bindings(body, &[]);
-        self.walk_members(
-            body,
-            Frame {
-                bindings,
-                role: Some(params),
-                ..Frame::default()
-            },
-        );
+            } => {
+                let frame = Frame {
+                    role: Some(Vec::new()),
+                    ..Frame::default()
+                };
+                // The class itself does not exist where the phaser runs, so a
+                // phaser that names it is not lifted.
+                self.walk_list(body, frame, |w| {
+                    if let Some(names) = names {
+                        w.declare_unavailable_type(names);
+                    }
+                });
+            }
+            _ => {}
+        }
     }
 
     /// Walk the routines and imports among the members of a package or role
