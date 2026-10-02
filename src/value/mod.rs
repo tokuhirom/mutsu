@@ -3156,6 +3156,9 @@ pub(crate) enum IndexTransform {
     AntiPairs,
     /// `.kv`: element `i` → two flat outputs `i, elem`.
     Kv,
+    /// `.lazy` over an unbounded range (`(1..*).lazy`): each element passes
+    /// through unchanged, so the result is a lazy `Seq` rather than the Range.
+    Identity,
     /// `flat`: each pulled element is flattened (`flat_val` in List context),
     /// so `flat [2,3,4], 10, 11 ... *` spills the nested array's elements
     /// while the sequence stays lazy. The index is unused.

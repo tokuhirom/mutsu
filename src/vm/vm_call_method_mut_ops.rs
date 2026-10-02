@@ -865,8 +865,7 @@ impl Interpreter {
             // (and its trailing side effects) instead of pulling on demand.
             // Laziness-preserving coercions return the list unchanged (native
             // dispatch) — neither forces.
-            && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && Self::lazy_pipe_preserving_coercion(method))
             // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked

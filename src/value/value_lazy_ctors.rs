@@ -101,6 +101,17 @@ impl LazyList {
             "__mutsu_lazylist_from_gather".to_string(),
             Value::Bool(true),
         );
+        // `.is-lazy` of a map/grep Seq delegates to its source, so a stage
+        // over an explicitly `.lazy` list is lazy even when the list is
+        // finite: `(1..5).lazy.map(* + 1).raku` is `(2, ...).lazy.Seq` (#10918).
+        if let ValueView::LazyList(ll) = source.view()
+            && ll.is_lazy_marked()
+        {
+            env.insert(
+                "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                Value::Bool(true),
+            );
+        }
         Self {
             body: Vec::new(),
             env,

@@ -372,6 +372,18 @@ impl LazyList {
         )
     }
 
+    /// Whether `.map`/`.grep` on this list appends a lazy pipe stage
+    /// (`is_lazy_pipe_source`) rather than forcing the list first: a pipe, an
+    /// infinite spec, a gather, a cat pull, or an explicitly `.lazy` finite
+    /// list, whose map is still a lazy Seq in Rakudo (#10918).
+    pub(crate) fn map_grep_appends_stage(&self) -> bool {
+        self.lazy_pipe.is_some()
+            || self.is_infinite_spec()
+            || self.is_from_gather()
+            || self.cat_pull.is_some()
+            || (self.is_lazy_marked() && self.is_cache_only())
+    }
+
     /// Whether this list has no generator at all -- its elements are exactly
     /// its cache (`lazy <b c d>`) -- and so is finite.
     pub(crate) fn is_cache_only(&self) -> bool {
@@ -383,6 +395,7 @@ impl LazyList {
             && self.lazy_pipe.is_none()
             && self.closure_seq.is_none()
             && self.cat_pull.is_none()
+            && self.walk_pending.is_none()
             && self.elems_count.is_none()
             && self
                 .cache
