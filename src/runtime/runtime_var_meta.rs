@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// Process-global, monotonic: set the first time any atomic variable / atomic
 /// storage is registered on ANY interpreter. See
@@ -524,7 +524,7 @@ impl Interpreter {
     /// hash to re-learn a constant. A hot loop stores to the same variable
     /// every iteration, so one entry is all it takes to miss only once.
     ///
-    /// [`MetaNs::key`]: crate::runtime::meta_ns::MetaNs::key
+    /// [`MetaNs::key`]: crate::meta_ns::MetaNs::key
     fn type_meta_key_cached(&self, name_sym: Symbol) -> Symbol {
         match self.type_meta_key_cache.get() {
             Some((cached_name, key)) if cached_name == name_sym => key,

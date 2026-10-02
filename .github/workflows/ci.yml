@@ -349,6 +349,15 @@ jobs:
         # walkers unchecked. Self-tests its detector first.
         run: make check-ast-walkers
 
+      - name: No new upward reference from the lower layers
+        # A ratchet (#10779): the AST, parser, Value, opcode, Env, GC and the
+        # name/key leaf modules may not name the runtime, VM, compiler,
+        # builtins or `Interpreter` -- each such edge is a module cycle that
+        # keeps the crate from being split. Per-file counts live in
+        # scripts/layer-deps-baseline.txt and may go down, never up.
+        # Self-tests its counter first.
+        run: make check-layer-deps
+
       - name: Value API wall holds
         # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
         # outside src/value/. At 0; this keeps it there.

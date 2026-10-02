@@ -8,7 +8,7 @@
 //! ask whether a name is qualified at all is `name.contains("::")`. Both do at
 //! run time what the source text decided once.
 //!
-//! That is the same finding [`crate::runtime::meta_ns`] records for
+//! That is the same finding [`crate::meta_ns`] records for
 //! `__mutsu_*` metadata keys, in a different namespace, and it is measurably
 //! larger. Profiling one `JSON::Fast` decode (issue
 //! [#8898](https://github.com/tokuhirom/mutsu/issues/8898)):
@@ -191,7 +191,7 @@ mod flags {
         if text.contains("::") {
             f |= QUALIFIED;
         }
-        if crate::runtime::utils::has_routine_scope_marker(text) {
+        if crate::str_scan::has_routine_scope_marker(text) {
             f |= ROUTINE_SCOPED;
         }
         TABLE.with(|c| {
@@ -308,7 +308,7 @@ mod tests {
     fn a_routine_scope_mangled_package_is_not_a_package() {
         for pkg in ["Foo::&bar/2", "::&x", "Foo::Bar", "Foo", "", "&bar"] {
             let sym = Symbol::intern(pkg);
-            let want = crate::runtime::utils::has_routine_scope_marker(pkg);
+            let want = crate::str_scan::has_routine_scope_marker(pkg);
             assert_eq!(is_routine_scoped_package(sym), want, "{pkg:?}");
             // Second call takes the memo, and must answer the same.
             assert_eq!(is_routine_scoped_package(sym), want, "{pkg:?} memoized");

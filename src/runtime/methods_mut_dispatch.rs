@@ -1,6 +1,6 @@
 use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 use crate::value::ValueView;

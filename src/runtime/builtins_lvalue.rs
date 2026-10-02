@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ArrayKind;
 
 impl Interpreter {
@@ -939,7 +939,7 @@ impl Interpreter {
         if !target_name.starts_with('@') {
             return Ok(Value::NIL);
         }
-        let key = crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&target_name);
+        let key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&target_name);
         let dims = self
             .env
             .get(&target_name)

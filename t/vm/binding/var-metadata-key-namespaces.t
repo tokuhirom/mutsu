@@ -7,7 +7,7 @@ use Test;
 # it lives as a sibling `__mutsu_<ns>::<name>` entry in the same env, and the
 # only way to reach it is to build that derived key and probe with it.
 #
-# `MetaNs` (src/runtime/meta_ns.rs) is the single memoizing constructor for
+# `MetaNs` (src/meta_ns.rs) is the single memoizing constructor for
 # those keys, and issue #8087 moved every namespace that had a memoized helper
 # off hand-built `format!` sites onto it. Two things can break silently in that
 # move and in every later one:

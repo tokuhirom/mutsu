@@ -1,7 +1,7 @@
 //! Bound-index / element-share / deleted-index bookkeeping helpers
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -22,7 +22,7 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
-        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
         if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
             map.contains_key(encoded)
         } else {
@@ -31,7 +31,7 @@ impl Interpreter {
     }
 
     pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
-        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
         if let Some(entry) = self.env_mut().get_mut_sym(key)
             && entry
                 .with_hash_mut(|map| {
@@ -162,7 +162,7 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return;
         }
-        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
         if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
                 crate::gc::Gc::make_mut(map).remove(encoded);
@@ -281,7 +281,7 @@ impl Interpreter {
     /// Remove deleted indices from the bound-index tracking set.
     /// This must be called after array element deletion to sever bindings.
     pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
         let Some(entry) = self.env_mut().get_mut_sym(key) else {
             return;
         };

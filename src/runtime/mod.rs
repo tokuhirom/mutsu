@@ -611,7 +611,6 @@ mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_reinstate;
 mod proxy_store;
-pub(crate) mod state_scope_reaper;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
@@ -723,7 +722,6 @@ mod lvalue_container_return;
 mod main_args;
 pub(crate) mod mark_context;
 mod match_target;
-pub(crate) mod meta_ns;
 mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
@@ -922,6 +920,7 @@ mod resolution_lazy;
 pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
 mod resolution_method;
+mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) mod return_target;
@@ -3512,6 +3511,10 @@ pub struct Interpreter {
     /// a read before the block correctly yields the undefined value (the cell is not
     /// recorded yet). Empty for ordinary programs: zero cost.
     pub(crate) escaping_our_lexical_names: std::sync::Arc<std::collections::HashSet<String>>,
+    /// The subset of `escaping_our_lexical_names` that are slotless `for`
+    /// parameters (`CompiledCode::escaping_our_env_params`): `RegisterSub`
+    /// boxes their env binding itself, as there is no declaration to do it.
+    pub(crate) escaping_our_env_param_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Names of the `our`-scoped subs declared in bare blocks (the subs whose
     /// free-variable reads/writes may resolve through `escaped_our_lexical_cells`).
     /// The cell resolution fires ONLY while the innermost named routine frame is

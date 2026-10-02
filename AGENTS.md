@@ -229,12 +229,18 @@ scripts/dev stop <id>
 - **A name derived from other names is built once, not per execution.** Use
   [`src/qualified.rs`](src/qualified.rs) (`qualified`, `package_ancestors`, `is_qualified`,
   `is_global_package`) instead of run-time `format!("{pkg}::{name}")` / `contains("::")`, and
-  `MetaNs` (`src/runtime/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` is a shrinking
+  `MetaNs` (`src/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` is a shrinking
   ratchet and `make check-magic-keys` a ban; `src/parser/` and `src/compiler/` are exempt.
 - **An AST analysis implements `crate::ast_visit::Visit`** ([ADR-0137](docs/adr/0137-typed-ast-visitor-for-analyses.md)),
   never a private recursive `match` over `Stmt`/`Expr` (whose `_ =>` silently skips variants) and
   never a `serde_json` dump of the tree. `make check-ast-walkers` is a shrinking ratchet over
   `scripts/ast-walkers-baseline.txt`.
+- **The lower layers do not name the upper ones.** The AST, parser, `Value`, `opcode`, `Env`,
+  the GC and the name/key leaf modules (`symbol`, `qualified`, `meta_ns`, `str_scan`,
+  `type_id`) never reference `crate::runtime` / `vm` / `compiler` / `builtins` / `trir` or
+  `Interpreter` (#10779): move a pure helper down, or route an essential compile-time call
+  through a trait. `make check-layer-deps` is a shrinking ratchet over
+  `scripts/layer-deps-baseline.txt`.
 - **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
   (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
   closure is called on the interpreter you already have (`call_compiled_closure`,

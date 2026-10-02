@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// Does this legacy-path placeholder/signature param list contain a *plain
 /// positional* param — a real signature name like `p` (from a pointy block

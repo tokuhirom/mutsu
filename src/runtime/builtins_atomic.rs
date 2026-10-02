@@ -5,7 +5,7 @@
 //! (shared-container helpers + multidim/hash CAS).
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::sync::atomic::{AtomicU64, Ordering};

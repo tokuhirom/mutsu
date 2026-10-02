@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
@@ -814,6 +814,7 @@ impl Interpreter {
             lexsub_latest_cells: self.lexsub_latest_cells.clone(),
             escaped_our_lexical_cells: self.escaped_our_lexical_cells.clone(),
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
+            escaping_our_env_param_names: self.escaping_our_env_param_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
             our_scalar_cell_names: self.our_scalar_cell_names.clone(),
             state_vars: HashMap::new(),

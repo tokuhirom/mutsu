@@ -1071,7 +1071,7 @@ impl Compiler {
                 // Record `__mutsu_bound::NAME` = true in env so the whole-var
                 // readonly check (`CheckReadOnly`) can tell a `:=`-bound
                 // container (writable) apart from a `constant` one (immutable).
-                let key = crate::runtime::meta_ns::MetaNs::Bound.key_for_str(name);
+                let key = crate::meta_ns::MetaNs::Bound.key_for_str(name);
                 let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                 let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));

@@ -8,7 +8,7 @@
 //! other.
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Build the `.WHAT` value for a role-mixed (`Mixin`) value: the base

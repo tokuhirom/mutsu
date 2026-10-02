@@ -1,6 +1,6 @@
 //! Push/append-through-accessor and subscript-adverb (`:exists`/`:delete`/`:kv`...) ops.
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ArrayData;
 use crate::value::types::is_stash_class_name;

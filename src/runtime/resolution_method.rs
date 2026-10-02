@@ -440,62 +440,29 @@ impl Interpreter {
             //        container, so `(Int $b is rw)` is narrower than `(Int $b)`
             //        for a variable argument (matching `candidate_specificity_rank`,
             //        which counts the same traits on the sub-dispatch side).
-            let narrowness = |def: &MethodDef| -> (usize, usize, usize, usize) {
-                let literal = def
-                    .param_defs
-                    .iter()
-                    .filter(|p| p.literal_value.is_some())
-                    .count();
-                let where_subset = def
-                    .param_defs
-                    .iter()
-                    .filter(|p| {
-                        // Positional params only, like the sub dispatch's
-                        // `constrained_count`: a named param's constraint
-                        // decides applicability, not narrowness, and a
-                        // `where` on a slurpy ranks with the named bind
-                        // check below instead (#10519).
-                        !p.named
-                            && ((p.where_constraint.is_some() && !p.is_variadic())
-                                || p.type_constraint.as_deref().is_some_and(|tc| {
-                                    self.constraint_is_subset(Self::constraint_base_for_distance(
-                                        tc,
-                                    ))
-                                }))
-                    })
-                    .count();
-                let sigil_typed = def
-                    .param_defs
-                    .iter()
-                    .filter(|p| {
-                        !p.is_invocant
-                            && !p.named
-                            && !p.slurpy
-                            && !p.double_slurpy
-                            // `+@a` is a (one-arg) slurpy: it never counts as
-                            // a Positional constraint, so `(@a)` beats it.
-                            && !p.onearg
-                            && (p.name.starts_with('@')
-                                || p.name.starts_with('%')
-                                || p.name.starts_with('&'))
-                    })
-                    .count();
-                let rw_typed = def
-                    .param_defs
-                    .iter()
-                    .filter(|p| !p.is_invocant && p.traits.iter().any(|t| t == "rw" || t == "raw"))
-                    .count();
-                (literal, where_subset, sigil_typed, rw_typed)
+            let different_owners = tied
+                .iter()
+                .any(|&i| all_matches[i].0 != all_matches[tied[0]].0);
+            let shared_positions = if different_owners {
+                tied.iter()
+                    .map(|&i| Self::method_specificity_positions(&all_matches[i].1))
+                    .min()
+                    .unwrap_or(0)
+            } else {
+                usize::MAX
             };
             let best_where = tied
                 .iter()
-                .map(|&i| narrowness(&all_matches[i].1))
+                .map(|&i| self.method_candidate_narrowness(&all_matches[i].1, shared_positions))
                 .max()
                 .unwrap_or((0, 0, 0, 0));
             let mut narrowed: Vec<usize> = tied
                 .iter()
                 .copied()
-                .filter(|&i| narrowness(&all_matches[i].1) == best_where)
+                .filter(|&i| {
+                    self.method_candidate_narrowness(&all_matches[i].1, shared_positions)
+                        == best_where
+                })
                 .collect();
             if let Some(&i) = narrowed.first() {
                 best_idx = i;

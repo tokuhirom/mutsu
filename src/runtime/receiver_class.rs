@@ -24,7 +24,7 @@
 
 use super::*;
 use crate::builtins::builtin_type_catalog::{builtin_type_info, builtin_type_mro_ids};
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::type_id::{TypeId, well_known_types};
 use crate::value::ValueView;
 use std::borrow::Cow;

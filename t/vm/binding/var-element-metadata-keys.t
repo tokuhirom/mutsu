@@ -5,7 +5,7 @@ use Test;
 # companion to `t/vm/binding/var-metadata-key-namespaces.t`. That file covers
 # the namespaces that describe a WHOLE binding (is it a sigilless alias, is it
 # `:=`-bound, what type constrains it); this one covers the rest, which issue
-# #8087 stage 3 moved onto `MetaNs` (src/runtime/meta_ns.rs): metadata about
+# #8087 stage 3 moved onto `MetaNs` (src/meta_ns.rs): metadata about
 # individual ELEMENTS of a container, and about a name's relationship to a
 # surrounding scope.
 #

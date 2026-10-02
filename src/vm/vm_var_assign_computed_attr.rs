@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
@@ -362,6 +362,20 @@ impl Interpreter {
             crate::symbol::Symbol::intern(bare),
             is_private,
             sigil,
+        )
+    }
+
+    /// `self`'s private `&`-sigil attribute `&!bare`, for a `&!bare(...)` call
+    /// (which compiles to `CallOnCodeVar` on the name `!bare`).
+    // Cost: O(m), m = mixin layers of `self` (bounded by 8), as
+    // `with_self_attr`; one symbol lookup for `bare`.
+    pub(super) fn read_self_private_code_attr(&self, bare: &str) -> Option<Value> {
+        self.read_attr_cell_by_key(
+            self.get_env_self(),
+            None,
+            crate::symbol::Symbol::intern(bare),
+            true,
+            '&',
         )
     }
 

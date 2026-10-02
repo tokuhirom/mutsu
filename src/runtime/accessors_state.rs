@@ -1,7 +1,7 @@
 //! Callable signature/composition and interpreter state accessors:
 //! `our`/`state`/once vars, wrap chains, method/multi/proto dispatch frames.
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -142,6 +142,12 @@ impl Interpreter {
     ) {
         for sym in &code.needs_cell_escaping_our_sub {
             crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+                .insert(sym.resolve());
+        }
+        for sym in &code.escaping_our_env_params {
+            crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+                .insert(sym.resolve());
+            crate::runtime::cow_table_mut(&mut self.escaping_our_env_param_names)
                 .insert(sym.resolve());
         }
         for nested in &code.closure_compiled_codes {
@@ -474,12 +480,12 @@ impl Interpreter {
     /// is paid for by the deaths it reclaims: O(1) amortized per dead clone.
     // Cost: O(1) amortized per dead clone; a sweep is O(n), n = state entries.
     fn reap_dead_state_scopes(&mut self) {
-        let dead = crate::runtime::state_scope_reaper::dead_scope_count();
+        let dead = crate::value::state_scope_reaper::dead_scope_count();
         if dead < 64.max(self.state_vars.len() / 4) {
             return;
         }
         let ids: std::collections::HashSet<u64> =
-            crate::runtime::state_scope_reaper::take_dead_scopes()
+            crate::value::state_scope_reaper::take_dead_scopes()
                 .into_iter()
                 .collect();
         let is_dead = |key: &(Symbol, Option<u64>)| key.1.is_some_and(|id| ids.contains(&id));

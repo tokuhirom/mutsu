@@ -95,8 +95,7 @@ impl Interpreter {
         if cf.code.state_locals.is_empty() || fn_name.is_empty() {
             return None;
         }
-        let key =
-            crate::runtime::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
+        let key = crate::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
         let id = self
             .env()
             .get_sym(key)

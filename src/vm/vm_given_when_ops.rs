@@ -1,6 +1,6 @@
 use super::*;
+use crate::meta_ns::MetaNs;
 use crate::opcode::WhenMatcherKind;
-use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn exec_given_op(

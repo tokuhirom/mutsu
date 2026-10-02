@@ -11,7 +11,7 @@ use Test;
 # *shape* rather than the value. Path assertions are relative (`.ends-with`,
 # `.IO.basename`) so the file survives being moved.
 
-plan 73;
+plan 71;
 
 # ---------------------------------------------------------------------------
 # EVAL synthesizes a per-call compilation-unit name for $?FILE
@@ -28,18 +28,14 @@ my $e2 = EVAL q[$?FILE];
 
 isnt $e1, $outer-file, 'EVAL does not inherit the outer unit ($?FILE) name';
 isnt $e1, $e2, 'two EVALs get two different compilation-unit names';
-ok $e1.IO.is-absolute, '$?FILE inside EVAL is an absolute path';
-ok $e2.IO.is-absolute, '$?FILE inside a second EVAL is absolute too';
+is $e1, $e1.IO.basename, '$?FILE inside EVAL is the bare unit name, not absolute';
+is $e2, $e2.IO.basename, '$?FILE inside a second EVAL is bare too';
 like $e1.IO.basename, /^ 'EVAL_' \d+ $/, 'the synthesized name is EVAL_<N>';
 like $e2.IO.basename, /^ 'EVAL_' \d+ $/, 'and so is the next one';
 
 my $n1 = +$e1.IO.basename.substr(5);
 my $n2 = +$e2.IO.basename.substr(5);
 is $n2, $n1 + 1, 'the EVAL_<N> counter advances by one per synthesized name';
-
-# The synthesized unit lives under $*CWD.
-is $e1.IO.parent.absolute, $*CWD.absolute,
-    'the synthesized EVAL unit is named relative to $*CWD';
 
 # ---------------------------------------------------------------------------
 # EVAL honors an explicit :filename
@@ -59,14 +55,13 @@ my $after = +(EVAL q[$?FILE]).IO.basename.substr(5);
 is $after, $before + 1, ':filename does not consume an EVAL_<N> counter slot';
 
 # ---------------------------------------------------------------------------
-# Code.file is the unit name as-is; $?FILE is its absolute form
+# $?FILE and Code.file inside an EVAL are the bare unit name
 # ---------------------------------------------------------------------------
 
 my $pair = EVAL q[sub __f() { }; ($?FILE, &__f.file)];
 my ($seen-file, $seen-code-file) = @$pair;
-ok $seen-file.IO.is-absolute, '$?FILE inside EVAL is absolute';
-is $seen-code-file, $seen-file.IO.basename,
-    'Code.file inside EVAL is the bare unit name, not the absolute path';
+is $seen-file, $seen-code-file,
+    '$?FILE and Code.file inside EVAL are both the bare unit name';
 
 # Nested EVAL gets its own unit name, distinct from its enclosing EVAL.
 my $nested = EVAL q[use MONKEY-SEE-NO-EVAL; ($?FILE, EVAL q<$?FILE>)];

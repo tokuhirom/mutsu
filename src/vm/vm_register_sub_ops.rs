@@ -1,6 +1,6 @@
 //! Lambda/block-closure creation and sub/proto/token registration ops.
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -475,11 +475,23 @@ impl Interpreter {
                     .insert(resolved_name.clone());
                 let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
                 for name in names {
-                    if let Some(cell) = self.env().get(&name).cloned()
-                        && cell.is_container_ref()
-                    {
-                        self.escaped_our_lexical_cells.insert(name, cell);
-                    }
+                    let Some(cur) = self.env().get(&name).cloned() else {
+                        continue;
+                    };
+                    let cell = if cur.is_container_ref() {
+                        cur
+                    } else if self.escaping_our_env_param_names.contains(&name) && !cur.is_nil() {
+                        // A `for -> $i` parameter bound by name: box the binding
+                        // in place, as a declaration would have. The next
+                        // iteration binds a fresh value, leaving this cell with
+                        // the sub (mutsu#10647).
+                        let boxed = cur.into_container_ref();
+                        self.env_mut().insert(name.clone(), boxed.clone());
+                        boxed
+                    } else {
+                        continue;
+                    };
+                    self.escaped_our_lexical_cells.insert(name, cell);
                 }
             }
             // ADR-0024: a mainline named sub whose body reads a free variable

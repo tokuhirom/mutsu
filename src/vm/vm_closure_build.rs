@@ -138,7 +138,7 @@ impl Interpreter {
         let state_scope_guard = compiled_code
             .as_ref()
             .filter(|cc| !cc.state_locals.is_empty())
-            .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
+            .map(|_| crate::value::state_scope_reaper::StateScopeGuard::new(id));
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: self.lexical_closure_package_sym(),
             name: spec.name,

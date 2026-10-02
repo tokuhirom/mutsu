@@ -9,7 +9,7 @@ use Test;
 # `__` rather than `::` -- `__mutsu_role__Stringy`, `__mutsu_attr__$!x`.
 #
 # Issue #8087 stage 3 moved all 78 of their hand-built `format!` sites onto
-# `MetaNs` (src/runtime/meta_ns.rs). Nothing about that move is visible to the
+# `MetaNs` (src/meta_ns.rs). Nothing about that move is visible to the
 # type checker: the writer inserts under one spelling and the reader probes
 # another, and a mismatch does not error, it just means the marker is never
 # found again -- `does` goes quiet, an attribute stops resolving, two roles
