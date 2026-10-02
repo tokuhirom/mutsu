@@ -795,6 +795,16 @@ impl Interpreter {
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
                     .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    // A qualified package array created in another frame
+                    // outlives that frame in our_vars, like scalar GetGlobal.
+                    .or_else(|| {
+                        if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
+                            self.qualified_our_var_read(code.const_sym(*name_idx))
+                                .or_else(|| self.our_var_pseudo_unqualified(name))
+                        } else {
+                            None
+                        }
+                    })
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         // Fallback: check bare name in env (for closures capturing params)
@@ -892,7 +902,10 @@ impl Interpreter {
                     // An `@`-sigil read strips the Scalar container: `@$x` on an
                     // itemized `$x = [1,2,3]` yields the plain Array (flattens /
                     // iterates element-wise).
-                    ValueView::Array(items, kind) if kind.is_itemized() => {
+                    ValueView::Array(items, kind)
+                        if kind.is_itemized()
+                            && !crate::qualified::is_package_array(code.const_sym(*name_idx)) =>
+                    {
                         Value::array_with_kind(items.clone(), kind.decontainerize())
                     }
                     ValueView::Hash(map) => {

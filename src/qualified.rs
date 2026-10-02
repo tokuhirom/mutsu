@@ -175,6 +175,8 @@ mod flags {
     /// The "package" is a routine-scope mangled name (`Pkg::&sub/arity`),
     /// which is not a package name at all and must not be walked as one.
     pub(super) const ROUTINE_SCOPED: u8 = 1 << 2;
+    /// An `@` variable addressed through a real package stash.
+    pub(super) const PACKAGE_ARRAY: u8 = 1 << 3;
 
     pub(super) fn of(sym: Symbol) -> u8 {
         thread_local! {
@@ -190,6 +192,26 @@ mod flags {
         let mut f = CLASSIFIED;
         if text.contains("::") {
             f |= QUALIFIED;
+        }
+        if let Some(rest) = text.strip_prefix('@')
+            && let Some((head, tail)) = rest.split_once("::")
+            && (tail.contains("::")
+                || !matches!(
+                    head,
+                    "SETTING"
+                        | "CALLER"
+                        | "CALLERS"
+                        | "OUTER"
+                        | "OUTERS"
+                        | "CORE"
+                        | "MY"
+                        | "DYNAMIC"
+                        | "UNIT"
+                        | "LEXICAL"
+                        | "CLIENT"
+                ))
+        {
+            f |= PACKAGE_ARRAY;
         }
         if crate::str_scan::has_routine_scope_marker(text) {
             f |= ROUTINE_SCOPED;
@@ -208,6 +230,11 @@ mod flags {
 /// Whether `name` carries a `::` qualifier, decided once per symbol.
 pub(crate) fn is_qualified(name: Symbol) -> bool {
     flags::of(name) & flags::QUALIFIED != 0
+}
+
+/// Whether an `@` name addresses a package stash rather than a lexical pseudo-stash.
+pub(crate) fn is_package_array(name: Symbol) -> bool {
+    flags::of(name) & flags::PACKAGE_ARRAY != 0
 }
 
 /// Whether `pkg` is a routine-scope mangled package name (`Pkg::&sub/arity`,
@@ -268,6 +295,29 @@ pub(crate) fn is_global_package(pkg: Symbol) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_arrays_exclude_lexical_pseudo_stashes() {
+        for name in [
+            "@GLOBAL::a",
+            "@OUR::a",
+            "@PROCESS::a",
+            "@P::a",
+            "@CORE::P::a",
+        ] {
+            assert!(is_package_array(Symbol::intern(name)), "{name}");
+        }
+        for name in [
+            "@MY::a",
+            "@OUTER::a",
+            "@CALLER::a",
+            "@UNIT::a",
+            "@a",
+            "$P::a",
+        ] {
+            assert!(!is_package_array(Symbol::intern(name)), "{name}");
+        }
+    }
 
     #[test]
     fn a_pair_is_built_once_and_spelled_the_way_format_spelled_it() {
