@@ -245,7 +245,7 @@ fn normalize_empty_coercion_type(tc: String) -> String {
 /// parenthesized list form `has T ($.x, $.y)`, where an explicit `= EXPR` in
 /// the list is parsed but ignored (rakudo does the same), so a listed
 /// attribute needs this same auto-default rather than staying uninitialized.
-fn auto_default_expr_for_type(tc: &str) -> Expr {
+pub(crate) fn auto_default_expr_for_type(tc: &str) -> Expr {
     if tc == "::?CLASS" {
         Expr::Var("?CLASS".to_string())
     } else if tc == "::?ROLE" {
