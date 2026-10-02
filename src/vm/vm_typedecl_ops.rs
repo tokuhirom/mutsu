@@ -779,6 +779,38 @@ impl Interpreter {
             // outer `code`.
             self.apply_pending_rw_writeback(code);
 
+            // A lexical `my class C is export` cannot carry the runtime
+            // `__MUTSU_EXPORT_TYPE__` call (see `class_decl`), only its
+            // `__mutsu_export_type` marker. Publish it here, the way an
+            // exported role is, so `import M` of an inline `module M` finds it
+            // (#10557); a module file's scan records the same entry.
+            if *is_lexical
+                && !self.suppress_exports
+                && let Some((_, tags)) = custom_traits
+                    .iter()
+                    .find(|(t, _)| t == "__mutsu_export_type")
+            {
+                let tags: Vec<String> = match tags {
+                    Some(arg) => {
+                        crate::runtime::utils::value_to_list(&self.eval_decl_trait_arg(arg)?)
+                            .iter()
+                            .map(Value::to_string_value)
+                            .collect()
+                    }
+                    None => Vec::new(),
+                };
+                let qualified_sym = Symbol::intern(&qualified_name);
+                let (export_pkg, export_short) =
+                    match crate::qualified::package_parent(qualified_sym) {
+                        Some(pkg) => (
+                            pkg.resolve(),
+                            crate::qualified::unqualified_part(qualified_sym).resolve(),
+                        ),
+                        None => (self.current_package(), qualified_name.clone()),
+                    };
+                self.register_exported_var(export_pkg, export_short, tags);
+            }
+
             // Record the actual registry key this declaration ended up
             // stored under (the qualified/lexical-mangled `storage_name`,
             // NOT the source-level bare `name`) for `PushLastRegisteredClass`
