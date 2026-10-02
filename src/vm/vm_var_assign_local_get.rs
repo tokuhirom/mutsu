@@ -577,10 +577,18 @@ impl Interpreter {
     /// with ADR-0055 slice 1 — the constraint belongs to the container now, so
     /// a write reaching the scalar through its cell re-checks it.)
     pub(crate) fn box_decl_local_cell(&mut self, code: &CompiledCode, idx: usize) {
-        let name = &code.locals[idx];
-        if name.starts_with('&') {
+        if code.locals[idx].starts_with('&') {
             return;
         }
+        self.box_decl_local_cell_any_sigil(code, idx);
+    }
+
+    /// [`Self::box_decl_local_cell`] admitting a `&` code variable too. Used
+    /// for a local an escaping `our sub` captures (#11051): a module-level
+    /// `my &backend` that an exported sub reassigns must alias one cell with
+    /// the closures the module mainline created over it.
+    pub(crate) fn box_decl_local_cell_any_sigil(&mut self, code: &CompiledCode, idx: usize) {
+        let name = &code.locals[idx];
         // `@`/`%` containers captured-and-mutated in place by a nested named sub
         // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) are boxed as
         // a whole-container cell so the sub's by-name mutation and the owner's
@@ -607,7 +615,11 @@ impl Interpreter {
         // list, and the type-constraint refusal below it went entirely -- an
         // unboxed captured-and-mutated lexical is precisely the residue the
         // vouch/cell dichotomy has to cover.
+        // A `&` code variable holds a `Sub` by nature; its binding is what
+        // the cell shares, so a code value is boxed like any scalar value.
+        let is_code_var = name.starts_with('&');
         if !cur.is_any_type_object()
+            && !(is_code_var && matches!(cur.view(), ValueView::Sub(..)))
             && matches!(
                 cur.view(),
                 ValueView::Sub(..)

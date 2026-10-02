@@ -858,7 +858,7 @@ impl Interpreter {
                 // named `my` locals share one slot, so an unrelated sibling-block
                 // `my $a` reaches this same site and must not pollute the persisted
                 // map with its value.
-                self.box_decl_local_cell(code, idx as usize);
+                self.box_decl_local_cell_any_sigil(code, idx as usize);
             }
         }
         r
