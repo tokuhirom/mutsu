@@ -372,7 +372,9 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     is_positional,
                 } if matches!(
                     target.as_ref(),
-                    Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_)
+                    // A pseudo-stash target is the `Pkg::<@a> := v` spelling
+                    // of a package-variable bind (#10546).
+                    Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_) | Expr::PseudoStash(_)
                 ) && !matches!(
                     index.as_ref(),
                     Expr::ArrayLiteral(_)
