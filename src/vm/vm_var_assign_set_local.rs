@@ -704,8 +704,17 @@ impl Interpreter {
             && self.vardecl_context().get()
             && let Some(pending) = self.take_hoist_pending_cell(idx as usize)
         {
+            // A `:=` declaration binds the slot to another container (a
+            // Proxy, a capture's value): there is no value to move into the
+            // cell.
+            let is_bind = self.bind_context().get()
+                || self.scalar_bind_context().get()
+                || matches!(
+                    self.stack.last().map(Value::view),
+                    Some(ValueView::VarRef { .. })
+                );
             self.exec_set_local_op_body(code, idx)?;
-            self.adopt_hoist_pending_cell(idx as usize, pending);
+            self.adopt_hoist_pending_cell(idx as usize, pending, is_bind);
             return Ok(());
         }
         self.exec_set_local_op_body(code, idx)

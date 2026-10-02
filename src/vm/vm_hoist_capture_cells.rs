@@ -128,7 +128,19 @@ impl Interpreter {
     /// pending cell and the cell back into the slot, so the hoisted sub keeps
     /// reading the declaration's own container.
     // Cost: O(1).
-    pub(super) fn adopt_hoist_pending_cell(&mut self, slot: usize, pending: HoistPendingCell) {
+    pub(super) fn adopt_hoist_pending_cell(
+        &mut self,
+        slot: usize,
+        pending: HoistPendingCell,
+        is_bind: bool,
+    ) {
+        // A `:=` declaration binds the name to a container of its own; drop
+        // the seeded entry so the in-sequence registration captures that
+        // binding as it did before (#9911 covers assignment declarations).
+        if is_bind {
+            self.set_hoist_store_entry(&pending, None);
+            return;
+        }
         let new = self.locals[slot].clone();
         if let ValueView::ContainerRef(c) = new.view() {
             if !Gc::ptr_eq(&c, &pending.cell) {
