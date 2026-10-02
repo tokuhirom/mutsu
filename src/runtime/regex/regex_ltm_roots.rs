@@ -92,7 +92,7 @@ impl Interpreter {
         order.sort_by_key(|(_, rank)| Reverse(*rank));
     }
 
-    /// Run `nfa`, a [`NfaNode::AcceptAt`] NFA of several roots, once at `pos`
+    /// Run `nfa`, an NFA of several roots (`LtmNfa::roots`), once at `pos`
     /// and hand `each` the measurement of every root, in root order.
     // Cost: O(n * t + r) for the run (as `ltm_measure`, over the paths of all
     // the roots), r = the roots.
