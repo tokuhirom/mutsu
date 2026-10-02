@@ -1,9 +1,10 @@
 use super::super::*;
 use super::regex_casefold::casefold_eq;
-use super::regex_eval_class::{composite_item_matches, composite_probe_chars};
+use super::regex_eval_class::{
+    class_matches_cluster_base, composite_item_matches, composite_probe_chars,
+};
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, class_has_only_exact_chars, grapheme_end, is_grapheme_boundary,
-    is_word_char, matches_named_builtin,
+    LTM_DECLARATIVE_MODE, grapheme_end, is_grapheme_boundary, is_word_char, matches_named_builtin,
 };
 use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open, ltm_record_fate};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
@@ -692,8 +693,8 @@ impl Interpreter {
                     } else {
                         return Some(ge);
                     }
-                } else if ge > pos + 1 && !class.negated && class_has_only_exact_chars(class) {
-                    false
+                } else if ge > pos + 1 {
+                    class_matches_cluster_base(class, c, ignore_case)
                 } else {
                     self.regex_match_class_ignorecase(class, c, ignore_case)
                 }
@@ -725,9 +726,21 @@ impl Interpreter {
                     effective_c
                 };
                 let chars_to_check: Vec<char> = composite_probe_chars(effective_c, ignore_case);
+                // A grapheme of several codepoints equals no enumerated
+                // character or range; the other items test its base (see
+                // `class_matches_cluster_base`).
+                let in_cluster = effective_c == c && grapheme_end(chars, pos) > pos + 1;
                 // `mut`: resolving a class item can dispatch a grammar token, which
                 // now takes `&mut self`, making this an `FnMut`.
                 let mut match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
+                    if in_cluster
+                        && matches!(
+                            item,
+                            ClassItem::Char(_) | ClassItem::Range(..) | ClassItem::Grapheme(_)
+                        )
+                    {
+                        return false;
+                    }
                     // A named item is a call to the rule of that name, so a
                     // token the grammar defines replaces the built-in class
                     // (`token alpha { 'Z' }` makes `<+alpha>` match only `Z`);

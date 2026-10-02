@@ -13,7 +13,7 @@
 //! what the engine matches.
 
 use super::super::*;
-use super::regex_eval_class::class_matches_ignorecase;
+use super::regex_eval_class::{class_matches_cluster_base, class_matches_ignorecase};
 use crate::runtime::unicode::{check_unicode_property, check_unicode_property_with_args};
 use crate::runtime::unicode_name_prop::is_name_regex_test;
 
@@ -242,7 +242,11 @@ pub(super) fn class_first_set(class: &CharClass, ignore_case: bool) -> FirstSet 
     };
     for cp in 0u8..128 {
         let c = cp as char;
-        if class_matches_ignorecase(class, c, ignore_case) {
+        // The second test is the same class asked of a cluster with base `c`
+        // (`c` plus a combining mark), which a scan position also starts at.
+        if class_matches_ignorecase(class, c, ignore_case)
+            || class_matches_cluster_base(class, c, ignore_case)
+        {
             set.insert(c);
         }
     }
