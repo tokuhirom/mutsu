@@ -251,11 +251,16 @@ impl Interpreter {
     pub(super) fn collect_cli_candidates(&self, name: &str) -> Vec<FunctionDef> {
         let mut candidates: Vec<FunctionDef> = Vec::new();
         let mut seen_keys = std::collections::HashSet::new();
+        let name_sym = Symbol::intern(name);
         let prefixes: Vec<String> = {
-            let mut p = vec![format!("GLOBAL::{name}/")];
-            let pkg = &self.current_package();
+            let multi_prefix = |pkg: &str| {
+                let key = crate::qualified::qualified(Symbol::intern(pkg), name_sym);
+                format!("{}/", key.as_str())
+            };
+            let mut p = vec![multi_prefix("GLOBAL")];
+            let pkg = self.current_package();
             if pkg != "GLOBAL" {
-                p.push(format!("{pkg}::{name}/"));
+                p.push(multi_prefix(&pkg));
             }
             p
         };
