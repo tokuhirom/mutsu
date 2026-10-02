@@ -40,16 +40,14 @@ impl Interpreter {
         } else {
             None
         };
-        // TODO: re-resolve inside the retry loop below. ADR-0062 §"Not
-        // addressed" (2): the lane's `value_key` is resolved once, here, so a
-        // lane another thread retires (via `reset_atomic_var_key`, i.e. a plain
-        // assignment) *during* this `cas` leaves the loop writing a slot nobody
-        // reads any more. Correct would be to re-resolve at the top of each
-        // retry iteration, but that changes which slot the compare is against
-        // mid-flight, which is a separate semantic decision — and the program
-        // that triggers it is already racy by Raku's own rules (an unordered
-        // plain assignment concurrent with a `cas`).
-        let value_key = if attr_cell.is_none() && scalar_cell.is_none() {
+        // ADR-0062 §"Not addressed" (2), decided in #9921: a `cas` follows the
+        // variable's *current* lane, never the one it resolved at entry. A plain
+        // assignment (or a same-spelled binding, the lane being keyed by bare
+        // name) in another thread can retire the lane mid-`cas`; Raku's `cas`
+        // reads the container afresh on every attempt, so a retired lane makes
+        // the compare fail and the next attempt re-resolves — see
+        // `atomic_lane_is_live`. Writing the retired slot would lose the swap.
+        let mut value_key = if attr_cell.is_none() && scalar_cell.is_none() {
             self.atomic_value_key_for_name(&name)
         } else {
             String::new()
@@ -80,16 +78,21 @@ impl Interpreter {
                 return Ok(current);
             }
             let mut did_swap = false;
-            let current = {
+            let current = loop {
                 // ADR-0010: atomics are process-wide shared state -> the root lineage.
                 let atomic_root = self.shared_vars.root_store();
                 let mut shared = atomic_root.own_map().write().unwrap();
+                if !Self::atomic_lane_is_live(&shared, &name, &value_key) {
+                    drop(shared);
+                    value_key = self.atomic_value_key_for_name(&name);
+                    continue;
+                }
                 let current = self.atomic_current_value(&shared, &name, &value_key);
                 if Self::cas_retry_matches(&current, expected) {
                     shared.insert(value_key.clone(), coerced.clone());
                     did_swap = true;
                 }
-                current
+                break current;
             };
             if did_swap {
                 self.env.insert(name.clone(), coerced);
@@ -377,6 +380,13 @@ impl Interpreter {
                     // ADR-0010: atomics are process-wide shared state -> the root lineage.
                     let atomic_root = self.shared_vars.root_store();
                     let mut shared = atomic_root.own_map().write().unwrap();
+                    if !Self::atomic_lane_is_live(&shared, &name, &value_key) {
+                        // Retired mid-`cas`: the attempt fails and the next one
+                        // reads the variable's current lane.
+                        drop(shared);
+                        value_key = self.atomic_value_key_for_name(&name);
+                        continue;
+                    }
                     let seen = self.atomic_current_value(&shared, &name, &value_key);
                     if Self::cas_retry_matches(&current, &seen) {
                         shared.insert(value_key.clone(), coerced.clone());
@@ -399,6 +409,22 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    /// Whether `value_key` is still the slot the root store maps `name` to.
+    /// Checked under the same write lock as the compare, so a lane that
+    /// `reset_atomic_var_key` retired after the caller resolved it is never
+    /// written (#9921).
+    // Cost: O(1) — one hash lookup.
+    fn atomic_lane_is_live(
+        shared: &rustc_hash::FxHashMap<String, Value>,
+        name: &str,
+        value_key: &str,
+    ) -> bool {
+        shared
+            .get(&Self::atomic_shared_name_key(name))
+            .and_then(Value::as_str)
+            == Some(value_key)
     }
 
     /// CAS on an array element: `cas(@arr[idx], $expected, $new)`
