@@ -1447,6 +1447,10 @@ impl Interpreter {
                 // unit instead of this one.
                 self.seclude_module_import_aliases(&module_routine_aliases, &module_path);
                 self.seclude_private_toplevel_routines(&module_path, Some(module));
+                // Its package-less `multi`/`proto` families stay registered
+                // (candidates are additive across compunits) but become
+                // visible only to it and to whoever imports them (#11004).
+                self.scope_unit_multi_families(&module_path);
             }
             // See `hide_toplevel_global_routines`: restore the loading scope's
             // own top-level routines regardless of whether the module's body

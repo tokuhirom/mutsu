@@ -701,6 +701,8 @@ impl Interpreter {
         let packages = self.bare_name_packages_syms();
         self.registry()
             .has_multi_function(Some(&base_keys), &packages, name)
+            && (!self.operator_has_import_scope(name)
+                || self.any_visible_candidate_of(Some(&base_keys), &packages, name))
     }
 
     /// [`Self::has_multi_function`] for a `&self` caller, which cannot fill the
@@ -710,6 +712,8 @@ impl Interpreter {
     pub(crate) fn has_multi_function_unindexed(&self, name: &str) -> bool {
         let packages = self.bare_name_packages_syms();
         self.registry().has_multi_function(None, &packages, name)
+            && (!self.operator_has_import_scope(name)
+                || self.any_visible_candidate_of(None, &packages, name))
     }
 
     /// Check if a user-defined function with the given name can accept the

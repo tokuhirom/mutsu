@@ -25,20 +25,36 @@
 use super::*;
 
 impl Interpreter {
-    /// Record that the unit executing right now imported the operator
-    /// candidates `defs` of `name`.
+    /// Record that the unit executing right now imported the candidates
+    /// `defs` of `name`.
+    ///
+    /// With `create`, a family with no record yet gets one (an operator is
+    /// scoped by being imported); without it only families that already carry
+    /// a record -- the package-less ones `scope_unit_multi_families` scoped to
+    /// their declaring unit (#11004) -- gain the importer.
     // Cost: O(d), d = the imported candidates.
     pub(crate) fn record_operator_import<'a>(
         &mut self,
         name: &str,
         defs: impl IntoIterator<Item = &'a Arc<FunctionDef>>,
+        create: bool,
     ) {
         let importer = self.current_unit;
         let name_sym = Symbol::intern(name);
-        let decl_units: HashSet<Symbol> = defs
+        let mut decl_units: HashSet<Symbol> = defs
             .into_iter()
             .map(|def| self.unit_of_source(def.source_file.as_deref()))
             .collect();
+        if !create {
+            let Some(families) = self.operator_import_units.get(&name_sym) else {
+                return;
+            };
+            decl_units.retain(|unit| {
+                families
+                    .get(unit)
+                    .is_some_and(|importers| !importers.contains(&importer))
+            });
+        }
         if decl_units.is_empty() {
             return;
         }
@@ -99,6 +115,13 @@ impl Interpreter {
     pub(crate) fn operator_has_import_scope(&self, name: &str) -> bool {
         !self.operator_import_units.is_empty()
             && Symbol::lookup(name).is_some_and(|sym| self.operator_import_units.contains_key(&sym))
+    }
+
+    /// [`Self::operator_has_import_scope`] for an already-interned name.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn operator_has_import_scope_sym(&self, name: Symbol) -> bool {
+        !self.operator_import_units.is_empty() && self.operator_import_units.contains_key(&name)
     }
 
     /// Drop the operator candidates of `name` that the running code cannot

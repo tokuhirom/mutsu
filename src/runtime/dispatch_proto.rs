@@ -13,9 +13,11 @@ impl Interpreter {
         if self.qualified_name_hidden_here(name) {
             return false;
         }
-        self.bare_name_packages_syms()
+        let packages = self.bare_name_packages_syms();
+        packages
             .iter()
             .any(|pkg| self.registry().has_proto(pkg.as_str(), name))
+            && (!self.operator_has_import_scope(name) || self.scoped_proto_visible(&packages, name))
     }
 
     /// Check if any multi candidates exist for this function name (any arity).
@@ -28,6 +30,8 @@ impl Interpreter {
         let packages = self.bare_name_packages_syms();
         self.registry()
             .has_multi_candidates(Some(&base_keys), &packages, name)
+            && (!self.operator_has_import_scope(name)
+                || self.any_visible_candidate_of(Some(&base_keys), &packages, name))
     }
 
     /// [`Self::has_multi_candidates`] for a `&self` caller — see
@@ -35,6 +39,8 @@ impl Interpreter {
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
         let packages = self.bare_name_packages_syms();
         self.registry().has_multi_candidates(None, &packages, name)
+            && (!self.operator_has_import_scope(name)
+                || self.any_visible_candidate_of(None, &packages, name))
     }
 
     pub(super) fn resolve_proto_function_with_alias(
@@ -76,6 +82,7 @@ impl Interpreter {
         for pkg in self.bare_name_packages_syms().iter() {
             if let Some(def) = dispatch_key::qualified_lookup(pkg.as_str(), name)
                 .and_then(|key| self.registry().proto_functions.get(&key).cloned())
+                .and_then(|def| self.visible_operator_def(name, def))
             {
                 return Some((*def).clone());
             }
