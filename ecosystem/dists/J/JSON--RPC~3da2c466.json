@@ -26,11 +26,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "rpc call with an invalid Batch (but not empty)",
-        "nok": 17,
-        "ok": 22,
+        "first_failure": "not ordered Batch",
+        "nok": 3,
+        "ok": 36,
         "plan": 39,
-        "secs": 1.09,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 33.4,
+        "secs": 35.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 0.55,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,10 +76,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -94,7 +94,7 @@
   "totals": {
     "baseline_assertions": 68,
     "baseline_files": 2,
-    "mutsu_assertions": 51,
+    "mutsu_assertions": 65,
     "parity_files": 1,
     "regressed_files": 1
   },

@@ -9,23 +9,23 @@
   "dist": "P5print",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "was \"foo\" said with print",
-        "nok": 1,
-        "ok": 3,
+        "first_failure": "Cannot assign to a readonly variable or a value",
+        "nok": 0,
+        "ok": 4,
         "plan": 13,
-        "secs": 0.2,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 5.39,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -55,7 +55,7 @@
   "totals": {
     "baseline_assertions": 13,
     "baseline_files": 1,
-    "mutsu_assertions": 3,
+    "mutsu_assertions": 4,
     "parity_files": 0,
     "regressed_files": 1
   },

@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 42.89,
+        "secs": 9.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,7 +55,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 7.84,
+        "secs": 6.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.78,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.71,
+        "secs": 7.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.49,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,53 +105,51 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 9.7,
+        "secs": 8.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'post' resolves to class 'Post', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.29,
+        "ok": 19,
+        "plan": 19,
+        "secs": 11.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/associations.rakutest",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 8.59,
+        "secs": 7.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'person' resolves to class 'Person', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.49,
+        "ok": 13,
+        "plan": 13,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/build-strategies.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 6.1,
+        "secs": 4.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +161,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 3.24,
+        "secs": 2.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -173,30 +171,29 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 4.53,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "sanity: User is in GLOBAL when declared at compunit top level",
-        "nok": 2,
-        "ok": 9,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 0.34,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/factory/class-resolution.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.83,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -208,7 +205,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.69,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -218,7 +215,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 78.74,
+        "secs": 63.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,7 +227,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 52.38,
+        "secs": 40.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -240,30 +237,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.87,
+        "secs": 3.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'post' resolves to class 'Post', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 7,
-        "plan": null,
-        "secs": 2.62,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/configuration.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.42,
+        "secs": 3.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -275,7 +271,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 3.48,
+        "secs": 2.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -285,7 +281,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 6.37,
+        "secs": 4.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -297,7 +293,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.62,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -307,7 +303,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 5.66,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -319,7 +315,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.26,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -329,30 +325,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.81,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'user' resolves to class 'User', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 2.6,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/dsl-bare-name.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 6.47,
+        "secs": 5.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -364,7 +359,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.35,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -374,99 +369,95 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.91,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'person' resolves to class 'Person', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 2.49,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/inheritance.rakutest",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 6.02,
+        "secs": 4.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "lint passes when every factory is healthy",
-        "nok": 4,
-        "ok": 14,
+        "nok": 0,
+        "ok": 18,
         "plan": 18,
-        "secs": 2.98,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/factory/lint.rakutest",
       "raku": {
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 5.84,
+        "secs": 4.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'user' resolves to class 'User', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 2.4,
+        "ok": 14,
+        "plan": 14,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/methods.rakutest",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 4.25,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "factory 'profile' resolves to class 'Profile', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.54,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/factory/overrides.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.14,
+        "secs": 3.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -478,7 +469,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.33,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -488,7 +479,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.39,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -500,7 +491,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.54,
+        "secs": 1.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -510,6 +501,94 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
+        "secs": 3.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/factory/sequences.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 4.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/factory/shared-models.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/factory/strategy.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/factory/transient.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
         "secs": 4.25,
         "skip": 0,
         "todo": 0,
@@ -520,98 +599,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 2.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/factory/sequences.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 4.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "factory 'user' resolves to class 'User', but no such class is in scope (declare it, pass :class explicitly, or set ORM::Factory.allow-class-lookup = False)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/factory/shared-models.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 4.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/factory/strategy.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/factory/transient.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 4.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 3.49,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -621,7 +611,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 6.29,
+        "secs": 3.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -633,7 +623,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.53,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -643,7 +633,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 16.06,
+        "secs": 11.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -660,10 +650,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -674,13 +664,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/O/RM/ORM_FACTORY/aab79c4b81592c5444c7103edcfb0d45e764705f.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 361,
     "baseline_files": 25,
-    "mutsu_assertions": 260,
-    "parity_files": 15,
-    "regressed_files": 10
+    "mutsu_assertions": 361,
+    "parity_files": 25,
+    "regressed_files": 0
   },
   "version": "0.9.1"
 }

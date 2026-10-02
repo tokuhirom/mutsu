@@ -23,7 +23,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 27.49,
+        "secs": 22.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -32,11 +32,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$url'; expected Str but got Any",
+        "first_failure": "Type check failed in binding to parameter '$url'; expected Str but got IO::Path (IO::Path.new(\"/home/...)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.85,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -60,7 +60,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 2,
-        "secs": 1.33,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -74,10 +74,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

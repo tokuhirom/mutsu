@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.18,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 6.57,
+        "secs": 7.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -35,11 +35,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.74,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,11 +58,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.19,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.58,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,11 +81,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.18,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,99 +95,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No matching candidates for method: scalar-build",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/04-required.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/05-bool-interpolation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
-        "nok": 4,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/06-arrays.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got List ((default => {a => b} sep => : kvsep => ;))",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/07-hashes.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.07,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -205,12 +113,104 @@
         "todo": 0,
         "verdict": "die"
       },
+      "path": "t/04-required.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-bool-interpolation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
+        "nok": 4,
+        "ok": 2,
+        "plan": null,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got List. You have to pass an explicitly typed",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-hashes.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No matching candidates for method: scalar-build",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
       "path": "t/08-attr-single-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.59,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,7 +223,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.03,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -233,7 +233,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.02,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -256,7 +256,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -269,7 +269,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.18,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -279,7 +279,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.82,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -298,7 +298,7 @@
     "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

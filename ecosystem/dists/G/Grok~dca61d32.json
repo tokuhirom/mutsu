@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.23,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,29 +24,30 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.73,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.21,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/10-moppet-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.62,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +61,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.5,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +75,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.55,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,10 +90,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -103,13 +104,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RO/GROK/776569d102aa5fbcbca5cbc748f681dea8f31989.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 2,
     "mutsu_assertions": 4,
-    "parity_files": 2,
-    "regressed_files": 0
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }
