@@ -153,24 +153,13 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
                 || contains_xx_with_bare_whatever(right)
         }
         Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            contains_xx_with_bare_whatever(target)
-                || args.iter().any(contains_xx_with_bare_whatever)
-        }
-        Expr::Index { target, index, .. } => {
-            contains_xx_with_bare_whatever(target) || contains_xx_with_bare_whatever(index)
-        }
-        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
-            args.iter().any(contains_xx_with_bare_whatever)
-        }
-        Expr::CallOn { target, args } => {
-            contains_xx_with_bare_whatever(target)
-                || args.iter().any(contains_xx_with_bare_whatever)
-        }
-        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) => {
-            items.iter().any(contains_xx_with_bare_whatever)
-        }
-        Expr::CaptureLiteral(items) => items.iter().any(contains_xx_with_bare_whatever),
+        // Follow only the curry spine (the operand positions `contains_whatever`
+        // follows): a method/call/subscript *argument* is its own expression, so
+        // a `1 xx *` there (`*.push(1 xx *)`) does not stop the target currying.
+        Expr::MethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::Index { target, .. }
+        | Expr::CallOn { target, .. } => contains_xx_with_bare_whatever(target),
         Expr::ChainedCompare { operands, .. } => {
             operands.iter().any(contains_xx_with_bare_whatever)
         }
