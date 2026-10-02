@@ -68,10 +68,11 @@ impl Interpreter {
         // `self` in the block is a grammar instance (Rakudo's cursor at the
         // rule's entry), not the cursor that becomes the rule's Match: what the
         // block writes to its attributes does not reach the Match. Only a
-        // grammar needs one; a class's regex already sees its own `self`.
-        // The start rule's own blocks run on the built invocant `.parse` made
-        // (#10848); every other rule's on a cursor minted without BUILD.
-        let self_cursor = (code.contains("self") && self.class_is_grammar(&pkg.resolve()))
+        // grammar needs one; a class's regex already sees its own `self`. An
+        // attribute (`$!n`, `$.n`) reads it too (#10730). The start rule's
+        // own blocks run on the built invocant `.parse` made (#10848); every
+        // other rule's on a cursor minted without BUILD.
+        let self_cursor = (code_needs_self(code) && self.class_is_grammar(&pkg.resolve()))
             .then(|| start_invocant.unwrap_or_else(|| self.new_grammar_cursor(chars, pos, pkg)));
         let saved_self = self_cursor
             .as_ref()
@@ -398,4 +399,20 @@ impl Interpreter {
             None
         })
     }
+}
+
+/// Whether a regex code block reads `self`: by name, or through an attribute
+/// twigil (`$!n`, `@.list`), which resolves against `self`. `$!` alone is the
+/// error variable, so a twigil counts only before an identifier.
+// Cost: O(n), n = the code's length.
+fn code_needs_self(code: &str) -> bool {
+    if code.contains("self") {
+        return true;
+    }
+    let bytes = code.as_bytes();
+    bytes.windows(3).any(|w| {
+        matches!(w[0], b'$' | b'@' | b'%' | b'&')
+            && matches!(w[1], b'!' | b'.')
+            && (w[2].is_ascii_alphabetic() || w[2] == b'_')
+    })
 }
