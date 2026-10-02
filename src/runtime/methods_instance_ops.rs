@@ -2809,7 +2809,12 @@ impl Interpreter {
             }
             "package" if args.is_empty() => match target.view() {
                 ValueView::Sub(data) => Ok(Value::package(data.package)),
-                ValueView::Routine { package, .. } => Ok(Value::package(package)),
+                // A `&Pkg::name` handle's package is the one its name spells.
+                ValueView::Routine { package, name, .. } => Ok(Value::package(
+                    crate::qualified::package_parent(name)
+                        .filter(|_| crate::qualified::is_qualified(name))
+                        .unwrap_or(package),
+                )),
                 ValueView::Nil => Ok(Value::NIL),
                 // A `Method` object built by `.^methods` for a multi's
                 // dispatcher records no package (rakudo reports a stub one).

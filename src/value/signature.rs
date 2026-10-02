@@ -1328,6 +1328,14 @@ fn render_param(p: &SigParam) -> String {
     }
 
     if p.is_capture {
+        // An explicit nominal type other than the default `Any` is shown, so
+        // a generated proto's `(;; Mu |)` keeps its `Mu`.
+        if let Some(ref tc) = p.type_constraint
+            && tc != "Any"
+        {
+            result.push_str(tc);
+            result.push(' ');
+        }
         result.push('|');
         if !p.name.is_empty() {
             result.push_str(&p.name);

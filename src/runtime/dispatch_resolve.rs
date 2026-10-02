@@ -618,7 +618,18 @@ impl Interpreter {
             .count();
         let mut all_matches = Vec::new();
 
-        let search_pkgs = self.candidate_search_packages(name);
+        // A package-qualified name (`&P::q.cando`) spells its own package:
+        // search only that one, for the bare name.
+        let name_sym = Symbol::intern(name);
+        let (search_pkgs, name) = match crate::qualified::package_parent(name_sym)
+            .filter(|_| crate::qualified::is_qualified(name_sym))
+        {
+            Some(pkg) => (
+                vec![pkg.as_str().to_string()],
+                crate::qualified::unqualified_part(name_sym).as_str(),
+            ),
+            None => (self.candidate_search_packages(name), name),
+        };
 
         // Collect from typed candidates
         let typed_prefixes: Vec<String> = search_pkgs
