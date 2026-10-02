@@ -134,9 +134,15 @@ impl Interpreter {
                 }
             } else {
                 // For multi-arg calls (list-associative flattened chains),
-                // try the user-defined function first before falling back
-                // to built-in reduction.
-                if let Some(def) =
+                // run a proto body before resolving a multi candidate, just
+                // as the binary path does.
+                if let Some(result) = self.vm_try_run_nontrivial_proto_body(
+                    &infix_name,
+                    call_args.clone(),
+                    compiled_fns,
+                ) {
+                    result?
+                } else if let Some(def) =
                     loan_env!(self, resolve_function_with_types(&infix_name, &call_args))
                 {
                     self.compile_and_call_function_def(&def, call_args.clone(), compiled_fns)?
