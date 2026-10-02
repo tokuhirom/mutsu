@@ -29,6 +29,20 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("call to {name} with a named or spread argument"));
             return None;
         }
+        // `$p.m(...) = v` on a read-only parameter: whether that is legal
+        // depends on the method (`.substr-rw` needs the parameter's own
+        // container and must die; an `is rw` accessor writes the object and
+        // must not), and the builtin decides it from the parameter's readonly
+        // mark, which only the VM's binder records. Leave the routine to the
+        // VM, as a plain assignment to a read-only parameter already is (#10893).
+        if name == "__mutsu_assign_method_lvalue"
+            && let Some(Expr::Var(n)) = args.first()
+            && let Some(Binding { slot, kind }) = self.binding_of(n)
+            && self.slot_is_readonly_param(slot, kind)
+        {
+            self.note_decline(|| format!("method lvalue on the read-only parameter {n}"));
+            return None;
+        }
         let callee = self.resolve_trir_callee(name, args.len());
         let params = callee.as_ref().map(|link| link.chunk.params.clone());
         let mut plan = Vec::with_capacity(args.len());
