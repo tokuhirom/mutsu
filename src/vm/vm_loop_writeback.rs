@@ -142,7 +142,7 @@ impl Interpreter {
         // A missing (or undefined) intermediate element autovivifies, shaped by
         // the next subscript, like `%f<a>[0] = 7` does.
         let existing = Self::read_element_source_child(target, index)
-            .filter(|child| Self::is_writable_element_container(child));
+            .filter(Self::is_writable_element_container);
         let mut child = existing.unwrap_or_else(|| {
             if path[1].1 {
                 Value::real_array(Vec::new())
