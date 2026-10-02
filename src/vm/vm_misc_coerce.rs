@@ -175,6 +175,14 @@ impl Interpreter {
         } else {
             val
         };
+        // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
+        if let Some(r) = self.user_find_method_stringify(&val, "Stringy") {
+            let caller_code = self.current_code;
+            let r = r?;
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            self.stack.push(r);
+            return Ok(());
+        }
         self.reify_nested_map_grep_for_read(&val)?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).

@@ -3298,6 +3298,24 @@ impl Interpreter {
                     {
                         let mut args = args;
                         let invocant = args.remove(0);
+                        // Bound to the owner's candidates, like the entry
+                        // above: a by-name re-dispatch would ask the
+                        // receiver's method lookup again, which a user
+                        // `^find_method` answers with this same dispatcher.
+                        if let Some(ValueView::Str(owner)) =
+                            am.get("__mutsu_lookup_class").map(Value::view)
+                            && let Some(qualified) = self.owner_bound_method_name(
+                                Symbol::intern(&owner),
+                                Symbol::intern(meth.as_str()),
+                                &invocant,
+                            )
+                        {
+                            return self.call_method_with_values(
+                                invocant,
+                                qualified.as_str(),
+                                args,
+                            );
+                        }
                         return self.call_method_with_values(invocant, &meth.to_string(), args);
                     }
                 }

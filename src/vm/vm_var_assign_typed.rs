@@ -704,6 +704,11 @@ impl Interpreter {
             // already carry (docs/adr/0058 §8.2) — this is the one string
             // path that had no surrounding coercion op to hang it on.
             self.reify_map_grep_seq(&v)?;
+            // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
+            if let Some(r) = self.user_find_method_stringify(&v, "Stringy") {
+                result.push_str(&r?.to_string_value());
+                continue;
+            }
             // Interpolating an unhandled Failure into a string throws its underlying
             // exception (Raku: a Failure is an "unthrown exception" that explodes on
             // use as a value). Mirrors the prefix:<~> stringify path; without this,

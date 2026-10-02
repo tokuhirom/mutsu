@@ -214,6 +214,12 @@ impl Interpreter {
                     None => Ok(None),
                 }
             }
+            // A user `^find_method` answers `.Str` (`find_method_intercept`).
+            ValueView::Instance { .. } | ValueView::Package(_)
+                if let Some(r) = self.user_find_method_stringify(value, "Str") =>
+            {
+                Ok(Some(r?))
+            }
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 if self.has_user_method(&cn, "Str") {
