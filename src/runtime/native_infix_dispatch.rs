@@ -213,6 +213,19 @@ fn core_infix_shape(name: &str) -> Option<CoreInfixShape> {
 /// its two positionals carry a *meaningful* type (mirroring
 /// `candidate_specificity_rank_for_args`, which does not count a bare
 /// `Mu`/`Any`), and the summed MRO distance from the arguments.
+/// What [`Interpreter::core_infix_candidate_wins`] is memoized on, besides the
+/// functions map (whose generation tags the entry). `def` is the candidate's
+/// address; the entry holds the `Arc` too, so a hit is confirmed by pointer
+/// identity and an address can never be reused while the entry lives.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct CoreInfixWinsKey {
+    name: Symbol,
+    def: usize,
+    proto_generation: u64,
+    subsets: usize,
+    arg_keys: Vec<Symbol>,
+}
+
 #[derive(Clone, Copy)]
 struct CoreRank {
     typed: usize,
@@ -230,7 +243,68 @@ impl Interpreter {
     /// A plain `sub infix:<op>` (not a `multi`) is a lexical shadow rather than
     /// a candidate: it replaces the operator outright, as in rakudo, so this
     /// answers `false` for it.
+    ///
+    /// The answer is a function of the operand *types*, so it is memoized per
+    /// `(operator, candidate, argument type keys)` in
+    /// [`Interpreter::core_infix_wins_cache`] (#10111): ranking the core set
+    /// walks every modelled core signature through `type_hierarchy_distance`,
+    /// ~30 string-keyed MRO walks per operator call, which was the largest
+    /// single cost of a user `multi infix:<*>` call. A candidate whose rank
+    /// reads an argument's value (a type capture) is never memoized.
+    // Cost: O(k) on a hit, k = operands (the key build); O(s · d) on a miss,
+    // s = modelled core signatures, d = MRO depth of the operand types.
     pub(crate) fn core_infix_candidate_wins(
+        &mut self,
+        name: &str,
+        def: &Arc<FunctionDef>,
+        left: &Value,
+        right: &Value,
+    ) -> bool {
+        let key = self.core_infix_wins_key(name, def, left, right);
+        let generation = self.fn_resolve_gen;
+        if let Some(key) = &key
+            && let Some((cached_def, wins)) = self.core_infix_wins_cache.get(generation, key)
+            && Arc::ptr_eq(cached_def, def)
+        {
+            return *wins;
+        }
+        let wins = self.core_infix_candidate_wins_uncached(name, def, left, right);
+        if let Some(key) = key {
+            debug_assert_eq!(generation, self.fn_resolve_gen);
+            self.core_infix_wins_cache
+                .insert(generation, key, (Arc::clone(def), wins));
+        }
+        wins
+    }
+
+    /// The memo key for [`Self::core_infix_candidate_wins`], or `None` when the
+    /// answer must be computed fresh: an operand that does not reduce to a type
+    /// key (a `Junction`, a mixin, a container), or a candidate whose rank reads
+    /// an argument's value. The registry state the ranking reads besides the
+    /// functions map — the proto generation and the registered subsets — joins
+    /// the key the way it joins `BareMultiPlanKey`; the functions map itself is
+    /// the cache generation.
+    fn core_infix_wins_key(
+        &mut self,
+        name: &str,
+        def: &Arc<FunctionDef>,
+        left: &Value,
+        right: &Value,
+    ) -> Option<CoreInfixWinsKey> {
+        if self.candidate_rank_reads_value(def) {
+            return None;
+        }
+        let arg_keys = self.multi_arg_type_keys(&[left.clone(), right.clone()])?;
+        Some(CoreInfixWinsKey {
+            name: Symbol::intern(name),
+            def: Arc::as_ptr(def) as usize,
+            proto_generation: self.registry().proto_generation(),
+            subsets: self.registry().subsets.len(),
+            arg_keys,
+        })
+    }
+
+    fn core_infix_candidate_wins_uncached(
         &mut self,
         name: &str,
         def: &FunctionDef,

@@ -3485,6 +3485,7 @@ impl Interpreter {
             func_multi_resolve_cache: Default::default(),
             func_multi_argkey_cacheable: Default::default(),
             bare_multi_plan_cache: Default::default(),
+            core_infix_wins_cache: Default::default(),
             func_multi_type_cacheable: Default::default(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
             given_pointy_capture_slots: Vec::new(),
