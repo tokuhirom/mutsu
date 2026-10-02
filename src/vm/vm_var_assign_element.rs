@@ -290,7 +290,7 @@ impl Interpreter {
         // moved into the insert -- `%h{$k} = $v` used to build the same
         // `String` twice per store.
         let key = self.stack[stack_len - 1].to_string_value();
-        let target = self.plain_hash_lane_target(code, name_idx, target_slot, &key)?;
+        let target = self.plain_hash_lane_target(code, name_idx, target_slot)?;
         let env = self.env();
         match (target, env.get_sym(var_sym).map(Value::view)) {
             (PlainHashTarget::Hash { local_slot }, Some(ValueView::Hash(hash_arc))) => {

@@ -246,12 +246,6 @@ impl Interpreter {
         {
             self.reify_map_grep_seq(&top)?;
         }
-        // A whole-container reassignment breaks every `:=`-bound element, so drop
-        // the read-only-element markers (`%h<i> := 137; %h = (...)` makes `%h<i>`
-        // writable again). Covers the tied-STORE path below too.
-        if name.starts_with('%') || name.starts_with('@') {
-            self.clear_all_ro_index(&name);
-        }
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.
         if name.starts_with('%') {

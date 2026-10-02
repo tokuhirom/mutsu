@@ -1754,12 +1754,6 @@ impl Interpreter {
                         // Write through the shared hash node, as BIND-KEY does,
                         // so an alias (`my %s := %!s; %s.ASSIGN-KEY(...)`) sees
                         // the store instead of a detached rebuild.
-                        //
-                        // A key bound by the subscript form (`%h<k> := 5`) is
-                        // recorded as a name-keyed read-only marker instead.
-                        if self.is_ro_index(target_name, &Self::encode_bound_index(&args[0])) {
-                            return Err(RuntimeError::immutable_value());
-                        }
                         if self.assign_key_in_place(target_name, &args[0], &value)? {
                             crate::vm::vm_stats::record_dispatch_entry_intercept(
                                 "callmethodmut",
