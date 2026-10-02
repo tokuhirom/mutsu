@@ -172,7 +172,7 @@ impl Interpreter {
                 break;
             }
             let ok = step.nominal_ok
-                && self.with_candidate_package(Some(step.def.package), |this| {
+                && self.with_candidate_scope(&step.def, |this| {
                     this.run_value_checks(args, &step.def.param_defs, &step.checks)
                 });
             if let Some(e) = self.take_where_exception() {

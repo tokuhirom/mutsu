@@ -596,6 +596,30 @@ impl Interpreter {
                     if self.resolve_function(&name).is_some() || captured_match {
                         return self.call_function(&name, call_args);
                     }
+                    // A compunit-scoped family (#11004) that the calling unit
+                    // cannot see by name, such as a module invoking a `&sha256`
+                    // its importer passed in. Dispatch it from the unit that
+                    // declared the captured candidates. There the name is that
+                    // family, with its proto, ranking and defaults intact.
+                    if self.operator_has_import_scope(&name)
+                        && let Some(unit) = candidates.first().and_then(|c| match c.view() {
+                            ValueView::Sub(d) => {
+                                Some(self.unit_of_source(d.source_file.as_deref()))
+                            }
+                            _ => None,
+                        })
+                    {
+                        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+                        // Only when the name really is that family there; a
+                        // dispatcher whose candidates no name reaches keeps
+                        // the captured-candidate walk below.
+                        if !self.resolve_all_multi_candidates(&name).is_empty() {
+                            let result = self.call_function(&name, call_args);
+                            self.current_unit = saved_unit;
+                            return result;
+                        }
+                        self.current_unit = saved_unit;
+                    }
                 }
                 // Candidates are out of scope -- dispatch through captured Subs
                 for candidate in &candidates {

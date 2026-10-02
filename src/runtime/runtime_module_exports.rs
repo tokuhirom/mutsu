@@ -1356,9 +1356,15 @@ impl Interpreter {
             {
                 self.shadow_imported_proto_family(&target_single);
             }
-            if is_operator {
-                self.record_operator_import(&name, function_entries.iter().map(|(_, def)| def));
-            }
+            // An operator family becomes scoped by being imported (#9944); any
+            // other family only when its declaring compunit already scoped it
+            // (`scope_unit_multi_families`, #11004) -- this import is then what
+            // makes it visible here.
+            self.record_operator_import(
+                &name,
+                function_entries.iter().map(|(_, def)| def),
+                is_operator,
+            );
             for (k, v) in function_entries {
                 let ks = k.resolve();
                 if ks.contains('/') {

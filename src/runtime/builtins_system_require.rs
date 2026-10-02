@@ -219,6 +219,7 @@ impl Interpreter {
             // global. Move it out of the registry before the loading scope's
             // own entries come back. See `runtime/unit_private_routines.rs`.
             self.seclude_private_toplevel_routines(&path.to_string_lossy(), None);
+            self.scope_unit_multi_families(&path.to_string_lossy());
         }
         self.restore_toplevel_global_routines(hidden_toplevel);
         // Invalidate name-keyed resolution caches.

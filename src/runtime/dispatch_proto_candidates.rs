@@ -58,6 +58,11 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> crate::runtime::MultiCandidateList {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
+        // A scoped family's candidate list depends on the executing compunit,
+        // which the memo key does not carry (#11004).
+        if self.operator_has_import_scope_sym(name_sym) {
+            return Arc::new(self.resolve_all_multi_candidates_indexed(name));
+        }
         let generation = (self.fn_resolve_gen, self.registry().proto_generation());
         if self.multi_dispatch_candidates_memo_gen != generation {
             self.multi_dispatch_candidates_memo.clear();
@@ -154,6 +159,9 @@ impl Interpreter {
         // candidate from the nextsame chain (hash-seed-dependent flake in
         // S12-methods/defer-next.t `nextsame + multi + where`). Mirrors the
         // deterministic winner resolution PR-4 added to `push_multi_dispatch_frame`.
+        // A scoped family only another compunit declared or imported is not
+        // a candidate here (#11004, `runtime/unit_multi_scope.rs`).
+        self.retain_visible_operator_candidates(name, &mut all);
         self.sort_candidates_by_specificity(&mut all);
         all.into_iter().map(|(_, def)| def).collect()
     }

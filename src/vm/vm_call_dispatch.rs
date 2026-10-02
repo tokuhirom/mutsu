@@ -65,6 +65,11 @@ impl Interpreter {
     /// key let one package's answer leak into every other package's (#7539) —
     /// see the doc comment on [`crate::runtime::Interpreter::multi_candidates_cache`].
     pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
+        // A scoped family's answer depends on the executing compunit, which
+        // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope_sym(sym) {
+            return self.has_multi_candidates(&sym.resolve());
+        }
         let generation = self.fn_resolve_gen;
         let key = self.bare_name_ctx_key(sym);
         if let Some(&cached) = self.multi_candidates_cache.get(generation, &key) {
@@ -104,6 +109,11 @@ impl Interpreter {
     /// [`crate::opcode::CompiledCode::const_sym`]), so the cache key does not
     /// re-hash a string constant it already had ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
     pub(crate) fn has_proto_cached_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
+        // A scoped family's answer depends on the executing compunit, which
+        // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope_sym(name_sym) {
+            return self.has_proto(name);
+        }
         let pgen = self.registry().proto_generation();
         if self.has_proto_cache_gen != pgen {
             self.has_proto_cache.clear();
@@ -159,6 +169,11 @@ impl Interpreter {
     /// the callsite name's `Symbol` — see [`Self::has_proto_cached_sym`]
     /// ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
     pub(crate) fn has_multi_function_cached_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
+        // A scoped family's answer depends on the executing compunit, which
+        // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope_sym(name_sym) {
+            return self.has_multi_function(name);
+        }
         let generation = self.fn_resolve_gen;
         let key = self.bare_name_ctx_key(name_sym);
         if let Some(&cached) = self.multi_fn_cache.get(generation, &key) {

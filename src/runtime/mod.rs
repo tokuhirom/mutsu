@@ -1017,6 +1017,7 @@ pub(crate) mod unbounded_range;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unicode_name_prop;
+mod unit_multi_scope;
 mod unit_private_routines;
 mod user_method_probe_memo;
 pub(crate) mod utf8_c8;

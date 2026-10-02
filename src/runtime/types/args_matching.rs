@@ -151,22 +151,47 @@ impl Interpreter {
         self.args_match_param_types_inner(args, param_defs, false, None)
     }
 
-    /// Match a multi candidate in the package where it was declared.
+    /// Match a multi candidate in the package and compunit where it was
+    /// declared.
     ///
     /// A `where` constraint is compiled and evaluated while the dispatcher is
     /// still selecting a candidate, so no callee routine frame has installed
     /// the candidate's lexical package yet.  Imported routines referenced by
     /// the constraint must nevertheless resolve from that package, just as
     /// they do in the candidate body.
-    pub(crate) fn args_match_multi_candidate_in_package(
+    ///
+    /// It is matched in the candidate's declaring compunit too, for the same
+    /// reason: a `where` that calls a multi family the candidate's module
+    /// imported must see that family, which is scoped to the importing
+    /// compunit (#11004), whoever is calling.
+    pub(crate) fn args_match_multi_candidate_in_scope(
         &mut self,
         args: &[Value],
-        param_defs: &[ParamDef],
-        package: Symbol,
+        def: &FunctionDef,
     ) -> bool {
-        self.with_candidate_package(Some(package), |this| {
-            this.args_match_param_types_inner(args, param_defs, true, Some(package))
+        let package = def.package;
+        self.with_candidate_scope(def, |this| {
+            this.args_match_param_types_inner(args, &def.param_defs, true, Some(package))
         })
+    }
+
+    /// Run `f` in candidate `def`'s declaring package and compilation unit:
+    /// the scope its signature-time code (`where` clauses, defaults) was
+    /// compiled in. A def with no recorded source file keeps the current unit.
+    pub(crate) fn with_candidate_scope<T>(
+        &mut self,
+        def: &FunctionDef,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let saved_unit = def.source_file.as_deref().map(|file| {
+            let unit = self.unit_of_source(Some(file));
+            std::mem::replace(&mut self.current_unit, unit)
+        });
+        let result = self.with_candidate_package(Some(def.package), f);
+        if let Some(saved_unit) = saved_unit {
+            self.current_unit = saved_unit;
+        }
+        result
     }
 
     pub(crate) fn with_candidate_package<T>(

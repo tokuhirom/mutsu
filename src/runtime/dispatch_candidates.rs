@@ -313,7 +313,7 @@ impl Interpreter {
                     .count();
                 positional_arg_count == def.params.len()
             } else {
-                self.args_match_multi_candidate_in_package(args, &def.param_defs, def.package)
+                self.args_match_multi_candidate_in_scope(args, &def)
             };
             if let Some(e) = self.take_where_exception() {
                 if threw.is_none() {
