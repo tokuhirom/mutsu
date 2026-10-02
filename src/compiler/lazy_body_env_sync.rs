@@ -1,4 +1,5 @@
-//! The bounded env-sync set of a named sub's lazily-registered body (#10960).
+//! The bounded env-sync set of a lazily-registered declaration: a named sub's
+//! body (#10960) or a class's registration (#10999).
 //!
 //! A named sub is installed by a `RegisterDecl` op and has no runtime
 //! closure-creation op, so the declaring frame's `compute_needs_env_sync`
@@ -15,18 +16,28 @@
 //! already meets: every name the body (or anything nested in it) can read by
 //! name from this frame's env must keep its mirror. A body that reaches names
 //! no scan can bound stays unbounded and keeps the conservative fold.
+//!
+//! A class is registered the same way and reads outer lexicals through more
+//! channels — its compiled method bodies, their signatures' declaration-time
+//! expressions, attribute descriptors, trait and parent-argument chunks, the
+//! class-body statement chunks run at registration, and the type names it
+//! mentions. [`Compiler::note_class_decl_env_sync`] bounds the plan only when
+//! every one of them is enumerable.
 
 use super::Compiler;
-use crate::opcode::{CompiledCode, OpCode};
+use crate::ast::ParamDef;
+use crate::opcode::{
+    ClassBodyOp, CompiledClassDeclPlan, CompiledCode, CompiledDeclExpr, DeclTraitArg, OpCode,
+};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 impl Compiler {
     /// Record the env-sync slots of a named sub's compiled bodies `keys` and
-    /// mark sub-declaration plans `plan_idxs` bounded. Leaves the plans
-    /// unbounded (the frame keeps its every-local fold) when a body failed to
-    /// compile (`expected` bodies but fewer `keys`) or reads names by a
-    /// mechanism no op scan can bound.
+    /// mark sub-declaration plans `plan_idxs` (`decl_plans` indices) bounded.
+    /// Leaves the plans unbounded (the frame keeps its every-local fold) when
+    /// a body failed to compile (`expected` bodies but fewer `keys`) or reads
+    /// names by a mechanism no op scan can bound.
     // Cost: O(b), b = total ops and constants of the sub's compiled bodies,
     // nested closures included.
     pub(super) fn note_sub_decl_env_sync(
@@ -48,6 +59,160 @@ impl Compiler {
             }
             collect_by_name_reads(&cf.code, &mut names);
         }
+        self.record_bounded_lazy_decl(plan_idxs, names);
+    }
+
+    /// The class counterpart of [`Self::note_sub_decl_env_sync`] (#10999):
+    /// mark the class-declaration plan `decl_idx` (a `decl_plans` index)
+    /// bounded when every channel its registration reads outer lexicals
+    /// through by name is enumerable, folding those names into this frame's
+    /// env-sync slots. The channels are the compiled method bodies, their
+    /// signatures' declaration-time expressions, the attribute descriptors,
+    /// the trait and parent-argument chunks, the class-body statement chunks,
+    /// and the type names the header and signatures mention. Anything
+    /// evaluated from raw AST at registration, a computed class or method
+    /// name, and a `token`/`rule` body leave the plan unbounded.
+    // Cost: O(b), b = total ops and constants of the class's compiled method
+    // bodies and declaration chunks, nested closures included.
+    pub(super) fn note_class_decl_env_sync(&mut self, decl_idx: u32) {
+        let Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) =
+            self.code.decl_plans.get(decl_idx as usize)
+        else {
+            return;
+        };
+        let Some(plan) = self.code.class_decl_plans.get(*plan_idx as usize) else {
+            return;
+        };
+        let Some(names) = self.class_plan_by_name_reads(plan) else {
+            return;
+        };
+        self.record_bounded_lazy_decl(&[decl_idx], names);
+    }
+
+    /// Every name the registration of `plan` (and each method it installs)
+    /// may resolve by name in the declaring frame's env, or `None` when one
+    /// of them is beyond enumeration.
+    // Cost: O(b), b as in `note_class_decl_env_sync`.
+    fn class_plan_by_name_reads(&self, plan: &CompiledClassDeclPlan) -> Option<Vec<Symbol>> {
+        if plan.name_chunk.is_some() {
+            return None;
+        }
+        let mut names: Vec<Symbol> = Vec::new();
+        for type_name in plan
+            .parents
+            .iter()
+            .chain(&plan.does_parents)
+            .chain(&plan.hidden_parents)
+            .chain(&plan.body_parents)
+        {
+            push_type_name_tokens(type_name, &mut names);
+        }
+        for sym in &plan.trusts {
+            sym.with_str(|s| push_type_name_tokens(s, &mut names));
+        }
+        for (_, arg) in &plan.custom_traits {
+            decl_arg_reads(arg.as_ref(), &mut names)?;
+        }
+        for (_, args) in &plan.parent_arg_chunks {
+            for arg in args {
+                decl_arg_reads(Some(arg), &mut names)?;
+            }
+        }
+        for (_, attr) in &plan.attr_decls {
+            if attr.unknown_traits.iter().any(|(_, _, arg)| arg.is_some()) {
+                return None;
+            }
+            for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
+                decl_arg_reads(arg.as_ref(), &mut names)?;
+            }
+            for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
+                push_type_name_tokens(type_name, &mut names);
+            }
+        }
+        if plan.method_name_chunks.iter().any(Option::is_some) {
+            return None;
+        }
+        for method in &plan.method_decls {
+            if method.name_expr.is_some()
+                || method.custom_traits.iter().any(|(_, arg)| arg.is_some())
+            {
+                return None;
+            }
+            let cf = self.compiled_functions.get(&method.compiled_routine_key?)?;
+            if !lazy_body_reads_bounded(&cf.code) {
+                return None;
+            }
+            collect_by_name_reads(&cf.code, &mut names);
+            self.param_defs_by_name_reads(&cf.param_defs, &mut names)?;
+            if let Some(ret) = &method.return_type {
+                push_type_name_tokens(ret, &mut names);
+            }
+        }
+        for op in &plan.body_plan {
+            match op {
+                ClassBodyOp::Attr { .. } | ClassBodyOp::Method => {}
+                ClassBodyOp::Does { name, args } => {
+                    name.with_str(|s| push_type_name_tokens(s, &mut names));
+                    for arg in args.iter().flatten() {
+                        decl_arg_reads(Some(arg), &mut names)?;
+                    }
+                }
+                ClassBodyOp::ClassSub {
+                    chunk, hoist_chunk, ..
+                } => {
+                    chunk_reads(chunk.as_ref()?, &mut names)?;
+                    if let Some(hoist) = hoist_chunk {
+                        chunk_reads(hoist, &mut names)?;
+                    }
+                }
+                ClassBodyOp::CodeAlias { chunk, .. }
+                | ClassBodyOp::ProtoMethod { chunk, .. }
+                | ClassBodyOp::LeavePhaser { chunk, .. }
+                | ClassBodyOp::Other { chunk, .. } => chunk_reads(chunk.as_ref()?, &mut names)?,
+                ClassBodyOp::TokenRule { .. } => return None,
+            }
+        }
+        Some(names)
+    }
+
+    /// Fold the by-name reads of a signature's declaration-time expressions
+    /// (defaults, `where` constraints, trait arguments, shape constraints,
+    /// nested signatures), which are evaluated from the `ParamDef` AST at
+    /// call time and never reach a compiled body's ops, plus the type names
+    /// it constrains its parameters with.
+    // Cost: O(p), p = total size of the signature's expressions.
+    fn param_defs_by_name_reads(&self, params: &[ParamDef], out: &mut Vec<Symbol>) -> Option<()> {
+        for pd in params {
+            if let Some(ty) = &pd.type_constraint {
+                push_type_name_tokens(ty, out);
+            }
+            let exprs = pd
+                .default
+                .iter()
+                .chain(pd.where_constraint.as_deref())
+                .chain(pd.trait_args.iter().map(|(_, e)| e))
+                .chain(pd.shape_constraints.iter().flatten());
+            for expr in exprs {
+                let chunk = self.compile_decl_expr(expr);
+                chunk_reads(&chunk, out)?;
+            }
+            for nested in pd
+                .sub_signature
+                .iter()
+                .chain(&pd.outer_sub_signature)
+                .chain(pd.code_signature.iter().map(|(sig, _)| sig))
+            {
+                self.param_defs_by_name_reads(nested, out)?;
+            }
+        }
+        Some(())
+    }
+
+    /// Resolve `names` against this frame's slots into
+    /// `lazy_body_env_sync_slots` and mark the declaration plans `decl_idxs`
+    /// bounded.
+    // Cost: O(n * s), n = names.len(), s = slots already recorded.
+    fn record_bounded_lazy_decl(&mut self, decl_idxs: &[u32], names: Vec<Symbol>) {
         for sym in names {
             let slot = sym.with_str(|s| {
                 self.local_map.get(s).copied().or_else(|| {
@@ -63,10 +228,57 @@ impl Compiler {
                 self.code.lazy_body_env_sync_slots.push(slot);
             }
         }
-        for &idx in plan_idxs {
-            if !self.code.bounded_lazy_sub_plans.contains(&idx) {
-                self.code.bounded_lazy_sub_plans.push(idx);
+        for &idx in decl_idxs {
+            if !self.code.bounded_lazy_decl_plans.contains(&idx) {
+                self.code.bounded_lazy_decl_plans.push(idx);
             }
+        }
+    }
+}
+
+/// Fold the by-name reads of one declaration-time argument; `None` when it is
+/// evaluated from raw AST (no compiled body to scan).
+// Cost: O(b), b = ops and constants of the argument's chunk.
+fn decl_arg_reads(arg: Option<&DeclTraitArg>, out: &mut Vec<Symbol>) -> Option<()> {
+    match arg {
+        None | Some(DeclTraitArg::Literal(_)) => Some(()),
+        Some(DeclTraitArg::Compiled(chunk)) => chunk_reads(chunk, out),
+        Some(DeclTraitArg::Ast(_)) => None,
+    }
+}
+
+/// Fold the by-name reads of a compiled declaration chunk; `None` when it
+/// reads names no op scan can bound.
+// Cost: O(b), b = ops and constants of `chunk` and its nested closures.
+fn chunk_reads(chunk: &CompiledDeclExpr, out: &mut Vec<Symbol>) -> Option<()> {
+    if !lazy_body_reads_bounded(&chunk.code) {
+        return None;
+    }
+    collect_by_name_reads(&chunk.code, out);
+    Some(())
+}
+
+/// Push every identifier in a type-name spelling (`Foo::Bar[Int]:D`, a
+/// parent string with bracketed arguments) as a by-name read: a lexical type
+/// or constant the declaration names (`my constant T = Int; class C is T`)
+/// is looked up by name at registration. Over-approximating with unrelated
+/// tokens only keeps an extra mirror live.
+// Cost: O(n), n = type_name.len().
+fn push_type_name_tokens(type_name: &str, out: &mut Vec<Symbol>) {
+    let mut push = |token: &str| {
+        if token.is_empty() {
+            return;
+        }
+        let sym = Symbol::intern(token);
+        if !out.contains(&sym) {
+            out.push(sym);
+        }
+    };
+    let is_name_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':');
+    for raw in type_name.split(|c: char| !is_name_char(c)) {
+        push(raw.trim_matches(':'));
+        for part in raw.split(':') {
+            push(part);
         }
     }
 }
@@ -79,7 +291,15 @@ impl Compiler {
 // Cost: O(b), b = total ops and constants of `code` and its nested closures.
 fn lazy_body_reads_bounded(code: &CompiledCode) -> bool {
     let own = code.ops.iter().all(|op| match op {
-        OpCode::RegisterDecl(idx) => code.bounded_lazy_sub_plans.contains(idx),
+        // Only a bounded SUB: a nested class's body-statement and type-name
+        // reads are not folded into the enclosing body's `free_var_syms`, so
+        // they would be lost on the way out.
+        OpCode::RegisterDecl(idx) => {
+            matches!(
+                code.decl_plans.get(*idx as usize),
+                Some(crate::opcode::CompiledDeclPlanRef::Sub(_))
+            ) && code.bounded_lazy_decl_plans.contains(idx)
+        }
         OpCode::PhaserEnd { .. } | OpCode::CheckPhaser { .. } => false,
         _ => true,
     }) && !code.holds_interpolating_regex()

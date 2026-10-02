@@ -6941,12 +6941,13 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/nested-named-sub-free-var-capture.md` and
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
-    /// Sub-declaration plans (`sub_decl_plans` indices) whose compiled bodies'
-    /// by-name reads are all folded into [`Self::lazy_body_env_sync_slots`], so
-    /// their `RegisterDecl` does not force `compute_needs_env_sync`'s
-    /// every-local fold (#10960; see `compiler/lazy_body_env_sync.rs`).
-    pub(crate) bounded_lazy_sub_plans: Vec<u32>,
-    /// This frame's local slots a bounded named sub's body reads by name.
+    /// Declaration plans (`decl_plans` indices — the `RegisterDecl` operand)
+    /// of a named sub (#10960) or a class (#10999) whose by-name reads are all
+    /// folded into [`Self::lazy_body_env_sync_slots`], so their `RegisterDecl`
+    /// does not force `compute_needs_env_sync`'s every-local fold (see
+    /// `compiler/lazy_body_env_sync.rs`).
+    pub(crate) bounded_lazy_decl_plans: Vec<u32>,
+    /// This frame's local slots a bounded declaration reads by name.
     pub(crate) lazy_body_env_sync_slots: Vec<u32>,
     /// The variables each lexically visible nested sub called (or fetched as
     /// `&name`) from this code WRITES, one entry per call site. Kept apart from
@@ -7926,7 +7927,7 @@ impl CompiledCode {
             amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
-            bounded_lazy_sub_plans: Vec::new(),
+            bounded_lazy_decl_plans: Vec::new(),
             lazy_body_env_sync_slots: Vec::new(),
             nested_routine_free_writes: Vec::new(),
             nested_sub_written_free: Vec::new(),
@@ -9011,21 +9012,18 @@ impl CompiledCode {
             // though, so the compiler resolves that body's by-name reads to
             // this frame's slots (`lazy_body_env_sync_slots`) and marks the plan
             // bounded (#10960, `compiler/lazy_body_env_sync.rs`); fold just
-            // those slots. Any other registration — a class/role (whose method
-            // bodies and body statements capture the same way), a body that
-            // failed to compile or reads names no scan can bound — still
-            // conservatively keeps every local of the frame env-synced.
+            // those slots. A class whose registration channels are all
+            // enumerable is bounded the same way (#10999). Any other
+            // registration — a role, a computed name, a body that failed to
+            // compile or reads names no scan can bound — still conservatively
+            // keeps every local of the frame env-synced.
             for &slot in &self.lazy_body_env_sync_slots {
                 if let Some(b) = self.needs_env_sync.get_mut(slot as usize) {
                     *b = true;
                 }
             }
             let defines_lazy_body = self.ops.iter().any(|op| match op {
-                OpCode::RegisterDecl(idx) => !matches!(
-                    self.decl_plans.get(*idx as usize),
-                    Some(CompiledDeclPlanRef::Sub(plan))
-                        if self.bounded_lazy_sub_plans.contains(plan)
-                ),
+                OpCode::RegisterDecl(idx) => !self.bounded_lazy_decl_plans.contains(idx),
                 // A deferred END body (`PhaserEnd`, run after the frame
                 // exits) and a compile-time BEGIN/CHECK body (`CheckPhaser`)
                 // reconstruct the installing frame's lexicals BY NAME from

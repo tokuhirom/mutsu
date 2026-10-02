@@ -4658,6 +4658,9 @@ impl Compiler {
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_class_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
+                // #10999: bound this frame's env-sync set by what the class
+                // registration actually reads by name, instead of every local.
+                self.note_class_decl_env_sync(idx);
             }
             Stmt::AugmentClass { name, body, .. } => {
                 let site_id = self.augment_site_id(&name.resolve(), body);
