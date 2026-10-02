@@ -364,4 +364,20 @@ impl ArrayData {
             self.head = 0;
         }
     }
+
+    /// Drop the trailing holes ([`Self::hole_at`]) a delete left behind, as
+    /// an unshaped array does after its last element is deleted
+    /// (`my @a; @a[0] = 1; @a[0]:delete` leaves `[]`). A shaped array is
+    /// fixed-size and never shrinks, so its callers must not call this; they
+    /// only hold the `ArrayKind` that says so.
+    // Cost: O(k), k = trailing holes removed.
+    pub fn trim_trailing_holes(&mut self) {
+        while !self.is_empty() && self.hole_at(self.len() - 1) {
+            let idx = self.len() - 1;
+            self.pop();
+            if let Some(s) = self.initialized.as_mut() {
+                s.remove(&idx);
+            }
+        }
+    }
 }
