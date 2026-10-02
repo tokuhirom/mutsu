@@ -52,12 +52,14 @@ pub(super) fn conditional_use(stmt: &Stmt) -> Option<ConditionalUse> {
 /// judging the unit. These are the pragmas: `if` (whose `sub EXPORT` returns
 /// an empty map, after enabling the `:if` adverb), `lib`, the `MONKEY`
 /// family, and the positional pragmas mutsu applies as run-time state, except
-/// `experimental`, whose `:macros` adds a declarator.
+/// `experimental`, whose `:macros` adds a declarator, and a language version
+/// (`use v6.e.PREVIEW` brings in routines such as `nano`).
 // Cost: O(1).
 pub(super) fn imports_no_routines(module: &str) -> bool {
     matches!(module, "if" | "lib")
         || module.starts_with("MONKEY")
         || (module != "experimental"
+            && !module.starts_with("v6")
             && crate::runtime::begin_prologue::is_known_pragma_name(module))
 }
 
