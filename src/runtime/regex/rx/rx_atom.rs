@@ -112,4 +112,17 @@ impl Interpreter {
         }
         self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, program.atom_ic[i])
     }
+
+    /// Where `:sigspace`'s `<.ws>` (`RegexAtom::WsRule`) ends at `pos`: a
+    /// `ws` method wrapped with `.wrap` runs through its wrapper chain, as in
+    /// the walk; otherwise the built-in `<!ww> \s*` (`ws_rule_end`).
+    // Cost: O(w), w = the whitespace run at `pos`; with a wrapped `ws`, one
+    // call of the wrapper chain.
+    #[inline]
+    pub(super) fn rx_ws_at(&mut self, chars: &[char], pos: usize, pkg: Symbol) -> Option<usize> {
+        if let Some(end) = self.try_wrapped_token_end(chars, pos, pkg, "ws") {
+            return end;
+        }
+        super::super::regex_helpers::ws_rule_end(chars, pos)
+    }
 }

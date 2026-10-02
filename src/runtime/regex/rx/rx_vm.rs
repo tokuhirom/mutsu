@@ -294,6 +294,16 @@ impl Interpreter {
                             true
                         }
                     }
+                    // Cost: O(w), w = the whitespace run at `pos` (`ws_rule_end`).
+                    RxOp::Ws => match self.rx_ws_at(chars, pos, pkg) {
+                        Some(next) => {
+                            pos = next;
+                            farthest = farthest.max(pos);
+                            pc += 1;
+                            true
+                        }
+                        None => false,
+                    },
                     // Cost: O(1) for every assertion Slice A compiles.
                     RxOp::Assert(i) => {
                         let hit = self

@@ -1237,6 +1237,24 @@ pub(super) fn is_word_char(c: char) -> bool {
     crate::builtins::cclass::is_word(c)
 }
 
+/// Where the built-in `<.ws>` ends when matched at `pos` (the `WsRule` atom
+/// `:sigspace` inserts): `<!ww> \s*`, committed to its longest run. Between two
+/// word characters it needs at least one space, else it fails. The one
+/// implementation shared by the walk and the compiled engine's `RxOp::Ws`.
+// Cost: O(w), w = the whitespace run at `pos`.
+pub(crate) fn ws_rule_end(chars: &[char], pos: usize) -> Option<usize> {
+    let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+    let mut end = pos;
+    while end < chars.len() && crate::builtins::cclass::is_space(chars[end]) {
+        end += 1;
+    }
+    let after_is_word = end < chars.len() && is_word_char(chars[end]);
+    if before_is_word && after_is_word && end == pos {
+        return None;
+    }
+    Some(end)
+}
+
 /// Advance past a single grapheme cluster starting at `pos` in `chars`.
 /// After matching the base character at `pos`, this skips any trailing
 /// combining marks (Unicode category M) so that a single regex atom

@@ -494,12 +494,9 @@ impl Compiler {
                 self.ops.push(RxOp::CapAtom(i));
                 self.has_code = true;
             }
-            RegexAtom::WsRule => {
-                // `<.ws>` of a `rule`: one candidate, matched by the walk's
-                // own single-candidate arm (a user `ws` token included).
-                let i = self.push_atom(&token.atom);
-                self.ops.push(RxOp::CapAtom(i));
-            }
+            // `:sigspace`'s `<.ws>`: one candidate, captures nothing (a
+            // wrapped `ws` method is dispatched by the op itself).
+            RegexAtom::WsRule => self.ops.push(RxOp::Ws),
             RegexAtom::CaptureIsolatedGroup(p) => {
                 // `<$rx>` and friends: the body is a regex of its own, matched in
                 // a level whose captures are dropped when it closes
