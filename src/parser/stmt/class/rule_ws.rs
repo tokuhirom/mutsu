@@ -420,7 +420,11 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     Some(n) => n,
                     None => '\0',
                 };
-                if p == '^' {
+                if super::rule_ws_quantified::is_quantifier_start(next)
+                    && super::rule_ws_quantified::wrap_last_atom_with_ws(&mut out)
+                {
+                    // `<item> +`: the whitespace repeats with the atom.
+                } else if p == '^' {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }
