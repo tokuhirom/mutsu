@@ -18,6 +18,6 @@ their own. `map` and `grep` already implemented both halves; `first` now does to
 still always flattens, and a bare Hash still flattens to its pairs while an itemized one stays
 whole, the part of this that #10601's PR did for `Hash`).
 
-Pinned by `t/collections/first-listop-single-arg-rule.t` (26 assertions, every one also checked
+Pinned by `t/collections/transform/first-listop-single-arg.t` (26 assertions, every one also checked
 against `raku`, including that a single bare Array / List / Range / Seq still flattens).
 Closes #10660.
