@@ -54,15 +54,12 @@ impl Compiler {
                 if !seen.insert(var_name.as_str()) {
                     continue;
                 }
-                let slot = match lex_scope::resolve_outer(
-                    &scopes,
-                    &self.local_map,
-                    var_name,
-                    frame_depth,
-                ) {
-                    lex_scope::OuterResolution::Read { slot, .. } => slot,
-                    lex_scope::OuterResolution::NotDeclared => None,
-                };
+                let slot =
+                    match lex_scope::resolve_outer(&scopes, &self.local_map, var_name, frame_depth)
+                    {
+                        lex_scope::OuterResolution::Read { slot, .. } => slot,
+                        lex_scope::OuterResolution::NotDeclared => None,
+                    };
                 entries.push(Value::array(vec![
                     Value::str(Self::lexical_stash_display_name(var_name)),
                     Value::str(var_name.clone()),
