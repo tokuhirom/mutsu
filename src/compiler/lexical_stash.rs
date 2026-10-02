@@ -1,5 +1,6 @@
 //! Lexical pseudo-stashes (`MY::`, `LEXICAL::`, `OUTER::MY::`) compiled to
-//! a fixed description of one scope frame (`OpCode::GetLexicalStash`).
+//! a fixed description of one scope frame — or, for `LEXICAL::`, of that
+//! frame and every frame enclosing it (`OpCode::GetLexicalStash`).
 use super::*;
 
 impl Compiler {
@@ -40,34 +41,33 @@ impl Compiler {
             return false;
         };
         let target = &scopes[target_index];
-        let entries = target
-            .keys()
-            .map(|var_name| {
-                let slot = match lex_scope::resolve_outer(&scopes, &self.local_map, var_name, depth)
-                {
-                    lex_scope::OuterResolution::Read { slot, .. } => slot,
-                    lex_scope::OuterResolution::NotDeclared => None,
-                };
-                let display_name =
-                    if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
-                        // A sigil-less constant is listed under its spelling (#9962).
-                        term.to_string()
-                    } else if var_name.starts_with(['$', '@', '%', '&'])
-                        || var_name.chars().next().is_some_and(|c| c.is_uppercase())
+        let is_lexical = remaining == "LEXICAL";
+        // `MY::` is the target frame alone. `LEXICAL::` is every lexical
+        // visible from it (#10858): the target frame and each frame enclosing
+        // it, an inner declaration shadowing an outer one of the same name.
+        let outermost = if is_lexical { 0 } else { target_index };
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut entries: Vec<Value> = Vec::new();
+        for frame_index in (outermost..=target_index).rev() {
+            let frame_depth = depth + (target_index - frame_index);
+            for var_name in scopes[frame_index].keys() {
+                if !seen.insert(var_name.as_str()) {
+                    continue;
+                }
+                let slot =
+                    match lex_scope::resolve_outer(&scopes, &self.local_map, var_name, frame_depth)
                     {
-                        var_name.clone()
-                    } else {
-                        format!("${var_name}")
+                        lex_scope::OuterResolution::Read { slot, .. } => slot,
+                        lex_scope::OuterResolution::NotDeclared => None,
                     };
-                Value::array(vec![
-                    Value::str(display_name),
+                entries.push(Value::array(vec![
+                    Value::str(Self::lexical_stash_display_name(var_name)),
                     Value::str(var_name.clone()),
-                    Value::int(depth as i64),
+                    Value::int(frame_depth as i64),
                     Value::int(slot.map_or(-1, |slot| slot as i64)),
-                ])
-            })
-            .collect();
-        let mut entries: Vec<Value> = entries;
+                ]));
+            }
+        }
         if let Some(local_index) = target_index.checked_sub(self.enclosing_scopes.len()) {
             let level = local_index + 1;
             for &(_, name) in self
@@ -89,7 +89,7 @@ impl Compiler {
         let spec_idx = self.code.add_constant(Value::array(entries));
         // `LEXICAL::` is every lexical visible from the frame, so its routines
         // are all the visible ones; only `MY::` is narrowed to the frame's own.
-        let routines = if remaining == "LEXICAL" {
+        let routines = if is_lexical {
             crate::opcode::LexicalStashRoutines::All
         } else {
             self.lexical_stash_routines(target_index)
@@ -97,6 +97,20 @@ impl Compiler {
         self.code
             .emit(OpCode::GetLexicalStash { spec_idx, routines });
         true
+    }
+
+    /// The key a pseudo-stash lists the scope-frame entry `var_name` under.
+    fn lexical_stash_display_name(var_name: &str) -> String {
+        if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
+            // A sigil-less constant is listed under its spelling (#9962).
+            term.to_string()
+        } else if var_name.starts_with(['$', '@', '%', '&'])
+            || var_name.chars().next().is_some_and(|c| c.is_uppercase())
+        {
+            var_name.to_string()
+        } else {
+            format!("${var_name}")
+        }
     }
 
     /// Note that the innermost scope frame declares the routine `name`.
