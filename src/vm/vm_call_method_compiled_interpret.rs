@@ -23,6 +23,12 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // See `call_method_with_values`: a user `^find_method` answers first.
+        if let Some(result) =
+            self.try_user_find_method_dispatch(&target, method_sym.as_str(), &args)
+        {
+            return result;
+        }
         let saved_self = self.get_env_self();
         let result = self.try_compiled_method_or_interpret_inner(target, method_sym, args);
         match saved_self {

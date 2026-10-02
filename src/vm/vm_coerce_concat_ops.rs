@@ -309,8 +309,16 @@ impl Interpreter {
         // an internal redispatch with no surrounding CallMethod op, so drain any
         // captured-outer writeback into the caller's slot (Slice 1b render pattern).
         let caller_code = self.current_code;
-        let left = self.coerce_stringy_operand(left)?;
-        let right = self.coerce_stringy_operand(right)?;
+        // A user `^find_method` is asked for `.Str`, as rakudo's infix `~`
+        // does (`find_method_intercept`).
+        let left = match self.user_find_method_stringify(&left, "Str") {
+            Some(r) => r?,
+            None => self.coerce_stringy_operand(left)?,
+        };
+        let right = match self.user_find_method_stringify(&right, "Str") {
+            Some(r) => r?,
+            None => self.coerce_stringy_operand(right)?,
+        };
         self.reconcile_caller_after_internal_dispatch(caller_code);
         Self::concat_values(left, right)
     }
@@ -341,6 +349,10 @@ impl Interpreter {
         } else {
             v
         };
+        // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
+        if let Some(r) = self.user_find_method_stringify(&v, "Stringy") {
+            return r;
+        }
         // Unhandled Failure throws in string context (infix `~`, `eq`/…),
         // matching Rakudo: `(sub { ... }).() ~ ""` dies with X::StubCode.
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {

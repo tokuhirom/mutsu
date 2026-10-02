@@ -174,6 +174,12 @@ impl Interpreter {
         // drops, so only the dispatch work itself can still be holding one
         // (`crate::profile::region`).
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
+        // A user `method ^find_method` answers every call on its type, the
+        // internal ones too (`say` asking for `.gist`, `~` for `.Str`):
+        // `find_method_intercept`.
+        if let Some(result) = self.try_user_find_method_dispatch(&target, method, &args) {
+            return result;
+        }
         // A `VarRef` (the value `Variable.var` hands back, e.g. inside a
         // `trait_mod:<is>(Variable:D \v, ...)` body calling `v.var.keyof`) is a
         // transient wrapper around the variable's real value, not a type of

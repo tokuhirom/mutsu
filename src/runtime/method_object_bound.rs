@@ -55,8 +55,12 @@ impl Interpreter {
         self.owner_bound_method_name(package, name, invocant)
     }
 
-    /// `owner::name` when `owner` is a user class `invocant` (an instance)
-    /// inherits from, else `None`.
+    /// `owner::name` when `owner` is a user class `invocant` (an instance, or
+    /// the type object itself) inherits from, else `None`.
+    ///
+    /// A type-object invocant is bound too: re-dispatching it by bare name
+    /// would ask the receiver's method lookup again, which a user
+    /// `^find_method` answers with this very Method object (#10819).
     ///
     // Cost: O(m), m = length of the invocant class's MRO.
     pub(crate) fn owner_bound_method_name(
@@ -68,12 +72,10 @@ impl Interpreter {
         if !self.has_class(owner.as_str()) {
             return None;
         }
-        let ValueView::Instance {
-            class_name: inst_class,
-            ..
-        } = invocant.view()
-        else {
-            return None;
+        let inst_class = match invocant.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return None,
         };
         if !self.class_mro(inst_class.as_str()).contains(&owner) {
             return None;

@@ -703,6 +703,10 @@ impl Interpreter {
         } else {
             value
         };
+        // A user `^find_method` answers `.Str` (`find_method_intercept`).
+        if let Some(Ok(r)) = self.user_find_method_stringify(value, "Str") {
+            return r.to_string_value();
+        }
         // Printing a type object stringifies to "" with rakudo's
         // uninitialized-value warning suggesting .^name/.raku/.gist/.say —
         // unless its class defines a user `.Str`, which dispatches instead

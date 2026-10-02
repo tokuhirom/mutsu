@@ -40,8 +40,12 @@ pub(crate) fn any_user_find_method() -> bool {
 
 /// The method names Rakudo compiles as macros rather than method calls, so a
 /// user `find_method` never sees them.
+/// A package-qualified call (`$obj.Foo::bar`, and the `Class::name` form a
+/// Method object's `CALL-ME` re-dispatches through) names its candidate
+/// explicitly and does not ask the receiver's `find_method` either.
 fn bypasses_method_lookup(method: &str) -> bool {
     method.starts_with(['^', '!'])
+        || crate::qualified::is_qualified(Symbol::intern(method))
         || matches!(
             method,
             "WHAT" | "HOW" | "VAR" | "WHO" | "DEFINITE" | "REPR" | "WHERE"
@@ -99,6 +103,20 @@ impl Interpreter {
             USER_FIND_METHOD,
             vec![target.clone(), Value::str(method.to_string())],
         ))
+    }
+
+    /// The string a user `^find_method` answers for the stringifier `method`
+    /// (`Str`, `Stringy`, `gist`) on `value`, for the string contexts that
+    /// coerce without a method-call opcode (`~`, interpolation, `join`, a
+    /// list's `.Str`). `None` when `value`'s type declares no `^find_method`.
+    // Cost: as `try_user_find_method_dispatch`.
+    pub(crate) fn user_find_method_stringify(
+        &mut self,
+        value: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.try_user_find_method_dispatch(value, method, &[])
+            .map(|r| r.map(|v| Value::str(v.to_string_value())))
     }
 
     /// Invoke the Callable a user `^find_method` answered, as the method:

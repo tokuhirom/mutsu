@@ -68,7 +68,9 @@ impl crate::Interpreter {
         matches!(
             item.view(),
             ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. }
-        ) || Self::list_str_needs_interpreter(item)
+        ) || (matches!(item.view(), ValueView::Package(_))
+            && crate::runtime::find_method_intercept::any_user_find_method())
+            || Self::list_str_needs_interpreter(item)
     }
 
     /// Replace every `Instance` element with the string its class's `Str`
@@ -127,7 +129,11 @@ impl crate::Interpreter {
             // must agree on what an element *is*, or a list the probe accepted
             // would fall through this loop unchanged.
             let inner = item.descalarize();
-            if matches!(
+            if let Some(r) = self.user_find_method_stringify(inner, "Str") {
+                // A user `^find_method` answers `.Str`, a type object's too
+                // (`find_method_intercept`).
+                out.push(r?);
+            } else if matches!(
                 inner.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)
             ) {
