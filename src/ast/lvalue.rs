@@ -157,7 +157,7 @@ impl Stmt {
     // t = custom traits on the declaration.
     pub fn declared_var_key(&self) -> Option<String> {
         match self {
-            Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(self),
+            Stmt::VarDecl { .. } => crate::term_names::stmt_decl_storage_name(self),
             Stmt::Assign { name, .. } => Some(name.clone()),
             Stmt::SyntheticBlock(stmts) => {
                 let mut keys = stmts.iter().filter_map(Stmt::declared_var_key);

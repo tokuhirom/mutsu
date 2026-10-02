@@ -44,16 +44,14 @@ pub(crate) mod string_pos;
 pub(crate) mod substr;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;
-pub(crate) mod unicode_gc;
-mod unicode_gc_data;
-// Test-only: the generators and verifiers for the tables above, plus their
-// shared machinery. Declared with the `#[path]` form so
-// `check-panic-surface` excludes them -- their `expect`/`panic!` calls are
-// test scaffolding, where failing loudly is the correct behaviour, and should
-// not consume the production panic budget.
-#[cfg(test)]
-#[path = "unicode_gc_gen.rs"]
-mod unicode_gc_gen;
+// The general-category table and NFC live in `crate::ucd`, below the parser
+// (issue #10779); these keep the old paths.
+pub(crate) use crate::ucd::gc as unicode_gc;
+pub(crate) use crate::ucd::normalize::nfc;
+// Test-only: the generators and verifiers for the tables below. Declared with
+// the `#[path]` form so `check-panic-surface` excludes them -- their
+// `expect`/`panic!` calls are test scaffolding, where failing loudly is the
+// correct behaviour, and should not consume the production panic budget.
 pub(crate) mod unicode_name;
 pub(crate) mod unicode_name_alias_table;
 mod unicode_name_data;
@@ -61,16 +59,12 @@ mod unicode_name_data;
 #[path = "unicode_name_gen.rs"]
 mod unicode_name_gen;
 pub(crate) mod unicode_named_sequence_table;
-pub(crate) mod unicode_numval_table;
 pub(crate) mod unicode_prop_class;
 pub(crate) mod unicode_script;
 mod unicode_script_data;
 #[cfg(test)]
 #[path = "unicode_script_gen.rs"]
 mod unicode_script_gen;
-#[cfg(test)]
-#[path = "unicode_table_gen.rs"]
-mod unicode_table_gen;
 pub(crate) mod uniprop;
 mod uniprop_tables;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -368,24 +362,6 @@ fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeE
         .map(|r| r.map_err(|_| ()))
         .collect::<Result<String, ()>>()
         .map_err(|()| RuntimeError::new("Malformed UTF-16 string: unpaired surrogate (line 1)"))
-}
-
-/// NFC-normalize a string. Raku's `Str` is NFG, so any string built from bytes
-/// -- or read out of program source -- is normalized at creation: `Buf.new(0xE2,0x84,0xA6).decode('utf-8')`
-/// composes U+2126 OHM SIGN to U+03A9 GREEK CAPITAL LETTER OMEGA, and the result
-/// `eq`s a literal `"Ω"`. mutsu normalizes string *literals* at parse time
-/// (`parser/primary/string/escapes.rs`) but did not normalize decode output, so
-/// the two compared unequal even though `.ords` — which normalizes on read —
-/// reported the same code points. Cro's percent-decoding of a query key hit
-/// exactly this: `%E2%84%A6%E2%84%A6` decoded to a key no lookup could find.
-pub(crate) fn nfc(s: String) -> String {
-    use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfc_quick};
-    // `is_nfc_quick` answers `Yes` without allocating for the overwhelmingly
-    // common already-normalized case (all-ASCII text answers immediately).
-    match is_nfc_quick(s.chars()) {
-        IsNormalized::Yes => s,
-        _ => s.nfc().collect(),
-    }
 }
 
 fn decode_bytes_with_builtin_encoding(

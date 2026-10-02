@@ -739,9 +739,7 @@ fn is_hash_literal_start(input: &str) -> bool {
         let r = &input[1..];
         let digit_end = r
             .char_indices()
-            .take_while(|(_, c)| {
-                crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some()
-            })
+            .take_while(|(_, c)| crate::ucd::numeric::unicode_decimal_digit_value(*c).is_some())
             .last()
             .map(|(idx, c)| idx + c.len_utf8())
             .unwrap_or(0);

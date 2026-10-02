@@ -914,9 +914,7 @@ fn parse_destructuring_with_rhs(
 /// Return the default expression for a native type, or Nil for non-native types.
 fn native_type_default(tc: &Option<String>) -> Expr {
     match tc.as_deref() {
-        Some(t) if crate::runtime::native_types::is_native_int_type(t) => {
-            Expr::Literal(Value::int(0))
-        }
+        Some(t) if crate::native_types::is_native_int_type(t) => Expr::Literal(Value::int(0)),
         Some("num" | "num32" | "num64") => Expr::Literal(Value::num(0.0)),
         Some("str") => Expr::Literal(Value::str(String::new())),
         _ => Expr::Literal(Value::NIL),

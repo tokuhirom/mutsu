@@ -711,7 +711,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // `Array[Array[Bool]].new` — not `Int.new` / `Array[Bool].new`.
     let target_expr = match &s.type_constraint {
         Some(c) if s.name.starts_with('@') => {
-            if crate::runtime::native_types::is_native_array_element_type(c) {
+            if crate::native_types::is_native_array_element_type(c) {
                 Expr::BareWord(format!("array[{c}]"))
             } else {
                 Expr::BareWord(format!("Array[{c}]"))
@@ -921,7 +921,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // container, so it cannot be bound with `:=` — Raku raises X::Bind::NativeType.
     if is_scalar_bind
         && let Some(tc) = s.type_constraint.as_deref()
-        && crate::runtime::native_types::is_native_array_element_type(tc)
+        && crate::native_types::is_native_array_element_type(tc)
     {
         let display = format!("${}", bound_name);
         let msg = format!(

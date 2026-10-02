@@ -124,7 +124,7 @@ fn heredoc_terminators(line: &str) -> Vec<String> {
 
 /// Regex `\w`: alphanumerics, marks, connector punctuation and the joiners.
 fn is_word(c: char) -> bool {
-    use crate::builtins::unicode_gc::{GeneralCategory as Gc, general_category};
+    use crate::ucd::gc::{GeneralCategory as Gc, general_category};
     c.is_alphanumeric()
         || matches!(general_category(c), Gc::Mn | Gc::Mc | Gc::Me | Gc::Pc)
         || c == '\u{200C}'

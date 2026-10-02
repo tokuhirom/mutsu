@@ -432,7 +432,7 @@ pub(in crate::parser) fn looks_like_colonpair_start(input: &str) -> bool {
     // :36<...> is a radix literal, not a colonpair
     let digit_end = r
         .char_indices()
-        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .take_while(|(_, c)| crate::ucd::numeric::unicode_decimal_digit_value(*c).is_some())
         .last()
         .map(|(idx, c)| idx + c.len_utf8())
         .unwrap_or(0);

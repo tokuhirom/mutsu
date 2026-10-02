@@ -251,7 +251,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         .ok_or_else(|| PError::expected("':'"))?;
     let digit_end = r
         .char_indices()
-        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .take_while(|(_, c)| crate::ucd::numeric::unicode_decimal_digit_value(*c).is_some())
         .last()
         .map(|(idx, c)| idx + c.len_utf8())
         .unwrap_or(0);

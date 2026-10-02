@@ -444,5 +444,5 @@ pub(crate) fn process_q_escapes(content: &str, delim: char) -> String {
 /// The `is_nfc_quick` gate inside makes this free for ASCII, which every hot
 /// literal is.
 pub(crate) fn literal_str(s: impl Into<String>) -> Value {
-    Value::str(crate::builtins::nfc(s.into()))
+    Value::str(crate::ucd::normalize::nfc(s.into()))
 }

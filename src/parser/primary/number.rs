@@ -4,7 +4,7 @@ use crate::ast::Expr;
 use crate::value::{Value, ValueView};
 
 fn decimal_digit_value(c: char) -> Option<u32> {
-    crate::builtins::unicode::unicode_decimal_digit_value(c)
+    crate::ucd::numeric::unicode_decimal_digit_value(c)
 }
 
 /// Recognize the imaginary-number literal suffix after a numeral: bare `i`
@@ -788,10 +788,10 @@ pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
     {
         return Err(PError::expected("unicode numeric literal"));
     }
-    if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(first) {
+    if let Some((n, d)) = crate::ucd::numeric::unicode_rat_value(first) {
         return Ok((rest, Expr::Literal(crate::value::make_rat(n, d))));
     }
-    if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(first) {
+    if let Some(n) = crate::ucd::numeric::unicode_numeric_int_value(first) {
         return Ok((rest, Expr::Literal(Value::int(n))));
     }
     Err(PError::expected("unicode numeric literal"))

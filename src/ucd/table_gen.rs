@@ -1,6 +1,6 @@
 //! Shared machinery for generating and verifying the Unicode property tables.
 //!
-//! Test-only. Both `unicode_gc_gen` and `unicode_script_gen` answer the same
+//! Test-only. Both `ucd::gc_gen` and `builtins::unicode_script_gen` answer the same
 //! question -- "which of these N disjoint `\p{...}` classes is this codepoint
 //! in?" -- and both bake the answer into the same three-tier shape, so the
 //! derivation, the tier construction, the emitter and the drift check live
@@ -17,11 +17,11 @@ use regex_syntax::hir::{Class, HirKind};
 use std::fmt::Write as _;
 
 /// Codepoints per BMP leaf block, as a shift.
-pub(super) const SHIFT: u32 = 6;
-pub(super) const BLOCK: usize = 1 << SHIFT;
+pub(crate) const SHIFT: u32 = 6;
+pub(crate) const BLOCK: usize = 1 << SHIFT;
 
 /// The codepoint ranges of one `\p{...}` class, straight out of `regex-syntax`.
-pub(super) fn ranges_for(pattern: &str) -> Vec<(u32, u32)> {
+pub(crate) fn ranges_for(pattern: &str) -> Vec<(u32, u32)> {
     // The class-forcing brackets keep a single-codepoint class (`Zp`) from
     // being folded into a `Literal` by the HIR translator.
     let hir = regex_syntax::parse(&format!("[{pattern}]")).expect("valid class");
@@ -41,7 +41,7 @@ pub(super) fn ranges_for(pattern: &str) -> Vec<(u32, u32)> {
 
 /// One code per codepoint: the index of the first pattern in `patterns` whose
 /// class contains it, or `patterns.len()` (the fallthrough) where none does.
-pub(super) fn derive_table(patterns: &[String]) -> Vec<u8> {
+pub(crate) fn derive_table(patterns: &[String]) -> Vec<u8> {
     let fallback = u8::try_from(patterns.len()).expect("fallthrough code fits in u8");
     let mut table = vec![fallback; 0x110000];
     // Reverse order so an earlier pattern wins, exactly as a first-match-wins
@@ -58,16 +58,16 @@ pub(super) fn derive_table(patterns: &[String]) -> Vec<u8> {
 
 /// The three tiers derived from a per-codepoint table: ASCII, the BMP trie,
 /// and the constant-category runs above the BMP.
-pub(super) struct Tables {
-    pub(super) ascii: Vec<u8>,
-    pub(super) index: Vec<u16>,
-    pub(super) leaves: Vec<u8>,
-    pub(super) leaf_count: usize,
-    pub(super) astral_starts: Vec<u32>,
-    pub(super) astral_cats: Vec<u8>,
+pub(crate) struct Tables {
+    pub(crate) ascii: Vec<u8>,
+    pub(crate) index: Vec<u16>,
+    pub(crate) leaves: Vec<u8>,
+    pub(crate) leaf_count: usize,
+    pub(crate) astral_starts: Vec<u32>,
+    pub(crate) astral_cats: Vec<u8>,
 }
 
-pub(super) fn build_tables(table: &[u8]) -> Tables {
+pub(crate) fn build_tables(table: &[u8]) -> Tables {
     let mut blocks: Vec<[u8; BLOCK]> = Vec::new();
     let mut index: Vec<u16> = Vec::new();
     for b in 0..(0x10000 / BLOCK) {
@@ -106,18 +106,18 @@ pub(super) fn build_tables(table: &[u8]) -> Tables {
 }
 
 /// The committed tables of one generated module, for the drift check.
-pub(super) struct Committed<'a> {
-    pub(super) ascii: &'a [u8],
-    pub(super) shift: u32,
-    pub(super) index: &'a [u16],
-    pub(super) leaves: &'a [u8],
-    pub(super) astral_starts: &'a [u32],
-    pub(super) astral_cats: &'a [u8],
+pub(crate) struct Committed<'a> {
+    pub(crate) ascii: &'a [u8],
+    pub(crate) shift: u32,
+    pub(crate) index: &'a [u16],
+    pub(crate) leaves: &'a [u8],
+    pub(crate) astral_starts: &'a [u32],
+    pub(crate) astral_cats: &'a [u8],
 }
 
 /// Fail loudly, naming the array, if the committed file no longer matches the
 /// Unicode data it was generated from.
-pub(super) fn assert_committed_matches(committed: &Committed<'_>, built: &Tables) {
+pub(crate) fn assert_committed_matches(committed: &Committed<'_>, built: &Tables) {
     assert_eq!(committed.shift, SHIFT, "BMP_SHIFT");
     assert_eq!(committed.ascii, built.ascii, "ASCII table");
     assert_eq!(committed.index, built.index, "BMP_INDEX");
@@ -142,7 +142,7 @@ fn emit_u8(out: &mut String, values: &[u8], per_line: usize) {
 
 /// Render the whole generated module. `header` is its `//!` doc block and
 /// `extra` is appended verbatim (the script module adds its name table).
-pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
+pub(crate) fn render(t: &Tables, header: &str, extra: &str) -> String {
     let mut out = String::from(header);
     let _ = write!(
         out,
@@ -152,20 +152,20 @@ pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
          /// the two-stage lookup below entirely: one load, no second dependent\n\
          /// load and no leaf index.\n\
          #[rustfmt::skip]\n\
-         pub(super) static ASCII_CATS: [u8; {}] = [\n",
+         pub(crate) static ASCII_CATS: [u8; {}] = [\n",
         t.ascii.len()
     );
     emit_u8(&mut out, &t.ascii, 32);
 
     let _ = write!(
         out,
-        "/// Codepoints per BMP leaf block, as a shift.\npub(super) const BMP_SHIFT: u32 = {SHIFT};\n\n"
+        "/// Codepoints per BMP leaf block, as a shift.\npub(crate) const BMP_SHIFT: u32 = {SHIFT};\n\n"
     );
     let _ = write!(
         out,
         "/// Leaf index for each {BLOCK}-codepoint block of the BMP.\n\
          #[rustfmt::skip]\n\
-         pub(super) static BMP_INDEX: [u16; {}] = [\n",
+         pub(crate) static BMP_INDEX: [u16; {}] = [\n",
         t.index.len()
     );
     for chunk in t.index.chunks(32) {
@@ -181,7 +181,7 @@ pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
         out,
         "/// Deduplicated BMP leaf blocks: {} blocks of {BLOCK} codes.\n\
          #[rustfmt::skip]\n\
-         pub(super) static BMP_LEAVES: [u8; {}] = [\n",
+         pub(crate) static BMP_LEAVES: [u8; {}] = [\n",
         t.leaf_count,
         t.leaves.len()
     );
@@ -193,7 +193,7 @@ pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
          /// entry is exactly `0x10000`, so the lookup's `partition_point` never\n\
          /// underflows.\n\
          #[rustfmt::skip]\n\
-         pub(super) static ASTRAL_STARTS: [u32; {}] = [\n",
+         pub(crate) static ASTRAL_STARTS: [u32; {}] = [\n",
         t.astral_starts.len()
     );
     for chunk in t.astral_starts.chunks(12) {
@@ -209,7 +209,7 @@ pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
         out,
         "/// Code of each run in [`ASTRAL_STARTS`].\n\
          #[rustfmt::skip]\n\
-         pub(super) static ASTRAL_CATS: [u8; {}] = [\n",
+         pub(crate) static ASTRAL_CATS: [u8; {}] = [\n",
         t.astral_cats.len()
     );
     emit_u8(&mut out, &t.astral_cats, 64);
@@ -219,18 +219,18 @@ pub(super) fn render(t: &Tables, header: &str, extra: &str) -> String {
 
 /// Rewrite `<manifest>/src/builtins/<file>` when `MUTSU_UPDATE_GC_TABLE` is
 /// set. A no-op otherwise, so the verify tests can call it unconditionally.
-pub(super) fn maybe_regenerate(file: &str, t: &Tables, header: &str, extra: &str) {
+pub(crate) fn maybe_regenerate(file: &str, t: &Tables, header: &str, extra: &str) {
     if std::env::var_os("MUTSU_UPDATE_GC_TABLE").is_none() {
         return;
     }
-    let path = format!("{}/src/builtins/{file}", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/src/{file}", env!("CARGO_MANIFEST_DIR"));
     std::fs::write(&path, render(t, header, extra)).expect("write generated table");
     eprintln!("regenerated {path}");
 }
 
 /// Drive `lookup` over every codepoint a `char` can be and compare it against
 /// the derived table. Exhaustive, not sampled.
-pub(super) fn assert_lookup_matches_table<F: Fn(char) -> u8>(table: &[u8], lookup: F) {
+pub(crate) fn assert_lookup_matches_table<F: Fn(char) -> u8>(table: &[u8], lookup: F) {
     for cp in 0..0x110000u32 {
         let Some(ch) = char::from_u32(cp) else {
             continue; // surrogate: unreachable through `char`

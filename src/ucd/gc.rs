@@ -8,7 +8,7 @@
 //! `nqp::findcclass`/`findnotcclass`, by `.uniprop`, by collation and by the
 //! segmentation properties -- so a JSON decode paid it 23,520 times.
 //!
-//! It is now a table lookup against [`super::unicode_gc_data`], which is generated
+//! It is now a table lookup against [`super::gc_data`], which is generated
 //! from `regex-syntax`'s own Unicode tables (see that module's header) and so
 //! answers exactly what the regexes did. Three tiers, cheapest first:
 //!
@@ -21,7 +21,7 @@
 //! Total static data is ~21 KB in `.rodata`: no heap, no lock, no lazy
 //! initialisation, and nothing to memoize per process.
 
-use super::unicode_gc_data as data;
+use super::gc_data as data;
 
 /// A Unicode General_Category value.
 ///
@@ -67,7 +67,7 @@ use GeneralCategory as Gc;
 
 impl GeneralCategory {
     /// Every category, ordered by discriminant. The generated tables store an
-    /// index into this array, so its order is load-bearing -- `unicode_gc_gen`
+    /// index into this array, so its order is load-bearing -- `gc_gen`
     /// pins it against the list it generates from.
     pub(crate) const ALL: [Self; 29] = [
         Gc::Lu,

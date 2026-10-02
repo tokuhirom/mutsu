@@ -43,7 +43,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     // :36<...> is a generic radix literal, not a colonpair.
     let digit_end = r
         .char_indices()
-        .take_while(|(_, c)| crate::builtins::unicode::unicode_decimal_digit_value(*c).is_some())
+        .take_while(|(_, c)| crate::ucd::numeric::unicode_decimal_digit_value(*c).is_some())
         .last()
         .map(|(idx, c)| idx + c.len_utf8())
         .unwrap_or(0);
@@ -247,7 +247,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let mut digit_end = 0;
         let mut base_clean = String::new();
         for c in r.chars() {
-            let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+            let Some(dv) = crate::ucd::numeric::unicode_decimal_digit_value(c) else {
                 break;
             };
             digit_end += c.len_utf8();
@@ -323,7 +323,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let dv = if c.is_ascii_digit() {
                 Some(c as u32 - '0' as u32)
             } else {
-                crate::builtins::unicode::unicode_decimal_digit_value(c)
+                crate::ucd::numeric::unicode_decimal_digit_value(c)
             };
             if let Some(d) = dv {
                 if let Some(ref mut v) = numeric_value {
@@ -350,7 +350,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                             let dv = if c.is_ascii_digit() {
                                 Some(c as u32 - '0' as u32)
                             } else {
-                                crate::builtins::unicode::unicode_decimal_digit_value(c)
+                                crate::ucd::numeric::unicode_decimal_digit_value(c)
                             };
                             dv.map(|d| char::from_digit(d, 10).unwrap())
                         })

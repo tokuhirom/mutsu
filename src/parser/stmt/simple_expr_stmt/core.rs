@@ -1184,7 +1184,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         // an ordinary `$name := ...` carries.
         let stmt = if let Expr::BareWord(name) = expr {
             Stmt::Expr(Expr::AssignExpr {
-                name: crate::runtime::term_names::term_key(&name),
+                name: crate::term_names::term_key(&name),
                 expr: Box::new(rhs),
                 is_bind: true,
             })

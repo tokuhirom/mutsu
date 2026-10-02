@@ -122,7 +122,7 @@ fn typed_default_expr(type_name: &str) -> Expr {
     let base = strip_type_smiley_suffix(type_name);
     if base == "Mu" {
         Expr::BareWord("Mu".to_string())
-    } else if crate::runtime::native_types::is_native_int_type(base) {
+    } else if crate::native_types::is_native_int_type(base) {
         // Includes the C-width aliases (`ulong`, `size_t`, …): an
         // uninitialized `my size_t $sz;` reads as 0, not Nil (DBDish::Pg's
         // `escapeBytea` declares its out-length slot exactly this way).

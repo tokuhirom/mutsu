@@ -8494,7 +8494,7 @@ impl CompiledCode {
             .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
         self.mentions_native_scalar_type_name = self.constants.iter().any(|c| {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
-                || crate::runtime::native_types::is_native_int_type(s.as_str()))
+                || crate::native_types::is_native_int_type(s.as_str()))
         });
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -12156,7 +12156,7 @@ impl FastParamType {
             "str" => Self::NativeStr,
             "num" => Self::NativeNum,
             "Any" | "Mu" => Self::Wild,
-            n if crate::runtime::native_types::is_native_int_type(n) => Self::NativeIntSized,
+            n if crate::native_types::is_native_int_type(n) => Self::NativeIntSized,
             _ => return None,
         })
     }
