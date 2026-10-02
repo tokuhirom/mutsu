@@ -409,12 +409,22 @@ impl Interpreter {
     ///
     /// A program that never made a sigilless/`:=` binding answers with one
     /// relaxed atomic load and reaches no env at all, exactly as before.
+    ///
+    /// The per-slot answer itself is an env probe (~48 instructions), so it is
+    /// filtered first by [`crate::sigilless_alias_index::alias_key_possible`],
+    /// a bit per alias key ever written, filled at the env tier funnel every
+    /// key passes through. The whole-program latch it replaces here let one
+    /// unrelated `my @u := @d` make every scalar store in the process pay the
+    /// probe (#10691); now only stores to a name some bind actually aliased do.
+    // Cost: O(1) — one relaxed load, plus one env probe when the key may exist.
     fn slot_has_sigilless_meta(&self, code: &CompiledCode, idx: usize) -> bool {
-        if !crate::env::sigilless_meta_keys_possible() {
+        if !crate::sigilless_alias_index::any_alias_key_possible() {
             return false;
         }
-        code.alias_sym(idx)
-            .is_some_and(|sym| self.env().contains_key_sym(sym))
+        code.alias_sym(idx).is_some_and(|sym| {
+            crate::sigilless_alias_index::alias_key_possible(sym)
+                && self.env().contains_key_sym(sym)
+        })
     }
 
     /// Everything [`Self::exec_set_local_scalar_fast`] checks *before* it

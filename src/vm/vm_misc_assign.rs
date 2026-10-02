@@ -565,12 +565,14 @@ impl Interpreter {
                 };
                 resolved_source = next.to_string();
             }
-            self.env_mut().insert_sym(
+            // `_noting`: these are `__mutsu_sigilless_*` keys, which the
+            // whole-program `SIGILLESS_*_KEY_SEEN` latches must see.
+            self.env_mut().insert_sym_noting(
                 MetaNs::SigillessAlias.key(name_sym),
                 Value::str(resolved_source),
             );
             self.env_mut()
-                .insert_sym(MetaNs::SigillessReadonly.key(name_sym), Value::FALSE);
+                .insert_sym_noting(MetaNs::SigillessReadonly.key(name_sym), Value::FALSE);
             self.mark_sigilless_alias_seen();
         }
         // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
