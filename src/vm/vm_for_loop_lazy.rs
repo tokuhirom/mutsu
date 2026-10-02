@@ -102,43 +102,49 @@ impl Interpreter {
         // Set once the `IterationEnd` sentinel was reached (#9809): it ends
         // iteration like the end of the list, after a partial final chunk.
         let mut reached_iteration_end = false;
+        // Each pull reads only the window the loop is about to consume
+        // (`force_lazy_list_vm_window`), never the whole reified prefix:
+        // copying the prefix on every iteration made the loop quadratic
+        // (#10780). `window` holds elements `window_start..` of the list.
+        //
         // A sequence spec (`1, 2 ... *`, an unbounded Range's `.succ` steps)
         // runs no user code, so producing its elements ahead is unobservable:
-        // force it in doubling batches and read the batch by index. Forcing
-        // exactly one more element per iteration instead copied the whole
-        // reified prefix every time, making the loop quadratic. Anything else
-        // (a gather, a `.map` pipe) is still forced one iteration at a time
-        // so its side effects interleave with the body as in Rakudo.
+        // force it in doubling batches. Anything else (a gather, a `.map`
+        // pipe) is forced one iteration's chunk at a time so its side effects
+        // interleave with the body as in Rakudo.
         let pure_source = ll.sequence_spec.is_some();
-        let mut items: Vec<Value> = Vec::new();
+        let mut window: Vec<Value> = Vec::new();
+        let mut window_start: usize = idx;
         'for_loop: loop {
             if reached_iteration_end {
                 break;
             }
             // Force enough elements for one iteration's chunk
-            if !pure_source || items.len() < idx + arity {
+            if idx < window_start || idx + arity > window_start + window.len() {
                 let want = if pure_source {
-                    (idx + arity).max(items.len() * 2).max(64)
+                    (idx + arity).max(idx * 2).max(64)
                 } else {
                     idx + arity
                 };
-                items = self.force_lazy_list_vm_n(ll, want)?;
+                window = self.force_lazy_list_vm_window(ll, idx, want)?;
+                window_start = idx;
             }
-            if idx >= items.len() {
+            let local = idx - window_start;
+            if local >= window.len() {
                 break; // No more elements
             }
-            let mut end = (idx + arity).min(items.len());
-            if let Some(pos) = items[idx..end].iter().position(Value::is_iteration_end) {
+            let mut end = (local + arity).min(window.len());
+            if let Some(pos) = window[local..end].iter().position(Value::is_iteration_end) {
                 if pos == 0 {
                     break;
                 }
-                end = idx + pos;
+                end = local + pos;
                 reached_iteration_end = true;
             }
             let item = if spec.chunks_items() {
-                Value::array(items[idx..end].to_vec())
+                Value::array(window[local..end].to_vec())
             } else {
-                items[idx].clone()
+                window[local].clone()
             };
             idx += arity;
 

@@ -281,18 +281,31 @@ impl Interpreter {
     /// by re-invoking its generator closure over the growing element history.
     /// Returns whatever is available (possibly fewer than `needed`) once the
     /// generator signals termination.
+    // Cost: O(needed) for the copy, plus one generator call per new element.
     pub(crate) fn extend_closure_sequence(
         &mut self,
         list: &LazyList,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.fill_closure_sequence(list, needed)?;
+        Ok(list.cache_window(0, needed))
+    }
+
+    /// [`Self::extend_closure_sequence`] without the copy: generate until the
+    /// cache holds `needed` elements or the sequence ends.
+    // Cost: O(1) amortized per new element, plus the generator call.
+    pub(super) fn fill_closure_sequence(
+        &mut self,
+        list: &LazyList,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
         // Fast path: already cached enough.
         {
             let cache = list.cache.lock().unwrap();
             if let Some(cached) = cache.as_ref()
                 && cached.len() >= needed
             {
-                return Ok(cached[..needed].to_vec());
+                return Ok(());
             }
         }
 
@@ -304,10 +317,17 @@ impl Interpreter {
         // (`Interpreter::restore_lazy_array_slot`) -- feeding that override
         // back into the generator would corrupt every later term. See the
         // `generation_state` field doc on `LazyList`.
-        let mut history = {
-            let gen_state = list.generation_state.lock().unwrap();
-            gen_state.as_ref().cloned().unwrap_or_default()
-        };
+        //
+        // The history is MOVED out of `generation_state` for the run and
+        // moved back below (on every exit path): cloning it in and back out
+        // cost O(history) per pull, which made a one-element-per-iteration
+        // consumer quadratic (#10780).
+        let mut history = list
+            .generation_state
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_default();
         // `cache` and the history end at the same generator frontier, but
         // need not have the same length: a front mutation of a lazy
         // `@`-array (`shift`, `unshift`, `splice`) rewrites the cache's
@@ -317,18 +337,49 @@ impl Interpreter {
         // the elements this call generates.
         let generated_from = history.len();
         let cached_len = list.cache.lock().unwrap().as_ref().map(Vec::len);
-        let have = |history: &Vec<Value>| match cached_len {
-            Some(c) => c + (history.len() - generated_from),
-            None => history.len(),
-        };
+        let generated =
+            self.generate_closure_sequence(list, &mut history, needed, generated_from, cached_len);
+        if generated.is_ok() {
+            // Append only the NEWLY generated tail to `cache` -- positions it
+            // already had may hold a user override and must not be clobbered
+            // (see `fill_sequence_cache`'s matching comment).
+            let mut cache = list.cache.lock().unwrap();
+            match cache.as_mut() {
+                Some(cached) => cached.extend_from_slice(&history[generated_from..]),
+                None => *cache = Some(history.clone()),
+            }
+        } else {
+            history.truncate(generated_from);
+        }
+        // Publish the extended PRISTINE history back to `generation_state`.
+        *list.generation_state.lock().unwrap() = Some(history);
+        generated
+    }
 
+    /// Run a closure sequence's generator until the cache would hold
+    /// `needed` elements (its `cached_len` plus what this call appends past
+    /// `generated_from`) or the sequence ends.
+    // Cost: O(1) amortized per new element, plus the generator call.
+    fn generate_closure_sequence(
+        &mut self,
+        list: &LazyList,
+        history: &mut Vec<Value>,
+        needed: usize,
+        generated_from: usize,
+        cached_len: Option<usize>,
+    ) -> Result<(), RuntimeError> {
         let state_mutex = list.closure_seq.as_ref().unwrap();
         let mut guard = state_mutex.lock().unwrap();
         let state = &mut *guard;
         let generator = state.generator.clone();
 
-        while have(&history) < needed && !state.finished {
-            match self.sequence_closure_step(&generator, &history, state.generator_shape, false)? {
+        // Elements the cache will hold once this call's output is appended.
+        let have = |history: &Vec<Value>| match cached_len {
+            Some(c) => c + (history.len() - generated_from),
+            None => history.len(),
+        };
+        while have(history) < needed && !state.finished {
+            match self.sequence_closure_step(&generator, history, state.generator_shape, false)? {
                 // A generator that `slip`s multiple values (`{ slip $^a+1, $^b*2 }`)
                 // contributes each as its own sequence element — flatten the Slip
                 // into the history so the next step's `$^a`/`$^b` see the newest
@@ -364,37 +415,37 @@ impl Interpreter {
             }
         }
 
-        // Append only the NEWLY generated tail to `cache` -- positions it
-        // already had may hold a user override and must not be clobbered
-        // (see `extend_sequence_cache`'s matching comment) -- and publish
-        // the extended PRISTINE history back to `generation_state`.
-        let mut cache = list.cache.lock().unwrap();
-        match cache.as_mut() {
-            Some(cached) => cached.extend_from_slice(&history[generated_from..]),
-            None => *cache = Some(history.clone()),
-        }
-        *list.generation_state.lock().unwrap() = Some(history);
-        let cached = cache.as_ref().unwrap();
-        let take = needed.min(cached.len());
-        Ok(cached[..take].to_vec())
+        Ok(())
     }
 
     /// Extend a sequence-spec lazy list's cache to at least `needed` elements.
     /// This generates new elements using the sequence spec (arithmetic/geometric)
     /// without needing any Interpreter or interpreter context.
+    // Cost: O(needed) for the copy, plus O(1) per new element.
     pub(super) fn extend_sequence_cache(
         list: &LazyList,
         spec: &crate::value::SequenceSpec,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
-        {
+        Self::fill_sequence_cache(list, spec, needed);
+        Ok(list.cache_window(0, needed))
+    }
+
+    /// [`Self::extend_sequence_cache`] without the copy.
+    // Cost: O(1) amortized per new element.
+    pub(super) fn fill_sequence_cache(
+        list: &LazyList,
+        spec: &crate::value::SequenceSpec,
+        needed: usize,
+    ) {
+        let cached_len = {
             let cache = list.cache.lock().unwrap();
-            if let Some(cached) = cache.as_ref()
-                && cached.len() >= needed
-            {
-                return Ok(cached[..needed].to_vec());
+            let cached_len = cache.as_ref().map_or(0, Vec::len);
+            if cached_len >= needed {
+                return;
             }
-        }
+            cached_len
+        };
         // Generate new elements from `generation_state` -- the sequence's OWN
         // trailing history -- NOT from `cache`. `cache` is the user-visible
         // prefix and may hold an element an `@`-array mutation overwrote in
@@ -440,19 +491,22 @@ impl Interpreter {
             };
             items.push(next);
         }
-        let history_snapshot = items.clone();
-        drop(gen_state);
         // Append only the freshly generated tail to `cache` -- positions it
         // already had (0..old cache len) may hold a user override and must
         // not be clobbered; `cache` and `generation_state` otherwise grow in
         // lockstep, so the tail beyond the current cache length is exactly
-        // what generation just produced.
+        // what generation just produced. Only that tail is copied: cloning
+        // the whole history here made a one-element-per-pull consumer
+        // quadratic (#10780).
+        let tail = items
+            .get(cached_len..)
+            .map(<[Value]>::to_vec)
+            .unwrap_or_default();
+        drop(gen_state);
         let mut cache = list.cache.lock().unwrap();
         let cached = cache.get_or_insert_with(Vec::new);
-        if cached.len() < history_snapshot.len() {
-            cached.extend_from_slice(&history_snapshot[cached.len()..]);
+        if cached.len() == cached_len {
+            cached.extend(tail);
         }
-        let take = needed.min(cached.len());
-        Ok(cached[..take].to_vec())
     }
 }
