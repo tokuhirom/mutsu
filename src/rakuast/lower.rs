@@ -1588,7 +1588,25 @@ fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
         NameShape::Identifier(name) => Ok(Expr::BareWord(name)),
         NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
-        NameShape::Indirect(inner) => Ok(Expr::IndirectTypeLookup(Box::new(lower_expr(inner)?))),
+        NameShape::Indirect {
+            expr,
+            tail,
+            trailing,
+        } => {
+            let head = Box::new(lower_expr(expr)?);
+            if tail.is_empty() && !trailing {
+                return Ok(Expr::IndirectTypeLookup(head));
+            }
+            let tail = tail
+                .iter()
+                .flat_map(|seg| ["::", seg.as_str()])
+                .collect::<String>();
+            Ok(Expr::IndirectTypeLookupTail {
+                head,
+                tail: tail.into_boxed_str(),
+                trailing,
+            })
+        }
     }
 }
 

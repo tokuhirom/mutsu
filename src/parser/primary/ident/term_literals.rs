@@ -141,13 +141,41 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((after, Expr::Var("?ROLE".to_string())));
     }
-    // Handle ::($expr) — indirect name lookup
+    // Handle ::($expr) — indirect name lookup, optionally followed by static
+    // segments (`::($n)::Bar`) and/or a trailing `::` (`::($n)::`, also before
+    // a subscript: `::($n)::<$v>` subscripts the package, as in Rakudo). A
+    // following dynamic segment `::(...)` is left to the postfix stash road.
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
         let (r, inner) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = parse_char(r, ')')?;
-        return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
+        let (mut r, _) = parse_char(r, ')')?;
+        let mut tail = String::new();
+        let mut trailing = false;
+        while let Some(after) = r.strip_prefix("::") {
+            if let Ok((after_seg, seg)) = crate::parser::stmt::ident_pub(after) {
+                tail.push_str("::");
+                tail.push_str(&seg);
+                r = after_seg;
+                continue;
+            }
+            if !after.starts_with('(') {
+                trailing = true;
+                r = after;
+            }
+            break;
+        }
+        if tail.is_empty() && !trailing {
+            return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
+        }
+        return Ok((
+            r,
+            Expr::IndirectTypeLookupTail {
+                head: Box::new(inner),
+                tail: tail.into_boxed_str(),
+                trailing,
+            },
+        ));
     }
     let (rest, name) = crate::parser::stmt::ident_pub(rest)?;
     // Handle qualified names: ::Foo::Bar, with optional dynamic segments ::($expr)

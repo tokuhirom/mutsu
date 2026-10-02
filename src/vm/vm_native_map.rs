@@ -390,6 +390,7 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
             | Expr::PositionalPair(_)
             | Expr::ZenSlice(_)
             | Expr::IndirectTypeLookup(_)
+            | Expr::IndirectTypeLookupTail { .. }
             | Expr::Binary { .. }
             | Expr::HyperOp { .. }
             | Expr::MetaOp { .. }

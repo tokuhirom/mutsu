@@ -1307,6 +1307,17 @@ pub(crate) enum Expr {
         label: Option<String>,
     },
     IndirectTypeLookup(Box<Expr>),
+    /// `::(EXPR)::Name` / `::(EXPR)::A::B` / `::(EXPR)::`: an indirect lookup
+    /// followed by static name segments. `tail` is the `::`-joined static
+    /// suffix (`"::A::B"`, empty for none) and `trailing` records a final bare
+    /// `::`. It looks up the same symbol as `IndirectTypeLookup(EXPR ~ tail)`
+    /// — Rakudo resolves `::($n)::` to the package itself, not its stash — and
+    /// keeps the segments apart only so RakuAST can render the name's parts.
+    IndirectTypeLookupTail {
+        head: Box<Expr>,
+        tail: Box<str>,
+        trailing: bool,
+    },
     IndirectCodeLookup {
         package: Box<Expr>,
         name: String,

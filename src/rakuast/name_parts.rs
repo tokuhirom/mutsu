@@ -81,7 +81,7 @@ pub(super) fn leading_empty() -> Value {
 }
 
 /// The trailing `::` of a stash lookup: the `Empty` type object itself.
-fn trailing_empty() -> Value {
+pub(super) fn trailing_empty() -> Value {
     Value::package(crate::symbol::Symbol::intern(
         RakuAstClass::NamePartEmpty.printed_name(),
     ))
@@ -134,6 +134,14 @@ pub(super) fn is_qualified_identifier(name: &str) -> bool {
 /// The `Name` of a qualified identifier, one simple part per segment.
 pub(super) fn qualified_name(name: &str) -> RakuAstNode {
     name_from_parts(identifier_segments(name).map(simple_part).collect())
+}
+
+/// The simple parts of an indirect name's static tail (`"::A::B"` -> `A`,
+/// `B`); an empty tail has none.
+pub(super) fn tail_parts(tail: &str) -> impl Iterator<Item = Value> + '_ {
+    identifier_segments(tail)
+        .filter(|seg| !seg.is_empty())
+        .map(simple_part)
 }
 
 /// The package a stash lookup names, in the parser's spelling: `Foo::Bar::`
@@ -191,8 +199,13 @@ pub(super) enum NameShape<'a> {
     Identifier(String),
     /// A stash lookup in the parser's spelling (`Foo::`, `::`).
     Stash(String),
-    /// A dynamic `::(EXPR)` lookup; the payload is the part's expression.
-    Indirect(&'a RakuAstNode),
+    /// A dynamic `::(EXPR)` lookup, optionally followed by static segments
+    /// (`::(EXPR)::A::B`) and a trailing `::`.
+    Indirect {
+        expr: &'a RakuAstNode,
+        tail: Vec<String>,
+        trailing: bool,
+    },
 }
 
 /// Classify a `RakuAST::Name` node, or `None` for a shape mutsu cannot lower.
@@ -220,9 +233,8 @@ pub(super) fn name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
         _ => (false, rest),
     };
     if leading
-        && !trailing
-        && let [only] = middle
-        && let ValueView::RakuAst(part) = only.view()
+        && let Some((first, static_tail)) = middle.split_first()
+        && let ValueView::RakuAst(part) = first.view()
         && part.class == RakuAstClass::NamePartExpression
     {
         let RakuAstFieldValue::Node(expr) = &part.fields.first()?.value else {
@@ -231,7 +243,15 @@ pub(super) fn name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
         let ValueView::RakuAst(expr) = expr.view() else {
             return None;
         };
-        return Some(NameShape::Indirect(expr));
+        let tail = static_tail
+            .iter()
+            .map(simple_part_name)
+            .collect::<Option<Vec<_>>>()?;
+        return Some(NameShape::Indirect {
+            expr,
+            tail,
+            trailing,
+        });
     }
     let names = middle
         .iter()

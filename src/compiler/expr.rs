@@ -1338,6 +1338,17 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
+            // `::(EXPR)::A::B` looks up `EXPR ~ "::A::B"`; a trailing `::`
+            // names the same package (Rakudo resolves `::($n)::` to it).
+            Expr::IndirectTypeLookupTail { head, tail, .. } => {
+                self.compile_expr(head);
+                if !tail.is_empty() {
+                    let tail_idx = self.code.add_constant(Value::str(tail.to_string()));
+                    self.code.emit(OpCode::LoadConst(tail_idx));
+                    self.code.emit(OpCode::Concat);
+                }
+                self.code.emit(OpCode::IndirectTypeLookup);
+            }
             Expr::IndirectCodeLookup { package, name } => {
                 self.compile_expr(package);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));

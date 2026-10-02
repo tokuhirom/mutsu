@@ -90,6 +90,7 @@ impl<'ast> Visit<'ast> for AstScan {
             expr,
             Expr::IndirectCodeLookup { .. }
                 | Expr::IndirectTypeLookup(..)
+                | Expr::IndirectTypeLookupTail { .. }
                 | Expr::IndirectTypeLookupAssign { .. }
                 | Expr::SymbolicDeref { .. }
                 | Expr::SymbolicDerefAssign { .. }
