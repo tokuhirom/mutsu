@@ -569,6 +569,19 @@ impl Interpreter {
         Some(self.call_subscript_code(&data, len))
     }
 
+    /// Whether a positional subscript calls a `WhateverCode` with the target's
+    /// element count: the index is one, or a list holding one (`@a[0, *-1]`).
+    // Cost: O(k), k = elements of a list index.
+    fn index_needs_target_elems(index: &Value) -> bool {
+        match index.view() {
+            ValueView::Sub(_) => true,
+            ValueView::Array(items, _) => items
+                .iter()
+                .any(|item| matches!(item.view(), ValueView::Sub(_))),
+            _ => false,
+        }
+    }
+
     /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         self.exec_index_op_with_positional(false)
@@ -810,6 +823,17 @@ impl Interpreter {
         // indexing; only an itemized Range *index* above remains a single index.
         if target.descalarize().is_range() {
             target = target.descalarize().clone();
+        }
+        // A `WhateverCode` subscript (`*-1`, `0..*-2`) is called with the
+        // target's `.elems`, which a lazy list or an infinite Range cannot
+        // report: rakudo dies with X::Cannot::Lazy before reifying anything,
+        // instead of answering from whatever prefix happens to be cached.
+        if is_positional
+            && Self::index_needs_target_elems(&index)
+            && (crate::builtins::methods_0arg::is_lazy_count_source(&target)
+                || crate::builtins::is_infinite_range(&target))
+        {
+            return Err(RuntimeError::cannot_lazy("elems"));
         }
         // An empty positional subscript (`$parts[]`) asks a Positional object
         // for all of its elements. IO::Path::Parts stores its three elements
