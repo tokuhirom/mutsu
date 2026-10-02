@@ -261,6 +261,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             rest,
         ));
     }
+    if !separated_by_newline
+        && let Some(result) = super::block_arg_call::bareword_block_call(input, &expr, rest)
+    {
+        return result;
+    }
     // Detect "unexpected block in infix position": a completed expression followed
     // by `{` on the same line without an infix operator is an error in Raku.
     // e.g., `(1) { $foo = 2 }` — parens do not eat spaces after them.

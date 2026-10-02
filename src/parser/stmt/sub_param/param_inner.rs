@@ -618,6 +618,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             // `Pointer is rw` (a NativeCall out-parameter), `Int where * > 0`.
             || super::super::keyword("is", r2).is_some()
             || super::super::keyword("where", r2).is_some()
+            // ... and a default: `Str = Str` (SQL::Abstract's `render-from`).
+            || (r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>"))
         {
             // True/False in signature position are literal Bool values, not type names.
             // In Raku, `sub f(True)` means "type Bool, smartmatched against True".

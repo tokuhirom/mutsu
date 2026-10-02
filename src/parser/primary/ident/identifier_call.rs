@@ -751,6 +751,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // Statement modifiers (for, if, etc.) bind outside try,
             // so we parse an expression, not a full statement.
             let (r, expr) = expression(r)?;
+            // `try retry { ... }`: the statement after `try` may be a call to a
+            // post-declared routine taking a block (Pakku).
+            let (r, expr) = match ws(r).ok().and_then(|(r_ws, _)| {
+                crate::parser::stmt::simple_expr_stmt::bareword_block_call_expr(input, &expr, r_ws)
+                    .filter(|_| !r[..r.len() - r_ws.len()].contains(['\n', '\r']))
+            }) {
+                Some(call) => call,
+                None => (r, expr),
+            };
             return Ok((
                 r,
                 Expr::Try {
@@ -2620,6 +2629,12 @@ fn loop_control_call_form<'a>(name: &str, input: &'a str) -> PResult<'a, Option<
         return Ok((rest, Some(loop_control_call(name, vec![slip]))));
     }
     let (after_ws, _) = ws(input)?;
+    // `last $res`: a listop argument (v6.e's value-returning `last`; v6.d
+    // rejects it at run time, as rakudo does), not a label.
+    if loop_control_listop_arg_start(input, after_ws) {
+        let (rest, arg) = expression(after_ws)?;
+        return Ok((rest, Some(loop_control_call(name, vec![arg]))));
+    }
     let Some(after_paren) = after_ws.strip_prefix('(') else {
         return Ok((input, None));
     };
@@ -2631,6 +2646,15 @@ fn loop_control_call_form<'a>(name: &str, input: &'a str) -> PResult<'a, Option<
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
     Ok((rest, Some(loop_control_call(name, args))))
+}
+
+/// Whether a loop-control keyword is followed, after whitespace, by a term
+/// that can only be its argument: a variable or a literal. A bare word stays
+/// a label (`last OUTER`), and `(` is the parenthesized call form.
+pub(in crate::parser) fn loop_control_listop_arg_start(input: &str, after_ws: &str) -> bool {
+    after_ws.len() < input.len()
+        && (after_ws.starts_with(['$', '@', '%'])
+            || crate::parser::term_boundary::starts_with_unambiguous_term(after_ws))
 }
 
 fn loop_control_call(name: &str, args: Vec<Expr>) -> Expr {

@@ -327,7 +327,18 @@ fn skip_char_class(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
         loop {
             match chars.next() {
                 Some((_, '\\')) => {
-                    chars.next(); // skip escaped char
+                    // Skip the escaped char — and a bracketed codepoint escape
+                    // whole (`\x[10FFFF]`, `\c[QUOTATION MARK]`), whose `]` does
+                    // not end the group (Grammar::Modelica).
+                    if let Some((_, 'x' | 'X' | 'o' | 'O' | 'c' | 'C')) = chars.next()
+                        && let Some((_, '[')) = chars.clone().next()
+                    {
+                        for (_, c) in chars.by_ref() {
+                            if c == ']' {
+                                break;
+                            }
+                        }
+                    }
                 }
                 Some((_, ']')) => {
                     break; // end of this bracket group

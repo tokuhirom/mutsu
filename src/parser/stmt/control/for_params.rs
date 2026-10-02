@@ -204,6 +204,12 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             (r, ())
         };
         let (r, _) = ws(r)?;
+        // A trailing comma closes the list (`for @css -> $css, { ... }`, as in
+        // any signature): one parameter, not the start of a second.
+        let r = match r.strip_prefix(',').map(ws) {
+            Some(Ok((after_comma, _))) if ends_pointy_param_list(after_comma) => after_comma,
+            _ => r,
+        };
         if r.starts_with(',') {
             let first_param = if first_def.sigilless {
                 format!("\\{}", first)
@@ -219,6 +225,10 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             loop {
                 let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws(r2)?;
+                if ends_pointy_param_list(r2) {
+                    r = r2;
+                    break;
+                }
                 // A later parameter may itself be a destructuring pattern
                 // (`-> $a, [$b, $c]`); it binds one chunk element and unpacks it,
                 // so give it a synthetic name for the compiler to bind first.
@@ -274,6 +284,13 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
     }
 }
 
+/// Whether `r` (just after a `,` and whitespace) is where a pointy parameter
+/// list ends rather than where another parameter starts: the block, or a
+/// `-->` return type.
+fn ends_pointy_param_list(r: &str) -> bool {
+    r.starts_with('{') || r.starts_with("-->")
+}
+
 /// Parse a pointy parameter list in which at least one parameter is a
 /// destructuring pattern and there is more than one parameter:
 /// `-> [$target, $variant], [$expected, $desc] { ... }`.
@@ -291,6 +308,10 @@ fn parse_multi_destructuring_params(input: &str, rw_block: bool) -> PResult<'_, 
     let mut any_rw = rw_block;
     loop {
         let (r2, _) = ws(r)?;
+        if !params_def.is_empty() && ends_pointy_param_list(r2) {
+            r = r2;
+            break;
+        }
         let (r2, mut def) = parse_destructuring_or_plain_param(r2)?;
         if def.sub_signature.is_some() && def.name.is_empty() {
             def.name = format!("__for_unpack_{}", params_def.len());

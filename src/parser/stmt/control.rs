@@ -126,6 +126,12 @@ fn condition_expr(input: &str) -> PResult<'_, Expr> {
             {
                 return Ok((assign_rest, assign_cond));
             }
+            // The condition is a full EXPR, comma included: `with 1, 2, 3 { }`
+            // topicalizes the list, and `if 1, 0 { }` tests it (a non-empty
+            // list is true).
+            if tail.starts_with(',') && !tail.starts_with(",,") {
+                return super::assign::parse_comma_or_expr(input);
+            }
             Ok((rest, cond))
         }
         Err(_) => super::assign::try_parse_assign_expr(input),

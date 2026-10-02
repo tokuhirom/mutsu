@@ -681,6 +681,39 @@ pub(crate) fn build_custom_compound_assign_expr(
                 },
             ));
         }
+        // `$tmp.weekday mod= 7`: an rw accessor read, combined, and written
+        // back, as `build_compound_assign_expr` does for the operators that have
+        // a `CompoundAssignOp`.
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted: _,
+        } if name != "AT-POS" => {
+            let target_var_name =
+                crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
+            let current_value = Expr::MethodCall {
+                target: target.clone(),
+                name,
+                args: args.clone(),
+                modifier: None,
+                quoted: false,
+            };
+            let assigned_value = Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(current_value),
+                right: vec![rhs],
+                modifier: None,
+            };
+            method_lvalue_roundtrip_assign_expr(
+                *target,
+                target_var_name,
+                name.resolve(),
+                args,
+                assigned_value,
+            )
+        }
         _ => return Err(PError::expected("assignment expression")),
     })
 }
