@@ -6,8 +6,9 @@
 //! - a `<subrule>` call frame runs its callee with the call's binding window
 //!   installed: the callee's `$*` parameters and the object or closure
 //!   arguments baking cannot carry into its code blocks
-//!   (`install_subrule_dynamic_params`), which the walk installs around the
-//!   callee's whole match.
+//!   (`install_subrule_dynamic_params`), and the rule's own `:my $*x`
+//!   declarations (`enter_grammar_rule_dynvars`), which the walk installs
+//!   around the callee's whole match.
 //!
 //! The body is part of the run, so the run can backtrack into it after leaving
 //! it, and out of it before it finished. Each install and uninstall is
@@ -23,6 +24,7 @@ use std::sync::Arc;
 
 use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::SavedDynParams;
+use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dynvar_scope_push};
 use crate::runtime::seq_helpers::RegexClosureBinding;
 use crate::value::{Value, ValueMap};
 
@@ -46,7 +48,24 @@ enum ScopeSave {
     Window {
         live: Vec<(String, Option<Value>)>,
         saved: Option<SavedDynParams>,
+        /// The keys whose values the callee's Match records.
+        attach: Vec<String>,
+        /// The rule's `:my $*x` declarations, marked as owned by a live rule
+        /// frame while the window is installed.
+        scope_keys: Option<Vec<String>>,
     },
+}
+
+/// A call's binding window, as `rx_call_resolve` installed it.
+pub(super) struct CallWindow {
+    /// What each binding shadowed, in install order.
+    pub(super) saved: SavedDynParams,
+    /// The keys whose final values the callee's Match records for its action
+    /// (`attach_grammar_dynvars_to_named_caps`).
+    pub(super) attach: Vec<String>,
+    /// The rule's own `:my $*x` declarations, when it has any. Not marked yet:
+    /// [`Interpreter::rx_window_adopt`] marks them.
+    pub(super) scope_keys: Option<Vec<String>>,
 }
 
 /// The bindings of one run, indexed by the handle an install returns (and the
@@ -72,10 +91,20 @@ impl Interpreter {
     /// has just installed (`saved` is what it shadowed); the index is its
     /// handle.
     // Cost: O(1).
-    pub(super) fn rx_window_adopt(scopes: &mut Scopes, saved: SavedDynParams) -> usize {
+    pub(super) fn rx_window_adopt(scopes: &mut Scopes, window: CallWindow) -> usize {
+        let CallWindow {
+            saved,
+            attach,
+            scope_keys,
+        } = window;
+        if let Some(keys) = &scope_keys {
+            grammar_dynvar_scope_push(keys.iter().cloned());
+        }
         scopes.saves.push(ScopeSave::Window {
             live: Vec::new(),
             saved: Some(saved),
+            attach,
+            scope_keys,
         });
         scopes.saves.len() - 1
     }
@@ -89,11 +118,12 @@ impl Interpreter {
     pub(super) fn rx_window_values(&self, scopes: &Scopes, k: usize) -> Vec<(String, Value)> {
         match scopes.saves.get(k) {
             Some(ScopeSave::Window {
-                saved: Some(shadowed),
+                saved: Some(_),
+                attach,
                 ..
-            }) => shadowed
+            }) => attach
                 .iter()
-                .filter_map(|(key, _)| self.env.get(key).map(|v| (key.clone(), v.clone())))
+                .filter_map(|key| self.env.get(key).map(|v| (key.clone(), v.clone())))
                 .collect(),
             _ => Vec::new(),
         }
@@ -107,10 +137,18 @@ impl Interpreter {
                 let saved = saved.take();
                 self.uninstall_regex_closure_scope(saved);
             }
-            Some(ScopeSave::Window { live, saved }) => {
+            Some(ScopeSave::Window {
+                live,
+                saved,
+                scope_keys,
+                ..
+            }) => {
                 let Some(shadowed) = saved.take() else {
                     return;
                 };
+                if scope_keys.is_some() {
+                    grammar_dynvar_scope_pop();
+                }
                 live.clear();
                 live.extend(
                     shadowed
@@ -137,9 +175,17 @@ impl Interpreter {
                     *saved = Some(installed);
                 }
             }
-            Some(ScopeSave::Window { live, saved }) => {
+            Some(ScopeSave::Window {
+                live,
+                saved,
+                scope_keys,
+                ..
+            }) => {
                 if saved.is_some() {
                     return;
+                }
+                if let Some(keys) = scope_keys {
+                    grammar_dynvar_scope_push(keys.iter().cloned());
                 }
                 let mut shadowed = Vec::with_capacity(live.len());
                 for (key, value) in live.iter() {

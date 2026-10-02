@@ -989,6 +989,38 @@ backtracking into a callee, nested windows, a failed call, proto candidates, act
 way, in both engines: a proto's own `$*` parameter (`proto token p($*K) {*}`) is never bound
 ([#11071](https://github.com/tokuhirom/mutsu/issues/11071)).
 
+### Slice E, ninth part: grammars that declare `:my $*x`
+
+`context:rule-dynvar-decls` and the `rule-dynvar-decls` bridge are gone. Before this part, a match ran
+on the walk whenever the grammar being parsed had any rule that declared a dynamic variable
+(`token r { :my $*x = …; … }`), and so did every call made in it. The walk initializes such
+declarations at rule entry (`enter_grammar_rule_dynvars`), restores them when the invocation ends,
+and marks the keys as owned by a live rule frame. The rule's `VarDecl` atom then records the value
+instead of running the initializer again.
+
+A frame call now does the same. Once the call is known to be a frame, `rx_call_rule_frame` enters the
+callee's rule frame. A bridged call enters none, because its producer enters its own, so an
+initializer never runs twice. The frame joins the call's binding window of the eighth part
+(`CallWindow`): its shadowed bindings follow the `$*` parameters, and its keys are recorded on the
+callee's Match for the action. The window also carries the frame's "owned" mark, which `rx_scope`
+pushes and pops with every install and uninstall (`grammar_dynvar_scope_push`). Backtracking into the
+callee therefore finds its declaration live and marked, as at the first entry.
+
+The comparison with rakudo found the walk wrong in such grammars, and the compiled engine right. With
+declarations present, the walk does not commit a ratcheted subrule to its first end (the
+`ratchet && grammar_rule_dynvar_decls.is_empty()` argument of its `for_each_atom_candidate` call), so
+a `token` callee was re-entered for its shorter ends. Rakudo commits. So D6 reports a code-order
+disagreement on such grammars (`t/grammar/ipv6-mapped-dotted-decimal.t`); the results agree.
+
+Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 11,469 to 10,538.
+
+- `walked` 4,537 → 3,352. `context:rule-dynvar-decls` 1,273 → 0.
+- `bridged` 4,909 → 4,985. The matches that ran on the compiled engine for the first time now reach
+  their declined callees through the bridge instead of walking whole (`callee-declined` +72).
+
+`t/grammar/grammar-rule-dynvar-decl-frames.t` pins the rakudo values: ratchet commit, scope and
+shadowing, re-installation on backtracking, and the action's view.
+
 ### Reproducing §2
 
 ```raku

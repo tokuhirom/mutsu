@@ -182,6 +182,20 @@ impl Interpreter {
         Some(GrammarDynvarFrame { saved, keys, scope })
     }
 
+    /// Take a rule frame apart for an owner that installs and removes it more
+    /// than once (the compiled regex engine's call window, `rx_scope`): what
+    /// the frame's bindings shadowed, and its declared keys. The frame's scope
+    /// marker ends here; the owner marks the keys itself while the frame is
+    /// installed (`grammar_dynvar_scope_push`).
+    // Cost: O(1).
+    pub(crate) fn into_window_parts(
+        frame: GrammarDynvarFrame,
+    ) -> (Vec<(String, Option<Value>)>, Vec<String>) {
+        let GrammarDynvarFrame { saved, keys, scope } = frame;
+        drop(scope);
+        (saved, keys)
+    }
+
     /// Leave a grammar rule's frame and return the values held by its declared
     /// variables at the end of matching. Callers attach these values to the
     /// rule's capture node before restoring the caller's environment.

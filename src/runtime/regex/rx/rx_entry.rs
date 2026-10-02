@@ -141,9 +141,6 @@ impl Interpreter {
         if h::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             return Err("context:ltm-declarative");
         }
-        if !self.grammar_rule_dynvar_decls.is_empty() {
-            return Err("context:rule-dynvar-decls");
-        }
         if h::inline_regex_vars_active() {
             return Err("context:inline-regex-vars");
         }
