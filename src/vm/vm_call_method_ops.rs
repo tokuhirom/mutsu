@@ -1465,6 +1465,11 @@ impl Interpreter {
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");
+            if matches!(method, "raku" | "perl") && Interpreter::lazy_seq_raku_applies(&ll) {
+                let text = self.lazy_seq_raku(&ll)?;
+                self.stack.push(Value::str(text));
+                return Ok(());
+            }
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
                     method,

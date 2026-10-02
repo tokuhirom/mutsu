@@ -4502,6 +4502,9 @@ impl Interpreter {
             && matches!(method, "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
+            if matches!(method, "raku" | "perl") && Self::lazy_seq_raku_applies(&ll) {
+                return Ok(Value::str(self.lazy_seq_raku(&ll)?));
+            }
             return Ok(Value::str(crate::value::lazy_list_placeholder(
                 method,
                 ll.in_array_context(),
