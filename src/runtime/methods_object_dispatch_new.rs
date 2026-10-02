@@ -2126,7 +2126,12 @@ impl Interpreter {
                         return self.construct_baggy_instance(&cn, &args);
                     }
                     let accepts_positional = class_mro.iter().any(|n| {
-                        *n == "Array" || *n == "List" || n == "Int" || n == "Num" || n == "Hash"
+                        *n == "Array"
+                            || *n == "List"
+                            || n == "Int"
+                            || n == "Num"
+                            || n == "Rat"
+                            || n == "Hash"
                     });
                     if !accepts_positional {
                         return Err(constructor_positional_error(&class_name.resolve()));

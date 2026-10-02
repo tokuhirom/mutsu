@@ -212,6 +212,11 @@ impl Interpreter {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         if let Some(payload) = crate::builtins::numeric_subclass::numeric_payload_of(&attributes) {
+            if let Some(rendered) =
+                self.numeric_subclass_repr(target, &class_name.resolve(), &payload, method)
+            {
+                return Some(rendered);
+            }
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
         // An `is Version` subclass (#8070) delegates any method it does not

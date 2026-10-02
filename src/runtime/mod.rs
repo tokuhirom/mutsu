@@ -108,7 +108,7 @@ pub(crate) fn seed_native_subclass_payloads(
     args: &[Value],
     positional_args: &[Value],
 ) {
-    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD};
+    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD};
     if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
         attrs.insert(INT_PAYLOAD, Value::int(payload));
@@ -119,6 +119,11 @@ pub(crate) fn seed_native_subclass_payloads(
             crate::runtime::coerce_to_numeric(v.clone()).to_f64()
         });
         attrs.insert(NUM_PAYLOAD, Value::num(payload));
+    } else if class_mro.iter().any(|name| name == "Rat") && !attrs.contains_key(RAT_PAYLOAD) {
+        // raku: `Rat.new(\nu, \de)` boxes the reduced fraction into the
+        // subclass; no argument is `0/1`. The native constructor builds it.
+        let payload = Interpreter::build_native_rat_value(positional_args);
+        attrs.insert(RAT_PAYLOAD, payload);
     }
     if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
         let payload = args
@@ -614,6 +619,7 @@ mod control_inline;
 mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_reinstate;
+mod numeric_subclass_repr;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
