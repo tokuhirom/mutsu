@@ -505,9 +505,12 @@ fn build(
             OpCode::SetLocalDecl {
                 slot,
                 explicit_init,
+                typechecked,
             } => {
                 let slotv = b.ins().iconst(types::I32, *slot as i64);
-                let initv = b.ins().iconst(types::I32, i64::from(*explicit_init));
+                // bit 0: explicit initializer; bit 1: already type-checked.
+                let flags = i64::from(*explicit_init) | (i64::from(*typechecked) << 1);
+                let initv = b.ins().iconst(types::I32, flags);
                 let status = call_helper(
                     &mut b,
                     sigs.s_code_u32_u32,

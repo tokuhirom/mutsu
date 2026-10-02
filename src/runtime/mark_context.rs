@@ -44,12 +44,13 @@ pub(crate) mod bit {
     pub(crate) const ARRAY_SHARE: u16 = 1 << 6;
     pub(crate) const EXPLICIT_INITIALIZER: u16 = 1 << 7;
     pub(crate) const VARDECL: u16 = 1 << 8;
+    pub(crate) const DECL_TYPECHECKED: u16 = 1 << 9;
 }
 
 /// The whole mark-context flag family in one allocation.
 #[derive(Default)]
 pub(crate) struct MarkContextState {
-    /// The nine boolean flags, one per [`bit`] constant.
+    /// The boolean flags, one per [`bit`] constant.
     pub(crate) flags: Cell<u16>,
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): the source variable name
     /// whose container the upcoming `SetLocal`/`AssignExpr` should share (set
@@ -90,7 +91,8 @@ impl MarkContextState {
         | bit::CONSTANT
         | bit::ARRAY_SHARE
         | bit::EXPLICIT_INITIALIZER
-        | bit::VARDECL;
+        | bit::VARDECL
+        | bit::DECL_TYPECHECKED;
 
     /// Whether *no* store-flavour mark is pending: the next store is a plain
     /// `=` into an already-declared variable, with no bind, rebind, `constant`,
@@ -164,6 +166,10 @@ impl MarkFlags {
     #[inline]
     pub(crate) fn vardecl(self) -> bool {
         self.0 & bit::VARDECL != 0
+    }
+    #[inline]
+    pub(crate) fn decl_typechecked(self) -> bool {
+        self.0 & bit::DECL_TYPECHECKED != 0
     }
 }
 
@@ -256,6 +262,14 @@ impl crate::runtime::Interpreter {
     #[inline]
     pub(crate) fn vardecl_context(&self) -> MarkFlag<'_> {
         MarkFlag::new(&self.mark_ctx.flags, bit::VARDECL)
+    }
+
+    /// Set by `SetLocalDecl` when the declaration's own `TypeCheck` already
+    /// matched the value against the declared type, so the store skips its
+    /// own match (a `where` predicate must run once per assignment).
+    #[inline]
+    pub(crate) fn decl_typechecked_context(&self) -> MarkFlag<'_> {
+        MarkFlag::new(&self.mark_ctx.flags, bit::DECL_TYPECHECKED)
     }
 
     /// The one non-`Copy` member of the family — see

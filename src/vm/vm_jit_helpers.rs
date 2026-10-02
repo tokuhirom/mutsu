@@ -217,13 +217,13 @@ pub(super) unsafe extern "C" fn set_local_decl(
     interp: *mut Interpreter,
     code: *const CompiledCode,
     idx: u32,
-    explicit_init: u32,
+    flags: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    interp
-        .explicit_initializer_context()
-        .set(explicit_init != 0);
+    // bit 0: explicit initializer; bit 1: already type-checked.
+    interp.explicit_initializer_context().set(flags & 1 != 0);
     interp.vardecl_context().set(true);
+    interp.decl_typechecked_context().set(flags & 2 != 0);
     panic_boundary(|| match interp.exec_set_local_op(code, idx) {
         Ok(()) => {
             interp.publish_state_local(code, idx);

@@ -6601,6 +6601,7 @@ impl Interpreter {
             OpCode::SetLocalDecl {
                 slot,
                 explicit_init,
+                typechecked,
             } => {
                 // The fused form of `MarkExplicitInitializerContext;
                 // MarkVarDeclContext; SetLocal` (ADR-0006 §2.3): set the very
@@ -6608,6 +6609,7 @@ impl Interpreter {
                 // (which reads and clears them).
                 self.explicit_initializer_context().set(*explicit_init);
                 self.vardecl_context().set(true);
+                self.decl_typechecked_context().set(*typechecked);
                 self.exec_set_local_op(code, *slot)?;
                 self.publish_state_local(code, *slot);
                 *ip += 1;
