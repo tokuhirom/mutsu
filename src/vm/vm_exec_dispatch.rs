@@ -2271,9 +2271,11 @@ impl Interpreter {
                         // keeps its existing value/ContainerRef — we only break
                         // the alias, we do NOT propagate the new ContainerRef to
                         // the old target.
-                        // Update source local if present
+                        // Prefer the compiler's source slot. A later nested
+                        // package can declare the same name, making a by-name
+                        // last match point at a sibling slot instead.
                         if let Some(source_idx) =
-                            code.locals.iter().rposition(|n| n == &resolved_source)
+                            Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
                         {
                             self.locals[source_idx] = container.clone();
                             self.flush_local_to_env(code, source_idx);
