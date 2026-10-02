@@ -5567,6 +5567,12 @@ pub(crate) struct CompiledClassDeclPlan {
     /// Method compilation uses a fresh scope, so this distinguishes genuine
     /// outer lexicals from class-body statics and lexicals declared later.
     pub(crate) method_outer_lexical_slots: Vec<(Symbol, u32)>,
+    /// The declaring frame's local slots a class-body `:=` declaration binds
+    /// (`class C { my $w := $z }`, `my \x := $z`), a subset of
+    /// `method_outer_lexical_slots`. Registration boxes each into a shared
+    /// cell before the body runs, so the body-scoped name aliases the outer
+    /// variable's container instead of a snapshot of its value (#10682).
+    pub(crate) body_bind_source_slots: Vec<u32>,
     /// Names the class body `my`/`state`-declares at its own top level
     /// (ADR-0019 D6-1), precomputed at plan lowering instead of
     /// `persist_class_body_statics` re-walking the raw body on every
@@ -5713,6 +5719,46 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
             classify_class_body_stmt(stmt, decl_line)
         })
         .collect()
+}
+
+/// The outer-lexical slots a class body's `:=` declarations bind: for each
+/// bind group `class_body_plan` kept whole (`[MarkBind, VarDecl, ...]`), the
+/// slot of a `VarDecl` whose right-hand side is a plain variable of the
+/// declaring frame. See [`CompiledClassDeclPlan::body_bind_source_slots`].
+// Cost: O(b * s), b = the body's bind declarations, s = the frame's lexical slots.
+fn class_body_bind_source_slots(
+    body_plan: &[ClassBodyOp],
+    outer_lexical_slots: &[(Symbol, u32)],
+) -> Vec<u32> {
+    let mut slots = Vec::new();
+    for op in body_plan {
+        let ClassBodyOp::Other {
+            raw: Stmt::SyntheticBlock(inner),
+            ..
+        } = op
+        else {
+            continue;
+        };
+        if !inner.iter().any(|s| matches!(s, Stmt::MarkBind)) {
+            continue;
+        }
+        for stmt in inner {
+            let Stmt::VarDecl {
+                expr: Expr::Var(source),
+                ..
+            } = stmt
+            else {
+                continue;
+            };
+            let source = Symbol::intern(source);
+            if let Some((_, slot)) = outer_lexical_slots.iter().find(|(n, _)| *n == source)
+                && !slots.contains(slot)
+            {
+                slots.push(*slot);
+            }
+        }
+    }
+    slots
 }
 
 /// Whether a `SyntheticBlock`'s statements must be compiled together, as one
@@ -11798,6 +11844,8 @@ impl CompiledCode {
         let declared_static_names = class_declared_static_names(body);
         let method_outer_lexical_slots =
             outer_lexical_slots_unshadowed(method_outer_lexical_slots, &declared_static_names);
+        let body_bind_source_slots =
+            class_body_bind_source_slots(&body_plan, &method_outer_lexical_slots);
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk
@@ -11828,6 +11876,7 @@ impl CompiledCode {
             method_name_chunks,
             method_decls,
             method_outer_lexical_slots,
+            body_bind_source_slots,
             declared_static_names,
             parent_arg_chunks,
             body_plan,

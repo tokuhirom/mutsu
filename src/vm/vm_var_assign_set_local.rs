@@ -2569,9 +2569,19 @@ impl Interpreter {
             // by-name sigilless-alias write, which replaced the package entry
             // with the raw value: `$r = "a"` slipped past `our Int $v`, and
             // the cell (and with it the constraint) was gone for good (#10411).
-            let qualified_source_cell = !source_in_same_scope
+            //
+            // The same holds for an unqualified DECLARATION bind whose source
+            // this frame reaches only by name, already celled by the frame that
+            // owns it: a class body's `my $w := $z` runs as its own chunk, and
+            // the class registration boxes the declaring frame's `$z` before
+            // the body runs. Binding to that cell keeps `$w`, `$z` and the
+            // methods that capture `$w` on one container (#10682); the by-name
+            // alias fallback only forwarded writes and left reads stale.
+            let env_source_cell = !source_in_same_scope
                 && val_is_simple_scalar
-                && crate::qualified::is_qualified(Symbol::intern(&resolved_source))
+                && !is_percall_pseudo_var
+                && !synthetic_index_source
+                && (is_vardecl || crate::qualified::is_qualified(Symbol::intern(&resolved_source)))
                 && self
                     .env()
                     .get(&resolved_source)
@@ -2579,7 +2589,7 @@ impl Interpreter {
             if (source_in_outer_frame
                 || (is_rebind && source_in_same_scope && val_is_simple_scalar)
                 || decl_bind_same_scope_scalar
-                || qualified_source_cell)
+                || env_source_cell)
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
