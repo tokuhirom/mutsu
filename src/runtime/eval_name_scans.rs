@@ -176,6 +176,13 @@ impl UndeclaredName<'_> {
                     .env()
                     .contains_key(crate::symbol::SIGILLESS_UNDERSCORE_STORAGE);
         }
+        // A definite/undefined type object (`Str:D`, `K:U`, `Int:_`) is known
+        // exactly when its base type is (#10814).
+        if let (base, Some(_)) = crate::runtime::types::strip_type_smiley(name)
+            && !base.is_empty()
+        {
+            return self.is_known(base);
+        }
         is_core_term(name)
             // Package-qualified names are looked up elsewhere.
             || name.contains("::")
