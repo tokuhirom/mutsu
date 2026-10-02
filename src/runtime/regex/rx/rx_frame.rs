@@ -71,6 +71,9 @@ pub(super) struct Frame {
     /// a call in the callee first runs a grammar method (#9803). The return files
     /// it on the callee's Match.
     pub(super) cursor: RefCell<Option<Value>>,
+    /// The call's binding window (`rx_scope`'s handle), installed while the
+    /// callee runs and uninstalled by its return.
+    pub(super) window: Option<usize>,
 }
 
 /// Calls nested deeper than this fail: a rule that re-enters itself without
@@ -115,6 +118,8 @@ pub(super) struct ProtoChoice {
     pub(super) ranked: Rc<[usize]>,
     pub(super) next: usize,
     pub(super) mark: Mark,
+    /// The call's binding window, which every candidate runs in.
+    pub(super) window: Option<usize>,
 }
 
 /// A point to resume from on failure.

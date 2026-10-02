@@ -956,6 +956,39 @@ invocation order, which an eager all-ends op (tried first) did not.
 The same pair is what `args-opaque` and the `$*`-parameter blocker need: a binding installed for a
 callee's match window, kept correct as backtracking crosses the frame.
 
+### Slice E, eighth part: call frames with a binding window
+
+`args-opaque` and `dynamic-param` compile. A `<subrule>` call whose callee needs a binding window
+(its `$*` parameters, or an object or closure argument that baking cannot carry into its code
+blocks) runs as a frame, like any other plain or proto call. The window is the one the walk's
+producer installs around the callee's whole match (`install_subrule_dynamic_params`). The Call op
+installs it before it resolves the callee (`rx_call_resolve`), because the callee's pattern may
+interpolate a `$*` parameter. It is recorded in the run's scopes (`rx_scope`, generalized from the
+closure scopes of the seventh part) and trailed under the same tags:
+
+- the install pushes an undo-install entry, so a failure that rewinds past the call removes it;
+- the callee's return uninstalls it and pushes an undo-uninstall entry, so backtracking into the
+  callee installs it again. What the window held at the uninstall is what goes back, so a write the
+  callee's code made to a `$*` parameter survives the round trip;
+- a proto's candidates all run in the one window: it is installed before the proto's choice point is
+  pushed, so moving to the next candidate keeps it;
+- the return also records the window's values on the callee's Match, as the walk does
+  (`attach_grammar_dynvars_to_named_caps`), because the callee's action runs later, in the reduce walk.
+
+The `ANY_DYNAMIC_TOKEN_PARAM` blocker is gone with it: once any rule in the program had a `$*`
+parameter, every call of every rule bridged. A call that bridges for another reason installs
+nothing; the producer installs its own window as before.
+
+D6 cannot compare a non-ratchet (`regex`) callee with arguments and code: the walk computes such a
+callee's ends eagerly, so it runs the callee's code at every end before the caller continues, where
+a frame runs it lazily (rakudo's order). That disagreement predates this part (the sixth part made
+calls with arguments frames) and is not a correctness issue; it goes with the walk.
+
+`t/grammar/grammar-subrule-binding-window-frames.t` pins the rakudo values (re-binding on
+backtracking into a callee, nested windows, a failed call, proto candidates, actions). Found on the
+way, in both engines: a proto's own `$*` parameter (`proto token p($*K) {*}`) is never bound
+([#11071](https://github.com/tokuhirom/mutsu/issues/11071)).
+
 ### Reproducing §2
 
 ```raku

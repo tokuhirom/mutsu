@@ -6,7 +6,7 @@
 # put the match there.
 use Test;
 
-plan 10;
+plan 12;
 
 sub walk-line(Str $code, *%extra-env) {
     my %env = %*ENV;
@@ -37,8 +37,16 @@ sub walk-line(Str $code, *%extra-env) {
     my ($out, $line) = walk-line(
         'class C { method m { "a" } }; grammar G { token TOP { <x(C.new)> }; token x($o) { a <?{ $o.m eq "a" }> } }; say ~G.parse("a")');
     is $out, "a\n", 'a call with an object argument still parses';
-    like $line, /'bridged=1 (args-opaque=1)'/,
-        'a call whose argument must be bound for its match is bridged, reason args-opaque';
+    like $line, /'walked=0 () bridged=0 ()'/,
+        'a call whose argument must be bound for its match runs as a frame (no bridge)';
+}
+
+{
+    my ($out, $line) = walk-line(
+        'grammar G { token TOP { <x("b")> }; token x($*W) { a <y> }; token y { . <?{ $/.Str eq $*W }> } }; say ~G.parse("ab")');
+    is $out, "ab\n", 'a `$*` rule parameter reaches a subrule the callee calls';
+    like $line, /'walked=0 () bridged=0 ()'/,
+        'a call that binds a `$*` parameter runs as a frame (no bridge)';
 }
 
 {

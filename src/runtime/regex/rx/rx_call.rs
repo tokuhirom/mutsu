@@ -15,8 +15,12 @@ use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
 use super::rx_entry::program_for;
 use crate::runtime::Interpreter;
+use crate::runtime::regex::regex_dynparams::{
+    ANY_DYNAMIC_TOKEN_PARAM, SavedDynParams, regex_args_have_opaque,
+};
 use crate::runtime::regex_types::NamedAtom;
 use crate::symbol::Symbol;
+use crate::value::Value;
 
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
 type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallVerdict)>;
@@ -35,6 +39,17 @@ thread_local! {
         std::cell::RefCell::new(rustc_hash::FxHashMap::default());
 }
 
+/// A `<subrule>` call, resolved ([`Interpreter::rx_call_resolve`]).
+pub(super) struct ResolvedCall {
+    /// The frame it runs as, or why it bridges.
+    pub(super) verdict: CallVerdict,
+    /// The evaluated arguments of a call with arguments.
+    pub(super) args: Option<Vec<Value>>,
+    /// The binding window installed for a frame's callee: what each binding
+    /// shadowed. The caller owns its uninstall from here on.
+    pub(super) window: Option<SavedDynParams>,
+}
+
 /// What a `<subrule>` call runs as a frame.
 #[derive(Clone)]
 pub(super) enum CallTarget {
@@ -50,24 +65,103 @@ pub(super) enum CallTarget {
 }
 
 impl Interpreter {
+    /// Resolve the `<subrule>` call `name` made from `pkg` at a position where
+    /// the caller's captures are `caps`. A call with arguments evaluates them
+    /// here, once, and a bridged call hands them to the walk's producer, so
+    /// user code in an argument never runs twice. `None` when an argument
+    /// fails to evaluate: the call does not match, as in the walk.
+    ///
+    /// A frame that needs a binding window (the callee's `$*` parameters, or
+    /// an object or closure argument baking cannot carry into its code blocks)
+    /// comes back with the window installed (`ResolvedCall::window`): the
+    /// caller records it in the run's scopes (`rx_scope`), so backtracking
+    /// across the frame removes and re-installs it, and the callee's return
+    /// uninstalls it. The window is installed before the callee is resolved,
+    /// because its pattern may interpolate a `$*` parameter
+    /// (`rule r($*w) { $*w }`), as in the walk.
+    // Cost: O(1) expected for an argument-less call without a window (one
+    // memoized candidate probe, plus the memoized call-graph verdicts); with
+    // arguments, their evaluation and the candidate resolution (memoized per
+    // argument list); O(c) more for a proto of c candidates (a program probe
+    // each); O(b) for a window of b bindings.
+    pub(super) fn rx_call_resolve(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        ic: bool,
+        caps: &crate::runtime::regex_types::RegexCaptures,
+    ) -> Option<ResolvedCall> {
+        let spec = name.spec();
+        if let Err(why) = self.rx_call_blockers(name) {
+            // Bridged without evaluating: the producer evaluates them itself.
+            return Some(ResolvedCall {
+                verdict: Err(why),
+                args: None,
+                window: None,
+            });
+        }
+        let args = if spec.arg_exprs.is_empty() {
+            None
+        } else {
+            Some(self.eval_regex_arg_list(&spec.arg_exprs, caps)?)
+        };
+        let window = self.rx_call_window(name, pkg, args.as_deref().unwrap_or(&[]));
+        let verdict = match &args {
+            None => self.rx_call_target_checked(name, pkg, ic),
+            Some(args) => {
+                let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, args);
+                // No rule of that name: a grammar method or a builtin, which
+                // the walk's producer dispatches with these arguments.
+                if raw_empty {
+                    Err("args-method")
+                } else {
+                    self.call_target_from_candidates(name, pkg, ic, candidates)
+                }
+            }
+        };
+        // Only a frame keeps the window: the producer installs its own.
+        let window = match (&verdict, window) {
+            (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => window,
+            (_, Some(saved)) => {
+                self.restore_subrule_dynamic_params(saved);
+                None
+            }
+            (_, None) => None,
+        };
+        Some(ResolvedCall {
+            verdict,
+            args,
+            window,
+        })
+    }
+
+    /// Install the binding window a call of `name` with `args` runs its callee
+    /// in, when it needs one: what the walk's producer installs around the
+    /// callee's whole match (`install_subrule_dynamic_params`).
+    // Cost: O(1) when no rule declares a `$*` parameter and no argument is
+    // opaque; else O(a + b), a = the arguments, b = the bindings installed.
+    fn rx_call_window(
+        &mut self,
+        name: &NamedAtom,
+        pkg: Symbol,
+        args: &[Value],
+    ) -> Option<SavedDynParams> {
+        if !ANY_DYNAMIC_TOKEN_PARAM.load(std::sync::atomic::Ordering::Relaxed)
+            && !regex_args_have_opaque(args)
+        {
+            return None;
+        }
+        self.install_subrule_dynamic_params_named(&name.spec().lookup_name, pkg, args, None)
+    }
+
     /// The frame `<name>` called from `pkg` runs as, or `Err(why)` when the
     /// call must take the bridge. `ic` is the caller's `:i`, which the walk scopes
     /// over the callee's body.
     // Cost: O(1) expected: one memoized candidate probe, plus the memoized
     // call-graph verdicts for the rule, per call; O(c) more for a proto of c
     // candidates (a program probe each).
-    pub(super) fn rx_call_target(
-        &mut self,
-        name: &NamedAtom,
-        pkg: Symbol,
-        ic: bool,
-    ) -> CallVerdict {
+    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
         let spec = name.spec();
-        // A call with arguments resolves per call (`rx_call_target_args`).
-        if !spec.arg_exprs.is_empty() {
-            return Err("args");
-        }
-        self.rx_call_blockers(name)?;
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         let key = (spec.lookup_sym, pkg, ic);
@@ -97,14 +191,8 @@ impl Interpreter {
         if spec.lookup_name == "::" || Self::may_name_lexical_regex(spec) {
             return Err("lexical-regex");
         }
-        // Dispatch the compiled engine does not model: a `$*` rule parameter
-        // that has to be installed around the call, a wrapped token, a custom
-        // HOW.
-        if crate::runtime::regex::regex_dynparams::ANY_DYNAMIC_TOKEN_PARAM
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return Err("dynamic-param");
-        }
+        // Dispatch the compiled engine does not model: a wrapped token, a
+        // custom HOW.
         if self.has_any_wrap_chains() {
             return Err("wrapped");
         }
@@ -123,58 +211,11 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The frame a `<name(…)>` call with arguments runs as. The arguments are
-    /// evaluated here, once, against the caller's captures `caps`, and handed
-    /// back with the verdict: a frame's callee was parsed for those values
-    /// (`parsed_subrule_candidates`, memoized per rendered argument list), and
-    /// a bridged call passes them to the walk's producer so user code in an
-    /// argument never runs twice. `None` when an argument fails to evaluate:
-    /// the call does not match, as in the walk.
-    // Cost: the arguments' evaluation, then the candidate resolution
-    // (memoized per argument list) and O(c) program probes for c candidates.
-    pub(super) fn rx_call_target_args(
-        &mut self,
-        name: &NamedAtom,
-        pkg: Symbol,
-        ic: bool,
-        caps: &crate::runtime::regex_types::RegexCaptures,
-    ) -> Option<(CallVerdict, Option<Vec<crate::value::Value>>)> {
-        let spec = name.spec();
-        if let Err(why) = self.rx_call_blockers(name) {
-            // Bridged without evaluating: the producer evaluates them itself.
-            return Some((Err(why), None));
-        }
-        let args = self.eval_regex_arg_list(&spec.arg_exprs, caps)?;
-        // An object or closure argument is bound in the env for the callee's
-        // match window (`install_subrule_dynamic_params`), which a frame the
-        // run can backtrack into does not keep live: the walk's producer
-        // binds it around the callee's whole match.
-        // TODO: compile to bytecode with a binding op pair that backtracking
-        // re-installs and removes, as `isolated-group-scoped` needs too.
-        if crate::runtime::regex::regex_dynparams::regex_args_have_opaque(&args) {
-            return Some((Err("args-opaque"), Some(args)));
-        }
-        let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &args);
-        // No rule of that name: a grammar method or a builtin, which the
-        // walk's producer dispatches with these arguments.
-        let verdict = if raw_empty {
-            Err("args-method")
-        } else {
-            self.call_target_from_candidates(name, pkg, ic, candidates)
-        };
-        Some((verdict, Some(args)))
-    }
-
     /// [`Self::rx_call_target`] with the one verdict a method definition can
     /// change: a plain grammar METHOD named like the rule is invoked by the
     /// walk's producer (`try_regex_subrule_as_method`), so such a call bridges.
     // Cost: O(1) expected.
-    pub(super) fn rx_call_target_checked(
-        &mut self,
-        name: &NamedAtom,
-        pkg: Symbol,
-        ic: bool,
-    ) -> CallVerdict {
+    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
         let target = self.rx_call_target(name, pkg, ic)?;
         if matches!(target, CallTarget::Single)
             && self.grammar_has_user_method_sym(pkg.as_str(), name.spec().lookup_sym)
