@@ -16,6 +16,7 @@ mod formatter;
 mod lower;
 mod name_parts;
 mod render;
+mod use_stmt;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;
@@ -282,6 +283,8 @@ pub enum RakuAstClass {
     TermSelf,
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
+    StatementUse,
+    StatementLanguageVersion,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,6 +465,8 @@ impl RakuAstClass {
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
             Pragma => "RakuAST::Pragma",
+            StatementUse => "RakuAST::Statement::Use",
+            StatementLanguageVersion => "RakuAST::Statement::LanguageVersion",
         }
     }
 
@@ -614,7 +619,7 @@ impl RakuAstClass {
             ColonPairTrue | ColonPairFalse | ColonPairValue => {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
-            Pragma => &["RakuAST::Statement"],
+            Pragma | StatementUse | StatementLanguageVersion => &["RakuAST::Statement"],
             _ => &[],
         }
     }
@@ -778,7 +783,9 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::ColonPair::Value" => {
             &["RakuAST::Term", "RakuAST::Expression"]
         }
-        "RakuAST::Pragma" => &["RakuAST::Statement"],
+        "RakuAST::Pragma"
+        | "RakuAST::Statement::Use"
+        | "RakuAST::Statement::LanguageVersion" => &["RakuAST::Statement"],
         "RakuAST::RegexDeclaration"
         | "RakuAST::TokenDeclaration"
         | "RakuAST::RuleDeclaration" => &[
@@ -997,6 +1004,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
     RakuAstClass::Pragma,
+    RakuAstClass::StatementUse,
+    RakuAstClass::StatementLanguageVersion,
 ];
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.

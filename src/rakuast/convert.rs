@@ -16,20 +16,20 @@ use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
 
-fn unsupported(what: &str) -> RuntimeError {
+pub(super) fn unsupported(what: &str) -> RuntimeError {
     RuntimeError::new(format!(
         "RakuAST: `.AST` does not yet support this construct: {what}"
     ))
 }
 
-fn node_field(name: Option<&'static str>, node: RakuAstNode) -> RakuAstField {
+pub(super) fn node_field(name: Option<&'static str>, node: RakuAstNode) -> RakuAstField {
     RakuAstField {
         name,
         value: RakuAstFieldValue::Node(Value::rakuast(Box::new(node))),
     }
 }
 
-fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstField {
+pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstField {
     RakuAstField {
         name,
         value: RakuAstFieldValue::Node(value),
@@ -256,18 +256,39 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 tree,
             )?)))
         }
-        // Raku keeps an argument-less core pragma as a `Pragma` directly in
-        // the statement list. Ordinary modules use `Statement::Use` instead;
-        // do not reconstruct that distinction from every `Stmt::Use`.
+        // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
+        // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
+        // adverb) is deferred.
         Stmt::Use {
             module,
-            arg: None,
+            arg,
             tags,
             condition: None,
-        } if tags.is_empty() && is_pragma_name(module) => Ok(Some(pragma_node(module))),
+        } => Ok(Some(super::use_stmt::convert_use(
+            module,
+            arg.as_ref(),
+            tags,
+        )?)),
+        Stmt::No { module, arg: None } if super::use_stmt::is_pragma_name(module) => {
+            Ok(Some(super::use_stmt::convert_no(module)))
+        }
         // `say 42` / `put`/`print`/`note` as listops (no parens) parse to a
         // dedicated statement; raku models them as a call in WithoutParentheses
         // form.
+        // A call the parser resolved at statement level (an imported routine
+        // such as `Test`'s `ok`) has `CallArg`s instead of argument
+        // expressions; it is the same `Call::Name` as an expression call.
+        Stmt::Call { name, args } => {
+            if is_desugar_marker(name.as_str()) {
+                return Err(desugared(name.as_str()));
+            }
+            let args = call_args_as_exprs(args)?;
+            Ok(Some(statement_expression(call_name(
+                name.as_str(),
+                &args,
+                false,
+            )?)))
+        }
         Stmt::Say(args) => Ok(Some(statement_expression(listop_call("say", args)?))),
         Stmt::Put(args) => Ok(Some(statement_expression(listop_call("put", args)?))),
         Stmt::Print(args) => Ok(Some(statement_expression(listop_call("print", args)?))),
@@ -1127,36 +1148,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     }
 }
 
-/// The argument-less pragmas that Rakudo represents as `RakuAST::Pragma`.
-/// Language-version pragmas and `use lib` have distinct parser contracts, and
-/// ordinary modules remain `RakuAST::Statement::Use`, so neither belongs here.
-fn is_pragma_name(name: &str) -> bool {
-    matches!(
-        name,
-        "strict"
-            | "fatal"
-            | "nqp"
-            | "soft"
-            | "MONKEY"
-            | "MONKEY-GUTS"
-            | "MONKEY-TYPING"
-            | "MONKEY-SEE-NO-EVAL"
-            | "dynamic-scope"
-            | "isms"
-            | "precompilation"
-            | "worries"
-            | "trace"
-            | "internals"
-    )
-}
-
-fn pragma_node(name: &str) -> RakuAstNode {
-    RakuAstNode {
-        class: RakuAstClass::Pragma,
-        fields: vec![leaf_field(Some("name"), Value::str(name.to_string()))],
-    }
-}
-
 /// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
 /// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
 /// (`@`/`%`) has no adverb.
@@ -1198,7 +1189,7 @@ fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 /// A plain `Infix.new("<op>")` node from a literal operator string.
-fn plain_infix(op: &str) -> RakuAstNode {
+pub(super) fn plain_infix(op: &str) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
@@ -1307,7 +1298,7 @@ fn var_declaration(
 /// `A::B` string would lose observable RakuAST structure. Anything else,
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
-fn name_from_identifier(s: &str) -> RakuAstNode {
+pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
     let mut segments = name_parts::identifier_segments(s);
     let qualified = segments.clone().nth(1).is_some()
         && segments.all(|seg| {
@@ -1430,7 +1421,7 @@ fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
-fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
@@ -4076,6 +4067,26 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 
 /// Whether a call argument is one of mutsu's own injected named arguments
 /// (`__`-prefixed key), rather than one the source wrote.
+/// A statement call's `CallArg`s in the argument-expression form an
+/// `Expr::Call` carries: a named argument is the `name => value` pair the
+/// expression parser builds for it (a bare `:name` being `name => True`).
+fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, RuntimeError> {
+    use crate::ast::CallArg;
+    args.iter()
+        .map(|arg| match arg {
+            CallArg::Positional(expr) => Ok(expr.clone()),
+            CallArg::Named { name, value } => Ok(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(name.clone()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value.clone().unwrap_or(Expr::Literal(Value::TRUE))),
+            }),
+            CallArg::Slip(_) | CallArg::Invocant(_) => Err(unsupported(
+                "statement call with a slip or invocant argument",
+            )),
+        })
+        .collect()
+}
+
 fn is_injected_named_arg(arg: &Expr) -> bool {
     let pair = match arg {
         Expr::PositionalPair(inner) => match inner.as_ref() {
