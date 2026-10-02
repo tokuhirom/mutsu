@@ -199,19 +199,26 @@ impl Interpreter {
                 continue;
             }
             if k.is_dynamic_var_env_key() {
-                if dynamics.iter().any(|(dk, dv)| dk == k && dv == v) {
+                if dynamics
+                    .iter()
+                    .any(|(dk, dv)| dk == k && dv.same_binding(v))
+                {
                     continue;
                 }
                 self.env_mut().insert_sym(*k, v.clone());
                 continue;
             }
+            // "The same variable" is binding identity, never structural
+            // equality: `PartialEq` walks container and object contents, so
+            // two same-shaped cyclic object graphs (a tree whose nodes point
+            // back at their parent) recursed until the stack overflowed (#11014).
             let installing = self.call_frames.get(depth).map(|f| &f.saved_env);
             let same_var = match (
                 self.env().get_sym(*k),
                 installing.and_then(|e| e.get_sym(*k)),
             ) {
                 (None, _) => true,
-                (Some(a), Some(b)) => a == b,
+                (Some(a), Some(b)) => a.same_binding(b),
                 (Some(_), None) => false,
             };
             if same_var {
