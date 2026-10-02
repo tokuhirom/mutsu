@@ -138,11 +138,11 @@ impl Interpreter {
         let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
 
+        // Zero iterations still reserve the atom's and the separator's
+        // positional slots, as empty lists (rakudo: `"" ~~ / (\d)* % ',' /`
+        // has `$/.list` `([],)`), like the unseparated quantifier does.
         let zero = (min == 0).then(|| {
-            let mut caps = RegexCaptures::default();
-            for name in &names {
-                caps.named.slot_mut(Symbol::intern(name)).quantified = true;
-            }
+            let caps = separated_capture_delta(&names, &[], &[], None, atom_stride, sep_stride);
             (start, caps)
         });
 

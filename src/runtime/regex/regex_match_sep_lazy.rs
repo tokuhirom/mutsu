@@ -54,14 +54,12 @@ impl SepChainWalk {
         )
     }
 
-    /// The names still have to render as an EMPTY list when the quantifier
-    /// matched nothing, not as a single empty Match.
+    /// The zero-iteration delta: the names still have to render as an EMPTY
+    /// list when the quantifier matched nothing, not as a single empty Match,
+    /// and the atom's and separator's positional slots are reserved as empty
+    /// lists (`$/.list` is `([],)` for `(\d)* % ','` on "").
     fn names_delta(&self) -> RegexCaptures {
-        let mut caps = RegexCaptures::default();
-        for n in self.names.iter() {
-            caps.named.slot_mut(Symbol::intern(n)).quantified = true;
-        }
-        caps
+        self.assemble(None)
     }
 }
 

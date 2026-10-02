@@ -317,10 +317,8 @@ impl Interpreter {
         let (seps, atoms): (Vec<_>, Vec<_>) = entries.into_iter().partition(|(s, _)| *s);
         let atoms: Vec<RegexCaptures> = atoms.into_iter().map(|(_, c)| c).collect();
         let seps: Vec<RegexCaptures> = seps.into_iter().map(|(_, c)| c).collect();
-        if at_end && atoms.is_empty() {
-            // Zero iterations mark the names only.
-            return separated_capture_delta_syms(names, &[], &[], None, 0, 0);
-        }
+        // Zero iterations fold an empty chain: the names marked, and the
+        // atom's and separator's positional slots reserved as empty lists.
         let sep = &token.separator.as_ref().expect("a separated token").pattern;
         separated_capture_delta_syms(
             names,
