@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::LvaluePeel;
 
 impl Compiler {
     /// Whether a `VarDecl`'s RHS is the *parser-synthesized* default for its
@@ -85,6 +86,7 @@ impl Compiler {
     /// Check if a method call is a known mutating method on an indexed target
     /// (e.g., `%hash<key>.push(4)` or `@array[0].push(5)`).
     pub(super) fn is_mutating_method_on_index(
+        &self,
         target: &Expr,
         method_name: &crate::symbol::Symbol,
     ) -> bool {
@@ -100,7 +102,7 @@ impl Compiler {
             target: idx_target, ..
         } = target
         {
-            Self::postfix_index_name(idx_target).is_some()
+            self.postfix_index_name(idx_target).is_some()
         } else {
             false
         }
@@ -236,44 +238,44 @@ impl Compiler {
         }
     }
 
-    pub(super) fn postfix_index_name(target: &Expr) -> Option<String> {
-        match target {
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::Var(name) => Some(name.clone()),
-            Expr::AssignExpr { name, .. } => Some(name.clone()),
-            Expr::CompoundAssign { expanded, .. } => Self::postfix_index_name(expanded),
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
-                Stmt::Assign { name, .. } => Some(name.clone()),
-                _ => None,
-            },
-            _ => None,
+    /// The variable a subscript lvalue (`@a[0]++`, `%h<k>:delete`, `x[0]++`)
+    /// writes through. Its callers emit a named opcode without evaluating the
+    /// target expression, so it accepts a root with a side effect
+    /// (`ASSIGN`/`DECL`) only where the caller checks
+    /// [`Compiler::index_assign_target_requires_eval`], and never peels
+    /// `temp (...)` (whose evaluation is the save) or parentheses (which would
+    /// expose a `(my @a = ...)` declaration the caller would then skip).
+    /// A bareword root counts only when it names a variable here (`my \x`,
+    /// a sigil-less `constant`): `Hash<z>:delete` subscripts a type object.
+    // Cost: O(w + |name|), w = wrappers peeled.
+    pub(super) fn postfix_index_name(&self, target: &Expr) -> Option<String> {
+        let peel = LvaluePeel::ASSIGN | LvaluePeel::DECL | LvaluePeel::SIGILLESS;
+        match target.lvalue_root(peel)? {
+            crate::ast::LvalueRoot::Key(key) => Some(key),
+            crate::ast::LvalueRoot::Sigilless(name)
+                if self.names_term_constant(name) || self.bareword_denotes_variable(name) =>
+            {
+                Some(self.sigilless_storage_key(name))
+            }
+            crate::ast::LvalueRoot::Sigilless(_) => None,
         }
     }
 
-    pub(super) fn index_assign_target_name(target: &Expr) -> Option<String> {
-        match target {
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::Var(name) => Some(name.clone()),
-            // Sigilless variables appear as BareWord in the AST.
-            // Treat them as named targets so IndexAssignExprNamed writes
-            // through the sigilless alias back to the original container.
-            Expr::BareWord(name) => Some(name.clone()),
-            Expr::AssignExpr { name, .. } => Some(name.clone()),
-            Expr::CompoundAssign { expanded, .. } => Self::index_assign_target_name(expanded),
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
-                _ => None,
-            },
-            // (temp %hash){key} = value → treat as %hash{key} = value
-            // TODO: implement proper temp save/restore semantics
-            Expr::Call { name, args } if name == "temp" => {
-                args.first().and_then(Self::index_assign_target_name)
-            }
-            _ => None,
-        }
+    /// The variable an element assignment (`@a[0] = 1`, `x<k> = 1`) writes
+    /// through: [`Compiler::postfix_index_name`]'s roots, plus `temp (...)`,
+    /// and any bareword -- one this unit cannot see (an `EVAL`'d `x[0] = 1`
+    /// over an outer `my \x`) is still resolved by name at run time.
+    // Cost: O(w + |name|), w = wrappers peeled.
+    pub(super) fn index_assign_target_name(&self, target: &Expr) -> Option<String> {
+        self.lvalue_root_key(
+            target,
+            LvaluePeel::ASSIGN
+                | LvaluePeel::DECL
+                | LvaluePeel::SIGILLESS
+                // (temp %hash){key} = value → treat as %hash{key} = value
+                // TODO: implement proper temp save/restore semantics
+                | LvaluePeel::TEMP,
+        )
     }
 
     pub(super) fn index_assign_target_requires_eval(target: &Expr) -> bool {
@@ -295,7 +297,7 @@ impl Compiler {
     /// Detect `@arr.map(-> $v is rw {$v})` pattern where the map closure is an
     /// identity function with an `is rw` parameter. Returns the array variable
     /// name (e.g. "@n") so the caller can compile a direct array slice assignment.
-    pub(super) fn map_rw_identity_target_name(target: &Expr) -> Option<String> {
+    pub(super) fn map_rw_identity_target_name(&self, target: &Expr) -> Option<String> {
         if let Expr::MethodCall {
             target: method_target,
             name: method_name,
@@ -315,12 +317,11 @@ impl Compiler {
             && param_defs[0].traits.iter().any(|t| t == "rw")
         {
             // Check if the body is an identity function: just returns the parameter.
-            // Body may contain SetLine statements before the final Expr.
-            let final_expr = body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_)));
+            let final_expr = crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers);
             if let Some(Stmt::Expr(Expr::Var(var_name))) = final_expr
                 && *var_name == params[0]
             {
-                return Self::index_assign_target_name(method_target);
+                return self.index_assign_target_name(method_target);
             }
         }
         None
@@ -331,14 +332,16 @@ impl Compiler {
     /// `inner_positional` is the `is_positional` flag of the inner Index node
     /// (the one closer to the variable), e.g. for `%h<key>[42]` it is false
     /// (because `<key>` is associative).
-    pub(super) fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr, bool)> {
+    pub(super) fn index_assign_nested_target<'a>(
+        &self,
+        target: &'a Expr,
+    ) -> Option<(String, &'a Expr, bool)> {
         if let Expr::Index {
             target: inner_target,
             index: inner_index,
             is_positional: inner_is_positional,
-            ..
         } = target
-            && let Some(name) = Self::index_assign_target_name(inner_target)
+            && let Some(name) = self.index_assign_target_name(inner_target)
         {
             return Some((name, inner_index, *inner_is_positional));
         }
@@ -349,29 +352,18 @@ impl Compiler {
     /// For `@a[0][1][2]` the target of IndexAssign is `Index{target: Index{target: ArrayVar("a"), [0]}, [1]}`.
     /// This returns `(var_name, vec![(index_expr, is_positional), ...])` from innermost to outermost.
     /// The outermost index (from IndexAssign itself) is NOT included -- caller adds it.
-    pub(super) fn index_assign_deep_nested_target(
-        target: &Expr,
-    ) -> Option<(String, Vec<(&Expr, bool)>)> {
-        let mut chain: Vec<(&Expr, bool)> = Vec::new();
-        let mut current = target;
-        while let Expr::Index {
-            target: inner_target,
-            index: inner_index,
-            is_positional: inner_is_positional,
-            ..
-        } = current
-        {
-            chain.push((inner_index, *inner_is_positional));
-            current = inner_target;
-        }
+    // Cost: O(d + w), d = subscript depth, w = wrappers peeled at the root.
+    pub(super) fn index_assign_deep_nested_target<'a>(
+        &self,
+        target: &'a Expr,
+    ) -> Option<(String, Vec<(&'a Expr, bool)>)> {
+        let mut chain = Vec::new();
+        let root = target.index_path(&mut chain);
         if chain.len() < 2 {
             // Single level is handled by index_assign_nested_target
             return None;
         }
-        let name = Self::index_assign_target_name(current)?;
-        // Reverse so chain[0] is the innermost (closest to variable)
-        chain.reverse();
-        Some((name, chain))
+        Some((self.index_assign_target_name(root)?, chain))
     }
 
     /// Like `index_assign_deep_nested_target`, but accepts a chain of any depth
@@ -382,24 +374,17 @@ impl Compiler {
     ///
     /// Returns `(var_name, vec![(index_expr, is_positional), ...])` ordered from
     /// innermost (closest to the variable) to outermost.
-    pub(super) fn index_chain_target(target: &Expr) -> Option<(String, Vec<(&Expr, bool)>)> {
-        let mut chain: Vec<(&Expr, bool)> = Vec::new();
-        let mut current = target;
-        while let Expr::Index {
-            target: inner_target,
-            index: inner_index,
-            is_positional: inner_is_positional,
-        } = current
-        {
-            chain.push((inner_index, *inner_is_positional));
-            current = inner_target;
-        }
+    // Cost: O(d + w), d = subscript depth, w = wrappers peeled at the root.
+    pub(super) fn index_chain_target<'a>(
+        &self,
+        target: &'a Expr,
+    ) -> Option<(String, Vec<(&'a Expr, bool)>)> {
+        let mut chain = Vec::new();
+        let root = target.index_path(&mut chain);
         if chain.is_empty() {
             return None;
         }
-        let name = Self::index_assign_target_name(current)?;
-        chain.reverse();
-        Some((name, chain))
+        Some((self.index_assign_target_name(root)?, chain))
     }
 
     /// Register `our`-scoped subs declared inside *nested* blocks early, so

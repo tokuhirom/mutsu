@@ -101,7 +101,7 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
-                    if let Some(name) = Self::postfix_index_name(target) {
+                    if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));
@@ -166,7 +166,7 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
-                    if let Some(name) = Self::postfix_index_name(target) {
+                    if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));

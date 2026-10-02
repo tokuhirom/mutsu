@@ -1,5 +1,5 @@
 use super::call_method::{QuotedMethodName, parse_quoted_method_name};
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, LvaluePeel, LvalueRoot, Stmt};
 use crate::parser::expr::listop_arg_expr_list_infix;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
@@ -17,18 +17,12 @@ pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
 /// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
 /// route an outer `.=` through a `do { … }`-block target back to its lvalue.
+// Cost: O(w + |name|), w = wrappers peeled.
 fn lvalue_assign_name(e: &Expr) -> Option<String> {
-    match e {
-        Expr::Grouped(inner) => lvalue_assign_name(inner),
-        // A compound-assignment marker (`$x .= m`, `$x += 1`) is transparent:
-        // its expansion carries the lvalue the chain must write back through.
-        Expr::CompoundAssign { expanded, .. } => lvalue_assign_name(expanded),
-        Expr::AssignExpr { name, .. } => Some(name.clone()),
-        Expr::Var(n) => Some(n.clone()),
-        Expr::ArrayVar(n) => Some(format!("@{}", n)),
-        Expr::HashVar(n) => Some(format!("%{}", n)),
-        _ => None,
-    }
+    // A compound-assignment marker (`$x .= m`, `$x += 1`) is transparent: its
+    // expansion carries the lvalue the chain must write back through.
+    e.lvalue_root(LvaluePeel::GROUPED | LvaluePeel::ASSIGN)
+        .map(LvalueRoot::into_spelled_key)
 }
 
 /// `EXPR .= meth` where `EXPR` is itself an assignment writing to `assign_name`
@@ -230,18 +224,10 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         // writes the outer `.=` result back to that lvalue. Run the block once (its
         // side effects included), then assign `$x = $x.method`.
         Expr::DoBlock { body, .. }
-            if body
-                .last()
-                .and_then(|s| match s {
-                    Stmt::Expr(e) => lvalue_assign_name(e),
-                    _ => None,
-                })
-                .is_some() =>
+            if let Some(Stmt::Expr(e)) =
+                crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers)
+                && let Some(assign_name) = lvalue_assign_name(e) =>
         {
-            let assign_name = match body.last() {
-                Some(Stmt::Expr(e)) => lvalue_assign_name(e).unwrap(),
-                _ => unreachable!(),
-            };
             chained_assign_writeback(target, assign_name, method_call_fn)
         }
         // A parenthesized list of lvalues (`($x, $y) .= reverse`) applies the

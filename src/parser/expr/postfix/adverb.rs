@@ -350,12 +350,7 @@ pub(crate) fn multidim_delete_fn(is_positional: bool, ndims: usize) -> &'static 
 }
 
 pub(crate) fn multidim_target_var_name(target: &Expr) -> String {
-    match target {
-        Expr::ArrayVar(name) => format!("@{}", name),
-        Expr::HashVar(name) => format!("%{}", name),
-        Expr::Var(name) => name.clone(),
-        _ => String::new(),
-    }
+    target.container_var_key().unwrap_or_default()
 }
 
 pub(crate) enum DeleteAdverb {

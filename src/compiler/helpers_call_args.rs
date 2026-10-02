@@ -502,8 +502,7 @@ impl Compiler {
     }
 
     fn bind_target_returns_aggregate_stmts(stmts: &[Stmt]) -> bool {
-        stmts
-            .last()
+        crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
             .is_some_and(Self::bind_target_returns_aggregate_stmt)
     }
 
@@ -714,33 +713,23 @@ impl Compiler {
         if !Self::is_named_arg_expr(arg) {
             self.code.emit(OpCode::ContainerizePair);
         }
+        // A sigil-less constant's binding is its term key (#9962). An
+        // anonymous scalar assignment (`$ = value`) produces a writable
+        // container, so it is wrapped with VarRef so `is rw` dispatch can
+        // match. An inline declaration used as an argument (`$y := my $x`,
+        // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`: compiling it
+        // declares the variable in the enclosing scope and leaves its value on
+        // the stack, and the VarRef to the freshly-declared variable lets a
+        // `:=` bind (or an `is rw` parameter) alias the new container rather
+        // than snapshot its value.
         let source_name = match arg {
-            Expr::Var(n) => Some(n.clone()),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            Expr::CodeVar(n) => Some(format!("&{}", n)),
-            // A sigil-less constant's binding is its term key (#9962).
-            Expr::BareWord(n) if self.names_term_constant(n) => {
-                Some(crate::runtime::term_names::term_key(n))
-            }
-            Expr::BareWord(n) => Some(n.clone()),
-            // Anonymous scalar assignment (`$ = value`) produces a writable
-            // container, so wrap it with VarRef so `is rw` dispatch can match.
-            Expr::AssignExpr { name, .. } => Some(name.clone()),
-            Expr::CompoundAssign { expanded, .. } => match expanded.as_ref() {
-                Expr::AssignExpr { name, .. } => Some(name.clone()),
-                _ => None,
-            },
-            // An inline declaration used as an argument (`$y := my $x`,
-            // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`. Compiling it
-            // declares the variable in the enclosing scope and leaves its value
-            // on the stack; wrap that with a VarRef to the freshly-declared
-            // variable so a `:=` bind (or an `is rw` parameter) can alias the
-            // new container rather than snapshotting its value. The `VarDecl`
-            // `name` already carries the sigil convention WrapVarRef expects
-            // ("x" for `$x`, "@x" for `@x`, "%y" for `%y`).
-            Expr::DoStmt(stmt) => crate::runtime::term_names::stmt_decl_storage_name(stmt),
-            _ => None,
+            Expr::CodeVar(_) => arg.var_key(),
+            _ => self.lvalue_root_key(
+                arg,
+                crate::ast::LvaluePeel::ASSIGN
+                    | crate::ast::LvaluePeel::DECL
+                    | crate::ast::LvaluePeel::SIGILLESS,
+            ),
         };
         if matches!(arg, Expr::Index { .. }) && is_bind_target {
             // `:=` bind to an Index expression (`my $x := @a[$i]`): the Index

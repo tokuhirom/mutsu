@@ -83,6 +83,11 @@ a separate decision when the first rewriting pass wants one.
   "mentions `$_`" check ported (25 → 5 in the cluster) onto one shared placeholder-scope walk in
   `ast/placeholders.rs`, driven by the ADR-0048 oracle; the remaining 5 are WhateverCode
   priming-scope operand walks and closure construction.
+- **Shared spines** (#10468): the hand-written variable-key atom (`$x` → `x`, `@a`, `%h`), the
+  lvalue/index-chain spines and "the last value statement of a block" are one implementation
+  each (`ast/lvalue.rs`: `Expr::container_var_key`, `index_path`, `lvalue_root` with an explicit
+  peel set; `ast/tail.rs`: `last_value_stmt`), 9 walker rows → 0 in their files. Unified rules
+  fixed sigil-less `constant` element writes and a trailing `LEAVE`/`KEEP` in a block or closure.
 - **Porting rule.** A ported walker descends into every child, which the old `_ =>` walkers did
   not. Each port is checked against `raku` for the positions it newly reaches: the sink-warning
   gather search, for one, must not enter a signature (rakudo does not sink-check a parameter

@@ -187,7 +187,7 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostIncrement(name_idx, slot));
         } else if let Expr::Index { target, index, .. } = expr {
-            if let Some(name) = Self::postfix_index_name(target) {
+            if let Some(name) = self.postfix_index_name(target) {
                 self.compile_expr(index);
                 // §1.5: bake the base container's scope-correct slot (as
                 // `IndexAssignExprNamed` already does), so a shadowing inner
@@ -301,7 +301,7 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostDecrement(name_idx, slot));
         } else if let Expr::Index { target, index, .. } = expr {
-            if let Some(name) = Self::postfix_index_name(target) {
+            if let Some(name) = self.postfix_index_name(target) {
                 self.compile_expr(index);
                 let target_slot = self.local_map.get(&name).copied();
                 let name_idx = self.code.add_constant(Value::str(name));

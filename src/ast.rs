@@ -2332,15 +2332,21 @@ pub(crate) enum AssignOp {
 
 mod body_local_names;
 mod chains;
+mod lvalue;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+mod tail;
 mod virtual_call;
 
 pub(crate) use body_local_names::{collect_all_my_decl_names, collect_routine_body_local_names};
+pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,
     collect_where_assign_placeholders,
+};
+pub(crate) use tail::{
+    TailSkip, is_nil_valued_tail_phaser, last_value_stmt, last_value_stmt_index,
 };
 pub(crate) use virtual_call::first_virtual_call_in_expr;
 

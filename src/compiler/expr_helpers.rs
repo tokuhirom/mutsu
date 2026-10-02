@@ -35,10 +35,9 @@ impl Compiler {
 
     pub(super) fn atomic_target_name(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_) => {
+                expr.var_key()
+            }
             Expr::Index { target, index, .. }
                 if matches!(target.as_ref(), Expr::PseudoStash(_)) =>
             {
@@ -412,30 +411,6 @@ impl Compiler {
                 None
             }
             _ => None,
-        }
-    }
-
-    /// Encode an Index expression as a source name for container identity
-    /// checking.  Returns `Some("@a\0idx\01")` for `@a[1]`, etc.
-    pub(super) fn encode_index_source(expr: &Expr) -> Option<String> {
-        if let Expr::Index { target, index, .. } = expr {
-            let target_name = match target.as_ref() {
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                Expr::Var(name) => Some(name.clone()),
-                _ => None,
-            }?;
-            let idx_str = match index.as_ref() {
-                Expr::Literal(lit) => match lit.view() {
-                    ValueView::Int(n) => n.to_string(),
-                    ValueView::Str(s) => s.to_string(),
-                    _ => return None,
-                },
-                _ => return None,
-            };
-            Some(format!("{}\x00idx\x00{}", target_name, idx_str))
-        } else {
-            None
         }
     }
 

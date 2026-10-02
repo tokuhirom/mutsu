@@ -94,12 +94,7 @@ pub(crate) fn has_subscript_named_adverb(input: &str) -> bool {
 /// The variable name an `X::Adverb` reports as its `.source`, when the target
 /// is a plain variable; empty otherwise (the runtime then names the type).
 fn subscript_source_name(target: &Expr) -> String {
-    match target {
-        Expr::ArrayVar(name) => format!("@{name}"),
-        Expr::HashVar(name) => format!("%{name}"),
-        Expr::Var(name) => format!("${name}"),
-        _ => String::new(),
-    }
+    target.sigiled_var_name().unwrap_or_default()
 }
 
 /// Lower a subscript (`Expr::Index` / `Expr::MultiDimIndex`) carrying the

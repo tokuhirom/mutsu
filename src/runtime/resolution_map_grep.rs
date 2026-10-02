@@ -205,7 +205,8 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
 ///   store (readonly / type-constraint checks) intact.
 pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
     use crate::ast::{AssignOp, Expr, Stmt};
-    let Some(last_idx) = body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) else {
+    let Some(last_idx) = crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
+    else {
         return body.to_vec();
     };
     match &body[last_idx] {

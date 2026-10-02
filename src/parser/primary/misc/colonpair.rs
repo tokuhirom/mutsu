@@ -733,9 +733,9 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
 fn render_signature_item(expr: &Expr) -> String {
     match expr {
         Expr::BareWord(name) => name.clone(),
-        Expr::Var(name) => crate::env::sigiled_scalar_name(name),
-        Expr::ArrayVar(name) => format!("@{}", name),
-        Expr::HashVar(name) => format!("%{}", name),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => {
+            expr.sigiled_var_name().unwrap_or_default()
+        }
         Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
             if let Expr::Literal(lit) = left.as_ref()
                 && let ValueView::Str(name) = lit.view()
