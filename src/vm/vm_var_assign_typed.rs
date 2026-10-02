@@ -774,6 +774,12 @@ impl Interpreter {
                 result.push_str(&mixed?.to_string_value());
                 continue;
             }
+            // A `Str` subclass interpolates its payload (`Str.Stringy` is
+            // `self`), not its own `Str` (#11026).
+            if let Some(payload) = self.str_subclass_stringy_payload(&v) {
+                result.push_value(&payload);
+                continue;
+            }
             // A native `Str` beats the inherited default `Stringy`.
             if let ValueView::Instance { class_name, .. } = v.view() {
                 let cn = class_name.resolve();

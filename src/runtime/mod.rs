@@ -773,6 +773,8 @@ mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
+mod str_subclass_stringy;
+pub(crate) use str_subclass_stringy::str_subclass_payload;
 mod methods_introspect;
 mod methods_io_dispatch;
 mod methods_list_view_default;

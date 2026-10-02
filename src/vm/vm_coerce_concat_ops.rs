@@ -431,6 +431,11 @@ impl Interpreter {
         if Self::list_str_needs_interpreter(&v) {
             return self.resolve_list_element_stringifiers(&v);
         }
+        // A `Str` subclass is already a `Str`: the native string operators
+        // read its payload, past any `Str`/`Stringy` it declares (#11026).
+        if let Some(payload) = crate::runtime::str_subclass_payload(&v) {
+            return Ok(payload);
+        }
         let (cn, is_type_object) = match v.view() {
             ValueView::Instance { class_name, .. } => (class_name.resolve(), false),
             ValueView::Package(name) => (name.resolve(), true),

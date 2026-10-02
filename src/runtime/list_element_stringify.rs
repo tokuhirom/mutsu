@@ -133,6 +133,10 @@ impl crate::Interpreter {
                 // A user `^find_method` answers `.Str`, a type object's too
                 // (`find_method_intercept`).
                 out.push(r?);
+            } else if let Some(payload) = crate::runtime::str_subclass_payload(inner) {
+                // A `Str` subclass element joins as its payload, past any
+                // `Str` it declares, as rakudo's native `Str` join does (#11026).
+                out.push(payload);
             } else if matches!(
                 inner.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)

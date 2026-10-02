@@ -220,6 +220,13 @@ impl Interpreter {
             {
                 Ok(Some(r?))
             }
+            // A `Str` subclass element already is a `Str`: join takes its
+            // payload, not its own `.Str` (#11026).
+            ValueView::Instance { .. }
+                if let Some(payload) = crate::runtime::str_subclass_payload(value) =>
+            {
+                Ok(Some(payload))
+            }
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 if self.has_user_method(&cn, "Str") {

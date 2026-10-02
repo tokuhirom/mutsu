@@ -826,7 +826,11 @@ impl Interpreter {
             // deconts its invocant. Without this `my @h = $c` (an `is Array`
             // subclass instance) joined to the `SA()` fallback.
             let v = v.descalarize().clone();
-            if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+            // A `Str` subclass element already is a `Str`: rakudo's join takes
+            // it as is (its payload), not through its own `.Str` (#11026).
+            if let Some(payload) = crate::runtime::str_subclass_payload(&v) {
+                resolved.push(payload);
+            } else if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
                 let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
                     Ok(s) => s,
                     Err(e) => return Some(Err(e)),

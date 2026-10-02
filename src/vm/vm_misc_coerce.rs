@@ -309,6 +309,19 @@ impl Interpreter {
         // render an object placeholder instead of the native string value.
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
+            // Prefix `~` on a `Str` subclass is its `.Str`: a user `Str`, or
+            // else the payload -- never `.Stringy`, which is `self` (#11026).
+            if let Some(payload) = crate::runtime::str_subclass_payload(&val) {
+                if !self.has_user_method(&cn, "Str") {
+                    self.stack.push(payload);
+                    return Ok(());
+                }
+                let caller_code = self.current_code;
+                let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![])?;
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                self.stack.push(str_r);
+                return Ok(());
+            }
             if self.is_native_method(&cn, "Str") && !self.has_user_method(&cn, "Stringy") {
                 let caller_code = self.current_code;
                 let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![])?;

@@ -3024,6 +3024,14 @@ impl Interpreter {
                         self.warn_type_object_string_context(&n, false)
                     }
                 }
+                // `Str.Stringy` is `self`: a `Str` subclass answers with the
+                // instance itself even when it declares its own `Str` (#11026).
+                ValueView::Instance { .. }
+                    if method == "Stringy"
+                        && self.str_subclass_stringy_payload(&target).is_some() =>
+                {
+                    Ok(target.clone())
+                }
                 ValueView::Instance { class_name, .. } => {
                     // Stringy defaults to Str, but Str does not default back to
                     // Stringy. A class that defines only Stringy therefore keeps
