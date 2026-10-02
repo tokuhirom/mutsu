@@ -4533,6 +4533,36 @@ pub(crate) enum OpCode {
         slot: Option<u32>,
     },
 
+    /// Read a binding of an enclosing compilation frame through `OUTER::` past
+    /// a shadowing declaration (#10827): `sub s { my $x; $OUTER::x }`. The
+    /// binding's shared cell travels in the env under the constant `key_idx`
+    /// (`__mutsu_outer::<scope>:<name>`), installed by the declaring frame's
+    /// [`BoxOuterRef`](Self::BoxOuterRef). Without one (a body run on a path that
+    /// never executed that op) the read falls back to
+    /// [`GetOuterVar`](Self::GetOuterVar)'s resolution of `name_idx` at `depth`.
+    GetOuterCapture {
+        key_idx: u32,
+        name_idx: u32,
+        depth: u32,
+    },
+
+    /// Share the binding in `slot` with code that reaches it through a
+    /// shadowed `OUTER::` (#10827): make the slot hold a container cell (a
+    /// binding cell when a write through `OUTER::` or this frame rebinds it,
+    /// ADR-0097 §14), and publish that cell in the env under the constant
+    /// `key_idx` -- where a write past the shadow finds it, and where the
+    /// closure or sub created next captures it. Emitted after a declaration
+    /// the unit writes through `OUTER::`, at an in-frame write site, and before
+    /// the creation of a nested body that reaches the binding. `visible` says the slot is
+    /// the binding the plain name denotes at this point, whose env entry then
+    /// takes the cell too (the env/slot invariant of ADR-0097 §15).
+    BoxOuterRef {
+        slot: u32,
+        key_idx: u32,
+        rebinds: bool,
+        visible: bool,
+    },
+
     /// Get a variable by searching the dynamic call stack ($DYNAMIC::varname).
     GetDynamicVar(u32),
 
@@ -6291,6 +6321,23 @@ pub(crate) enum CompiledDeclPlanRef {
     Token(u32),
 }
 
+/// One binding of an enclosing compilation frame that a nested body reaches
+/// through `OUTER::` past a shadowing declaration (see
+/// [`CompiledCode::outer_captures`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OuterCapture {
+    /// The env key the binding's shared cell travels under
+    /// (`__mutsu_outer::<scope>:<name>`), unique per binding.
+    pub(crate) key: String,
+    /// The binding's own name as its scope frame records it (`x`, `@a`).
+    pub(crate) name: String,
+    /// The index of the declaring scope in the full lexical scope chain.
+    pub(crate) scope: usize,
+    /// The nested body rebinds it (`$OUTER::x := $y`), so the declaring slot
+    /// needs a binding cell rather than a plain container cell.
+    pub(crate) rebinds: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
@@ -7307,6 +7354,13 @@ pub(crate) struct CompiledCode {
     /// [`Self::note_rebound_name`]. Raw compiler input to
     /// [`Self::free_var_rebinds`].
     pub(crate) rebound_free_names: Vec<Symbol>,
+    /// Bindings of an ENCLOSING compilation frame this code reaches through a
+    /// shadowed `OUTER::` (`sub s { my $x; $OUTER::x = 1 }`), recorded by
+    /// `Compiler::outer_capture_key` (#10827). Compile-time only: the creating
+    /// compiler turns each entry into an `OpCode::BoxOuterRef` before the
+    /// closure/sub creation op, or passes it on to its own creator when the
+    /// binding lies further out still.
+    pub(crate) outer_captures: Vec<OuterCapture>,
     /// The source names of the variable operands of each numeric infix op
     /// (`+ - * / % **`, `== != < <= > >=`), keyed by the op's index in
     /// [`Self::ops`] and sorted by it (ops are only ever appended). Recorded
@@ -7857,6 +7911,7 @@ impl CompiledCode {
             rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),
+            outer_captures: Vec::new(),
             numeric_operand_names: Vec::new(),
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),

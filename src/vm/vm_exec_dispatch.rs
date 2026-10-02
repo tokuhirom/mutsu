@@ -6721,6 +6721,26 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(1) amortized (one env lookup; see exec_get_outer_capture_op).
+            OpCode::GetOuterCapture {
+                key_idx,
+                name_idx,
+                depth,
+            } => {
+                let val = self.exec_get_outer_capture_op(code, *key_idx, *name_idx, *depth);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            // Cost: O(1).
+            OpCode::BoxOuterRef {
+                slot,
+                key_idx,
+                rebinds,
+                visible,
+            } => {
+                self.exec_box_outer_ref_op(code, *slot, *key_idx, *rebinds, *visible);
+                *ip += 1;
+            }
             // Cost: O(s), s = caller frames walked (the same bound as Rakudo's uncached dynamic lookup).
             OpCode::GetDynamicVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);

@@ -614,6 +614,9 @@ impl Compiler {
         // sub has no runtime closure-creation op, so this set is what
         // `RegisterSub` snapshots into the sub's captured env.
         self.fold_decl_time_param_captures(&mut sub_compiler.code, param_defs);
+        // A shadowed `$OUTER::x` in the body reaches a binding of this frame
+        // through a cell published right before the sub is registered (#10827).
+        self.absorb_outer_captures(&sub_compiler.code);
         let own_compiled_fns = self.import_compiled_functions(
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
@@ -1790,6 +1793,8 @@ impl Compiler {
             }
         }
         sub_compiler.code.compute_upvalues(&runtime_bound);
+        // See the twin call in `compile_sub_body` (#10827).
+        self.absorb_outer_captures(&sub_compiler.code);
         sub_compiler.code
     }
 }

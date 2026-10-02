@@ -1123,6 +1123,7 @@ mod lexical_stash;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
+mod outer_ref;
 mod package_runtime_body;
 mod require_stubs;
 mod type_decl_value;
@@ -1219,6 +1220,13 @@ pub(crate) struct Compiler {
     /// it learns its target name too late to be answered any other way. Empty for a
     /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
     enclosing_scopes: Vec<lex_scope::ScopeFrame>,
+    /// Scalar names the compilation unit writes through `OUTER::` (`$OUTER::x
+    /// = 1`, `$OUTER::x := $y`, `$OUTER::x++`), each with whether one of those
+    /// writes is a `:=`. A declaration of such a name shares its binding in a
+    /// cell from the start (see `outer_ref`), so a write that later reaches it
+    /// past a shadow lands where the slot, the env and every capture see it.
+    /// Shared with the nested compilers of the unit.
+    outer_write_names: std::sync::Arc<std::collections::HashMap<String, bool>>,
     /// The lexical frame a role's parameter list (`role R[&f, $x]`) opens
     /// around its body, set only while that role's method bodies compile.
     /// Method bodies compile on a fresh compiler with no enclosing scopes, so
@@ -1859,6 +1867,7 @@ impl Compiler {
             pending_scope_frame: None,
             retired_loop_param_slots: HashMap::new(),
             enclosing_scopes: Vec::new(),
+            outer_write_names: Default::default(),
             role_param_scope: None,
             unit_root_scope: 0,
             in_lexical_scope: false,
@@ -2444,6 +2453,7 @@ impl Compiler {
 
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
+        sub.outer_write_names = std::sync::Arc::clone(&self.outer_write_names);
         // Hand down every sigilless binding visible here (this frame's own plus
         // the ones it inherited) so a nested closure recognizes a bare reference
         // to an enclosing `\thing` / `my \x` as a lexical capture, not a bareword.
@@ -2696,26 +2706,11 @@ impl Compiler {
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
     /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
     fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
+        if self.try_emit_outer_capture_read(&bare, depth) {
+            return;
+        }
         let res = lex_scope::resolve_outer(&self.full_scope_chain(), &self.local_map, &bare, depth);
         self.emit_outer_resolution(bare, res);
-    }
-
-    /// The plain name a write through `OUTER::` (`$OUTER::x := $y`,
-    /// `$OUTER::x = 5`) targets, when that is the same binding an unqualified
-    /// `$x` names here (see [`lex_scope::outer_is_visible_binding`]). The write
-    /// is then compiled exactly as a write to `$x`, so a rebind aliases the
-    /// declaring slot / captured cell instead of storing under the literal
-    /// `OUTER::x` key (#10676).
-    /// A sigiled target (`@OUTER::a`, `%OUTER::h`) keeps its sigil, which is
-    /// how the scope frames key non-scalar names.
-    pub(crate) fn outer_write_target(&self, name: &str) -> Option<String> {
-        let (sigil, rest) = match name.as_bytes().first() {
-            Some(b'@' | b'%' | b'&') => name.split_at(1),
-            _ => ("", name),
-        };
-        let (bare, depth) = Self::parse_outer_prefix(rest)?;
-        let key = format!("{sigil}{bare}");
-        lex_scope::outer_is_visible_binding(&self.full_scope_chain(), &key, depth).then_some(key)
     }
 
     /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
@@ -4196,6 +4191,7 @@ impl Compiler {
         // native local storage decisions do not depend on runtime declaration
         // order (for example, `constant time = int64` used by a sub body).
         self.seed_type_aliases(stmts);
+        self.seed_outer_write_names(stmts);
         if !self.fold_root {
             return self.compile_unit(stmts);
         }

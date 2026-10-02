@@ -855,6 +855,7 @@ impl Compiler {
         let saved = std::mem::replace(&mut self.expr_depth, 1);
         self.compile_stmt_inner(stmt);
         self.expr_depth = saved;
+        self.share_outer_written_decl(stmt);
     }
 
     fn compile_stmt_inner(&mut self, stmt: &Stmt) {
@@ -2217,12 +2218,14 @@ impl Compiler {
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
-                // `$OUTER::x := $y` / `$OUTER::x = v` naming the binding a plain
-                // `$x` sees here is a write to `$x` (#10676).
+                // `$OUTER::x := $y` / `$OUTER::x = v` stores to the binding
+                // `OUTER::` names (#10676, #10827): the plain `$x` when no
+                // scope in between shadows it, else the key that binding's
+                // shared cell is published under (see `outer_ref`).
                 let outer_target;
-                let name = match self.outer_write_target(name) {
-                    Some(bare) => {
-                        outer_target = bare;
+                let name = match self.outer_write_target(name, matches!(op, AssignOp::Bind)) {
+                    Some(target) => {
+                        outer_target = target;
                         &outer_target
                     }
                     None => name,
