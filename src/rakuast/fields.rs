@@ -140,6 +140,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         TraitReturns | TraitOf => &[("type", Absent::Required)],
         Parameter => &[
+            ("default-rw", Absent::False),
             ("type", Absent::TypeObject("RakuAST::Type")),
             ("names", Absent::EmptyList),
             ("type-captures", Absent::EmptyList),
@@ -159,7 +160,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("desigilname", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
-        InitializerAssign => &[("expression", Absent::Required)],
+        InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
+        VarDeclarationSignature => &[
+            ("signature", Absent::Required),
+            ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+        ],
         TypeSimple | TypeSetting | TypeCapture => &[("name", Absent::Required)],
         TypeEnum => &[("name", Absent::Required), ("term", Absent::Required)],
         QuotedRegex => &[
@@ -263,7 +268,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         TermName => "name",
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional => "lexical-name",
-        InitializerAssign => "expression",
+        InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",
         TraitReturns | TraitOf => "type",

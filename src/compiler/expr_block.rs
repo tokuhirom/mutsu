@@ -1163,16 +1163,12 @@ impl Compiler {
             // expression whose elements are the newly declared scalar values.
             // Its SyntheticBlock is scopeless: the declarations remain visible
             // in the surrounding lexical scope.
-            Stmt::SyntheticBlock(inner)
-                if !inner.is_empty()
-                    && inner
-                        .iter()
-                        .all(|stmt| matches!(stmt, Stmt::VarDecl { .. })) =>
-            {
+            Stmt::SyntheticBlock(inner) if crate::ast::is_group_declaration(inner) => {
                 let mut values = Vec::with_capacity(inner.len());
                 for stmt in inner {
                     let Stmt::VarDecl { name, .. } = stmt else {
-                        unreachable!();
+                        // The expansion's source-form record emits nothing.
+                        continue;
                     };
                     self.compile_stmt(stmt);
                     values.push(if let Some(name) = name.strip_prefix('@') {

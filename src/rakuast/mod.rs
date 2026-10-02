@@ -17,6 +17,7 @@ pub(crate) mod frontend;
 mod lower;
 mod name_parts;
 mod render;
+mod signature_decl;
 mod use_stmt;
 
 pub use formatter::formatter_ast;
@@ -122,6 +123,8 @@ pub enum RakuAstClass {
     VarPackage,
     VarDeclarationSimple,
     InitializerAssign,
+    VarDeclarationSignature,
+    InitializerBind,
     ApplyInfix,
     Infix,
     FunctionInfix,
@@ -357,6 +360,8 @@ impl RakuAstClass {
             VarPackage => "RakuAST::Var::Package",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
+            VarDeclarationSignature => "RakuAST::VarDeclaration::Signature",
+            InitializerBind => "RakuAST::Initializer::Bind",
             ApplyInfix => "RakuAST::ApplyInfix",
             Infix => "RakuAST::Infix",
             FunctionInfix => "RakuAST::FunctionInfix",
@@ -905,6 +910,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarPackage,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
+    RakuAstClass::VarDeclarationSignature,
+    RakuAstClass::InitializerBind,
     RakuAstClass::ApplyInfix,
     RakuAstClass::Infix,
     RakuAstClass::FunctionInfix,
@@ -2418,6 +2425,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
+        ("RakuAST::Initializer::Bind", "new") => RakuAstClass::InitializerBind,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
         ("RakuAST::Type::Capture", "new") => RakuAstClass::TypeCapture,
@@ -2701,6 +2709,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ParameterTargetVar
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
+            | RakuAstClass::InitializerBind
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeEnum
             | RakuAstClass::TypeSetting

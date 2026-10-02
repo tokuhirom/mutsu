@@ -117,16 +117,6 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
-        // `&!attr` is `self`'s private attribute: the caller's `$!attr` sits in
-        // env under the same sigil-less `!attr` key (#10662).
-        if let Some(val) = name
-            .strip_prefix('!')
-            .filter(|n| !n.is_empty())
-            .and_then(|bare| self.read_self_private_code_attr(bare))
-        {
-            self.stack.push(val);
-            return Ok(());
-        }
         let mut val = loan_env!(self, resolve_code_var(name));
         // The same module-scope lexical the bare-call path consults (see
         // `lexical_amp_var_callable`): an imported CODE variable outlives its

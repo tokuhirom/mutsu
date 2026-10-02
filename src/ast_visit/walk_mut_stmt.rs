@@ -37,6 +37,9 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_expr_mut(e);
             }
         }
+        // Not code; see `walk_stmt`. A rewriting pass leaves the record's
+        // copies as the parser wrote them, which is the source form.
+        Stmt::SourceForm(_) => {}
         Stmt::MarkReadonly(_name, _) => {}
         Stmt::MarkBoundContainer(_name) => {}
         Stmt::MarkBind

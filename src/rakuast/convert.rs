@@ -256,6 +256,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 tree,
             )?)))
         }
+        // A signature declaration (`my ($a, @b) = …`): the parser keeps its
+        // source form as the expansion's first statement.
+        Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
+            Some(form) => Ok(Some(statement_expression(super::signature_decl::convert(
+                form,
+            )?))),
+            None => Err(unsupported("source form")),
+        },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
         // adverb) is deferred.
@@ -1443,6 +1451,17 @@ fn subscript_node(
     })
 }
 
+/// The source-form record a parser expansion opens with (`ast::signature_decl`).
+fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
+    match stmt {
+        Stmt::SyntheticBlock(stmts) => match stmts.first() {
+            Some(Stmt::SourceForm(form)) => Some(form),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
@@ -1656,6 +1675,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }),
             }
         }
+        // A signature declaration in expression position (`if my ($a, $b) = …`).
+        Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
+            Some(form) => super::signature_decl::convert(form),
+            None => Err(unsupported("source form")),
+        },
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
             // The contents of `(...)` are a semilist of *statements*, so a

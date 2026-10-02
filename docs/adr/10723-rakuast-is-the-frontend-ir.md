@@ -243,3 +243,20 @@ before the flip, not after.
   `update` grows the list (never shrinks it). First count: **984 / 5696** `t/` files.
 - Not yet counted: whitelisted roast files, and the `all` level.
 
+### Stage 1 (from 2026-10-02)
+
+- Slices that only needed a converter/lowerer arm for a construct the parser already keeps
+  distinct: subscript assignment (`assignee` / `Assignment` over a subscript, #10794) and the
+  terms the parser folds to a value (`Any`, `1e0`/`Inf`/`NaN`, `Empty`, #10802).
+- **The pattern for a parser expansion** (first used for `my ($a, @b) = …`): the parser splits
+  the construct into a parse step that builds a *source-form record* and an expansion function
+  that turns the record into the statements the compiler runs. The expansion opens with the
+  record as a `Stmt::SourceForm` statement (`src/ast/signature_decl.rs`), which the compiler
+  skips and the AST visitors do not walk (the expansion holds the same expressions). `convert`
+  renders the RakuAST node from the record, never from the expansion; `lower` builds a record from
+  the node and calls the *same* expansion function. This is §2.2's "move desugaring out of the
+  parser" done in two steps: the expansion function is already the one desugaring site, and it
+  moves into `lower` wholesale once the parser emits RakuAST (Stage 2). Code that inspected an
+  expansion's shape to recognise the construct (`sink_warn::is_destructure_block`, the "all
+  `VarDecl`" group-declaration checks) reads `ast::is_group_declaration` or skips the record.
+

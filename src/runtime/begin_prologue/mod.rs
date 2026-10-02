@@ -332,14 +332,16 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
     // A group declaration `my ($a, @b);` arrives as a `SyntheticBlock` of plain
     // declarations. It splits member by member.
     if let Stmt::SyntheticBlock(inner) = &stmt
-        && !inner.is_empty()
-        && inner.iter().all(|s| matches!(s, Stmt::VarDecl { .. }))
+        && crate::ast::is_group_declaration(inner)
     {
         let Stmt::SyntheticBlock(inner) = stmt else {
             unreachable!()
         };
         for member in inner {
-            partition_stmt(member, prologue, rest);
+            // The source-form record goes with the group it described.
+            if !matches!(member, Stmt::SourceForm(_)) {
+                partition_stmt(member, prologue, rest);
+            }
         }
         return;
     }

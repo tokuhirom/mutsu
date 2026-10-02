@@ -229,6 +229,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // implied by the statement class, so only the block's statements are
         // read back.
         RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
+        RakuAstClass::VarDeclarationSignature => super::signature_decl::lower(node),
         // `use` / `no` statements (see `use_stmt`).
         RakuAstClass::Pragma => super::use_stmt::lower_pragma(node),
         RakuAstClass::StatementUse => super::use_stmt::lower_use(node),
@@ -1610,7 +1611,7 @@ pub(super) fn leaf_str(node: &RakuAstNode, name: &str) -> Result<String, Runtime
 }
 
 /// The child node of an `Initializer::Assign` — its single positional child.
-fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, RuntimeError> {
+pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, RuntimeError> {
     match node.fields.first() {
         Some(f) if f.name.is_none() => child_node(&f.value),
         _ => Err(unsupported(node)),
@@ -2385,6 +2386,11 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
+        // A signature declaration in expression position (`if my ($a, $b) = …`)
+        // is the parser's expansion wrapped in a `DoStmt`.
+        RakuAstClass::VarDeclarationSignature => {
+            Ok(Expr::DoStmt(Box::new(super::signature_decl::lower(node)?)))
+        }
         RakuAstClass::IntLiteral
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral
@@ -2574,7 +2580,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if let Some(declaration) = declaration
                 && matches!(
                     declaration.class,
-                    RakuAstClass::VarDeclarationSimple | RakuAstClass::VarDeclarationConstant
+                    RakuAstClass::VarDeclarationSimple
+                        | RakuAstClass::VarDeclarationConstant
+                        | RakuAstClass::VarDeclarationSignature
                 )
             {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt_inner(declaration)?)));
