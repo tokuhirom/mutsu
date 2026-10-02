@@ -459,6 +459,14 @@ impl Interpreter {
             }
             return Ok(None);
         }
+        // A proto body is the operator's entry point, even when a multi
+        // candidate matches. Its body may answer directly or dispatch through
+        // {*} after doing its own work.
+        if let Some(result) =
+            self.vm_try_run_nontrivial_proto_body(op_name, args.clone(), &CompiledFns::default())
+        {
+            return result.map(Some);
+        }
         if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
             // The native implementation is a *candidate*, not a fallback
             // (ADR-0071): a user `multi infix:<+>($a, $b)` joins the operator's
