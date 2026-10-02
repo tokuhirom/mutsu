@@ -588,8 +588,14 @@ impl Interpreter {
         }
         // `return` is a control-flow keyword that also resolves as &return
         // so that it can be rebound (proxied return pattern).
-        if bare_name == "return" {
-            return Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern("return"), false);
+        // `take` is the same kind of keyword-with-a-callable-form: `&take`,
+        // `@a».&take` and `.map(&take)` apply the `call_function` "take" arm.
+        if bare_name == "return" || bare_name == "take" {
+            return Value::routine_parts(
+                Symbol::intern("GLOBAL"),
+                Symbol::intern(bare_name),
+                false,
+            );
         }
         // Look up as a function reference (including multi subs).
         // When pseudo-packages are present (e.g. OUR::, GLOBAL::), also check
