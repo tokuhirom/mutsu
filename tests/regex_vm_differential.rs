@@ -423,12 +423,15 @@ say so "ab" ~~ / :s a b /;"#;
         .find_map(|l| l.split("regex-vm: ").nth(1))
         .unwrap_or_else(|| panic!("no regex-vm stats line: {err}"));
     assert!(!vm.contains("ws-rule"), "`<.ws>` declined: {vm}");
-    let compiled: u64 = vm
+    let runs: u64 = vm
         .split_whitespace()
-        .find_map(|w| w.strip_prefix("compiled="))
+        .find_map(|w| w.strip_prefix("runs="))
         .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| panic!("no compiled= in: {vm}"));
-    assert!(compiled >= 3, "the sigspace patterns were not compiled: {vm}");
+        .unwrap_or_else(|| panic!("no runs= in: {vm}"));
+    assert!(
+        runs >= 3,
+        "the sigspace patterns did not run compiled: {vm}"
+    );
     assert!(
         !err.lines()
             .any(|l| l.contains("regex-walk:") && l.contains("ws-rule")),
