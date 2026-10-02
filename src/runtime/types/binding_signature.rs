@@ -252,6 +252,7 @@ impl Interpreter {
     /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)) -- see
     /// `pending_skip_where_recheck`'s doc comment for why that verdict may be
     /// trusted instead of re-running the constraint.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::runtime) fn check_positional_param_where_constraint(
         &mut self,
         pd: &ParamDef,
