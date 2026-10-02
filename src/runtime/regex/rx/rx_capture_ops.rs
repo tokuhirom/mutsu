@@ -46,7 +46,7 @@ impl Interpreter {
                 let entries = levels.collected_since(regs[base as usize]).to_vec();
                 let folded =
                     Self::rx_sep_fold(token, &program.name_sets[names as usize], entries, false);
-                let atom_stride = count_capture_groups(&token.atom);
+                let atom_stride = count_capture_groups(token);
                 let fold = if sep {
                     let sep = &token.separator.as_ref().expect("a separated token").pattern;
                     (atom_stride, separator_stride(sep))
@@ -58,7 +58,7 @@ impl Interpreter {
             // Cost: O(c), c = the captures the enclosing level sees (one fold,
             // one flattened copy), as the walk pays per iteration.
             RxOp::OpenPlainIter { tok, pos_base } => {
-                let stride = count_capture_groups(&program.toks[tok as usize].atom);
+                let stride = count_capture_groups(&program.toks[tok as usize]);
                 levels.open_plain_iter(regs[pos_base as usize], stride);
             }
             // Cost: O(c), c = the iteration's captures (one snapshot).
@@ -197,9 +197,8 @@ impl Interpreter {
             }
             // Cost: O(k), k = the slots folded.
             RxOp::Fold { tok, pos_base } => {
-                let stride = super::super::regex_helpers::count_capture_groups(
-                    &program.toks[tok as usize].atom,
-                );
+                let stride =
+                    super::super::regex_helpers::count_capture_groups(&program.toks[tok as usize]);
                 levels.edit(|s| s.fold_quantified(regs[pos_base as usize], stride, true));
             }
             // Cost: O(p + n), p = the padding slots, n = the alternation's
@@ -325,7 +324,7 @@ impl Interpreter {
             &atoms,
             &seps,
             trailing.as_ref(),
-            count_capture_groups(&token.atom),
+            count_capture_groups(token),
             separator_stride(sep),
         )
     }

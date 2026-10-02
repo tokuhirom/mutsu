@@ -1544,9 +1544,22 @@ pub(super) fn adopt_inline_ast(dst: &mut RegexCaptures, src: &mut RegexCaptures)
     }
 }
 
-/// Count how many positional capture groups the given atom will produce.
-pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
-    match atom {
+fn named_alias_hides_positional_group(token: &RegexToken) -> bool {
+    matches!(token.atom, RegexAtom::CaptureGroup(_))
+        && token
+            .named_capture
+            .as_deref()
+            .is_some_and(|name| name.parse::<usize>().is_err())
+}
+
+/// Count how many positional capture groups the token will produce. A named
+/// alias takes the capture group's slot into the named axis; a numbered alias
+/// still names a positional slot.
+pub(super) fn count_capture_groups(token: &RegexToken) -> usize {
+    if named_alias_hides_positional_group(token) {
+        return 0;
+    }
+    match &token.atom {
         RegexAtom::CaptureGroup(_) => 1,
         RegexAtom::Group(pat) => count_pattern_capture_groups(pat),
         RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
@@ -1571,8 +1584,11 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
 /// captures (`(a)?(b)` on "b" yields `$0 = Nil`, but `[ (a)+ ]?` on ""
 /// yields `$0 = []`, same as a zero-iteration `(a)*`). `ambient_list` carries
 /// whether an enclosing token in the walk was already list-quantified.
-pub(super) fn capture_group_list_flags(atom: &RegexAtom, ambient_list: bool) -> Vec<bool> {
-    match atom {
+pub(super) fn capture_group_list_flags(token: &RegexToken, ambient_list: bool) -> Vec<bool> {
+    if named_alias_hides_positional_group(token) {
+        return Vec::new();
+    }
+    match &token.atom {
         RegexAtom::CaptureGroup(_) => vec![ambient_list],
         RegexAtom::Group(pat) => pattern_capture_group_list_flags(pat, ambient_list),
         RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => alts
@@ -1596,7 +1612,7 @@ fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> V
                     | RegexQuant::RepeatCode(_)
             )
             || token.separator.is_some();
-        out.extend(capture_group_list_flags(&token.atom, token_is_list));
+        out.extend(capture_group_list_flags(token, token_is_list));
         // A separator's slots follow the atom's (see `count_pattern_capture_groups`).
         if let Some(sep) = token.separator.as_ref() {
             out.extend(pattern_capture_group_list_flags(&sep.pattern, true));
@@ -1841,7 +1857,7 @@ pub(super) fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
     *pat.derived.capture_group_count.get_or_init(|| {
         let mut count = 0;
         for token in &pat.tokens {
-            count += count_capture_groups(&token.atom);
+            count += count_capture_groups(token);
             if let Some(sep) = token.separator.as_ref() {
                 count += count_pattern_capture_groups(&sep.pattern);
             }
