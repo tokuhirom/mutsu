@@ -329,6 +329,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
+            captured_readonly: Some(self.capture_declaring_readonly_state()),
         };
         // A role method's custom `is` traits dispatch to a user
         // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --

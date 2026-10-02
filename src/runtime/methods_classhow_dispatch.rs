@@ -1448,6 +1448,7 @@ impl Interpreter {
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
                     nested_capture_index: None,
+                    captured_readonly: None,
                 };
                 // A role's methods live in its `RoleDef`, which is what
                 // composition (`does`, `but`, `.^mixin`) copies into the
@@ -1556,6 +1557,7 @@ impl Interpreter {
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
                     nested_capture_index: None,
+                    captured_readonly: None,
                 };
                 // `^add_multi_method` must still *error* for an unregistered
                 // class -- existence keys off `classes.contains_key`, not the

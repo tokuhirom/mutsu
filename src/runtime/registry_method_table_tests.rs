@@ -26,6 +26,7 @@ fn dummy_method_def() -> MethodDef {
         source_file: None,
         role_param_bindings: None,
         nested_capture_index: None,
+        captured_readonly: None,
     }
 }
 
