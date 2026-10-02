@@ -37,9 +37,7 @@ impl Interpreter {
                 .routine_candidate_subs(package, name)
                 .iter()
                 .any(|c| match c.view() {
-                    ValueView::Sub(data) => {
-                        data.env.contains_key("__mutsu_is_multi_candidate")
-                    }
+                    ValueView::Sub(data) => data.env.contains_key("__mutsu_is_multi_candidate"),
                     _ => false,
                 })
         {
