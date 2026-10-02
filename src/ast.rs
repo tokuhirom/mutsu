@@ -2456,7 +2456,7 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
     false
 }
 
-/// Whether `stmts` reads the legacy argument array `@_` anywhere.
+/// Whether `stmts` reads the legacy argument array `@_`.
 ///
 /// This is the ONE thing that makes a routine accept more positional arguments
 /// than its signature names: rakudo refuses a surplus for `sub f { $^x }` but
@@ -2466,30 +2466,27 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
 /// because `%_` is about *named* arguments and has no bearing on positional
 /// arity.
 ///
-/// The debug-format probe is the same one `make_anon_sub` has always used for
-/// the signature-less-block case; it is deliberately conservative, since a
-/// false positive only makes a call more permissive than rakudo and a false
-/// negative only leaves the pre-existing behaviour.
-///
-/// A literal value statement is skipped: it reads no variable, and a
-/// `token`/`rule` body is one whose regex value can carry its captured scope
-/// (closures included, whose formatted form is unbounded).
+/// The scan is the ADR-0137 visitor shared with the signature-less-routine
+/// case ([`crate::method_signature_shared::auto_signature_uses`]): a nested
+/// routine or package declaration binds its own `@_` and is not looked into.
+/// It replaced a `format!("{stmts:?}")` probe, which recursed without bound
+/// through a literal value holding a cyclic structure (an object whose
+/// attribute refers back to it) and overflowed the stack.
+// Cost: O(n), n = size of `stmts` outside nested routine declarations.
 pub(crate) fn body_reads_args_array(stmts: &[Stmt]) -> bool {
-    stmts
-        .iter()
-        .filter(|stmt| !matches!(stmt, Stmt::Expr(Expr::Literal(_))))
-        .any(|stmt| format!("{stmt:?}").contains("ArrayVar(\"_\")"))
+    crate::method_signature_shared::auto_signature_uses(stmts).0
 }
 
-/// Whether `stmts` reads the legacy named-argument hash `%_` anywhere.
+/// Whether `stmts` reads the legacy named-argument hash `%_`.
 ///
 /// Unlike `@_`, a `%_` read does not make a signature-less routine accept
 /// surplus positional arguments. It does, however, require the implicit
 /// named slurpy so that the block can observe named arguments passed to it.
 /// Keep this separate from [`body_reads_args_array`] because the two legacy
 /// aggregates have different call-arity semantics.
+// Cost: O(n), n = size of `stmts` outside nested routine declarations.
 pub(crate) fn body_reads_args_hash(stmts: &[Stmt]) -> bool {
-    format!("{stmts:?}").contains("HashVar(\"_\")")
+    crate::method_signature_shared::auto_signature_uses(stmts).1
 }
 
 /// Create an `Expr::AnonSub` or `Expr::AnonSubParams` depending on whether

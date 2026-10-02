@@ -3029,6 +3029,7 @@ impl Compiler {
                     _ => None,
                 };
                 let topic_readonly;
+                let tagged_source;
                 if let Some((container, index, is_positional)) = element_source {
                     if let Expr::Index { target, .. } = topic {
                         self.compile_expr(target);
@@ -3040,6 +3041,7 @@ impl Compiler {
                         positional: is_positional,
                     });
                     topic_readonly = false;
+                    tagged_source = false;
                 } else {
                     self.compile_expr(topic);
                     // `given my $x = EXPR` (a scalar declaration used as the topic)
@@ -3076,6 +3078,12 @@ impl Compiler {
                         self.code
                             .emit(OpCode::TagContainerRef(name_idx, source_slot));
                     }
+                    // The topic names its source only if it ends in a tag (the
+                    // one just emitted, or an assignment topic's own).
+                    tagged_source = matches!(
+                        self.code.ops.last(),
+                        Some(OpCode::TagContainerRef(..) | OpCode::TagContainerRefReversed(..))
+                    );
                     // The topic is read-only unless it is a bare scalar variable
                     // (`given $x` aliases `$x` rw), a scalar declaration topic
                     // (`given my $x = ...`), or an `is copy` writable copy.
@@ -3150,6 +3158,7 @@ impl Compiler {
                     body_end: 0,
                     topic_readonly,
                     pointy_param_idx,
+                    tagged_source,
                 });
                 let block_local_idx = (!*is_statement_modifier
                     && Self::branch_declares_block_local(body))

@@ -60,10 +60,11 @@ impl Interpreter {
                 let mut quit_cb = Self::named_value(&args, "quit");
                 let mut delay_seconds = Self::supply_delay_seconds(&attrs);
                 let shared_on_demand = attrs.contains_key("shared_on_demand");
-                let shared_started = attrs
-                    .get("shared_started")
-                    .map(Value::truthy)
-                    .unwrap_or(false);
+                // A shared on-demand supply runs its block on the first tap
+                // only; claiming the start-up here (keyed on the shared
+                // supplier, see `state_shared_supply`) decides which tap that is.
+                let shared_started = shared_on_demand
+                    && !supplier_id_from_attrs(&attrs).is_some_and(shared_supply_claim_start);
                 let mut outer_tap_registered = false;
 
                 // ADR-0028 Slice 1: `Supply.schedule-on($scheduler)` genuinely
@@ -370,9 +371,6 @@ impl Interpreter {
                     } else {
                         next_supplier_id()
                     };
-                    if shared_on_demand {
-                        attrs.insert("shared_started".to_string(), Value::TRUE);
-                    }
                     close_supplier_id = Some(emitter_supplier_id);
                     // ADR-0031 Decision A: this supply block's own emitter is
                     // what "quit" means for this block — register the tap's
@@ -470,15 +468,20 @@ impl Interpreter {
 
                     let mut done_group_id: Option<u64> = None;
                     if whenever_supplier_count > 0 {
-                        done_group_marker = done_cb.as_ref().map(|df| {
-                            let group_done = if shared_on_demand {
-                                Self::make_shared_supply_done_marker(
-                                    emitter_supplier_id,
-                                    df.clone(),
-                                )
-                            } else {
-                                df.clone()
-                            };
+                        // A shared block always needs its done group: its
+                        // completion is the shared supplier's `done`, which
+                        // every joined consumer waits on — even when the tap
+                        // that started it has no `done =>` of its own (a
+                        // `whenever` or react consumer starts it with none).
+                        let group_done = if shared_on_demand {
+                            Some(Self::make_shared_supply_done_marker(
+                                emitter_supplier_id,
+                                done_cb.clone().unwrap_or(Value::NIL),
+                            ))
+                        } else {
+                            done_cb.clone()
+                        };
+                        done_group_marker = group_done.map(|group_done| {
                             let group_id =
                                 create_whenever_done_group(whenever_supplier_count, group_done);
                             done_group_id = Some(group_id);
@@ -674,6 +677,10 @@ impl Interpreter {
                                         }
                                     }
                                 }
+                                // A `.share`d source this whenever is the first
+                                // consumer of: run its block now that the body
+                                // listens on the shared supplier (#10740).
+                                self.start_shared_supply_if_pending(&inner_attrs.as_map())?;
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
