@@ -858,7 +858,7 @@ pub(crate) enum LexicalStashRoutines {
     /// A compunit or routine root: every routine visible here by name.
     // TODO: a routine's own pad does not hold the routines it merely sees
     // from outer scopes (rakudo's `sub r { MY::<&foo> }` is Nil); narrowing
-    // this needs the compiler to keep a per-unit routine table.
+    // this needs the compiler to keep a per-unit routine table -- see #10849.
     All,
     /// A nested block that imports nothing itself: no routine beyond the
     /// `&name` entries its own declarations put in the baked frame.
