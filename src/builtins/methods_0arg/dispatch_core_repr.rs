@@ -293,8 +293,10 @@ pub(super) fn dispatch(
                     dd /= 5;
                 }
                 if dd == 1 {
-                    let val = n as f64 / d as f64;
-                    Some(Ok(Value::str(format!("{}", val))))
+                    // The exact decimal, spelled by the one renderer `.raku`
+                    // reaches inside a collection or a type-check message (an
+                    // `f64` quotient rounds past 15 significant digits).
+                    Some(Ok(Value::str(raku_value(target))))
                 } else {
                     Some(Ok(Value::str(format!("<{}/{}>", n, d))))
                 }

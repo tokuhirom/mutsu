@@ -834,8 +834,8 @@ pub fn raku_value(v: &Value) -> String {
             } else if n % d == 0 {
                 format!("{}.0", n / d)
             } else {
-                // Non-integer rat: check if it's a simple decimal
-                let whole = n as f64 / d as f64;
+                // Non-integer rat: a terminating decimal reads as one, exactly
+                // (an `f64` quotient would round past 15 significant digits).
                 let mut dd = d.abs();
                 while dd % 2 == 0 {
                     dd /= 2;
@@ -844,12 +844,10 @@ pub fn raku_value(v: &Value) -> String {
                     dd /= 5;
                 }
                 if dd == 1 {
-                    let s = format!("{}", whole);
-                    if s.contains('.') {
-                        s
-                    } else {
-                        format!("{}.0", whole)
-                    }
+                    format_bigrat_decimal_exact(
+                        &num_bigint::BigInt::from(n),
+                        &num_bigint::BigInt::from(d),
+                    )
                 } else {
                     format!("<{}/{}>", n, d)
                 }
