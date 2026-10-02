@@ -162,8 +162,10 @@ impl Interpreter {
             let item = Value::int(i);
             self.topic_source_var = None;
 
+            // `rebind_sym`: from the second iteration on, the key is already
+            // in the overlay, so this is an overwrite rather than an insert.
             if let Some(sym) = topic_sym {
-                self.env_mut().insert_sym(sym, item.clone());
+                self.env_mut().rebind_sym(sym, item.clone());
             }
             // The topic's own local slot (a `sub f ($_) {…}` parameter), which
             // the body reads via `GetLocal` — see `save_loop_topic_local`. This
@@ -175,9 +177,9 @@ impl Interpreter {
                 self.locals[slot] = item.clone();
             }
             if let Some(sym) = param_sym {
-                self.env_mut().insert_sym(sym, item.clone());
+                self.env_mut().rebind_sym(sym, item.clone());
                 if let Some(alias) = caret_alias_sym {
-                    self.env_mut().insert_sym(alias, item.clone());
+                    self.env_mut().rebind_sym(alias, item.clone());
                 }
             }
             if let Some(slot) = spec.param_local {

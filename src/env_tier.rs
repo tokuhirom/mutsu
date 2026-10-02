@@ -399,7 +399,7 @@ impl std::fmt::Debug for Tier {
 /// load.
 // Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
 #[inline(always)]
-fn note_alias_entry(key: Symbol, value: &Value) {
+pub(crate) fn note_alias_entry(key: Symbol, value: &Value) {
     // Test the key flag first: `as_str()` on a lazy strand string (ADR-0120)
     // flattens it, so probing every stored value would materialize each
     // `"a" x 2**32-1` the moment it is bound to a variable.
