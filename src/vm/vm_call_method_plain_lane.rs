@@ -34,11 +34,21 @@
 //! The memo replays a verdict, so everything the prefix reads must be either in
 //! the key or pinned by the gate:
 //!
-//! * **the method name** and **the receiver's class** are the key;
-//! * **`args.is_empty()`**, **no `.^`/`.!`/`."…"` modifier**, **not quoted** and
-//!   **no accessor-ref marker** are required by the gate on both the install and
-//!   the replay, so no probe's argument-shaped or call-shaped early-out can
-//!   differ between them;
+//! * **the method name**, **the receiver's class** and **the arguments' type
+//!   keys** ([`Interpreter::multi_arg_type_keys`]: runtime type plus
+//!   definedness per argument) are the key. A call with arguments is admitted
+//!   only when every argument has a type key, so a `Junction`, a named `Pair`,
+//!   a container or a mixin -- the shapes the probes that read arguments
+//!   (autothreading, the named-argument intercepts) decide on -- never enters
+//!   the lane. Every other probe in the skipped stretch reads at most the
+//!   argument *count* for a user-class receiver, which the key fixes (#10111);
+//! * **no `.^`/`.!`/`."…"` modifier**, **not quoted** and **no accessor-ref
+//!   marker** are required by the gate on both the install and the replay, so
+//!   no probe's call-shaped early-out can differ between them;
+//! * **the native-method cascade** (`try_native_method`), the one probe in the
+//!   stretch whose decline depends on argument *values*, is consulted only
+//!   when the class has no user method of the name. A call with arguments
+//!   installs only when the class has one, so that probe was never asked;
 //! * **the registry** (methods, roles, wraps, MRO, attributes) is pinned by
 //!   `Registry::method_generation` -- the same latch the sibling method caches
 //!   use, cleared in `refresh_method_caches_for_generation`;
@@ -57,35 +67,42 @@
 use super::*;
 
 impl Interpreter {
-    /// The `(class, method)` key this dispatch is eligible to replay or install,
-    /// or `None` when the call shape is outside the lane.
+    /// The key this dispatch is eligible to replay or install, or `None` when
+    /// the call shape is outside the lane.
     ///
-    /// Deliberately cheap and allocation-free: it runs on every `CallMethodMut`,
-    /// including the ones that will miss.
+    /// Runs on every `CallMethodMut` on an instance receiver, including the
+    /// ones that will miss; allocation-free for a call without arguments.
+    // Cost: O(a), a = arguments (one type-key intern each).
     pub(super) fn plain_method_lane_key(
+        &mut self,
         target: &Value,
         args: &[Value],
         modifier: Option<&str>,
         quoted: bool,
         want_ref: bool,
         method_sym: crate::symbol::Symbol,
-    ) -> Option<(crate::symbol::Symbol, crate::symbol::Symbol)> {
-        if !args.is_empty() || modifier.is_some() || quoted || want_ref {
+    ) -> Option<crate::runtime::PlainMethodLaneKey> {
+        if modifier.is_some() || quoted || want_ref {
             return None;
         }
-        match target.view() {
-            ValueView::Instance { class_name, .. } => Some((class_name, method_sym)),
-            _ => None,
-        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        let arg_keys = if args.is_empty() {
+            Vec::new()
+        } else {
+            self.multi_arg_type_keys(args)?
+        };
+        Some((class_name, method_sym, arg_keys))
     }
 
-    /// Whether the prefix has already been proven inert for this pair.
+    /// Whether the prefix has already been proven inert for this key.
     pub(super) fn plain_method_lane_hit(
         &mut self,
-        key: (crate::symbol::Symbol, crate::symbol::Symbol),
+        key: &crate::runtime::PlainMethodLaneKey,
     ) -> bool {
         self.refresh_method_caches_for_generation();
-        self.plain_method_lane.contains(&key)
+        self.plain_method_lane.contains(key)
     }
 
     /// Dispatch a lane hit: everything the skipped stretch does that is *not* a
@@ -104,6 +121,7 @@ impl Interpreter {
         target: Value,
         method: &str,
         method_sym: crate::symbol::Symbol,
+        args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
         self.flatten_scoped_env();
         self.method_dispatch_pure = false;
@@ -115,7 +133,7 @@ impl Interpreter {
             target,
             method,
             method_sym,
-            Vec::new(),
+            args,
         );
         // The flag is consumed by `try_compiled_method_mut_or_interpret_sym`;
         // clear it unconditionally so an error path that never reached it (the
@@ -143,15 +161,24 @@ impl Interpreter {
         class_sym: crate::symbol::Symbol,
         method_sym: crate::symbol::Symbol,
     ) {
-        if self.plain_method_lane_candidate != Some((class_sym, method_sym)) {
+        let Some(key) = self
+            .plain_method_lane_candidate
+            .take_if(|key| key.0 == class_sym && key.1 == method_sym)
+        else {
             return;
-        }
-        self.plain_method_lane_candidate = None;
+        };
         if !self.plain_method_lane_class_eligible(class_sym) {
             return;
         }
+        // With arguments, the native-method cascade must not have been asked:
+        // its decline reads argument values, which the key does not hold. It
+        // is skipped exactly when the class has a user method of this name
+        // (`skip_native` in `exec_call_method_mut_op_impl`).
+        if !key.2.is_empty() && !self.grammar_has_user_method_memo(class_sym, method_sym) {
+            return;
+        }
         self.refresh_method_caches_for_generation();
-        self.plain_method_lane.insert((class_sym, method_sym));
+        self.plain_method_lane.insert(key);
     }
 
     /// The three class families whose prefix probes read the *instance* (or a
