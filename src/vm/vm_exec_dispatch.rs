@@ -6724,7 +6724,13 @@ impl Interpreter {
                 slot,
             } => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_outer_var(code, name, *depth as usize, *slot);
+                // A read yields the value: the binding may live in a shared
+                // cell (a capture, or one a write past a shadow published,
+                // #10827), and a cell on the stack would be written back into
+                // itself by a mutating method call on it.
+                let val = self
+                    .get_outer_var(code, name, *depth as usize, *slot)
+                    .into_deref();
                 self.stack.push(val);
                 *ip += 1;
             }

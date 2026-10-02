@@ -32,21 +32,33 @@ impl Interpreter {
         };
         let key = Self::const_str(code, key_idx);
         let name = code.locals[idx].as_str();
-        // `@`/`%` containers are reference-shared already: the nested body
-        // reaches the very Array/Hash the slot holds. So are the shapes the
-        // closure-capture boxing refuses (`box_captured_lexicals`): a type
-        // object other than the `Any` seed, a Proxy, a Seq-family value, a Sub.
-        let shareable = name.starts_with(['@', '%', '&'])
-            || (!cur.is_any_type_object()
-                && matches!(
-                    cur.view(),
-                    ValueView::Proxy { .. }
-                        | ValueView::Seq(..)
-                        | ValueView::HyperSeq(..)
-                        | ValueView::RaceSeq(..)
-                        | ValueView::Slip(..)
-                        | ValueView::Sub(..)
-                ));
+        // An `@`/`%` container takes a container cell exactly like the one a
+        // capture gives it at its declaration (ADR-0039,
+        // `box_decl_local_container_cell`): a mutating method call
+        // (`@OUTER::a.push(1)`) writes its result back by name, and only a
+        // cell carries that write to the slot (#10857). A native element type
+        // stays bare, as there. The shapes the closure-capture boxing refuses
+        // (`box_captured_lexicals`) are shared as they are: a type object other
+        // than the `Any` seed, a Proxy, a Seq-family value, a Sub.
+        let shareable = if name.starts_with(['@', '%']) {
+            let bare = cur.deref_container();
+            !matches!(bare.view(), ValueView::Array(..) | ValueView::Hash(..))
+                || self
+                    .container_element_type_constraint(name)
+                    .is_some_and(|t| Self::is_native_element_type(&t))
+        } else {
+            name.starts_with('&')
+                || (!cur.is_any_type_object()
+                    && matches!(
+                        cur.view(),
+                        ValueView::Proxy { .. }
+                            | ValueView::Seq(..)
+                            | ValueView::HyperSeq(..)
+                            | ValueView::RaceSeq(..)
+                            | ValueView::Slip(..)
+                            | ValueView::Sub(..)
+                    ))
+        };
         // A rebind on either side -- the nested `$OUTER::x := $y`, or this
         // frame's own `$x := ...` after the capture -- must swap what both see,
         // which takes a binding cell (ADR-0097 §14).

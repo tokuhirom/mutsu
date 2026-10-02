@@ -23,6 +23,12 @@
 //!   and [`Compiler::absorb_outer_captures`] turns each entry into that op
 //!   (or passes it on outward); the closure capture then carries the key like
 //!   every other `__mutsu_*` key.
+//!
+//! An `@`/`%` binding takes the same route with an `@`/`%` key
+//! (`@__mutsu_outer::<scope>:<name>`), so a whole-container store keeps its
+//! list-assignment semantics, and a mutating method call writes its result
+//! back through that key. An element store (`@OUTER::a[0] = v`) needs no key:
+//! it stores into the container the lexical read yields (#10857).
 
 use std::collections::HashMap;
 
@@ -34,7 +40,8 @@ use crate::opcode::{CompiledCode, OpCode, OuterCapture};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-/// Collects the scalar names a tree writes through `OUTER::`, each with
+/// Collects the names a tree writes through `OUTER::` -- a scalar assigned,
+/// bound or stepped, or any mention of an `@`/`%` container -- each with
 /// whether one of the writes is a `:=` (see `Compiler::outer_write_names`).
 #[derive(Default)]
 struct OuterWriteScan {
@@ -44,7 +51,7 @@ struct OuterWriteScan {
 impl OuterWriteScan {
     fn record(&mut self, target: &str, rebinds: bool) {
         if let Some((name, _)) = Compiler::split_outer_name(target)
-            && !name.starts_with(['@', '%', '&'])
+            && !name.starts_with('&')
         {
             *self.names.entry(name).or_default() |= rebinds;
         }
@@ -62,6 +69,11 @@ impl<'ast> Visit<'ast> for OuterWriteScan {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::AssignExpr { name, is_bind, .. } => self.record(name, *is_bind),
+            // An Array/Hash is mutable through every path that reaches it --
+            // a method call, an element store -- so any mention of one through
+            // `OUTER::` counts as a write (#10857).
+            Expr::ArrayVar(name) => self.record(&format!("@{name}"), false),
+            Expr::HashVar(name) => self.record(&format!("%{name}"), false),
             Expr::PostfixOp {
                 op: TokenKind::PlusPlus | TokenKind::MinusMinus,
                 expr: target,
@@ -81,7 +93,7 @@ impl<'ast> Visit<'ast> for OuterWriteScan {
 }
 
 impl Compiler {
-    /// Record the scalar names `stmts` write through `OUTER::` (see
+    /// Record the names `stmts` write through `OUTER::` (see
     /// [`Compiler::outer_write_names`]).
     // Cost: O(n), n = size of the tree.
     pub(super) fn seed_outer_write_names(&mut self, stmts: &[Stmt]) {
@@ -163,13 +175,8 @@ impl Compiler {
             return Some(key);
         }
         let scope = lex_scope::outer_target_index(&chain, &key, depth)?;
-        // A whole-container store to `@OUTER::a` / `%OUTER::h` takes its
-        // list-assignment semantics from the sigil of the name it stores
-        // under, which the capture key does not carry.
-        // TODO: reach a shadowed `@`/`%` binding too (#10857); it needs a
-        // store op that assigns into the container it is handed, not one that
-        // takes the container kind from the spelling of the name.
-        if key.starts_with(['@', '%', '&']) {
+        // A `&` binding has no shadowed-write form worth a key of its own.
+        if key.starts_with('&') {
             return None;
         }
         if scope < self.enclosing_scopes.len() {
@@ -189,9 +196,22 @@ impl Compiler {
     }
 
     /// The env key the shared cell of `name`, declared in the scope at index
-    /// `scope` of the full scope chain, is published under.
+    /// `scope` of the full scope chain, is published under. An `@`/`%` name
+    /// keeps its sigil in front (`@__mutsu_outer::1:a`): a whole-container
+    /// store takes its list-assignment semantics from the sigil of the name it
+    /// stores under, and the Array/Hash itself is what the key holds -- it is
+    /// reference-shared, so storing into it reaches the declaring slot (#10857).
     fn outer_cell_key(name: &str, scope: usize) -> String {
-        MetaNs::Outer.owned_key_for_str(format!("{scope}:{name}"))
+        match name.as_bytes().first() {
+            Some(b'@' | b'%') => {
+                let (sigil, bare) = name.split_at(1);
+                format!(
+                    "{sigil}{}",
+                    MetaNs::Outer.owned_key_for_str(format!("{scope}:{bare}"))
+                )
+            }
+            _ => MetaNs::Outer.owned_key_for_str(format!("{scope}:{name}")),
+        }
     }
 
     /// Record that this code reaches `name` of the enclosing-frame scope

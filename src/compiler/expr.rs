@@ -193,6 +193,12 @@ impl Compiler {
                     });
                     return;
                 }
+                // `@OUTER::a` names a lexical of an enclosing scope, exactly
+                // like `$OUTER::x` / `OUTER::<@a>` (#10857).
+                if let Some((bare, depth)) = Self::parse_outer_prefix(name) {
+                    self.emit_outer_var_access(format!("@{bare}"), depth);
+                    return;
+                }
                 let sigiled = format!("@{}", name);
                 // ADR-0039 slice 2: a plain lexical container read resolves
                 // through its slot, exactly as a scalar read does.
@@ -237,6 +243,11 @@ impl Compiler {
                         quoted: false,
                         arg_sources_idx: None,
                     });
+                    return;
+                }
+                // `%OUTER::h` -- see the `ArrayVar` twin above (#10857).
+                if let Some((bare, depth)) = Self::parse_outer_prefix(name) {
+                    self.emit_outer_var_access(format!("%{bare}"), depth);
                     return;
                 }
                 let sigiled = format!("%{}", name);

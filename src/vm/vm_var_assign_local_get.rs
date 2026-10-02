@@ -688,7 +688,7 @@ impl Interpreter {
     /// The declared ELEMENT type of an `@`/`%` container lexical, looked up
     /// under both the sigilled and the bare spelling (the metadata is
     /// registered under whichever the declaration used).
-    fn container_element_type_constraint(&self, name: &str) -> Option<String> {
+    pub(super) fn container_element_type_constraint(&self, name: &str) -> Option<String> {
         loan_env!(self, var_type_constraint(name)).or_else(|| {
             loan_env!(
                 self,
@@ -700,7 +700,7 @@ impl Interpreter {
     /// Whether an element type names a NATIVE representation — one whose
     /// elements are raw machine slots rather than `Value`s, so a `ContainerRef`
     /// in front of the container breaks native/atomic element access.
-    fn is_native_element_type(constraint: &str) -> bool {
+    pub(super) fn is_native_element_type(constraint: &str) -> bool {
         let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
         crate::runtime::native_types::is_native_int_type(base)
             || matches!(base, "num" | "num32" | "num64" | "str")
