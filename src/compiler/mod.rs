@@ -2227,7 +2227,7 @@ impl Compiler {
             && !name.starts_with("__ANON")
     }
 
-    /// See [`CompiledCode::is_simple_scalar_local`]. A plain lexical name, minus
+    /// See [`CompiledCode::simple_scalar_local_desc`]. A plain lexical name, minus
     /// the two shapes that still reach a name-derived branch of the store
     /// cascade: a `term:<...>` definition (mirrored into its own and its
     /// package-qualified env keys on every store) and a compiler-synthesised

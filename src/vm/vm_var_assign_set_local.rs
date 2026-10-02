@@ -339,7 +339,7 @@ impl Interpreter {
     /// removes and no local fix does.
     ///
     /// The decision splits in two. The **compile-time** half is
-    /// [`CompiledCode::is_simple_scalar_local`]: the slot's name settles every
+    /// [`CompiledCode::simple_scalar_local_desc`]: the slot's name settles every
     /// sigil / twigil / attribute / topic / term / anon branch at compile time,
     /// where it is already known. The **runtime** half is the guards below, each
     /// of which names the branch of the full path it stands in for; every one is
@@ -416,15 +416,21 @@ impl Interpreter {
     /// key passes through. The whole-program latch it replaces here let one
     /// unrelated `my @u := @d` make every scalar store in the process pay the
     /// probe (#10691); now only stores to a name some bind actually aliased do.
+    /// No "any alias yet" latch precedes the bit test: it answers a program that
+    /// never binds too, and a latch made one unrelated bind change every
+    /// store's cost.
     // Cost: O(1) — one relaxed load, plus one env probe when the key may exist.
-    fn slot_has_sigilless_meta(&self, code: &CompiledCode, idx: usize) -> bool {
-        if !crate::sigilless_alias_index::any_alias_key_possible() {
+    #[inline(always)]
+    fn slot_has_sigilless_meta(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+        desc: &crate::binding_desc::BindingDesc,
+    ) -> bool {
+        let Some(sym) = desc.alias_sym.or_else(|| code.alias_sym(idx)) else {
             return false;
-        }
-        code.alias_sym(idx).is_some_and(|sym| {
-            crate::sigilless_alias_index::alias_key_possible(sym)
-                && self.env().contains_key_sym(sym)
-        })
+        };
+        crate::sigilless_alias_index::alias_key_possible(sym) && self.env().contains_key_sym(sym)
     }
 
     /// Everything [`Self::exec_set_local_scalar_fast`] checks *before* it
@@ -470,9 +476,9 @@ impl Interpreter {
         // The slot's name makes every name-derived branch inert (see the
         // bitmap's doc), and there is no `@`/`%`/`&`/attribute slot in play for
         // the wrapper's tied-store, `our`-sync and attribute-mirror steps either.
-        if !code.is_simple_scalar_local(idx) {
+        let Some(desc) = code.simple_scalar_local_desc(idx) else {
             return false;
-        }
+        };
         // A plain `=` into an existing variable: no bind, rebind, `constant`,
         // declaration, explicit initializer or array-share flavour is pending,
         // so every `is_bind` / `is_vardecl` / `is_constant` branch is inert —
@@ -513,7 +519,7 @@ impl Interpreter {
             || crate::env::sigilless_readonly_keys_possible()
             || Self::atomic_var_seen_anywhere()
             || crate::env::closure_state_meta_keys_possible()
-            || self.slot_has_sigilless_meta(code, idx)
+            || self.slot_has_sigilless_meta(code, idx, desc)
             || self.fatal_mode
             || !self.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())

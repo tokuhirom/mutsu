@@ -13,7 +13,7 @@
 //!
 //! This slice is a pure consolidation: no `__mutsu_*` namespace is retired
 //! and no probe changes shape. [`crate::opcode::CompiledCode::alias_sym`] and
-//! its four siblings, and the `is_plain_local`/`is_simple_scalar_local` predicates,
+//! its four siblings, and the `is_plain_local`/`simple_scalar_local_desc` predicates,
 //! keep their exact prior fallback behaviour for a hand-built chunk whose
 //! `locals` outgrew its descriptors (see each accessor's own doc comment).
 //! Later ADR-0097 slices grow [`BindingDesc`] with the declaration-settled
