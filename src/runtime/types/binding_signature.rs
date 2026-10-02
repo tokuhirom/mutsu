@@ -608,7 +608,9 @@ impl Interpreter {
             self.bind_type_capture(captured_name, &value);
         }
         if let Some(constraint) = &pd.type_constraint
-            && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
+            && (pd.name != "__type_only__"
+                || (self.is_resolvable_type(constraint)
+                    && !self.type_only_enum_value_shadows_alias(pd, constraint)))
         {
             let resolved_constraint = self.resolved_type_capture_name(constraint);
             // For &-sigil parameters, the type constraint specifies the

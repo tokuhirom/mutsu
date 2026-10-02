@@ -403,6 +403,14 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
 }
 
 fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    // A type capture (`-> ::T { ... }`, `-> ::T $x`) is the sub parameter
+    // parser's; without this `::T` was read as a type constraint with nothing
+    // bound after it (Deps' `for Type.^roles -> ::Type { ... }`).
+    if input.starts_with("::") {
+        let (r, mut p) = crate::parser::stmt::sub_param::parse_single_param(input)?;
+        p.block_param = true;
+        return Ok((r, p));
+    }
     let rest = input;
     let mut type_constraint = None;
     // Use parse_type_constraint_expr so coercion types (`IO()`, `Int(Str)`),

@@ -410,6 +410,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             || rest.starts_with(',')
             || rest.starts_with(';')
             || rest.starts_with("-->")
+            // `{` ends a bare capture in a pointy header: `for @a -> ::T { ... }`.
+            || rest.starts_with('{')
         {
             let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
             p.type_capture = Some(capture_name);
