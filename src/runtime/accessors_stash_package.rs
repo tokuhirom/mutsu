@@ -66,6 +66,9 @@ impl Interpreter {
                     // the path and then answered Nil.
                     let mut code = self.resolve_code_var(&fq);
                     if code.is_nil() {
+                        code = self.export_alias_code_value(module, name);
+                    }
+                    if code.is_nil() {
                         code = self.resolve_code_var(name);
                     }
                     symbols.insert(format!("&{name}"), code);
@@ -434,5 +437,51 @@ impl Interpreter {
         }
 
         Self::make_stash_instance(package, symbols)
+    }
+
+    /// The code value of `module`'s exported routine `name`, read from the
+    /// `Mod::EXPORT::ALL::name` aliases `register_exported_sub` installs —
+    /// they point at the module's own definition(s), whether or not the
+    /// routine was ever imported anywhere.
+    ///
+    /// A `need`ed module's routines are not in the caller's lexical scope, so
+    /// the bare-name fallback would hand back a by-name routine reference; a
+    /// `sub EXPORT` re-exporting that value installs it under the very name it
+    /// dispatches through, and the first call recursed forever (#10683).
+    // Cost: O(f), f = registry function keys (one scan for a multi family;
+    // a single-def export is an O(1) probe).
+    fn export_alias_code_value(&self, module: &str, name: &str) -> Value {
+        use crate::qualified::qualified;
+        let pkg = qualified(
+            qualified(Symbol::intern(module), Symbol::intern("EXPORT")),
+            Symbol::intern("ALL"),
+        );
+        let name_sym = Symbol::intern(name);
+        let exact = self
+            .registry()
+            .functions
+            .get(&qualified(pkg, name_sym))
+            .cloned();
+        if let Some(def) = exact {
+            return self.sub_value_from_function_def((*def).clone());
+        }
+        let pkg_str = pkg.as_str();
+        let mut candidates: Vec<(Symbol, Arc<FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter(|(key, _)| super::dispatch_key::key_is_candidate_of(key.as_str(), pkg_str, name))
+            .map(|(key, def)| (*key, def.clone()))
+            .collect();
+        if candidates.is_empty() {
+            return Value::NIL;
+        }
+        // Registry iteration order is unspecified; the key is the candidate
+        // order's stable tie-break, as in the ordinary candidate gather.
+        candidates.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+        self.sub_value_from_multi_candidates(
+            name,
+            candidates.into_iter().map(|(_, def)| def).collect(),
+        )
     }
 }

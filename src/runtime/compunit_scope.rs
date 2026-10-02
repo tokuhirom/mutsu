@@ -453,4 +453,37 @@ impl Interpreter {
         }
         false
     }
+
+    /// Grant the executing compunit the package visibility a module's first
+    /// load granted its importer (#7797).
+    ///
+    /// A `use`/`need` of an already-loaded module skips `load_module_inner`
+    /// entirely, so the importer-scoped grant that runs there on first load
+    /// (`compunit_visible_packages`) never fires for a second importer — e.g.
+    /// `Issue7733::User.rakumod`'s own `use Issue7733::Conf;` is a no-op once
+    /// the top-level script already loaded `Conf` first, yet
+    /// `Issue7733::Conf.new` inside a `User`-declared method must still
+    /// resolve; likewise a module's `need Mod;` after the script loaded `Mod`
+    /// must still reach `Mod::EXPORT::DEFAULT` (#10683).
+    // Cost: O(g), g = packages the module's first load granted.
+    pub(crate) fn replay_module_visibility_grant(&mut self, module: &str) {
+        let importer_unit = self.executing_unit_sym_for_module_load();
+        let top = module.split_once("::").map_or(module, |(top, _)| top);
+        // Replay the FULL set the first load granted, not just the module's
+        // own name: the packages a module declares are not derivable from the
+        // name it is `use`d by. `Acme/Cow.rakumod` says `unit module Cow;`, so
+        // granting only `Acme::Cow`/`Acme` here left `Cow::cow` unreachable
+        // for every importer after the first -- and `Test`'s `use-ok` makes
+        // the first importer an `EVAL` unit routinely, so the script's own
+        // `use` was the one that lost.
+        let recorded = self.module_granted_packages.get(module).cloned();
+        let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+            .entry(importer_unit)
+            .or_default();
+        entry.insert(module.to_string());
+        entry.insert(top.to_string());
+        if let Some(recorded) = recorded {
+            entry.extend(recorded);
+        }
+    }
 }
