@@ -13,3 +13,11 @@ lexical that a method captures into a shared cell, and it took the snapshot
 before that writeback reached the slot, so the cell kept the stale value.
 Registration now claims the pending writeback into the declaring frame's slots
 before the method-capture pass boxes them (#10751).
+
+The earlier claim exposed a second bug. A `my` that is the last statement of a
+nested block in a class body (`class A { { my $p = 7 } }`) has no local slot. It
+was stored under the package-qualified name `A::p`, and the free-variable
+analysis read that store as a write to the enclosing scope's `$p`, so the outer
+variable became 7. That declaration now stores under its bare name and is
+recorded as the block's own binding, as an expression-position `my` already
+was.
