@@ -354,6 +354,10 @@ impl Interpreter {
         self.routine_stack.push(frame);
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
+        // Subrule-call arguments are evaluated below, in the caller's scope; an
+        // assignment in one (`<x($c++)>`) is logged in `pending_local_updates`
+        // and must survive the env restore at the end of this frame.
+        let pending_before = self.pending_local_updates.len();
         // Apply <sym> instantiation for proto token :sym<> variants
         let instantiate_sym = |pat: &str| -> String { Self::instantiate_token_pattern(def, pat) };
         let rendered = match result {
@@ -399,6 +403,23 @@ impl Interpreter {
             Err(e) => Err(e),
         };
         let mut restored_env = saved_env;
+        let arg_writes: Vec<(String, Value)> = self
+            .pending_local_updates
+            .get(pending_before.min(self.pending_local_updates.len())..)
+            .unwrap_or_default()
+            .iter()
+            .filter(|(name, _)| {
+                restored_env.contains_key(name)
+                    && !def
+                        .params
+                        .iter()
+                        .any(|p| p.trim_start_matches(['$', '@', '%', '&', ':']) == name)
+            })
+            .cloned()
+            .collect();
+        for (name, v) in arg_writes {
+            restored_env.insert(name, v);
+        }
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;

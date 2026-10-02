@@ -898,9 +898,37 @@ impl Interpreter {
         // of its memo key.
         super::regex_arg_purity::note_opaque_read();
         let env = self.make_regex_eval_env(caps);
-        match self.run_regex_sub_eval(env, None, |interp| {
-            interp.eval_block_value_cached(&stmts, id)
-        }) {
+        // The expression may assign to a caller lexical (`<x($c++)>`). The
+        // swapped-in env is dropped afterwards, so carry those writes out the
+        // way an assertion body's are: read each reported name's new value
+        // before the env goes back, then publish it to the caller's env and
+        // compiled slots.
+        let mut free_var_writes: Vec<String> = Vec::new();
+        let (result, updated) = self.run_regex_sub_eval(env, None, |interp| {
+            let saved_in_block = std::mem::replace(&mut interp.in_regex_code_block, true);
+            let r =
+                interp.eval_block_value_cached_reporting_writes(&stmts, id, &mut free_var_writes);
+            interp.in_regex_code_block = saved_in_block;
+            let pkg = interp.current_package_sym();
+            let updated: Vec<(String, Value)> = free_var_writes
+                .iter()
+                .filter_map(|n| {
+                    let bare = Self::strip_regex_pkg_prefix(&pkg, n);
+                    interp.env.get(bare).map(|v| (bare.to_string(), v.clone()))
+                })
+                .collect();
+            (r, updated)
+        });
+        let mut names: Vec<String> = Vec::new();
+        for (name, v) in updated {
+            if caps.regex_vars().contains_key(&name) {
+                continue;
+            }
+            self.env.insert(name.clone(), v);
+            names.push(name);
+        }
+        self.writeback_assertion_free_var_writes(&names, &[]);
+        match result {
             Ok(v) => Some(v),
             Err(e) => e.return_value,
         }
