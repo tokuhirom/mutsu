@@ -1231,6 +1231,12 @@ impl Interpreter {
         // invisible, exactly as raku scopes them. A package qualifier is not a
         // decoration to be discarded.
         if let Some(pos) = name.rfind("::") {
+            // A lexical constant naming a package (`my constant Meta =
+            // A::Meta; Meta::index()`) is a valid qualifier: retry under the
+            // package it stands for.
+            if let Some(real) = self.resolve_package_alias_prefix(name) {
+                return self.call_function(&real, args.to_vec());
+            }
             let short_name = &name[pos + 2..];
             let package = &name[..pos];
             return Err(self.no_such_qualified_symbol(package, short_name));
@@ -1306,6 +1312,28 @@ impl Interpreter {
                 || self.has_role(package)
                 || self.registry().package_kinds.contains_key(package)
                 || self.registry().package_stubs.contains(package))
+    }
+
+    /// If the leading component of the qualified `name` is a lexical (or
+    /// package) constant bound to a package type object, `name` rewritten with
+    /// that package substituted (`Meta::index` -> `A::Meta::index`).
+    // Cost: O(n) in the length of `name`, one env lookup.
+    pub(crate) fn resolve_package_alias_prefix(&self, name: &str) -> Option<String> {
+        use crate::qualified::{package_ancestors, package_parent, qualified};
+        let name_sym = Symbol::intern(name);
+        // The outermost enclosing package of `name` is its leading component.
+        let head = package_ancestors(package_parent(name_sym)?).last()?;
+        // A `constant` is a term (#9962), reached through `type_name_binding`.
+        let value = self.type_name_binding(head.as_str())?;
+        let ValueView::Package(pkg) = value.view() else {
+            return None;
+        };
+        if pkg == head {
+            return None;
+        }
+        // Skip the head and its `::` separator.
+        let rest = Symbol::intern(&name[head.as_str().len() + 2..]);
+        Some(qualified(pkg, rest).as_str().to_string())
     }
 
     pub(super) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
