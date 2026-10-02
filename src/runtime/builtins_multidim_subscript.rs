@@ -162,6 +162,52 @@ impl Interpreter {
         Err(RuntimeError::x_adverb(&what, &source, &nogo, &unexpected))
     }
 
+    // Cost: O(1) when the target is not an object; otherwise one candidate resolution.
+    fn user_postcircumfix_for_adverb(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let target = args[0].deref_container();
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) {
+            return Ok(None);
+        }
+        let mode = args[2].to_string_value();
+        let (name, truthy) = match mode.as_str() {
+            "k" | "v" | "kv" | "p" => (mode.as_str(), true),
+            "not-k" | "k0" => ("k", false),
+            "not-v" | "v0" => ("v", false),
+            "not-kv" | "kv0" => ("kv", false),
+            "not-p" | "p0" => ("p", false),
+            _ => return Ok(None),
+        };
+        let positional = args.iter().skip(4).find_map(|a| match a.view() {
+            ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER => {
+                Some(true)
+            }
+            ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_ASSOCIATIVE_MARKER => {
+                Some(false)
+            }
+            _ => None,
+        });
+        let op_name = match positional {
+            Some(true) => "postcircumfix:<[ ]>",
+            Some(false) => "postcircumfix:<{ }>",
+            None => return Ok(None),
+        };
+        let call_args = vec![
+            target,
+            args[1].clone(),
+            Value::pair(name.to_string(), Value::truth(truthy)),
+        ];
+        match self.resolve_function_with_types(op_name, &call_args) {
+            Some(def) => self.call_routine_def(&def, call_args).map(Some),
+            None => Ok(None),
+        }
+    }
+
     pub(super) fn builtin_subscript_adverb(
         &mut self,
         args: &[Value],
@@ -172,6 +218,13 @@ impl Interpreter {
             ));
         }
         let index = args[1].clone();
+        // A user-declared `multi sub postcircumfix:<{ }>`/`<[ ]>` taking the
+        // slice adverb as a named argument (`%m{ /x/ }:k` against
+        // `(Map::Match:D $m, \keys, *%_)`) sees the adverb itself, exactly as
+        // it does for any non-built-in adverb name.
+        if let Some(result) = self.user_postcircumfix_for_adverb(args)? {
+            return Ok(result);
+        }
         // Which bracket the subscript was written with, as recorded by the
         // parser. `None` for a call shape that predates the marker.
         let subscript_is_positional = args.iter().skip(4).find_map(|a| match a.view() {
