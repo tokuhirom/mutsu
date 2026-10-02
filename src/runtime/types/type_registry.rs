@@ -901,6 +901,29 @@ impl Interpreter {
             .cloned()
     }
 
+    /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
+    /// source-facing name is `bare`, or `None` when there is none or several.
+    // Cost: O(t), t = registered types.
+    pub(crate) fn unique_lexical_type_key(&self, bare: &str) -> Option<String> {
+        let prefix = format!("{bare}\u{0}");
+        let reg = self.registry();
+        let mut found: Option<&String> = None;
+        for key in reg
+            .classes
+            .keys()
+            .chain(reg.roles.keys())
+            .chain(reg.enum_types.keys())
+            .chain(reg.subsets.keys())
+            .filter(|key| key.starts_with(&prefix))
+        {
+            match found {
+                Some(prev) if prev != key => return None,
+                _ => found = Some(key),
+            }
+        }
+        found.cloned()
+    }
+
     /// Resolve a type name against the current package chain: inside
     /// `module Foo { class Params {…}; sub mk { Params.new } }` the sub's
     /// bareword `Params` names `Foo::Params` (registered fully qualified),
