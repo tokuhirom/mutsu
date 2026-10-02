@@ -16,6 +16,13 @@ pub(crate) fn is_shaped_array(value: &Value) -> bool {
     shaped_array_shape(value).is_some()
 }
 
+/// Row breaks in a shaped array's gist follow its declared dimensions, even
+/// when a one-dimensional array stores another Array as an element.
+// Cost: O(d), d = dimensions of a shaped array.
+pub(crate) fn shaped_array_has_rows(value: &Value) -> bool {
+    shaped_array_shape(value).is_some_and(|shape| shape.len() > 1)
+}
+
 // Cost: O(d), d = dimensions, when the array carries its shape (the cached shape is
 // checked along the first-child spine only); O(E), E = leaves, the first time a shape
 // has to be inferred, which then caches it on the array.
