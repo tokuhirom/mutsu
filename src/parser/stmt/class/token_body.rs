@@ -157,9 +157,19 @@ pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     Err(PError::expected("regex closing delimiter"))
 }
 
-/// In a `rule`, the `%` separator quantifier should allow optional whitespace
-/// around the separator. This function finds `% SEPARATOR` patterns and wraps
-/// the separator with `[ <.ws>? SEPARATOR <.ws>? ]`.
+/// Place a `rule`'s sigspace around a `%`/`%%` separated quantifier where the
+/// source whitespace puts it, as rakudo does (#10569). Runs after
+/// [`inject_implicit_rule_ws`], which
+/// leaves a plain space for whitespace it found insignificant and a `<.ws>`
+/// for whitespace it found significant:
+///
+/// - whitespace after the separator atom (`% ',' `) is matched after every
+///   separator: the following `<.ws>` moves inside it (`% [',' <.ws>]`);
+/// - whitespace between the quantifier and the `%` (`<item>* % ','`) is
+///   matched once after the whole separated quantifier (`% ',' <.ws>`);
+/// - whitespace right after the `%` is not significant.
+///
+/// So `rule { <item>* % ',' }` matches `"a, b"` but not `"a ,b"`.
 pub(crate) fn inject_separator_ws(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
@@ -236,6 +246,7 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
         }
         // Look for `%` (or `%%`) followed by a separator expression
         if c == '%' {
+            let ws_before_separator = out.ends_with(char::is_whitespace);
             out.push('%');
             i += 1;
             // `%%` (trailing-separator-allowed) is a single operator: emit its
@@ -277,11 +288,14 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
                     i += 1;
                 }
                 let sep: String = chars[sep_start..sep_end].iter().collect();
-                if optional {
-                    out.push_str(&format!("[ <.ws>? {}? <.ws>? ]", sep.trim()));
-                } else {
-                    out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
-                }
+                emit_rule_separator(
+                    &mut out,
+                    &sep,
+                    optional,
+                    &chars,
+                    &mut i,
+                    ws_before_separator,
+                );
             } else {
                 // Non-bracketed separator: % \, or % ","
                 // Collect the separator atom (could be \X, 'str', "str", or a single char)
@@ -335,11 +349,14 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
                     i += 1;
                 }
                 let sep: String = chars[atom_start..sep_end].iter().collect();
-                if optional {
-                    out.push_str(&format!("[ <.ws>? {}? <.ws>? ]", sep.trim()));
-                } else {
-                    out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
-                }
+                emit_rule_separator(
+                    &mut out,
+                    &sep,
+                    optional,
+                    &chars,
+                    &mut i,
+                    ws_before_separator,
+                );
             }
             continue;
         }
@@ -347,6 +364,41 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
         i += 1;
     }
     out
+}
+
+/// Emit one separator of [`inject_separator_ws`]. `i` points just past the
+/// separator in `chars`; a `<.ws>` the implicit-whitespace pass put right
+/// after it is consumed here and matched inside the separator instead.
+fn emit_rule_separator(
+    out: &mut String,
+    sep: &str,
+    optional: bool,
+    chars: &[char],
+    i: &mut usize,
+    ws_before_separator: bool,
+) {
+    const WS: &str = "<.ws>";
+    let mut j = *i;
+    while j < chars.len() && chars[j].is_whitespace() {
+        j += 1;
+    }
+    let ws_after_separator = chars[j..].iter().take(WS.len()).copied().eq(WS.chars())
+        && chars.get(j + WS.len()) != Some(&'?');
+    if ws_after_separator {
+        *i = j + WS.len();
+    }
+    let opt = if optional { "?" } else { "" };
+    let sep = sep.trim();
+    if ws_after_separator {
+        out.push_str(&format!("[ {sep}{opt} {WS} ]"));
+    } else if optional {
+        out.push_str(&format!("[ {sep} ]?"));
+    } else {
+        out.push_str(sep);
+    }
+    if ws_before_separator {
+        out.push_str(&format!(" {WS}"));
+    }
 }
 
 pub(crate) fn normalize_token_pattern(pattern: &str) -> String {

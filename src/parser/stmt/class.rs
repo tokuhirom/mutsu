@@ -11,6 +11,7 @@ mod grammar_module;
 mod package_decl;
 mod role_decl;
 pub(crate) mod rule_ws;
+mod rule_ws_quantified;
 pub(crate) mod token_body;
 
 // Shared attribute / body validation helpers used across submodules.
