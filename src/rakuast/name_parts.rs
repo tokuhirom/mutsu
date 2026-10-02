@@ -117,6 +117,25 @@ pub(super) fn identifier_segments(name: &str) -> std::str::Split<'_, &'static st
     name.split("::")
 }
 
+/// Whether `name` is a `::`-qualified identifier (`A::B`, `Foo::v`): two or
+/// more segments, every one of them an identifier. A name that merely
+/// contains `::`, such as the operator name `infix:<::=>`, is not.
+pub(super) fn is_qualified_identifier(name: &str) -> bool {
+    let mut segments = identifier_segments(name);
+    segments.clone().nth(1).is_some()
+        && segments.all(|seg| {
+            !seg.is_empty()
+                && seg
+                    .chars()
+                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+        })
+}
+
+/// The `Name` of a qualified identifier, one simple part per segment.
+pub(super) fn qualified_name(name: &str) -> RakuAstNode {
+    name_from_parts(identifier_segments(name).map(simple_part).collect())
+}
+
 /// The package a stash lookup names, in the parser's spelling: `Foo::Bar::`
 /// -> `Foo::Bar`, `::` -> the empty string. `None` when `stash` is not a stash
 /// lookup at all.

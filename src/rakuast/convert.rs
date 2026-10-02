@@ -3483,7 +3483,20 @@ fn desugared(name: &str) -> RuntimeError {
 }
 
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
+/// A variable reference. A package-qualified one (`$Foo::v`, `@A::B::c`) is a
+/// `Var::Package` carrying the segmented `Name` and the sigil, as Rakudo
+/// 2026.09 renders it; anything else is a `Var::Lexical` of the whole
+/// spelling.
 fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    if name_parts::is_qualified_identifier(name) {
+        return RakuAstNode {
+            class: RakuAstClass::VarPackage,
+            fields: vec![
+                node_field(Some("name"), name_parts::qualified_name(name)),
+                leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+            ],
+        };
+    }
     RakuAstNode {
         class: RakuAstClass::VarLexical,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
