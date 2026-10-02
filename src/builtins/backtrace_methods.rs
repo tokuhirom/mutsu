@@ -69,19 +69,19 @@ pub(crate) fn frame_code_value(attributes: &Gc<InstanceAttrs>) -> Value {
         .get("package")
         .map(|v| v.to_string_value())
         .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| "GLOBAL".to_string());
+        .map_or_else(|| Symbol::intern("GLOBAL"), |p| Symbol::intern(&p));
     let is_method = attributes
         .as_map()
         .get("is-method")
         .is_some_and(Value::truthy);
-    if is_method || package == "GLOBAL" {
-        return Value::routine_parts(Symbol::intern(&package), Symbol::intern(&subname), false);
+    if is_method || crate::qualified::is_global_package(package) {
+        return Value::routine_parts(package, Symbol::intern(&subname), false);
     }
     // A plain `Sub` declared in a package: a bare routine handle would
     // report `Method` for any non-GLOBAL package, so synthesize a (bodiless)
     // `Sub` carrying the package instead.
     Value::make_sub(
-        Symbol::intern(&package),
+        package,
         Symbol::intern(&subname),
         Vec::new(),
         Vec::new(),

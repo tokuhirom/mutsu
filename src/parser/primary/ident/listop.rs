@@ -61,7 +61,7 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
         "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
     ) || name == "caller")
         && (crate::parser::stmt::simple::is_imported_function(&name)
-        || crate::parser::stmt::simple::is_user_declared_sub(&name))
+            || crate::parser::stmt::simple::is_user_declared_sub(&name))
     {
         return Expr::UserRoutineCall {
             name: Symbol::intern(&name),
