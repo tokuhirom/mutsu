@@ -582,8 +582,12 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
     // OWN elements are its positional captures: raku's
     // `('ab' ~~ /(.)(.)/).map(*.Str)` is `("a", "b")`, not the whole match.
     if bare.is_match_instance() {
+        // An unbound interior slot iterates as `Mu` (`match_list_view`).
         return match bare.match_list() {
-            Some(list) => value_to_list(&list),
+            Some(list) => value_to_list(&list)
+                .into_iter()
+                .map(Value::unbound_capture_as_mu)
+                .collect(),
             None => Vec::new(),
         };
     }
