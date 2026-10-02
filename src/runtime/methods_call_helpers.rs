@@ -451,10 +451,10 @@ impl Interpreter {
                 _ => 0,
             }
         };
-        let start = (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
+        let start = (args.first().map(resolve).unwrap_or(0).max(0) as usize).min(len);
         let count = args
             .get(1)
-            .map(&resolve)
+            .map(resolve)
             .unwrap_or((len - start) as i64)
             .max(0) as usize;
         let end = (start + count).min(len);

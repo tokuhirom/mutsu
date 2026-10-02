@@ -72,7 +72,7 @@ Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.24.0`); `:latest` tracks th
 newest release. Images are built from release tags only, so there is no
 development-branch tag.
 
-The image is a **two-stage build**: a `rust:1.98-bookworm` **builder** stage
+The image is a **two-stage build**: a `rust:1.99-bookworm` **builder** stage
 compiles the binaries, and the shipped `debian:bookworm-slim` **runtime** stage
 carries only the `mutsu`/`mzef` binaries, the bundled zef tree, and zef's
 shell-out tools (`curl`/`git`/`tar`/`unzip`) — no Rust toolchain or source. Build
@@ -292,7 +292,7 @@ make roast               # Whitelisted official Raku spec (Roast) tests
 
 ## Requirements
 
-- Rust 1.98.1+ (edition 2024)
+- Rust 1.99.0+ (edition 2024)
 - A C compiler (for the vendored libffi that NativeCall links)
 
 ## Architecture

@@ -164,7 +164,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
       # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
       # registry and the built dependencies (pruning the workspace crate so the
@@ -404,7 +404,7 @@ jobs:
         # through. Stdlib Python, no build, seconds.
         run: make check-dev
 
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: clippy, rustfmt
 
@@ -866,7 +866,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           components: clippy
           targets: wasm32-unknown-unknown
@@ -942,7 +942,7 @@ jobs:
       #
       # Installed with rustup directly rather than dtolnay/rust-toolchain:
       # Dependabot re-pins that action to the SHA of its newest *version*
-      # branch (e.g. `1.98.1`), and a version branch ignores the `toolchain:`
+      # branch (e.g. `1.99.0`), and a version branch ignores the `toolchain:`
       # input and installs that stable release, which ships no Miri (the grouped
       # actions bump PR #10433 failed exactly so).
       - name: Install pinned nightly with Miri
@@ -1050,7 +1050,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
           targets: wasm32-unknown-unknown
 
@@ -1160,7 +1160,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
       # Its own dependency cache: the profile overrides above make these
       # artifacts differ from `test-check`'s opt-level-0 debug build, and on a

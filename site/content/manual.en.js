@@ -55,7 +55,7 @@ docker run --rm -v "$PWD:/work:ro" ghcr.io/tokuhirom/mutsu mutsu hello.raku</cod
         installed modules between runs.</p>
 
         <h3>From source</h3>
-        <p>You need Rust 1.98.1 or newer (edition 2024) and a C compiler, which
+        <p>You need Rust 1.99.0 or newer (edition 2024) and a C compiler, which
         builds the vendored <code>libffi</code> that NativeCall links.</p>
         <pre><code>git clone https://github.com/tokuhirom/mutsu.git
 cd mutsu
