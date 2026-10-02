@@ -20,22 +20,37 @@ impl Interpreter {
     /// argumented accessor -- is left to that general path.
     // Cost: O(1) expected, plus the attribute lookup.
     pub(super) fn store_accessor_element_in_place(
+        &mut self,
         target: &Value,
         method: &str,
         current: &Value,
         index: &Value,
         value: &Value,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let ValueView::Instance { attributes, .. } = target.view() else {
-            return false;
+            return Ok(false);
         };
         let held = {
             let map = attributes.as_map();
             let Some(slot) = map.get(method) else {
-                return false;
+                return Ok(false);
             };
             Self::deref_lvalue_value(slot.clone())
         };
+        // An element is a Scalar and cannot hold `Nil`: it takes the
+        // container's own default (ADR-0049), as `decay_nil_container_elements`
+        // gives the general path's rebuilt container.
+        let value = if value.is_nil() {
+            let default = self.typed_container_default(current);
+            if default.is_nil() {
+                value.clone()
+            } else {
+                default
+            }
+        } else {
+            value.clone()
+        };
+        let value = &value;
         match (current.view(), held.view()) {
             (ValueView::Hash(cur), ValueView::Hash(attr)) if crate::gc::Gc::ptr_eq(&cur, &attr) => {
                 if cur.key_type.is_some() {
@@ -46,32 +61,35 @@ impl Interpreter {
                     let data = unsafe { crate::value::gc_contents_mut(&cur) };
                     Value::hash_insert_through(&mut data.map, which, value.clone());
                 } else {
+                    // The same key the general path stores under: a bare type
+                    // object coerces to "" with its warning.
+                    let key = if matches!(index.view(), ValueView::Package(_)) {
+                        self.coerce_type_object_hash_key(index)?
+                    } else {
+                        index.to_string_value()
+                    };
                     let data = unsafe { crate::value::gc_contents_mut(&cur) };
-                    Value::hash_insert_through(
-                        &mut data.map,
-                        index.to_string_value(),
-                        value.clone(),
-                    );
+                    Value::hash_insert_through(&mut data.map, key, value.clone());
                 }
-                true
+                Ok(true)
             }
             (ValueView::Array(cur, _), ValueView::Array(attr, _))
                 if crate::gc::Gc::ptr_eq(&cur, &attr) =>
             {
                 let Ok(idx) = usize::try_from(crate::runtime::to_int(index)) else {
-                    return false;
+                    return Ok(false);
                 };
                 if idx >= cur.len() {
                     // A shaped array does not grow; its bounds error is the
                     // general path's.
                     if crate::runtime::utils::is_shaped_array(current) {
-                        return false;
+                        return Ok(false);
                     }
                     current.array_grow_to(idx);
                 }
-                current.array_set_in_place(idx, value.clone())
+                Ok(current.array_set_in_place(idx, value.clone()))
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 }

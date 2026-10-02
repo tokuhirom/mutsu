@@ -656,13 +656,13 @@ impl Interpreter {
         // it, so every `:=` alias of the attribute sees the write (#10897).
         if bound_cell.is_none()
             && method_args.is_empty()
-            && Self::store_accessor_element_in_place(
+            && self.store_accessor_element_in_place(
                 &target,
                 &method,
                 &current,
                 &index,
                 &effective_value,
-            )
+            )?
         {
             return Ok(effective_value);
         }
