@@ -20,7 +20,9 @@
 //! same as before.
 
 use super::*;
-use crate::runtime::{CapNode, MatchTarget, NamedSlot, PosSlot, SILENT_ACTION_MARKER_PREFIX};
+use crate::value::regex_caps::{
+    CapNode, MatchTarget, NamedSlot, PosSlot, SILENT_ACTION_MARKER_PREFIX,
+};
 use std::sync::OnceLock;
 
 /// Interned class symbol for `Match`.
@@ -84,7 +86,7 @@ impl MatchNode {
     /// Force the Instance-shaped materialization (one level deep).
     pub(in crate::value) fn force_attrs(&self) -> &crate::gc::Gc<InstanceAttrs> {
         self.attrs.get_or_init(|| {
-            crate::vm::vm_stats::record_regex_match_materialization();
+            crate::value::regex_caps::stats::record_regex_match_materialization();
             crate::gc::Gc::new(InstanceAttrs::new(
                 cursor_class_symbol(&self.target),
                 self.materialize_map(),
@@ -140,7 +142,7 @@ impl MatchNode {
     fn materialize_map(&self) -> AttrMap {
         let cap = &*self.cap;
         if cap.children.is_none() {
-            crate::vm::vm_stats::record_regex_match_leaf(false);
+            crate::value::regex_caps::stats::record_regex_match_leaf(false);
         }
         let kids = cap.kids();
 
@@ -250,7 +252,7 @@ impl MatchNode {
 /// — not the class name — is what tells every consumer "this is a Match".
 fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     if target.cursor_class().is_some() {
-        let caps = crate::runtime::RegexCaptures {
+        let caps = crate::value::regex_caps::RegexCaptures {
             from,
             to,
             ..Default::default()
@@ -381,7 +383,7 @@ impl Value {
     /// is unrecoverable here, so it is reported as `0..chars` of the captured
     /// text itself.
     pub(crate) fn text_leaf_match(s: &str, target: &MatchTarget) -> Value {
-        crate::vm::vm_stats::record_regex_match_leaf(true);
+        crate::value::regex_caps::stats::record_regex_match_leaf(true);
         let mut attrs = AttrMap::new();
         attrs.insert("str", Value::str(s.to_string()));
         attrs.insert("from", Value::Int(0));
@@ -488,7 +490,7 @@ impl Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::RegexCaptures;
+    use crate::value::regex_caps::RegexCaptures;
 
     fn leaf_cap(from: usize, to: usize) -> Arc<CapNode> {
         let caps = RegexCaptures {
@@ -544,8 +546,8 @@ mod tests {
         };
         caps.named.insert(
             Symbol::intern("x"),
-            crate::runtime::NamedSlot {
-                nodes: crate::runtime::CapNodes::one(Arc::clone(&child)),
+            crate::value::regex_caps::NamedSlot {
+                nodes: crate::value::regex_caps::CapNodes::one(Arc::clone(&child)),
                 quantified: false,
             },
         );

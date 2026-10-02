@@ -1047,9 +1047,8 @@ impl Value {
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
-                let (y, m, d) =
-                    crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
-                crate::builtins::methods_0arg::temporal::format_date(y, m, d)
+                let (y, m, d) = crate::value::temporal_core::date_attrs(&(attributes).as_map());
+                crate::value::temporal_core::format_date(y, m, d)
             }
             ValueView::Instance { attributes, .. }
                 if attributes.contains_key("year")
@@ -1061,8 +1060,8 @@ impl Value {
                     && attributes.contains_key("timezone") =>
             {
                 let (y, mo, d, h, mi, s, tz) =
-                    crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
-                crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
+                    crate::value::temporal_core::datetime_attrs(&(attributes).as_map());
+                crate::value::temporal_core::format_datetime(y, mo, d, h, mi, s, tz)
             }
             ValueView::Instance {
                 class_name,

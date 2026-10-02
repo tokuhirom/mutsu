@@ -215,7 +215,7 @@ impl MatchTarget {
     }
 
     fn build(text: Arc<crate::value::StrBody>) -> Self {
-        crate::vm::vm_stats::record_regex_match_target_built();
+        super::stats::record_regex_match_target_built();
         Self {
             chars: text.chars().collect(),
             ascii: text.is_ascii(),
@@ -245,8 +245,7 @@ impl MatchTarget {
     /// the first `:ignoremark` use for this match target.
     pub(crate) fn stripped(&self) -> &StrippedMatchTarget {
         self.stripped.get_or_init(|| {
-            let (chars, stripped_to_original) =
-                crate::runtime::regex::regex_helpers::strip_marks_text(&self.chars);
+            let (chars, stripped_to_original) = super::marks::strip_marks_text(&self.chars);
             let stripped_len = chars.len();
             let mut original_to_stripped = Vec::with_capacity(self.chars.len() + 1);
             let mut stripped_pos = 0usize;

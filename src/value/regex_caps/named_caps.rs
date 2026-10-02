@@ -14,7 +14,7 @@
 //! order the captures were taken in, not a hash order. [`CapNodes`] holds one
 //! node inline and spills to a vector only for a name captured twice or more.
 
-use super::regex_types::CapNode;
+use super::CapNode;
 use crate::symbol::Symbol;
 use std::sync::Arc;
 

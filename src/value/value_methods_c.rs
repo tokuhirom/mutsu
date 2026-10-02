@@ -18,16 +18,16 @@ impl Value {
     pub(crate) fn make_match_object_full(
         from: i64,
         to: i64,
-        positional: &[crate::runtime::PosSlot],
-        named: &crate::runtime::NamedCaptureMap,
-        target: crate::runtime::MatchTarget,
+        positional: &[crate::value::regex_caps::PosSlot],
+        named: &crate::value::regex_caps::NamedCaptureMap,
+        target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
         Self::make_match_object_full_with_regex_vars(
             from,
             to,
             positional,
             named,
-            &crate::runtime::RegexVarMap::default(),
+            &crate::value::regex_caps::RegexVarMap::default(),
             None,
             target,
         )
@@ -43,19 +43,19 @@ impl Value {
     pub(crate) fn make_match_object_full_with_regex_vars(
         from: i64,
         to: i64,
-        positional: &[crate::runtime::PosSlot],
-        named: &crate::runtime::NamedCaptureMap,
-        regex_vars: &crate::runtime::RegexVarMap,
+        positional: &[crate::value::regex_caps::PosSlot],
+        named: &crate::value::regex_caps::NamedCaptureMap,
+        regex_vars: &crate::value::regex_caps::RegexVarMap,
         cursor: Option<Value>,
-        target: crate::runtime::MatchTarget,
+        target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
-        let positional = &positional[..crate::runtime::PosSlot::bound_len(positional)];
+        let positional = &positional[..crate::value::regex_caps::PosSlot::bound_len(positional)];
         let has_children = !named.is_empty()
             || !positional.is_empty()
             || !regex_vars.is_empty()
             || cursor.is_some();
         let children = has_children.then(|| {
-            Box::new(crate::runtime::CapChildren {
+            Box::new(crate::value::regex_caps::CapChildren {
                 named: named.clone(),
                 capture_alias_map: Default::default(),
                 positional: positional.to_vec(),
@@ -64,7 +64,7 @@ impl Value {
                 pos: None,
             })
         });
-        let cap = crate::runtime::CapNode {
+        let cap = crate::value::regex_caps::CapNode {
             from: from.max(0) as usize,
             to: to.max(0) as usize,
             sym: None,
@@ -82,11 +82,11 @@ impl Value {
     pub(crate) fn make_match_object_full_visible(
         from: i64,
         to: i64,
-        positional: &[crate::runtime::PosSlot],
-        named: &crate::runtime::NamedCaptureMap,
-        target: crate::runtime::MatchTarget,
+        positional: &[crate::value::regex_caps::PosSlot],
+        named: &crate::value::regex_caps::NamedCaptureMap,
+        target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
-        let visible_len = crate::runtime::PosSlot::visible_len(positional);
+        let visible_len = crate::value::regex_caps::PosSlot::visible_len(positional);
         Self::make_match_object_full(from, to, &positional[..visible_len], named, target)
     }
 

@@ -41,6 +41,7 @@ pub(crate) mod repl_core;
 mod runtime;
 pub(crate) mod scan_cache;
 pub(crate) mod sigilless_alias_index;
+mod stats_gate;
 mod str_scan;
 pub mod symbol;
 pub(crate) mod term_names;
