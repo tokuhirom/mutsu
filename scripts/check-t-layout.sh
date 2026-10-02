@@ -141,7 +141,7 @@ while IFS= read -r f; do
 
   if [ "$first" = "$rel" ]; then
     echo "$f sits at t/ top level; every test belongs in a category directory" >&2
-    echo "    scripts/migrate-t-layout.py names the category for a file." >&2
+    echo "    scripts/migrate-t-layout.py --where <name> prints the path it belongs at." >&2
     status=1
     continue
   fi

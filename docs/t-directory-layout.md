@@ -71,6 +71,22 @@ Do not create a subcategory holding three files. A flat category of 60 is fine.
 
 ## 3. Choosing a category
 
+**The directory is a function of the basename.** `make check-t-layout` runs
+`scripts/migrate-t-layout.py --check`, which places every file by matching its basename against
+`OVERRIDES`, then `RULES`, then the category's `SUBRULES`, and fails on any file that sits
+elsewhere. So a new test is placed in two steps:
+
+1. **Choose the name** with the guidance below in mind — the words in it decide the category
+   (`method-...` lands in `t/oo/method/`, `...-role-...` in `t/oo/role/`).
+2. **Ask for the path**: `scripts/migrate-t-layout.py --where <name>` prints `t/<category>/[<sub>/]<name>.t`
+   (and complains if the basename is already taken). Write the file there.
+
+Do not copy the directory of a similar-looking existing test: a file sits directly in `t/oo/` only
+because no `oo` subrule matches *its* name. If the guidance below and the rules disagree for your
+test, rename it or add an `OVERRIDES` entry — both are reviewable. In Claude Code, a `PostToolUse`
+hook (`.claude/hooks/check-t-placement.py`) runs `--where` on every `t/**.t` written and reports a
+misplaced file immediately.
+
 Categories overlap; that is unavoidable and not a problem as long as the choice is predictable.
 Two tie-breakers, in order:
 
