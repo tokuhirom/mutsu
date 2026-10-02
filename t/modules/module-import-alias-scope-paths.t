@@ -19,16 +19,11 @@ sub leaked(Str $name) {
     found ~~ Failure ?? found.so !! True
 }
 
-# The block-scoped `use Issue9925::Vars` further down is preloaded at the head
-# of this unit, and that preload leaves the module's `our` names bound in the
-# file scope (#11009), so the two variable checks below are TODO until then.
-
 # --- `require` from inside a method --------------------------------------
 is I9925Loader.new.load, 'imported/hi/late',
     'a method that requires a module still sees its unit imports';
 is I9925Loader.new.load, 'imported/hi/late',
     'a second require from the method (module already loaded) behaves the same';
-todo 'a preloaded module leaves its our names bound (#11009)';
 nok leaked('$i9925-value'), 'the unit import does not leak to the caller after require';
 
 # --- EVAL nested in an imported routine -----------------------------------
@@ -42,7 +37,6 @@ my ($sorted, $tagged) = i9925-native-sorted(3, 1, 4, 2);
 is-deeply $sorted, (4, 3, 2, 1),
     'a native callback closure reads the unit imported variable';
 ok $tagged, 'a native callback closure calls the unit imported sub';
-todo 'a preloaded module leaves its our names bound (#11009)';
 nok leaked('$i9925-direction'), 'the imported variable does not leak after the callback';
 
 # --- Two modules importing the same short type name -----------------------
