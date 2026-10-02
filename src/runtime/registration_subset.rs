@@ -5,6 +5,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_subset_decl(
         &mut self,
         name: &str,
