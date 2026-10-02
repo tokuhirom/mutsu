@@ -1,62 +1,29 @@
 {
-  "axis": "guts",
-  "deps": {
-    "bundled_would_supply": [],
-    "mode": "flat-closure",
-    "resolved": [],
-    "unresolved": []
-  },
   "dist": "L10N::DE",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 4.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
-  "load": {
-    "L10N::DE": "ok",
-    "RakuAST::Deparse::L10N::DE": "ok"
-  },
+  "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
+  "note": "harness error: FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/.cache/mutsu-ecosystem/tarballs/b4a052920225-L_10_L10N_DE_92c6ef2c19a709db4a67d67ec3b809bac7cd3e6b.tar.gz.part' -> '/home/runner/.cache/mutsu-ecosystem/tarballs/b4a052920225-L_10_L10N_DE_92c6ef2c19a709db4a67d67ec3b809bac7cd3e6b.tar.gz'",
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/L/10/L10N_DE/92c6ef2c19a709db4a67d67ec3b809bac7cd3e6b.tar.gz"
   },
-  "status": "green",
+  "status": "skipped",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.4"

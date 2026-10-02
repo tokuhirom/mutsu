@@ -25,12 +25,12 @@
   "dist": "Math::NIntegrate",
   "files": [],
   "load": {
-    "Math::NIntegrate": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after chained comparison operator or '.' or digits or generic radix literal or [at NIntegrate/Processing/Grammar.rakumod:14]",
-    "Math::NIntegrate::Builder": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after chained comparison operator or '.' or digits or generic radix literal or [at NIntegrate/Processing/Grammar.rakumod:14]",
+    "Math::NIntegrate": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
+    "Math::NIntegrate::Builder": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
     "Math::NIntegrate::Codes": "ok",
     "Math::NIntegrate::NumericalFunction": "ok",
     "Math::NIntegrate::Processing::Actions::MethodSpec": "ok",
-    "Math::NIntegrate::Processing::Grammar": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after chained comparison operator or '.' or digits or generic radix literal or [at NIntegrate/Processing/Grammar.rakumod:14]",
+    "Math::NIntegrate::Processing::Grammar": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
     "Math::NIntegrate::Region": "ok",
     "Math::NIntegrate::Rule": "ok",
     "Math::NIntegrate::Rule::Cartesian": "ok",
@@ -41,15 +41,17 @@
     "Math::NIntegrate::Rule::MultiDimensional": "ok",
     "Math::NIntegrate::Rule::NewtonCotes": "ok",
     "Math::NIntegrate::Rule::Trapezoidal": "ok",
-    "Math::NIntegrate::Spec": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after chained comparison operator or '.' or digits or generic radix literal or [at NIntegrate/Processing/Grammar.rakumod:14]",
+    "Math::NIntegrate::Spec": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
     "Math::NIntegrate::Strategy": "ok",
     "Math::NIntegrate::Strategy::AdaptiveMonteCarlo": "ok",
+    "Math::NIntegrate::Strategy::Decorator": "ok",
     "Math::NIntegrate::Strategy::DoubleExponential": "ok",
     "Math::NIntegrate::Strategy::GlobalAdaptive": "ok",
     "Math::NIntegrate::Strategy::LocalAdaptive": "ok",
     "Math::NIntegrate::Strategy::MonteCarlo": "ok",
     "Math::NIntegrate::Strategy::Saturating": "ok",
     "Math::NIntegrate::Strategy::Trapezoidal": "ok",
+    "Math::NIntegrate::Strategy::UnitCubeRescaling": "ok",
     "Math::NIntegrate::Utilities": "ok",
     "Math::NIntegrate::VariableTransformer": "ok",
     "Math::NIntegrate::VariableTransformer::Affine": "ok",
@@ -60,10 +62,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -72,7 +74,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/M/AT/MATH_NINTEGRATE/6d2ca57ed26a5d751867e50dcf2cb2c3848f7f7e.tar.gz"
+    "url": "https://360.zef.pm/M/AT/MATH_NINTEGRATE/8fb45d14206189b4b953151b532d9067c876e1cc.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -82,5 +84,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.1"
+  "version": "0.0.2"
 }

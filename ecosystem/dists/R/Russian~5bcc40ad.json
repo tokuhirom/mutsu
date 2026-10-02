@@ -7,17 +7,185 @@
     "unresolved": []
   },
   "dist": "Russian",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic-simple.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 18.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "нуль() returns Nil",
+        "nok": 2,
+        "ok": 14,
+        "plan": 50,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-comprehensive.t",
+      "raku": {
+        "first_failure": "Module loads successfully",
+        "nok": 2,
+        "ok": 12,
+        "plan": 100,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-simple.t",
+      "raku": {
+        "first_failure": "Variable '$результат' is not declared. Did you mean '&результат'? [at dist/t/02-simple.t:19]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "пусто is Nil",
+        "nok": 3,
+        "ok": 99,
+        "plan": 102,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-functions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 102,
+        "plan": 102,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 40,
+        "plan": 40,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-operators.t",
+      "raku": {
+        "nok": 0,
+        "ok": 40,
+        "plan": 40,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-functional.t",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-datetime.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-edge-cases.t",
+      "raku": {
+        "first_failure": "минимум of empty array dies",
+        "nok": 3,
+        "ok": 7,
+        "plan": 50,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "Russian": "Failed to parse module 'Russian': Confused. Two terms in a row [at dist/lib/Russian.rakumod:31]",
-    "Русский": "raku_also_fails"
+    "Russian": "ok",
+    "Русский": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -28,13 +196,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/US/RUSSIAN/179d24d3ecd6e89e6612bc952910b1ada06faf22.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 202,
+    "baseline_files": 5,
+    "mutsu_assertions": 199,
+    "parity_files": 4,
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }
