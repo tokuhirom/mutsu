@@ -1,4 +1,7 @@
-use super::*;
+use crate::value::numeric_coerce::to_float_value;
+use crate::value::rat_parts::{compare_rat_parts, to_rat_parts};
+use crate::value::{Value, ValueView};
+use num_traits::{Signed, ToPrimitive};
 
 pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
     match val.view() {
@@ -81,7 +84,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 minus: bmi,
                 ..
             },
-        ) => crate::runtime::version_cmp(ap, apl, ami, bp, bpl, bmi) as i32,
+        ) => crate::value::version_cmp::version_cmp(ap, apl, ami, bp, bpl, bmi) as i32,
         (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b) as i32,
         (ValueView::BigInt(a), ValueView::BigInt(b)) => a.as_ref().cmp(b.as_ref()) as i32,
         (ValueView::BigInt(a), ValueView::Int(b)) => {
@@ -212,10 +215,10 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             // numerically too — without this branch a `.sort` over values past
             // i64 falls to the string fallback and mis-orders them.
             if let (Some(ap), Some(bp)) = (
-                crate::runtime::utils::to_big_rat_parts(a),
-                crate::runtime::utils::to_big_rat_parts(b),
+                crate::value::rat_parts::to_big_rat_parts(a),
+                crate::value::rat_parts::to_big_rat_parts(b),
             ) {
-                let cmp = crate::runtime::utils::compare_big_rat_parts(ap, bp)
+                let cmp = crate::value::rat_parts::compare_big_rat_parts(ap, bp)
                     .unwrap_or(std::cmp::Ordering::Equal) as i32;
                 if cmp != 0 {
                     return cmp;

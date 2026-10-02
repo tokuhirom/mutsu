@@ -308,7 +308,7 @@ impl Interpreter {
             ))),
             "succ" => {
                 let (volume, dirname, basename) = Self::io_path_parts(&p);
-                let new_basename = crate::builtins::str_increment::string_succ(&basename);
+                let new_basename = crate::value::str_increment::string_succ(&basename);
                 let sep = Self::io_path_sep(attributes);
                 let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
                 let mut new_attrs = attributes.clone();
@@ -317,7 +317,7 @@ impl Interpreter {
             }
             "pred" => {
                 let (volume, dirname, basename) = Self::io_path_parts(&p);
-                let new_basename = crate::builtins::str_increment::string_pred(&basename);
+                let new_basename = crate::value::str_increment::string_pred(&basename);
                 let sep = Self::io_path_sep(attributes);
                 let new_path = Self::join_io_path_parts(&volume, &dirname, &new_basename, sep);
                 let mut new_attrs = attributes.clone();

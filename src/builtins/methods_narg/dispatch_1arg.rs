@@ -2541,7 +2541,7 @@ pub(crate) fn native_method_1arg(
 /// An infinite integer range (`a..*`) is indexed arithmetically; every other
 /// range materializes its (finite) element list.
 fn range_at_pos(range: &Value, idx: usize) -> Value {
-    if crate::builtins::functions::flat::is_infinite_range(range) {
+    if crate::value::flat::is_infinite_range(range) {
         // Element `idx` of an unbounded range of any element type: `first +
         // idx` for a numeric start, `idx` `.succ` steps otherwise.
         let Some(first) = crate::runtime::unbounded_range::first(range) else {
@@ -2564,7 +2564,7 @@ fn range_at_pos(range: &Value, idx: usize) -> Value {
 
 /// Number of elements in a Range, or None when the range is infinite.
 fn range_elem_count(range: &Value) -> Option<usize> {
-    if crate::builtins::functions::flat::is_infinite_range(range) {
+    if crate::value::flat::is_infinite_range(range) {
         return None;
     }
     Some(crate::runtime::value_to_list(range).len())

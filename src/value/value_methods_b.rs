@@ -130,7 +130,7 @@ impl Value {
             // final guard so replacing an Array's contents never leaves the
             // attribute slot holding an immutable list value.
             (ValueView::Array(dst_arc, _), ValueView::Seq(_) | ValueView::Slip(_)) => {
-                let coerced = crate::runtime::utils::coerce_to_array(src.clone());
+                let coerced = crate::value::array_coerce::coerce_finite_to_array(src.clone());
                 let ValueView::Array(src_items, _) = coerced.view() else {
                     return false;
                 };

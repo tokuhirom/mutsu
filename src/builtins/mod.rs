@@ -38,7 +38,6 @@ pub(crate) mod rng;
 pub(crate) mod seq_coerce;
 pub(crate) mod sha1;
 pub(crate) mod split;
-pub(crate) mod str_increment;
 pub(crate) mod str_prim;
 pub(crate) mod string_pos;
 pub(crate) mod substr;
@@ -149,6 +148,7 @@ pub(crate) fn chomp_value(v: &Value) -> Value {
     Value::str(chomp_one(&v.to_string_value()))
 }
 
+pub(crate) use crate::value::flat::is_infinite_range;
 pub(crate) use accepted_nameds::strip_undeclared_nameds;
 pub(crate) use arith::{
     BitOp, arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub, int_abs,
@@ -157,7 +157,6 @@ pub(crate) use arith::{
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::epoch_nanos;
-pub(crate) use functions::flat::is_infinite_range;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;

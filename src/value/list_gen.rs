@@ -304,7 +304,7 @@ impl ListGen {
                 let item = positional_get(array, *pos)?;
                 *pos += 1;
                 let mut out = Vec::new();
-                crate::builtins::flat_val(&item, &mut out, *flatten_children);
+                crate::value::flat::flat_val(&item, &mut out, *flatten_children);
                 buf.extend(out);
             },
             ListGen::Tree { array, depth, pos } => {
@@ -316,12 +316,7 @@ impl ListGen {
                     ValueView::Array(_, kind) if kind.is_real_array() => item.deitemize_element(),
                     _ => item,
                 };
-                Some(
-                    crate::builtins::methods_0arg::dispatch_core_math::tree_to_depth(
-                        &item,
-                        *depth - 1,
-                    ),
-                )
+                Some(crate::value::flat::tree_to_depth(&item, *depth - 1))
             }
             ListGen::Combinations {
                 items,

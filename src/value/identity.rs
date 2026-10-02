@@ -1,5 +1,10 @@
-use super::*;
+//! Value identity: `===` (`values_identical`), `nqp::eqaddr`
+//! (`values_same_object`) and container-preserving identity. Pure functions of
+//! the values, so they live in `value` (#10779); `runtime::utils` re-exports them.
+
 use crate::value::types::is_stash_class_name;
+use crate::value::which_key::value_which_key;
+use crate::value::{Value, ValueView};
 
 /// `nqp::eqaddr`: are these the same object? Unlike `===`
 /// ([`values_identical`]), this never consults `.WHICH`: two instances of a
@@ -161,13 +166,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 && b_attrs.as_map().contains_key("__mutsu_version_value")
             {
                 // A Version subclass is a value type, like Version itself.
-                crate::runtime::utils::value_which_key(left)
-                    == crate::runtime::utils::value_which_key(right)
+                value_which_key(left) == value_which_key(right)
             } else if a_name == b_name && matches!(a_name.as_str(), "Date" | "DateTime") {
                 // Date and DateTime are value types: their native WHICH is
                 // derived from the calendar value, not the allocated instance.
-                crate::runtime::utils::value_which_key(left)
-                    == crate::runtime::utils::value_which_key(right)
+                value_which_key(left) == value_which_key(right)
             } else if a_name == b_name
                 && a_name.starts_with("Perl6::Metamodel::")
                 && a_name.ends_with("HOW")

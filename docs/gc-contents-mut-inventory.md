@@ -174,9 +174,9 @@ All guarded by `strong_count > 1`, falling back to `make_mut` when unique.
 - `:274` — deepmap leaf write-back into source array — (c).
 - `:358` — same into source hash — (c).
 
-### `src/runtime/utils/shaped.rs` — pure (c)
+### `src/value/shaped_array.rs` — pure (c)
 
-- `:121` — `mark_shaped_array_items` — set `shape` metadata (shared by every holder;
+- `:156` — `mark_shaped_array_items` — set `shape` metadata (shared by every holder;
   replaces a pointer-keyed side table) — (c).
 
 ---

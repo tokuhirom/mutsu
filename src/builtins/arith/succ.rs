@@ -103,8 +103,7 @@ pub(crate) fn value_succ(v: &Value) -> Option<Value> {
         | ValueView::Complex(..) => super::arith_add(v.clone(), Value::int(1)).ok()?,
         ValueView::Bool(_) => Value::TRUE,
         ValueView::Str(s) => Value::str(
-            superscript_step(&s, 1)
-                .unwrap_or_else(|| crate::builtins::str_increment::string_succ(&s)),
+            superscript_step(&s, 1).unwrap_or_else(|| crate::value::str_increment::string_succ(&s)),
         ),
         ValueView::Mixin(inner, _) => return value_succ(inner),
         _ => return None,
@@ -129,7 +128,7 @@ pub(crate) fn value_pred(v: &Value) -> Option<Value> {
         | ValueView::Complex(..) => super::arith_sub(v.clone(), Value::int(1)),
         ValueView::Bool(_) => Value::FALSE,
         ValueView::Str(s) => match superscript_step(&s, -1)
-            .or_else(|| crate::builtins::str_increment::string_pred_checked(&s))
+            .or_else(|| crate::value::str_increment::string_pred_checked(&s))
         {
             Some(prev) => Value::str(prev),
             None => decrement_failure(),

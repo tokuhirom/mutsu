@@ -279,7 +279,7 @@ pub(crate) fn sig_info_from_new_args(args: &[Value]) -> SigInfo {
         };
         match key.as_str() {
             "params" => {
-                params = crate::runtime::utils::value_to_list(value)
+                params = crate::value::to_list::value_to_list(value)
                     .iter()
                     .map(sig_param_from_parameter_value)
                     .collect();

@@ -488,7 +488,7 @@ pub(crate) fn mixin_composition_key(base_type_name: &str, mixins: &MixinOverride
 }
 
 /// Build the identity key for a role-mixed value's `===` (`.WHICH`) —
-/// [`crate::runtime::utils::values_identical`]'s `Mixin` arm.
+/// [`crate::value::identity::values_identical`]'s `Mixin` arm.
 ///
 /// `===` on two separately-built but identically-composed values is `True` in
 /// raku (`(1 but A) === (1 but A)`), so the key must exclude everything that is
@@ -614,7 +614,7 @@ pub(crate) fn has_role_composition(mixins: &MixinOverrides) -> bool {
 /// without any extra lookup, and two DIFFERENT compositions get
 /// content-different overrides maps (rather than two structurally-equal
 /// empty maps), which matters because `values_identical`'s `Mixin` arm
-/// (`src/runtime/utils/shaped.rs`) compares overrides by content, not by
+/// (`src/value/identity.rs`) compares overrides by content, not by
 /// `Gc` pointer.
 ///
 /// Drops per-instance data: `__mutsu_attr__*` (role-attribute values),
