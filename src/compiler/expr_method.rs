@@ -377,8 +377,10 @@ impl Compiler {
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         // Use CallMethod (non-mut) for read-only special variables like $!
-        // so they benefit from the Nil dispatch path in CallMethod.
-        if target_name == "!" {
+        // so they benefit from the Nil dispatch path in CallMethod. `$/` is
+        // the same: a method call on it (`$/.subst(...)`) must not write the
+        // env `$/` a nested match/subst produced back over a `$/` parameter.
+        if target_name == "!" || target_name == "/" {
             self.code.emit(OpCode::CallMethod {
                 name_idx,
                 arity,
