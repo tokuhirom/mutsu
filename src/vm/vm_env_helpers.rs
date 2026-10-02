@@ -1196,7 +1196,27 @@ impl Interpreter {
     /// resolution, which would leak a same-named GLOBAL `our`. Returns `None`
     /// only when `name` is not an `OUR::` *variable* form (a `&OUR::` code
     /// name or an `OUR::Type` package), which the caller resolves normally.
+    // Cost: O(n), n = name length (plus the `our`-store / env probes).
     pub(super) fn our_pseudo_var_read(&self, name: &str) -> Option<Value> {
+        let qkey = self.our_pseudo_var_key(name)?;
+        // The `our` store holds both the bare and package-qualified keys and
+        // survives block-scope restoration (env drops the bare key on block
+        // exit); fall back to env for a live qualified alias. A miss is an
+        // authoritative Nil — the var is genuinely absent from THIS package.
+        Some(
+            self.get_our_var(&qkey)
+                .cloned()
+                .or_else(|| self.get_env_with_main_alias(&qkey))
+                .unwrap_or(Value::NIL),
+        )
+    }
+
+    /// The `our`-store key an `OUR::`-qualified *variable* name denotes in the
+    /// current package: the bare name at file scope, `Pkg::name` inside
+    /// `package Pkg`, keeping an `@`/`%` sigil. `None` when `name` is not an
+    /// `OUR::` variable form (a `&OUR::` code name or an `OUR::Type` package).
+    // Cost: O(n), n = name length.
+    pub(super) fn our_pseudo_var_key(&self, name: &str) -> Option<String> {
         // `@`/`%` keep their sigil in the env/our-store key; a scalar reaches
         // GetGlobal sigil-less (`OUR::x`), and `&OUR::f` is code (handled below).
         let (sigil, rest) = match name.as_bytes().first() {
@@ -1217,21 +1237,11 @@ impl Interpreter {
         }
         let cur_sym = self.current_package_sym();
         let cur: &str = cur_sym.as_str();
-        let qkey = if crate::qualified::is_global_package(cur_sym) {
+        Some(if crate::qualified::is_global_package(cur_sym) {
             format!("{sigil}{bare}")
         } else {
             format!("{sigil}{cur}::{bare}")
-        };
-        // The `our` store holds both the bare and package-qualified keys and
-        // survives block-scope restoration (env drops the bare key on block
-        // exit); fall back to env for a live qualified alias. A miss is an
-        // authoritative Nil — the var is genuinely absent from THIS package.
-        Some(
-            self.get_our_var(&qkey)
-                .cloned()
-                .or_else(|| self.get_env_with_main_alias(&qkey))
-                .unwrap_or(Value::NIL),
-        )
+        })
     }
 
     /// Write-back companion of [`Self::read_package_scope_var`]: if a bare free

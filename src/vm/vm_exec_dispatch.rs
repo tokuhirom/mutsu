@@ -2320,6 +2320,23 @@ impl Interpreter {
                         // so GetGlobal fallback (which uses qualified keys) can
                         // find the binding.
                         self.set_our_var(name.clone(), container.clone());
+                        // `$OUR::x := $y` binds the current package's `our`
+                        // variable, which an `OUR::` read and a `$Pkg::x` read
+                        // find under the resolved key (#10859). Only the store
+                        // entry is rebound: a lexical `$x` aliasing the old
+                        // `our` container keeps it, as in Rakudo.
+                        if let Some(qkey) = self.our_pseudo_var_key(&name) {
+                            // Inside `package Pkg` the key is the qualified
+                            // `Pkg::x`, which env may also hold (never a
+                            // lexical alias); the bare file-scope key is left
+                            // alone in env for the reason above.
+                            if crate::qualified::is_qualified(Symbol::intern(&qkey))
+                                && self.env().contains_key(&qkey)
+                            {
+                                self.env_mut().insert(qkey.clone(), container.clone());
+                            }
+                            self.set_our_var(qkey, container.clone());
+                        }
                         // Update the package-qualified our_var key (e.g., "K::x"
                         // for bare "x" in class K) so GetGlobal fallback can find
                         // the binding. Only match the exact class from the method
