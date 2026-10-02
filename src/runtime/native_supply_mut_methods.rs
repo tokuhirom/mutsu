@@ -643,7 +643,8 @@ impl Interpreter {
                                 // to its supplier (`Supply.merge` of a live and
                                 // a cold source); nothing will emit them to the
                                 // tap registered above, so deliver them now.
-                                if !inner_attrs.as_map().get("live").is_some_and(Value::truthy)
+                                if !inner_attrs.as_map().contains_key("preserving")
+                                    && !inner_attrs.as_map().get("live").is_some_and(Value::truthy)
                                     && let Some(ValueView::Array(seeded, ..)) =
                                         inner_attrs.as_map().get("values").map(Value::view)
                                 {
