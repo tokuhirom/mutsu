@@ -50,7 +50,7 @@ impl Interpreter {
     #[cold]
     #[inline(never)]
     fn positional_light_arity_error(
-        &self,
+        &mut self,
         cf: &CompiledFunction,
         func_name: &str,
         args_base: usize,
@@ -65,7 +65,8 @@ impl Interpreter {
             if too_many { "many" } else { "few" },
             if expected == 1 { "" } else { "s" },
         ));
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+        let args = self.stack[args_base..].to_vec();
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
     }
 
     /// The error for a positional-light parameter whose argument failed its
@@ -93,7 +94,8 @@ impl Interpreter {
                 &val,
             )
             .with_parameter_object(pd, Some(&*self));
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &self.stack[args_base..])
+        let args = self.stack[args_base..].to_vec();
+        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
     }
 
     pub(super) fn call_compiled_function_positional_light(

@@ -628,6 +628,7 @@ mod builtins_system_run;
 mod builtins_unbase;
 mod call_helpers;
 mod calls;
+mod calls_static_refute;
 mod class;
 mod class_attr_table;
 mod class_dispatch;
