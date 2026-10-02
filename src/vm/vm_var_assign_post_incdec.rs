@@ -430,6 +430,35 @@ impl Interpreter {
         } else {
             idx_val
         };
+        // An element `:=`-bound to a bare value has no container for `++` to
+        // write: Raku's rw-only `postfix:<++>` candidates all reject it (#10984).
+        if self.element_has_no_container(&name, container.as_ref(), &idx_val) {
+            let is_positional = matches!(
+                container.as_ref().map(Value::view),
+                Some(ValueView::Array(..))
+            );
+            let current = container
+                .as_ref()
+                .and_then(|c| Self::existing_element_container(c, &idx_val, is_positional))
+                .unwrap_or(Value::NIL)
+                .deref_container();
+            let arg = format!(
+                "{}:{}",
+                crate::runtime::value_type_name(&current),
+                if crate::runtime::types::value_is_defined(&current) {
+                    "D"
+                } else {
+                    "U"
+                }
+            );
+            let op = match (return_new, increment) {
+                (true, true) => "prefix:<++>",
+                (true, false) => "prefix:<-->",
+                (false, true) => "postfix:<++>",
+                (false, false) => "postfix:<-->",
+            };
+            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, &arg));
+        }
         // QuantHash element stores are `.WHICH`-keyed (a plain hash/array keeps
         // the display-string key); the element object goes into `original_keys`
         // on the write side below.

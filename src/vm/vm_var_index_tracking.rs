@@ -407,4 +407,77 @@ impl Interpreter {
             }
         }
     }
+
+    /// Whether element `idx` of `container` (the value held by `var_name`) has
+    /// no writable container: it was `:=`-bound to a bare value, recorded either
+    /// as a `__mutsu_ro_index` marker (`@a[i] := 42`) or as a read-only cell in
+    /// the slot (`.BIND-POS`/`.BIND-KEY`, `Value::bound_element`). An in-place
+    /// mutator (`++`, `--`) must refuse such an element (#10984).
+    // Cost: O(1) in a program with no element bind (two flag loads); else one
+    // env probe and one element/hash probe, plus O(k) to encode a k-index key.
+    pub(super) fn element_has_no_container(
+        &self,
+        var_name: &str,
+        container: Option<&Value>,
+        idx: &Value,
+    ) -> bool {
+        if crate::env::elem_index_meta_possible()
+            && self.is_ro_index(var_name, &Self::encode_bound_index(idx))
+        {
+            return true;
+        }
+        if !crate::value::readonly_cells_possible() {
+            return false;
+        }
+        let idx = match idx.view() {
+            ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+            _ => idx.clone(),
+        };
+        let slot = match container.map(Value::view) {
+            Some(ValueView::Array(items, _)) => match idx.view() {
+                ValueView::Int(i) => usize::try_from(i).ok().and_then(|i| items.get(i).cloned()),
+                _ => None,
+            },
+            Some(ValueView::Hash(map)) => {
+                let key = if map.key_type.is_some() {
+                    crate::runtime::utils::value_which_key(&idx)
+                } else {
+                    idx.to_string_value()
+                };
+                map.map.get(&key).cloned()
+            }
+            _ => None,
+        };
+        matches!(
+            slot.as_ref().map(Value::view),
+            Some(ValueView::ContainerRef(cell)) if cell.is_readonly()
+        )
+    }
+
+    /// The value held by the read-only cell at `target[d0;d1;...]`, when that
+    /// slot is one (an element bound to a bare value); `None` otherwise,
+    /// including for any index that is not a plain in-range `Int`.
+    // Cost: O(d), d = dimensions.
+    pub(super) fn multidim_readonly_slot(target: &Value, dims: &[Value]) -> Option<Value> {
+        let mut cur = target.deref_container();
+        for (n, d) in dims.iter().enumerate() {
+            let ValueView::Int(i) = d.view() else {
+                return None;
+            };
+            let ValueView::Array(items, _) = cur.view() else {
+                return None;
+            };
+            let slot = items.get(usize::try_from(i).ok()?)?.clone();
+            if n + 1 == dims.len() {
+                return match slot.view() {
+                    ValueView::ContainerRef(cell) if cell.is_readonly() => {
+                        Some(cell.lock().unwrap().clone())
+                    }
+                    _ => None,
+                };
+            }
+            cur = slot.deref_container();
+        }
+        None
+    }
 }

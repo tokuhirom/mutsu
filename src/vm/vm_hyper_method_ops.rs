@@ -469,10 +469,9 @@ impl Interpreter {
             } else {
                 "postfix:<-->"
             };
-            return Err(RuntimeError::new(format!(
-                "Cannot resolve caller {}(Int:D); the parameter requires mutable arguments",
-                opname
-            )));
+            return Err(
+                crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(opname, "Int:D"),
+            );
         }
         let delta: i64 = if increment { 1 } else { -1 };
         let new_value = match target.view() {

@@ -3174,6 +3174,10 @@ impl Interpreter {
                 // (see `is_literal_ro_bind`); record it so a later plain `=` throws.
                 if is_literal_ro_bind {
                     self.mark_ro_index(&var_name, encoded_idx.clone());
+                } else if bind_mode {
+                    // Rebinding the element to a container (`@a[i] := $x`) gives
+                    // it a writable container again (#10984).
+                    self.unmark_ro_indices(&var_name, &idx);
                 }
                 // Slice 2b: a `=`-shared element just reassigned with a non-share
                 // value has been replaced by a plain value — drop the share

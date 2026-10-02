@@ -19,7 +19,25 @@
 //! method-accessor form `$obj.attr++`.
 
 use crate::runtime::Interpreter;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
+
+/// The `X::Multi::NoMatch` Raku's `++`/`--` multi raises for an argument with
+/// no container to write: `op` is the routine (`postfix:<++>`, ...), `arg`
+/// what the message names it by (a variable name, `Int:D`, `...`).
+// Cost: O(n), n = length of the message.
+pub(crate) fn incdec_requires_mutable_error(op: &str, arg: &str) -> RuntimeError {
+    let msg =
+        format!("Cannot resolve caller {op}({arg}); the parameter requires mutable arguments");
+    let mut err = RuntimeError::new(msg.clone());
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg));
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::Multi::NoMatch"),
+        attrs,
+    )));
+    err
+}
 
 impl Interpreter {
     /// Whether a named routine exposes a writable call result: declared `is rw`
