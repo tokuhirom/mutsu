@@ -6,7 +6,7 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
-use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_parts};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, name_parts};
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
@@ -1070,6 +1070,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             default,
             handles,
             is_rw,
+            is_readonly,
             type_constraint,
             type_smiley,
             is_required,
@@ -1082,29 +1083,26 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_type,
             deprecated_message,
             unknown_traits,
+            is_built,
             ..
         } => {
-            // A plain `has [Type] $.x` attribute -> a `VarDeclaration::Simple`
-            // with `scope => "has"` and a `twigil` (`.` public accessor / `!`
-            // private). An *explicit* attribute default (`has $.x = 5`) becomes a
-            // `Trait::WillBuild` in raku (not an `initializer`), so it is
-            // deferred; but a typed attribute (`has Int $.z`) carries an
-            // *implicit* `BareWord(<TypeName>)` default that is NOT a will-build
-            // and must be ignored. Traits, type smileys, `required`, `where`,
-            // aliases, and `my`/`our` attributes are also deferred.
-            // A typed attribute (`has Int $.z`) carries an *implicit*
-            // `BareWord(<TypeName>)` default that is NOT a real default; an
-            // *explicit* `= EXPR` default (slice 27) is a `Trait::WillBuild` and
-            // an `initializer`.
+            // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
+            // `scope => "has"` and a `twigil` (`.` public accessor / `!`
+            // private). An explicit `= EXPR` default is both the implicit
+            // `Trait::WillBuild` and the `initializer`; a typed attribute
+            // (`has Int $.z`) carries an *implicit* `BareWord(<TypeName>)`
+            // default that is no default at all. `is rw` / `is readonly` /
+            // `is required` are `Trait::Is` (`rakuast::attribute`); other
+            // traits, type smileys, `where`, aliases and `my`/`our`
+            // attributes are deferred.
             let explicit_default = match default {
                 None => None,
                 Some(Expr::BareWord(w)) if type_constraint.as_deref() == Some(w.as_str()) => None,
                 Some(e) => Some(e),
             };
             if !handles.is_empty()
-                || *is_rw
                 || type_smiley.is_some()
-                || is_required.is_some()
+                || matches!(is_required, Some(Some(_)))
                 || where_constraint.is_some()
                 || *is_alias
                 || *is_our
@@ -1113,6 +1111,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || is_type.is_some()
                 || deprecated_message.is_some()
                 || !unknown_traits.is_empty()
+                || is_built.is_some()
             {
                 return Err(unsupported("attribute with traits / smiley / scope"));
             }
@@ -1125,14 +1124,23 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             } else {
                 format!("{}{}", sigil, name.resolve())
             };
-            Ok(Some(statement_expression(var_declaration(
+            let mut decl = var_declaration(
                 &full_name,
                 explicit_default,
                 Some("has"),
                 type_name,
                 Some(twigil),
                 explicit_default,
-            )?)))
+            )?;
+            attribute::add_traits(
+                &mut decl,
+                attribute::AttributeTraits {
+                    is_rw: *is_rw,
+                    is_readonly: *is_readonly,
+                    is_required: is_required.is_some(),
+                },
+            )?;
+            Ok(Some(statement_expression(decl)))
         }
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound

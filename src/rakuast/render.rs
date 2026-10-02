@@ -12,6 +12,11 @@ use super::{Constructor, RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstN
 use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
+    if node.class == RakuAstClass::VarDeclarationSimple
+        && let Some(shown) = super::attribute::without_implicit_traits(node)
+    {
+        return render_node(&shown, indent);
+    }
     let name = node.class.printed_name();
     if node.class == RakuAstClass::Name
         && let Some(rendered) = render_name_parts(node, indent)

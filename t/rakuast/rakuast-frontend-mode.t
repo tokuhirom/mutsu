@@ -26,7 +26,7 @@ my $plain = q[{ say "blk" }; say 1 + 2; sub f($x) { $x * 2 }; say f(21)];
     is $out, "blk\n3\n42\n", 'and prints what it prints without the mode';
 }
 
-my $refused = q[class C { has $.x is rw }; say 1];
+my $refused = q[class C { has $.x is built(False) }; say 1];
 {
     my ($rc, $out, $err) = run-mutsu('1', '-e', $refused);
     isnt $rc, 0, 'a construct the converter refuses fails the program';
@@ -40,7 +40,7 @@ my $refused = q[class C { has $.x is rw }; say 1];
 }
 
 {
-    my ($rc, $out, $err) = run-mutsu('1', '-e', 'say EVAL q[class D { has $.x is rw }; 1]');
+    my ($rc, $out, $err) = run-mutsu('1', '-e', 'say EVAL q[class D { has $.x is built(False) }; 1]');
     like $err, /'MUTSU_RAKUAST'/, 'an EVAL string is a unit the mode covers';
 }
 

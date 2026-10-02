@@ -10,6 +10,7 @@
 //! maps to/from the internal AST. See docs/adr/0011 for the full design and
 //! phasing (construction, EVAL, macros are later phases).
 
+mod attribute;
 mod convert;
 mod fields;
 mod formatter;

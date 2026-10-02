@@ -159,6 +159,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationSimple => &[
             ("sigil", Absent::Required),
             ("desigilname", Absent::Required),
+            ("traits", Absent::EmptyList),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
