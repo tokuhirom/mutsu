@@ -61,6 +61,8 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
             | OpCode::ConcatAssignLocal(..)
+            | OpCode::MarkArrayShareSource(_)
+            | OpCode::CheckReadOnly(_)
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::CallFunc { .. }
@@ -457,6 +459,29 @@ fn build(
                     )?;
                     check_status(&mut b, status);
                 }
+            }
+            // Every whole-variable assignment runs one: a dedicated shim, not a
+            // generic `step` (#10955).
+            OpCode::CheckReadOnly(name_idx) => {
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let namev = b.ins().iconst(types::I32, *name_idx as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_code_u32_u32,
+                    helpers::check_read_only as *const () as usize,
+                    &[interp, codep, opidx, namev],
+                )?;
+                check_status(&mut b, status);
+            }
+            // Infallible: a void shim, no status check (#10955).
+            OpCode::MarkArrayShareSource(name_idx) => {
+                let idxv = b.ins().iconst(types::I32, *name_idx as i64);
+                call_helper(
+                    &mut b,
+                    sigs.v_code_u32,
+                    helpers::mark_array_share_source as *const () as usize,
+                    &[interp, codep, idxv],
+                );
             }
             OpCode::MetaAssignIdentity(identity) => {
                 if identity.is_infallible() {

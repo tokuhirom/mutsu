@@ -85,7 +85,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::LetSave { .. }
             | OpCode::LetSaveElem { .. }
             | OpCode::LetSaveElemVivified { .. }
-            | OpCode::CheckReadOnly(_)
             | OpCode::MarkSigillessBind(_)
             | OpCode::MarkSigillessBindSource(_)
             | OpCode::MarkVarReadonly(..)
@@ -167,7 +166,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MarkExplicitInitializerContext
             | OpCode::MarkShapedDeclContext
             | OpCode::StashVarDeclInit
-            | OpCode::MarkArrayShareSource(_)
             | OpCode::SetTopic
             | OpCode::SaveTopic
             | OpCode::RestoreTopic

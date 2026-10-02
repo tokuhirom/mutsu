@@ -155,7 +155,22 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        let mut result = self.exec_one_dispatch(code, ip, compiled_fns);
+        let result = self.exec_one_dispatch(code, ip, compiled_fns);
+        self.finish_op_result(code, *ip, result)
+    }
+
+    /// What [`Self::exec_one`] does with an instruction's result, for a JIT
+    /// shim that runs the instruction's handler directly (`check_read_only`):
+    /// the pending-`where` backstop, then a backtrace located at `ip` on a
+    /// genuine runtime error.
+    // Cost: O(1) on success; the error path attaches a backtrace, O(s),
+    // s = routine-stack depth.
+    pub(crate) fn finish_op_result(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        mut result: Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         // Backstop for a `where`-constraint exception recorded during candidate
         // matching (`pending_where_exception`). The dispatch funnels raise it
         // before invoking a winner; this catches any matching path that has no
@@ -185,7 +200,7 @@ impl Interpreter {
             // Most opcodes do not refresh the observable source line on the
             // successful path. An error can still arise from any of them, so
             // locate the failing instruction before capturing its backtrace.
-            self.sync_source_line(code, *ip);
+            self.sync_source_line(code, ip);
             self.attach_backtrace_to_error(e);
         }
         result
@@ -3341,11 +3356,9 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(1) (plus a copy of the name).
+            // Cost: O(1) (plus a copy of the name when the mark is set).
             OpCode::MarkArrayShareSource(name_idx) => {
-                self.array_share_context().set(true);
-                self.array_share_source()
-                    .set(Some(Self::const_str(code, *name_idx).to_string()));
+                self.exec_mark_array_share_source_op(code, *name_idx);
                 *ip += 1;
             }
             // Cost: O(1).
@@ -6860,70 +6873,7 @@ impl Interpreter {
             }
             // Cost: O(1) (gated hashed probes; the error path is cold).
             OpCode::CheckReadOnly(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                // A `:=`-bound container (`my %a := %b`) is marked readonly as a
-                // bind signal, but a whole reassignment (`%a = (...)`) is allowed
-                // — it writes through to the bound source. The `__mutsu_bound::`
-                // marker distinguishes it from a genuinely immutable `constant`.
-                // Both marker probes are gated on their process-global
-                // "ever created" flags: this opcode runs on every whole-variable
-                // assignment (per iteration in tight loops), and the common
-                // program never creates either marker — skipping the two
-                // `format!` allocations plus env lookups entirely.
-                if crate::env::bound_marker_possible() {
-                    let bound_key = crate::meta_ns::MetaNs::Bound.key_for_str(name);
-                    if matches!(
-                        self.env().get_sym(bound_key).map(Value::view),
-                        Some(ValueView::Bool(true))
-                    ) {
-                        *ip += 1;
-                        return Ok(());
-                    }
-                }
-                // Probe through the pre-interned constant Symbol: this opcode
-                // runs on every whole-variable assignment (per iteration in
-                // tight loops), and `check_readonly_for_modify(name)` would
-                // re-intern the name on each execution just to miss the set.
-                // The error construction (readonly hit) is the cold path.
-                if self.is_readonly_sym(code.const_sym(*name_idx)) {
-                    // A term that IS its value (`constant term:<$x> =
-                    // Obj.new`, `constant x = ...`) bound to an object with a
-                    // user `STORE` is assignable, as a sigilless `my \x` is
-                    // below (#9566).
-                    if self.readonly_kind(name) == Some(crate::ast::ReadonlyKind::ImmutableValue)
-                        && self.sigilless_value_has_store(code, name)
-                    {
-                        self.pending_sigilless_store = Some(name.to_string());
-                        *ip += 1;
-                        return Ok(());
-                    }
-                    self.check_readonly_for_modify(name)?;
-                }
-                // Also check env-based readonly status set by cross-scope
-                // `:=` binding (e.g. binding to a readonly sub parameter
-                // in a closure).  The readonly_vars set is scope-local
-                // and gets restored on frame pop, but the env key persists.
-                if crate::env::sigilless_readonly_keys_possible() {
-                    let readonly_key = crate::runtime::sigilless_readonly_key(name);
-                    if matches!(
-                        self.env().get_sym(readonly_key).map(Value::view),
-                        Some(ValueView::Bool(true))
-                    ) {
-                        // An object with a user `STORE` is its own container
-                        // (rakudo's p6store falls back to `.STORE`): let the
-                        // assignment through and have the store that follows
-                        // call it (#9551, FixedInt).
-                        if self.sigilless_value_has_store(code, name) {
-                            self.pending_sigilless_store = Some(name.to_string());
-                            *ip += 1;
-                            return Ok(());
-                        }
-                        // A sigilless term (`my \\c = 5`) IS the value, so
-                        // rakudo names the value in the error: "Cannot modify
-                        // an immutable Int (5)".
-                        return Err(self.immutable_value_error(name));
-                    }
-                }
+                self.exec_check_read_only_op(code, *name_idx)?;
                 *ip += 1;
             }
             // Cost: O(1).
