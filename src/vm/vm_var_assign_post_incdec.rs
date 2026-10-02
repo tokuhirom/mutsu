@@ -246,42 +246,6 @@ impl Interpreter {
         Some(result)
     }
 
-    pub(super) fn exec_post_increment_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        slot: Option<u32>,
-    ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, slot, true, false)
-    }
-
-    pub(super) fn exec_post_decrement_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        slot: Option<u32>,
-    ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, slot, false, false)
-    }
-
-    pub(super) fn exec_pre_increment_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        slot: Option<u32>,
-    ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, slot, true, true)
-    }
-
-    pub(super) fn exec_pre_decrement_index_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        slot: Option<u32>,
-    ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, slot, false, true)
-    }
-
     /// Type-check the incremented value against the element constraint of a
     /// typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
     /// @x[0]++` must throw when the new value (11) falls outside the subset.
