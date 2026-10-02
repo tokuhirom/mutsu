@@ -865,7 +865,7 @@ impl Compiler {
     /// The temp's name embeds the accessor spelling (`@.a`) so an element type
     /// error still names something the user wrote -- see
     /// `format_var_name_for_error`.
-    fn bind_method_rooted_chain_root(&mut self, target: &Expr) -> Option<Expr> {
+    fn bind_method_rooted_chain_root(&mut self, target: &Expr, binding: bool) -> Option<Expr> {
         // `target` is the chain BELOW the outermost subscript, so requiring one
         // `Expr::Index` here is what makes this depth >= 2.
         let Expr::Index { .. } = target else {
@@ -883,38 +883,85 @@ impl Compiler {
             levels.push((index.as_ref(), *is_positional));
             cur = inner.as_ref();
         }
-        let Expr::MethodCall {
-            name: method_name,
-            args,
-            modifier,
-            ..
-        } = cur
-        else {
-            return None;
-        };
-        // Only a no-argument accessor-style call yields a container to store
-        // through; a call with arguments (or an adverb) can compute a fresh
-        // value, and writing into that must keep its existing behaviour.
-        if !args.is_empty() || modifier.is_some() {
-            return None;
-        }
-        self.compile_expr(cur);
         let sigil = if levels.last().map(|(_, p)| *p).unwrap_or(true) {
             '@'
         } else {
             '%'
         };
+        // The temp's name after the prefix: `<sigil><method>` for an accessor
+        // root, `=<spelling>` (shown verbatim in an error) for any other root.
+        let spelling = match cur {
+            Expr::MethodCall {
+                name: method_name,
+                args,
+                modifier,
+                ..
+            } => {
+                // Only a no-argument accessor-style call yields a container to
+                // store through; a call with arguments (or an adverb) can
+                // compute a fresh value, and writing into that must keep its
+                // existing behaviour.
+                if !args.is_empty() || modifier.is_some() {
+                    return None;
+                }
+                format!("{sigil}{}", method_name.resolve())
+            }
+            // A parenthesized variable is the variable: subscript it directly,
+            // so the by-name store (and its autovivification) applies (#10900).
+            Expr::Grouped(inner) if Self::is_plain_named_container(inner.peel_parens()) => {
+                return Some(Self::rebuild_index_chain(
+                    inner.peel_parens().clone(),
+                    levels,
+                ));
+            }
+            // A root no by-name store reaches -- `@OUTER::a` past a shadow, a
+            // call -- yields a reference-shared container all the same, so the
+            // chain stores into it in place and autovivifies its inner levels
+            // (#10900). A variable root keeps its by-name store, and a list
+            // literal its own write-through.
+            // A `:=` keeps its own path: it binds the element in the container
+            // the generic store reaches, which a temp would only copy.
+            root if !binding
+                && !Self::is_plain_named_container(root.peel_parens())
+                && !matches!(root.peel_parens(), Expr::ArrayLiteral(_))
+                && self.index_assign_target_name(target).is_none() =>
+            {
+                // An error names the variable, as rakudo does, not its
+                // `OUTER::` spelling.
+                let bare = |n: &str| Self::parse_outer_prefix(n).map_or(n.to_string(), |(b, _)| b);
+                match root.peel_parens() {
+                    Expr::ArrayVar(n) => format!("=@{}", bare(n)),
+                    Expr::HashVar(n) => format!("=%{}", bare(n)),
+                    Expr::Var(n) => format!("=${}", bare(n)),
+                    _ => format!("={sigil}"),
+                }
+            }
+            _ => return None,
+        };
+        self.compile_expr(cur);
         let tmp = format!(
-            "{}{}{}#{}",
+            "{}{}#{}",
             crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX,
-            sigil,
-            method_name.resolve(),
+            spelling,
             self.code.constants.len()
         );
         let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
         self.code.emit(OpCode::SetGlobal(tmp_idx));
-        // Rebuild the chain against the temp, innermost level first.
-        let mut rebuilt = Expr::Var(tmp);
+        Some(Self::rebuild_index_chain(Expr::Var(tmp), levels))
+    }
+
+    /// Whether `root` is a variable an lvalue chain stores through by name: a
+    /// `$`/`@`/`%` variable that is not an `OUTER::` spelling (which no
+    /// by-name store reaches past a shadow).
+    fn is_plain_named_container(root: &Expr) -> bool {
+        matches!(root, Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n)
+            if !n.starts_with("OUTER::"))
+    }
+
+    /// Rebuild the subscript chain `levels` (outermost first, as collected by
+    /// [`Self::bind_method_rooted_chain_root`]) on top of `root`.
+    fn rebuild_index_chain(root: Expr, levels: Vec<(&Expr, bool)>) -> Expr {
+        let mut rebuilt = root;
         for (index, is_positional) in levels.into_iter().rev() {
             rebuilt = Expr::Index {
                 target: Box::new(rebuilt),
@@ -922,7 +969,7 @@ impl Compiler {
                 is_positional,
             };
         }
-        Some(rebuilt)
+        rebuilt
     }
 
     pub(super) fn compile_expr_index_assign(
@@ -1152,7 +1199,9 @@ impl Compiler {
         // Only depth >= 2 routes here: a single-level `$o.a[0] = v` is already
         // correct through `__mutsu_index_assign_method_lvalue`, which also
         // performs the accessor write-back a non-container attribute needs.
-        if let Some(rewritten) = self.bind_method_rooted_chain_root(target) {
+        let binding =
+            matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value");
+        if let Some(rewritten) = self.bind_method_rooted_chain_root(target, binding) {
             self.compile_expr_index_assign(&rewritten, index, value, outer_positional);
             return;
         }
