@@ -40,10 +40,19 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
 /// the unit's own `use vX` pragma in effect, because the statements that follow
 /// execute under it. Callers that load a *nested* unit (`load_module`) restore
 /// their own version once the unit's mainline has finished.
-pub(crate) fn parse_compilation_unit(
+///
+/// `unit` says which kind of unit this is, because under `MUTSU_RAKUAST` the
+/// parsed unit runs as its RakuAST round trip (ADR-10723 Stage 0; see
+/// `rakuast::frontend`).
+pub(crate) fn parse_compilation_unit_of(
     input: &str,
+    unit: crate::rakuast::frontend::Unit,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parser::parse_program(input)
+    let (stmts, finish) = parser::parse_program(input)?;
+    Ok((
+        crate::rakuast::frontend::round_trip_if_enabled(stmts, unit)?,
+        finish,
+    ))
 }
 
 /// Parse a quote-construct body under `qq` (double-quote) interpolation rules,
