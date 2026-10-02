@@ -30,12 +30,14 @@ concurrency:
 #             test-check ───┤
 #             debug-tap ────┘
 #
-# `test` is an AGGREGATOR: it runs no tests and exists for its NAME. Branch
-# protection's required status checks are job names (`test`, `wasm-e2e`), and
-# a required check that is never created does not fail the PR -- it leaves it
+# `test` is an AGGREGATOR: it runs no tests and exists for its NAME. The
+# required status checks are job names, set in the repository ruleset for
+# `main` (not classic branch protection): `test`, `wasm-e2e`, `lint-configs`,
+# `miri` and `changes` (`gh api repos/tokuhirom/mutsu/rules/branches/main`
+# lists them). A required check that is never created does not fail the PR -- it leaves it
 # pending forever, unmergeable, with no error anywhere. So the halves take new
 # names and the required name stays put. If you split, rename or remove a job
-# here, check its name against branch protection FIRST, and verify on the PR
+# here, check its name against that ruleset FIRST, and verify on the PR
 # itself that the required checks still appear.
 #
 # The GC-stress and JIT-stress runs are NOT here: they live in `stress.yml`,
@@ -57,7 +59,7 @@ jobs:
   #
   # This must be a job-level `if:`, not a workflow-level `paths-ignore`. With
   # `paths-ignore` GitHub never creates the check run, so the required status
-  # checks (`test`, `wasm-e2e`) stay pending and the PR can never
+  # checks (`test`, `wasm-e2e`, ...) stay pending and the PR can never
   # merge. A job that exists and is *skipped* counts as success for branch
   # protection, which is exactly the semantics we want.
   #
