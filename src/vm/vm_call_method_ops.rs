@@ -1552,8 +1552,7 @@ impl Interpreter {
             // (and its trailing side effects) instead of pulling on demand.
             // Laziness-preserving coercions return the list unchanged (native
             // dispatch) — neither forces.
-            && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
             // `.cache`) returns an infinite pipe unchanged, but a FINITE pipe
             // (one bottoming out in a `gather`/finite source) must reify — else

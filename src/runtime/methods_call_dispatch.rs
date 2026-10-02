@@ -4517,8 +4517,7 @@ impl Interpreter {
             // stage (`dispatch_map_method`/`dispatch_grep` via
             // `is_lazy_pipe_source`); a laziness-preserving coercion returns the
             // list unchanged. Neither forces the (possibly infinite) sequence (L2b).
-            && !(matches!(method, "map" | "grep")
-                && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
         {

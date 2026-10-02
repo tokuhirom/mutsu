@@ -94,7 +94,15 @@ impl Interpreter {
             // trailing side effects the consumer never asked for). This holds for a
             // *plain* gather too — in Rakudo `gather { … }.grep(…)[^3]` pulls only
             // the elements the slice needs and never runs the gather's tail.
-            ValueView::LazyList(ll) => ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch(),
+            //
+            // An explicitly `.lazy` list (`(1..5).lazy`) is one even when it is
+            // finite: Rakudo's `.map` over it is a lazy Seq that runs the
+            // callback only as elements are pulled (#10918).
+            ValueView::LazyList(ll) => {
+                ll.lazy_pipe.is_some()
+                    || ll.needs_vm_lazy_dispatch()
+                    || (ll.is_cache_only() && ll.is_lazy_marked())
+            }
             // A lazy Seq over a not-yet-pulled iterator (`Seq.new($lazy-iter)`,
             // `Seq.from-loop`): the stage pulls it through
             // `SeqBody::extend_from_iterator` (#10891).
