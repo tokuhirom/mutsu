@@ -288,9 +288,11 @@ impl Interpreter {
         }
         // The start rule is itself a rule invocation: a grammar method it calls
         // writes to its cursor, which is the parse's own Match (#9803).
-        self.enter_rule_cursor();
+        // When it runs the parse's start rule, its code blocks also see the
+        // start rule's built invocant (#10848).
+        let saved = self.enter_start_rule_cursor();
         let mut ends = self.regex_walk_ends_for_diff(pattern, chars, start, pkg, true);
-        let cursor = self.leave_rule_cursor();
+        let cursor = self.leave_start_rule_cursor(saved);
         Self::file_rule_cursor(cursor, &mut ends);
         ends
     }

@@ -3302,6 +3302,7 @@ impl Interpreter {
             grammar_rule_dynvar_decls: HashMap::new(),
             rx_cursor: None,
             walk_cursors: Vec::new(),
+            start_invocant: Default::default(),
             grammar_dynvar_decls_cache: HashMap::new(),
             supply_emit_buffer: Vec::new(),
             pending_react_subscriptions: Vec::new(),

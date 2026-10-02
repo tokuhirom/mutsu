@@ -38,6 +38,9 @@ impl Interpreter {
             debug_assert!(false, "regex_code_atom takes a CodeAssertion");
             return None;
         };
+        // Taken first, so the compiled engine's publication for this op never
+        // outlives it, whichever way the atom returns.
+        let start_invocant = self.code_block_start_invocant();
         // Declarative-prefix (LTM) measurement: never execute the code
         // (ADR-0009). The two kinds are treated differently, per
         // roast/S05-grammar/protoregex.t:
@@ -66,8 +69,10 @@ impl Interpreter {
         // rule's entry), not the cursor that becomes the rule's Match: what the
         // block writes to its attributes does not reach the Match. Only a
         // grammar needs one; a class's regex already sees its own `self`.
+        // The start rule's own blocks run on the built invocant `.parse` made
+        // (#10848); every other rule's on a cursor minted without BUILD.
         let self_cursor = (code.contains("self") && self.class_is_grammar(&pkg.resolve()))
-            .then(|| self.new_grammar_cursor(chars, pos, pkg));
+            .then(|| start_invocant.unwrap_or_else(|| self.new_grammar_cursor(chars, pos, pkg)));
         let saved_self = self_cursor
             .as_ref()
             .map(|cursor| self.env.insert("self".to_string(), cursor.clone()));

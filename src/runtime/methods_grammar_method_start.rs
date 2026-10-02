@@ -48,6 +48,8 @@ pub(super) struct MethodStartRuleCall<'a> {
     pub(super) start_pos: Option<usize>,
     pub(super) continue_pos: Option<usize>,
     pub(super) rule_args: &'a [Value],
+    /// The built `self.new` the start rule runs on (#10848).
+    pub(super) invocant: &'a Value,
 }
 
 impl Interpreter {
@@ -67,9 +69,25 @@ impl Interpreter {
             start_pos,
             continue_pos,
             rule_args,
+            invocant,
         } = call;
         let from = start_pos.or(continue_pos).unwrap_or(0) as i64;
         let cursor = Interpreter::make_cursor_value(package_name, text, from, from, false);
+        // The method runs on the built invocant: its attributes carry the
+        // grammar's defaults and whatever BUILD/TWEAK set.
+        if let (
+            ValueView::Instance { attributes, .. },
+            ValueView::Instance {
+                attributes: built, ..
+            },
+        ) = (cursor.view(), invocant.view())
+        {
+            for (name, value) in built.to_map() {
+                if !attributes.contains_key(&name) {
+                    attributes.insert(&name, value);
+                }
+            }
+        }
         let value = self.call_method_with_values(cursor, start_rule, rule_args.to_vec())?;
         // rakudo requires the start rule -- regex-shaped or not -- to hand
         // back a Match/Cursor; a method that returns anything else (commonly

@@ -717,11 +717,24 @@ impl Interpreter {
                 None,
             );
         }
+        // The start rule runs on `self.new` (#10848): a built instance, so a
+        // required attribute dies here as in rakudo. Only this parse's start
+        // rule sees it; an enclosing parse's invocant is disarmed meanwhile.
+        let outer_invocant = self.arm_start_rule_invocant(None);
         let result = (|| -> Result<Value, RuntimeError> {
             let _farthest_scope = super::regex::regex_helpers::RegexFarthestPositionScope::enter();
+            let invocant = self.build_start_rule_invocant(
+                Symbol::intern(package_name),
+                &text,
+                candidate_from,
+            )?;
+            if !is_method_start_rule {
+                self.arm_start_rule_invocant(Some(invocant.clone()));
+            }
             if is_method_start_rule {
                 return self.dispatch_package_parse_via_method(
                     super::methods_grammar_method_start::MethodStartRuleCall {
+                        invocant: &invocant,
                         package_name,
                         start_rule: &start_rule,
                         text: &text,
@@ -1052,6 +1065,7 @@ impl Interpreter {
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
         })();
+        self.arm_start_rule_invocant(outer_invocant);
 
         if !is_method_start_rule {
             self.routine_stack.pop();

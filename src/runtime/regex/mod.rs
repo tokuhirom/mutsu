@@ -9,7 +9,7 @@ pub(crate) mod regex_dynparams;
 mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;
-mod regex_grammar_cursor;
+pub(crate) mod regex_grammar_cursor;
 pub(crate) mod regex_helpers;
 mod regex_ignoremark;
 mod regex_interpolate;

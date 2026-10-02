@@ -155,3 +155,116 @@ impl Interpreter {
         cursor
     }
 }
+
+/// The invocant `.parse` hands its start rule (#10848). Rakudo calls the
+/// start rule on `self.new` — a BUILT instance, with `= default` values,
+/// BUILD and TWEAK applied (even `G.new(n => 7).parse` sees the default) —
+/// while every subrule runs on a cursor minted without BUILD. So `self` in a
+/// code block of the start rule's own body reads the grammar's defaults, and a
+/// code block of any subrule reads uninitialised attributes.
+///
+/// The parse arms the invocant; the first engine run of the start rule's
+/// pattern takes it for that run (the walk's start-rule scope, or the compiled
+/// engine's root frame) and puts it back when the run ends, so a nested run —
+/// a subrule, or another regex the code calls — never sees it.
+#[derive(Default)]
+pub(crate) struct StartRuleInvocant {
+    /// Armed by `.parse`, not yet taken by a run.
+    armed: Option<Value>,
+    /// The walk's start-rule scope: its `walk_cursors` depth and the invocant.
+    walk: Option<(usize, Value)>,
+    /// Published by the compiled engine for one `Code` op: `Some(invocant)`
+    /// when the op runs in the start rule's own root frame, `Some(None)` in
+    /// any other frame, `None` when the walk runs the atom.
+    rx_code: Option<Option<Value>>,
+}
+
+impl Interpreter {
+    /// Arm `invocant` as the start rule's for the parse in progress, handing
+    /// back what was armed before (a parse inside a code block nests).
+    // Cost: O(1).
+    pub(crate) fn arm_start_rule_invocant(&mut self, invocant: Option<Value>) -> Option<Value> {
+        std::mem::replace(&mut self.start_invocant.armed, invocant)
+    }
+
+    /// The built invocant `.parse` hands the start rule of grammar `pkg`
+    /// (`pkg.new`), positioned at `pos` of `text` as rakudo's is: its cursor
+    /// attributes stay at the start position for the whole parse.
+    // Cost: one default construction of `pkg` (its BUILD/TWEAK runs), plus
+    // O(n), n = chars of `text`, to share the subject.
+    pub(crate) fn build_start_rule_invocant(
+        &mut self,
+        pkg: Symbol,
+        text: &str,
+        pos: usize,
+    ) -> Result<Value, RuntimeError> {
+        let invocant = self.dispatch_new(Value::package(pkg), Vec::new())?;
+        if let ValueView::Instance { attributes, .. } = invocant.view() {
+            attributes.insert("orig", Value::str(text.to_string()));
+            attributes.insert("from", Value::int(pos as i64));
+            attributes.insert("pos", Value::int(pos as i64));
+            attributes.insert("to", Value::int(pos as i64));
+        }
+        Ok(invocant)
+    }
+
+    /// Take the armed invocant for a compiled run's root frame; hand it back
+    /// with [`Self::restore_rx_start_invocant`] when the run ends.
+    // Cost: O(1).
+    pub(super) fn take_rx_start_invocant(&mut self) -> Option<Value> {
+        self.start_invocant.armed.take()
+    }
+
+    // Cost: O(1).
+    pub(super) fn restore_rx_start_invocant(&mut self, invocant: Option<Value>) {
+        if invocant.is_some() {
+            self.start_invocant.armed = invocant;
+        }
+    }
+
+    /// Publish the invocant a compiled `Code` op's block runs on (see
+    /// [`StartRuleInvocant::rx_code`]).
+    // Cost: O(1).
+    pub(super) fn publish_rx_code_invocant(&mut self, invocant: Option<Value>) {
+        self.start_invocant.rx_code = Some(invocant);
+    }
+
+    /// Open the walk's scope for the start rule's own pattern: a rule
+    /// invocation like any other ([`Self::enter_rule_cursor`]) that also takes
+    /// the armed invocant. Pair with [`Self::leave_start_rule_cursor`].
+    // Cost: O(1) amortized.
+    pub(super) fn enter_start_rule_cursor(&mut self) -> Option<(usize, Value)> {
+        self.enter_rule_cursor();
+        let scope = self
+            .start_invocant
+            .armed
+            .take()
+            .map(|inv| (self.walk_cursors.len(), inv));
+        std::mem::replace(&mut self.start_invocant.walk, scope)
+    }
+
+    // Cost: O(1).
+    pub(super) fn leave_start_rule_cursor(
+        &mut self,
+        saved: Option<(usize, Value)>,
+    ) -> Option<Value> {
+        if let Some((_, inv)) = std::mem::replace(&mut self.start_invocant.walk, saved) {
+            self.start_invocant.armed = Some(inv);
+        }
+        self.leave_rule_cursor()
+    }
+
+    /// The invocant a code block at the current point runs on when it is the
+    /// start rule's own: the compiled engine's publication for this op, else
+    /// the walk's start-rule scope when it is the innermost invocation.
+    // Cost: O(1).
+    pub(super) fn code_block_start_invocant(&mut self) -> Option<Value> {
+        if let Some(published) = self.start_invocant.rx_code.take() {
+            return published;
+        }
+        match &self.start_invocant.walk {
+            Some((depth, inv)) if *depth == self.walk_cursors.len() => Some(inv.clone()),
+            _ => None,
+        }
+    }
+}
