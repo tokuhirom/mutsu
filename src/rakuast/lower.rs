@@ -1348,14 +1348,7 @@ fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> 
 /// (`$` sigil stripped to match the parser's naming; `@`/`%`/`&` kept) and the
 /// lowered right-hand side.
 fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError> {
-    let left = named_child(node, "left")?;
-    if left.class != RakuAstClass::VarLexical {
-        return Err(unsupported(node));
-    }
-    let raw = match positional_leaf(left)?.view() {
-        ValueView::Str(s) => s.to_string(),
-        _ => return Err(unsupported(node)),
-    };
+    let raw = variable_spelling(named_child(node, "left")?).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
         Some(bare) => bare.to_string(),
         None => raw,
@@ -1373,6 +1366,29 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         op: crate::ast::AssignOp::Assign,
         target_is_sigilless: false,
     })
+}
+
+/// The source spelling of a variable node: `$x` for a `Var::Lexical`, and the
+/// sigil plus the `::`-joined name for a `Var::Package` (`$Foo::v`), which is
+/// how the parser names a package-qualified variable.
+fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    match node.class {
+        RakuAstClass::VarLexical => match positional_leaf(node)?.view() {
+            ValueView::Str(s) => Ok(s.to_string()),
+            _ => Err(unsupported(node)),
+        },
+        RakuAstClass::VarPackage => {
+            let sigil = leaf_str(node, "sigil")?;
+            if !matches!(sigil.as_str(), "$" | "@" | "%" | "&") {
+                return Err(unsupported(node));
+            }
+            match name_parts::name_shape(named_child(node, "name")?) {
+                Some(NameShape::Identifier(name)) => Ok(format!("{sigil}{name}")),
+                _ => Err(unsupported(node)),
+            }
+        }
+        _ => Err(unsupported(node)),
+    }
 }
 
 /// The identifier string of a call node's `name` (a `Name`) child.
@@ -2644,11 +2660,8 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
-        RakuAstClass::VarLexical => {
-            let name = match positional_leaf(node)?.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => return Err(unsupported(node)),
-            };
+        RakuAstClass::VarLexical | RakuAstClass::VarPackage => {
+            let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
             Ok(match sigil {
                 "@" => Expr::ArrayVar(bare.to_string()),
