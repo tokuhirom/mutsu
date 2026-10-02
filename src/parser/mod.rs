@@ -72,6 +72,11 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+/// See `stmt::simple::source_declares_export_hook`.
+pub(crate) fn source_declares_export_hook(source: &str) -> bool {
+    stmt::simple::source_declares_export_hook(source)
+}
+
 pub(crate) fn imported_value_term_names() -> Vec<String> {
     stmt::simple::imported_value_term_names()
 }

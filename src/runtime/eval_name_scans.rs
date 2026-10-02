@@ -355,6 +355,15 @@ impl Interpreter {
         walk_stmts(&mut modules, stmts);
         declared.extend(modules.names);
         let types = self.eval_declared_types(stmts);
+        // A `use` of a module that imports through a `sub EXPORT` hook brings
+        // in whatever names the hook returns for the `use`'s arguments
+        // (`use M <U>; U.k`), known only once it runs. Rakudo runs `use` at
+        // compile time, so such a term is declared; the check cannot see it
+        // and must not judge any bareword of the unit (the mainline
+        // undeclared-routine check bails out on unseen imports the same way).
+        if types.imports_through_export_hook {
+            return Ok(());
+        }
         declared.extend(types.types);
         declared.extend(types.packages);
         let mut scan = UndeclaredName {

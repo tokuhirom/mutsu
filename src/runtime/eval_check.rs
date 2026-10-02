@@ -15,19 +15,24 @@ use crate::ast::{PhaserKind, Stmt};
 /// instead. Over-collecting is harmless (the set only ever *widens* what the
 /// check accepts, and a genuine typo still will not appear in any module's
 /// source); under-collecting just restores the old behaviour.
+///
+/// Returns whether the module computes its import set in a `sub EXPORT` hook:
+/// what a `use` of it imports is decided by running the hook with the `use`'s
+/// arguments, which no source scan can predict (#11062).
+// Cost: O(m), m = size of the module's source.
 fn collect_use_declared_type_names(
     interp: &Interpreter,
     module: &str,
     extra_dirs: &[String],
     out: &mut HashSet<String>,
-) {
+) -> bool {
     let path = module_source_in_dirs(module, extra_dirs)
         .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
     let Some(path) = path else {
-        return;
+        return false;
     };
     let Ok(source) = std::fs::read_to_string(&path) else {
-        return;
+        return false;
     };
     const DECLARATORS: [&str; 5] = ["class", "role", "grammar", "enum", "subset"];
     let bytes: Vec<char> = source.chars().collect();
@@ -62,6 +67,7 @@ fn collect_use_declared_type_names(
         i = (i + kw.len()).max(j);
     }
     collect_source_constant_names(&bytes, out);
+    crate::parser::source_declares_export_hook(&source)
 }
 
 /// Record the `constant NAME = ...;` names a used module's source declares.
