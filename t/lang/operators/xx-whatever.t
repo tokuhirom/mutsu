@@ -7,7 +7,7 @@ use Test;
 # throwing X::Cannot::Map, and `(* xx 3).elems` returned a WhateverCode).
 # A compound operand like `(*+1) xx 2` IS a WhateverCode (repeated).
 
-plan 9;
+plan 11;
 
 is (* xx 2).raku,  '(*, *).Seq',     '`* xx 2` is the Whatever value repeated, not a WhateverCode';
 is (* xx 3).elems, 3,                'a postfix on `* xx N` evaluates the repetition first';
@@ -28,3 +28,13 @@ ok (* x 2) ~~ Callable, '`* x 2` (string replication) still curries into a Whate
 
 # Sanity: bare Whatever in an ordinary expression still curries.
 ok (* + 1) ~~ Callable, 'bare `*` in arithmetic still curries into a WhateverCode';
+
+# An `xx *` inside an *argument* is its own expression, not part of the curry
+# spine: it must not stop the target `*` from currying.
+{
+    my $f = *.push(1 xx *);
+    is $f.WHAT.^name, 'WhateverCode', '`*.push(1 xx *)` still curries';
+    my @a;
+    $f(@a);
+    ok @a.elems > 0, 'the curried call runs with the infinite repetition argument';
+}
