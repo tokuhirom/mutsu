@@ -177,6 +177,10 @@ pub(crate) fn format_var_name_for_error(name: &str) -> String {
         if let Some(hash) = rest.find('#') {
             let (accessor, tail) = rest.split_at(hash);
             let subscript = tail.find(['[', '{']).map(|i| &tail[i..]).unwrap_or("");
+            // A non-accessor root records its spelling verbatim.
+            if let Some(spelling) = accessor.strip_prefix('=') {
+                return format!("{spelling}{subscript}");
+            }
             return format!(
                 "{}{}",
                 format_var_name_for_error(&format!("{}.{}", &accessor[..1], &accessor[1..])),
