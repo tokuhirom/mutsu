@@ -108,9 +108,10 @@ impl Interpreter {
         let value = value.itemize_for_hash_element();
         if let Some(existing) = hash.get(&key) {
             let new_val = match existing.view() {
-                // Only a real Array is a stack of earlier pushes; an immutable
-                // List value (`push('k' => ('a','b'))`) is one element to wrap.
-                ValueView::Array(arr, kind) if kind.is_real_array() => {
+                // For `push` only a real Array is a stack of earlier pushes; an
+                // immutable List value (`push('k' => ('a','b'))`) is one element
+                // to wrap. `append` flattens a List value into the stack.
+                ValueView::Array(arr, kind) if kind.is_real_array() || !is_push => {
                     let mut items = arr.to_vec();
                     if is_push {
                         // push: add value as-is (could be nested array)
