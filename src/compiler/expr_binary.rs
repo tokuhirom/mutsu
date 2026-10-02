@@ -552,6 +552,27 @@ impl Compiler {
                 // instead of re-resolving the name against `code.locals` (which is
                 // ambiguous once shadow slots exist). See
                 // docs/lexical-scope-slot-campaign.md.
+                // `(my $y = $x) ~~ s///`: the declaration-assignment yields its
+                // container, which the substitution rewrites. Run the declaration
+                // first, then substitute on the variable itself.
+                let hoisted_decl_var;
+                let left = match left {
+                    Expr::Grouped(inner) if rhs_is_destructive => match inner.as_ref() {
+                        Expr::DoStmt(stmt) => match stmt.as_ref() {
+                            Stmt::VarDecl { name, .. }
+                                if !name.starts_with(['@', '%', '&'])
+                                    && !name.contains(['(', '[']) =>
+                            {
+                                self.compile_stmt(stmt);
+                                hoisted_decl_var = Expr::Var(name.clone());
+                                &hoisted_decl_var
+                            }
+                            _ => left,
+                        },
+                        _ => left,
+                    },
+                    _ => left,
+                };
                 let lhs = match left {
                     Expr::Var(name) => Some(Box::new(crate::opcode::SmartMatchLhs::Var {
                         name: name.clone(),
