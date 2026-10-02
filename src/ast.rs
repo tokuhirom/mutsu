@@ -611,12 +611,6 @@ impl FunctionDef {
             .body_fp_cache
             .get_or_init(|| function_body_fingerprint(&self.params, &self.param_defs, &self.body))
     }
-
-    /// Drop the memoized fingerprint after the body has been rewritten in place
-    /// (the `proto` dispatch rewrite is the only such mutation).
-    pub(crate) fn invalidate_body_fingerprint(&mut self) {
-        self.body_fp_cache = std::sync::OnceLock::new();
-    }
 }
 
 #[cfg(test)]
@@ -2390,6 +2384,15 @@ pub(crate) use tail::{
 pub(crate) use virtual_call::first_virtual_call_in_expr;
 
 impl Expr {
+    /// What the onlystar term `{*}` parses to: the `{*}` dispatch, resolved
+    /// from the callers at run time (`Interpreter::resolve_onlystar`, #10746).
+    pub(crate) fn onlystar_dispatch() -> Expr {
+        Expr::Call {
+            name: Symbol::intern("__PROTO_DISPATCH__"),
+            args: Vec::new(),
+        }
+    }
+
     /// Whether this expression is one of the syntactic empty import lists
     /// accepted by `use Module Empty` and `use Module ()`.
     ///
