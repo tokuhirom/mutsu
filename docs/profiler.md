@@ -30,7 +30,7 @@ surface, the document's schema, and the things the numbers do and do not mean.
   the counting allocator changes allocation timing.
 
 That is why the document says `"time_is_sampled": true` in its header and the text
-report says so on its second line. Numbers that go into PERFORMANCE.md, PLAN.md
+report says so on its second line. Numbers that go into PLAN.md
 or `news/` come from the bench CI (`bench-history.tsv`), never from a profile —
 a profile tells you *where* to look, not *how fast* something is.
 

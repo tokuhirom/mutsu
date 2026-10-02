@@ -10,7 +10,7 @@
 > | which finding to pick up next | the `tier:*` labels on the issues themselves — `tier:S` first, then `tier:B`, `tier:N`; `tier:icebox` is out of the queue. Untiered `todo:*` issues are where the next triage pass starts |
 > | architectural decisions | [docs/adr/](docs/adr/) |
 > | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
-> | performance numbers | the bench CI (`bench-data` branch), [PERFORMANCE.md](PERFORMANCE.md) |
+> | performance numbers | the bench CI (`bench-data` branch); how to read them: [docs/benchmarks.md](docs/benchmarks.md) |
 >
 > Do **not** append progress notes here. A GitHub issue or a new file under `news/` conflicts with
 > nothing on merge; an append to this file conflicts with every other in-flight PR.

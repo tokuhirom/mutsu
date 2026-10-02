@@ -353,7 +353,7 @@ the ratio.
 - Give the deterministic counts as the evidence and the wall clock as the reading, with the run
   count.
 - When a percentage's denominator includes something the steady state does not do, say that too.
-- **Numbers in `PERFORMANCE.md` / `PLAN.md` / `news/` come from the bench CI, not local runs.**
+- **Numbers in `PLAN.md` / `news/` come from the bench CI, not local runs** ([docs/benchmarks.md](../../../docs/benchmarks.md) has the noise classes).
   `git show origin/bench-data:bench-history.tsv` — appended on every main push, median of 7 runs
   plus a same-runner raku ratio that normalizes runner speed — citing the main commit hash the
   row belongs to. The `<bench>+jit` rows are the JIT-on series (the default since J5,
