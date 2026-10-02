@@ -95,6 +95,10 @@ impl Interpreter {
             // *plain* gather too — in Rakudo `gather { … }.grep(…)[^3]` pulls only
             // the elements the slice needs and never runs the gather's tail.
             ValueView::LazyList(ll) => ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch(),
+            // A lazy Seq over a not-yet-pulled iterator (`Seq.new($lazy-iter)`,
+            // `Seq.from-loop`): the stage pulls it through
+            // `SeqBody::extend_from_iterator` (#10891).
+            ValueView::Seq(body) => body.is_lazy() && body.unpulled_iterator().is_some(),
             _ => false,
         }
     }

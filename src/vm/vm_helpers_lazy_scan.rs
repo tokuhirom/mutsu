@@ -68,7 +68,16 @@ impl Interpreter {
                 }
                 Ok(Some(Value::num(s)))
             }
-            ValueView::Seq(items) => Ok(items.get(idx).cloned()),
+            // A lazy `Seq.new($iterator)` source is pulled only as far as
+            // `idx` (#10891); any other Seq is read as it stands.
+            ValueView::Seq(body) => {
+                if idx >= body.len() && body.unpulled_iterator().is_some() {
+                    body.extend_from_iterator(idx + 1, |iterator, count| {
+                        self.pull_iterator_prefix_to_vec(iterator, count)
+                    })?;
+                }
+                Ok(body.get(idx).cloned())
+            }
             ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
