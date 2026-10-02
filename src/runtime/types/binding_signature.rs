@@ -245,13 +245,14 @@ impl Interpreter {
     /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)) -- see
     /// `pending_skip_where_recheck`'s doc comment for why that verdict may be
     /// trusted instead of re-running the constraint.
-    fn check_positional_param_where_constraint(
+    pub(in crate::runtime) fn check_positional_param_where_constraint(
         &mut self,
         pd: &ParamDef,
         binding_name: &str,
         name_sym: Symbol,
         value: &Value,
         skip: bool,
+        record_free_var_writes: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
@@ -277,7 +278,9 @@ impl Interpreter {
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self.eval_param_where_value(pd, false).map(|v| v.truthy());
+                let r = self
+                    .eval_param_where_value(pd, record_free_var_writes)
+                    .map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -288,10 +291,11 @@ impl Interpreter {
             // evaluate and check truthiness of the result, not smart-match.
             // `where .method: args` is equivalent to `where { .method: args }`.
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_param_where_value(pd, false).map(|v| v.truthy())
+                self.eval_param_where_value(pd, record_free_var_writes)
+                    .map(|v| v.truthy())
             }
             _ => self
-                .eval_param_where_value(pd, false)
+                .eval_param_where_value(pd, record_free_var_writes)
                 .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
@@ -3418,6 +3422,7 @@ impl Interpreter {
                         pd_name_sym(),
                         &value,
                         skip_where_recheck,
+                        false,
                     )?;
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
@@ -3584,6 +3589,7 @@ impl Interpreter {
                         pd_name_sym(),
                         &value,
                         skip_where_recheck,
+                        false,
                     )?;
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
@@ -3640,6 +3646,7 @@ impl Interpreter {
                         pd_name_sym(),
                         &value,
                         skip_where_recheck,
+                        false,
                     )?;
                     if !pd.name.is_empty() {
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);
