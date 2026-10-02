@@ -11,6 +11,7 @@ use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
+use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -125,47 +126,43 @@ fn insert_declared_type(
     }
 }
 
-/// Walk a statement list for the names it declares. Nested blocks count: raku
-/// resolves a name declared anywhere the reference can see it, and a bareword
-/// that reaches conversion at all was already accepted by the parser.
+/// The names a statement list declares, at any depth: raku resolves a name
+/// declared anywhere the reference can see it, and a bareword that reaches
+/// conversion at all was already accepted by the parser. So the scan enters
+/// every child -- a declaration in an `if` or loop body, a closure or a `do`
+/// block counts as well as one in a class, routine or bare block.
+// Cost: O(n), n = size of the AST.
 fn collect_declared_names(
     stmts: &[Stmt],
     out: &mut std::collections::HashMap<String, DeclaredKind>,
 ) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::ClassDecl { name, body, .. } => {
-                insert_declared_type(*name, out);
-                collect_declared_names(body, out);
+    struct Scan<'o>(&'o mut std::collections::HashMap<String, DeclaredKind>);
+
+    impl<'ast> Visit<'ast> for Scan<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                // A `module`/`package`/`grammar` name resolves at parse time
+                // just like a class one: raku renders a later bareword `M` as
+                // a `Type::Simple` (measured on `module M { }; M.HOW`).
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::EnumDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. }
+                | Stmt::Package { name, .. } => insert_declared_type(*name, self.0),
+                Stmt::VarDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                    self.0.insert(name.clone(), DeclaredKind::Constant);
+                }
+                _ => {}
             }
-            Stmt::RoleDecl { name, body, .. } => {
-                insert_declared_type(*name, out);
-                collect_declared_names(body, out);
-            }
-            Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
-                insert_declared_type(*name, out);
-            }
-            Stmt::VarDecl {
-                name,
-                custom_traits,
-                ..
-            } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
-                out.insert(name.clone(), DeclaredKind::Constant);
-            }
-            // A `module`/`package`/`grammar` name resolves at parse time just
-            // like a class one: raku renders a later bareword `M` as a
-            // `Type::Simple` (measured on `module M { }; M.HOW`).
-            Stmt::Package { name, body, .. } => {
-                insert_declared_type(*name, out);
-                collect_declared_names(body, out);
-            }
-            Stmt::Block(body)
-            | Stmt::SyntheticBlock(body)
-            | Stmt::SubDecl { body, .. }
-            | Stmt::MethodDecl { body, .. } => collect_declared_names(body, out),
-            _ => {}
+            walk_stmt(self, stmt);
         }
     }
+
+    walk_stmts(&mut Scan(out), stmts);
 }
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
