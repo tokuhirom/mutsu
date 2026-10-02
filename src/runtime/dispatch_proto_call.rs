@@ -292,7 +292,7 @@ impl Interpreter {
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }
-            if !self.args_match_multi_candidate_in_scope(args, &cand) {
+            if !self.args_match_multi_candidate_in_scope(args, cand) {
                 continue; // doesn't match
             }
             if !found_current {
