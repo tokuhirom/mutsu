@@ -37,6 +37,19 @@ impl Ctx {
             self.reference(k);
         }
     }
+
+    /// Registers the reads of a `qq` source text kept as a string (the
+    /// replacement of a quote-form `s///`), in the current scope. The text is
+    /// parsed the way the runtime parses it; the parse only feeds this check.
+    fn read_qq_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let mut parsed = vec![Stmt::Expr(crate::parse_dispatch::parse_qq_interpolation(
+            text,
+        ))];
+        self.visit_stmts_mut(&mut parsed);
+    }
 }
 
 impl VisitMut for Ctx {
@@ -178,10 +191,7 @@ impl VisitMut for Ctx {
                 replacement_thunk: None,
                 ..
             } => {
-                if !replacement.is_empty() {
-                    let mut parsed = crate::parse_dispatch::parse_qq_interpolation(replacement);
-                    self.visit_expr_mut(&mut parsed);
-                }
+                self.read_qq_text(replacement);
                 walk_expr_mut(self, expr);
             }
             // Body-bearing expressions open a new nested lexical scope.
