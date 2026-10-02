@@ -68,7 +68,7 @@ jobs:
   # on each run (~1s) so a bad edit to the path rules is caught here rather
   # than by a silently-untested merge.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       docs-only: ${{ steps.detect.outputs.docs-only }}
@@ -84,11 +84,13 @@ jobs:
           # scripts/, not just the classifier: `--check-inputs` has to see the
           # scripts the build names to tell whether they are allowlisted, and
           # with only the classifier checked out it silently checked nothing.
+          # All of .github/workflows/, not just this file: the runner-pin check
+          # below scans every workflow.
           sparse-checkout: |
             /scripts/
             /docs/adr/
             /Makefile
-            /.github/workflows/ci.yml
+            /.github/workflows/
           sparse-checkout-cone-mode: false
 
       - name: Classifier self-test
@@ -108,6 +110,11 @@ jobs:
         # ADR PR is usually docs-only, and a docs-only PR skips that job. A
         # duplicate or new sequential ADR number must still fail it.
         run: make check-adr
+
+      - name: Runner labels are pinned
+        # Here for the same reason as the ADR check: a PR that edits only a
+        # workflow other than this one is docs-only and skips `test-check`.
+        run: make check-runner-pins
 
       - name: Detect documentation-only change
         id: detect
@@ -149,7 +156,7 @@ jobs:
   build:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
@@ -252,7 +259,7 @@ jobs:
   test-check:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Clippy with `--all-targets` on a cold cargo cache is the long pole here.
     timeout-minutes: 30
     env:
@@ -456,7 +463,7 @@ jobs:
   test-suites:
     needs: [changes, build]
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       # Absolute, so every mutsu in the process tree reports to the one place
@@ -509,7 +516,7 @@ jobs:
         # Via the wrapper (not a bare `timeout 30 <bin>`) so t/ gets the same
         # per-file timeout + flaky-quarantine handling as roast.
         #
-        # `-j4` matches the roast step below (and the ubuntu-latest core
+        # `-j4` matches the roast step below (and the ubuntu-24.04 core
         # count): this suite ran fully serial and took ~6.5 min against
         # roast's ~2.5 min at -j4 despite having 3200+ files vs roast's 246,
         # almost entirely idle-serial overhead. `--merge` folds each test's
@@ -559,7 +566,7 @@ jobs:
           git checkout -- roast/
 
       - name: Roast tests (make roast)
-        # -j4 matches the GitHub ubuntu-latest core count. The roast suite is
+        # -j4 matches the GitHub ubuntu-24.04 core count. The roast suite is
         # dominated by sleep/timer-bound S17 concurrency tests that leave the
         # CPU idle; running them in parallel overlaps that idle time with the
         # CPU-bound tests and cuts wall-clock roughly 3x (~7.5min -> ~2.5min).
@@ -762,7 +769,7 @@ jobs:
   test:
     needs: [changes, build, test-check, test-suites]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every half succeeded
@@ -800,7 +807,7 @@ jobs:
   lint-configs:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 30, not 20: this job's cache is its own, and a cold restore compiles two
     # dependency sets from scratch (native minus cranelift, then all of them
     # again for wasm32) before either clippy pass starts.
@@ -871,7 +878,7 @@ jobs:
   miri:
     needs: changes
     if: needs.changes.outputs.gc-value == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -987,7 +994,7 @@ jobs:
     # Skipped on a documentation-only change — see the `changes` job.
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1040,7 +1047,7 @@ jobs:
         run: |
           npm install playwright
           # `--with-deps` is the only apt consumer in this job and can hang
-          # when the Ubuntu mirror stalls; ubuntu-latest already ships the
+          # when the Ubuntu mirror stalls; ubuntu-24.04 already ships the
           # shared libraries Chromium needs.
           npx playwright install chromium
 
@@ -1091,7 +1098,7 @@ jobs:
   gc-stress-tap:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       MUTSU_GC: "on"
@@ -1166,7 +1173,7 @@ jobs:
         # regression (semantics or soundness), not a known gap.
         #
         # `-j4`, matching the roast step below, the `test` job's TAP step and
-        # the ubuntu-latest core count. This suite ran fully SERIAL here until
+        # the ubuntu-24.04 core count. This suite ran fully SERIAL here until
         # 2026-09-11 and that, not the debug binary, was the dominant cost of
         # the job: the `test` job runs the same 3997 files at `-j4` in 1m28s
         # against 15m53s (gc-stress) / 18m42s (jit-stress) serial, a 10.8x /
@@ -1255,7 +1262,7 @@ jobs:
   gc-stress-roast:
     needs: [changes, build]
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       MUTSU_GC: "on"
@@ -1389,7 +1396,7 @@ jobs:
   gc-stress:
     needs: [changes, build, gc-stress-tap, gc-stress-roast]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every half succeeded
@@ -1433,7 +1440,7 @@ jobs:
   jit-stress-tap:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       MUTSU_JIT: "on"
@@ -1485,7 +1492,7 @@ jobs:
 
       - name: TAP tests (prove t/, JIT on)
         # `-j4`, matching the roast step below, the `test` job's TAP step and
-        # the ubuntu-latest core count. This suite ran fully SERIAL here until
+        # the ubuntu-24.04 core count. This suite ran fully SERIAL here until
         # 2026-09-11 and that, not the debug binary, was the dominant cost of
         # the job: the `test` job runs the same 3997 files at `-j4` in 1m28s
         # against 15m53s (gc-stress) / 18m42s (jit-stress) serial, a 10.8x /
@@ -1553,7 +1560,7 @@ jobs:
   jit-stress-roast:
     needs: [changes, build]
     if: needs.changes.outputs.docs-only != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       MUTSU_JIT: "on"
@@ -1659,7 +1666,7 @@ jobs:
   jit-stress:
     needs: [changes, build, jit-stress-tap, jit-stress-roast]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every half succeeded

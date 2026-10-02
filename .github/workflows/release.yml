@@ -21,16 +21,16 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive_name: linux-x64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             archive_name: linux-arm64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-26
             archive_name: macos-x64
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-26
             archive_name: macos-arm64
 
     runs-on: ${{ matrix.os }}
@@ -108,7 +108,7 @@ jobs:
   # cut by the manual `tag-release.yml` trigger, and a regression here blocks it.
   # See scripts/battery-testsuite.sh, batteries.lock, batteries-whitelist.txt.
   batteries:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,7 +157,7 @@ jobs:
 
   npm:
     needs: batteries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.ref_type == 'tag' }}
     permissions:
       contents: read
@@ -189,7 +189,7 @@ jobs:
 
   release:
     needs: [build, batteries, npm]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only publish a GitHub Release for a real tag push. workflow_dispatch runs
     # stop after build (artifacts are available for inspection, no release).
     if: ${{ github.ref_type == 'tag' }}

@@ -55,7 +55,7 @@ concurrency:
 
 jobs:
   bench:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Raised from 30 when the deterministic instruction-count pass was added
     # (#8085): callgrind is ~90x native, which costs roughly 12 more minutes
     # for the two configurations of the whole suite.
