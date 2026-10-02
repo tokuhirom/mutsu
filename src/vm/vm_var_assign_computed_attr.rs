@@ -365,6 +365,20 @@ impl Interpreter {
         )
     }
 
+    /// `self`'s private `&`-sigil attribute `&!bare`, for a `&!bare(...)` call
+    /// (which compiles to `CallOnCodeVar` on the name `!bare`).
+    // Cost: O(m), m = mixin layers of `self` (bounded by 8), as
+    // `with_self_attr`; one symbol lookup for `bare`.
+    pub(super) fn read_self_private_code_attr(&self, bare: &str) -> Option<Value> {
+        self.read_attr_cell_by_key(
+            self.get_env_self(),
+            None,
+            crate::symbol::Symbol::intern(bare),
+            true,
+            '&',
+        )
+    }
+
     /// Slot form of [`Self::read_self_attr_cell`]: the attribute `Symbol` comes
     /// pre-resolved from the chunk's local-slot table, so the hot `$!x` / `$.x`
     /// read parses no twigil, interns no string and allocates nothing. Falls back

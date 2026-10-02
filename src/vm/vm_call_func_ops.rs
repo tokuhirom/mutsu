@@ -1743,8 +1743,19 @@ impl Interpreter {
         // A named routine's free `&name` is the binding visible at its
         // declaration (the unit-lexical cell), not a same-named `my &name`
         // in the CALLER's env (#10483).
-        let mut target = dispatch_key::with_amp_name(&name, |amp| self.unit_scope_lexical(amp))
-            .map(Value::into_deref)
+        // `&!attr(...)` names `self`'s private attribute, and nothing else: a
+        // `$!attr` of the CALLER's invocant is stored in env under the same
+        // sigil-less `!attr` key, so an env lookup first would call the
+        // caller's attribute value (#10662).
+        let private_attr = name
+            .strip_prefix('!')
+            .filter(|n| !n.is_empty())
+            .and_then(|bare| self.read_self_private_code_attr(bare));
+        let mut target = private_attr
+            .or_else(|| {
+                dispatch_key::with_amp_name(&name, |amp| self.unit_scope_lexical(amp))
+                    .map(Value::into_deref)
+            })
             .unwrap_or(Value::NIL);
         if target.is_nil() {
             target = loan_env!(self, resolve_code_var(&name));
