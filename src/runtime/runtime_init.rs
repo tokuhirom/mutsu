@@ -3078,6 +3078,8 @@ impl Interpreter {
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: TapState::default(),
             halted: false,
+            uncaught_reporter: None,
+            uncaught_reported: false,
             exit_code: 0,
             exit_status_locked: false,
             begin_prologue_pending: false,

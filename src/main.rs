@@ -20,6 +20,29 @@ fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_n
     );
 }
 
+/// Print an uncaught exception the way rakudo's top-level handler does.
+fn report_uncaught(
+    interpreter: &mut mutsu::Interpreter,
+    err: &RuntimeError,
+    input: &str,
+    program_name: &str,
+) {
+    // When `%*ENV<RAKU_EXCEPTIONS_HANDLER>` selects the JSON handler,
+    // print uncaught exceptions as a JSON document instead of the
+    // human-readable backtrace.
+    if interpreter.exceptions_handler().as_deref() == Some("JSON") {
+        eprintln!("{}", err.to_json_exception());
+    } else if let Some(gist) = interpreter.render_uncaught(err) {
+        // rakudo renders an uncaught exception by calling `.gist` on
+        // it, so a `method gist` override decides what stderr shows.
+        // `render_uncaught` declines for a parse diagnosis or an error
+        // with no exception object, which the pure renderer handles.
+        eprintln!("{}", gist);
+    } else {
+        print_error("Runtime error", err, Some(input), Some(program_name));
+    }
+}
+
 /// Stack for the `mutsu-main` thread the interpreter actually runs on. Matches
 /// `stack_budget::STACK_TIERS[0]`, the stack a `start`/Promise
 /// worker normally gets, so the ADR-0100 recursion guard fires at a comparable depth
@@ -369,6 +392,14 @@ fn run_main() {
     if !script_args.is_empty() {
         interpreter.set_args(script_args.into_iter().map(Value::str).collect());
     }
+    {
+        // Report an uncaught mainline exception before the END phasers run
+        // (rakudo's order); `run` calls this ahead of `finish()`.
+        let (input, program_name) = (input.clone(), program_name.clone());
+        interpreter.set_uncaught_reporter(Box::new(move |interp, err| {
+            report_uncaught(interp, err, &input, &program_name);
+        }));
+    }
     match interpreter.run(&input) {
         Ok(_output) => {
             // A `Thread` created without `:app_lifetime` keeps the process
@@ -390,19 +421,8 @@ fn run_main() {
             std::process::exit(code as i32);
         }
         Err(err) => {
-            // When `%*ENV<RAKU_EXCEPTIONS_HANDLER>` selects the JSON handler,
-            // print uncaught exceptions as a JSON document instead of the
-            // human-readable backtrace.
-            if interpreter.exceptions_handler().as_deref() == Some("JSON") {
-                eprintln!("{}", err.to_json_exception());
-            } else if let Some(gist) = interpreter.render_uncaught(&err) {
-                // rakudo renders an uncaught exception by calling `.gist` on
-                // it, so a `method gist` override decides what stderr shows.
-                // `render_uncaught` declines for a parse diagnosis or an error
-                // with no exception object, which the pure renderer handles.
-                eprintln!("{}", gist);
-            } else {
-                print_error("Runtime error", &err, Some(&input), Some(&program_name));
+            if !interpreter.uncaught_reported() {
+                report_uncaught(&mut interpreter, &err, &input, &program_name);
             }
             interpreter.flush_all_handles();
             interpreter.flush_stderr_buffer();

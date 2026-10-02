@@ -840,6 +840,7 @@ impl Interpreter {
         // the plan diagnostic after, so keep `finish()`'s side effects (the
         // diagnostics it writes and the exit code it sets) and drop its error.
         if let Err(e) = body_result {
+            self.report_uncaught_early(&e);
             let _ = self.finish();
             return Err(e);
         }

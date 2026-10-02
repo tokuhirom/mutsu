@@ -612,6 +612,8 @@ impl Interpreter {
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: self.tap.clone_for_thread(),
             halted: false,
+            uncaught_reporter: None,
+            uncaught_reported: false,
             exit_code: 0,
             exit_status_locked: false,
             begin_prologue_pending: false,

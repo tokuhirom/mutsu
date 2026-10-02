@@ -61,6 +61,9 @@ use crate::value::{
     SharedPromise, Value, make_rat, take_pending_instance_destroys,
 };
 
+/// Callback printing an uncaught exception; see [`Interpreter::set_uncaught_reporter`].
+pub type UncaughtReporter = Box<dyn FnMut(&mut Interpreter, &RuntimeError) + Send>;
+
 /// The `X::Phaser::PrePost` a falsy `PRE`/`POST` phaser throws.
 ///
 /// The message is derived from the phaser and its condition source text, and it
@@ -2220,6 +2223,11 @@ pub struct Interpreter {
     /// move (lever B). Access only through `self.tap`'s methods.
     tap: TapState,
     halted: bool,
+    /// Prints an uncaught mainline exception; `run` calls it before the END
+    /// phasers, as rakudo's top-level handler does. See [`Self::set_uncaught_reporter`].
+    uncaught_reporter: Option<UncaughtReporter>,
+    /// Set once `uncaught_reporter` has printed the error `run` returns.
+    uncaught_reported: bool,
     exit_code: i64,
     /// Set while the END phasers run for a program that is already exiting, and
     /// once any END phaser has itself called `exit`. A further `exit` still
