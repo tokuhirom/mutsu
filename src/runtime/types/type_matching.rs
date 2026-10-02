@@ -510,6 +510,13 @@ impl Interpreter {
     // miss path adds one registry-name probe and, on a hit, a scan of the type
     // tables.
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
+        // so `has Cursor $.cursor` accepts the grammar `self`.
+        let constraint = if constraint == "Cursor" {
+            "Match"
+        } else {
+            constraint
+        };
         if self.type_matches_value_resolved(constraint, value) {
             return true;
         }
