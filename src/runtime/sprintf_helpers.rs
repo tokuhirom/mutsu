@@ -195,7 +195,9 @@ pub(super) fn format_rat_sci(
 }
 
 /// Format a non-negative float using %g/%G rules:
-/// - Use %e/%E if exponent < -4 or >= precision
+/// - Use %e/%E if exponent >= precision, or exponent < -min(precision + 1, 4)
+///   (Rakudo switches to exponent form earlier than C for precision 1 and 2:
+///   `%.2g` of 0.00012 is `1.2e-04`)
 /// - Otherwise use %f
 /// - Precision specifies total significant digits
 /// - Trailing zeros are removed (unless # flag is set)
@@ -206,7 +208,8 @@ pub(super) fn format_g(abs: f64, prec: usize, upper: bool, hash_flag: bool) -> S
     } else {
         abs.log10().floor() as i32
     };
-    let use_sci = exp < -4 || exp >= prec as i32;
+    let low_limit = (prec as i32 + 1).min(4);
+    let use_sci = exp < -low_limit || exp >= prec as i32;
     if use_sci {
         // Scientific notation with (prec-1) decimal digits
         let decimal_digits = prec.saturating_sub(1);
