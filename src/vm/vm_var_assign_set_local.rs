@@ -791,6 +791,9 @@ impl Interpreter {
         if is_vardecl && self.shared_vars_active {
             self.remask_declaration_store(code, idx as usize);
         }
+        if !self.rw_param_rebinds.is_empty() && self.rebind_context().get() && !is_vardecl {
+            self.note_rw_param_rebind(idx);
+        }
         let r = self.exec_set_local_op_inner(code, idx);
         if r.is_ok()
             && let Some(cell) = binding_cell

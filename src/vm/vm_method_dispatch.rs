@@ -852,6 +852,7 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        self.arm_rw_param_rebinds(cc, &rw_bindings);
         // A method parameter is a fresh per-invocation binding, exactly like a
         // sub parameter (see the matching mark in
         // `call_compiled_function_named_inner`): while the cross-thread shared
@@ -1148,9 +1149,10 @@ impl Interpreter {
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
-                    self.env()
-                        .get(param_name)
-                        .cloned()
+                    // A param the body rebound (`$p := ...`) writes back its
+                    // pre-rebind value (#10361).
+                    self.rw_param_detached_by_name(cc, param_name)
+                        .or_else(|| self.env().get(param_name).cloned())
                         .or_else(|| {
                             let qualified = format!("{}::{}", owner_class, param_name);
                             self.env().get(&qualified).cloned()

@@ -309,6 +309,7 @@ mod vm_run_loop;
 mod vm_rw_arg_callee;
 mod vm_rw_arg_outer_cell;
 mod vm_rw_attr_container;
+mod vm_rw_param_rebind;
 mod vm_scalar_incdec;
 mod vm_scalar_param_bind;
 mod vm_scope_ops;
@@ -545,6 +546,9 @@ pub(crate) struct VmCallFrame {
     /// written and the caller kept its old value. `pop_call_frame` merges the
     /// frame's own unclaimed writebacks back over these.
     pub saved_pending_caller_var_writeback: rustc_hash::FxHashSet<String>,
+    /// The caller frame's `rw_param_rebinds` (see `vm_rw_param_rebind`),
+    /// hidden while this frame runs and restored on pop.
+    pub saved_rw_param_rebinds: Vec<(u32, Option<Value>)>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`
