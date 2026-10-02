@@ -32,9 +32,9 @@ use crate::opcode::{
     ClassBodyOp, CompiledAttrDecl, CompiledClassDeclPlan, CompiledCode, CompiledDeclExpr,
     CompiledMethodDecl, CompiledRoleDeclPlan, DeclTraitArg, DeferredBodyOpKind, OpCode,
 };
-use std::collections::{HashMap, HashSet};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
+use std::collections::{HashMap, HashSet};
 
 impl Compiler {
     /// Record the env-sync slots of a named sub's compiled bodies `keys` and
