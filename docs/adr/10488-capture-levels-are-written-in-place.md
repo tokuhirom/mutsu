@@ -87,6 +87,11 @@ whose writes are trailed. A callee frame's return therefore costs the node and n
 - A **`~` goal match** matched its inner pattern and its goal in levels of their own and merged
   them, the goal's first (`GoalEnd`). When the goal files no positional capture or marker and no
   name the inner pattern can file, both sides match in place.
+- **Update (#10574)**: both folds now list names in match order, the separated quantifier's
+  `a0, s0, a1, …` and the goal match's inner pattern before its goal (positional slots keep their
+  source order; `merge_goal_captures`). In-place filing gives that order too, so both
+  disjointness tests (and `filed_keys`) are gone. A separated quantifier files in place whenever
+  neither side files a positional capture or marker, and a goal match whenever its goal does not.
 
 Both conditions hold for the grammar shapes: `<pair>* % ','` and `'[' ~ ']' <list>`, including a
 `rule`'s implicit `<.ws>`, which is a silent call and so counted as capturing by the coarser test

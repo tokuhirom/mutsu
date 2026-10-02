@@ -12,7 +12,6 @@ use super::rx_compile::{
     pattern_contains_backref, pattern_contains_code, pattern_reads_enclosing_state,
 };
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
-use crate::symbol::Symbol;
 
 /// Do the captures matching `atom` takes at its own level consist of named
 /// captures only? Then a separated quantifier's iterations need no capture
@@ -46,57 +45,6 @@ fn pattern_files_names_only(pattern: &RegexPattern) -> bool {
                 .as_ref()
                 .is_none_or(|sep| pattern_files_names_only(&sep.pattern))
     })
-}
-
-/// Every capture name matching `pattern` can file under at its own level: a
-/// subrule call's capture name (the rule's own too, for an alias that keeps
-/// it), a silent call's action marker, a token's `$<x>=` aliases. A separated
-/// quantifier's iterations or a goal match's two sides may file in place only
-/// when their sets are disjoint: the fold put one side's entries of a shared
-/// name after all of the other's, which in-place filing would interleave.
-// TODO(#10574): rakudo lists a shared name's entries in match order, which is
-// what in-place filing gives; once the fold does too, a separated quantifier
-// needs no disjointness test.
-fn filed_keys(pattern: &RegexPattern, out: &mut Vec<Symbol>) {
-    for t in &pattern.tokens {
-        for name in [&t.named_capture, &t.secondary_named_capture]
-            .into_iter()
-            .flatten()
-        {
-            out.push(Symbol::intern(name));
-        }
-        atom_filed_keys(&t.atom, out);
-        if let Some(sep) = &t.separator {
-            filed_keys(&sep.pattern, out);
-        }
-    }
-}
-
-fn atom_filed_keys(atom: &RegexAtom, out: &mut Vec<Symbol>) {
-    match atom {
-        RegexAtom::Named(name) => {
-            let spec = name.spec();
-            out.extend([spec.lookup_sym, spec.silent_marker_sym]);
-            out.extend(spec.capture_sym);
-        }
-        RegexAtom::WsRule => out.extend([
-            Symbol::intern("ws"),
-            Symbol::intern(&format!(
-                "{}ws",
-                crate::runtime::SILENT_ACTION_MARKER_PREFIX
-            )),
-        ]),
-        RegexAtom::Group(p) => filed_keys(p, out),
-        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
-            alts.iter().for_each(|p| filed_keys(p, out))
-        }
-        _ => {}
-    }
-}
-
-/// Can no name be filed by both `a` and `b`? (`filed_keys` output.)
-fn disjoint(a: &[Symbol], b: &[Symbol]) -> bool {
-    !a.iter().any(|k| b.contains(k))
 }
 
 impl Compiler {
@@ -242,17 +190,13 @@ impl Compiler {
         {
             return Err("goal-match-code");
         }
-        // `GoalEnd` merges the goal's captures, then the inner pattern's, into
-        // this level. When the goal files only names the inner pattern never
-        // does (`'[' ~ ']' <list>`, the grammar case, whose goal at most calls
-        // `<.ws>`), that merge is what matching both sides in place produces,
-        // so neither gets a level of its own (ADR-10488 D3).
-        let in_place = pattern_files_names_only(goal) && {
-            let (mut goal_keys, mut inner_keys) = (Vec::new(), Vec::new());
-            filed_keys(goal, &mut goal_keys);
-            filed_keys(inner, &mut inner_keys);
-            disjoint(&goal_keys, &inner_keys)
-        };
+        // `GoalEnd` merges the two sides with the goal's positional slots
+        // first and every name in match order (`merge_goal_captures`). When
+        // the goal files only names (`'[' ~ ']' <list>`, the grammar case,
+        // whose goal at most calls `<.ws>`), that merge is what matching both
+        // sides in place produces, so neither gets a level of its own
+        // (ADR-10488 D3).
+        let in_place = pattern_files_names_only(goal);
         let height = token.ratchet.then(|| self.reg());
         if let Some(h) = height {
             self.ops.push(RxOp::Height(h));
@@ -378,26 +322,19 @@ impl Compiler {
         }
         // Each atom and separator then matches in a capture level of its own,
         // collected for `SepEmit` to fold side by side. When the only captures
-        // are names an atom files (`<pair>+ % ','`, the grammar case), there
-        // is nothing to fold side by side: the iterations file straight into
-        // this level and `SepNames` marks what they filed quantified, as the
-        // fold would have (ADR-10488 D3). Code in an iteration reads the
-        // iterations folded so far (below), which filing in place does not
-        // present, so it keeps the levels.
+        // are names (`<pair>+ % ','`, the grammar case, including a `rule`'s
+        // `<.ws>` on either side), there is nothing to fold side by side: the
+        // fold lists names in match order (#10574), which is what filing in
+        // place gives, so the iterations file straight into this level and
+        // `SepNames` marks what they filed quantified (ADR-10488 D3). Code in
+        // an iteration reads the iterations folded so far (below), which
+        // filing in place does not present, so it keeps the levels.
         let captures = atom_captures(&token.atom) || pattern_captures(sep);
         let code = atom_contains_code(&token.atom) || pattern_contains_code(sep);
         let direct = captures
             && !code
             && atom_files_names_only(&token.atom)
-            && pattern_files_names_only(sep)
-            && {
-                // The token's own alias declines above, so the atom is all
-                // an iteration files besides the separator.
-                let (mut atom_keys, mut sep_keys) = (Vec::new(), Vec::new());
-                atom_filed_keys(&token.atom, &mut atom_keys);
-                filed_keys(sep, &mut sep_keys);
-                disjoint(&atom_keys, &sep_keys)
-            };
+            && pattern_files_names_only(sep);
         let collect = captures && !direct;
         // Code in an atom or separator reads the captures too: `$/[*-1][*-1]`
         // addresses the iterations folded so far with this one's folded in

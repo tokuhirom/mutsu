@@ -1533,6 +1533,27 @@ pub(super) fn merge_regex_captures(
     dst
 }
 
+/// Merge a `~` goal match's two sides (#10574). Positional slots keep source
+/// order, the goal's first (it is written first: `"(" ~ (\d) (\w)` numbers
+/// the goal's group `$0`); named captures list in match order, the inner
+/// pattern's before the goal's, as rakudo's cursor stack does. Every engine
+/// that matches a goal match merges through here.
+// Cost: O(c), c = the captures of both sides.
+pub(super) fn merge_goal_captures(
+    mut goal_caps: RegexCaptures,
+    mut inner_caps: RegexCaptures,
+) -> RegexCaptures {
+    let goal_named = std::mem::take(&mut goal_caps.named);
+    let inner_named = std::mem::take(&mut inner_caps.named);
+    let mut merged = merge_regex_captures(goal_caps, inner_caps);
+    for mut named in [inner_named, goal_named] {
+        for (k, v) in named.drain() {
+            merged.named.slot_mut(k).merge(v);
+        }
+    }
+    merged
+}
+
 /// Carry an inline `{ make … }` value from a sub-pattern's captures up to the
 /// level they are being folded into. A `make` belongs to the enclosing *rule*
 /// node, so it travels with the sub-pattern's code blocks — wherever a caller

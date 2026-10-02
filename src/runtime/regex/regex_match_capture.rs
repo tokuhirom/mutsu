@@ -2,7 +2,7 @@ use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, alternation_list_flags, is_word_char, matches_named_builtin,
-    merge_regex_captures,
+    merge_goal_captures,
 };
 use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
@@ -366,10 +366,7 @@ impl Interpreter {
                     if let Some((goal_end, goal_caps)) =
                         self.regex_match_end_from_caps_in_pkg(goal, chars, inner_end, pkg)
                     {
-                        let new_caps = merge_regex_captures(
-                            RegexCaptures::default(),
-                            merge_regex_captures(goal_caps, inner_caps),
-                        );
+                        let new_caps = merge_goal_captures(goal_caps, inner_caps);
                         return Some((goal_end, new_caps));
                     }
                     Self::record_goal_failure(goal_text, inner_end);
