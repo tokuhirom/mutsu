@@ -1,7 +1,7 @@
 # ADR-0081: A unit module's imported aliases are scoped to its compilation unit
 
-- Status: Accepted — implemented by PR #7743 (#7692 closed); the §6 open checks that were never
-  pinned by a test are [#9925](https://github.com/tokuhirom/mutsu/issues/9925) (2026-09-27 status review, #9913)
+- Status: Accepted — implemented by PR #7743 (#7692 closed); the §6 open checks are pinned by
+  `t/modules/module-import-alias-scope-paths.t` ([#9925](https://github.com/tokuhirom/mutsu/issues/9925))
 - Date: 2026-09-09
 - Related: [ADR-0024](0024-mainline-lexicals-for-named-subs.md) (a mainline
   routine carries the lexical store of its compilation unit),
@@ -207,6 +207,9 @@ Before accepting the implementation, re-check these less common paths:
 - two unrelated modules importing the same short type name;
 - a block-scoped `use` followed by a repeated `use` after the module is already
   loaded.
+
+All five are pinned by `t/modules/module-import-alias-scope-paths.t`, which
+agrees with rakudo on each (#9925).
 
 This ADR intentionally does not change the broader `@`/`%` slot campaign in
 ADR-0039, nor the identity model for lexical type declarations in ADR-0047.
