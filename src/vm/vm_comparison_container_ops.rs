@@ -252,7 +252,7 @@ impl Interpreter {
 
     /// `=:=` between an `@`/`%` variable's raw slot and another raw container:
     /// only a shared cell or slot makes them the same container, see
-    /// [`OpCode::ContainerEqRawAggregate`](crate::opcode::OpCode::ContainerEqRawAggregate).
+    /// [`OpCode::ContainerEqRawAggregate`].
     pub(super) fn exec_container_eq_raw_aggregate_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
