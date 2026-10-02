@@ -46,14 +46,9 @@ impl Interpreter {
                     ),
                 );
             }
-            if let Some(result) = self.check_method_wrap_chain(
-                cn,
-                owner_class.as_str(),
-                method,
-                &method_def,
-                &target,
-                &args,
-            ) {
+            if let Some(result) =
+                self.check_method_wrap_chain(cn, owner_class, method, &method_def, &target, &args)
+            {
                 return result;
             }
             // Resolve to a def carrying compiled bytecode, compiling on demand
@@ -103,8 +98,8 @@ impl Interpreter {
                 let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                 let method_result = self.call_compiled_method(
                     cn,
-                    owner_class.as_str(),
-                    method,
+                    owner_class,
+                    method_sym,
                     &method_def,
                     &cc,
                     &attributes,

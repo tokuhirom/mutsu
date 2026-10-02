@@ -163,6 +163,7 @@ impl Interpreter {
                     // proto, so introspection and dispatch agree on what the proto
                     // looks like as a method.
                     vec![MethodDef {
+                        syms: Default::default(),
                         lexical_package: proto.package,
                         params: proto.params.clone(),
                         param_defs: proto.param_defs.clone(),

@@ -1346,8 +1346,8 @@ impl Interpreter {
                     if let Some(cc) = method_def.compiled_code.clone() {
                         self.call_compiled_method(
                             &receiver_class,
-                            &owner_class,
-                            &method_name_for_dispatch,
+                            crate::symbol::Symbol::intern(&owner_class),
+                            crate::symbol::Symbol::intern(&method_name_for_dispatch),
                             &method_def,
                             &cc,
                             &attributes.to_map(),
@@ -1399,8 +1399,8 @@ impl Interpreter {
                     if let Some(cc) = method_def.compiled_code.clone() {
                         self.call_compiled_method(
                             &receiver_class,
-                            &owner_class,
-                            &method_name_for_dispatch,
+                            crate::symbol::Symbol::intern(&owner_class),
+                            crate::symbol::Symbol::intern(&method_name_for_dispatch),
                             &method_def,
                             &cc,
                             &AttrMap::new(),
