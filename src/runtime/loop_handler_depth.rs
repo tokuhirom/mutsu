@@ -73,3 +73,36 @@ impl Drop for LoopHandlerGuard {
         LOOP_HANDLER_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
     }
 }
+
+/// The error a `last` / `next` / `redo` raises: the control signal carrying
+/// `label` (`None` for the innermost loop) when a loop construct is on the
+/// dynamic chain, the catchable `X::ControlFlow` otherwise. Shared by the
+/// `Last`/`Next`/`Redo` opcodes, the `next(Label)` routine form and the
+/// `Label.next` method, so every spelling of a loop-control raise agrees.
+// Cost: O(1).
+pub(crate) fn loop_control_signal(
+    control: crate::value::Control,
+    label: Option<String>,
+) -> crate::value::RuntimeError {
+    use crate::value::{Control, RuntimeError};
+    let word = match control {
+        Control::Last => "last",
+        Control::Next => "next",
+        _ => "redo",
+    };
+    if !loop_handler_in_scope() {
+        let illegal = if label.is_some() {
+            format!("labeled {word}")
+        } else {
+            word.to_string()
+        };
+        return RuntimeError::control_flow_illegal(control, &illegal, "loop construct");
+    }
+    let mut sig = match control {
+        Control::Last => RuntimeError::last_signal(),
+        Control::Next => RuntimeError::next_signal(),
+        _ => RuntimeError::redo_signal(),
+    };
+    sig.label = label;
+    sig
+}

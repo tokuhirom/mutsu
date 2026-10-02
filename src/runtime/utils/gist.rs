@@ -550,6 +550,13 @@ pub(crate) fn gist_value(value: &Value) -> String {
         ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID => {
             "IterationEnd".to_string()
         }
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == crate::value::label::LABEL_CLASS => {
+            crate::value::label::label_gist(&attributes.as_map())
+        }
         ValueView::Instance { attributes, .. } if value.is_match_instance() => {
             match_gist(&(attributes).as_map(), 0)
         }

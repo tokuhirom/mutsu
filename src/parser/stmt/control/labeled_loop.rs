@@ -35,7 +35,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             .iter()
             .any(|kw| keyword(kw, rest).is_some())
     {
-        crate::parser::stmt::simple::register_loop_label(&label);
+        crate::parser::stmt::simple::register_loop_label(&label, input);
     }
 
     // Check which loop keyword follows

@@ -561,6 +561,7 @@ mod guards;
 pub mod hash_key;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
+pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 pub mod user_key_map;
 pub use hash_key::HashKey;

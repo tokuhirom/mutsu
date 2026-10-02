@@ -1531,12 +1531,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
-            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
-                let flow = Expr::ControlFlow {
-                    kind: crate::ast::ControlFlowKind::Last,
-                    label: None,
-                };
-                return Ok((rest, slipped_control_flow("last", slip, flow)));
+            if let (rest, Some(call)) = loop_control_call_form("last", rest)? {
+                return Ok((rest, call));
             }
             let (rest, label) = control_flow_label(rest);
             return Ok((
@@ -1551,12 +1547,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
-            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
-                let flow = Expr::ControlFlow {
-                    kind: crate::ast::ControlFlowKind::Next,
-                    label: None,
-                };
-                return Ok((rest, slipped_control_flow("next", slip, flow)));
+            if let (rest, Some(call)) = loop_control_call_form("next", rest)? {
+                return Ok((rest, call));
             }
             let (rest, label) = control_flow_label(rest);
             return Ok((
@@ -1571,12 +1563,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
-            if let (rest, Some(slip)) = control_flow_slip_args(rest)? {
-                let flow = Expr::ControlFlow {
-                    kind: crate::ast::ControlFlowKind::Redo,
-                    label: None,
-                };
-                return Ok((rest, slipped_control_flow("redo", slip, flow)));
+            if let (rest, Some(call)) = loop_control_call_form("redo", rest)? {
+                return Ok((rest, call));
             }
             let (rest, label) = control_flow_label(rest);
             return Ok((
@@ -1602,6 +1590,17 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         {
             return Ok((r, Expr::DoStmt(Box::new(stmt))));
         }
+    }
+
+    // A declared loop label in term position is its `Label` object
+    // (`FOO.next`, `f(FOO)`, `say FOO.name`), built once at the declaration.
+    // `FOO(...)`, `FOO::Bar` and `FOO => ...` are not label references.
+    if !rest.starts_with('(')
+        && !rest.starts_with("::")
+        && !rest.trim_start().starts_with("=>")
+        && let Some(label) = crate::parser::stmt::simple::declared_loop_label_value(&name)
+    {
+        return Ok((rest, Expr::Literal(label)));
     }
 
     // Check for :: qualified name (e.g. Foo::Bar, CORE::<&run>)
@@ -2611,25 +2610,44 @@ pub(in crate::parser) fn control_flow_slip_args(input: &str) -> PResult<'_, Opti
     Ok((rest, Some(slip)))
 }
 
-/// Build `last(|args)`: with an empty argument list this is the plain loop
-/// control. A non-empty list would carry a `Label` value, which mutsu does not
-/// model (labels are static names in `OpCode::Last`), so it is rejected rather
-/// than silently dropped.
-// TODO: compile dynamic `Label` arguments once labels are first-class values.
-pub(in crate::parser) fn slipped_control_flow(name: &str, slip: Expr, flow: Expr) -> Expr {
-    Expr::Ternary {
-        cond: Box::new(slip_arg_count(slip)),
-        then_expr: Box::new(Expr::DoStmt(Box::new(reject_slipped_label(name)))),
-        else_expr: Box::new(flow),
+/// The routine forms of `last` / `next` / `redo`: `next(FOO)` with a `Label`
+/// value and `next |c` slipping a capture that may hold one. Both are a call
+/// of the `next` routine, which raises the (labelled) loop-control signal at
+/// run time — see `builtins/label.rs`. An empty `next()` stays the plain
+/// control flow term (the caller's ordinary path), as does every other form.
+fn loop_control_call_form<'a>(name: &str, input: &'a str) -> PResult<'a, Option<Expr>> {
+    if let (rest, Some(slip)) = control_flow_slip_args(input)? {
+        return Ok((rest, Some(loop_control_call(name, vec![slip]))));
+    }
+    let (after_ws, _) = ws(input)?;
+    let Some(after_paren) = after_ws.strip_prefix('(') else {
+        return Ok((input, None));
+    };
+    let (after_ws, _) = ws(after_paren)?;
+    if after_ws.starts_with(')') {
+        return Ok((input, None));
+    }
+    let (rest, args) = crate::parser::primary::parse_call_arg_list(after_ws)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = parse_char(rest, ')')?;
+    Ok((rest, Some(loop_control_call(name, args))))
+}
+
+fn loop_control_call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Call {
+        name: Symbol::intern(name),
+        args,
     }
 }
 
-/// Statement form of [`slipped_control_flow`], for `proceed |c` / `succeed |c`
-/// whose control transfer must stay a statement of the enclosing block.
+/// `proceed |c` / `succeed |c`, whose control transfer must stay a statement
+/// of the enclosing block: with an empty argument list this is the plain
+/// control transfer; a non-empty one has no candidate, so it is rejected
+/// rather than silently dropped.
 pub(in crate::parser) fn slipped_control_stmt(name: &str, slip: Expr, flow: Stmt) -> Stmt {
     Stmt::If {
         cond: slip_arg_count(slip),
-        then_branch: vec![reject_slipped_label(name)],
+        then_branch: vec![reject_slipped_args(name)],
         else_branch: vec![flow],
         binding_var: None,
         is_statement_modifier: true,
@@ -2648,9 +2666,9 @@ fn slip_arg_count(slip: Expr) -> Expr {
     }
 }
 
-fn reject_slipped_label(name: &str) -> Stmt {
+fn reject_slipped_args(name: &str) -> Stmt {
     Stmt::Die(Expr::Literal(Value::str(format!(
-        "Cannot resolve caller {name}: a Label argument is not supported"
+        "Cannot resolve caller {name}: too many positionals passed"
     ))))
 }
 

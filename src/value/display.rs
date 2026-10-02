@@ -968,6 +968,13 @@ impl Value {
                 class_name,
                 attributes,
                 ..
+            } if class_name == crate::value::label::LABEL_CLASS => {
+                crate::value::label::label_str(&attributes.as_map())
+            }
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
             } if class_name == "Instant" => {
                 let val = attributes
                     .as_map()

@@ -280,6 +280,11 @@ impl Interpreter {
             Some(ValueView::Str(label)) => {
                 sig.label = Some(label.to_string());
             }
+            Some(_)
+                if let Some(label) = crate::value::label::label_name(target.as_ref().unwrap()) =>
+            {
+                sig.label = Some(label);
+            }
             Some(_) => {
                 sig.label = Some(target.as_ref().unwrap().to_string_value());
             }
