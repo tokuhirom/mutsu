@@ -37,6 +37,7 @@ fn answered_by_the_instance(method: &str) -> bool {
             | "perl"
             | "gist"
             | "Str"
+            | "Stringy"
             | "clone"
             | "item"
             | "self"
