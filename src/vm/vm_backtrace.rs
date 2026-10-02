@@ -308,6 +308,9 @@ impl BacktraceCapture {
 
             let mut frame_attrs = HashMap::new();
             frame_attrs.insert("subname".to_string(), Value::str(subname));
+            // The routine's declaring package, so `.code.package` answers it.
+            frame_attrs.insert("package".to_string(), Value::str(frame.package.resolve()));
+            frame_attrs.insert("is-method".to_string(), Value::truth(frame.is_method));
             frame_attrs.insert(
                 "is-hidden".to_string(),
                 Value::truth(frame.is_hidden_from_backtrace),

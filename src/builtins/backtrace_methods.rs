@@ -54,7 +54,8 @@ fn frame_entry(subname: &str, file: &str, line: &str) -> String {
 
 /// The `Backtrace::Frame.code` value: mutsu does not retain the actual
 /// routine a frame points into, so this synthesizes a `Routine` carrying just
-/// the frame's `subname` (`.code.name` is the documented use). Shared by the
+/// the frame's `subname` (`.code.name` is the documented use) and
+/// declaring `package`. Shared by the
 /// `code` accessor and the `.raku`/`.gist` renderer so both describe the same
 /// object.
 pub(crate) fn frame_code_value(attributes: &Gc<InstanceAttrs>) -> Value {
@@ -63,7 +64,31 @@ pub(crate) fn frame_code_value(attributes: &Gc<InstanceAttrs>) -> Value {
         .get("subname")
         .map(|v| v.to_string_value())
         .unwrap_or_default();
-    Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(&subname), false)
+    let package = attributes
+        .as_map()
+        .get("package")
+        .map(|v| v.to_string_value())
+        .filter(|p| !p.is_empty())
+        .map_or_else(|| Symbol::intern("GLOBAL"), |p| Symbol::intern(&p));
+    let is_method = attributes
+        .as_map()
+        .get("is-method")
+        .is_some_and(Value::truthy);
+    if is_method || crate::qualified::is_global_package(package) {
+        return Value::routine_parts(package, Symbol::intern(&subname), false);
+    }
+    // A plain `Sub` declared in a package: a bare routine handle would
+    // report `Method` for any non-GLOBAL package, so synthesize a (bodiless)
+    // `Sub` carrying the package instead.
+    Value::make_sub(
+        package,
+        Symbol::intern(&subname),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        false,
+        crate::env::Env::new(),
+    )
 }
 
 /// A `Backtrace::Frame` is a "routine" frame when it has a real subname
