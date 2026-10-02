@@ -27,4 +27,4 @@ allocated, so its plan never got the free-variable slot bake. It now emits a
 plan-only registration like every other hoist site
 (`Compiler::hoist_one_sub_decl`).
 
-Closes mutsu#9911. Test: `t/routines/hoisted-sub-free-var-before-declaration.t`.
+Closes mutsu#9911. Test: `t/routines/sub-hoisted-free-var-before-declaration.t`.
