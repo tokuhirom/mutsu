@@ -108,6 +108,12 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
 /// transfer means that phantom statement never actually runs (#8610). A
 /// non-empty parenthesized form (e.g. `last(LABEL)`, a real call with a
 /// `Label` argument) is left untouched.
+/// Whether `input` opens a non-empty parenthesized argument list
+/// (`next(FOO)`), which is the routine form rather than the statement.
+fn has_call_args(input: &str) -> bool {
+    input.starts_with('(') && consume_empty_call_parens(input).len() == input.len()
+}
+
 fn consume_empty_call_parens(input: &str) -> &str {
     let Some(after_paren) = input.strip_prefix('(') else {
         return input;
@@ -125,8 +131,9 @@ fn consume_empty_call_parens(input: &str) -> &str {
 pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
-    // `last |c` passes a slipped argument list: the expression form owns it.
-    if rest.starts_with('|') {
+    // `last |c` passes a slipped argument list and `last(LABEL)` a `Label`
+    // value: the expression form owns both.
+    if rest.starts_with('|') || has_call_args(rest) {
         return Err(PError::expected("last statement"));
     }
     // Check for label: last LABEL
@@ -143,8 +150,9 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
-    // `next |c` passes a slipped argument list: the expression form owns it.
-    if rest.starts_with('|') {
+    // `next |c` passes a slipped argument list and `next(LABEL)` a `Label`
+    // value: the expression form owns both.
+    if rest.starts_with('|') || has_call_args(rest) {
         return Err(PError::expected("next statement"));
     }
     // Check for label: next LABEL
@@ -161,8 +169,9 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
-    // `redo |c` passes a slipped argument list: the expression form owns it.
-    if rest.starts_with('|') {
+    // `redo |c` passes a slipped argument list and `redo(LABEL)` a `Label`
+    // value: the expression form owns both.
+    if rest.starts_with('|') || has_call_args(rest) {
         return Err(PError::expected("redo statement"));
     }
     // Check for label: redo LABEL

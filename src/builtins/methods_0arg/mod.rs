@@ -336,6 +336,12 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(&pairs, method_sym);
     }
 
+    // A loop `Label` (`FOO.name`, `FOO.next`, ...); see `builtins/label.rs`.
+    // Cost: O(1) to decline any other receiver (one `view()` probe).
+    if let Some(result) = crate::builtins::label::label_method_0arg(target, method) {
+        return Some(result);
+    }
+
     // Cost: O(1), one lookup in the Attribute metadata map.
     if method == "DEPRECATED"
         && let ValueView::Instance {

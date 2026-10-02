@@ -369,6 +369,38 @@ pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)>
     })
 }
 
+/// The (at most) `n` characters of the original source right before `at`, or
+/// an empty string when `at` is outside the recorded source buffer. A loop
+/// `Label` quotes this much context in its `.gist`.
+// Cost: O(n) plus the char-boundary walk back from `at`.
+pub(in crate::parser) fn source_chars_before(at: &str, n: usize) -> String {
+    ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        let (src_ptr, src_len) = (origin.ptr, origin.len);
+        let at_ptr = at.as_ptr() as usize;
+        if src_ptr == 0 || at_ptr < src_ptr || at_ptr > src_ptr + src_len {
+            return String::new();
+        }
+        let offset = at_ptr - src_ptr;
+        // SAFETY: as in `source_span_at`: (src_ptr, src_len) was recorded from
+        // a live `&str` and `offset` is within `[0, src_len]`.
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, src_len))
+        };
+        let prefix = &full[..offset];
+        let start = prefix
+            .char_indices()
+            .rev()
+            .nth(n.saturating_sub(1))
+            .map_or(0, |(i, _)| i);
+        if n == 0 {
+            String::new()
+        } else {
+            prefix[start..].to_string()
+        }
+    })
+}
+
 /// The 1-based line of the original source that `eject` points at, or `None`
 /// when it is outside the recorded source buffer. For diagnostics that have to
 /// name a line in their own message text rather than in error metadata (rakudo

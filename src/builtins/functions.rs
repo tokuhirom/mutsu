@@ -80,6 +80,19 @@ pub(crate) fn native_function(
         }
         return native_function_variadic(name, args);
     }
+    // `next(LABEL)` / `last(LABEL)` / `redo(LABEL)` and the `next |c` slip:
+    // the routine forms of loop control. They never return a value.
+    // Cost: O(1).
+    if let Some(control) = match name {
+        "next" => Some(crate::value::Control::Next),
+        "last" => Some(crate::value::Control::Last),
+        "redo" => Some(crate::value::Control::Redo),
+        _ => None,
+    } {
+        return Some(Err(crate::builtins::label::loop_control_call(
+            control, args,
+        )));
+    }
     if name == "split" {
         return crate::builtins::split::native_split_function(args);
     }

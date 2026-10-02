@@ -24,13 +24,29 @@ pub(crate) fn register_user_sub(name: &str) {
 /// it, so the declaration is already registered by the time the reference is
 /// parsed. Registered in the *current* scope; the loop body pushes a nested
 /// scope, and `is_declared_loop_label` searches outwards.
-pub(crate) fn register_loop_label(name: &str) {
+///
+/// `at` is the source at the label's name; the `Label` value the bareword
+/// evaluates to in term position (`FOO.next`, `f(FOO)`) is built here, once,
+/// from the name, the unit's file, the line and the source around `at`.
+pub(crate) fn register_loop_label(name: &str, at: &str) {
+    let file = crate::unit_source_file::current()
+        .map(|f| f.resolve())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let line = crate::parser::primary::current_line_number(at);
+    let prematch = crate::parser::primary::source_chars_before(at, 20);
+    let postmatch: String = at
+        .get(name.len()..)
+        .unwrap_or("")
+        .chars()
+        .take(20)
+        .collect();
+    let label = crate::builtins::label::make_label(name, &file, line, &prematch, &postmatch);
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        current.loop_labels.insert(name.to_string());
+        current.loop_labels.insert(name.to_string(), label);
     });
     // `next FOO` parses differently once `FOO` is a known label, so a memoized
     // parse of the body taken before the declaration must not be reused.
@@ -43,7 +59,17 @@ pub(crate) fn is_declared_loop_label(name: &str) -> bool {
         s.borrow()
             .iter()
             .rev()
-            .any(|scope| scope.loop_labels.contains(name))
+            .any(|scope| scope.loop_labels.contains_key(name))
+    })
+}
+
+/// The `Label` value of the innermost declared loop label named `name`.
+pub(crate) fn declared_loop_label_value(name: &str) -> Option<crate::value::Value> {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .rev()
+            .find_map(|scope| scope.loop_labels.get(name).cloned())
     })
 }
 

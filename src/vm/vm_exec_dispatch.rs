@@ -4903,57 +4903,24 @@ impl Interpreter {
             // answers it. See `runtime/loop_handler_depth.rs`.
             // Cost: O(1) (raises a control signal; the unwind is paid by the loop).
             OpCode::Last(label) => {
-                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
-                    let illegal = if label.is_some() {
-                        "labeled last"
-                    } else {
-                        "last"
-                    };
-                    return Err(RuntimeError::control_flow_illegal(
-                        crate::value::Control::Last,
-                        illegal,
-                        "loop construct",
-                    ));
-                }
-                let mut sig = RuntimeError::last_signal();
-                sig.label = label.clone();
-                return Err(sig);
+                return Err(crate::runtime::loop_handler_depth::loop_control_signal(
+                    crate::value::Control::Last,
+                    label.clone(),
+                ));
             }
             // Cost: O(1) (raises a control signal).
             OpCode::Next(label) => {
-                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
-                    let illegal = if label.is_some() {
-                        "labeled next"
-                    } else {
-                        "next"
-                    };
-                    return Err(RuntimeError::control_flow_illegal(
-                        crate::value::Control::Next,
-                        illegal,
-                        "loop construct",
-                    ));
-                }
-                let mut sig = RuntimeError::next_signal();
-                sig.label = label.clone();
-                return Err(sig);
+                return Err(crate::runtime::loop_handler_depth::loop_control_signal(
+                    crate::value::Control::Next,
+                    label.clone(),
+                ));
             }
             // Cost: O(1) (raises a control signal).
             OpCode::Redo(label) => {
-                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
-                    let illegal = if label.is_some() {
-                        "labeled redo"
-                    } else {
-                        "redo"
-                    };
-                    return Err(RuntimeError::control_flow_illegal(
-                        crate::value::Control::Redo,
-                        illegal,
-                        "loop construct",
-                    ));
-                }
-                let mut sig = RuntimeError::redo_signal();
-                sig.label = label.clone();
-                return Err(sig);
+                return Err(crate::runtime::loop_handler_depth::loop_control_signal(
+                    crate::value::Control::Redo,
+                    label.clone(),
+                ));
             }
 
             // -- Given/When control --
