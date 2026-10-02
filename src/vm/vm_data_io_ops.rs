@@ -328,6 +328,15 @@ impl Interpreter {
         // {$seen=1} }`). Capture the caller frame's code before any dispatch
         // clobbers `current_code`, and reconcile after.
         let caller_code = self.current_code;
+        if kind.renders_gist() {
+            // A Seq over a user iterator that reports `is-lazy` renders as
+            // `(...)` rather than being pulled forever.
+            for v in &values {
+                if let ValueView::Seq(body) = v.view() {
+                    self.resolve_seq_iterator_laziness(&body)?;
+                }
+            }
+        }
         let mut content = String::new();
         for v in &values {
             // `say`/`note` render only the gist head of a long list, so only

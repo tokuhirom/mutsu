@@ -485,6 +485,9 @@ impl Interpreter {
             }
             return Ok(target);
         };
+        if matches!(method, "is-lazy" | "gist") {
+            self.resolve_seq_iterator_laziness(&body)?;
+        }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }

@@ -219,6 +219,7 @@ mod vm_helpers_lazy_nested;
 mod vm_helpers_lazy_pull;
 mod vm_helpers_lazy_reify;
 mod vm_helpers_lazy_scan;
+mod vm_helpers_lazy_seq_is_lazy;
 pub(crate) mod vm_hyper_func;
 mod vm_hyper_method_ops;
 pub(crate) mod vm_hyper_ops;
