@@ -444,6 +444,15 @@ impl Interpreter {
         }
     }
 
+    /// `name` without the auto-package qualification (`G::x` -> `x`) a body
+    /// compiled inside `grammar G { ... }` records its free-variable writes under.
+    pub(super) fn strip_regex_pkg_prefix<'a>(pkg: &Symbol, name: &'a str) -> &'a str {
+        if *pkg == "GLOBAL" {
+            return name;
+        }
+        name.strip_prefix(&format!("{pkg}::")).unwrap_or(name)
+    }
+
     /// Carry an assertion body's assignments to *outer* lexicals through to the
     /// caller's compiled local slots.
     ///
@@ -462,7 +471,11 @@ impl Interpreter {
     /// restore (the regex's own `:my`/`:let` lexicals, `$/` / `$¢` / `$0`…, and
     /// the body's own `my` declarations); none of them is a caller lexical.
     /// `made` is engine state, not a variable the caller can declare.
-    fn writeback_assertion_free_var_writes(&mut self, names: &[String], scoped: &[String]) {
+    pub(super) fn writeback_assertion_free_var_writes(
+        &mut self,
+        names: &[String],
+        scoped: &[String],
+    ) {
         if names.is_empty() {
             return;
         }
@@ -472,17 +485,8 @@ impl Interpreter {
         // lexical in `env` — strip the package so the two names agree (the same
         // adjustment the deferred class/role body drain in `run.rs` makes).
         let pkg = self.current_package_sym();
-        let pkg_prefix = if pkg == "GLOBAL" {
-            String::new()
-        } else {
-            format!("{pkg}::")
-        };
         for name in names {
-            let name = if pkg_prefix.is_empty() {
-                name.as_str()
-            } else {
-                name.strip_prefix(&pkg_prefix).unwrap_or(name.as_str())
-            };
+            let name = Self::strip_regex_pkg_prefix(&pkg, name);
             if matches!(name, "made" | "_" | "$_" | "@_" | "%_") || scoped.iter().any(|s| s == name)
             {
                 continue;
