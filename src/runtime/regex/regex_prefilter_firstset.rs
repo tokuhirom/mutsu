@@ -183,12 +183,23 @@ impl FirstSet {
     /// `chars[i]` is admitted by the set already. Anything else falls back to
     /// admitting the position, which costs one wasted engine entry near a
     /// non-ASCII character and never a wrong answer.
+    ///
+    /// Every set is also a statement about *single-codepoint* graphemes only:
+    /// a class atom tests a multi-codepoint cluster by rules of its own (an
+    /// enumerated character never equals `x` + U+0301, so `<-[a..z]>` matches
+    /// that cluster although it rejects `x`; see `class_matches_cluster_base`).
+    /// A position that starts such a cluster is therefore always admitted
+    /// (a mark-skewed set already speaks about the stripped base, see below).
+    /// `grapheme_end` answers that with one comparison on ASCII text.
     #[inline]
     pub(crate) fn admits_at(&self, chars: &[char], i: usize) -> bool {
         if self.contains(chars[i]) {
             return true;
         }
-        if !self.mark_skewed || i == 0 {
+        if !self.mark_skewed {
+            return super::regex_helpers::grapheme_end(chars, i) > i + 1;
+        }
+        if i == 0 {
             return false;
         }
         let prev = chars[i - 1];

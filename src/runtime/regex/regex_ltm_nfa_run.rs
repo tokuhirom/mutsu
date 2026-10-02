@@ -229,7 +229,7 @@ impl LtmNfa {
                 // A node that can only go on from a character `here` is not:
                 // the thread dies here, as it would in the matcher.
                 if let Some(guard) = &self.guards[node as usize]
-                    && !here.is_some_and(|c| guard.contains(c))
+                    && !(here.is_some() && guard.admits_at(chars, pos))
                 {
                     continue;
                 }

@@ -52,6 +52,30 @@ pub(super) fn class_matches_ignorecase(class: &CharClass, c: char, ignore_case: 
     if class.negated { !matched } else { matched }
 }
 
+/// Whether a grapheme of several codepoints whose base is `c` is in `class`
+/// (no `Grapheme` entry matched it). An enumerated character or range names
+/// one codepoint, which such a cluster never equals, so only the class's
+/// other items (`\w`, `\s`, `<:L>`, ...) are asked, of the base. Hence
+/// `"x\x[301]"` is in `<-[a..z]>` and `<[\w]>` but not in `<[a..z\s]>`.
+// Cost: O(k), k = items in the class.
+pub(super) fn class_matches_cluster_base(class: &CharClass, c: char, ignore_case: bool) -> bool {
+    let rest = CharClass {
+        negated: class.negated,
+        items: class
+            .items
+            .iter()
+            .filter(|item| {
+                !matches!(
+                    item,
+                    ClassItem::Char(_) | ClassItem::Range(..) | ClassItem::Grapheme(_)
+                )
+            })
+            .cloned()
+            .collect(),
+    };
+    class_matches_ignorecase(&rest, c, ignore_case)
+}
+
 /// Whether `c` is in `class` (case-sensitively). See
 /// [`class_matches_ignorecase`] for why this is a free function.
 pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
