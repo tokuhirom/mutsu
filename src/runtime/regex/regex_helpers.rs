@@ -1790,7 +1790,22 @@ pub(super) fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
     *pat.derived.capture_group_count.get_or_init(|| {
         let mut count = 0;
         for token in &pat.tokens {
-            count += count_capture_groups(token);
+            // A `$N=` alias files slot N itself (padding the slots below it):
+            // over a capture group it replaces the group's own slot, over
+            // anything else it comes after the atom's slots.
+            match token
+                .named_capture
+                .as_ref()
+                .and_then(|n| n.parse::<usize>().ok())
+            {
+                Some(n) => {
+                    if !matches!(token.atom, RegexAtom::CaptureGroup(_)) {
+                        count += count_capture_groups(token);
+                    }
+                    count = count.max(n + 1);
+                }
+                None => count += count_capture_groups(token),
+            }
             if let Some(sep) = token.separator.as_ref() {
                 count += count_pattern_capture_groups(&sep.pattern);
             }
