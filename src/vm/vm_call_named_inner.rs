@@ -251,6 +251,7 @@ impl Interpreter {
                 }
             }
         };
+        self.arm_rw_param_rebinds(&cf.code, &rw_bindings);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
         self.static_call_args = false;
@@ -623,7 +624,11 @@ impl Interpreter {
                     continue;
                 }
                 if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
-                    let final_val = self.locals[slot].clone();
+                    // A body that rebound the param (`$p := ...`) detached it
+                    // from the caller: write back its pre-rebind value (#10361).
+                    let final_val = self
+                        .rw_param_detached_value(slot)
+                        .unwrap_or_else(|| self.locals[slot].clone());
                     self.env_mut().insert(param_name.clone(), final_val);
                 }
             }

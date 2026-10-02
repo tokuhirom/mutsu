@@ -3432,6 +3432,7 @@ impl Interpreter {
             pending_caller_var_writeback: rustc_hash::FxHashSet::default(),
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
+            rw_param_rebinds: Vec::new(),
             otf_compile_cache: HashMap::new(),
             imported_compiled_fns: HashMap::new(),
             state_scope_id: Box::new(std::cell::Cell::new(None)),

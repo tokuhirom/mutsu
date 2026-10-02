@@ -78,6 +78,7 @@ impl Interpreter {
             saved_pending_caller_var_writeback: std::mem::take(
                 &mut self.pending_caller_var_writeback,
             ),
+            saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
         };
         // A call-site "the topic argument is a bare literal" flag
         // (`OpCode::CallOnValue`'s `bare_args`) belongs to exactly one call.
@@ -114,6 +115,7 @@ impl Interpreter {
             saved_pending_caller_var_writeback: std::mem::take(
                 &mut self.pending_caller_var_writeback,
             ),
+            saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
         };
         self.call_frames.push(frame);
     }
@@ -152,6 +154,7 @@ impl Interpreter {
             self.active_loop_rw_param_names.pop_frame(caller);
         }
         self.exit_readonly_frame(frame.readonly_mark);
+        self.rw_param_rebinds = std::mem::take(&mut frame.saved_rw_param_rebinds);
         // Unclaimed writebacks recorded in this frame belong further up; put
         // them back beside the caller's.
         let outer = std::mem::take(&mut frame.saved_pending_caller_var_writeback);
