@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 27;
 
 # Rakudo words a failed store as `... expected R but got F (F.new)`: the offending
 # OBJECT's class name, then its `.raku` in parentheses. mutsu named every object
@@ -103,3 +103,26 @@ try Outer.new.m;
 is $!.message,
     'Type check failed in assignment to $!n; expected Int but got Outer::Inner (Outer::Inner.new)',
     'a nested class is named qualified';
+
+# A built-in object type is named by its own `.raku`, not the user-class
+# attribute dump (`Blob.new`) (#10677).
+{
+    role BR {}
+    class BH { has BR $.r }
+    try BH.new(:r(Blob.new(1, 2)));
+    is $!.message, 'Type check failed in assignment to $!r; expected BR but got Blob (Blob.new(1,2))',
+        'a Blob';
+    try BH.new(:r(Buf.new(1, 2)));
+    is $!.message, 'Type check failed in assignment to $!r; expected BR but got Buf (Buf.new(1,2))',
+        'a Buf';
+    try BH.new(:r(buf8.new(3)));
+    is $!.message, 'Type check failed in assignment to $!r; expected BR but got Buf[uint8] (Buf[uint8].new(3))',
+        'a buf8';
+    try BH.new(:r(IO::Path.new('/tmp')));
+    is $!.message, 'Type check failed in assignment to $!r; expected BR but got IO::Path (IO::Path.new("/tmp",...)',
+        'an IO::Path, cut like rakudo';
+    my BR $x;
+    try { $x = Blob.new(7) };
+    is $!.message, 'Type check failed in assignment to $x; expected BR but got Blob (Blob.new(7))',
+        'a typed scalar variable';
+}
