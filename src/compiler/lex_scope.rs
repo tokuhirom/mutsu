@@ -118,6 +118,38 @@ pub(crate) fn outer_is_visible_binding(scopes: &[ScopeFrame], bare: &str, depth:
     !inner.iter().any(|frame| frame.contains_key(bare))
 }
 
+/// The index, in `scopes`, of the scope `OUTER::` at `depth` names, when that
+/// scope lies inside the chain and declares `bare` -- i.e. when the lookup
+/// names one definite binding (#10827). `None` for the topic, for a depth that
+/// crosses the chain's outermost scope, and for a scope that does not declare
+/// the name (the read side answers that one with a constant Nil).
+// Cost: O(1).
+pub(crate) fn outer_target_index(scopes: &[ScopeFrame], bare: &str, depth: usize) -> Option<usize> {
+    let n = scopes.len();
+    if depth == 0 || depth >= n || bare == "_" {
+        return None;
+    }
+    let target = n - 1 - depth;
+    scopes[target].contains_key(bare).then_some(target)
+}
+
+/// The emit-point slot of the binding `bare` has in the scope at index
+/// `target` of `scopes` (see [`outer_target_index`]). `None` unless a
+/// shadow-slot build recorded one for every intervening shadow.
+// Cost: O(d), d = the number of scopes between the emit point and the target.
+pub(crate) fn slot_at_index(
+    scopes: &[ScopeFrame],
+    local_map: &HashMap<String, u32>,
+    bare: &str,
+    target: usize,
+) -> Option<u32> {
+    let n = scopes.len();
+    if target >= n {
+        return None;
+    }
+    resolve_slot(scopes, local_map, bare, n - 1 - target)
+}
+
 /// Resolve `OUTERS::` -- packages.rakudoc: "Symbols in any outer lexical scope".
 ///
 /// Where `OUTER` names one scope, `OUTERS` searches outward and stops at the
