@@ -1371,7 +1371,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if r.starts_with('{') {
                 let (r, pat) = parse_raw_braced_regex_body(r)?;
                 let pat = finalize_anon_regex_pattern(&pat, kind);
-                return Ok((r, Expr::Literal(Value::regex(pat))));
+                return Ok((r, Expr::Literal(Value::anon_regex_code(pat, None))));
             }
             if r.starts_with('(')
                 && let Ok((r, param_defs)) = parse_anon_regex_signature(r)
@@ -1381,7 +1381,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let pat = finalize_anon_regex_pattern(&pat, kind);
                 return Ok((
                     r,
-                    Expr::Literal(Value::regex_with_signature(pat, param_defs)),
+                    Expr::Literal(Value::anon_regex_code(pat, Some(param_defs))),
                 ));
             }
         }

@@ -209,8 +209,15 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn insert_token_def(&mut self, name: &str, mut def: FunctionDef, multi: bool) {
-        let key = dispatch_key::qualified_intern(&self.current_package(), name);
+    /// Register a token/rule/regex candidate `name` in `package`.
+    pub(super) fn insert_token_def_in(
+        &mut self,
+        package: &str,
+        name: &str,
+        mut def: FunctionDef,
+        multi: bool,
+    ) {
+        let key = dispatch_key::qualified_intern(package, name);
         // Stamp declaration order: grammar bodies register their `token`s
         // top-to-bottom, so a monotonic counter captures declaration order,
         // which is Rakudo's tie-break for an equal-length LTM tie between

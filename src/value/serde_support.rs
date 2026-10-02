@@ -67,7 +67,9 @@ enum SerValue {
     /// text (`Regex.gist`) and source tree across the module AST cache.
     RegexDeclared {
         pattern: String,
-        declared_source: String,
+        /// `None` for an anonymous declarator term (`regex { ... }`), which
+        /// keeps its code-object payload but has no declaration text.
+        declared_source: Option<String>,
         source_tree: Option<Box<crate::regex_tree::RegexTree>>,
         signature: Option<Vec<crate::ast::ParamDef>>,
     },
@@ -254,15 +256,13 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             value: value.clone(),
             index,
         }),
-        ValueView::Regex(s) => match v.regex_declared_source() {
-            Some(declared_source) => Ok(SerValue::RegexDeclared {
-                pattern: (**s).clone(),
-                declared_source: declared_source.to_string(),
-                source_tree: v.regex_source_tree().cloned().map(Box::new),
-                signature: v.regex_signature().map(|sig| (*sig).clone()),
-            }),
-            None => Ok(SerValue::Regex((**s).clone())),
-        },
+        ValueView::Regex(s) if v.is_regex_code_payload() => Ok(SerValue::RegexDeclared {
+            pattern: (**s).clone(),
+            declared_source: v.regex_declared_source().map(str::to_string),
+            source_tree: v.regex_source_tree().cloned().map(Box::new),
+            signature: v.regex_signature().map(|sig| (*sig).clone()),
+        }),
+        ValueView::Regex(s) => Ok(SerValue::Regex((**s).clone())),
         ValueView::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
             pattern: (*a.pattern).clone(),
             global: a.global,
@@ -493,7 +493,8 @@ fn ser_to_value(sv: SerValue) -> Value {
             source_tree,
             signature: signature.map(Arc::new),
             topic: None,
-            declared_source: Some(Arc::from(declared_source)),
+            declared_source: declared_source.map(Arc::from),
+            name: Default::default(),
         })),
         SerValue::RegexWithAdverbs {
             pattern,
