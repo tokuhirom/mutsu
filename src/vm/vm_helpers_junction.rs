@@ -308,13 +308,26 @@ impl Interpreter {
             let gen_state = list.generation_state.lock().unwrap();
             gen_state.as_ref().cloned().unwrap_or_default()
         };
+        // `cache` and the history end at the same generator frontier, but
+        // need not have the same length: a front mutation of a lazy
+        // `@`-array (`shift`, `unshift`, `splice`) rewrites the cache's
+        // prefix and leaves the generator's own history untouched, as
+        // Rakudo's sequence iterator never sees the array it feeds (#10861).
+        // So `needed` counts cache elements, and the cache receives exactly
+        // the elements this call generates.
+        let generated_from = history.len();
+        let cached_len = list.cache.lock().unwrap().as_ref().map(Vec::len);
+        let have = |history: &Vec<Value>| match cached_len {
+            Some(c) => c + (history.len() - generated_from),
+            None => history.len(),
+        };
 
         let state_mutex = list.closure_seq.as_ref().unwrap();
         let mut guard = state_mutex.lock().unwrap();
         let state = &mut *guard;
         let generator = state.generator.clone();
 
-        while history.len() < needed && !state.finished {
+        while have(&history) < needed && !state.finished {
             match self.sequence_closure_step(&generator, &history, state.generator_shape, false)? {
                 // A generator that `slip`s multiple values (`{ slip $^a+1, $^b*2 }`)
                 // contributes each as its own sequence element — flatten the Slip
@@ -351,16 +364,17 @@ impl Interpreter {
             }
         }
 
-        // Publish the extended PRISTINE history back to `generation_state`...
-        *list.generation_state.lock().unwrap() = Some(history.clone());
-        // ...and append only the NEWLY generated tail to `cache` -- positions
-        // it already had may hold a user override and must not be clobbered
-        // (see `extend_sequence_cache`'s matching comment).
+        // Append only the NEWLY generated tail to `cache` -- positions it
+        // already had may hold a user override and must not be clobbered
+        // (see `extend_sequence_cache`'s matching comment) -- and publish
+        // the extended PRISTINE history back to `generation_state`.
         let mut cache = list.cache.lock().unwrap();
-        let cached = cache.get_or_insert_with(Vec::new);
-        if cached.len() < history.len() {
-            cached.extend_from_slice(&history[cached.len()..]);
+        match cache.as_mut() {
+            Some(cached) => cached.extend_from_slice(&history[generated_from..]),
+            None => *cache = Some(history.clone()),
         }
+        *list.generation_state.lock().unwrap() = Some(history);
+        let cached = cache.as_ref().unwrap();
         let take = needed.min(cached.len());
         Ok(cached[..take].to_vec())
     }

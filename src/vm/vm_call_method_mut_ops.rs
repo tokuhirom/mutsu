@@ -656,11 +656,13 @@ impl Interpreter {
         // Mutating a lazy `@`-array (infinite source). raku rejects operations
         // that touch the (non-existent) end — push/pop/append — with
         // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/
-        // splice). A sequence-spec array keeps its laziness across those
-        // (`vm_lazy_front_mutate`, run before this impl); the remaining
-        // cache-backed specs below still reify the cached prefix to a real
-        // Array first. Restricted to specs whose reify never runs user code or
-        // hangs. (L2)
+        // splice). An array over an infinite sequence spec, an endpoint-less
+        // closure sequence or a triangle reduce keeps its laziness across
+        // those (`vm_lazy_front_mutate`, run before this impl); the finite
+        // shapes below (a closure sequence with an endpoint, a `lazy`-marked
+        // finite list) still reify to a real Array first, and an infinite one
+        // reaching here through another route answers the strict force's
+        // `X::Cannot::Lazy`. (L2)
         if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()

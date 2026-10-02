@@ -1,12 +1,14 @@
 //! Front mutation (`shift` / `unshift` / `prepend` / `splice`) of a lazy
-//! `@`-array backed by a [`SequenceSpec`](crate::value::SequenceSpec) LazyList
-//! (`my @a = 1..*`, `my @a = 1, 2, 4 ... *`, `.roll(*)`).
+//! `@`-array backed by one of the infinite generator shapes: a
+//! [`SequenceSpec`](crate::value::SequenceSpec) LazyList (`my @a = 1..*`,
+//! `my @a = 1, 2, 4 ... *`, `.roll(*)`), an endpoint-less closure sequence
+//! (`my @a = 1, 1, * + * ... *`) or a triangle reduce (`my @a = [\+] 1..*`).
 //!
-//! Every sequence spec is infinite, so a strict force of one throws
-//! `X::Cannot::Lazy` (#10846). A front mutation only touches a bounded prefix,
-//! though, and Rakudo keeps the array lazy across it (`my @a = 1..*; @a.shift;
-//! @a[^3]` is `(2 3 4)`, and `@a.is-lazy` stays `True`). So the mutation runs
-//! in three steps:
+//! None of them can be strictly forced: the strict force throws
+//! `X::Cannot::Lazy` (#10846, #10861). A front mutation only touches a bounded
+//! prefix, though, and Rakudo keeps the array lazy across it (`my @a = 1..*;
+//! @a.shift; @a[^3]` is `(2 3 4)`, and `@a.is-lazy` stays `True`). So the
+//! mutation runs in three steps:
 //!
 //! 1. [`Interpreter::lazy_seq_front_mutation_prepare`] works out how many leading
 //!    elements the call touches (`k`), reifies exactly those as a real Array and
@@ -16,11 +18,23 @@
 //!    front of the untouched tail, as a fresh LazyList that keeps the live
 //!    generator, and installs it over the temporary Array.
 //!
-//! The rebuilt list keeps `cache` and `generation_state` the same length, as
-//! `extend_sequence_cache` requires: both become `prefix ++ old[k..]`. A
-//! sequence spec computes its next element from the last generated one only,
-//! and step 1 generates at least one element past `k`, so the generator's last
-//! value is never part of the rewritten prefix.
+//! The cache always becomes `prefix ++ old[k..]`. What happens to the
+//! generator's own state depends on the shape:
+//!
+//! - A sequence spec keeps `cache` and `generation_state` the same length, as
+//!   `extend_sequence_cache` requires: both are rewritten. It computes its next
+//!   element from the last generated one only, and step 1 generates at least
+//!   one element past `k`, so the generator's last value is never part of the
+//!   rewritten prefix.
+//! - A closure sequence's generator may read any amount of its trailing
+//!   history (a Fibonacci generator reads two elements, a slurpy one all of
+//!   them), so its `generation_state` is left untouched: as in Rakudo, the
+//!   sequence never sees the array it feeds. `extend_closure_sequence` only
+//!   needs the cache and the history to end at the same generator frontier,
+//!   which the stitch preserves.
+//! - A triangle reduce keeps its accumulator and source position in its
+//!   `ScanSpec`, which the stitch does not touch either; `force_scan_lazy_list`
+//!   walks the source from that position, not from the cache length.
 
 use super::*;
 
@@ -34,10 +48,11 @@ pub(super) struct LazySeqFrontMutation {
 
 impl Interpreter {
     /// Step 1 (see the module docs). `None` when the call is not a front
-    /// mutation of a sequence-spec lazy `@`-array; `Some(Err)` when it is one
+    /// mutation of an infinite-generator lazy `@`-array; `Some(Err)` when it is one
     /// that would have to reach the (non-existent) end of the list.
     ///
-    /// Cost: O(k), k = the number of leading elements the call touches.
+    /// Cost: O(k) generator steps, k = the number of leading elements the call
+    /// touches.
     pub(super) fn lazy_seq_front_mutation_prepare(
         &mut self,
         code: &CompiledCode,
@@ -55,8 +70,13 @@ impl Interpreter {
             return None;
         };
         let ll = ll.clone();
-        let spec = ll.sequence_spec.clone()?;
-        if !ll.in_array_context() {
+        let unbounded_closure_seq = ll
+            .closure_seq
+            .as_ref()
+            .is_some_and(|state| state.lock().unwrap().endpoint.is_none());
+        if !ll.in_array_context()
+            || !(ll.sequence_spec.is_some() || unbounded_closure_seq || ll.scan_spec.is_some())
+        {
             return None;
         }
         let args = &self.stack[target_idx + 1..];
@@ -76,8 +96,14 @@ impl Interpreter {
         };
         // One element past the prefix, so the generator's last value stays in
         // the untouched tail (see the module docs).
-        let mut items = match Self::extend_sequence_cache(&ll, &spec, prefix_len.saturating_add(1))
-        {
+        let reified = match ll.sequence_spec.as_ref() {
+            Some(spec) => Self::extend_sequence_cache(&ll, spec, prefix_len.saturating_add(1)),
+            None if unbounded_closure_seq => {
+                self.extend_closure_sequence(&ll, prefix_len.saturating_add(1))
+            }
+            None => self.force_scan_lazy_list(&ll, prefix_len.saturating_add(1)),
+        };
+        let mut items = match reified {
             Ok(items) => items,
             Err(e) => return Some(Err(e)),
         };
@@ -135,7 +161,11 @@ impl Interpreter {
             *slot = Some(next);
         };
         restitch(&mut rebuilt.cache.lock().unwrap());
-        restitch(&mut rebuilt.generation_state.lock().unwrap());
+        // Only a sequence spec reads its history in lockstep with the cache
+        // (see the module docs).
+        if rebuilt.sequence_spec.is_some() {
+            restitch(&mut rebuilt.generation_state.lock().unwrap());
+        }
         let restored = Value::lazy_list(crate::gc::Gc::new(rebuilt));
         self.env_mut()
             .insert(target_name.to_string(), restored.clone());

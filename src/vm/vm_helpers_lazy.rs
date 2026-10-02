@@ -1133,9 +1133,10 @@ impl Interpreter {
             let total = wp.lock().unwrap().targets.len();
             return self.force_walk_pending(list, total);
         }
-        // Handle scan-based lazy lists: compute elements on demand
-        if list.scan_spec.is_some() {
-            return self.force_scan_lazy_list(list, 200_000);
+        // A triangle reduce scans its strictly forced source; an infinite
+        // source answers X::Cannot::Lazy rather than a capped prefix (#10861).
+        if let Some(forced) = self.strict_force_scan(list) {
+            return forced;
         }
 
         // A lazy map/grep pipeline is rooted at an infinite source. It can still
@@ -1202,6 +1203,12 @@ impl Interpreter {
             .is_some_and(|state| state.lock().unwrap().endpoint.is_some())
         {
             return self.extend_closure_sequence(list, usize::MAX);
+        }
+        // An endpoint-less closure sequence is complete only once its
+        // generator ends it; its cache is otherwise just the prefix generated
+        // so far, never the whole list (#10861).
+        if let Some(forced) = self.strict_force_unbounded_closure_seq(list) {
+            return forced;
         }
 
         // A prior BOUNDED pull (`force_lazy_list_vm_n`, e.g. a single-element

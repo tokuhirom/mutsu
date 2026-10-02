@@ -129,24 +129,39 @@ impl Interpreter {
 
         let callable = self.reduction_callable_for_op(&base_op, None);
         let remaining = needed - cached_len;
+        // The source position runs ahead of the cache by however many elements
+        // a front mutation of a lazy `@`-array removed (or behind by however
+        // many it added): the source is walked from `already`, the scan's own
+        // count, never from the cache length (#10861).
+        let source_needed = already.saturating_add(remaining);
+        let span = |first: i64, offset: usize| first.saturating_add(offset as i64);
+        let remaining_i = i64::try_from(remaining).unwrap_or(i64::MAX);
 
         // Collect new source values to iterate over
         let new_values: Vec<Value> = match source.view() {
             ValueView::Range(a, b) => {
-                let start = a + already as i64;
-                let end = if b == i64::MAX { a + needed as i64 } else { b };
+                let start = span(a, already);
+                let end = if b == i64::MAX {
+                    span(a, source_needed)
+                } else {
+                    b
+                };
                 (start..=end).take(remaining).map(Value::int).collect()
             }
             ValueView::RangeExcl(a, b) => {
-                let start = a + already as i64;
-                let end = if b == i64::MAX { a + needed as i64 } else { b };
+                let start = span(a, already);
+                let end = if b == i64::MAX {
+                    span(a, source_needed)
+                } else {
+                    b
+                };
                 (start..end).take(remaining).map(Value::int).collect()
             }
             ValueView::RangeExclStart(a, b) => {
                 let first = a + 1;
-                let start = first + already as i64;
+                let start = span(first, already);
                 let end = if b == i64::MAX {
-                    first + needed as i64
+                    span(first, source_needed)
                 } else {
                     b
                 };
@@ -154,9 +169,9 @@ impl Interpreter {
             }
             ValueView::RangeExclBoth(a, b) => {
                 let first = a + 1;
-                let start = first + already as i64;
+                let start = span(first, already);
                 let end = if b == i64::MAX {
-                    first + needed as i64
+                    span(first, source_needed)
                 } else {
                     b
                 };
@@ -168,7 +183,7 @@ impl Interpreter {
                 if let Some(first) = crate::runtime::unbounded_range::first(&source)
                     && first.is_numeric() =>
             {
-                (already..already + remaining)
+                (already..source_needed)
                     .filter_map(|i| crate::runtime::unbounded_range::nth(&first, i))
                     .collect()
             }
@@ -182,11 +197,11 @@ impl Interpreter {
                 let is_infinite = end_f.is_infinite() && end_f.is_sign_positive();
                 let start_i = start.as_ref().to_f64() as i64;
                 let first_i = if excl_start { start_i + 1 } else { start_i };
-                let iter_start = first_i + already as i64;
+                let iter_start = span(first_i, already);
                 let iter_end = if is_infinite {
-                    iter_start + remaining as i64
+                    iter_start.saturating_add(remaining_i)
                 } else {
-                    (end_f as i64).min(iter_start + remaining as i64)
+                    (end_f as i64).min(iter_start.saturating_add(remaining_i))
                 };
                 (iter_start..=iter_end)
                     .take(remaining)
@@ -203,7 +218,7 @@ impl Interpreter {
             // out and the scan ends with it.
             ValueView::LazyList(inner) => {
                 let inner = inner.clone();
-                let items = self.force_lazy_list_vm_n(&inner, needed)?;
+                let items = self.force_lazy_list_vm_n(&inner, source_needed)?;
                 items.into_iter().skip(already).take(remaining).collect()
             }
             _ => {

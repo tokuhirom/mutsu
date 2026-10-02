@@ -62,6 +62,15 @@ impl Interpreter {
                 "Cannot coerce an infinite lazy list to a strict list",
             ));
         }
+        // An endpoint-less closure sequence or a triangle reduce: the cache is
+        // only a prefix, so strictly force the generator (#10861). Same
+        // verdict as `force_lazy_list_vm`.
+        if let Some(forced) = self.strict_force_unbounded_closure_seq(list) {
+            return forced;
+        }
+        if let Some(forced) = self.strict_force_scan(list) {
+            return forced;
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
