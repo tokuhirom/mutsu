@@ -411,7 +411,17 @@ impl Interpreter {
                 // object-hash element miss and hand back `Any`
                 // (`my %h{Any}; %h{Int} = IntStr; my $t := %h{Int}`).
                 let key = if map.key_type.is_some() {
-                    crate::runtime::utils::value_which_key(&index)
+                    let which = crate::runtime::utils::value_which_key(&index);
+                    // A missing key comes back as a deferred entry token that
+                    // carries only the `.WHICH` string, so record the key
+                    // object now: the write through the token stores under
+                    // that string, and `original_keys` is what maps it back to
+                    // the key (`sub f($k) is rw { %h{$k} }; f(1) = 2` on a
+                    // `my %h{Int}` is keyed by `1`, not `"Int|1"`, #10811).
+                    if !map.map.contains_key(&which) {
+                        resolved.hash_record_original_key(&which, &index);
+                    }
+                    which
                 } else {
                     Value::hash_key_encode(&index)
                 };

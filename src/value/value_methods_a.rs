@@ -1357,6 +1357,20 @@ impl Value {
         }
     }
 
+    /// Record `key` as the key object behind the object-hash store key `which`
+    /// (`HashData::original_keys`), in place. A no-op on a non-hash.
+    // Cost: O(1) expected.
+    pub(crate) fn hash_record_original_key(&self, which: &str, key: &Value) {
+        if let ValueView::Hash(arc) = self.view() {
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `gc_contents_mut`. No borrow into the map is live across the write.
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
+            data.original_keys
+                .get_or_insert_with(ValueMap::default)
+                .insert(which.to_string(), key.clone());
+        }
+    }
+
     /// Autovivify a hash entry with a scalar value (for binding/assignment).
     /// Inserts the given value at the key if missing, or replaces the existing value.
     /// Returns the value stored at the key after the operation.
