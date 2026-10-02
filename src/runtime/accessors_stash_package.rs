@@ -470,7 +470,9 @@ impl Interpreter {
             .registry()
             .functions
             .iter()
-            .filter(|(key, _)| super::dispatch_key::key_is_candidate_of(key.as_str(), pkg_str, name))
+            .filter(|(key, _)| {
+                super::dispatch_key::key_is_candidate_of(key.as_str(), pkg_str, name)
+            })
             .map(|(key, def)| (*key, def.clone()))
             .collect();
         if candidates.is_empty() {
