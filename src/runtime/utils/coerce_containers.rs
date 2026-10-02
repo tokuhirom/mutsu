@@ -528,6 +528,11 @@ where
 /// `map`/`grep`/`sort`/`reverse`, `.pairs`/`.kv`, the implicit topic) simply
 /// copies the flag along (§1.6.3).
 pub(crate) fn coerce_to_array(value: Value) -> Value {
+    // An unbounded range of any element type becomes its lazy `.succ`
+    // sequence in array context, not a capped prefix.
+    if let Some(lazy) = crate::runtime::utils::infinite_range_to_lazy_array(&value) {
+        return lazy;
+    }
     itemize_real_array_elements(coerce_to_array_inner(value))
 }
 

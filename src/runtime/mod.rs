@@ -986,6 +986,7 @@ mod mixin_wrapped_methods;
 mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;
+pub(crate) mod unbounded_range;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unicode_name_prop;

@@ -1016,6 +1016,32 @@ impl Interpreter {
             // `body` is shared by `target` (both alias the same
             // `Arc<SeqBody>`); the reify above already filled it in place.
         }
+        // An unbounded range the integer-range arms below cannot index by
+        // arithmetic (`1.5..*`, `"a"..*`, `^Inf`) is indexed as its
+        // `unbounded_range::lazy_list`, which reifies only as far as the
+        // largest index asked for, whatever the element type.
+        if is_positional
+            && target.is_range()
+            && range_params(&target).is_none()
+            && let Some(ll) = crate::runtime::unbounded_range::lazy_list(&target)
+        {
+            target = Value::lazy_list(crate::gc::Gc::new(ll));
+        }
+        // `@lazy[2..*]` over an infinite list is the rest of that list, still
+        // lazy (Rakudo): a `.skip` stage, instead of forcing an endless prefix.
+        if is_positional
+            && let ValueView::LazyList(ll) = target.view()
+            && ll.is_genuinely_lazy()
+            && let Some(ValueView::Int(skip)) = crate::runtime::unbounded_range::first(&index)
+                .as_ref()
+                .map(Value::view)
+            && skip >= 0
+            && let Some(rest) =
+                self.try_lazy_adaptor_method(&target, "skip", &[Value::int(skip)])?
+        {
+            self.stack.push(rest);
+            return Ok(());
+        }
         if let ValueView::LazyList(ll) = target.view() {
             let forced = self.force_lazy_list_for_index(&ll, &index)?;
             target = Value::array(forced);

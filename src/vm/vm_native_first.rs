@@ -51,8 +51,9 @@ impl Interpreter {
 
     /// Try to run `target.first(...)` natively. Returns `Some(result)` when
     /// handled in the Interpreter, `None` to fall back unchanged.
-    // Cost: O(i), i = index of the first match, on an Array/List/Seq (scanned
-    // in doubling chunks); O(e + i), e = elements, on any other receiver.
+    // Cost: O(i), i = index of the first match, on an Array/List/Seq or an
+    // unbounded Range (scanned in doubling chunks); O(e + i), e = elements, on
+    // any other receiver.
     pub(super) fn try_native_first(
         &mut self,
         target: &Value,
@@ -117,6 +118,22 @@ impl Interpreter {
         // already do. A `Hash` is decomposed whole into its pairs.
         if Self::promotable_array_len(target).is_some() || Self::first_borrows(target) {
             return answer(self.find_first_match_chunked_with(target, false, scan));
+        }
+        // An unbounded range of any element type is stepped by `.succ` in
+        // doubling chunks: O(i) time, nothing reified past the match.
+        if let Some(mut steps) = crate::runtime::unbounded_range::Steps::new(target) {
+            let mut chunk_len = 64usize;
+            loop {
+                let chunk = steps.take(chunk_len);
+                if chunk.is_empty() {
+                    return Some(Ok(Value::NIL));
+                }
+                match scan(self, &chunk, false) {
+                    Ok(None) => {}
+                    found => return answer(found),
+                }
+                chunk_len = (chunk_len * 2).min(1 << 16);
+            }
         }
         let items = crate::runtime::utils::value_to_list_for_receiver(target);
         answer(scan(self, &items, false))

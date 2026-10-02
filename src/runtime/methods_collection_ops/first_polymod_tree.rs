@@ -143,6 +143,26 @@ impl Interpreter {
             self.find_first_match_over_items(func, &bytes, has_end)?
         } else if Self::promotable_array_len(&target).is_some() || Self::first_borrows(&target) {
             self.find_first_match_chunked(&target, func, has_end)?
+        } else if !has_end
+            && let Some(mut steps) = crate::runtime::unbounded_range::Steps::new(&target)
+        {
+            // An unbounded range of any element type, stepped by `.succ` in
+            // doubling chunks; `:k`/`:kv`/`:p` keep the absolute index.
+            let mut offset = 0usize;
+            let mut chunk_len = 64usize;
+            loop {
+                let chunk = steps.take(chunk_len);
+                if chunk.is_empty() {
+                    break None;
+                }
+                if let Some((idx, value)) =
+                    self.find_first_match_over_items(func.clone(), &chunk, false)?
+                {
+                    break Some((offset + idx, value));
+                }
+                offset += chunk.len();
+                chunk_len = (chunk_len * 2).min(1 << 16);
+            }
         } else {
             let items = crate::runtime::utils::value_to_list_for_receiver(&target);
             self.find_first_match_over_items(func, &items, has_end)?

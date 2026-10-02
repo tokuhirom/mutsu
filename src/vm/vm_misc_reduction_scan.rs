@@ -175,7 +175,7 @@ impl Interpreter {
         let spec = crate::value::ScanSpec {
             op: base_op.to_string(),
             negate,
-            source: list_value.clone(),
+            source: crate::runtime::unbounded_range::pipe_source(list_value.clone()),
             accumulator: None,
             computed_count: 0,
         };

@@ -2980,6 +2980,9 @@ pub(crate) enum SequenceSpec {
     /// uniform-random pick from `pool` (unlike Arithmetic/Geometric, this
     /// never terminates and has no fixed "next" formula beyond the pool).
     RollPool(Vec<Value>),
+    /// Successor stepping: next = `last.succ` (an unbounded Range of any
+    /// element type, see `runtime::unbounded_range`).
+    Succ,
 }
 
 /// Specification for a lazy scan (triangle) reduction.

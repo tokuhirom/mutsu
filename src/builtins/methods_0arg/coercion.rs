@@ -321,14 +321,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             // An infinite Range's `.List` is a genuinely lazy List (Rakudo:
             // `(1..Inf).List.^name` is `List`, `.gist` is `(...)`, `.is-lazy`
-            // is `True`) — not the Range itself. A `LazyList` carrying an
-            // `Arithmetic` sequence spec already backs `1, 2, 3 ... *`, so
-            // reuse it here rather than inventing a second lazy representation.
+            // is `True`) — not the Range itself: the range's
+            // `unbounded_range::lazy_list`, whatever its element type.
             // Cost: O(1) for the infinite arm (builds a one-element seed);
             // O(e), e = elements, for the finite arm.
             ValueView::Range(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(infinite_arithmetic_list(a)))
+                    Some(Ok(unbounded_range_list(target)?))
                 } else if a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
@@ -338,7 +337,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExcl(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(infinite_arithmetic_list(a)))
+                    Some(Ok(unbounded_range_list(target)?))
                 } else if a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
@@ -412,6 +411,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 excl_start,
                 excl_end,
             } => {
+                if let Some(list) = unbounded_range_list(target) {
+                    return Some(Ok(list));
+                }
                 // String range: expand using codepoint succession
                 if let (ValueView::Str(s), ValueView::Str(e)) = (start.view(), end.view()) {
                     if s.chars().count() == 1 && e.chars().count() == 1 {
@@ -445,7 +447,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExclStart(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(infinite_arithmetic_list(a + 1)))
+                    Some(Ok(unbounded_range_list(target)?))
                 } else {
                     Some(Ok(Value::array((a + 1..=b).map(Value::int).collect())))
                 }
@@ -453,7 +455,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
             ValueView::RangeExclBoth(a, b) => {
                 if b == i64::MAX {
-                    Some(Ok(infinite_arithmetic_list(a + 1)))
+                    Some(Ok(unbounded_range_list(target)?))
                 } else {
                     Some(Ok(Value::array((a + 1..b).map(Value::int).collect())))
                 }
@@ -585,6 +587,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             };
             match target.view() {
+                // An unbounded range of any element type stays lazy: a lazy
+                // List for `.list`, a lazy Array for `.Array` (Rakudo:
+                // `(1..*).list.^name` is `List`, `(1.5..*).Array.is-lazy`).
+                // Cost: O(1).
+                _ if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) => {
+                    let ll = if want_array {
+                        ll.with_array_context()
+                    } else {
+                        ll.with_list_context()
+                    };
+                    Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))))
+                }
                 ValueView::Instance {
                     class_name,
                     attributes,
@@ -1265,19 +1279,12 @@ fn cannot_capture(type_name: &str) -> RuntimeError {
     RuntimeError::typed("X::Cannot::Capture", attrs)
 }
 
-/// Build the genuinely-lazy `List` an infinite ascending `Range.List` coerces
-/// to (`(1..Inf).List`): a `LazyList` carrying the same `Arithmetic`
-/// sequence spec that backs `1, 2, 3 ... *`, seeded at `start` with step 1,
-/// tagged as list context so `.^name` reads `List` and `.gist` renders
-/// `(...)` rather than the Array's `[...]`.
+/// The genuinely-lazy `List` an unbounded `Range.List` coerces to
+/// (`(1..Inf).List`, `("a"..*).List`): its `unbounded_range::lazy_list`,
+/// tagged as list context so `.^name` reads `List` and `.gist` renders `(...)`
+/// rather than the Array's `[...]`. `None` for any other value.
 /// Cost: O(1) (allocates a one-element seed vector and the LazyList shell).
-fn infinite_arithmetic_list(start: i64) -> Value {
-    let ll = crate::value::LazyList::new_sequence(
-        vec![Value::int(start)],
-        crate::value::SequenceSpec::Arithmetic {
-            step: 1,
-            all_int: true,
-        },
-    );
-    Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
+fn unbounded_range_list(target: &Value) -> Option<Value> {
+    let ll = crate::runtime::unbounded_range::lazy_list(target)?;
+    Some(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())))
 }

@@ -937,14 +937,11 @@ impl Interpreter {
         let value_is_lazy = |v: &Value| match v.view() {
             ValueView::LazyList(list) => list.is_genuinely_lazy(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
-            ValueView::Range(_, end)
-            | ValueView::RangeExcl(_, end)
-            | ValueView::RangeExclStart(_, end)
-            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
-            ValueView::GenericRange { end, .. } => {
-                let end_f = end.to_f64();
-                end_f.is_infinite() && end_f.is_sign_positive()
-            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => crate::builtins::is_infinite_range(v),
             _ => false,
         };
         let is_lazy = if value_is_lazy(target) {

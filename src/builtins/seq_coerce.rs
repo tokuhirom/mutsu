@@ -21,6 +21,10 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         ValueView::Seq(_) => Some(target.clone()),
         ValueView::Array(items, ..) => Some(Value::seq(items.to_vec())),
         ValueView::Slip(items) => Some(Value::seq(items.to_vec())),
+        // An unbounded range of any element type: its lazy `.succ` sequence.
+        _ if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) => {
+            Some(Value::lazy_list(crate::gc::Gc::new(ll)))
+        }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)

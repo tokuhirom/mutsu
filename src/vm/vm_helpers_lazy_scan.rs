@@ -2,14 +2,24 @@ use super::*;
 
 impl Interpreter {
     /// Pull the `idx`-th element of a pipeline source, or `None` when the source
-    /// has fewer than `idx + 1` elements (finite source exhausted). Infinite
-    /// integer ranges always produce. Nested lazy pipelines / gathers are pulled
+    /// has fewer than `idx + 1` elements (finite source exhausted). Unbounded
+    /// ranges always produce. Nested lazy pipelines / gathers are pulled
     /// incrementally via [`Self::force_lazy_list_vm_n`].
     pub(crate) fn pull_source_element(
         &mut self,
         source: &Value,
         idx: usize,
     ) -> Result<Option<Value>, RuntimeError> {
+        // An unbounded range with a numeric start (`^Inf`, `1.5..*`,
+        // `1e0..Inf`): element `idx` is `first + idx` in the start's own type,
+        // with nothing cached. (A non-numeric start reaches a pipe as its
+        // `unbounded_range::lazy_list` instead, see `pipe_source`.)
+        if matches!(source.view(), ValueView::GenericRange { .. })
+            && let Some(first) = crate::runtime::unbounded_range::first(source)
+            && let Some(v) = crate::runtime::unbounded_range::nth(&first, idx)
+        {
+            return Ok(Some(v));
+        }
         match source.view() {
             ValueView::Range(a, b)
             | ValueView::RangeExcl(a, b)
@@ -35,65 +45,6 @@ impl Interpreter {
                 } else {
                     Ok(None)
                 }
-            }
-            // Integer-start GenericRange (e.g. `^Inf`, `0..^Inf`): pull the
-            // idx-th element directly so an infinite range stays lazy instead of
-            // being materialized.
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } if matches!(start.as_ref().view(), ValueView::Int(_)) => {
-                let s = match start.as_ref().view() {
-                    ValueView::Int(i) => i,
-                    _ => unreachable!(),
-                };
-                let base = if excl_start { s.saturating_add(1) } else { s };
-                let cur = match base.checked_add(idx as i64) {
-                    Some(v) => v,
-                    None => return Ok(None),
-                };
-                let end_f = end.to_f64();
-                let in_bounds = if end_f.is_infinite() && end_f.is_sign_positive() {
-                    true
-                } else {
-                    let cur_f = cur as f64;
-                    if excl_end {
-                        cur_f < end_f
-                    } else {
-                        cur_f <= end_f
-                    }
-                };
-                Ok(in_bounds.then_some(Value::int(cur)))
-            }
-            // Finite non-integer numeric start with infinite end (`1.5..Inf`):
-            // yield `start + idx` (step 1), preserving the Rat/Num type. (Int
-            // starts are handled by the case above; finite-end ranges never
-            // reach the pull path — they are not lazy-pipe sources — but the
-            // bounds check stays correct if one does.)
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } if start.is_numeric() && start.to_f64().is_finite() => {
-                let i = idx as i64 + if excl_start { 1 } else { 0 };
-                let cur = match start.as_ref().view() {
-                    ValueView::Rat(n, d) => crate::value::make_rat(n + i * d, d),
-                    ValueView::Num(f) => Value::num(f + i as f64),
-                    _ => Value::num(start.as_ref().to_f64() + i as f64),
-                };
-                let end_f = end.to_f64();
-                let cur_f = cur.to_f64();
-                let in_bounds = if end_f.is_infinite() && end_f.is_sign_positive() {
-                    true
-                } else if excl_end {
-                    cur_f < end_f
-                } else {
-                    cur_f <= end_f
-                };
-                Ok(in_bounds.then_some(cur))
             }
             // Non-finite-start numeric GenericRange (`-Inf..0`, `NaN..NaN`):
             // the `.succ` of `-Inf`/`NaN` is itself (`-Inf+1 == -Inf`,
@@ -210,6 +161,16 @@ impl Interpreter {
                     b
                 };
                 (start..end).take(remaining).map(Value::int).collect()
+            }
+            // An unbounded range with a numeric start: elements `already..`
+            // are `first + i` in the start's own type (`1.5..*` scans Rats).
+            ValueView::GenericRange { .. }
+                if let Some(first) = crate::runtime::unbounded_range::first(&source)
+                    && first.is_numeric() =>
+            {
+                (already..already + remaining)
+                    .filter_map(|i| crate::runtime::unbounded_range::nth(&first, i))
+                    .collect()
             }
             ValueView::GenericRange {
                 start,

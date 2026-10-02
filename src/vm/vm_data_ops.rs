@@ -188,7 +188,7 @@ impl Interpreter {
                 // prefix. (n == 1 guarantees this is the whole array.)
                 _ if is_real_array
                     && n == 1
-                    && let Some(lazy) = runtime::utils::infinite_int_range_to_lazy_array(&val) =>
+                    && let Some(lazy) = runtime::utils::infinite_range_to_lazy_array(&val) =>
                 {
                     self.stack.push(lazy);
                     return Ok(());
