@@ -2717,6 +2717,28 @@ impl Compiler {
                     self.compile_stmt(&rewritten);
                     return;
                 }
+                // `for values %h { ... }` is the routine form of `for %h.values`
+                // and aliases the same value containers (`clip-to 0, $_, 255 for
+                // values %r` writes through). Normalize it to the method form so
+                // it reuses the values-alias write-back path.
+                if let Expr::Call { name, args } = iterable
+                    && name.resolve() == "values"
+                    && args.len() == 1
+                    && matches!(args[0], Expr::HashVar(_) | Expr::ArrayVar(_))
+                {
+                    let mut rewritten = stmt.clone();
+                    if let Stmt::For { iterable: it, .. } = &mut rewritten {
+                        *it = Expr::MethodCall {
+                            target: Box::new(args[0].clone()),
+                            name: *name,
+                            args: Vec::new(),
+                            modifier: None,
+                            quoted: false,
+                        };
+                    }
+                    self.compile_stmt(&rewritten);
+                    return;
+                }
                 // Element-source writeback: `for %h<k>.values { $_ *= 2 }` /
                 // `for @a[i].values { ... }`. The plain @/%-source writeback only
                 // handles named container variables, so an element source (an
