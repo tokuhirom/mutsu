@@ -1093,9 +1093,11 @@ pub(super) fn check_missing_class_operator(content: &str) -> Result<(), RuntimeE
 }
 
 pub(super) fn make_attribute_regex_error(symbol: &str) -> RuntimeError {
-    let msg = "Cannot interpolate attribute in a regex";
+    let msg = format!(
+        "Attribute '{symbol}' not available inside of a regex, since regexes are methods on the Cursor class. Consider storing the attribute in a lexical, and using that in the regex."
+    );
     let mut attrs = HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
     attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
     let ex = Value::make_instance(Symbol::intern("X::Attribute::Regex"), attrs);
     let mut err = RuntimeError::new(msg);
@@ -1113,29 +1115,28 @@ pub(super) fn make_hash_reserved_error() -> RuntimeError {
     err
 }
 
-/// Scan `text` for an attribute interpolation `$!name` and return the full
-/// symbol (`$!name`) if found. Used by the parse-time validator to reject
-/// `$!attr` interpolation inside regexes and embedded code blocks.
-pub(super) fn find_attribute_interpolation(text: &str) -> Option<String> {
-    let bytes: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == '$' && bytes[i + 1] == '!' {
-            let mut symbol = String::from("$!");
-            let mut j = i + 2;
-            while j < bytes.len()
-                && (bytes[j].is_alphanumeric() || bytes[j] == '_' || bytes[j] == '-')
-            {
-                symbol.push(bytes[j]);
-                j += 1;
-            }
-            if symbol.chars().count() > 2 {
-                return Some(symbol);
-            }
+/// The first statement of the regex code block `code` that is nothing but an
+/// attribute variable (`$!name`, `@!name`, `%!name`), as its symbol. Rakudo
+/// rejects such a statement inside a regex (`X::Attribute::Regex`) but allows
+/// an attribute used within a larger expression (`{ say $!a }`, `<?{ $!a }>`).
+// Cost: O(n), n = the length of `code`.
+pub(super) fn find_bare_attribute_statement(code: &str) -> Option<String> {
+    code.split(';').map(str::trim).find_map(|stmt| {
+        let mut chars = stmt.chars();
+        let sigil = chars.next()?;
+        if !matches!(sigil, '$' | '@' | '%') || chars.next() != Some('!') {
+            return None;
         }
-        i += 1;
-    }
-    None
+        let name = chars.as_str();
+        let is_name = name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+        is_name.then(|| stmt.to_string())
+    })
 }
 
 /// Whether `name` is a known regex inline adverb (`:i`, `:ignorecase`, ...).

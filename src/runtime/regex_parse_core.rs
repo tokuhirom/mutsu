@@ -1952,25 +1952,27 @@ impl Interpreter {
                             subrule_call_capture: false,
                         });
                     };
-                    if c == '$' {
-                        // `$!attr` — interpolating an attribute into a regex is prohibited.
-                        if next == Some('!') {
-                            let mut symbol = String::from("$!");
-                            let mut peeked = chars.clone();
-                            peeked.next(); // skip '!'
-                            while peeked
-                                .peek()
-                                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
-                            {
-                                symbol.push(peeked.next().unwrap());
-                            }
-                            if symbol.chars().count() > 2 {
-                                PENDING_REGEX_ERROR.with(|e| {
-                                    *e.borrow_mut() = Some(make_attribute_regex_error(&symbol));
-                                });
-                                return None;
-                            }
+                    // `$!attr` / `@!attr` — interpolating an attribute into a
+                    // regex is prohibited (rakudo: X::Attribute::Regex, since a
+                    // regex is a method on the Cursor, not on the class).
+                    if next == Some('!') {
+                        let mut symbol = format!("{c}!");
+                        let mut peeked = chars.clone();
+                        peeked.next(); // skip '!'
+                        while peeked
+                            .peek()
+                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+                        {
+                            symbol.push(peeked.next().unwrap());
                         }
+                        if symbol.chars().count() > 2 {
+                            PENDING_REGEX_ERROR.with(|e| {
+                                *e.borrow_mut() = Some(make_attribute_regex_error(&symbol));
+                            });
+                            return None;
+                        }
+                    }
+                    if c == '$' {
                         // `$` followed by a variable-introducing char is interpolation
                         // (`$name`, `${...}`, `$(...)`, `$*dyn`, `$.attr`, ...). `$$`,
                         // `$<name>`, `$0`, and trailing `$` were handled above; what
@@ -4580,10 +4582,12 @@ impl Interpreter {
                     '{' => {
                         // Code block in regex: { ... }
                         let code = read_code_block_body(chars.by_ref());
-                        // Validate mode: an embedded code block may not interpolate
-                        // an attribute (`{ $!attr }`).
+                        // Validate mode: an embedded code block may not have a
+                        // statement that is a bare attribute (`{ $!attr }`,
+                        // `{ 1; $!attr }`); using one in a larger expression
+                        // (`{ say $!attr }`) is fine, as in rakudo.
                         if mode == RegexParseMode::Validate
-                            && let Some(symbol) = find_attribute_interpolation(&code)
+                            && let Some(symbol) = find_bare_attribute_statement(&code)
                         {
                             PENDING_REGEX_ERROR.with(|e| {
                                 *e.borrow_mut() = Some(make_attribute_regex_error(&symbol))
