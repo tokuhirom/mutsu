@@ -207,6 +207,7 @@ impl Interpreter {
             alternate_metadata,
             compiled_routine_keys,
             free_var_decl_slots,
+            hoist_seed_slots,
             lexsub_free_aliases: _,
             multi,
             is_rw,
@@ -694,8 +695,29 @@ impl Interpreter {
                     {
                         continue;
                     }
+                    // The hoisted pass runs before a declaration in the sub's
+                    // own scope has: seed the cell that declaration adopts, so
+                    // a call made before the in-sequence registration (even
+                    // before the declaration) already reads it rather than
+                    // the caller's same-named binding (#9911, see
+                    // `vm_hoist_capture_cells.rs`). A rebound name's binding
+                    // cell is left to the in-sequence pass, and so is an `our`
+                    // sub's capture, which `escaped_our_lexical_cells` owns.
+                    let seeded = if is_hoisted_pass
+                        && baked.is_some()
+                        && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                        && hoist_seed_slots.contains(&(slot_idx as u32))
+                        && !rebound_syms.contains(&sym)
+                        && !code.rebound_slots.contains(&(slot_idx as u32))
+                    {
+                        self.seed_hoist_capture_cell(slot_idx, &name, &unit_key)
+                    } else {
+                        None
+                    };
                     let cur = self.locals[slot_idx].clone();
-                    let mut cell = if cur.is_container_ref() {
+                    let mut cell = if let Some(seeded) = seeded {
+                        seeded
+                    } else if cur.is_container_ref() {
                         cur
                     } else if cur.is_nil() {
                         // Hoisted pass (or a `my $x;` whose initializer has not

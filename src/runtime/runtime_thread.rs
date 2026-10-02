@@ -859,6 +859,8 @@ impl Interpreter {
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
+            // Pending hoist cells belong to the parent's frames.
+            hoist_pending_cells: Vec::new(),
             // ADR-0039 §8.6: withdrawal is the *parent's* bookkeeping — the
             // child must not retire an entry it depends on. Its own spawns
             // populate this as they run.

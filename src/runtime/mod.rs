@@ -3658,6 +3658,11 @@ pub struct Interpreter {
     /// in-flight window closes that hole; the store is republished normally once
     /// the initializer's value lands. Empty for single-threaded programs.
     pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
+    /// Cells a hoisted named-sub registration seeded for a free variable whose
+    /// declaration has not run yet (#9911, ADR-0024's textual-order edge); the
+    /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
+    /// Empty unless a sub is called before a variable it reads is declared.
+    pub(crate) hoist_pending_cells: Vec<crate::vm::HoistPendingCell>,
     /// Plain-lexical `@`/`%` names this frame's spawns put on the bare-name
     /// cross-thread lane **only because every spawn publishes every live
     /// container**, not because any spawned block actually names them

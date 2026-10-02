@@ -697,6 +697,34 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // A declaration whose slot holds the cell a hoisted sub seeded for it
+        // (#9911, `vm_hoist_capture_cells.rs`): the store replaces the slot,
+        // then the value moves into that cell.
+        if !self.hoist_pending_cells.is_empty()
+            && self.vardecl_context().get()
+            && let Some(pending) = self.take_hoist_pending_cell(idx as usize)
+        {
+            // A `:=` declaration binds the slot to another container (a
+            // Proxy, a capture's value): there is no value to move into the
+            // cell.
+            let is_bind = self.bind_context().get()
+                || self.scalar_bind_context().get()
+                || matches!(
+                    self.stack.last().map(Value::view),
+                    Some(ValueView::VarRef { .. })
+                );
+            self.exec_set_local_op_body(code, idx)?;
+            self.adopt_hoist_pending_cell(idx as usize, pending, is_bind);
+            return Ok(());
+        }
+        self.exec_set_local_op_body(code, idx)
+    }
+
+    fn exec_set_local_op_body(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
         // The hot `$x = <scalar>` store, decided up front so it pays for none of
         // the cascade below or in `exec_set_local_op_inner`. See its doc comment.
         if self.exec_set_local_scalar_fast(code, idx) {
@@ -3426,7 +3454,16 @@ impl Interpreter {
             } else {
                 Value::package(crate::symbol::wk::any())
             };
-            if (reset_existing || !had_binding)
+            // A slot holding the cell a hoisted sub seeded for this very
+            // declaration (#9911) keeps the cell: the fresh binding is the
+            // cell's, so the sub still shares it.
+            let kept_hoist_cell = (reset_existing || !had_binding)
+                && !self.hoist_pending_cells.is_empty()
+                && local_slot.is_some_and(|slot| {
+                    self.reset_hoist_pending_cell(slot as usize, name, &default)
+                });
+            if !kept_hoist_cell
+                && (reset_existing || !had_binding)
                 && let Some(slot) = local_slot
                 && let Some(local) = self.locals.get_mut(slot as usize)
             {
@@ -3436,7 +3473,7 @@ impl Interpreter {
                 // here instead of leaking a previous loop iteration's value.
                 *local = default.clone();
             }
-            if reset_existing || !had_binding {
+            if !kept_hoist_cell && (reset_existing || !had_binding) {
                 crate::env::note_env_key(name);
                 self.env_mut().insert_sym(name_sym, default);
             }

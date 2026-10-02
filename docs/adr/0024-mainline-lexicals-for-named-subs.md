@@ -367,6 +367,14 @@ trigger B).
   dynamically — capture has not run yet at that call. Raku-correct programs
   hit this only in contrived orderings; fixing it needs compile-time scope
   analysis, out of scope here.
+  **(2026-10-02, mutsu#9911: DONE. The compiler marks the free variables
+  declared in the sub's own scope (`CompiledSubDeclPlan::hoist_seed_slots`);
+  the hoisted registration seeds a fresh cell for each in the declaration
+  slot and the store, and the declaration's reset and store go through that
+  cell instead of replacing it. The statement-position `BlockScope` hoist now
+  emits a plan-only registration like every other hoist site, so its plan
+  receives the source-order slot bakes. See `src/vm/vm_hoist_capture_cells.rs`
+  and `news/2026-10/hoisted-sub-free-var-before-declaration.md`.)**
 - **Name-set imprecision** (§3): upgrade path (b) if a real program collides.
 - **map/grep callback params** as shadow sources are covered on the *read*
   side by this ADR (the sub consults the store no matter what kind of

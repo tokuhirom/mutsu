@@ -3300,6 +3300,7 @@ impl Interpreter {
                 rustc_hash::FxHashSet::default(),
             )),
             thread_decl_in_flight: std::collections::HashSet::new(),
+            hoist_pending_cells: Vec::new(),
             transient_lane_containers: std::collections::HashSet::new(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
