@@ -481,7 +481,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             value,
             index,
         }),
-        SerValue::Regex(s) => Value::Regex(Arc::new(s)),
+        SerValue::Regex(s) => Value::regex(s),
         SerValue::RegexDeclared {
             pattern,
             declared_source,
@@ -490,11 +490,12 @@ fn ser_to_value(sv: SerValue) -> Value {
         } => Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern: Arc::new(pattern),
             scope: None,
-            source_tree,
+            source_tree: source_tree.map(Arc::from),
             signature: signature.map(Arc::new),
             topic: None,
             declared_source: declared_source.map(Arc::from),
             name: Default::default(),
+            id: Default::default(),
         })),
         SerValue::RegexWithAdverbs {
             pattern,
@@ -533,6 +534,8 @@ fn ser_to_value(sv: SerValue) -> Value {
             captured: None,
             topic: None,
             source_tree: None,
+            id: Default::default(),
+            name: Default::default(),
         })),
         SerValue::Junction { kind, values } => {
             let jk = match kind {

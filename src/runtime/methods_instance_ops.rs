@@ -2725,9 +2725,9 @@ impl Interpreter {
                 if target.set_regex_name(Symbol::intern(&name)) {
                     Ok(Value::str(name))
                 } else {
-                    // TODO: a synthesized regex (no closure payload) or one
-                    // carrying adverbs has no shared cell to hold a name; give
-                    // every regex value the code-object payload.
+                    // Unreachable for a value built by `Value::regex`, a
+                    // literal or an adverbed regex — every one of them carries
+                    // a payload with a name cell.
                     Err(RuntimeError::new(
                         "Cannot set_name on a regex value without a code-object payload",
                     ))

@@ -5,7 +5,6 @@ use crate::symbol::Symbol;
 use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
-use std::sync::Arc;
 
 use super::parse_raku_int_from_str;
 use crate::value::ValueMap;
@@ -598,11 +597,11 @@ pub(super) fn dispatch(
                         sub_data.id
                     )
                 }
-                ValueView::Regex(pattern) => {
-                    format!("Regex|{:p}", Arc::as_ptr(&pattern))
-                }
-                ValueView::RegexWithAdverbs(a) => {
-                    format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
+                // One identity with the object-hash key (`value_which_key`):
+                // the code object's payload id, not the pattern text's address
+                // (which every evaluation of a literal shares).
+                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
+                    runtime::utils::value_which_key(target)
                 }
                 ValueView::Instance { class_name, id, .. } => {
                     // Anonymous classes display as `<anon|N>` (the instance id

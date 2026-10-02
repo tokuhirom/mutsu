@@ -250,7 +250,8 @@ impl Interpreter {
                 self.stack.push(code.constants[*idx as usize].clone());
                 *ip += 1;
             }
-            // Cost: O(c), c = captured names (one scope-map insert, and a name copy, each).
+            // Cost: O(c), c = captured names (one scope-map insert, and a name copy, each);
+            // O(1) (one payload allocation) for a literal that captures nothing.
             OpCode::LoadRegexClosure {
                 const_idx,
                 topic,
@@ -280,8 +281,7 @@ impl Interpreter {
                 self.stack.push(Value::FALSE);
                 *ip += 1;
             }
-            // Cost: O(t), t = nodes of the regex's boxed `source_tree` (deep-copied with the
-            // `RegexAdverbs` payload); the match that consumes it is at least O(t) anyway.
+            // Cost: O(1) (the `RegexAdverbs` payload's fields are shared handles).
             OpCode::PatchRegexAdverbPos => {
                 let pos_val = self.stack.pop().unwrap_or(Value::NIL);
                 let regex_val = self.stack.pop().unwrap_or(Value::NIL);
@@ -289,7 +289,7 @@ impl Interpreter {
                 self.stack.push(regex_val.with_regex_pos_value(pos));
                 *ip += 1;
             }
-            // Cost: O(t), t = nodes of the regex's boxed `source_tree` (as PatchRegexAdverbPos).
+            // Cost: O(1) (as PatchRegexAdverbPos).
             OpCode::PatchRegexAdverbContinue => {
                 let pos_val = self.stack.pop().unwrap_or(Value::NIL);
                 let regex_val = self.stack.pop().unwrap_or(Value::NIL);

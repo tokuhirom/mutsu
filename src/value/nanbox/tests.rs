@@ -488,6 +488,8 @@ fn every_variant_roundtrips_losslessly() {
             captured: None,
             topic: None,
             source_tree: None,
+            id: Default::default(),
+            name: Default::default(),
         })),
         ValueRepr::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern: Arc::new("a { $x }".to_string()),
@@ -500,6 +502,7 @@ fn every_variant_roundtrips_losslessly() {
             signature: None,
             topic: None,
             declared_source: None,
+            id: Default::default(),
             name: Default::default(),
         })),
         ValueRepr::Sub(sample_sub()),

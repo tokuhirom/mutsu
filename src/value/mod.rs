@@ -2807,7 +2807,54 @@ pub struct RegexAdverbs {
     /// separate from the execution spelling in `pattern`: the runtime may
     /// carry normalized prefixes there, while RakuAST and the execution
     /// lowerer need the parser's structural tree.
-    pub(crate) source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+    pub(crate) source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
+    /// This code object's never-reused identity — see [`RegexId`].
+    pub(crate) id: RegexId,
+    /// The name `Code.set_name` gave this regex — see [`RegexClosure::name`].
+    /// Every alias shares the payload (one `Arc` inside the NaN box), so a
+    /// rename is seen through all of them.
+    pub(crate) name: RegexName,
+}
+
+/// The never-reused id of a regex payload, what `Regex.WHICH` reports.
+///
+/// A regex is a `Code` object: every evaluation of its literal mints a new
+/// payload (`Value::fresh_regex_code_object`), and every alias of one value
+/// shares it. The payload's address already tells two *live* values apart
+/// (`===`), but a `.WHICH` string outlives the value it names, and a freed
+/// payload's address is soon reused. Cloning a payload builds a new code
+/// object, so it draws a new id.
+pub struct RegexId(u64);
+
+/// Opaque on purpose: a regex literal's `Debug` rendering feeds the AST
+/// declaration fingerprints (`identity_hash.rs`), which must agree across two
+/// parses of the same source — and two parses mint two ids.
+impl std::fmt::Debug for RegexId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RegexId(..)")
+    }
+}
+
+impl RegexId {
+    // Cost: O(1).
+    pub(crate) fn get(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for RegexId {
+    // Cost: O(1).
+    fn default() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl Clone for RegexId {
+    // Cost: O(1).
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// Boxed payload of [`Value::RegexCaptured`]: a code-bearing regex literal
@@ -2828,7 +2875,7 @@ pub struct RegexClosure {
     /// Source-level provenance for a static regex value. A source-only value
     /// has no defining lexical scope, so `scope` is `None`; code-bearing
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
-    pub source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+    pub source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
     /// The signature an *anonymous* declarator term carried
     /// (`token ($x) { $x \\d+ }`). A regex is a routine, so its parameters
     /// have to ride along with the value: there is no named `token_defs`
@@ -2848,6 +2895,8 @@ pub struct RegexClosure {
     /// The verbatim declaration text (`token foo { ... }`) of a grammar
     /// `token`/`rule`/`regex` declaration -- what `Regex.gist` prints.
     pub declared_source: Option<Arc<str>>,
+    /// This code object's never-reused identity — see [`RegexId`].
+    pub id: RegexId,
     /// The name `Code.set_name` gave this regex (`Regex.name`). A Raku regex
     /// is a code object with identity, so renaming it is seen through every
     /// alias of the value: the cell lives in the shared `Arc` payload.

@@ -58,8 +58,12 @@ impl Value {
     pub fn is_iteration_end(&self) -> bool {
         matches!(self.view(), ValueView::Instance { id, .. } if id == crate::value::ITERATION_END_ID)
     }
+    /// A regex value over the pattern `s`. A regex is a code object, so even
+    /// a runtime-synthesized one gets the closure payload: it has an identity
+    /// of its own and a name cell for `Code.set_name`.
+    // Cost: O(1) (two allocations; the pattern is moved, not copied).
     pub fn regex(s: String) -> Self {
-        Value::Regex(Arc::new(s))
+        Value::regex_closure(Arc::new(s), None, None, None, None)
     }
     /// A code-bearing regex literal that closed over `scope` — see
     /// [`crate::value::RegexClosure`]. Views as a plain `Regex`.
@@ -67,7 +71,7 @@ impl Value {
         pattern: Arc<String>,
         scope: Option<Arc<ValueMap>>,
         signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
-        source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+        source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
         topic: Option<Value>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
@@ -77,6 +81,7 @@ impl Value {
             signature,
             topic,
             declared_source: None,
+            id: Default::default(),
             name: Default::default(),
         }))
     }
@@ -99,34 +104,86 @@ impl Value {
             signature: params.map(Arc::new),
             topic: None,
             declared_source: None,
+            id: Default::default(),
             name: Default::default(),
         }))
     }
 
-    /// Whether this regex value carries the closure payload (and so can be
-    /// renamed by `Code.set_name`).
+    /// Whether this regex value carries the closure payload.
     // Cost: O(1).
     pub(crate) fn is_regex_code_payload(&self) -> bool {
         self.0.regex_closure_payload().is_some()
     }
 
+    /// The shared name cell of a regex value's payload: the closure payload
+    /// or the adverbs payload. `None` for a plain synthesized `Regex` (a bare
+    /// pattern string, never what a literal evaluates to) and for every
+    /// non-regex value.
+    // Cost: O(1).
+    fn regex_name_cell(&self) -> Option<&crate::value::RegexName> {
+        if let Some(closure) = self.0.regex_closure_payload() {
+            return Some(&closure.name);
+        }
+        self.0.regex_adverbs_payload().map(|adverbs| &adverbs.name)
+    }
+
     /// The name `Code.set_name` gave this regex, if any.
     // Cost: O(1).
     pub(crate) fn regex_name(&self) -> Option<crate::symbol::Symbol> {
-        self.0.regex_closure_payload()?.name.get()
+        self.regex_name_cell()?.get()
     }
 
     /// `Code.set_name` on a regex: rename it in place, seen through every
-    /// alias. `false` when the value has no closure payload to hold a name.
+    /// alias. `false` when the value has no payload to hold a name.
     // Cost: O(1).
     pub(crate) fn set_regex_name(&self, name: crate::symbol::Symbol) -> bool {
-        match self.0.regex_closure_payload() {
-            Some(closure) => {
-                closure.name.set(name);
+        match self.regex_name_cell() {
+            Some(cell) => {
+                cell.set(name);
                 true
             }
             None => false,
         }
+    }
+
+    /// A new evaluation of the regex literal `self`: the same pattern, tree,
+    /// signature and captures, in a payload of its own, so the result is a
+    /// distinct code object from `self` and from every other evaluation (see
+    /// [`Value::regex_identity`]). Every field is a shared handle, so this is
+    /// one allocation. A non-regex value is returned unchanged.
+    // Cost: O(1).
+    pub(crate) fn fresh_regex_code_object(&self) -> Self {
+        if let Some(closure) = self.0.regex_closure_payload() {
+            return Value::RegexCaptured(Arc::new(closure.clone()));
+        }
+        match self.view() {
+            // A bare-pattern payload (only ever decoded from a pre-payload
+            // representation) becomes a code object of its own.
+            ValueView::Regex(pattern) => {
+                Value::regex_closure(Arc::clone(&pattern), None, None, None, None)
+            }
+            ValueView::RegexWithAdverbs(adverbs) => Value::regex_with_adverbs(adverbs.clone()),
+            _ => self.clone(),
+        }
+    }
+
+    /// The identity of a regex value (its payload's address while it is
+    /// live), or `None` for a non-regex value. `===` and `.WHICH` compare
+    /// regexes by it: a regex is a `Code` object, so two evaluations of the
+    /// same literal are distinct while every alias of one value is the same.
+    // Cost: O(1).
+    pub(crate) fn regex_identity(&self) -> Option<usize> {
+        self.0.regex_payload_addr()
+    }
+
+    /// The `.WHICH` id of a regex value: its payload's never-reused
+    /// [`crate::value::RegexId`], or — for a plain synthesized `Regex`, which
+    /// carries none — its payload address. `None` for a non-regex value.
+    // Cost: O(1).
+    pub(crate) fn regex_which_id(&self) -> Option<u64> {
+        self.0
+            .regex_payload_id()
+            .or_else(|| self.regex_identity().map(|addr| addr as u64))
     }
 
     /// The parameters an anonymous regex declarator term declared, or `None`
@@ -153,16 +210,17 @@ impl Value {
                 Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
                     pattern: Arc::new(pattern.to_string()),
                     scope: None,
-                    source_tree: Some(Box::new(tree)),
+                    source_tree: Some(Arc::new(tree)),
                     signature: self.regex_signature(),
                     topic: None,
                     declared_source: None,
+                    id: Default::default(),
                     name: Default::default(),
                 }))
             }
             ValueView::RegexWithAdverbs(adverbs) => {
                 let mut adverbs = adverbs.clone();
-                adverbs.source_tree = Some(Box::new(tree));
+                adverbs.source_tree = Some(Arc::new(tree));
                 Value::regex_with_adverbs(adverbs)
             }
             _ => self.clone(),
@@ -229,10 +287,11 @@ impl Value {
                 Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
                     pattern: Arc::new(pattern.to_string()),
                     scope: None,
-                    source_tree: self.regex_source_tree().cloned().map(Box::new),
+                    source_tree: self.regex_source_tree_arc(),
                     signature: self.regex_signature(),
                     topic: None,
                     declared_source: Some(Arc::from(text)),
+                    id: Default::default(),
                     name: Default::default(),
                 }))
             }
@@ -254,6 +313,19 @@ impl Value {
         }
         match self.view() {
             ValueView::RegexWithAdverbs(a) => a.source_tree.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// [`Value::regex_source_tree`] as a shared handle, for building another
+    /// regex value over the same tree without copying it.
+    // Cost: O(1).
+    pub(crate) fn regex_source_tree_arc(&self) -> Option<Arc<crate::regex_tree::RegexTree>> {
+        if let Some(tree) = self.0.regex_source_tree() {
+            return Some(Arc::clone(tree));
+        }
+        match self.view() {
+            ValueView::RegexWithAdverbs(a) => a.source_tree.clone(),
             _ => None,
         }
     }

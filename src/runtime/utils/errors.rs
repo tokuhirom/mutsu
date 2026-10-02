@@ -210,6 +210,11 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         // every Block alike, so two different closures collided as one
         // object-hash key and as one curried-role argument.
         ValueView::Sub(sub_data) => format!("{}|{}", value_type_name(value), sub_data.id),
+        // A regex is a code object too; its payload is shared by every alias
+        // and minted afresh by every evaluation of its literal.
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
+            format!("Regex|{}", value.regex_which_id().unwrap_or_default())
+        }
         // A Pair with a plain string key and a ValuePair holding a Str key are
         // the same identity (`("x" => 1) === (:x(1))`), so both render the key
         // through its own `.WHICH` (`Pair|Str|x|Int|1`, raku's format).

@@ -887,13 +887,18 @@ pub(crate) enum OpCode {
     ///
     /// The operand indexes `CompiledCode::constants`; the entry is cloned, so
     /// the pool itself is never mutated. Emitted for every compile-time literal
-    /// (`42`, `"str"`, `1.5`, a type-object term, a code-free regex literal)
+    /// (`42`, `"str"`, `1.5`, a type-object term)
     /// and for the synthetic values the compiler needs on the stack (names
     /// passed to helper calls, default arguments). A literal `Nil`, `True` or
     /// `False` has its own constant-free op instead ([`Self::LoadNil`],
     /// [`Self::LoadTrue`], [`Self::LoadFalse`]).
     LoadConst(u32),
-    /// Load a *code-bearing* regex literal as the closure it is.
+    /// Load a regex literal as the closure it is.
+    ///
+    /// A regex is a `Code` object, so every evaluation mints a fresh payload
+    /// (`Value::fresh_regex_code_object`): two evaluations of one literal are
+    /// not `===`, while every alias of one value is. Every regex literal in
+    /// value position loads through this op, never through `LoadConst`.
     ///
     /// A Raku regex closes over the scope it was written in, but mutsu stores a
     /// regex as a pattern string, so code embedded in the pattern (`{ … }`,

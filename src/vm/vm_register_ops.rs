@@ -151,7 +151,7 @@ impl Interpreter {
                 .or_else(|| Some(self.topic_container_cell()))
         });
         if scope.is_empty() && topic.is_none() {
-            return base.clone();
+            return base.fresh_regex_code_object();
         }
         let scope = (!scope.is_empty()).then(|| std::sync::Arc::new(scope));
         let topic_only = scope.is_none();
@@ -165,14 +165,11 @@ impl Interpreter {
                     base.regex_signature(),
                     // A topic-only capture changes nothing about the pattern, so
                     // its source tree survives whole.
-                    base.regex_source_tree()
-                        .filter(|tree| {
-                            topic_only
-                                || tree.contains_array_interpolation()
-                                || tree.contains_regex_value_interpolation()
-                        })
-                        .cloned()
-                        .map(Box::new),
+                    base.regex_source_tree_arc().filter(|tree| {
+                        topic_only
+                            || tree.contains_array_interpolation()
+                            || tree.contains_regex_value_interpolation()
+                    }),
                     topic,
                 );
                 // A `set_name` given to the literal's code object survives

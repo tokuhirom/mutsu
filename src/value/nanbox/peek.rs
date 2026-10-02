@@ -322,18 +322,6 @@ impl NanBox {
             .as_ref()
     }
 
-    /// The source-level tree carried by a transparent regex provenance value.
-    #[inline]
-    pub(in crate::value) fn regex_source_tree(&self) -> Option<&crate::regex_tree::RegexTree> {
-        let bits = self.0.get();
-        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
-            return None;
-        }
-        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
-            .source_tree
-            .as_deref()
-    }
-
     /// The closure payload of a `RegexCaptured` value.
     #[inline]
     pub(in crate::value) fn regex_closure_payload(&self) -> Option<&crate::value::RegexClosure> {
@@ -341,7 +329,69 @@ impl NanBox {
         if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
             return None;
         }
+        // SAFETY: kind-checked above; the word is live for this borrow.
         Some(unsafe { peek_arc::<crate::value::RegexClosure>(bits) })
+    }
+
+    /// The payload of a `RegexWithAdverbs` value.
+    #[inline]
+    pub(in crate::value) fn regex_adverbs_payload(&self) -> Option<&RegexAdverbs> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexWithAdverbs)) {
+            return None;
+        }
+        // SAFETY: kind-checked above; the word is live for this borrow.
+        Some(unsafe { peek_arc::<RegexAdverbs>(bits) })
+    }
+
+    /// The never-reused id of a regex value's payload (`Regex.WHICH`); `None`
+    /// for a plain synthesized `Regex`, which has no id field, and for every
+    /// non-regex word.
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn regex_payload_id(&self) -> Option<u64> {
+        let bits = self.0.get();
+        match classify(bits) {
+            // SAFETY: kind-checked; the word is live for this borrow.
+            Classified::Kind(Kind::RegexCaptured) => Some(
+                unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+                    .id
+                    .get(),
+            ),
+            Classified::Kind(Kind::RegexWithAdverbs) => {
+                Some(unsafe { peek_arc::<RegexAdverbs>(bits) }.id.get())
+            }
+            _ => None,
+        }
+    }
+
+    /// The address of a regex value's payload allocation, or `None` for a
+    /// non-regex word. A regex is a code object: every clone of one value
+    /// shares the payload `Arc`, while each evaluation of a literal mints its
+    /// own (`OpCode::LoadRegexClosure`), so the address is its identity for
+    /// as long as the value is live.
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn regex_payload_addr(&self) -> Option<usize> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Regex | Kind::RegexWithAdverbs | Kind::RegexCaptured) => {
+                Some(addr_of_payload(bits))
+            }
+            _ => None,
+        }
+    }
+
+    /// The source-level tree carried by a transparent regex provenance value.
+    #[inline]
+    pub(in crate::value) fn regex_source_tree(&self) -> Option<&Arc<crate::regex_tree::RegexTree>> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+            .source_tree
+            .as_ref()
     }
 
     /// The verbatim declaration text of a grammar `token`/`rule`/`regex`.
