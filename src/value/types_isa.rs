@@ -269,14 +269,14 @@ impl Value {
         // it", which a builtin `Duration` answering `Real` would reroute into
         // a coercion loop.
         if !matches!(self.view(), ValueView::Instance { .. }) {
-            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(my_type)
+            if let Some(info) = crate::builtin_types::catalog::builtin_type_info(my_type)
                 && info.mro.contains(&type_name)
             {
                 return true;
             }
             if allow_roles
                 && !type_name.contains('[')
-                && crate::builtins::builtin_type_catalog::builtin_type_has_role(my_type, type_name)
+                && crate::builtin_types::catalog::builtin_type_has_role(my_type, type_name)
             {
                 return true;
             }
@@ -396,10 +396,7 @@ impl Value {
         };
         if role_name == "Awaitable"
             && let Some(catalog_type) = catalog_type
-            && crate::builtins::builtin_type_catalog::builtin_type_has_role(
-                &catalog_type,
-                role_name,
-            )
+            && crate::builtin_types::catalog::builtin_type_has_role(&catalog_type, role_name)
         {
             return true;
         }

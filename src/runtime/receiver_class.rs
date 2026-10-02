@@ -2,7 +2,7 @@
 //!
 //! `receiver_dispatch_class`/`dispatch_mro` compute the "who owns this method for this
 //! receiver" decision from a single place, using [`crate::type_id::TypeId`] and the
-//! raku-adjudicated [`crate::builtins::builtin_type_catalog`] instead of the four
+//! raku-adjudicated [`crate::builtin_types::catalog`] instead of the four
 //! divergent MRO tables and the alias logic baked into `value_type_name`. See
 //! `todo/deep/adr0019-e1-typeid-receiver-owner.md` for the full design and the
 //! verification items (V1-V5) referenced in the comments below.
@@ -23,7 +23,7 @@
 //! fallback consolidation (E1c) is still out of scope here.
 
 use super::*;
-use crate::builtins::builtin_type_catalog::{builtin_type_info, builtin_type_mro_ids};
+use crate::builtin_types::catalog::{builtin_type_info, builtin_type_mro_ids};
 use crate::meta_ns::MetaNs;
 use crate::type_id::{TypeId, well_known_types};
 use crate::value::ValueView;
@@ -35,7 +35,7 @@ use std::sync::Arc;
 ///
 /// Most receivers a dispatch classifies are plain builtin values (`Str`, `Int`,
 /// `Bool`, ...), whose chain is a constant the catalog already holds interned
-/// ([`crate::builtins::builtin_type_catalog::builtin_type_mro_ids`]). Returning
+/// ([`crate::builtin_types::catalog::builtin_type_mro_ids`]). Returning
 /// an owned `Vec` meant allocating, copying and freeing that constant on every
 /// such dispatch — and every consumer only ever reads it (`.first()`,
 /// `.iter()`, `&chain` into `resolve_sequence`), so none of them needed to own

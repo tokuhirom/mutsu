@@ -960,7 +960,7 @@ impl Registry {
             !self.roles.contains_key(base)
         });
         let parents = if !has_class_parent && self.classes.contains_key(class_name) {
-            match crate::builtins::builtin_type_catalog::builtin_type_info(class_name) {
+            match crate::builtin_types::catalog::builtin_type_info(class_name) {
                 Some(info) if info.mro.len() > 1 && explicit_parents.is_empty() => {
                     vec![info.mro[1].to_string()]
                 }
@@ -1036,9 +1036,7 @@ impl Registry {
                 // A RakuAST node class parent contributes its model-layer
                 // hierarchy (ADR-0011), up to and including `Any`/`Mu`.
                 seqs.push(mro);
-            } else if let Some(info) =
-                crate::builtins::builtin_type_catalog::builtin_type_info(parent)
-            {
+            } else if let Some(info) = crate::builtin_types::catalog::builtin_type_info(parent) {
                 // An unregistered bare (non-parametrized; the bracketed case is
                 // handled above) builtin collection/Cool parent (`List`,
                 // `Hash`, `Range`, ...): use the catalog's own full ancestor
@@ -1142,9 +1140,7 @@ impl Registry {
             // catalog's own chain directly rather than recursing through
             // `class_mro`, whose `compute_class_mro` fallback would otherwise
             // treat an un-registered `base` like "Array" as parentless.
-            if let Some(base_mro) =
-                crate::builtins::builtin_type_catalog::builtin_type_mro_syms(base)
-            {
+            if let Some(base_mro) = crate::builtin_types::catalog::builtin_type_mro_syms(base) {
                 let mut mro = vec![Symbol::intern(class_name)];
                 mro.extend_from_slice(&base_mro);
                 return mro.into();
@@ -1180,9 +1176,7 @@ impl Registry {
                     mro.extend(self.class_mro_readonly(base)?.iter().copied());
                     return Some(mro.into());
                 }
-                if let Some(base_mro) =
-                    crate::builtins::builtin_type_catalog::builtin_type_mro_syms(base)
-                {
+                if let Some(base_mro) = crate::builtin_types::catalog::builtin_type_mro_syms(base) {
                     let mut mro = vec![Symbol::intern(class_name)];
                     mro.extend_from_slice(&base_mro);
                     return Some(mro.into());
@@ -1207,9 +1201,7 @@ impl Registry {
             // MRO every builtin-receiver method dispatch walks, and re-interning
             // the chain plus allocating a fresh `Arc` per call put it on the
             // per-assertion `Symbol::intern` budget (#7766).
-            if let Some(mro) =
-                crate::builtins::builtin_type_catalog::builtin_type_mro_syms(class_name)
-            {
+            if let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(class_name) {
                 return Some(mro);
             }
             // Not a registered class at all: the write side computes but has no

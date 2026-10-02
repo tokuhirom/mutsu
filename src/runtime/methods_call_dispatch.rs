@@ -4469,7 +4469,8 @@ impl Interpreter {
         // lazy index-pipe stage instead of forcing the source (mirrors the
         // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
         if args.is_empty()
-            && let Some(pipe) = crate::value::LazyList::index_pipe_method(&target, method, false)
+            && let Some(pipe) =
+                crate::builtins::lazy_scan::index_pipe_method(&target, method, false)
         {
             return Ok(pipe);
         }

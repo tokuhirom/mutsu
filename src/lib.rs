@@ -5,6 +5,7 @@ pub mod anon_names;
 mod ast;
 pub(crate) mod ast_visit;
 pub(crate) mod binding_desc;
+mod builtin_types;
 mod builtins;
 pub(crate) mod chain_compare;
 mod compiled_operator;

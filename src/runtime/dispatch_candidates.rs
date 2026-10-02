@@ -13,7 +13,7 @@ pub(super) const UNRELATED_DISTANCE: usize = 500;
 /// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
 /// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
-    crate::builtins::builtin_type_ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
+    crate::builtin_types::ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
 
 /// The narrowness key a multi candidate is ranked by (see

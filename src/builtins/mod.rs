@@ -4,8 +4,6 @@ pub(crate) mod backtrace_methods;
 pub(crate) mod buf_bits;
 pub(crate) mod buf_write_int;
 pub(crate) mod buf_write_num;
-pub(crate) mod builtin_type_ancestry;
-pub(crate) mod builtin_type_catalog;
 pub(crate) mod builtin_type_methods;
 pub(crate) mod cclass;
 pub(crate) mod collation;
@@ -21,6 +19,7 @@ mod functions;
 pub(crate) mod grapheme_index;
 pub(crate) mod iterator_construct;
 pub(crate) mod label;
+pub(crate) mod lazy_scan;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod math_prim;
 pub(crate) mod methods_0arg;
@@ -170,7 +169,7 @@ pub(crate) use methods_narg::{
     native_prefix_suffix_with_options, native_substr_eq_with_options, pair_key_value,
     read_f32_endian, read_f64_endian, read_int_value, resolve_buf_index,
 };
-pub(crate) use unicode::{samecase_string, samemark_string, unicode_titlecase_first};
+pub(crate) use unicode::{samecase_string, samemark_string};
 
 /// Convert a floating-point number to a Rat using a continued fraction algorithm.
 /// `epsilon` controls the precision: smaller epsilon means a closer approximation

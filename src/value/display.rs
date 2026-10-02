@@ -293,7 +293,7 @@ pub fn tclc_str(s: &str) -> String {
     let mut first = true;
     for ch in s.chars() {
         if first {
-            result.push_str(&crate::builtins::unicode_titlecase_first(ch));
+            result.push_str(&crate::ucd::case::unicode_titlecase_first(ch));
             first = false;
         } else {
             for c in ch.to_lowercase() {
@@ -790,7 +790,7 @@ impl Value {
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()
-                        .map(|(k, v)| match crate::builtins::mix_weight::render(**v) {
+                        .map(|(k, v)| match crate::value::mix_weight_render(**v) {
                             Some(w) => format!("{}({})", k, w),
                             None => k.clone(),
                         })
@@ -872,11 +872,11 @@ impl Value {
             ValueView::Instance { attributes, .. }
                 if attributes
                     .as_map()
-                    .contains_key(crate::runtime::types::NATIVE_BACKING_ATTR) =>
+                    .contains_key(super::types::NATIVE_BACKING_ATTR) =>
             {
                 attributes
                     .as_map()
-                    .get(crate::runtime::types::NATIVE_BACKING_ATTR)
+                    .get(super::types::NATIVE_BACKING_ATTR)
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_default()
             }

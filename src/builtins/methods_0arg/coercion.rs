@@ -273,7 +273,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Slip(_) => Some(Ok(target.clone().with_slip_itemized(false))),
             ValueView::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
-                    let items = ll.force_scan_to(200_000);
+                    let items = crate::builtins::lazy_scan::force_scan_to(&ll, 200_000);
                     Some(Ok(Value::slip_arc(std::sync::Arc::new(items))))
                 } else {
                     let items = ll.cache.lock().unwrap().clone().unwrap_or_default();

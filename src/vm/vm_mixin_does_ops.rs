@@ -263,7 +263,7 @@ impl Interpreter {
     /// X::Does::TypeObject.
     fn but_on_type_object_error(&self, type_name: &str) -> RuntimeError {
         if self.is_role_type_name(type_name) {
-            return RuntimeError::method_not_found(
+            return crate::runtime::did_you_mean::method_not_found(
                 "mixin",
                 "Perl6::Metamodel::ParametricRoleGroupHOW",
             );

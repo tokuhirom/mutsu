@@ -1003,7 +1003,7 @@ impl Interpreter {
                             match self.try_dispatch_compiled_method_direct(last, method, &[]) {
                                 Some(result) => result?,
                                 None => {
-                                    return Err(RuntimeError::method_not_found(
+                                    return Err(crate::runtime::did_you_mean::method_not_found(
                                         method,
                                         &name.resolve(),
                                     ));

@@ -4,6 +4,7 @@
 //! it rather than in `builtins` (issue #10779); `builtins` re-exports them
 //! under their old names.
 
+pub(crate) mod case;
 pub(crate) mod gc;
 mod gc_data;
 pub(crate) mod normalize;
