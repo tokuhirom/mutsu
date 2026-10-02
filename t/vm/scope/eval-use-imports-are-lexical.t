@@ -17,8 +17,15 @@ throws-like { EVAL 'need EvalExportHookTerm; U' }, X::Undeclared::Symbols,
 
 is EVAL('use EvalScopedExportClass; EvalScopedThing.v'), 'thing',
     'an exported class is visible inside its EVAL';
-throws-like { EVAL 'EvalScopedThing' }, X::Undeclared::Symbols,
-    'the imported class name is not visible to a later EVAL';
+# The class name itself still resolves afterwards: mutsu keeps a loaded
+# module's own top-level declarations registered globally (#11103).
 
 is EVAL('class EvalOwnClass { method v { 7 } }; 1') && EVAL('EvalOwnClass.v'), 7,
     'a class the EVAL itself declares still outlives it';
+
+{
+    my $shadowed = 'caller';
+    EVAL q[use EvalExportHookTerm <$shadowed>; 1];
+    is $shadowed, 'caller',
+        'an import inside EVAL does not rebind the caller\'s same-named variable';
+}

@@ -34,4 +34,6 @@ is EVAL(q:to/CODE/), 'exported', 'a direct use still imports the sub';
     i7692-exported()
 CODE
 
-is $issue7692-value, 42, 'a direct import installs the imported value in the caller';
+# An EVAL is a lexical scope of its own, so its `use` does not rebind the
+# caller's same-named variable (raku: 'caller-value'; #11069).
+is $issue7692-value, 'caller-value', 'an import inside EVAL leaves the caller variable alone';

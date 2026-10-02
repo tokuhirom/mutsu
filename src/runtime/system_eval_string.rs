@@ -277,14 +277,12 @@ impl Interpreter {
         // its LEAVE phasers to the EVAL, not to the enclosing program
         // (`runtime::attach_target`).
         //
-        // What its `use` statements import is lexical to the EVAL too (#11069):
-        // the import scope a `use`-holding block opens is what records each
-        // imported alias and drops it on the way out. It is opened outside the
+        // What its `use` statements import is lexical to the EVAL too (#11069,
+        // `runtime::eval_import_scope`). The scope is opened outside the
         // compunit, so a top-level `use` still sees no enclosing 'block'.
-        self.push_import_scope();
-        let result = self.run_compunit(|interp| interp.eval_eval_string_unit(code));
-        self.pop_import_scope();
-        result
+        self.with_eval_import_scope(|interp| {
+            interp.run_compunit(|interp| interp.eval_eval_string_unit(code))
+        })
     }
 
     fn eval_eval_string_unit(&mut self, code: &str) -> Result<Value, RuntimeError> {
