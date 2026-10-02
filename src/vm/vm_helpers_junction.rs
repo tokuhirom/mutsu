@@ -315,17 +315,7 @@ impl Interpreter {
         let generator = state.generator.clone();
 
         while history.len() < needed && !state.finished {
-            let precompiled = state
-                .precompiled
-                .as_ref()
-                .map(|(c, f)| (c.as_ref(), f.as_ref()));
-            match self.sequence_closure_step(
-                &generator,
-                &history,
-                precompiled,
-                &mut state.closure_env,
-                false,
-            )? {
+            match self.sequence_closure_step(&generator, &history, state.generator_shape, false)? {
                 // A generator that `slip`s multiple values (`{ slip $^a+1, $^b*2 }`)
                 // contributes each as its own sequence element — flatten the Slip
                 // into the history so the next step's `$^a`/`$^b` see the newest

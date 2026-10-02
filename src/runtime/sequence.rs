@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    fn normalize_sequence_arg(value: &Value) -> Value {
+    pub(super) fn normalize_sequence_arg(value: &Value) -> Value {
         match value.view() {
             ValueView::Capture { positional, .. } => Value::array(positional.clone()),
             _ => value.clone(),
@@ -31,375 +31,6 @@ impl Interpreter {
         let mut err = RuntimeError::new("X::Cannot::Empty");
         err.exception = Some(Box::new(ex));
         err
-    }
-
-    /// Merge a sequence generator/predicate closure's captured env over the LIVE
-    /// env before running its body.
-    ///
-    /// The merge (rather than a replace) is what lets the body see the enclosing
-    /// scope, but it means every captured name *shadows* the caller's current
-    /// binding. That is right for names the closure genuinely closes over and
-    /// wrong for the bulk names a *reflective* program's whole-env snapshot drags
-    /// along ([`Interpreter::capture_closure_env`] falls back to `clone_env()`
-    /// once any chunk in the process uses `EVAL`/`CALLER::`/symbolic deref — and
-    /// merely `use`-ing a module that contains one, such as the real
-    /// `Test.rakumod`'s `cmp-ok`, is enough).
-    ///
-    /// The bulk names are stale by construction here: a self-referential sequence
-    /// (`my @primes = 2, 3, 5, -> $p { … &is-prime-beta … } … *`) creates its
-    /// generator while `@primes` is still the hoisted empty array, so re-imposing
-    /// the snapshot on every later pull hides the assigned list from any routine
-    /// the body calls. Install a *plain user lexical* that the closure does not
-    /// close over only when the live env has no binding of its own — exactly the
-    /// classification [`crate::env::is_plain_user_lexical`] exists for.
-    fn install_sequence_closure_env(
-        &mut self,
-        data: &crate::value::SubData,
-        env: &crate::env::Env,
-    ) {
-        let genuine: Option<std::collections::HashSet<Symbol>> =
-            data.compiled_code.as_ref().map(|cc| {
-                cc.free_var_syms
-                    .iter()
-                    .chain(data.owned_captures.iter())
-                    .chain(data.authoritative_captures.iter())
-                    .copied()
-                    .collect()
-            });
-        for (k, v) in env.iter() {
-            if let Some(genuine) = &genuine
-                && !genuine.contains(k)
-                && k.with_str(crate::env::is_plain_user_lexical)
-                && self.env.contains_key_sym(*k)
-            {
-                continue;
-            }
-            self.env.insert_sym(*k, v.clone());
-        }
-    }
-
-    fn collect_sequence_args_fixed(
-        result: &[Value],
-        arity: usize,
-    ) -> Result<Vec<Value>, RuntimeError> {
-        if arity == 0 {
-            return Ok(Vec::new());
-        }
-        if result.len() < arity {
-            return Err(RuntimeError::new(format!(
-                "Too few positionals passed; expected {arity} arguments but got {}",
-                result.len()
-            )));
-        }
-        Ok(result[result.len() - arity..]
-            .iter()
-            .map(Self::normalize_sequence_arg)
-            .collect())
-    }
-
-    fn collect_sequence_args_slurpy(result: &[Value], min_arity: usize) -> Vec<Value> {
-        if result.len() >= min_arity {
-            return result.iter().map(Self::normalize_sequence_arg).collect();
-        }
-        let mut args = vec![Value::NIL; min_arity - result.len()];
-        args.extend(result.iter().map(Self::normalize_sequence_arg));
-        args
-    }
-
-    fn sequence_routine_param_mode(&self, package: &str, name: &str) -> SequenceRoutineParamMode {
-        let name = name.strip_prefix('&').unwrap_or(name);
-        if name.starts_with("prefix:<") || name.starts_with("postfix:<") {
-            return SequenceRoutineParamMode::Fixed(1);
-        }
-        if name.starts_with("infix:<") {
-            return SequenceRoutineParamMode::Fixed(2);
-        }
-
-        let local_prefix = format!("{package}::{name}/");
-        let global_prefix = format!("GLOBAL::{name}/");
-        let mut fixed_arity = 0usize;
-        let mut slurpy_min: Option<usize> = None;
-
-        for (key, def) in self.registry().functions.iter() {
-            let key_s = key.resolve();
-            let loose_match = key_s.contains(&format!("::{name}/"));
-            if !key_s.starts_with(&local_prefix)
-                && !key_s.starts_with(&global_prefix)
-                && !loose_match
-            {
-                continue;
-            }
-
-            let mut positional_non_slurpy = 0usize;
-            let mut has_slurpy = false;
-            if def.param_defs.is_empty() {
-                positional_non_slurpy = def.params.len();
-            } else {
-                for pd in &def.param_defs {
-                    if pd.named {
-                        continue;
-                    }
-                    if pd.slurpy {
-                        has_slurpy = true;
-                    } else {
-                        positional_non_slurpy += 1;
-                    }
-                }
-            }
-
-            if has_slurpy {
-                slurpy_min = Some(match slurpy_min {
-                    Some(existing) => existing.max(positional_non_slurpy),
-                    None => positional_non_slurpy,
-                });
-            } else {
-                fixed_arity = fixed_arity.max(positional_non_slurpy);
-            }
-        }
-
-        if let Some(min) = slurpy_min {
-            SequenceRoutineParamMode::Slurpy { min_arity: min }
-        } else if fixed_arity > 0 {
-            SequenceRoutineParamMode::Fixed(fixed_arity)
-        } else {
-            SequenceRoutineParamMode::Fixed(2)
-        }
-    }
-
-    fn sequence_has_registered_routine(&self, package: &str, name: &str) -> bool {
-        let name = name.strip_prefix('&').unwrap_or(name);
-        let local_prefix = format!("{package}::{name}/");
-        let global_prefix = format!("GLOBAL::{name}/");
-        self.registry().functions.keys().any(|key| {
-            let ks = key.resolve();
-            ks.starts_with(&local_prefix)
-                || ks.starts_with(&global_prefix)
-                || ks.contains(&format!("::{name}/"))
-        })
-    }
-
-    /// Produce the next element of a closure-based sequence given the current
-    /// element `history`. Returns `Ok(Some(v))` for the next value, or
-    /// `Ok(None)` when the generator signalled termination (`last`, or a
-    /// suppressed error). Side effects in a fast-path generator are reflected
-    /// back into `closure_env` so subsequent calls observe them.
-    ///
-    /// This is the single per-element step shared by the initial generation
-    /// loop in `eval_sequence` and the on-demand extension of an infinite
-    /// closure sequence (`Interpreter::extend_closure_sequence`).
-    #[allow(clippy::type_complexity)]
-    pub(crate) fn sequence_closure_step(
-        &mut self,
-        generator: &Value,
-        history: &[Value],
-        precompiled: Option<(&crate::opcode::CompiledCode, &crate::opcode::CompiledFns)>,
-        closure_env: &mut Option<crate::env::Env>,
-        suppress_generator_error: bool,
-    ) -> Result<Option<Value>, RuntimeError> {
-        // This construct handles `next`/`last`/`redo`, so a loop-control
-        // statement raised anywhere in its dynamic extent has somewhere to go
-        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
-        // would convert the signal into a thrown `X::ControlFlow` and silently
-        // break this loop.
-        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        let genfn = generator;
-        let val = if let ValueView::Sub(data) = genfn.view() {
-            if self.sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve()) {
-                let args = match self
-                    .sequence_routine_param_mode(&data.package.resolve(), &data.name.resolve())
-                {
-                    SequenceRoutineParamMode::Fixed(arity) => {
-                        Self::collect_sequence_args_fixed(history, arity)?
-                    }
-                    SequenceRoutineParamMode::Slurpy { min_arity } => {
-                        Self::collect_sequence_args_slurpy(history, min_arity)
-                    }
-                };
-                let name_str = data.name.resolve();
-                let call_name = name_str.strip_prefix('&').unwrap_or(&name_str);
-                match self.call_function(call_name, args) {
-                    Ok(v) => v,
-                    Err(_e) if suppress_generator_error => return Ok(None),
-                    Err(e) => return Err(e),
-                }
-            } else {
-                // A `@`/`%`-sigiled generator parameter is a *slurpy* history
-                // window only when the signature actually says so
-                // (`-> *@history { ... }`). A plain `-> @row { ... }` is one
-                // ordinary Positional parameter that binds ONE previous element,
-                // exactly like `-> $x`. Only `param_defs` records that
-                // distinction; the bare `params` names do not, so consult the
-                // defs whenever they exist and keep the sigil heuristic for the
-                // defs-less legacy shapes (placeholders, WhateverCode).
-                let slurpy_index = if data.param_defs.is_empty() {
-                    data.params
-                        .iter()
-                        .position(|param| param.starts_with('@') || param.starts_with('%'))
-                } else {
-                    data.param_defs
-                        .iter()
-                        .position(|pd| pd.slurpy || pd.double_slurpy)
-                };
-                let args: Vec<Value> = if data.params.is_empty() {
-                    // No declared params: sequence generators still receive history in @_.
-                    history.to_vec()
-                } else if let Some(min_arity) = slurpy_index {
-                    Self::collect_sequence_args_slurpy(history, min_arity)
-                } else {
-                    let arity = data.params.len();
-                    Self::collect_sequence_args_fixed(history, arity)?
-                };
-                let needs_full_binding = data.param_defs.iter().any(|pd| {
-                    pd.type_constraint.is_some()
-                        || pd.literal_value.is_some()
-                        || pd.shape_constraints.is_some()
-                        || pd.named
-                        || pd.slurpy
-                        || pd.double_slurpy
-                })
-                    // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
-                    // carries only bytecode; the manual bind + AST eval below
-                    // would evaluate an empty body, so run the real call path.
-                    || (data.body.is_empty() && data.compiled_routine.is_some());
-                if needs_full_binding {
-                    // A genuinely zero-parameter routine generator (`&subrand
-                    // ... *`) reads its state from captured lexicals; the
-                    // history args exist only for the manual path's `@_`, and
-                    // the real binder would reject them (empty signature).
-                    let call_args = if data.params.is_empty() && data.param_defs.is_empty() {
-                        Vec::new()
-                    } else {
-                        args
-                    };
-                    match self.call_sub_value(Value::sub_value(data.clone()), call_args, false) {
-                        Ok(v) => v,
-                        Err(_e) if suppress_generator_error => return Ok(None),
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    let saved = self.env.clone();
-                    // Pre-run snapshot of the generator's captured vars. After the
-                    // body runs we propagate back only the captures it GENUINELY
-                    // mutated (e.g. `++$i`, `++$sunk`); a capture that merely
-                    // shadows a caller variable without being written — notably
-                    // the very `$s` this sequence is bound to — is left untouched,
-                    // so the generator cannot clobber unrelated outer variables.
-                    let pre: Vec<(crate::symbol::Symbol, Value)> = closure_env
-                        .as_ref()
-                        .map(|e| e.iter().map(|(k, v)| (*k, v.clone())).collect())
-                        .unwrap_or_default();
-                    // Use the mutable closure env so side-effects persist across
-                    // iterations (e.g. `my $i = 0; { ++$i } ... *`).
-                    if let Some(env) = closure_env.clone() {
-                        self.install_sequence_closure_env(&data, &env);
-                    }
-
-                    // Bind parameters
-                    for (i, param) in data.params.iter().enumerate() {
-                        // Same rule as `slurpy_index` above: only a genuinely
-                        // slurpy parameter swallows the rest of the history
-                        // window; a plain `@`/`%` parameter takes one argument.
-                        let slurps_rest = data
-                            .param_defs
-                            .get(i)
-                            .map(|pd| pd.slurpy || pd.double_slurpy)
-                            .unwrap_or(true);
-                        if param.starts_with('@') && slurps_rest {
-                            let rest = if i < args.len() {
-                                args[i..].to_vec()
-                            } else {
-                                Vec::new()
-                            };
-                            self.env.insert(param.clone(), Value::array(rest));
-                            break;
-                        }
-                        if param.starts_with('%') && slurps_rest {
-                            let mut map = ValueMap::default();
-                            for item in args.iter().skip(i) {
-                                if let ValueView::Pair(k, v) = item.view() {
-                                    map.insert(k.clone(), v.clone());
-                                }
-                            }
-                            self.env
-                                .insert(param.clone(), Value::hash_with_data(Value::hash_arc(map)));
-                            break;
-                        }
-                        if let Some(arg) = args.get(i) {
-                            self.env.insert(param.clone(), arg.clone());
-                        }
-                    }
-
-                    // Bind $_ to last arg
-                    if let Some(last_arg) = args.last() {
-                        self.env.insert("_".to_string(), last_arg.clone());
-                    }
-                    // Bind @_ to the argument history window.
-                    self.env.insert("@_".to_string(), Value::array(args));
-
-                    let exec_result = if let Some((code, fns)) = precompiled {
-                        self.eval_precompiled_block_fast(code, fns)
-                    } else {
-                        let saved_placeholders = std::mem::replace(
-                            &mut self.pending_eval_placeholder_params,
-                            data.params.iter().map(|p| p.to_string()).collect(),
-                        );
-                        let r = self.eval_block_value(&data.body);
-                        self.pending_eval_placeholder_params = saved_placeholders;
-                        r
-                    };
-                    // Propagate genuinely-mutated captures into both the
-                    // persistent closure env (so the next pull sees them) and the
-                    // caller (so outer side effects like `++$sunk` are visible),
-                    // then restore the caller env. This runs on every exit path —
-                    // including `last` — so `{ ++$sunk; last }` still records its
-                    // side effect even though the body signals termination.
-                    let mut restored = saved;
-                    for (k, before) in &pre {
-                        if let Some(after) = self.env.get_sym(*k)
-                            && after != before
-                        {
-                            let after = after.clone();
-                            if let Some(gen_env) = closure_env.as_mut() {
-                                gen_env.insert_sym(*k, after.clone());
-                            }
-                            if restored.contains_key_sym(*k) {
-                                restored.insert_sym(*k, after);
-                            }
-                        }
-                    }
-                    self.env = restored;
-                    match exec_result {
-                        Ok(v) => v,
-                        Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                        Err(e) if e.is_last() => return Ok(None),
-                        Err(_e) if suppress_generator_error => return Ok(None),
-                        Err(e) => return Err(e),
-                    }
-                }
-            }
-        } else if let ValueView::Routine { name: rname, .. } = genfn.view() {
-            let package = match genfn.view() {
-                ValueView::Routine { package, .. } => package,
-                _ => unreachable!(),
-            };
-            let args = match self.sequence_routine_param_mode(&package.resolve(), &rname.resolve())
-            {
-                SequenceRoutineParamMode::Fixed(arity) => {
-                    Self::collect_sequence_args_fixed(history, arity)?
-                }
-                SequenceRoutineParamMode::Slurpy { min_arity } => {
-                    Self::collect_sequence_args_slurpy(history, min_arity)
-                }
-            };
-            match self.call_sub_value(genfn.clone(), args, false) {
-                Ok(v) => v,
-                Err(_e) if suppress_generator_error => return Ok(None),
-                Err(e) => return Err(e),
-            }
-        } else {
-            return Ok(None);
-        };
-        Ok(Some(val))
     }
 
     /// `LAZY-LIST ... endpoint` where the left is a genuinely-INFINITE lazy
@@ -932,66 +563,21 @@ impl Interpreter {
             }
         }
 
+        // Raku's `.count` of a closure endpoint, read once for the whole sequence.
+        let endpoint_count = match &endpoint_kind {
+            Some(EndpointKind::Closure(closure_val)) => self.sequence_closure_count(closure_val),
+            _ => crate::value::SeqClosureCount::Fixed(1),
+        };
         // For closure/regex endpoints, check if any seed already satisfies the predicate
         if !seeds.is_empty() {
-            if let Some(EndpointKind::Closure(ref closure_val)) = endpoint_kind
-                && let ValueView::Sub(data) = closure_val.view()
-            {
-                // Determine arity from params
-                let arity = if !data.params.is_empty() {
-                    data.params.len()
-                } else {
-                    1
-                };
-
-                for (i, _) in seeds.iter().enumerate() {
-                    let saved = self.env.clone();
-                    let captured = data.env.clone();
-                    self.install_sequence_closure_env(&data, &captured);
-
-                    // Collect the appropriate number of previous values up to position i+1
-                    let args: Vec<Value> = if i + 1 < arity {
-                        // Not enough values yet - pad with Nil
-                        let mut args = vec![Value::NIL; arity - (i + 1)];
-                        args.extend(seeds[..=i].iter().cloned());
-                        args
-                    } else {
-                        // Take the last 'arity' values up to position i
-                        seeds[i + 1 - arity..=i].to_vec()
-                    };
-
-                    // Bind parameters
-                    for (j, param) in data.params.iter().enumerate() {
-                        if j < args.len() {
-                            self.env.insert(param.clone(), args[j].clone());
-                        }
-                    }
-
-                    // Bind $_ to last arg
-                    if let Some(last_arg) = args.last() {
-                        self.env.insert("_".to_string(), last_arg.clone());
-                    }
-                    // Bind @_ to all values up to this point
-                    self.env
-                        .insert("@_".to_string(), Value::array(seeds[..=i].to_vec()));
-
-                    // A body-less routine endpoint (plan-derived, ADR-0019
-                    // C6e-3) runs through the real call path (bytecode); the
-                    // AST eval would answer Nil for every element and the
-                    // sequence would never terminate.
-                    let predicate_eval = if data.body.is_empty() && data.compiled_routine.is_some()
-                    {
-                        self.call_sub_value(Value::sub_value(data.clone()), args.clone(), false)
-                    } else {
-                        self.eval_block_value(&data.body)
-                    };
-                    let predicate_result = match predicate_eval {
-                        Ok(v) => v,
-                        Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                        Err(e) => return Err(e),
-                    };
-                    self.env = saved;
-                    if predicate_result.truthy() {
+            if let Some(EndpointKind::Closure(ref closure_val)) = endpoint_kind {
+                for i in 0..seeds.len() {
+                    if self.sequence_endpoint_matches(
+                        closure_val,
+                        endpoint_count,
+                        &seeds[..i],
+                        &seeds[i],
+                    )? {
                         let end = if exclusive { i } else { i + 1 };
                         let mut result: Vec<Value> = seeds[..end].to_vec();
                         result.extend(extra_rhs);
@@ -1222,66 +808,11 @@ impl Interpreter {
             None
         };
 
-        // Pre-compile the closure body once to avoid recompilation per iteration.
-        let precompiled_closure: Option<(crate::opcode::CompiledCode, crate::opcode::CompiledFns)> =
-            if let SeqMode::Closure = &mode {
-                if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
-                    if !self.sequence_has_registered_routine(
-                        &data.package.resolve(),
-                        &data.name.resolve(),
-                    ) && !data.body.is_empty()
-                    {
-                        let needs_full_binding = data.param_defs.iter().any(|pd| {
-                            pd.type_constraint.is_some()
-                                || pd.literal_value.is_some()
-                                || pd.shape_constraints.is_some()
-                                || pd.named
-                                || pd.slurpy
-                                || pd.double_slurpy
-                        });
-                        if !needs_full_binding {
-                            let mut compiler = crate::compiler::Compiler::new();
-                            compiler.is_routine = !self.routine_stack.is_empty();
-                            compiler.lexically_in_routine = !self.routine_stack.is_empty();
-                            let scope = if let Some(frame) = self.routine_stack.last() {
-                                format!("{}::&{}", frame.package, frame.name)
-                            } else {
-                                self.current_package()
-                            };
-                            compiler.set_current_package(scope);
-                            compiler.seed_prebound_placeholders(&data.params);
-                            if let Some(origin) = data.compiled_code.as_deref() {
-                                compiler.seed_amp_shadowed_calls_from(origin);
-                            }
-                            let (mut code, mut fns) = compiler.compile(&data.body);
-                            if let Some(origin) = data.compiled_code.as_deref() {
-                                crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
-                                    &mut code, &mut fns, origin,
-                                );
-                            }
-                            Some((code, fns))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-        // Maintain a mutable copy of the generator closure's captured env so that
-        // side-effects (e.g. `++$i`) persist across iterations instead of being reset
-        // from the immutable `data.env` each time.
-        let mut generator_closure_env: Option<crate::env::Env> =
-            if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
-                Some(data.env.clone())
-            } else {
-                None
-            };
+        // How the closure generator is called, decided once for the whole sequence.
+        let generator_shape = match generator.as_ref() {
+            Some(g) if matches!(mode, SeqMode::Closure) => self.sequence_generator_shape(g),
+            _ => crate::value::SeqGeneratorShape::Closure(crate::value::SeqClosureCount::Fixed(1)),
+        };
 
         // Tracks whether a closure generator signalled termination (`last`)
         // during initial generation. When it did, the sequence is finite and
@@ -1307,8 +838,7 @@ impl Interpreter {
                     match self.sequence_closure_step(
                         genfn,
                         &result,
-                        precompiled_closure.as_ref().map(|t| (&t.0, &t.1)),
-                        &mut generator_closure_env,
+                        generator_shape,
                         suppress_generator_error,
                     ) {
                         Ok(Some(v)) => {
@@ -1534,79 +1064,17 @@ impl Interpreter {
                 if let Some(ref epk) = endpoint_kind {
                     match epk {
                         EndpointKind::Closure(closure_val) => {
-                            if let ValueView::Sub(data) = closure_val.view() {
-                                let arity = if !data.params.is_empty() {
-                                    data.params.len()
-                                } else {
-                                    1
-                                };
-
-                                let result_len = result.len();
-                                // For multi-arity endpoint closures, skip the check
-                                // until we have enough values (result + current item).
-                                if arity > 1 && result_len + 1 < arity {
+                            if self.sequence_endpoint_matches(
+                                closure_val,
+                                endpoint_count,
+                                &result,
+                                &item,
+                            )? {
+                                if !exclusive {
                                     result.push(item);
-                                    continue;
                                 }
-
-                                let saved = self.env.clone();
-                                for (k, v) in data.env.iter() {
-                                    self.env.insert_sym(*k, v.clone());
-                                }
-
-                                let args: Vec<Value> = if result_len == 0 {
-                                    vec![item.clone(); arity]
-                                } else if result_len < arity - 1 {
-                                    let mut args = vec![Value::NIL; arity - result_len - 1];
-                                    args.extend(result.iter().cloned());
-                                    args.push(item.clone());
-                                    args
-                                } else {
-                                    let mut args = result[result_len - (arity - 1)..].to_vec();
-                                    args.push(item.clone());
-                                    args
-                                };
-
-                                for (i, param) in data.params.iter().enumerate() {
-                                    if i < args.len() {
-                                        self.env.insert(param.clone(), args[i].clone());
-                                    }
-                                }
-                                if let Some(last_arg) = args.last() {
-                                    self.env.insert("_".to_string(), last_arg.clone());
-                                }
-                                // Bind @_ to all values including the current item
-                                {
-                                    let mut all_vals = result.clone();
-                                    all_vals.push(item.clone());
-                                    self.env.insert("@_".to_string(), Value::array(all_vals));
-                                }
-
-                                // Body-less routine endpoint: real call path
-                                // (see the eager endpoint scan above).
-                                let predicate_eval =
-                                    if data.body.is_empty() && data.compiled_routine.is_some() {
-                                        self.call_sub_value(
-                                            Value::sub_value(data.clone()),
-                                            args.clone(),
-                                            false,
-                                        )
-                                    } else {
-                                        self.eval_block_value(&data.body)
-                                    };
-                                let predicate_result = match predicate_eval {
-                                    Ok(v) => v,
-                                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
-                                    Err(e) => return Err(e),
-                                };
-                                self.env = saved;
-                                if predicate_result.truthy() {
-                                    if !exclusive {
-                                        result.push(item);
-                                    }
-                                    should_break = true;
-                                    continue;
-                                }
+                                should_break = true;
+                                continue;
                             }
                         }
                         EndpointKind::Regex(pat) => {
@@ -1760,9 +1228,7 @@ impl Interpreter {
         {
             let state = crate::value::ClosureSeqState {
                 generator: gen_fn,
-                closure_env: generator_closure_env,
-                precompiled: precompiled_closure
-                    .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
+                generator_shape,
                 endpoint,
                 exclude_endpoint: exclusive,
                 post_endpoint: extra_rhs,
@@ -1814,9 +1280,7 @@ impl Interpreter {
                 // demand instead of truncating to the initial cache.
                 let state = crate::value::ClosureSeqState {
                     generator: gen_fn,
-                    closure_env: generator_closure_env,
-                    precompiled: precompiled_closure
-                        .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
+                    generator_shape,
                     endpoint: None,
                     exclude_endpoint: false,
                     post_endpoint: Vec::new(),
@@ -1954,9 +1418,4 @@ impl Interpreter {
 
         Ok(Value::array(all_results))
     }
-}
-
-enum SequenceRoutineParamMode {
-    Fixed(usize),
-    Slurpy { min_arity: usize },
 }

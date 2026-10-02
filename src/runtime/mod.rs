@@ -950,6 +950,7 @@ mod runtime_var_bind_meta;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
+mod sequence_closure_call;
 pub(crate) mod shared_store;
 pub(crate) mod signal_watcher;
 pub(crate) mod slang_activation;
