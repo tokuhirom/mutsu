@@ -385,9 +385,14 @@ pub(crate) fn native_method_0arg(
         match method {
             // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
             // returns the shared subject Value; `.Str` copies the k matched chars).
-            "from" => return Some(Ok(Value::int(target.match_from().unwrap_or(0)))),
-            "to" => return Some(Ok(Value::int(target.match_to().unwrap_or(0)))),
-            "pos" => return Some(Ok(Value::int(target.match_pos().unwrap_or(0)))),
+            "from" => return Some(Ok(Value::int(match_helpers::match_value_from(target)))),
+            "to" => return Some(Ok(Value::int(match_helpers::match_value_to(target)))),
+            "pos" => {
+                return Some(Ok(Value::int(match_helpers::match_visible_pos(
+                    target,
+                    target.match_pos().unwrap_or(0),
+                ))));
+            }
             "Str" => {
                 return Some(Ok(target
                     .match_str_value()
@@ -2093,13 +2098,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let named_v = target.match_named();
         match method {
             "from" => {
-                return Some(Ok(Value::int(target.match_from().unwrap_or(0))));
+                return Some(Ok(Value::int(match_helpers::match_value_from(target))));
             }
             "to" => {
-                return Some(Ok(Value::int(target.match_to().unwrap_or(0))));
+                return Some(Ok(Value::int(match_helpers::match_value_to(target))));
             }
             "pos" => {
-                return Some(Ok(Value::int(target.match_pos().unwrap_or(0))));
+                return Some(Ok(Value::int(match_helpers::match_visible_pos(
+                    target,
+                    target.match_pos().unwrap_or(0),
+                ))));
             }
             "gist" => {
                 // Full Match gist: corner-quoted text plus positional/named

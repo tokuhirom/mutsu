@@ -2467,6 +2467,8 @@ impl Compiler {
             .extend(self.local_map.keys().cloned());
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
+        sub.class_body_static_code_vars
+            .extend(self.class_body_static_code_vars.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
