@@ -5061,6 +5061,12 @@ pub(crate) struct CompiledSubDeclPlan {
     /// where earlier sibling blocks have already run and left their own
     /// same-named slots live. Empty when the plan compiled no bodies.
     pub(crate) free_var_decl_slots: Vec<(Symbol, u32)>,
+    /// The subset of `free_var_decl_slots` whose `my` is declared in the
+    /// sub's OWN scope — textually after the point its hoisted registration
+    /// runs, so the hoisted pass finds the declaration not yet executed and
+    /// seeds the cell the declaration later adopts (#9911; see
+    /// `vm/vm_hoist_capture_cells.rs`). Set on the hoisted plan only.
+    pub(crate) hoist_seed_slots: Vec<u32>,
     /// A sub declared inside a routine body: one entry per free variable,
     /// naming the hidden local of the DECLARING frame that each activation
     /// binds to that variable's cell (mutsu#9111; see
@@ -11603,6 +11609,7 @@ impl CompiledCode {
             frame_lexical: None,
             frame_lexical_value: false,
             free_var_decl_slots: Vec::new(),
+            hoist_seed_slots: Vec::new(),
             lexsub_free_aliases: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
@@ -11736,6 +11743,15 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].free_var_decl_slots = slots;
+    }
+
+    /// Set a hoisted sub plan's `CompiledSubDeclPlan::hoist_seed_slots`.
+    pub(crate) fn set_sub_decl_hoist_seed_slots(&mut self, decl_idx: u32, slots: Vec<u32>) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].hoist_seed_slots = slots;
     }
 
     /// Companion of [`Self::set_sub_decl_free_var_decl_slots`] for the

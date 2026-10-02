@@ -539,55 +539,63 @@ impl Compiler {
         self.hoist_require_stubs(stmts);
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
-                let mut hoisted = stmt.clone();
-                if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-                    if lexical_hoist
-                        && !custom_traits
-                            .iter()
-                            .any(|(trait_name, _)| trait_name == "__lexical_hoist")
-                    {
-                        custom_traits.push(("__lexical_hoist".to_string(), None));
-                    }
-                    // Mark every hoist-pass registration (including the mainline
-                    // hoist, which passes `lexical_hoist == false`) so the
-                    // `our multi` scope check can skip this early pass and instead
-                    // validate at in-sequence registration, where an `our proto`
-                    // declared later in the same scope is already registered.
-                    if !custom_traits
-                        .iter()
-                        .any(|(trait_name, _)| trait_name == "__hoisted")
-                    {
-                        custom_traits.push(("__hoisted".to_string(), None));
-                    }
-                    // Strip user-defined custom traits during hoisting.
-                    // Traits like `is description(...)` require types/roles to be
-                    // registered first; they will be applied during the normal pass.
-                    // Keep internal (__) and well-known traits (default, DEPRECATED).
-                    custom_traits.retain(|(t, _)| {
-                        t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
-                    });
-                }
-                let idx = self.add_sub_decl_plan(&hoisted);
-                self.code.emit(OpCode::RegisterDecl(idx));
-                // A hoisted routine is in its scope's pad from the scope's
-                // entry, so a `MY::` read before the declaration lists it.
-                if let Stmt::SubDecl {
-                    name,
-                    name_expr: None,
-                    ..
-                } = stmt
-                {
-                    self.note_scope_routine(*name);
-                }
-                // Remember the hoisted plan so the source-order compile of the
-                // same declaration can hand it the bytecode it compiles (see
-                // `Compiler::hoisted_sub_plans`).
-                if let Stmt::SubDecl { name, .. } = stmt
-                    && let Some(fp) = self.code.sub_decl_plan_fingerprint(idx)
-                {
-                    self.hoisted_sub_plans.push((*name, fp, idx));
-                }
+                self.hoist_one_sub_decl(stmt, lexical_hoist);
             }
+        }
+    }
+
+    /// Emit the hoist-pass registration of one `Stmt::SubDecl`: a plan-only
+    /// `RegisterDecl` whose bodies (and the slot bakes that need the
+    /// declaration's own textual position) are handed over by the
+    /// source-order compile of the same declaration (`hoisted_sub_plans`).
+    pub(super) fn hoist_one_sub_decl(&mut self, stmt: &Stmt, lexical_hoist: bool) {
+        let mut hoisted = stmt.clone();
+        if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
+            if lexical_hoist
+                && !custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__lexical_hoist")
+            {
+                custom_traits.push(("__lexical_hoist".to_string(), None));
+            }
+            // Mark every hoist-pass registration (including the mainline
+            // hoist, which passes `lexical_hoist == false`) so the
+            // `our multi` scope check can skip this early pass and instead
+            // validate at in-sequence registration, where an `our proto`
+            // declared later in the same scope is already registered.
+            if !custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__hoisted")
+            {
+                custom_traits.push(("__hoisted".to_string(), None));
+            }
+            // Strip user-defined custom traits during hoisting.
+            // Traits like `is description(...)` require types/roles to be
+            // registered first; they will be applied during the normal pass.
+            // Keep internal (__) and well-known traits (default, DEPRECATED).
+            custom_traits.retain(|(t, _)| {
+                t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+            });
+        }
+        let idx = self.add_sub_decl_plan(&hoisted);
+        self.code.emit(OpCode::RegisterDecl(idx));
+        // A hoisted routine is in its scope's pad from the scope's
+        // entry, so a `MY::` read before the declaration lists it.
+        if let Stmt::SubDecl {
+            name,
+            name_expr: None,
+            ..
+        } = stmt
+        {
+            self.note_scope_routine(*name);
+        }
+        // Remember the hoisted plan so the source-order compile of the
+        // same declaration can hand it the bytecode it compiles (see
+        // `Compiler::hoisted_sub_plans`).
+        if let Stmt::SubDecl { name, .. } = stmt
+            && let Some(fp) = self.code.sub_decl_plan_fingerprint(idx)
+        {
+            self.hoisted_sub_plans.push((*name, fp, idx));
         }
     }
 

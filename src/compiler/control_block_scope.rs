@@ -100,32 +100,12 @@ impl Compiler {
         // declared (Raku sub hoisting semantics).
         // Strip non-internal custom traits during hoisting — types/roles
         // may not be registered yet; traits are applied during the normal pass.
+        // Plan-only, like every other hoist site: the source-order compile
+        // hands the plan its bodies and the free-variable slot bakes, which
+        // only that textual position can resolve (#9911).
         for s in stmts.iter() {
             if let Stmt::SubDecl { .. } = s {
-                let mut hoisted = s.clone();
-                if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-                    custom_traits.retain(|(t, _)| {
-                        t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
-                    });
-                    // Mark this copy as a hoist-pass registration,
-                    // exactly as `hoist_sub_decls` does for the
-                    // value-position (inline) block path. Without the
-                    // marker the pre-pass looked like a real
-                    // declaration, and an `our multi` inside a
-                    // statement-form bare block hit the "Cannot
-                    // declare individual multi candidates in 'our'
-                    // scope" check here — before the block's own
-                    // `our proto` had run. The in-sequence
-                    // registration below runs after the proto and
-                    // enforces the check for real.
-                    if !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist") {
-                        custom_traits.push(("__lexical_hoist".to_string(), None));
-                    }
-                    if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
-                        custom_traits.push(("__hoisted".to_string(), None));
-                    }
-                }
-                self.compile_stmt(&hoisted);
+                self.hoist_one_sub_decl(s, true);
             }
         }
         // Raku's `my TYPE $x` is in effect for the WHOLE block, not

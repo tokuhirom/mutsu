@@ -2341,6 +2341,21 @@ impl Compiler {
         out
     }
 
+    /// The slots of `baked` (a [`Self::bake_sub_decl_free_var_slots`] result)
+    /// whose name is declared in the innermost scope — the scope the sub
+    /// itself is declared in, whose top its hoisted registration runs at.
+    /// See `CompiledSubDeclPlan::hoist_seed_slots`.
+    pub(super) fn own_scope_decl_slots(&self, baked: &[(crate::symbol::Symbol, u32)]) -> Vec<u32> {
+        let Some(own) = self.local_scopes.last() else {
+            return Vec::new();
+        };
+        baked
+            .iter()
+            .filter(|(sym, _)| sym.with_str(|s| own.contains_key(s)))
+            .map(|(_, slot)| *slot)
+            .collect()
+    }
+
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
         compiled.free_var_parent_slots = compiled
             .free_var_syms

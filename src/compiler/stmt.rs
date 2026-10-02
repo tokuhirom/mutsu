@@ -4115,6 +4115,8 @@ impl Compiler {
                     );
                     self.code
                         .set_sub_decl_free_var_decl_slots(hoisted_idx, free_var_decl_slots.clone());
+                    let seeds = self.own_scope_decl_slots(&free_var_decl_slots);
+                    self.code.set_sub_decl_hoist_seed_slots(hoisted_idx, seeds);
                     self.code
                         .set_sub_decl_lexsub_free_aliases(hoisted_idx, lexsub_free_aliases.clone());
                 }
