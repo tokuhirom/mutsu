@@ -21,6 +21,12 @@
 #                         unfetchable, with a 5s/10s/... backoff (default: 4)
 #   BATTERY_SRC_CACHE     directory caching fetched checkouts by pinned commit
 #                         (default: unset = always fetch; CI sets it)
+#   FLAKY_LIST            quarantine ledger (default: flaky-tests.txt); a file
+#                         listed there as `battery:<Name>/<file>` is re-run up
+#                         to FLAKY_MAX_ATTEMPTS (default 3) times before it
+#                         counts as failed, and every retry is appended to
+#                         FLAKY_RETRY_LOG (default: tmp/flaky-retries.log).
+#                         See docs/flaky-test-policy.md.
 #
 # The path overrides exist so the gate itself can be exercised against a
 # scratch manifest/baseline (e.g. to verify that a regression really does fail)
@@ -74,6 +80,11 @@ export DBIISH_WRITE_TEST=YES
 # depend on every upstream host being reachable on every run (#9275: git.sr.ht
 # was unreachable from GitHub runners for long stretches on 2026-09-24).
 BATTERY_SRC_CACHE="${BATTERY_SRC_CACHE:-}"
+FLAKY_LIST="${FLAKY_LIST:-flaky-tests.txt}"
+FLAKY_MAX_ATTEMPTS="${FLAKY_MAX_ATTEMPTS:-3}"
+FLAKY_RETRY_LOG="${FLAKY_RETRY_LOG:-$ROOT/tmp/flaky-retries.log}"
+case "$FLAKY_LIST" in /*) ;; *) FLAKY_LIST="$ROOT/$FLAKY_LIST" ;; esac
+case "$FLAKY_RETRY_LOG" in /*) ;; *) FLAKY_RETRY_LOG="$ROOT/$FLAKY_RETRY_LOG" ;; esac
 case "$BATTERY_SRC_CACHE" in "" | /*) ;; *) BATTERY_SRC_CACHE="$ROOT/$BATTERY_SRC_CACHE" ;; esac
 
 # --- fetch a specific upstream commit into $dir (shallow, no full history) ----
@@ -130,7 +141,8 @@ fetch_commit() {
   fi
 }
 
-# --- run one test file; echo PASS or FAIL(detail); return 0 iff it fully passes
+# --- run one test file; echo PASS or FAIL(detail); return 0 iff it fully passes,
+# 2 if the interpreter died of a signal, 1 for any other failure
 #
 # $1 is the working directory to run in — the fetched repo root. These suites are
 # written to be run from their own checkout (`prove` / `zef test` do exactly
@@ -144,8 +156,9 @@ fetch_commit() {
 # ungateable even at exact parity with raku — which fails the same subtest.
 run_one() {
   local workdir="$1"; shift
-  local out planned nok okc todo
+  local out rc planned nok okc todo
   out="$(cd "$workdir" && timeout 120 "$MUTSU_BIN" "$@" 2>&1)"
+  rc=$?
   planned="$(printf '%s\n' "$out" | grep -oE '^1\.\.[0-9]+' | head -1 | cut -d. -f3)"
   nok="$(printf '%s\n' "$out" | grep -cE '^not ok')"
   okc="$(printf '%s\n' "$out" | grep -cE '^ok ')"
@@ -160,8 +173,70 @@ run_one() {
     fi
     return 0
   fi
-  echo "FAIL(ok=$okc/${planned:-?},notok=$nok,todo=$todo)"
+  echo "FAIL(ok=$okc/${planned:-?},notok=$nok,todo=$todo,rc=$rc)"
+  # Name the failing assertions, so a one-off failure in CI says WHICH test
+  # failed rather than only how many (#10885: the first Crypt::Random
+  # 03-uniform.t failure could not be told apart from a bad read).
+  printf '%s\n' "$out" | grep -E '^not ok' | grep -viE '# *TODO' | head -10 \
+    | sed 's/^/      | /'
+  printf '%s\n' "$out" | grep -vE '^(ok|not ok) |^1\.\.' | tail -5 | sed 's/^/      | /'
+  # A signal death (rc = 128 + signum; `timeout` reports its own 124) is a
+  # crash, which the quarantine below must never re-roll.
+  if [ "$rc" -ge 128 ]; then
+    return 2
+  fi
   return 1
+}
+
+# Is `battery:<name>/<file>` in the quarantine ledger? (Same ledger, and same
+# first-column rule, as scripts/flaky-retry.sh.)
+is_quarantined() {
+  local want="battery:$1/$2" path _rest
+  [ -f "$FLAKY_LIST" ] || return 1
+  while read -r path _rest; do
+    case "$path" in ''|'#'*) continue ;; esac
+    [ "$path" = "$want" ] && return 0
+  done < "$FLAKY_LIST"
+  return 1
+}
+
+# --- run_one, re-rolled for a quarantined file --------------------------------
+#
+# The battery counterpart of scripts/flaky-retry.sh: an unlisted file runs once;
+# a listed one is re-run until it passes or FLAKY_MAX_ATTEMPTS is spent, and
+# every failed attempt is logged so CI's retry report shows it. A crash is never
+# re-rolled, and a file that fails every attempt fails the gate as usual.
+run_gated() {
+  local name="$1" base="$2"; shift 2
+  local verdict rc attempt=1
+  # Append a note to the verdict's first line, ahead of run_one's detail lines.
+  annotate() { printf '%s %s%s\n' "${verdict%%$'\n'*}" "$1" "${verdict#*"${verdict%%$'\n'*}"}"; }
+  while :; do
+    verdict="$(run_one "$@")"
+    rc=$?
+    if [ "$rc" -eq 0 ] || ! is_quarantined "$name" "$base"; then
+      if [ "$rc" -eq 0 ] && [ "$attempt" -gt 1 ]; then
+        annotate "(flaky-retry: passed on attempt $attempt/$FLAKY_MAX_ATTEMPTS)"
+      else
+        printf '%s\n' "$verdict"
+      fi
+      return "$rc"
+    fi
+    mkdir -p "$(dirname "$FLAKY_RETRY_LOG")" 2>/dev/null
+    if [ "$rc" -eq 2 ]; then
+      printf 'battery:%s/%s attempt %d/%d died of a signal -- NOT retried\n' \
+        "$name" "$base" "$attempt" "$FLAKY_MAX_ATTEMPTS" >> "$FLAKY_RETRY_LOG"
+      annotate "(crash: NOT retried, see docs/flaky-test-policy.md)"
+      return 1
+    fi
+    printf 'battery:%s/%s attempt %d/%d failed\n' \
+      "$name" "$base" "$attempt" "$FLAKY_MAX_ATTEMPTS" >> "$FLAKY_RETRY_LOG"
+    if [ "$attempt" -ge "$FLAKY_MAX_ATTEMPTS" ]; then
+      annotate "(flaky-retry: FAILED all $FLAKY_MAX_ATTEMPTS attempts)"
+      return 1
+    fi
+    attempt=$((attempt + 1))
+  done
 }
 
 # Read a tab-separated lock, skipping comments/blank lines and the header row.
@@ -279,7 +354,7 @@ process_battery() {
         printf 'EXCLUDED\t%s\t%s\n' "$name" "$base" >> "$summary"
         continue
       fi
-      verdict="$(run_one "$clone" "${inc[@]}" "$rel")"
+      verdict="$(run_gated "$name" "$base" "$clone" "${inc[@]}" "$rel")"
       rc=$?
       printf '  %-40s %s\n' "$base" "$verdict"
       if [ "$rc" -eq 0 ]; then

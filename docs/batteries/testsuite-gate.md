@@ -166,9 +166,11 @@ Note what this category is **not**. It is not `flaky-tests.txt`
 ([`docs/flaky-test-policy.md`](../flaky-test-policy.md)): that ledger quarantines
 tests whose non-determinism is inherent but *bounded* — a statistical assertion
 that a correct RNG violates now and then — by re-running them up to three times,
-which is the right answer when a retry converges. It does not apply here for two
-reasons: the battery harness has no retry path, and a ~50% per-run rate would not
-converge in three attempts if it had one.
+which is the right answer when a retry converges. The battery harness consults
+that ledger too (a `battery:<Name>/<file>` entry; `Crypt::Random/03-uniform.t`,
+whose `$one != $two && $two != $thr` over `^10000` fails 2 runs in 10,000 on a
+correct RNG, is the first), but a ~50% per-run rate would not converge in three
+attempts, so a self-racing harness is excluded rather than quarantined.
 
 ### In both cases
 

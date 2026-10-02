@@ -111,6 +111,15 @@ Both test runners consult it through one retry engine:
 - `scripts/run-t-test.sh` (t/, new — so both suites behave identically)
 - `scripts/flaky-retry.sh` (the engine)
 
+The bundled-library release gate (`scripts/battery-testsuite.sh`) reads the
+same ledger. Its files are upstream tests fetched at gate time, so they have no
+path in this tree: such an entry is written `battery:<Name>/<file>` (e.g.
+`battery:Crypt::Random/03-uniform.t`), must name a row of
+`batteries-whitelist.txt` (`make check-flaky-list` checks it), and is re-rolled
+by the gate's own `run_gated` with the same rules — at most
+`FLAKY_MAX_ATTEMPTS`, a signal death never retried, every retry logged to
+`tmp/flaky-retries.log`.
+
 For a listed file, a failed attempt's output is discarded and the file runs
 again, up to `FLAKY_MAX_ATTEMPTS` (default 3). The first passing attempt is what
 prove sees, preceded by a `# flaky-retry:` TAP comment. An unlisted file is
