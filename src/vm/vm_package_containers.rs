@@ -29,8 +29,11 @@ impl Interpreter {
     /// spelling when `name` is a pseudo-package-qualified `@`/`%` variable
     /// (`@GLOBAL::d`) whose only declaration is a bare `our @d`, else `name`.
     // Cost: O(1) hash probes; only a `::`-qualified `@`/`%` name probes at all.
-    pub(crate) fn package_container_store_name(&self, name: &str) -> String {
-        if name.starts_with(['@', '%']) && crate::runtime::utils::has_double_colon(name) {
+    pub(crate) fn package_container_store_name(&self, name_sym: Symbol) -> String {
+        let name = name_sym.as_str();
+        if crate::qualified::is_package_array(name_sym)
+            || crate::qualified::is_package_hash(name_sym)
+        {
             return self.package_container_key(name);
         }
         name.to_string()

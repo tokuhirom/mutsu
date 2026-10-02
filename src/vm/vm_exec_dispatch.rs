@@ -1384,7 +1384,7 @@ impl Interpreter {
                 // `our @d` / `our %e` declared stores into THAT container (its
                 // `our_vars` key is the bare spelling), instead of minting a
                 // second one under the qualified key that `@d` never sees (#11031).
-                let mut name = self.package_container_store_name(name_str);
+                let mut name = self.package_container_store_name(code.const_sym(*name_idx));
                 // Outer-lexical write fallback (symmetric with the GetGlobal read
                 // fallback above): the compiler auto-qualifies a bare free variable
                 // with the current package (`$x` inside `grammar G { ... }` compiles
