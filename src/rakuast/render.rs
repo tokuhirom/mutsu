@@ -266,6 +266,9 @@ fn render_leaf(v: &Value) -> String {
         // while `.slurpy.gist` alone is `(Flattened)`. See `slurpy_marker_value`
         // for why the field holds a type object at all (GH #8157).
         ValueView::Package(name) => name.resolve(),
+        // A version leaf renders as its literal (`LanguageVersion.new(v6.d)`),
+        // which is its `.gist`, not its `.Str` (`6.d`).
+        ValueView::Version { .. } => format!("v{}", v.to_string_value()),
         _ => v.to_string_value(),
     }
 }

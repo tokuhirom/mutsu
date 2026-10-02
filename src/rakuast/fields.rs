@@ -217,6 +217,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("argument", EXPRESSION),
             ("off", Absent::Zero),
         ],
+        StatementUse => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementLanguageVersion => &[("version", Absent::Required)],
         // The conditional family. `If` and `With` take the `elsif`/`orwith`
         // chain and an `else`; `Unless` and `Without` take neither (rakudo
         // rejects them at compile time) and name their block `body` rather than
@@ -269,6 +271,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexAlternation | RegexSequentialAlternation => "branches",
         RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
         RegexBlock => "block",
+        StatementLanguageVersion => "version",
+        ColonPairTrue | ColonPairFalse => "key",
         StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless

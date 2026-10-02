@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 type LoweredEnumVariants = (Vec<(String, Option<Expr>)>, EnumVariantForm);
 
-fn unsupported(node: &RakuAstNode) -> RuntimeError {
+pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
     RuntimeError::new(format!(
         "RakuAST: EVAL does not yet support lowering `{}`",
         node.class.printed_name()
@@ -229,15 +229,25 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // implied by the statement class, so only the block's statements are
         // read back.
         RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
-        // An argument-less `RakuAST::Pragma` is the model form of `use strict`,
-        // `use fatal`, and the other core pragmas handled by the parser and
-        // compiler's existing `Stmt::Use` path.
-        RakuAstClass::Pragma => Ok(Stmt::Use {
-            module: leaf_str(node, "name")?,
-            arg: None,
-            tags: Vec::new(),
-            condition: None,
-        }),
+        // `use` / `no` statements (see `use_stmt`).
+        RakuAstClass::Pragma => super::use_stmt::lower_pragma(node),
+        RakuAstClass::StatementUse => super::use_stmt::lower_use(node),
+        RakuAstClass::StatementLanguageVersion => super::use_stmt::lower_language_version(node),
+        // A bare block in statement position runs once, here and now: it is
+        // the parser's `Stmt::Block`, not a closure value. One that takes
+        // arguments (placeholders, `@_`, `%_`) is a closure value even in
+        // statement position, so it keeps the expression path.
+        RakuAstClass::Block => {
+            let body = lower_block(node)?;
+            if crate::ast::collect_placeholders_shallow(&body).is_empty()
+                && !crate::ast::body_reads_args_array(&body)
+                && !crate::ast::body_reads_args_hash(&body)
+            {
+                Ok(Stmt::Block(body))
+            } else {
+                Ok(Stmt::Expr(lower_expr(node)?))
+            }
+        }
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.
@@ -1305,7 +1315,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// Lower a `Block` (`body => Blockoid` wrapping a positional `StatementList`) to a
 /// statement list.
-fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let blockoid = named_child(block, "body")?;
     lower_stmts(named_child_or_positional(blockoid)?)
 }
@@ -1556,7 +1566,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 }
 
 /// The value of a leaf-valued named field (e.g. `sigil => "$"`), as a `String`.
-fn leaf_str(node: &RakuAstNode, name: &str) -> Result<String, RuntimeError> {
+pub(super) fn leaf_str(node: &RakuAstNode, name: &str) -> Result<String, RuntimeError> {
     let field = node
         .fields
         .iter()
@@ -2327,7 +2337,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
     Ok(Value::regex_with_adverbs(value).with_regex_source_tree(tree.clone()))
 }
 
-fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
         RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
             Ok(Expr::Literal(positional_leaf(node)?))
@@ -3035,7 +3045,7 @@ fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
 }
 
 /// The value of a node's single positional (name-less) leaf field.
-fn positional_leaf(node: &RakuAstNode) -> Result<Value, RuntimeError> {
+pub(super) fn positional_leaf(node: &RakuAstNode) -> Result<Value, RuntimeError> {
     match node.fields.first() {
         Some(f) if f.name.is_none() => match &f.value {
             RakuAstFieldValue::Node(v) => Ok(v.clone()),
@@ -3046,7 +3056,10 @@ fn positional_leaf(node: &RakuAstNode) -> Result<Value, RuntimeError> {
 }
 
 /// The child RakuAST node of a named field.
-fn named_child<'a>(node: &'a RakuAstNode, name: &str) -> Result<&'a RakuAstNode, RuntimeError> {
+pub(super) fn named_child<'a>(
+    node: &'a RakuAstNode,
+    name: &str,
+) -> Result<&'a RakuAstNode, RuntimeError> {
     node.fields
         .iter()
         .find(|f| f.name == Some(name))
@@ -3070,7 +3083,10 @@ fn child_node(fv: &RakuAstFieldValue) -> Result<&RakuAstNode, RuntimeError> {
     Err(RuntimeError::new("RakuAST: EVAL expected a child node"))
 }
 
-fn list_field<'a>(node: &'a RakuAstNode, name: &str) -> Result<&'a [Value], RuntimeError> {
+pub(super) fn list_field<'a>(
+    node: &'a RakuAstNode,
+    name: &str,
+) -> Result<&'a [Value], RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some(name)) {
         Some(f) => match &f.value {
             RakuAstFieldValue::List(items) => Ok(items),
