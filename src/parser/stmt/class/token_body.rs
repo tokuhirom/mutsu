@@ -159,7 +159,7 @@ pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
 
 /// Place a `rule`'s sigspace around a `%`/`%%` separated quantifier where the
 /// source whitespace puts it, as rakudo does (#10569). Runs after
-/// [`inject_implicit_rule_ws`](super::rule_ws::inject_implicit_rule_ws), which
+/// [`inject_implicit_rule_ws`], which
 /// leaves a plain space for whitespace it found insignificant and a `<.ws>`
 /// for whitespace it found significant:
 ///
