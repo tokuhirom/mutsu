@@ -477,8 +477,17 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
-    let (return_type, custom_traits) = routine_return_type(node, None)?;
+    let mut is_traits = super::routine_traits::IsTraits::default();
+    let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
     let multi = multiness(node)?;
+    match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => {}
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "our" => custom_traits.push((super::convert::OUR_SCOPED.to_string(), None)),
+            "my" => {}
+            _ => return Err(unsupported(node)),
+        },
+    }
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
@@ -492,10 +501,10 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         signature_alternates: Vec::new(),
         body,
         multi,
-        is_rw: false,
-        is_raw: false,
-        is_export: false,
-        export_tags: Vec::new(),
+        is_rw: is_traits.is_rw,
+        is_raw: is_traits.is_raw,
+        is_export: !is_traits.export_tags.is_empty(),
+        export_tags: is_traits.export_tags,
         is_test_assertion: false,
         supersede: false,
         custom_traits,
@@ -982,8 +991,8 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         deprecated_message: None,
         handles: Vec::new(),
         custom_traits,
-        is_export: false,
-        export_tags: Vec::new(),
+        is_export: !is_traits.export_tags.is_empty(),
+        export_tags: is_traits.export_tags,
     })
 }
 
@@ -1018,20 +1027,15 @@ fn routine_return_type(
             let marker = match t.class {
                 RakuAstClass::TraitReturns => "__return_via_trait",
                 RakuAstClass::TraitOf => "__return_via_of",
-                RakuAstClass::TraitIs if t.fields.len() == 1 => {
-                    let name = positional_leaf(named_child(t, "name")?)?;
-                    let ValueView::Str(name) = name.view() else {
-                        return Err(unsupported(node));
+                RakuAstClass::TraitIs => {
+                    let read = match is_traits.as_deref_mut() {
+                        Some(flags) => flags.read(t)?,
+                        None => false,
                     };
-                    match is_traits.as_deref_mut() {
-                        Some(flags) => {
-                            if flags.set_name(name.as_str()) {
-                                continue;
-                            }
-                            return Err(unsupported(node));
-                        }
-                        None => return Err(unsupported(node)),
+                    if read {
+                        continue;
                     }
+                    return Err(unsupported(node));
                 }
                 _ => return Err(unsupported(node)),
             };

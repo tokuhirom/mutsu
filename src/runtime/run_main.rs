@@ -51,7 +51,6 @@ impl Interpreter {
             .cloned()
             .unwrap_or_else(|| Value::array(Vec::new()));
         let raw_values = Self::value_to_list(&args_val);
-        let (main_package, main_name) = self.run_main_routine_name(&main);
 
         // Build the dispatch Capture.
         let capture = if has_args_to_capture {
@@ -59,7 +58,7 @@ impl Interpreter {
             // same value `@*ARGS.Array` yields.
             self.call_function("ARGS-TO-CAPTURE", vec![main.clone(), args_val])?
         } else {
-            self.default_args_to_capture(&raw_values, &main_name)
+            self.default_args_to_capture(&raw_values)
         };
         let (positional, named_pairs) = Self::capture_parts(&capture);
         let parsed = ParsedMainArgs {
@@ -70,10 +69,7 @@ impl Interpreter {
 
         // Try to dispatch &main with the capture.
         let sub_main_opts = self.read_sub_main_opts();
-        let candidates = self.collect_cli_candidates(&main_name);
-        let usage_candidates = self.usage_candidates(&main_package, &main_name, candidates.first());
-        let usage_text = self.generate_usage(&usage_candidates, None);
-        self.set_usage_var(&usage_text);
+        let candidates = self.collect_main_candidates();
         let mut matched = false;
         for candidate in &candidates {
             match self.try_dispatch_candidate(candidate, &parsed, &sub_main_opts) {
@@ -90,6 +86,14 @@ impl Interpreter {
         }
 
         // Failed dispatch: generate usage and exit.
+        let usage_text = self.generate_usage_from_candidates(&candidates);
+        self.env
+            .insert("$*USAGE".to_string(), Value::str(usage_text.clone()));
+        self.env
+            .insert("*USAGE".to_string(), Value::str(usage_text.clone()));
+        self.mark_readonly("$*USAGE");
+        self.mark_readonly("*USAGE");
+
         if has_generate_usage {
             let mut ga = vec![main];
             ga.extend(positional.iter().cloned());
@@ -101,35 +105,12 @@ impl Interpreter {
         } else if has_usage {
             self.call_function("USAGE", vec![])?;
         } else {
-            // The default generator sees the capture, so a sub-command's
-            // usage narrows to the candidates its first argument selects.
-            let usage = self.generate_usage(&usage_candidates, positional.first());
-            if help_requested {
-                self.emit_output(&format!("{usage}\n"));
-            } else {
-                self.emit_stderr(&format!("{usage}\n"));
-            }
+            self.emit_stderr(&format!("Usage:\n{}\n", usage_text));
         }
 
         let exit_code = if help_requested { 0 } else { 2 };
         self.run_main_exit(exit_code)?;
         Ok(Value::NIL)
-    }
-
-    /// The package and name of the routine handed to `RUN-MAIN`, whose
-    /// candidates are dispatched to and described by the usage message. An
-    /// anonymous callable falls back to `MAIN`.
-    fn run_main_routine_name(&self, main: &Value) -> (String, String) {
-        let (package, name) = match main.view() {
-            ValueView::Sub(data) => (data.package.resolve(), data.name.resolve()),
-            ValueView::Routine { package, name, .. } => (package.resolve(), name.resolve()),
-            _ => (String::new(), String::new()),
-        };
-        if name.is_empty() {
-            (self.current_package(), "MAIN".to_string())
-        } else {
-            (package, name)
-        }
     }
 
     /// Extract the positional list and named pairs (sorted by key) from a
@@ -150,17 +131,13 @@ impl Interpreter {
     /// Each argument value is `val()`-coerced to an allomorph (so `--n=42`
     /// yields `IntStr` `<42>`, matching Rakudo), and a repeated named option
     /// collects its values into an `Array`.
-    pub(super) fn default_args_to_capture(
-        &mut self,
-        raw_values: &[Value],
-        main_name: &str,
-    ) -> Value {
+    pub(super) fn default_args_to_capture(&mut self, raw_values: &[Value]) -> Value {
         let sub_main_opts = self.read_sub_main_opts();
         // Determine bool/value-taking named options from the MAIN candidates so
         // `--verbose value` is parsed correctly for a typed signature; for a
         // slurpy `*%_` MAIN this is empty and every unknown named without `=`
         // becomes a boolean flag.
-        let candidates = self.collect_cli_candidates(main_name);
+        let candidates = self.collect_main_candidates();
         let named_info: Vec<_> = candidates
             .iter()
             .flat_map(Self::extract_named_param_info)

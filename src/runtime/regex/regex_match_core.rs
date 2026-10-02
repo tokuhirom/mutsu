@@ -513,10 +513,45 @@ impl Interpreter {
         // capture key (Raku keeps BOTH captures — `$/.keys` is `(G::list pl)`);
         // else a minimal span carrier, which keeps `.from`/`.to` exact even
         // for a zero-width match (`$<delim>=<[a..z]>*` matching empty).
-        let (subrule_subcap, reused_silent_marker) = if group_subcap.is_none() {
-            Self::aliased_subrule_subcap(store, token, from, to)
+        let mut reused_silent_marker = false;
+        let subrule_subcap = if group_subcap.is_none()
+            && let RegexAtom::Named(atom_name) = &token.atom
+        {
+            let spec = atom_name.spec();
+            let own_key = spec
+                .capture_name
+                .clone()
+                .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
+            let own = own_key.and_then(|k| {
+                store
+                    .caps()
+                    .named
+                    .get(&Symbol::intern(&k))?
+                    .nodes
+                    .last()
+                    .cloned()
+            });
+            own.or_else(|| {
+                // A visible alias around a silent subrule (`$<x>=<.rule>`)
+                // receives the subrule's capture under the hidden action
+                // marker. Reuse that node so its nested captures and `.made`
+                // value remain available to the alias instead of collapsing
+                // it to a span-only leaf.
+                let marker_node = store
+                    .caps()
+                    .named
+                    .get(&spec.silent_marker_sym)?
+                    .nodes
+                    .last()
+                    .cloned();
+                if marker_node.is_some() {
+                    reused_silent_marker = true;
+                }
+                marker_node
+            })
+            .filter(|sc| sc.from == from && sc.to == to)
         } else {
-            (None, false)
+            None
         };
         // An alias on anything but a subrule call (`$<x>=(…)`, `$<x>=[…]`,
         // `$<x>=<:!Cc>*`, `$<x>=\S+`) names a capture, not a rule: no cursor
@@ -550,8 +585,19 @@ impl Interpreter {
                 ..Default::default()
             })
         };
-        if reused_silent_marker {
-            Self::drop_reused_silent_marker(store, token);
+        if reused_silent_marker && let RegexAtom::Named(atom_name) = &token.atom {
+            let marker_sym = atom_name.spec().silent_marker_sym;
+            let remove_marker = store
+                .caps_mut()
+                .named
+                .get_mut(&marker_sym)
+                .is_some_and(|slot| {
+                    slot.nodes.pop();
+                    slot.nodes.is_empty()
+                });
+            if remove_marker {
+                store.caps_mut().named.remove(&marker_sym);
+            }
         }
         // `$<alias>=<.subrule>` is a visible alias around a silent subrule.
         // The silent call itself does not create a named capture, so the alias
