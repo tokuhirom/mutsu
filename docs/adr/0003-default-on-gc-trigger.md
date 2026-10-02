@@ -1,6 +1,8 @@
 # ADR-0003: Trigger policy for default-on GC (the level-1a production trigger)
 
-- **Status**: Accepted (user approval 2026-07-05)
+- **Status**: Accepted (user approval 2026-07-05). §2 gate (a)'s blocking gc-stress PR job is
+  superseded by [ADR-10738](10738-stress-runs-leave-the-pr-gate.md): the stress run is nightly and
+  on demand (`stress.yml`).
 - **Date**: 2026-07-05
 - **Relates to**: [ADR-0001](0001-gc-strategy-and-phasing.md) (§4.2 activation mechanism / §4.3 A' scope),
   [ADR-0002](0002-phase-a-gate-reassessment.md), `docs/gc-level1-detailed-design.md` §9

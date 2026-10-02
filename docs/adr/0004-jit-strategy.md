@@ -1,6 +1,8 @@
 # ADR-0004: JIT — mechanism selection and phasing (layer 4)
 
-- **Status**: Accepted (user approval 2026-07-06 — including the Lever 3 freeze)
+- **Status**: Accepted (user approval 2026-07-06 — including the Lever 3 freeze). §2.6's
+  `jit-stress` PR job is superseded by [ADR-10738](10738-stress-runs-leave-the-pr-gate.md): the
+  stress run is nightly and on demand (`stress.yml`).
 - **Date**: 2026-07-05
 - **Deciders**: tokuhirom, Claude
 - **Relates to**: [ADR-0001](0001-gc-strategy-and-phasing.md) (phase order 3a→3b→4; the

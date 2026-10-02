@@ -26,16 +26,16 @@ So four out of ten red builds were noise, and essentially every red build on
 "Flaky" is a claim about non-determinism. It must be shown, not asserted. Two
 independent instruments:
 
-**(a) Job spread — free, from CI history.** Every PR runs the same suite three
-times, in three configurations: default, GC on, JIT hot. Since the CI jobs were
-split into halves, the three jobs running a given file are `test-suites` /
-`gc-stress-tap` / `jit-stress-tap` for a `t/` file and `test-suites` /
-`gc-stress-roast` / `jit-stress-roast` for a roast file (`test`, `gc-stress` and
-`jit-stress` are now aggregator jobs that run no tests). A genuine regression
-fails in all three, because the code is broken in every configuration. A test
-that fails in exactly ONE of the three, with the other two green on the same
-commit, is non-deterministic by construction: same binary, same inputs,
-different verdict.
+**(a) Job spread — free, from CI history.** Every PR runs the `t/` suite twice:
+`test-suites` on the release binary and `debug-tap` on a debug binary (`test` is
+an aggregator job that runs no tests). A genuine regression fails in both,
+because the code is broken in every configuration. A test that fails in exactly
+ONE of them, with the other green on the same commit, is most likely
+non-deterministic: same source, same inputs, different verdict. Roast files run
+in one PR job only, so for them only the `push: main` signal below applies. The
+GC-stress and JIT-stress configurations run nightly in `stress.yml`
+([ADR-10738](adr/10738-stress-runs-leave-the-pr-gate.md)); a file red there and
+green in the PR jobs on the same tree is configuration- or timing-sensitive.
 A failure on a `push: main` run is stronger still — main is protected, so that
 exact tree passed the full suite minutes earlier on its PR.
 

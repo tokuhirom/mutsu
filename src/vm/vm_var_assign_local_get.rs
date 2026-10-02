@@ -213,8 +213,8 @@ impl Interpreter {
             // instead of failing. These restate its contract for those sources,
             // and the env/slot invariant that replaced the cell/`Proxy` sources
             // (ADR-0097 §15), so a missing bump or a new divergence surfaces as
-            // a debug-build assertion in the `gc-stress-tap` / `jit-stress-tap`
-            // suite runs rather than as a wrong answer in release.
+            // a debug-build assertion in the `debug-tap` suite run rather than
+            // as a wrong answer in release.
             debug_assert!(
                 !self.atomic_var_seen(),
                 "GetLocal fast path taken with an atomic variable registered"

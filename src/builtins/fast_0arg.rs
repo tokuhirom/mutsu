@@ -113,7 +113,7 @@ pub(crate) fn try_dispatch(
 /// This is the maintenance net for the table. Its entries are authorized by an
 /// argument about which guards can fire, and a later commit adding a guard has
 /// no way of knowing it invalidated one. Running both paths over the whole TAP
-/// suite (CI's `gc-stress-tap` / `jit-stress-tap` jobs build debug) turns that
+/// suite (CI's `debug-tap` job builds debug) turns that
 /// silent divergence into a failing assertion.
 ///
 /// It re-runs [`native_method_0arg`](super::methods_0arg::native_method_0arg),

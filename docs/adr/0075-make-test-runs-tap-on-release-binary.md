@@ -1,6 +1,7 @@
 # ADR-0075: `make test` runs the TAP (`t/`) suite on the release binary
 
-- **Status**: Accepted
+- **Status**: Accepted. The debug-binary `t/` pass it left with `gc-stress` / `jit-stress` now
+  lives in ci.yml's `debug-tap` job ([ADR-10738](10738-stress-runs-leave-the-pr-gate.md)).
 - **Date**: 2026-09-08
 - **Supersedes**: [ADR-0014](0014-make-test-runs-tap-on-debug-binary.md)
 - **Related**: `Makefile` (the `test` target), `.github/workflows/ci.yml` (the `test`,

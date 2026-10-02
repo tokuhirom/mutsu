@@ -57,7 +57,7 @@ nok (my $m = min).defined, 'bare `min` returns an undefined value';
 #
 # Two seconds, not more: a `sleep` that falls through as a bareword returns in
 # about 20ms, so this is already a hundredfold margin, and the wait is paid in
-# full by the serial `prove t/` of the gc-stress and jit-stress jobs.
+# full by every `prove t/` run.
 {
     my $prog = Proc::Async.new($*EXECUTABLE.absolute, '-e', 'sleep; print "RETURNED"');
     my $out = '';

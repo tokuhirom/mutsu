@@ -318,8 +318,8 @@ impl FunctionTableTransitions {
     ///
     /// This is the safety net for the inductive argument in the module docs. It
     /// hashes the whole map, so it is `debug_assertions`-only — but it runs over
-    /// the entire `prove t/` suite in CI (the `gc-stress-tap` / `jit-stress-tap`
-    /// jobs build debug), which is where a broken transition would show up.
+    /// the entire `prove t/` suite in CI (the `debug-tap` job builds debug),
+    /// which is where a broken transition would show up.
     #[cfg(debug_assertions)]
     fn audit(&mut self, table: &FunctionTable) {
         use std::hash::{Hash, Hasher};
