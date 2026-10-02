@@ -11,5 +11,5 @@ Two gaps found by working the MVC::Keayl distribution:
   scope-blind, so `&k = ...` was compiled as an assignment to a routine name and
   threw "Cannot modify an immutable value"; they now learn the enclosing `&`-lexicals.
 
-Pinned by `t/regex/match-from-to-counts-graphemes.t` and
-`t/oo/method-assigns-outer-callable-lexical.t`.
+Pinned by `t/regex/match/match-from-to-counts-graphemes.t` and
+`t/oo/method/method-assigns-outer-callable-lexical.t`.
