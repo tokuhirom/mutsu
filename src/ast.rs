@@ -2320,7 +2320,32 @@ pub(crate) enum Stmt {
     },
     /// Set the current source line number (for deprecation tracking, etc.).
     SetLine(i64),
+    /// The `use trace` pragma's per-statement hook: write
+    /// `"<id> (<file> line <line>)\n<source>\n"` to the process's stderr just
+    /// before the statement that follows it runs. A *sibling* of the traced
+    /// statement rather than a wrapper around it, so declarations the
+    /// statement makes stay at the top level of their statement list where the
+    /// hoisting scans look for them. `id` is rakudo's per-compunit
+    /// statement-attempt counter (see `parser::stmt::trace`), `line` the
+    /// statement's start line and `source` its text, both fixed at parse time;
+    /// the file name is the compilation unit's, known to the compiler.
+    Trace {
+        id: u32,
+        line: i64,
+        source: String,
+    },
     Expr(Expr),
+}
+
+impl Stmt {
+    /// A statement that exists for the program's diagnostics, not for what it
+    /// computes: a source-line marker or a `use trace` hook. Code that
+    /// recognises a body by its *shape* (a stub `{...}`, a dispatcher `{*}`)
+    /// looks past these, which is what lets a pragma add them without changing
+    /// what the body means.
+    pub(crate) fn is_marker(&self) -> bool {
+        matches!(self, Stmt::SetLine(_) | Stmt::Trace { .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]

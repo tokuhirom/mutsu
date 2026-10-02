@@ -13,6 +13,7 @@ pub(crate) mod simple_expr_stmt;
 mod stmtlist;
 pub(crate) mod sub;
 pub(crate) mod sub_param;
+pub(in crate::parser) mod trace;
 pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};

@@ -172,7 +172,9 @@ fn collect_declared_names(
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
-        Stmt::SetLine(_) => Ok(None),
+        // The `use trace` hook is bookkeeping too: rakudo models the trace as a
+        // flag on the traced statement, not as a statement of its own.
+        Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),
         // An expression statement modified by `with`/`without` is wrapped in a
         // `DoStmt` so it keeps expression semantics. The wrapper has no RakuAST
         // counterpart, so convert the `Given` it carries instead of rendering a

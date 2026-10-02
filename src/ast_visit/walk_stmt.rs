@@ -45,7 +45,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
-        | Stmt::SetLine(_) => {}
+        | Stmt::SetLine(_)
+        | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) => {}
         Stmt::LoopExitGuard {

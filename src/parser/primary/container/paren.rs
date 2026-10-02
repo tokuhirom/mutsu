@@ -27,9 +27,19 @@ use super::meta_ops::{
 
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
+    // The parentheses hold a `semilist`, whose statements are numbered for `use trace`.
+    let semilist = input
+        .strip_prefix('(')
+        .and_then(crate::parser::stmt::trace::semilist_open);
     // Parens open a fresh nesting context: nothing inside binds to a prefix
     // operator waiting outside the group.
-    let (rest, expr) = crate::parser::expr::without_pending_prefix(|| paren_expr_inner(input))?;
+    let result = crate::parser::expr::without_pending_prefix(|| paren_expr_inner(input));
+    match (&result, semilist) {
+        (Ok((rest, _)), Some(list)) => list.close_after(rest),
+        (Err(_), Some(list)) => list.abandon(),
+        _ => {}
+    }
+    let (rest, expr) = result?;
     Ok((rest, mark_parenthesized(expr)))
 }
 

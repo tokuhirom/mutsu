@@ -6176,6 +6176,12 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(t), t = length of the message (one write to the stderr sink).
+            OpCode::Trace(text_idx) => {
+                let text = Self::const_str(code, *text_idx);
+                self.output_sink_mut().emit_stderr(text);
+                *ip += 1;
+            }
             // Cost: O(n) plus hashed lookups, n = chars of the looked-up name (stringified and parsed per execution).
             OpCode::IndirectTypeLookup => {
                 self.exec_indirect_type_lookup_op();

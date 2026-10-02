@@ -2617,11 +2617,7 @@ impl Interpreter {
         // then is bypassing the body safe. `{*}` parses to `Stmt::Expr(Whatever)`.
         // The compiler prepends line-tracking `SetLine` markers (no runtime
         // effect on dispatch), so ignore those when judging triviality.
-        let significant: Vec<&Stmt> = proto
-            .body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let significant: Vec<&Stmt> = proto.body.iter().filter(|s| !s.is_marker()).collect();
         let trivial = significant.is_empty()
             || (significant.len() == 1 && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
         if !trivial {
@@ -2699,11 +2695,7 @@ impl Interpreter {
         // Only handle *non-trivial* bodies here; the trivial (bodyless / `{*}`-only)
         // case is the trivial resolver's job. A bodyless proto (`def.body.empty`)
         // dispatches implicitly and must not be compiled here.
-        let significant: Vec<&Stmt> = proto
-            .body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let significant: Vec<&Stmt> = proto.body.iter().filter(|s| !s.is_marker()).collect();
         let trivial = significant.is_empty()
             || (significant.len() == 1 && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
         if trivial {

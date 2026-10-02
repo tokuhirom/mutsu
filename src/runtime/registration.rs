@@ -29,10 +29,7 @@ impl Interpreter {
     }
 
     pub(super) fn is_stub_routine_body(body: &[Stmt]) -> bool {
-        let filtered: Vec<_> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let filtered: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
         filtered.len() == 1
             && matches!(
                 filtered[0],

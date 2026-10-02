@@ -9,6 +9,20 @@ use crate::value::ValueView;
 
 /// Parse an array literal [...].
 pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
+    // The brackets hold a `semilist`, whose statements are numbered for `use trace`.
+    let semilist = input
+        .strip_prefix('[')
+        .and_then(crate::parser::stmt::trace::semilist_open);
+    let result = array_literal_inner(input);
+    match (&result, semilist) {
+        (Ok((rest, _)), Some(list)) => list.close_after(rest),
+        (Err(_), Some(list)) => list.abandon(),
+        _ => {}
+    }
+    result
+}
+
+fn array_literal_inner(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '[')?;
     let (input, _) = ws(input)?;
     let mut items = Vec::new();
@@ -244,6 +258,20 @@ pub(crate) fn fail_goal_error_at(dba: &str, goal: &str, pos: Option<&str>) -> PE
 
 /// Parse a hash constructor literal: %(key => value, :name, ...)
 pub(crate) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
+    // The parentheses hold a `semilist`, whose statements are numbered for `use trace`.
+    let semilist = input
+        .strip_prefix("%(")
+        .and_then(crate::parser::stmt::trace::semilist_open);
+    let result = percent_hash_literal_inner(input);
+    match (&result, semilist) {
+        (Ok((rest, _)), Some(list)) => list.close_after(rest),
+        (Err(_), Some(list)) => list.abandon(),
+        _ => {}
+    }
+    result
+}
+
+fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
     let (input, _) = parse_char(input, '(')?;
     let (mut rest, _) = ws(input)?;

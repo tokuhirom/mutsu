@@ -472,9 +472,10 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   the pragma:
   - `strict`, `newline` and `no strict` / `no fatal` set interpreter modes
     that the block's `ImportScope` region saves and restores. `soft`, `nqp`,
-    `isms`, `v6`, `oo`, `class`, `experimental`, `customtrait`, `warnings`, and
-    `no` of `isms`, `worries`, `precompilation` or `soft`, are no-ops in mutsu.
-    They are repeated.
+    `isms`, `v6`, `oo`, `class`, `experimental`, `customtrait`, `warnings`,
+    `trace` (the parser has already put its `Stmt::Trace` hooks into the body),
+    and `no` of `isms`, `worries`, `precompilation`, `soft` or `trace`, are
+    no-ops in mutsu. They are repeated.
   - `use fatal` also marks a routine compiled after it, and `use variables` /
     `use dynamic-scope` change a variable declaration compiled after it. The
     block puts its pragmas ahead of its copied declarations, so each of these
@@ -483,8 +484,8 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   - Any other pragma still blocks the scope. `use lib` and `use if` act beyond
     the block (mutsu does not yet apply a nested `use lib` at BEGIN time
     either), `use attributes` is not restored on block exit, and a pragma mutsu
-    does not implement (`use worries`, `use trace`) fails at run time, which
-    repeating it would move to startup.
+    does not implement fails at run time, which repeating it would move to
+    startup.
 - **Still not lifted.** A BEGIN that relies on `no strict` to auto-declare a
   variable, since the undeclared name resolves to nothing the unit declares,
   and the pragmas listed above.
