@@ -588,6 +588,16 @@ impl Interpreter {
         {
             return Err(self.multi_no_candidates_error(op_name, &call_args));
         }
+        // A user `proto sub infix:<op>` whose body answers the call itself
+        // (no `{*}` dispatch) is an ordinary routine (mutsu#10696); neither
+        // the direct routine lookup above nor the by-name call below resolves
+        // a proto, so run it here.
+        // TODO: compile to bytecode (reuses the interpreter's proto runner).
+        if let Some(op_name) = infix_name
+            && let Some(proto) = self.resolve_proto_function(op_name)
+        {
+            return self.call_proto_function(op_name, &proto, &call_args);
+        }
         match self.call_function_compiled_first(name, call_args.clone(), compiled_fns) {
             Ok(v) => Ok(v),
             Err(err) => {
