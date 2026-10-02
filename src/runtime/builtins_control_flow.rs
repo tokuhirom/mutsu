@@ -566,18 +566,7 @@ impl Interpreter {
             .first()
             .map(Value::to_string_value)
             .unwrap_or_else(|| "postfix:<++>".to_string());
-        let msg = format!(
-            "Cannot resolve caller {}(...); the parameter requires mutable arguments",
-            caller
-        );
-        let mut err = RuntimeError::new(msg.clone());
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(msg));
-        err.exception = Some(Box::new(Value::make_instance(
-            Symbol::intern("X::Multi::NoMatch"),
-            attrs,
-        )));
-        Err(err)
+        Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(&caller, "..."))
     }
 
     pub(super) fn builtin_hyper_prefix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

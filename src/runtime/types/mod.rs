@@ -644,18 +644,7 @@ impl Interpreter {
         // "requires mutable arguments") the same way it rejects a readonly
         // sub parameter's `++$n`.
         if self.name_is_readonly_binding_for(name, name_sym) {
-            let msg = format!(
-                "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
-                name
-            );
-            let mut err = RuntimeError::new(msg.clone());
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Multi::NoMatch"),
-                attrs,
-            )));
-            return Err(err);
+            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name));
         }
         Ok(())
     }

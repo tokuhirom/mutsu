@@ -1173,6 +1173,22 @@ impl Interpreter {
                 .get(&var_name)
                 .is_some_and(|v| crate::runtime::utils::is_shaped_array(&v.deref_container()));
 
+        // A slot a multi-index `BIND-POS` bound to a bare value holds a
+        // read-only cell (`Value::bound_element`, #10984). Rakudo reports a
+        // shaped array's as `X::Assignment::RO`, a nested one's as X::AdHoc.
+        if crate::value::readonly_cells_possible()
+            && let Some(bound) = Self::multidim_readonly_slot(&target_val, &resolved_dims)
+        {
+            return Err(if is_shaped {
+                RuntimeError::assignment_ro_typename(
+                    crate::runtime::utils::value_type_name(&bound),
+                    &bound.to_string_value(),
+                )
+            } else {
+                RuntimeError::immutable_value()
+            });
+        }
+
         let assign_value = value.clone();
         self.mutate_named_container(code, &var_name, !is_shaped, move |slf, container| {
             if is_shaped {
