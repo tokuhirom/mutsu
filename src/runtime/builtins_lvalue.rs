@@ -688,22 +688,15 @@ impl Interpreter {
             }
             ValueView::Sub(data) => {
                 let data = data.clone();
-                // A body-less routine code object (ADR-0019 C6e-3b registers
-                // safe-class defs with an empty AST body) cannot answer the
-                // `return-rw` question itself; its installed def can. Delegate
-                // to the named path, which reads the def.
-                if data.body.is_empty() && data.compiled_routine.is_some() && !data.name.is_empty()
-                {
-                    return self.assign_named_sub_lvalue_with_values(
-                        &data.name.resolve(),
-                        call_args,
-                        value,
-                    );
-                }
                 // Same rule as the named path (ADR-0059): run the routine and
-                // write through the container it returns.
-                let rw_capable =
-                    data.is_rw || data.is_raw || crate::opcode::body_uses_return_rw(&data.body);
+                // write through the container it returns. A body-less routine
+                // code object (ADR-0019 C6e-3b registers safe-class defs with
+                // an empty AST body) answers the `return-rw` question through
+                // its `compiled_routine`. It is never re-resolved by its
+                // declared name: that name may be lexical to another unit
+                // (`my &k = EVAL 'sub h is rw {...}; &h'`) or be the very
+                // `&`-variable that led here (#10965).
+                let rw_capable = Self::sub_is_rw_capable(&data);
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
                 let result = self.call_sub_value(Value::sub_value(data), call_args, true);
