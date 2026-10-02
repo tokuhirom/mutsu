@@ -1,6 +1,6 @@
 use super::*;
 use crate::binding_desc::DeclaredConstraint;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {

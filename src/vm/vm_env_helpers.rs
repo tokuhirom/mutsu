@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is

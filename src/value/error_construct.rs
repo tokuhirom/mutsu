@@ -477,7 +477,7 @@ impl RuntimeError {
     /// it (`Crane::Set`'s `X::Crane::OpSet::RO.new(:typename(.typename))`) must
     /// see the same thing whichever constructor raised the refusal.
     pub(crate) fn assignment_ro_value(value: Value) -> Self {
-        let typename = crate::runtime::utils::value_type_name(&value);
+        let typename = crate::value::type_name::value_type_name(&value);
         let message = if matches!(value.view(), super::ValueView::Nil) {
             "Cannot modify an immutable Nil value".to_string()
         } else {

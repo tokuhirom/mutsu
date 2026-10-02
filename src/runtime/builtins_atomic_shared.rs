@@ -4,7 +4,7 @@
 //! (`self_attr_cell_target`) shared with `builtins_atomic`/`builtins_atomic_cas`.
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {

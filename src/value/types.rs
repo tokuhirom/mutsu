@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// Marks a `Mixin` overrides map produced by `but`/`does` with a *concrete
 /// value* on the right (`1 but "hi"`, `$obj does 42`, `Method but True`)
@@ -166,7 +166,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         }
         // A pointy block / bare block is a `Block`, a method a `Method`, a
         // routine a `Sub`: the same classification `.^name` reports.
-        ValueView::Sub(_) => crate::runtime::value_type_name(val).to_string(),
+        ValueView::Sub(_) => crate::value::type_name::value_type_name(val).to_string(),
         ValueView::WeakSub(_) => "Sub".to_string(),
         ValueView::Routine { .. } => "Sub".to_string(),
         ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => "Regex".to_string(),

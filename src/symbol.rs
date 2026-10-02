@@ -181,7 +181,7 @@ pub(crate) mod flags {
     /// `$!` / `$/` and the capture views that belong to `$/` (`0`, `1`, ...,
     /// `<name>`) — the names scoped per *routine*, which a return merge must
     /// never copy back into the caller. Mirrors
-    /// `crate::runtime::utils::is_routine_scoped_implicit_var`.
+    /// `is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
     /// A `__mutsu_type::<name>` typed-lexical metadata key.
     pub(crate) const TYPE_META: u16 = 1 << 2;
@@ -269,9 +269,48 @@ pub(crate) const CALLABLE_ID_META_PREFIX: &str = "__mutsu_callable_id::";
 /// Must equal `MetaNs::SigillessAlias`'s prefix (pinned by a unit test there).
 pub(crate) const SIGILLESS_ALIAS_KEY_PREFIX: &str = "__mutsu_sigilless_alias::";
 
+/// True for the env keys of `$!` and `$/`. Both are scoped **per routine** in
+/// raku — every sub and method gets its own implicit `my $!` / `my $/` — so the
+/// CALLER's value must survive the call, and the return-side env merge has to
+/// treat them like the other per-routine magic names (`_`, `@_`, `%_`,
+/// `__mutsu_callable_id`) and never copy the callee's back.
+///
+/// `$/` was missing here, which is why a routine that matched internally
+/// clobbered its caller's match:
+///
+/// ```raku
+/// sub inner() { "zz" ~~ /(z)/; 1 }
+/// "abc" ~~ /(b)(c)/;   say ~$/;   # bc
+/// inner();             say ~$/;   # was `z`, must stay `bc`
+/// ```
+///
+/// The real `Test.rakumod` hits this on every FAILING assertion (its diagnostic
+/// rendering matches internally), so the next statement in the test file read a
+/// clobbered `$/` — invisible to the native Rust provider, which never runs
+/// Raku-level code.
+///
+/// Deliberately NOT applied on the block/closure path: a bare block shares its
+/// enclosing routine's `$!` and `$/` — a `CATCH` block *writes* `$!` there, and
+/// `if $x ~~ /y/ { }` must leave `$/` visible to the enclosing scope — so
+/// skipping the merge for blocks would break `try`/`CATCH` and ordinary
+/// conditional matches.
+pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
+    match name {
+        "!" | "/" => true,
+        // The capture variables are views into `$/` and mutsu stores them in
+        // their own env slots (`0`, `1`, ... for `$0`/`$1`, `<name>` for
+        // `$<name>`), so they have to be scoped exactly like the `$/` they
+        // belong to or the caller keeps `$/` and loses `$0`.
+        _ => {
+            let digits = !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
+            digits || (name.starts_with('<') && name.ends_with('>'))
+        }
+    }
+}
+
 fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
-    if crate::runtime::utils::is_routine_scoped_implicit_var(s) {
+    if is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT;
     }
     if s.starts_with(TYPE_META_PREFIX) {

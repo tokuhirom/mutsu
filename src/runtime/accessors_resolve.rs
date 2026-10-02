@@ -1,6 +1,6 @@
 //! Method-body compilation, `resolve_code_var`, and smart-match/sequence eval.
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {

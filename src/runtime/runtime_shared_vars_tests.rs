@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::Value;
 
 /// Minimal `ParamDef` for a plain scalar parameter (not slurpy, no default,

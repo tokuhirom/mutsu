@@ -42,7 +42,7 @@
 //! take a `class_name`, because the name is where Raku keeps the element type
 //! (`Blob[int8]`) and there is nowhere else to read it from.
 //!
-//! [`is_buf_or_blob_class`](crate::runtime::utils::is_buf_or_blob_class) stays
+//! [`is_buf_or_blob_class`](crate::value::buf_class_names::is_buf_or_blob_class) stays
 //! the companion class-name filter: this module answers "what is in there", not
 //! "is this a Buf".
 

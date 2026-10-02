@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -175,15 +175,14 @@ impl Interpreter {
         }
         {
             if crate::env::shaped_array_dims_possible() {
-                let shaped_key =
-                    crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(var_name);
+                let shaped_key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(var_name);
                 if self.env().contains_key_sym(shaped_key) {
                     return None;
                 }
             }
             // See the hash twin above for why the bound-index probe is gated.
             if crate::env::elem_index_meta_possible() {
-                let bound_key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+                let bound_key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
                 if self.env().contains_key_sym(bound_key) {
                     return None;
                 }
@@ -320,7 +319,7 @@ impl Interpreter {
         // (e.g. `%h<a> := $foo` makes element writes propagate to $foo).
         // Gated like the twin above: no bound element, no probe.
         if crate::env::elem_index_meta_possible() {
-            let bound_key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+            let bound_key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
             if self.env().contains_key_sym(bound_key) {
                 return None;
             }

@@ -2,7 +2,7 @@ use super::methods_signature_errors::{
     make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
 };
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 /// Byte offset of the first extended-name adverb in a method name (`:sym<…>`,

@@ -1,4 +1,4 @@
-.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers check-name-scans check-adr check-runner-pins check-integration-tests adr-index
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers check-layer-deps check-name-scans check-adr check-runner-pins check-integration-tests adr-index
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -61,7 +61,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
 # and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-bench-det check-prims check-dev check-adr check-runner-pins check-integration-tests
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-layer-deps check-bench-det check-prims check-dev check-adr check-runner-pins check-integration-tests
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -95,7 +95,7 @@ check-t-layout:
 	python3 scripts/migrate-t-layout.py --check
 
 # Hand-built `format!("__mutsu_...::{name}")` metadata keys are banned (#8087).
-# Build them with `MetaNs` (src/runtime/meta_ns.rs) instead, which memoizes the
+# Build them with `MetaNs` (src/meta_ns.rs) instead, which memoizes the
 # key per (namespace, name). This was a shrinking per-file ratchet while the
 # 276 pre-existing sites were worked through; they are all converted now, so
 # the baseline file is gone and any new site simply fails.
@@ -139,6 +139,17 @@ check-interp-construction:
 check-ast-walkers:
 	python3 scripts/check-ast-walkers.py --self-test
 	python3 scripts/check-ast-walkers.py
+
+# Ratchet on upward references from the lower layers (#10779): the AST,
+# parser, Value, opcode, Env, GC and the name/key leaf modules may not name the
+# runtime, VM, compiler, builtins or `Interpreter`. Each such edge is a module
+# cycle, and the cycles keep the crate from being split. Per-file counts live
+# in scripts/layer-deps-baseline.txt and may go down, never up. Re-cut after
+# moving a helper down or routing a call through a trait:
+#   scripts/check-layer-deps.py --update
+check-layer-deps:
+	python3 scripts/check-layer-deps.py --self-test
+	python3 scripts/check-layer-deps.py
 
 # Ban on private copies of the Str primitives (ADR-0117). The nqp:: op tables,
 # the VM's nqp path and TRIR's runtime must call src/builtins/str_prim/ -- the

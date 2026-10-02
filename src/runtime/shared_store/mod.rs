@@ -67,15 +67,15 @@ fn atomic_lane_base_name(key: &str) -> Option<&str> {
 /// key and the `^<name>` placeholder key built beside it were together ~1.5%
 /// of the RIPEMD profile in `format!` machinery alone (#7571). The
 /// `name -> key` mapping never changes, so it is memoized — by
-/// [`MetaNs`](crate::runtime::meta_ns::MetaNs), the one constructor for these
+/// [`MetaNs`](crate::meta_ns::MetaNs), the one constructor for these
 /// keys (#8087); this is a named shorthand for its two atomic namespaces.
 pub(crate) fn atomic_lane_key(name: &str, hash_lane: bool) -> crate::symbol::Symbol {
-    crate::runtime::meta_ns::MetaNs::atomic_lane(hash_lane).key_for_str(name)
+    crate::meta_ns::MetaNs::atomic_lane(hash_lane).key_for_str(name)
 }
 
 /// [`atomic_lane_key`] as a `&'static str`, for the by-name shared-store API.
 pub(crate) fn atomic_lane_str_key(name: &str, hash_lane: bool) -> &'static str {
-    crate::runtime::meta_ns::MetaNs::atomic_lane(hash_lane).str_key_for_str(name)
+    crate::meta_ns::MetaNs::atomic_lane(hash_lane).str_key_for_str(name)
 }
 
 /// Set once any atomic array/hash lane entry has been created anywhere in the

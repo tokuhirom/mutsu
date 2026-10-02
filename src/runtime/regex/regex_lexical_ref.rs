@@ -167,7 +167,7 @@ impl Interpreter {
             .resolve_lexical_regex(spec, pkg)?
             .regex_closure_scope()?;
         let mut saved: super::regex_dynparams::SavedDynParams = Vec::with_capacity(scope.len());
-        let qq_prefix = crate::runtime::meta_ns::MetaNs::RegexQq.prefix();
+        let qq_prefix = crate::meta_ns::MetaNs::RegexQq.prefix();
         for (key, value) in scope.iter() {
             // A `"..."` atom's qq thunk is bound to its result, which the
             // pre-pass splices in while the pattern is parsed (see

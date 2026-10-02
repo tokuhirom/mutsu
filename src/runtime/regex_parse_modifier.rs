@@ -1,6 +1,6 @@
 use super::regex_parse::*;
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Try to parse an inline scope modifier from the remaining source after ':'.

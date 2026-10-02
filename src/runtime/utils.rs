@@ -1,4 +1,4 @@
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
@@ -45,7 +45,7 @@ pub(crate) const MAX_LAZY_RANGE_PREFIX: i64 = 100_000;
 /// `insert_sym_noting`, so neither the key string nor its hash is rebuilt
 /// (#8087). [`MetaNs`] memoizes the mapping.
 pub(crate) fn sigilless_alias_key(name: &str) -> crate::symbol::Symbol {
-    crate::runtime::meta_ns::MetaNs::SigillessAlias.key_for_str(name)
+    crate::meta_ns::MetaNs::SigillessAlias.key_for_str(name)
 }
 
 /// The env key marking the sigilless variable `name` as readonly (`my \x = 42`).
@@ -53,7 +53,7 @@ pub(crate) fn sigilless_alias_key(name: &str) -> crate::symbol::Symbol {
 /// program creates a sigilless/`:=` binding, which `closure_meta_keys_possible`
 /// reports.
 pub(crate) fn sigilless_readonly_key(name: &str) -> crate::symbol::Symbol {
-    crate::runtime::meta_ns::MetaNs::SigillessReadonly.key_for_str(name)
+    crate::meta_ns::MetaNs::SigillessReadonly.key_for_str(name)
 }
 
 /// The env key tracking which indices of `name` were `:delete`d. A `my`
@@ -97,45 +97,6 @@ pub(crate) fn bound_array_slice_key(name: &str) -> String {
 /// but a caller that still holds the sigiled spelling must land on the same key.
 pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
     MetaNs::ScalarBindNoContainer.owned_key_for_str(name.trim_start_matches('$'))
-}
-
-/// True for the env keys of `$!` and `$/`. Both are scoped **per routine** in
-/// raku — every sub and method gets its own implicit `my $!` / `my $/` — so the
-/// CALLER's value must survive the call, and the return-side env merge has to
-/// treat them like the other per-routine magic names (`_`, `@_`, `%_`,
-/// `__mutsu_callable_id`) and never copy the callee's back.
-///
-/// `$/` was missing here, which is why a routine that matched internally
-/// clobbered its caller's match:
-///
-/// ```raku
-/// sub inner() { "zz" ~~ /(z)/; 1 }
-/// "abc" ~~ /(b)(c)/;   say ~$/;   # bc
-/// inner();             say ~$/;   # was `z`, must stay `bc`
-/// ```
-///
-/// The real `Test.rakumod` hits this on every FAILING assertion (its diagnostic
-/// rendering matches internally), so the next statement in the test file read a
-/// clobbered `$/` — invisible to the native Rust provider, which never runs
-/// Raku-level code.
-///
-/// Deliberately NOT applied on the block/closure path: a bare block shares its
-/// enclosing routine's `$!` and `$/` — a `CATCH` block *writes* `$!` there, and
-/// `if $x ~~ /y/ { }` must leave `$/` visible to the enclosing scope — so
-/// skipping the merge for blocks would break `try`/`CATCH` and ordinary
-/// conditional matches.
-pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
-    match name {
-        "!" | "/" => true,
-        // The capture variables are views into `$/` and mutsu stores them in
-        // their own env slots (`0`, `1`, ... for `$0`/`$1`, `<name>` for
-        // `$<name>`), so they have to be scoped exactly like the `$/` they
-        // belong to or the caller keeps `$/` and loses `$0`.
-        _ => {
-            let digits = !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
-            digits || (name.starts_with('<') && name.ends_with('>'))
-        }
-    }
 }
 
 /// Build the `Failure` value raku yields when a count/numeric coercion is
@@ -278,45 +239,6 @@ pub(crate) fn decode_text_content(s: String) -> String {
     // NFC like every other decode (ADR-0118 §2.4): rakudo's strings are NFG,
     // so a slurped file and a `.decode`d Blob of the same bytes are equal.
     crate::builtins::nfc(translate_nl_in(strip_utf8_bom(s)))
-}
-
-/// Check if a class name represents a (mutable) Buf-like type (`Buf`, `Buf[uint8]`,
-/// buf8, etc.). The encoding types (utf8/utf16/...) are immutable Blobs, not
-/// Bufs, so they are excluded here (see `is_blob_like_class`).
-pub(crate) fn is_buf_like_class(cn: &str) -> bool {
-    matches!(cn, "Buf" | "buf8" | "buf16" | "buf32" | "buf64")
-        || cn.starts_with("Buf[")
-        || cn.starts_with("buf")
-        || crate::value::value_buf::buffer_class_type(cn).is_some_and(|t| t.starts_with("Buf"))
-}
-
-/// Check if a class name represents a Blob-like type (`Blob`, `Blob[uint8]`, `blob8`,
-/// and the immutable encoding buffers utf8/utf16/utf32).
-pub(crate) fn is_blob_like_class(cn: &str) -> bool {
-    matches!(
-        cn,
-        "Blob" | "blob8" | "blob16" | "blob32" | "blob64" | "utf8" | "utf16" | "utf32"
-    ) || cn.starts_with("Blob[")
-        || cn.starts_with("blob")
-        || crate::value::value_buf::buffer_class_type(cn).is_some_and(|t| t.starts_with("Blob"))
-}
-
-/// Check if a class name represents any Buf or Blob type
-pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
-    is_buf_like_class(cn) || is_blob_like_class(cn)
-}
-
-/// Whether instances of `cn` keep their elements in a native storage node — a
-/// `Buf`/`Blob`, or a native-backed `CArray[T]` (ADR-0015 P2 and P3).
-///
-/// This is the predicate for the *element-storage mechanics* an accessor in
-/// [`crate::value::value_buf`] serves: indexing, assignment, `.elems`, `.list`,
-/// iteration. It is deliberately **not** the predicate for anything that means
-/// "is a byte string": a `CArray` is not a `Blob`, so `.decode`, `.subbuf`,
-/// the `write-*` families, the hex `.gist` and the `Buf`/`Blob` type checks all
-/// keep the narrower [`is_buf_or_blob_class`] gate.
-pub(crate) fn is_native_elems_class(cn: &str) -> bool {
-    is_buf_or_blob_class(cn) || crate::value::value_carray::is_native_carray_class(cn)
 }
 
 /// Normalize Buf/Blob type aliases to canonical form.
@@ -571,7 +493,6 @@ mod set_coerce;
 mod set_operand;
 mod set_ops;
 mod shaped;
-mod str_scan;
 mod type_check_errors;
 mod type_constraints;
 mod type_misc;
@@ -593,7 +514,11 @@ pub(crate) use set_coerce::*;
 pub(crate) use set_operand::*;
 pub(crate) use set_ops::*;
 pub(crate) use shaped::*;
-pub(crate) use str_scan::*;
+// The name-marker byte scans live below the runtime (issue #10779); the
+// glob re-export keeps them reachable as `runtime::utils::*`.
+pub(crate) use crate::str_scan::*;
+pub(crate) use crate::value::buf_class_names::*;
+pub(crate) use crate::value::type_name::value_type_name;
 pub(crate) use type_check_errors::*;
 pub(crate) use type_constraints::*;
 pub(crate) use type_misc::*;

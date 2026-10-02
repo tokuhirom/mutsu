@@ -5,7 +5,7 @@
 
 use super::user_method_probe_memo::probe_key;
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// Winner of the per-MRO-level race between an explicit user method and a
 /// public attribute accessor (see `resolve_user_method_or_accessor`).

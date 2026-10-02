@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {

@@ -42,7 +42,7 @@ noticed to be recurrent rather than incidental.
 ### 1.2 What has already been done, and why it is not the fix
 
 #8087 stages 1-3 are merged. Every one of the **48** `__mutsu_*` namespaces now
-goes through `MetaNs` (`src/runtime/meta_ns.rs`), a memoizing constructor with
+goes through `MetaNs` (`src/meta_ns.rs`), a memoizing constructor with
 no public string form, and `scripts/check-magic-keys.sh` fails the build on a
 hand-built key. That removed the `format!` and the repeated `Symbol::intern`.
 
