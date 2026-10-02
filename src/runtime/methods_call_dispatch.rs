@@ -3442,22 +3442,16 @@ impl Interpreter {
         }
         // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
         // Cost (preamble, paid by every method that reaches this block on an Array):
-        // O(v + E), v = bindings in the current env (the `is_native` scan below walks
-        // them all), E = leaves of a shaped invocant (`shaped_array_shape` validates
-        // the whole structure). Rakudo: O(1) -- see #9157.
-        if let ValueView::Array(items, arr_kind) = target.view() {
+        // O(d), d = dimensions of a shaped invocant (`shaped_array_shape`); O(1)
+        // otherwise. The element type is read off the container
+        // (`ArrayData::value_type`), not looked up through the env.
+        if let ValueView::Array(items, _) = target.view() {
             // Detect shaped array and native typed array properties
             let shape = crate::runtime::utils::shaped_array_shape(&target);
-            let is_native = self.env.iter().any(|(name, bound)| {
-                if let ValueView::Array(existing, ..) = bound.view()
-                    && crate::gc::Gc::ptr_eq(&existing, &items)
-                    && let Some(constraint) = self.var_type_constraint(&name.resolve())
-                {
-                    crate::runtime::native_types::is_native_array_element_type(&constraint)
-                } else {
-                    false
-                }
-            });
+            let element_type = items.value_type.clone();
+            let is_native = element_type
+                .as_deref()
+                .is_some_and(crate::runtime::native_types::is_native_array_element_type);
 
             // For shaped arrays, validate dimension counts for ASSIGN-POS and DELETE-POS
             if let Some(ref shape) = shape {
@@ -3512,9 +3506,7 @@ impl Interpreter {
                         }
                         return Ok(Value::truth(multidim_exists_pos(&target, &args)));
                     }
-                    // Cost: O(p + v), p = elements of the arrays on the index path (each
-                    // level is copied by `multidim_assign_pos`), v = env bindings (rebind
-                    // scan). Rakudo: O(d), d = dimensions -- see #9157.
+                    // Cost: O(d), d = dimensions (in place through each level's node).
                     "ASSIGN-POS" if args.len() >= 3 => {
                         if let Some(ref shape) = shape {
                             let (indices, _) = args.split_at(args.len() - 1);
@@ -3522,11 +3514,7 @@ impl Interpreter {
                         }
                         let (indices, value) = args.split_at(args.len() - 1);
                         let value = value[0].clone();
-                        let updated = multidim_assign_pos(&target, indices, value.clone())?;
-                        if let Some(ref shape) = shape {
-                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
-                        }
-                        self.overwrite_array_bindings_by_identity(&items, updated);
+                        multidim_assign_pos(&target, indices, value.clone())?;
                         return Ok(value);
                     }
                     "BIND-POS" if args.len() >= 3 => {
@@ -3535,11 +3523,7 @@ impl Interpreter {
                         }
                         let (indices, value) = args.split_at(args.len() - 1);
                         let value = value[0].clone();
-                        let updated = multidim_bind_pos(&target, indices, value.clone())?;
-                        if let Some(ref shape) = shape {
-                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
-                        }
-                        self.overwrite_array_bindings_by_identity(&items, updated);
+                        multidim_bind_pos(&target, indices, value.clone())?;
                         return Ok(value);
                     }
                     "DELETE-POS" => {
@@ -3551,12 +3535,7 @@ impl Interpreter {
                         if let Some(ref shape) = shape {
                             check_shaped_bounds(shape, &args)?;
                         }
-                        let (deleted, updated) = multidim_delete_pos(&target, &args)?;
-                        if let Some(ref shape) = shape {
-                            crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
-                        }
-                        self.overwrite_array_bindings_by_identity(&items, updated);
-                        return Ok(deleted);
+                        return multidim_delete_pos(&target, &args);
                     }
                     _ => {}
                 }
@@ -3580,9 +3559,9 @@ impl Interpreter {
                         index.is_some_and(|i| i < items.len() && !items.hole_at(i)),
                     ));
                 }
-                // Cost: O(v) for a defined value, v = env bindings (scanned for the
-                // array's type constraint); the store itself is O(1) amortized, in
-                // place. Rakudo: O(1) -- see #9157.
+                // Cost: O(1) amortized, in place (the element type check reads the
+                // container's `value_type`; only a failing check scans the env, for
+                // the variable name its message reports).
                 ("ASSIGN-POS", [idx, value]) => {
                     let index = match idx.view() {
                         ValueView::Int(i) if i >= 0 => Some(i as usize),
@@ -3598,20 +3577,11 @@ impl Interpreter {
                     };
 
                     if !value.is_nil()
-                        && let Some((var_name, constraint)) =
-                            self.env.iter().find_map(|(name, bound)| {
-                                if let ValueView::Array(existing, ..) = bound.view()
-                                    && crate::gc::Gc::ptr_eq(&existing, &items)
-                                    && let Some(constraint) =
-                                        self.var_type_constraint(&name.resolve())
-                                {
-                                    return Some((name.resolve(), constraint));
-                                }
-                                None
-                            })
-                        && !self.type_matches_value(&constraint, value)
+                        && let Some(constraint) = element_type.as_deref()
+                        && !self.type_matches_value(constraint, value)
                     {
-                        return Err(self.type_check_element_failure(&var_name, &constraint, value));
+                        let var_name = self.array_binding_name(&items);
+                        return Err(self.type_check_element_failure(&var_name, constraint, value));
                     }
 
                     // For shaped arrays, check bounds
@@ -3639,8 +3609,7 @@ impl Interpreter {
                     data.store_element(index, Self::itemize_value_for_element_store(value.clone()));
                     return Ok(value.clone());
                 }
-                // Cost: O(e + v), e = elements of the array, v = env bindings (whole-array
-                // copy plus an env rebind scan, as ASSIGN-POS). Rakudo: O(1) -- see #9157.
+                // Cost: O(1) amortized, in place through the shared node (as ASSIGN-POS).
                 ("BIND-POS", [idx, value]) => {
                     if is_native {
                         return Err(RuntimeError::new("Cannot bind to a natively typed array"));
@@ -3653,24 +3622,10 @@ impl Interpreter {
                     let Some(index) = index else {
                         return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
                     };
-                    let old_len = items.len();
-                    let mut updated = items.to_vec();
-                    let mut initialized = items.initialized.clone();
-                    if index >= updated.len() {
-                        updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
-                        initialized.get_or_insert_with(|| (0..old_len).collect());
-                    }
-                    if let Some(initialized) = initialized.as_mut() {
-                        initialized.insert(index);
-                    }
-                    updated[index] = Value::scalar(value.clone());
-                    let mut data = crate::value::ArrayData::new(updated);
-                    data.initialized = initialized;
-                    let replacement = Value::array_with_kind(crate::gc::Gc::new(data), arr_kind);
-                    if let Some(ref shape) = shape {
-                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
-                    }
-                    self.overwrite_array_bindings_by_identity(&items, replacement);
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut); no borrow into the node is live.
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
+                    data.store_element(index, Value::scalar(value.clone()));
                     return Ok(value.clone());
                 }
                 // Cost: O(1) amortized (in place through the shared node; plus the

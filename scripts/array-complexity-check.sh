@@ -45,6 +45,10 @@ CASES=(
     'splice(0,1) loop|50000|2|my @a = ^NN;|@a.splice(0, 1) while @a'
     'ASSIGN-POS loop|10000|2|my @a = ^NN;|@a.ASSIGN-POS($_, 1) for ^NN'
     'shaped array write loop|10000|2|my @a[NN];|@a[$_] = $_ for ^NN'
+    'BIND-POS loop|10000|2|my @a = ^NN;|@a.BIND-POS($_, 1) for ^NN'
+    '2-dim ASSIGN-POS loop|10000|2|my @a = [0, 0] xx NN;|@a.ASSIGN-POS($_, 1, 1) for ^NN'
+    'shaped array delete loop|10000|2|my @a[NN] = ^NN;|@a[$_]:delete for ^NN'
+    'is Array computed-target store|10000|2|my class A is Array {}; my $x = A.new; sub g { $x };|g()[$_] = 1 for ^NN'
     'List.List (2000 calls)|50000|1|my $l = (^NN).List;|$l.List for ^2000'
     'native int shift loop|50000|2|my int @a = ^NN;|@a.shift while @a'
     # --- traversal / transform ----------------------------------------------

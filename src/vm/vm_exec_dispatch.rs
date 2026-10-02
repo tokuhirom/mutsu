@@ -4859,7 +4859,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
-            // exec_delete_index_named_op). Shaped: O(E) -- #9157.
+            // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_delete_index_named_op(code, *name_idx, *slot)?;
@@ -4871,8 +4871,7 @@ impl Interpreter {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
-            // Cost: O(d), d = indices, on nested arrays; O(E) on a shaped array, E = leaves (shape
-            // re-validation, see array_depth). Rakudo: O(d) -- see #9157.
+            // Cost: O(d), d = indices (a shaped array's shape lookup is O(d) too, see array_depth).
             OpCode::MultiDimIndex {
                 ndims,
                 is_positional,
@@ -4880,8 +4879,7 @@ impl Interpreter {
                 self.exec_multi_dim_index_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(d), d = indices, on nested arrays; O(E) on a shaped target (see
-            // assign_array_multidim). Rakudo: O(d) -- see #9157.
+            // Cost: O(d), d = indices (see assign_array_multidim).
             OpCode::MultiDimIndexAssign {
                 name_idx,
                 ndims,
@@ -4892,8 +4890,7 @@ impl Interpreter {
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            // Cost: O(p + d), p = prefix depth, d = indices; O(E) on a shaped target. Rakudo: O(p +
-            // d) -- see #9157.
+            // Cost: O(p + d), p = prefix depth, d = indices.
             OpCode::MultiDimIndexAssignNested {
                 name_idx,
                 prefix_depth,
@@ -4913,7 +4910,7 @@ impl Interpreter {
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            // Cost: O(d), d = indices; O(E) on a shaped target. Rakudo: O(d) -- see #9157.
+            // Cost: O(d), d = indices.
             OpCode::MultiDimIndexAssignGeneric {
                 ndims,
                 is_positional,
@@ -6487,7 +6484,7 @@ impl Interpreter {
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(1) amortized for one index into an Array/Hash; O(e) into an `is Array` instance (storage copied per store). Rakudo: O(1) -- see #9157.
+            // Cost: O(1) amortized for one index into an Array/Hash or an `is Array` instance.
             OpCode::IndexAssignGeneric { is_positional } => {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
