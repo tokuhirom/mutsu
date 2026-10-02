@@ -306,6 +306,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // expressions; it is the same `Call::Name` as an expression call.
         Stmt::Call { name, args } => {
             if is_desugar_marker(name.as_str()) {
+                let args = call_args_as_exprs(args)?;
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
+                    return Ok(Some(statement_expression(method_lvalue_assignment(
+                        convert_expr(&call)?,
+                        convert_expr(value)?,
+                    ))));
+                }
                 return Err(desugared(name.as_str()));
             }
             let args = call_args_as_exprs(args)?;
@@ -1259,6 +1266,54 @@ fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
+/// `$o.attr = EXPR` parses to the internal `__mutsu_assign_method_lvalue(target,
+/// "attr", [args], value, var-name)` writeback call. Rakudo models it as a plain
+/// assignment whose left side is the method call: this returns that method call
+/// and the assigned value. `None` when `name` is another marker or the method
+/// name is not a literal (a dynamic `$o."$n"() = v` stays the boundary).
+fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
+    if name != "__mutsu_assign_method_lvalue" {
+        return None;
+    }
+    let [target, method, Expr::ArrayLiteral(method_args), value, ..] = args else {
+        return None;
+    };
+    let (Expr::Literal(method) | Expr::LiteralSrc(method, _)) = method else {
+        return None;
+    };
+    let ValueView::Str(method) = method.view() else {
+        return None;
+    };
+    let (modifier, method) = match method.strip_prefix('!') {
+        Some(private) => (Some('!'), private),
+        None => (None, &method[..]),
+    };
+    let call = Expr::MethodCall {
+        target: Box::new(target.clone()),
+        name: crate::symbol::Symbol::intern(method),
+        args: method_args.clone(),
+        modifier,
+        quoted: false,
+    };
+    Some((call, value))
+}
+
+/// `ApplyInfix(left, Assignment, right)` over already converted operands.
+fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
+    let assignment = RakuAstNode {
+        class: RakuAstClass::Assignment,
+        fields: vec![],
+    };
+    RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), left),
+            node_field(Some("infix"), assignment),
+            node_field(Some("right"), right),
+        ],
+    }
+}
+
 /// A plain `Infix.new("<op>")` node from a literal operator string.
 pub(super) fn plain_infix(op: &str) -> RakuAstNode {
     RakuAstNode {
@@ -1533,6 +1588,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
             if is_desugar_marker(name.as_str()) {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
+                    return Ok(method_lvalue_assignment(
+                        convert_expr(&call)?,
+                        convert_expr(value)?,
+                    ));
+                }
                 return Err(desugared(name.as_str()));
             }
             Ok(call_name(name.as_str(), args, false)?)
