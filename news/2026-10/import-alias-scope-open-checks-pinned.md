@@ -11,6 +11,11 @@ each checked against rakudo:
 - two modules that import the same short type name (`Thing`);
 - a block-scoped `use`, repeated after the module is already loaded.
 
-In each case the module's own routines see their imports, and nothing leaks
-into the caller. mutsu already behaved correctly on all five, so the change
-adds tests only (#9925).
+In each case the module's own routines see their imports. All five paths
+already worked, so the change adds tests only (#9925).
+
+Writing the tests turned up one divergence, filed as #11009. A unit module's
+`our $x` stays reachable as a bare `$x` in the importer. A block-scoped
+`use`, whose load is hoisted to the head of the file, therefore exposes the
+module's `our` variables to the whole file. Two leak checks are marked
+`todo` until that is fixed.
