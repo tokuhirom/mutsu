@@ -14,6 +14,7 @@ use super::super::regex_lr_state::lr_name_active;
 use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
 use super::rx_entry::program_for;
+use super::rx_scope::CallWindow;
 use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
     ANY_DYNAMIC_TOKEN_PARAM, SavedDynParams, regex_args_have_opaque,
@@ -45,9 +46,9 @@ pub(super) struct ResolvedCall {
     pub(super) verdict: CallVerdict,
     /// The evaluated arguments of a call with arguments.
     pub(super) args: Option<Vec<Value>>,
-    /// The binding window installed for a frame's callee: what each binding
-    /// shadowed. The caller owns its uninstall from here on.
-    pub(super) window: Option<SavedDynParams>,
+    /// The binding window installed for a frame's callee. The caller owns its
+    /// uninstall from here on.
+    pub(super) window: Option<CallWindow>,
 }
 
 /// What a `<subrule>` call runs as a frame.
@@ -121,7 +122,9 @@ impl Interpreter {
         };
         // Only a frame keeps the window: the producer installs its own.
         let window = match (&verdict, window) {
-            (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => window,
+            (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => {
+                self.rx_call_rule_frame(name, window)
+            }
             (_, Some(saved)) => {
                 self.restore_subrule_dynamic_params(saved);
                 None
@@ -152,6 +155,47 @@ impl Interpreter {
             return None;
         }
         self.install_subrule_dynamic_params_named(&name.spec().lookup_name, pkg, args, None)
+    }
+
+    /// The whole window of a call that runs as a frame: `params` (what
+    /// [`Self::rx_call_window`] installed) and then the callee's own `:my $*x`
+    /// declarations, initialized for this invocation as the walk does at rule
+    /// entry (`enter_grammar_rule_dynvars`). The declarations are entered only
+    /// once the call is known to be a frame, so a bridged call, whose producer
+    /// enters its own, never runs an initializer twice.
+    // Cost: O(1) when the program's grammar declares no `:my $*x`; else one
+    // hash probe, plus the initializers' evaluation for a rule that declares
+    // some.
+    fn rx_call_rule_frame(
+        &mut self,
+        name: &NamedAtom,
+        params: Option<SavedDynParams>,
+    ) -> Option<CallWindow> {
+        let rule_frame = if self.grammar_rule_dynvar_decls.is_empty()
+            || !self
+                .grammar_rule_dynvar_decls
+                .contains_key(&name.spec().lookup_name)
+        {
+            None
+        } else {
+            self.enter_grammar_rule_dynvars(&name.spec().lookup_name)
+        };
+        if params.is_none() && rule_frame.is_none() {
+            return None;
+        }
+        let mut saved = params.unwrap_or_default();
+        let mut attach: Vec<String> = saved.iter().map(|(key, _)| key.clone()).collect();
+        let scope_keys = rule_frame.map(|frame| {
+            let (frame_saved, keys) = Self::into_window_parts(frame);
+            saved.extend(frame_saved);
+            attach.extend(keys.iter().cloned());
+            keys
+        });
+        Some(CallWindow {
+            saved,
+            attach,
+            scope_keys,
+        })
     }
 
     /// The frame `<name>` called from `pkg` runs as, or `Err(why)` when the
@@ -198,9 +242,6 @@ impl Interpreter {
         }
         if !self.registry().grammar_custom_how.is_empty() {
             return Err("custom-how");
-        }
-        if !self.grammar_rule_dynvar_decls.is_empty() {
-            return Err("rule-dynvar-decls");
         }
         // An enclosing call of this name is being evaluated by the walk's
         // growing-seed loop: this call may be its re-entry, which only the

@@ -163,19 +163,34 @@ pub(crate) struct GrammarDynvarScopeGuard;
 
 impl GrammarDynvarScopeGuard {
     pub(crate) fn enter(keys: impl IntoIterator<Item = String>) -> Self {
-        GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
-            stack.borrow_mut().push(keys.into_iter().collect());
-        });
+        grammar_dynvar_scope_push(keys);
         Self
     }
 }
 
 impl Drop for GrammarDynvarScopeGuard {
     fn drop(&mut self) {
-        GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
-            stack.borrow_mut().pop();
-        });
+        grammar_dynvar_scope_pop();
     }
+}
+
+/// Mark the declarations `keys` as owned by a live grammar-rule frame. The
+/// compiled regex engine pushes and pops this itself, because a rule frame it
+/// runs can be left and re-entered by backtracking (`rx_scope`); everything
+/// else goes through [`GrammarDynvarScopeGuard`].
+// Cost: O(k), k = the keys.
+pub(crate) fn grammar_dynvar_scope_push(keys: impl IntoIterator<Item = String>) {
+    GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
+        stack.borrow_mut().push(keys.into_iter().collect());
+    });
+}
+
+/// Undo the newest [`grammar_dynvar_scope_push`].
+// Cost: O(k), k = the keys dropped.
+pub(crate) fn grammar_dynvar_scope_pop() {
+    GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
+        stack.borrow_mut().pop();
+    });
 }
 
 /// Whether a dynamic declaration is owned by a live grammar-rule frame.

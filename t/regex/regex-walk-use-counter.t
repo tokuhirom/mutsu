@@ -6,7 +6,7 @@
 # put the match there.
 use Test;
 
-plan 12;
+plan 14;
 
 sub walk-line(Str $code, *%extra-env) {
     my %env = %*ENV;
@@ -47,6 +47,14 @@ sub walk-line(Str $code, *%extra-env) {
     is $out, "ab\n", 'a `$*` rule parameter reaches a subrule the callee calls';
     like $line, /'walked=0 () bridged=0 ()'/,
         'a call that binds a `$*` parameter runs as a frame (no bridge)';
+}
+
+{
+    my ($out, $line) = walk-line(
+        'grammar G { token TOP { :my $*D = 1; <a> <a> }; token a { :my $*E = 2; \\w <?{ $*D + $*E == 3 }> } }; say ~G.parse("ab")');
+    is $out, "ab\n", 'a grammar whose rules declare `:my $*x` parses';
+    like $line, /'walked=0 () bridged=0 ()'/,
+        'rule declarations keep neither the match nor its calls off the compiled engine';
 }
 
 {
