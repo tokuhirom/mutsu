@@ -795,12 +795,12 @@ struct HeredocScopeScan<'a> {
 impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_none() {
-            super::scope_scan::walk_stmt_own_scope(self, stmt);
+            crate::ast::scope_scan::walk_stmt_own_scope(self, stmt);
         }
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if self.found.is_some() || super::scope_scan::opens_own_scope(expr) {
+        if self.found.is_some() || crate::ast::scope_scan::opens_own_scope(expr) {
             return;
         }
         match expr {

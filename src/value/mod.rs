@@ -574,6 +574,9 @@ pub(crate) use match_lazy::MatchNode;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
+pub(crate) mod numeric_coerce;
+pub(crate) mod numeric_payload;
+pub(crate) use nanbox::CONTAINER_CELLS;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
@@ -664,7 +667,7 @@ pub use view::ValueView;
 
 /// Get current time as seconds since UNIX epoch. On WASM the host's
 /// `Date.now()` supplies it, plus whatever the cooperative scheduler's virtual
-/// clock has been advanced by (see `runtime::wasm_sched`), so a `sleep` is
+/// clock has been advanced by (see `wasm_sched`), so a `sleep` is
 /// visible to `now` / `time` / `DateTime.now` exactly as it is natively.
 pub(crate) fn current_time_secs_f64() -> f64 {
     #[cfg(not(target_arch = "wasm32"))]
@@ -676,8 +679,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        crate::runtime::thread_compat::js_epoch_secs()
-            + crate::runtime::wasm_sched::clock_offset_secs()
+        crate::thread_compat::js_epoch_secs() + crate::wasm_sched::clock_offset_secs()
     }
 }
 
@@ -2756,7 +2758,7 @@ impl UniData {
         match self.codes.view() {
             ValueView::Array(items, _) => items
                 .iter()
-                .map(|v| u32::try_from(crate::runtime::to_int(v)).unwrap_or(0))
+                .map(|v| u32::try_from(numeric_coerce::to_int(v)).unwrap_or(0))
                 .collect(),
             _ => Vec::new(),
         }

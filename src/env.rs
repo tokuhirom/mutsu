@@ -20,6 +20,8 @@ use crate::value::ValueMap;
 /// actually holds.
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
+pub(crate) mod stats;
+
 /// Process-wide immutable "base" tier of the environment.
 ///
 /// Holds the built-in enum constants (`Order`, `Endian`, `ProtocolFamily`,
@@ -2144,11 +2146,11 @@ impl Env {
     /// Copy-on-write access to the inner map for mutation. Equivalent to
     /// `Arc::make_mut`, but when stats are enabled it records an actual
     /// O(env_size) deep copy whenever the env is shared (the real dual-store
-    /// cost; see docs/vm-dual-store.md and `vm_stats::record_env_deep_copy`).
+    /// cost; see docs/vm-dual-store.md and `stats::record_env_deep_copy`).
     #[inline]
     fn cow_mut(&mut self) -> &mut Tier {
-        if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
-            crate::vm::vm_stats::record_env_deep_copy(self.inner.len());
+        if stats::enabled() && Arc::strong_count(&self.inner) > 1 {
+            stats::record_env_deep_copy(self.inner.len());
         }
         Arc::make_mut(&mut self.inner)
     }

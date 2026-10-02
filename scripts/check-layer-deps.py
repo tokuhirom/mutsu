@@ -42,12 +42,15 @@ _spec.loader.exec_module(_ps)
 
 # Lower-layer roots (directories and single-file modules), relative to src/.
 LOWER = [
-    "ast", "ast.rs", "parser", "value", "opcode.rs", "env.rs", "gc",
+    "ast", "ast.rs", "parser", "value", "opcode.rs", "env.rs", "env", "gc",
     # Leaf modules below all of them: name and key construction (including the
     # sigil-less constant term keys), native type names, and the Unicode
     # tables the parser reads.
     "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs",
     "native_types.rs", "term_names.rs", "ucd", "stats_gate.rs",
+    # Platform shims: thread/clock abstraction and the wasm32 cooperative
+    # scheduler.
+    "thread_compat.rs", "wasm_sched.rs",
 ]
 # Modules above every lower layer. `crate::Interpreter` is lib.rs's re-export.
 UPPER = ["runtime", "vm", "compiler", "builtins", "trir", "interpreter", "Interpreter"]

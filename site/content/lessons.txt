@@ -9,7 +9,7 @@
 #  build (a feature the browser cannot provide at all, e.g. spawning a real
 #  process).  The site shows the recorded native output instead of offering to
 #  run it.  Concurrency does NOT need this flag: `start`/`await`/`Channel` run
-#  on the cooperative scheduler (src/runtime/wasm_sched.rs).
+#  on the cooperative scheduler (src/wasm_sched.rs).
 #
 #  The expected-output blocks are GENERATED and verified: run
 #      node scripts/check-site-snippets.mjs --update

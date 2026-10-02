@@ -45,6 +45,7 @@ mod stats_gate;
 mod str_scan;
 pub mod symbol;
 pub(crate) mod term_names;
+pub(crate) mod thread_compat;
 mod token_kind;
 mod trace;
 pub(crate) mod trir;
@@ -53,6 +54,9 @@ mod ucd;
 pub(crate) mod unit_source_file;
 mod value;
 mod vm;
+/// Cooperative scheduler standing in for OS threads in the browser.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm_sched;
 pub(crate) mod whatever_curry;
 pub(crate) mod with_desugar;
 

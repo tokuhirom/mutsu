@@ -1098,8 +1098,7 @@ impl Value {
             // A subclass of native `Int` or `Num` carries its numeric payload
             // in the reserved slot seeded by both `new` and `bless`.
             ValueView::Instance { attributes, .. }
-                if let Some(payload) =
-                    crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
+                if let Some(payload) = super::numeric_payload::numeric_payload_of(&attributes) =>
             {
                 payload.to_string_value()
             }

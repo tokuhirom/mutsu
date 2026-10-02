@@ -1147,7 +1147,7 @@ impl Interpreter {
         // same point a native build would collect a finished thread's output, so
         // `start { say "hi" }` prints instead of silently evaporating.
         #[cfg(target_arch = "wasm32")]
-        crate::runtime::wasm_sched::drain_ready();
+        crate::wasm_sched::drain_ready();
         // Drain any output produced by fire-and-forget `start` threads that was
         // never collected by an `await` (those drain on join). A `start` block
         // that ran to a `say` and then blocked/exited still left its text in the

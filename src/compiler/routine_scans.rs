@@ -3,7 +3,7 @@
 //! visitor (ADR-0137). Where a scan stops is part of its answer; each stop is
 //! an explicit hook arm with its reason.
 
-use super::scope_scan::{
+use crate::ast::scope_scan::{
     is_code_object, is_scope_declaration, opens_own_scope, walk_stmt_own_scope,
 };
 use crate::ast::{Expr, Stmt};

@@ -54,7 +54,7 @@ impl Interpreter {
                 // wake us up.
                 loop {
                     crate::gc::block_quiescent(|| {
-                        crate::runtime::thread_compat::sleep(Duration::from_millis(100))
+                        crate::thread_compat::sleep(Duration::from_millis(100))
                     });
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
                         self.halted = true;
@@ -75,7 +75,7 @@ impl Interpreter {
                         return Ok(Value::NIL);
                     }
                 } else {
-                    crate::gc::block_quiescent(|| crate::runtime::thread_compat::sleep(duration));
+                    crate::gc::block_quiescent(|| crate::thread_compat::sleep(duration));
                 }
                 self.sync_shared_vars_to_env();
                 Ok(Value::NIL)
@@ -85,12 +85,12 @@ impl Interpreter {
 
     /// Sleep for the given duration, but check for global exit every 100ms.
     fn interruptible_sleep(total: Duration) {
-        let start = crate::runtime::thread_compat::mono_now();
+        let start = crate::thread_compat::mono_now();
         let total_secs = total.as_secs_f64();
-        while crate::runtime::thread_compat::mono_now() - start < total_secs {
-            let remaining = total_secs - (crate::runtime::thread_compat::mono_now() - start);
+        while crate::thread_compat::mono_now() - start < total_secs {
+            let remaining = total_secs - (crate::thread_compat::mono_now() - start);
             let chunk = Duration::from_secs_f64(remaining).min(Duration::from_millis(100));
-            crate::gc::block_quiescent(|| crate::runtime::thread_compat::sleep(chunk));
+            crate::gc::block_quiescent(|| crate::thread_compat::sleep(chunk));
             if super::builtins_control_flow::global_exit_requested().is_some() {
                 return;
             }
@@ -99,9 +99,9 @@ impl Interpreter {
 
     pub(super) fn builtin_sleep_timer(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let duration = Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
-        let start = crate::runtime::thread_compat::mono_now();
-        crate::gc::block_quiescent(|| crate::runtime::thread_compat::sleep(duration));
-        let elapsed = crate::runtime::thread_compat::mono_now() - start;
+        let start = crate::thread_compat::mono_now();
+        crate::gc::block_quiescent(|| crate::thread_compat::sleep(duration));
+        let elapsed = crate::thread_compat::mono_now() - start;
         let remaining = (duration.as_secs_f64() - elapsed).max(0.0);
         Ok(crate::builtins::arith::make_duration_value(remaining))
     }
@@ -149,7 +149,7 @@ impl Interpreter {
             }
             let diff_secs = target - now;
             crate::gc::block_quiescent(|| {
-                crate::runtime::thread_compat::sleep(Duration::from_secs_f64(diff_secs))
+                crate::thread_compat::sleep(Duration::from_secs_f64(diff_secs))
             });
             return Ok(Value::TRUE);
         }

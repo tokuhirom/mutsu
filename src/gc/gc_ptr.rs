@@ -40,7 +40,7 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::vm::vm_stats::{record_gc_candidate_dedup_hit, record_gc_candidate_push};
+use super::stats::{record_gc_candidate_dedup_hit, record_gc_candidate_push};
 
 /// Bacon-Rajan node color (design doc §5.1's "color / state").
 ///

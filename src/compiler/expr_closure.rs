@@ -15,10 +15,10 @@ fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSe
             {
                 self.out.insert(name.clone());
             }
-            super::scope_scan::walk_stmt_own_scope(self, stmt);
+            crate::ast::scope_scan::walk_stmt_own_scope(self, stmt);
         }
         fn visit_expr(&mut self, expr: &'ast Expr) {
-            if !super::scope_scan::opens_own_scope(expr) {
+            if !crate::ast::scope_scan::opens_own_scope(expr) {
                 crate::ast_visit::walk_expr(self, expr);
             }
         }
@@ -1505,7 +1505,7 @@ struct TopicMutationScan {
 
 impl<'ast> crate::ast_visit::Visit<'ast> for TopicMutationScan {
     fn visit_expr(&mut self, e: &'ast Expr) {
-        if self.found || super::scope_scan::is_code_object(e) {
+        if self.found || crate::ast::scope_scan::is_code_object(e) {
             return;
         }
         self.found = match e {

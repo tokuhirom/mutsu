@@ -38,7 +38,7 @@
 //! mutates; `scan_black` restores it for every survivor, so the heap's refcounts
 //! are pristine afterward (only genuine garbage is disturbed).
 
-use crate::runtime::thread_compat::Instant;
+use crate::thread_compat::Instant;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -46,7 +46,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::gc_ptr::{
     CollectGuard, Color, ErasedGc, drain_candidates, erased_id, gc_drop_edges, gc_finalize,
 };
-use crate::vm::vm_stats::record_gc_collection;
+use super::stats::record_gc_collection;
 
 /// Outcome of one `collect_cycles` run.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -514,7 +514,7 @@ pub(crate) fn collect_at_program_end(has_destroy_methods: bool) {
     if !has_destroy_methods
         && log_mode() == LogMode::Off
         && !verify_enabled()
-        && !crate::vm::vm_stats::enabled()
+        && !crate::stats_gate::enabled()
     {
         return;
     }

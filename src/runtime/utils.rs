@@ -518,6 +518,7 @@ pub(crate) use shaped::*;
 // glob re-export keeps them reachable as `runtime::utils::*`.
 pub(crate) use crate::str_scan::*;
 pub(crate) use crate::value::buf_class_names::*;
+pub(crate) use crate::value::numeric_coerce::*;
 pub(crate) use crate::value::type_name::value_type_name;
 pub(crate) use type_check_errors::*;
 pub(crate) use type_constraints::*;

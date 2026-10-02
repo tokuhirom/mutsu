@@ -1,9 +1,9 @@
 //! The virtual-accessor-call check for attribute initializers, over the typed
 //! AST visitor (ADR-0137).
 
+use super::scope_scan::is_scope_declaration;
 use super::{Expr, RoutineDeclarator, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
-use crate::compiler::scope_scan::is_scope_declaration;
 use crate::regex_tree::RegexNode;
 
 struct FirstVirtualCall {

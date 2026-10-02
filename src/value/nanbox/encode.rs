@@ -226,9 +226,9 @@ impl NanBox {
             ValueRepr::Scalar(inner) => pack_arc(Kind::Scalar, Arc::new(*inner)),
             ValueRepr::ContainerRef(cell, itemized) => {
                 // The single point every ContainerRef word passes through, so
-                // this counts every cell ever made (`vm_jit::CONTAINER_CELLS`,
+                // this counts every cell ever made (`CONTAINER_CELLS`,
                 // a `MUTSU_VM_STATS` statistic).
-                crate::vm::vm_jit::note_container_cell();
+                note_container_cell();
                 pack_gc(
                     if itemized {
                         Kind::ContainerRefItemized
@@ -247,4 +247,20 @@ impl NanBox {
         };
         NanBox(word)
     }
+}
+
+/// Process-wide, monotonic count of `ContainerRef` cell words ever packed
+/// (bumped at the single NaN-box encode chokepoint for `Kind::ContainerRef`).
+/// A statistic only (`MUTSU_VM_STATS`, read by `vm_stats::dump`): a cell no
+/// longer spoils the `GetLocal` fast paths, which rely on the ADR-0097 §15 env/slot invariant instead — a
+/// slot holding a cell is refused by its own tag test, and no frame's env names
+/// a container its slot does not hold.
+pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one `ContainerRef` cell creation (see `CONTAINER_CELLS`).
+// Cost: O(1).
+#[inline]
+pub(crate) fn note_container_cell() {
+    CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }

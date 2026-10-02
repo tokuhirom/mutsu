@@ -57,10 +57,7 @@ pub(crate) fn refused_thread_error(e: std::io::Error) -> RuntimeError {
 ///
 /// Panics when no thread can be created at all; code that runs on behalf of a
 /// Raku program uses [`try_spawn_user_thread`] and raises instead.
-pub(crate) fn spawn_user_thread<F, T>(
-    name: &str,
-    f: F,
-) -> crate::runtime::thread_compat::JoinHandle<T>
+pub(crate) fn spawn_user_thread<F, T>(name: &str, f: F) -> crate::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -77,7 +74,7 @@ pub(crate) fn try_spawn_user_thread<F, T>(
     name: &str,
     policy: StackPolicy,
     f: F,
-) -> Result<crate::runtime::thread_compat::JoinHandle<T>, SpawnError>
+) -> Result<crate::thread_compat::JoinHandle<T>, SpawnError>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -147,7 +144,7 @@ where
 pub(crate) fn try_spawn_gc_helper_thread<F, T>(
     name: &str,
     f: F,
-) -> std::io::Result<crate::runtime::thread_compat::JoinHandle<T>>
+) -> std::io::Result<crate::thread_compat::JoinHandle<T>>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -182,7 +179,7 @@ fn spawn_registered_thread<F, T>(
     name: &str,
     stack: Option<crate::runtime::stack_budget::StackReservation>,
     body: BodySlot<F>,
-) -> std::io::Result<crate::runtime::thread_compat::JoinHandle<T>>
+) -> std::io::Result<crate::thread_compat::JoinHandle<T>>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -204,7 +201,7 @@ where
     // `gc::stw::preregister_worker_quiescent`.
     crate::gc::preregister_worker_quiescent();
     let stack_size = stack.as_ref().map(|r| r.size());
-    let spawned = crate::runtime::thread_compat::spawn_thread(name, stack_size, move || {
+    let spawned = crate::thread_compat::spawn_thread(name, stack_size, move || {
         // The reservation is this thread's for as long as it lives.
         let _stack = stack;
         // ADR-0100: arm the deep-recursion guard, from the top of this

@@ -448,7 +448,7 @@ impl Interpreter {
 
         let mut out = Vec::new();
         let mut quit_reason: Option<Value> = None;
-        let deadline = crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30);
+        let deadline = crate::thread_compat::Instant::now() + Duration::from_secs(30);
         'drain: loop {
             for (_, event, _) in waker.drain() {
                 match event {
@@ -463,7 +463,7 @@ impl Interpreter {
             if !wait_until_done {
                 break;
             }
-            let now = crate::runtime::thread_compat::Instant::now();
+            let now = crate::thread_compat::Instant::now();
             if now >= deadline {
                 break;
             }
@@ -777,7 +777,7 @@ impl Interpreter {
             .unwrap_or(Value::NIL);
         let policy = crate::runtime::react_whenever::SupplyDrivePolicy::Promise {
             promise: promise.clone(),
-            deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
+            deadline: crate::thread_compat::Instant::now() + Duration::from_secs(30),
             last_value: seed,
             emitter_supplier_id: Some(emitter_supplier_id),
         };
