@@ -194,6 +194,7 @@ OVERRIDES: dict[str, str] = {
     # ahead of "dispatch"'s `multi`, so even a bare "routines" override would
     # still land one level short.
     "multi-where-slurpy-hash": "routines/dispatch",
+    "star-array-flattens-hash": "routines/signature",
     # The `(receiver kind, method)` table that lets a plain aggregate/Str skip
     # the native-dispatch probe gauntlet (#8888) is interpreter dispatch
     # machinery with no user-facing feature of its own -- what it would catch
