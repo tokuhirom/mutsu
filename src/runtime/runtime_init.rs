@@ -3236,6 +3236,7 @@ impl Interpreter {
             module_owned_exports: Default::default(),
             module_owned_types: Default::default(),
             suppress_exports: false,
+            loading_without_import: false,
             in_lvalue_assignment: false,
             rw_return_context: false,
             in_does_rhs: false,

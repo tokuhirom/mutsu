@@ -560,10 +560,8 @@ impl Interpreter {
     /// [`crate::opcode::OpCode::PreloadModule`]): Raku loads every `use`d
     /// compunit before the importing unit's mainline runs, so its packages are
     /// visible everywhere, while the import itself stays lexical to the scope
-    /// holding the `use`. `need_module` is not a substitute — it loads with
-    /// `suppress_exports` set, so the module's `is export` routines are never
-    /// registered and a later `use` of the (now already-loaded) module has
-    /// nothing left to import.
+    /// holding the `use`. `need_module` is not a substitute — it skips the
+    /// `use`-only work (export-hook re-runs, the import itself).
     pub(crate) fn preload_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         self.use_module_with_tags_scoped(module, &[], false)
     }
@@ -593,17 +591,19 @@ impl Interpreter {
         let (module, dist_selectors) = Self::split_dist_selectors(module);
         let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
         // `suppress_exports` is set for the whole duration of an enclosing
-        // `need` load (see `need_module`), so its own compunit's `is export`
-        // subs never get registered as importable. But an explicit `use`
-        // nested inside that compunit's body (e.g. `need CT;` where
-        // `CT.rakumod` itself says `use Test;`) must still register and
-        // import Test's exports normally -- otherwise CT's own methods can
+        // `CompUnit::Repository.need` load (see `load_module_from_path`), so
+        // its own compunit's `is export` subs never get registered as
+        // importable. But an explicit `use` nested inside that compunit's
+        // body (e.g. a needed `CT.rakumod` that itself says `use Test;`) must
+        // still register and import Test's exports normally -- otherwise CT's own methods can
         // never resolve `diag` via `module_imported_lexical_names`, even
         // though CT's own mainline genuinely imported it (#7805). `use`
         // always wants ordinary export semantics regardless of an ambient
         // `need`, so suspend the flag for exactly this nested load.
         let saved_suppress_exports = std::mem::replace(&mut self.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.loading_without_import, false);
         let result = self.use_module_with_tags_inner(module, tags, import);
+        self.loading_without_import = saved_no_import;
         self.suppress_exports = saved_suppress_exports;
         self.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue
@@ -680,34 +680,7 @@ impl Interpreter {
             }
             // #7797: same gap as the aliasing copy just above, for package-
             // qualified-name visibility instead of bare short-name aliasing.
-            // A re-`use` of an already-loaded module skips
-            // `load_module_inner` entirely, so the importer-scoped grant that
-            // runs there on first load (`compunit_visible_packages`) never
-            // fires for a second importer — e.g. `Issue7733::User.rakumod`'s
-            // own `use Issue7733::Conf;` is a no-op once the top-level script
-            // already loaded `Conf` first, yet `Issue7733::Conf.new` inside a
-            // `User`-declared method must still resolve.
-            {
-                let importer_unit = self.executing_unit_sym_for_module_load();
-                let top = module.split_once("::").map_or(module, |(top, _)| top);
-                // Replay the FULL set the first load granted, not just the
-                // module's own name: the packages a module declares are not
-                // derivable from the name it is `use`d by. `Acme/Cow.rakumod`
-                // says `unit module Cow;`, so granting only `Acme::Cow`/`Acme`
-                // here left `Cow::cow` unreachable for every importer after
-                // the first -- and `Test`'s `use-ok` makes the first importer
-                // an `EVAL` unit routinely, so the script's own `use` was the
-                // one that lost.
-                let recorded = self.module_granted_packages.get(module).cloned();
-                let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
-                    .entry(importer_unit)
-                    .or_default();
-                entry.insert(module.to_string());
-                entry.insert(top.to_string());
-                if let Some(recorded) = recorded {
-                    entry.extend(recorded);
-                }
-            }
+            self.replay_module_visibility_grant(module);
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even
             // though the module body itself is not re-run.
