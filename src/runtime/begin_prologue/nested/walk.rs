@@ -127,6 +127,8 @@ impl Walker<'_> {
                 ..
             } => {
                 if let Some((index, is_tail)) = loc {
+                    // The value of a type's body is not observable.
+                    let is_tail = is_tail && !self.directly_in_package();
                     let slot = is_tail.then(|| next_slot("__init_value_"));
                     if self.lift(body, slot.as_deref(), &kind.clone()) {
                         self.edit_lifted(index, slot);
@@ -164,7 +166,9 @@ impl Walker<'_> {
                         Stmt::ClassDecl { .. } | Stmt::Package { .. } if self.frames.is_empty() => {
                             self.walk_package(member)
                         }
-                        Stmt::RoleDecl { .. } if self.frames.is_empty() => self.walk_role(member),
+                        Stmt::RoleDecl { .. } if self.frames.is_empty() => {
+                            self.walk_detached(member)
+                        }
                         // A nested `will begin` trait is a BEGIN-time effect
                         // this slice does not lift. A top-level one is split
                         // by the unit partition itself.
@@ -222,8 +226,10 @@ impl Walker<'_> {
                         w.visit_expr_mut(e);
                     }
                 });
-                // A package's routines are reached through the package.
-                if !self.in_package() {
+                // A package's own routines are reached through the package,
+                // which a lifted phaser re-enters. Any other scope's are
+                // copied into the lifted body.
+                if !self.directly_in_real_package() {
                     self.declare_routine(stmt);
                 }
             }
@@ -265,12 +271,16 @@ impl Walker<'_> {
             {
                 self.walk_package(stmt)
             }
-            Stmt::RoleDecl { .. } if self.frames.is_empty() => self.walk_role(stmt),
+            // A role, and a class declared in code, are walked without a
+            // package to re-enter, and are recorded as a type of their scope
+            // as before.
+            Stmt::RoleDecl { .. } | Stmt::ClassDecl { .. } => {
+                self.walk_detached(stmt);
+                self.declare_type_or_import(stmt);
+            }
             // A BEGIN in a package or type body is not lifted: the declaration
             // is recorded and its body left alone.
-            Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. }
-            | Stmt::EnumDecl { .. }
+            Stmt::EnumDecl { .. }
             | Stmt::SubsetDecl { .. }
             | Stmt::Package { .. }
             | Stmt::Use { .. }

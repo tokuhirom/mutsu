@@ -15,8 +15,8 @@ struct FindsTypeDecl {
     found: bool,
 }
 
-impl Visit for FindsTypeDecl {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for FindsTypeDecl {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }

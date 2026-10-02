@@ -8,7 +8,7 @@ use crate::ast::Stmt;
 /// The [`super::walk_stmt()`] arm for `ClassDecl`, `HasDecl`, `MethodDecl` and
 /// `RoleDecl`; `walk_stmt`'s own match keeps the variant list exhaustive.
 // Cost: O(n), n = size of `s`'s subtree.
-pub(super) fn walk_type_member_decl<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
+pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt) {
     match s {
         Stmt::ClassDecl {
             name,

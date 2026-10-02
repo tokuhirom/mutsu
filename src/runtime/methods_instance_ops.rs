@@ -2870,8 +2870,11 @@ impl Interpreter {
                 let ValueView::Sub(data) = target.view() else {
                     unreachable!()
                 };
+                // A `multi sub`'s dispatcher is the Sub carrying its captured
+                // candidates; each `.candidates` entry carries none.
                 Ok(Value::truth(
-                    Self::sub_multi_method_dispatcher_name(&data).is_some(),
+                    Self::sub_multi_method_dispatcher_name(&data).is_some()
+                        || data.env.contains_key("__mutsu_multi_dispatch_candidates"),
                 ))
             }
             // `.dispatcher` on a multi candidate is the proto that dispatches
@@ -3869,10 +3872,7 @@ impl Interpreter {
     /// (`sub f { ...; 2 }` is not a stub).
     fn sub_body_is_yada_stub(body: &[crate::ast::Stmt]) -> bool {
         use crate::ast::{Expr, Stmt};
-        let meaningful: Vec<&Stmt> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let meaningful: Vec<&Stmt> = body.iter().filter(|s| !s.is_marker()).collect();
         meaningful.len() == 1
             && matches!(meaningful[0], Stmt::Expr(Expr::Call { name, .. })
                 if *name == "__mutsu_stub_die" || *name == "__mutsu_stub_warn")

@@ -611,6 +611,7 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
     // would turn an already auto-quoted `V => 1` (or the deliberately
     // positional `::V => 1`) back into a fresh, misclassified pair.
     if !matches!(&*left, Expr::AssignExpr { .. })
+        && !is_indexed_bind(&left)
         && !matches!(&*left, Expr::Binary { op, .. } if is_loose_word_logical(op))
     {
         return Expr::Binary {
@@ -639,8 +640,41 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             expr: Box::new(reassociate_fat_arrow_operand(*expr, value)),
             is_bind,
         },
+        // `%h<k> := $x => 1`: `=>` and `:=` share the item-assignment tier and
+        // associate right, so the pair is the bound value, not the bind's result.
+        Expr::IndexAssign {
+            target,
+            index,
+            value: bind,
+            is_positional,
+        } if is_bind_index_value(&bind) => {
+            let Expr::Call { name, mut args } = *bind else {
+                unreachable!("is_bind_index_value checked the shape");
+            };
+            let rhs = reassociate_fat_arrow_operand(args.remove(0), value);
+            let source_meta =
+                crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(&rhs);
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(Expr::Call {
+                    name,
+                    args: vec![rhs, source_meta],
+                }),
+                is_positional,
+            }
+        }
         left => reassociated_fat_arrow_pair(left, value),
     }
+}
+
+fn is_bind_index_value(value: &Expr) -> bool {
+    matches!(value, Expr::Call { name, args }
+        if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
+}
+
+fn is_indexed_bind(expr: &Expr) -> bool {
+    matches!(expr, Expr::IndexAssign { value, .. } if is_bind_index_value(value))
 }
 
 fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {

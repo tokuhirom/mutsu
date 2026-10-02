@@ -52,8 +52,8 @@ impl EvalLexicalKeys {
     }
 }
 
-impl Visit for EvalLexicalKeys {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for EvalLexicalKeys {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::VarDecl {
                 name,
@@ -106,7 +106,7 @@ impl Visit for EvalLexicalKeys {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             // Closures: their body runs in its own frame when called.
             Expr::AnonSub { .. }
@@ -138,8 +138,8 @@ struct OurRoutines {
     found: Option<RuntimeError>,
 }
 
-impl Visit for OurRoutines {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for OurRoutines {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() {
             return;
         }

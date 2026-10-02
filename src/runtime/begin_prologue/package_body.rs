@@ -104,7 +104,7 @@ pub(super) fn split_package_decl(stmt: Stmt) -> (Stmt, Option<Stmt>) {
 
 /// A stub body (`class A { ... }`) is a declaration only.
 fn splittable_body(body: &[Stmt]) -> bool {
-    !body.iter().filter(|s| !matches!(s, Stmt::SetLine(_))).all(
+    !body.iter().filter(|s| !s.is_marker()).all(
         |s| matches!(s, Stmt::Expr(Expr::Call { name, .. }) if is_internal_call(&name.resolve())),
     )
 }

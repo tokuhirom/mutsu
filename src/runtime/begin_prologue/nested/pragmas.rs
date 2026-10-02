@@ -24,8 +24,8 @@
 //! - **Anything else** keeps the scope blocked. `use if` acts beyond the
 //!   block, as does a `use lib` the walker could not lift into the prologue
 //!   itself (a lifted one is already in effect when a later BEGIN runs); `use attributes` is not restored on block exit; and a
-//!   pragma mutsu does not implement (`use worries`, `use trace`) fails at
-//!   run time, which repeating it would move to startup.
+//!   pragma mutsu does not implement fails at run time, which repeating it
+//!   would move to startup.
 
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr};
@@ -64,6 +64,9 @@ pub(super) fn repeat_of(stmt: &Stmt) -> Option<Repeat> {
         } if arg.as_ref().is_none_or(is_literal_arg) => match module.as_str() {
             "strict" | "newline" | "soft" | "nqp" | "isms" | "v6" | "oo" | "class"
             | "experimental" | "customtrait" | "warnings" => Some(Repeat::Anywhere),
+            // The parser has already put its `Stmt::Trace` hooks into the lifted
+            // body; the pragma statement itself does nothing at run time.
+            "trace" => Some(Repeat::Anywhere),
             "fatal" => Some(Repeat::BeforeRoutines),
             "variables" | "dynamic-scope" => Some(Repeat::BeforeDeclarations),
             _ => None,
@@ -72,7 +75,7 @@ pub(super) fn repeat_of(stmt: &Stmt) -> Option<Repeat> {
         // which the block restores, or is a no-op.
         Stmt::No { module, arg: None } => matches!(
             module.as_str(),
-            "strict" | "fatal" | "isms" | "worries" | "precompilation" | "soft"
+            "strict" | "fatal" | "isms" | "worries" | "precompilation" | "soft" | "trace"
         )
         .then_some(Repeat::Anywhere),
         _ => None,
@@ -117,8 +120,8 @@ fn is_literal_arg(arg: &Expr) -> bool {
 /// Whether every expression it visits is a literal, a pair or a list of them.
 struct LiteralArg(bool);
 
-impl Visit for LiteralArg {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for LiteralArg {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Literal(_) | Expr::Binary { .. } | Expr::ArrayLiteral(_) => walk_expr(self, expr),
             _ => self.0 = false,

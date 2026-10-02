@@ -60,8 +60,8 @@ struct ScopeRequires {
     prefix_stmt: bool,
 }
 
-impl Visit for ScopeRequires {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ScopeRequires {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         let prefix = std::mem::take(&mut self.prefix_stmt);
         if self.expr_depth > 0 && !prefix {
             return;
@@ -92,9 +92,9 @@ impl Visit for ScopeRequires {
     }
 
     // A parameter default belongs to its closure's scope too.
-    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
+    fn visit_param(&mut self, _param: &'ast crate::ast::ParamDef) {}
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Call { name, args } = expr
             && name.resolve() == "require"
             && let Some(Expr::Literal(target)) = args.first()

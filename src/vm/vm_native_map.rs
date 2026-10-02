@@ -292,8 +292,8 @@ struct MapBodyClassifier {
     mutates_topic: bool,
 }
 
-impl Visit for MapBodyClassifier {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for MapBodyClassifier {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.escapes {
             return;
         }
@@ -335,7 +335,7 @@ impl Visit for MapBodyClassifier {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.escapes {
             return;
         }
@@ -417,7 +417,7 @@ impl Visit for MapBodyClassifier {
 
     // Unreachable through the accepted forms (a regex literal is a leaf);
     // kept explicit so an accepted form never vets regex code blocks.
-    fn visit_regex_node(&mut self, _node: &crate::regex_tree::RegexNode) {
+    fn visit_regex_node(&mut self, _node: &'ast crate::regex_tree::RegexNode) {
         self.escapes = true;
     }
 }

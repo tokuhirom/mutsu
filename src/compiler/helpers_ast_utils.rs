@@ -400,7 +400,10 @@ impl Compiler {
     /// to `hoist_sub_decls`, which already registers them.
     pub(super) fn hoist_nested_our_subs(&mut self, stmts: &[Stmt]) {
         let nested = super::body_scans::nested_our_subs(stmts);
-        for mut hoisted in nested {
+        for decl in nested {
+            // The hoisted copy is retagged below; the source-order declaration
+            // keeps its own traits.
+            let mut hoisted = decl.clone();
             let name = match &mut hoisted {
                 Stmt::SubDecl {
                     name,
@@ -635,10 +638,7 @@ impl Compiler {
 
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).
     pub(super) fn is_stub_class_body(body: &[Stmt]) -> bool {
-        let filtered: Vec<_> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
+        let filtered: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
         filtered.len() == 1
             && matches!(filtered[0], Stmt::Expr(Expr::Call { name, .. })
                 if name.resolve() == "__mutsu_stub_die" || name.resolve() == "__mutsu_stub_warn")
@@ -795,6 +795,7 @@ impl Compiler {
         matches!(
             stmt,
             Stmt::SetLine(_)
+                | Stmt::Trace { .. }
                 | Stmt::Use { .. }
                 | Stmt::No { .. }
                 | Stmt::Need { .. }

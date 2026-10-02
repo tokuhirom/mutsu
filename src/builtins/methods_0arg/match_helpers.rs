@@ -141,8 +141,14 @@ pub(super) fn match_caps(attributes: &AttrMap) -> Value {
 }
 
 /// Expand a capture value: if it's an Array of Matches (from quantified captures),
-/// return each element; otherwise return the single value.
+/// return each element; otherwise return the single value. An unbound slot
+/// (`Nil`, an unmatched `(x)?` before a later capture) captured nothing, so it
+/// yields no entry: raku's `.caps` / `.chunks` hold only what was bound.
+// Cost: O(e), e = the entries of a quantified capture (1 otherwise).
 fn expand_capture_items(val: &Value) -> Vec<Value> {
+    if val.is_nil() {
+        return Vec::new();
+    }
     match val.view() {
         ValueView::Array(items, _)
             if items

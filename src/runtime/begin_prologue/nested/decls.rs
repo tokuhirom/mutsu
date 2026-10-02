@@ -89,8 +89,8 @@ const READ_ONLY_METAMETHODS: &[&str] = &[
     "enum_value_list",
 ];
 
-impl Visit for Mentions {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for Mentions {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         self.has_begin |= matches!(
             stmt,
             Stmt::Phaser {
@@ -102,7 +102,7 @@ impl Visit for Mentions {
         walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         self.has_begin |= matches!(
             expr,
             Expr::PhaserExpr {
@@ -165,7 +165,7 @@ impl Mentions {
 
 /// The names a type or package declaration installs, or `None` when they are
 /// not known statically (`class ::($name)`, a `unit` declarator).
-fn declared_names(decl: &Stmt) -> Option<Vec<String>> {
+pub(super) fn declared_names(decl: &Stmt) -> Option<Vec<String>> {
     let name = match decl {
         Stmt::ClassDecl {
             name,
@@ -225,7 +225,9 @@ fn has_user_trait(traits: &[(String, Option<Expr>)]) -> bool {
 /// A member of a type or package body that only declares.
 fn is_pure_member(stmt: &Stmt) -> bool {
     match stmt {
+        // A `use trace` hook prints; it declares nothing and runs no user code.
         Stmt::SetLine(_)
+        | Stmt::Trace { .. }
         | Stmt::DoesDecl { .. }
         | Stmt::TrustsDecl { .. }
         | Stmt::TokenDecl { .. }
@@ -312,6 +314,15 @@ impl Walker<'_> {
             .then(|| decl.clone());
         let frame = self.frames.last_mut().expect("checked above");
         frame.types.push(TypeDecl { names, copy });
+    }
+
+    /// Note that the current scope declares a type a lifted body cannot be
+    /// given: it has no copy ([`TypeDecl`]), so a body that names it is not
+    /// lifted.
+    pub(super) fn declare_unavailable_type(&mut self, names: Vec<String>) {
+        if let Some(frame) = self.frames.last_mut() {
+            frame.types.push(TypeDecl { names, copy: None });
+        }
     }
 
     /// Whether a call of `name` reaches a type, enum key or package an inner

@@ -39,8 +39,8 @@ impl Interpreter {
 #[derive(Default)]
 struct ExportedTypeNames(HashSet<String>);
 
-impl crate::ast_visit::Visit for ExportedTypeNames {
-    fn visit_stmt(&mut self, stmt: &crate::ast::Stmt) {
+impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
+    fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
         if let crate::ast::Stmt::ClassDecl {
             name,
             custom_traits,
@@ -55,7 +55,7 @@ impl crate::ast_visit::Visit for ExportedTypeNames {
         crate::ast_visit::walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &crate::ast::Expr) {
+    fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
         if let crate::ast::Expr::Call { name, args } = expr
             && name.resolve() == "__MUTSU_EXPORT_TYPE__"
             && let Some(crate::ast::Expr::Literal(value)) = args.first()
@@ -72,8 +72,8 @@ impl crate::ast_visit::Visit for ExportedTypeNames {
 /// The walk of `Interpreter::module_has_state_sub` (ADR-0137 visitor).
 struct HasStateSub(bool);
 
-impl crate::ast_visit::Visit for HasStateSub {
-    fn visit_stmt(&mut self, stmt: &crate::ast::Stmt) {
+impl<'ast> crate::ast_visit::Visit<'ast> for HasStateSub {
+    fn visit_stmt(&mut self, stmt: &'ast crate::ast::Stmt) {
         if self.0 {
             return;
         }

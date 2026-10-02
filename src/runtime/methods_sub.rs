@@ -354,6 +354,11 @@ impl Interpreter {
             return Some(Ok(Value::str(display)));
         }
         if matches!(method, "raku" | "perl") && args.is_empty() {
+            // A routine with `multi` candidates is its dispatcher, which
+            // Rakudo spells as its proto: `proto sub hs (|) {*}`.
+            if let Some(raku) = self.dispatcher_raku(package, name) {
+                return Some(Ok(Value::str(raku)));
+            }
             // TODO: Rakudo renders a builtin routine's .raku as its proto
             // (`proto sub say (|) {*}`); mutsu has no real protos for
             // builtins, so the long candidate-signature form remains.
@@ -950,6 +955,19 @@ impl Interpreter {
             }
             return Some(Ok(self.sub_signature_value(data)));
         }
+        // The dispatcher `&name` of a `multi sub` (a Sub carrying its captured
+        // candidates) is spelled as its proto, like the by-name handle above.
+        if matches!(method, "raku" | "perl")
+            && args.is_empty()
+            && data.env.contains_key("__mutsu_multi_dispatch_candidates")
+            && !matches!(
+                data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(kind)) if matches!(kind.as_str(), "Method" | "Submethod")
+            )
+            && let Some(raku) = self.dispatcher_raku(&data.package.resolve(), &data.name.resolve())
+        {
+            return Some(Ok(Value::str(raku)));
+        }
         if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
             let sig = self.sub_signature_value(data);
             let sig_gist = if let ValueView::Instance { attributes, .. } = sig.view() {
@@ -1019,9 +1037,16 @@ impl Interpreter {
                     sig_part, id
                 ))));
             }
+            // A `multi` candidate (an entry of a dispatcher's `.candidates`)
+            // is spelled `multi sub`, as Rakudo does.
+            let keyword = if data.env.contains_key("__mutsu_is_multi_candidate") {
+                "multi sub"
+            } else {
+                "sub"
+            };
             return Some(Ok(Value::str(format!(
-                "sub {} {}{{ #`(Sub|{}) ... }}",
-                name, sig_part, id
+                "{} {} {}{{ #`(Sub|{}) ... }}",
+                keyword, name, sig_part, id
             ))));
         }
         if matches!(method, "line" | "file") && args.is_empty() {

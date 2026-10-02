@@ -1048,9 +1048,12 @@ impl Interpreter {
                 if let Some(mut captures) = match_result {
                     // Reset stale numeric/named capture vars from any previous match.
                     self.reset_capture_env_vars();
-                    // Set positional captures as strings first (needed by code blocks)
+                    // Set positional captures as strings first (needed by code blocks).
+                    // An unbound slot (alternation padding, unmatched `(x)?`) has
+                    // no text: it stays Nil, and the Match upgrade below may never
+                    // visit it once trailing unbound slots are dropped.
                     for (i, v) in captures.positional.iter().enumerate() {
-                        if v.alternation_padding {
+                        if v.nil {
                             continue;
                         }
                         self.env.insert_sym(
@@ -1127,11 +1130,8 @@ impl Interpreter {
                     // captures still use the materialized map because their
                     // values are rewritten above from the capture payload.
                     if captures.hash_captures().is_empty() {
-                        let visible_len = captures
-                            .positional
-                            .iter()
-                            .rposition(|slot| !slot.alternation_padding)
-                            .map_or(0, |idx| idx + 1);
+                        let visible_len =
+                            crate::runtime::PosSlot::visible_len(&captures.positional);
                         for (i, slot) in captures.positional[..visible_len].iter().enumerate() {
                             self.env.insert_sym(
                                 crate::symbol::wk::capture_index(i),

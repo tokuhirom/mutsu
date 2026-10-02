@@ -63,8 +63,8 @@ impl NestedTypeDecls {
     }
 }
 
-impl Visit for NestedTypeDecls {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for NestedTypeDecls {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::ClassDecl {
                 name,

@@ -33,7 +33,7 @@ impl Compiler {
     /// per-execution `ResetStateLocals` is skipped; the loop-entry reset
     /// already restarts the state when the loop STATEMENT re-executes.
     pub(super) fn loop_body_is_sole_block(body: &[Stmt]) -> bool {
-        let mut semantic = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+        let mut semantic = body.iter().filter(|s| !s.is_marker());
         matches!(
             (semantic.next(), semantic.next()),
             (Some(Stmt::Block(_)), None)

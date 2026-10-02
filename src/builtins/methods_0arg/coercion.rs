@@ -233,7 +233,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 items.mark_cache_requested();
                 Some(Ok(Value::slip(items.to_vec())))
             }
-            ValueView::Array(items, ..) => {
+            ValueView::Array(items, kind) => {
                 // `.Slip` materializes array holes with the container's
                 // `is default(...)` value (Rakudo semantics: the .List keeps
                 // holes as Nil, while .Slip uses the default). The default is
@@ -253,10 +253,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 } else {
                     // No custom default: holes read as `Any`. A deleted slot
                     // stores literal `Nil`, which must still surface as `Any`.
+                    // An immutable List has no containers to default, so its
+                    // `Nil` elements survive (`(Nil,).Slip` is `slip(Nil,)`).
                     items
                         .iter()
                         .map(|v| match v.view() {
-                            ValueView::Nil => Value::package(crate::symbol::wk::any()),
+                            ValueView::Nil if kind.is_real_array() => {
+                                Value::package(crate::symbol::wk::any())
+                            }
                             _ => v.clone(),
                         })
                         .collect()

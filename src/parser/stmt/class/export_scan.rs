@@ -24,8 +24,8 @@ pub(crate) fn extract_exported_subs(stmts: &[Stmt]) -> Vec<InlineModuleExportSpe
 
 struct ExportedSubs(Vec<InlineModuleExportSpec>);
 
-impl Visit for ExportedSubs {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ExportedSubs {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::SubDecl {
                 name,
@@ -72,8 +72,8 @@ pub(crate) fn extract_exported_operator_methods(stmts: &[Stmt]) -> Vec<InlineMod
 
 struct ExportedOperatorMethods(Vec<InlineModuleExportSpec>);
 
-impl Visit for ExportedOperatorMethods {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ExportedOperatorMethods {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if let Stmt::MethodDecl {
             name,
             is_export: true,
@@ -120,8 +120,8 @@ struct ExportNameClash {
     clash: Option<String>,
 }
 
-impl Visit for ExportNameClash {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ExportNameClash {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.clash.is_some() {
             return;
         }

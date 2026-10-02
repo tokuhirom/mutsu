@@ -9,7 +9,9 @@ use std::borrow::Borrow;
 /// Which non-value statements [`last_value_stmt`] looks past.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TailSkip {
-    /// The statements that are never a value: `SetLine` line markers and the
+    /// The statements that are never a value: `SetLine` line markers, the
+    /// `use trace` hooks (`Stmt::Trace`: one left behind once the phasers
+    /// around it are filtered out must not become a block's value) and the
     /// compile-time binding markers a declaration lowering appends after its
     /// `VarDecl` (`my \x = 1` is `SyntheticBlock[VarDecl, MarkSigillessReadonly]`,
     /// whose value is the declaration's). A trailing phaser IS the last
@@ -28,6 +30,7 @@ impl TailSkip {
     fn skips(self, stmt: &Stmt) -> bool {
         match stmt {
             Stmt::SetLine(_)
+            | Stmt::Trace { .. }
             | Stmt::MarkBind
             | Stmt::MarkBoundContainer(_)
             | Stmt::MarkReadonly(..)

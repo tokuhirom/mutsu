@@ -115,6 +115,8 @@ pub enum RakuAstClass {
     ArgList,
     // Phase 2: variables, declarations, operators.
     VarLexical,
+    // A package-qualified variable `$Foo::v`: a `Name` plus its sigil.
+    VarPackage,
     VarDeclarationSimple,
     InitializerAssign,
     ApplyInfix,
@@ -346,6 +348,7 @@ impl RakuAstClass {
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
+            VarPackage => "RakuAST::Var::Package",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             ApplyInfix => "RakuAST::ApplyInfix",
@@ -537,6 +540,7 @@ impl RakuAstClass {
             | QuotedRegex
             | TypeEnum
             | VarLexical
+            | VarPackage
             | TermReduce
             | Sub
             | Block
@@ -709,6 +713,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::QuotedString"
         | "RakuAST::Type::Enum"
         | "RakuAST::Var::Lexical"
+        | "RakuAST::Var::Package"
         | "RakuAST::Term::Reduce"
         | "RakuAST::Sub"
         | "RakuAST::Block"
@@ -884,6 +889,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
+    RakuAstClass::VarPackage,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::ApplyInfix,
@@ -2499,6 +2505,7 @@ fn multi_field_schema(
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
         ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
         ("RakuAST::PointyBlock", "new") => (RakuAstClass::PointyBlock, &["signature", "body"][..]),
+        ("RakuAST::Var::Package", "new") => (RakuAstClass::VarPackage, &["name", "sigil"][..]),
         ("RakuAST::ParameterTarget::Var", "new") => {
             (RakuAstClass::ParameterTargetVar, &["name"][..])
         }
@@ -2653,6 +2660,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Infix
             | RakuAstClass::Prefix
             | RakuAstClass::VarLexical
+            | RakuAstClass::VarPackage
             | RakuAstClass::StatementExpression
             | RakuAstClass::ApplyInfix
             | RakuAstClass::ApplyPrefix

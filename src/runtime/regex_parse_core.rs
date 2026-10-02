@@ -4804,6 +4804,15 @@ impl Interpreter {
             } else {
                 false
             };
+            // `*!`, `+!`, `?!`: explicit greedy marker, which also allows
+            // backtracking into this quantifier even under `:ratchet`.
+            let explicit_greedy = !token_frugal
+                && !matches!(quant, RegexQuant::One)
+                && chars.peek() == Some(&'!')
+                && {
+                    chars.next();
+                    true
+                };
             // Handle per-token backtracking control. `:` commits to this
             // token; `:!` allows backtracking and `:?` makes it frugal.
             // In Validate mode a `:` immediately followed by an identifier/digit
@@ -4831,6 +4840,8 @@ impl Interpreter {
                     }
                     _ => true,
                 }
+            } else if explicit_greedy {
+                false
             } else {
                 ratchet // inherit from pattern-level :ratchet flag
             };

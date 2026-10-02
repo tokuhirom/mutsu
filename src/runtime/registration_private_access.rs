@@ -106,8 +106,8 @@ struct PrivateAccess<'a> {
     err: Option<RuntimeError>,
 }
 
-impl Visit for PrivateAccess<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for PrivateAccess<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.err.is_some() {
             return;
         }
@@ -129,7 +129,7 @@ impl Visit for PrivateAccess<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.err.is_some() {
             return;
         }
@@ -202,8 +202,8 @@ struct PrivateCallsExist<'a> {
     err: Option<RuntimeError>,
 }
 
-impl Visit for PrivateCallsExist<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for PrivateCallsExist<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.err.is_some() {
             return;
         }
@@ -254,7 +254,7 @@ impl Visit for PrivateCallsExist<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.err.is_some() {
             return;
         }
@@ -300,8 +300,8 @@ struct NestedPrivateCalls<'a> {
     err: Option<RuntimeError>,
 }
 
-impl Visit for NestedPrivateCalls<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for NestedPrivateCalls<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.err.is_some() {
             return;
         }
@@ -311,7 +311,7 @@ impl Visit for NestedPrivateCalls<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.err.is_some() {
             return;
         }

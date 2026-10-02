@@ -194,6 +194,7 @@ impl Compiler {
         self.ltm_alts.push(super::LtmAltTable {
             tok,
             pcs: Box::default(),
+            nfa: Default::default(),
         });
         self.ops.push(RxOp::LtmAlt(table as u32));
         let suppress_padding = self.quant_alt_depth > 0;

@@ -210,11 +210,7 @@ impl Interpreter {
         // must be implemented by the composing class.
         // Non-stub multi methods with ::?CLASS are fine.
         let body_is_stub = {
-            let filtered: Vec<_> = decl
-                .body
-                .iter()
-                .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                .collect();
+            let filtered: Vec<_> = decl.body.iter().filter(|s| !s.is_marker()).collect();
             filtered.len() == 1
                 && matches!(
                     filtered[0],

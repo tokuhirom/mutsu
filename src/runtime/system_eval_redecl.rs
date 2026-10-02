@@ -40,10 +40,7 @@ impl Interpreter {
         // A forward stub body is a single `... { !!! }` / `{ ??? }` placeholder,
         // compiled to a lone `__mutsu_stub_die` / `__mutsu_stub_warn` call.
         let body_is_stub = |body: &[Stmt]| -> bool {
-            let body_no_sl: Vec<_> = body
-                .iter()
-                .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                .collect();
+            let body_no_sl: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
             body_no_sl.len() == 1
                 && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
                     if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn")
@@ -200,7 +197,7 @@ impl Interpreter {
         for stmt in stmts {
             // SetLine markers are interleaved between real statements; they must
             // not reset the "previous statement was `anon`" tracking.
-            if matches!(stmt, Stmt::SetLine(_)) {
+            if stmt.is_marker() {
                 continue;
             }
             let was_anon = prev_was_anon;

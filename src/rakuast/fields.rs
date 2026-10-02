@@ -92,6 +92,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         IntLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
         VarLexical => &[("name", Absent::Required)],
+        VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
         Name => &[("parts", Absent::EmptyList)],
         NamePartSimple => &[("name", Absent::Required)],
         NamePartExpression => &[("expr", Absent::Required)],

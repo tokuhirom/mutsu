@@ -112,3 +112,7 @@ a separate decision when the first rewriting pass wants one.
   `ast::scope_members` (any depth; `unit module` and keep-a-bind-group-whole as explicit
   options) (120 → 109). A role body now keeps a bind group whole like a class body; a `sub
   EXPORT` scan no longer collects from an earlier bare block of the hook.
+- **`'ast` lifetime** (#10468): the trait is `Visit<'ast>` (hooks take `&'ast Stmt` etc.;
+  `visit_name` stays `&str`), so an analysis collects borrows of the nodes it finds. The
+  class body's nested-`has` collection became a visitor on it and now finds a `has` in any
+  position below a method, in source order, as rakudo does (109 → 107).

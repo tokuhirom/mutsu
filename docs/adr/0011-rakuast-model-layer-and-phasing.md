@@ -1,6 +1,8 @@
 # ADR-0011: RakuAST — a reflection/model layer over the internal AST, and its phasing
 
-- **Status**: Accepted (2026-07-18). **Progress (2026-08-02): Phases 1–5 have substantially
+- **Status**: Accepted (2026-07-18); proposed to be superseded by
+  [ADR-10723](10723-rakuast-is-the-frontend-ir.md) (2026-10-02, Proposed).
+  The live inventory link below is dead — the roadmap is [#7564](https://github.com/tokuhirom/mutsu/issues/7564). **Progress (2026-08-02): Phases 1–5 have substantially
   landed** across ~37 slices (PRs #4679, #4729–#4804 and successors) — read (`Q[…].AST` +
   `.gist`), the type-object registry, construction, and `EVAL($tree)` lowering through the
   existing compiler all work, pinned by dual-oracle `t/rakuast-*.t` files that pass under

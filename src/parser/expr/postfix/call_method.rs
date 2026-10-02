@@ -63,6 +63,18 @@ pub(crate) enum ParsedBracketIndex {
 }
 
 pub(crate) fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
+    // A subscript holds a `semilist`, whose statements are numbered for `use trace`.
+    let semilist = crate::parser::stmt::trace::semilist_open(input);
+    let result = parse_bracket_indices_body(input);
+    match (&result, semilist) {
+        (Ok((rest, _)), Some(list)) => list.close_at(ws(rest).map_or(rest, |(r, _)| r)),
+        (Err(_), Some(list)) => list.abandon(),
+        _ => {}
+    }
+    result
+}
+
+fn parse_bracket_indices_body(input: &str) -> PResult<'_, ParsedBracketIndex> {
     // Allow phaser-only blocks (e.g. `%h{ CATCH { } }`) inside subscripts.
     // In Raku this evaluates the block which returns Nil and then indexes
     // the hash with Nil; we represent it as a Whatever placeholder to keep

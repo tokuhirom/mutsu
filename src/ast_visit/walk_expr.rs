@@ -7,7 +7,7 @@ use crate::ast::Expr;
 /// Visits every child of `e` (statements, expressions, parameters, regex
 /// nodes) and reports every identifier `e` itself holds.
 // Cost: O(n), n = size of `e`'s subtree.
-pub(crate) fn walk_expr<V: Visit + ?Sized>(v: &mut V, e: &Expr) {
+pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr) {
     match e {
         Expr::Literal(value) => walk_literal(v, value),
         Expr::ShadowableTermKeyword { name, value } => {

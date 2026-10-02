@@ -326,14 +326,14 @@ struct MentionsTopic {
     found: bool,
 }
 
-impl Visit for MentionsTopic {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for MentionsTopic {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if !self.found {
             walk_stmt(self, stmt);
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         // A code object (block, pointy block, sub, an already-built
         // WhateverCode) binds a `$_` of its own.
         if !self.found && !is_code_object(expr) {
@@ -342,7 +342,7 @@ impl Visit for MentionsTopic {
     }
 
     // A regex binds its own topic.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if kind == NameKind::Var && name == "_" {

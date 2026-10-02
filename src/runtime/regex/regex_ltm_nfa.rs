@@ -128,7 +128,12 @@ pub(super) struct NfaRoot {
     pub(super) accept: u32,
 }
 
-/// One entry of `PatternDerived::ltm_nfa`.
+/// The NFAs built for one pattern, or one compiled `|`'s branches: one entry
+/// per (package, `:i`) they were measured from, stamped with the
+/// `TOKEN_DEFS_GEN` they were built under (building one resolves rule names).
+pub(crate) type LtmNfaSlots = std::sync::Mutex<Vec<LtmNfaSlot>>;
+
+/// One entry of [`LtmNfaSlots`].
 pub(crate) struct LtmNfaSlot {
     pkg: Symbol,
     ignore_case: bool,
@@ -155,6 +160,19 @@ pub(crate) struct LtmMeasure {
 }
 
 impl LtmMeasure {
+    /// The `(prefix_len, litlen)` a `|` branch ranks by (ADR-0022 §4.4). A
+    /// nested sequential alternation can expose its epsilon bypass to the
+    /// prefix measurement even when its first branch has already consumed a
+    /// declarative literal. `litlen` still records that consumed literal, so
+    /// keep the two measurements ordered consistently. Otherwise a later
+    /// branch with a directly visible literal (for example `atom` after a
+    /// nested `func` subrule) outranks the earlier branch despite both
+    /// matching the same full text.
+    // Cost: O(1).
+    pub(crate) fn branch_rank(&self) -> (usize, usize) {
+        (self.len.unwrap_or(0).max(self.litlen), self.litlen)
+    }
+
     /// What a path set that got as far as `furthest` (an accept or a fate)
     /// from `pos` measures: `ll_ends` are the places the `_LL` literals it
     /// crossed ended. The one definition of a measurement, whether one NFA
@@ -217,32 +235,60 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Arc<LtmNfa> {
-        let generation =
-            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        if let Ok(mut slots) = pattern.derived.ltm_nfa.lock() {
-            if slots.iter().any(|slot| slot.generation != generation) {
-                slots.clear();
-            }
-            if let Some(slot) = slots
-                .iter()
-                .find(|slot| slot.pkg == pkg && slot.ignore_case == ignore_case)
-            {
-                return slot.nfa.clone();
-            }
+        let generation = token_generation();
+        if let Some(nfa) = cached_ltm_nfa(&pattern.derived.ltm_nfa, pkg, ignore_case, generation) {
+            return nfa;
         }
         let nfa = Arc::new(super::regex_ltm_nfa_build::NfaBuilder::new(self, 0).build(
             pattern,
             pkg,
             ignore_case,
         ));
-        if let Ok(mut slots) = pattern.derived.ltm_nfa.lock() {
-            slots.push(LtmNfaSlot {
-                pkg,
-                ignore_case,
-                generation,
-                nfa: nfa.clone(),
-            });
-        }
+        store_ltm_nfa(&pattern.derived.ltm_nfa, pkg, ignore_case, generation, &nfa);
         nfa
+    }
+}
+
+/// The token-definition generation an NFA is built under.
+// Cost: O(1).
+pub(super) fn token_generation() -> u64 {
+    crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The NFA in `slots` for (`pkg`, `ignore_case`) built under `generation`. A
+/// slot of another generation is stale and is dropped.
+// Cost: O(k), k = the slots.
+pub(super) fn cached_ltm_nfa(
+    slots: &LtmNfaSlots,
+    pkg: Symbol,
+    ignore_case: bool,
+    generation: u64,
+) -> Option<Arc<LtmNfa>> {
+    let mut slots = slots.lock().ok()?;
+    if slots.iter().any(|slot| slot.generation != generation) {
+        slots.clear();
+    }
+    slots
+        .iter()
+        .find(|slot| slot.pkg == pkg && slot.ignore_case == ignore_case)
+        .map(|slot| slot.nfa.clone())
+}
+
+/// Keep `nfa` in `slots` for the next measurement.
+// Cost: O(1).
+pub(super) fn store_ltm_nfa(
+    slots: &LtmNfaSlots,
+    pkg: Symbol,
+    ignore_case: bool,
+    generation: u64,
+    nfa: &Arc<LtmNfa>,
+) {
+    if let Ok(mut slots) = slots.lock() {
+        slots.push(LtmNfaSlot {
+            pkg,
+            ignore_case,
+            generation,
+            nfa: nfa.clone(),
+        });
     }
 }

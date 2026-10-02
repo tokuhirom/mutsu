@@ -418,9 +418,9 @@ impl InlinePackageSubCollector {
     }
 }
 
-impl Visit for InlinePackageSubCollector {
+impl<'ast> Visit<'ast> for InlinePackageSubCollector {
     // Cost: O(n), n = size of `stmt`'s subtree.
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::Package {
                 name,

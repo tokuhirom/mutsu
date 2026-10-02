@@ -8,6 +8,9 @@ impl Interpreter {
         let mut pairs = Vec::new();
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
+            // A Pair read from a `$` variable (`my $p = a => 1; %h.push(($p,))`)
+            // arrives in its container; look through it.
+            let arg = arg.deref_container().into_descalarized();
             match arg.view() {
                 // Named-flavour Pairs are named arguments at the call boundary,
                 // not entries for Hash.push/append's positional `+new` capture.
@@ -57,6 +60,9 @@ impl Interpreter {
         let mut pairs = Vec::new();
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
+            // A Pair read from a `$` variable (`my $p = a => 1; %h.push(($p,))`)
+            // arrives in its container; look through it.
+            let arg = arg.deref_container().into_descalarized();
             match arg.view() {
                 // See hash_push_collect_pairs: named arguments are not part of
                 // the positional `+new` capture.
@@ -102,7 +108,10 @@ impl Interpreter {
         let value = value.itemize_for_hash_element();
         if let Some(existing) = hash.get(&key) {
             let new_val = match existing.view() {
-                ValueView::Array(arr, ..) => {
+                // For `push` only a real Array is a stack of earlier pushes; an
+                // immutable List value (`push('k' => ('a','b'))`) is one element
+                // to wrap. `append` flattens a List value into the stack.
+                ValueView::Array(arr, kind) if kind.is_real_array() || !is_push => {
                     let mut items = arr.to_vec();
                     if is_push {
                         // push: add value as-is (could be nested array)

@@ -182,8 +182,8 @@ impl DeclScan {
     }
 }
 
-impl Visit for DeclScan {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for DeclScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::ClassDecl {
                 name,
@@ -352,7 +352,7 @@ impl Visit for DeclScan {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             // An L10N distribution's generated EXPORT hook calls
             // `$*LANG.define_slang(...)` instead of `use Slangify`. Read off

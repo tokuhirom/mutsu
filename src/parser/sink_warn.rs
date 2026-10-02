@@ -57,8 +57,8 @@ fn scan_gathers_stmts(stmts: &[Stmt]) {
 
 struct GatherScan;
 
-impl Visit for GatherScan {
-    fn visit_expr(&mut self, expr: &Expr) {
+impl<'ast> Visit<'ast> for GatherScan {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Gather(body) = expr {
             // The gather body is in sink context. This is a separate
             // top-level scan (not fed a `line` from an enclosing walk), so it
@@ -74,7 +74,7 @@ impl Visit for GatherScan {
     // Rakudo does not sink-check a gather inside a signature (a parameter
     // default or `where` clause): measured, `sub f($x = gather { 42; take 1
     // }) { }` warns nothing.
-    fn visit_param(&mut self, _param: &crate::ast::ParamDef) {}
+    fn visit_param(&mut self, _param: &'ast crate::ast::ParamDef) {}
 }
 
 /// Walk a sink-context statement list. `nil_hint` is true when these statements

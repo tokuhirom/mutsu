@@ -22,7 +22,6 @@ src/compiler/helpers_do_expr.rs                      1  # do_if_branch_supported
 src/compiler/helpers_sub_body.rs                     1  # recursion over ParamDef sub-signatures; the Vec<Stmt> is its output, not an AST walk
 src/compiler/mod.rs                                  7  # value-shape classifiers following the value-producing operand (for-iterable bareness family, container-less value) and the for_iterable_source_name spine
 src/compiler/stmt.rs                                 4  # 4 spines: statement-tail value shapes
-src/opcode.rs                                        2  # collect_nested_has_decl_stmts/collect_has_decls_in_scope collect &'a Stmt borrows, which Visit's lifetime-free hooks cannot hand out
 src/param_destructure.rs                             1  # destructure_binds: lowering of a sub-signature into bind statements, recursing over ParamDefs
 src/parser/decl_doc.rs                               1  # stmt_ident: spine to the declaration a SyntheticBlock wrapper ends with
 src/parser/expr/mod.rs                               1  # reassociate_fat_arrow_operand: parser rewrite along the right spine of a loose-logical chain

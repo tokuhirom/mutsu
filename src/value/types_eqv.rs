@@ -296,6 +296,22 @@ impl Value {
                 let b_name = b.name.resolve();
                 !a_name.is_empty() && a_name == b_name && a.package == b.package
             }
+            // A multi dispatcher is one routine however it is reached: the Sub
+            // carrying its captured candidates (`&name`, an import of it) and the
+            // by-name handle a package-qualified `&Pkg::name` evaluates to denote
+            // the same one when their package-qualified names agree. (Rakudo
+            // answers this by comparing the two protos' `.raku`, which spells
+            // neither an id nor a package.)
+            (ValueView::Sub(s), ValueView::Routine { package, name, .. })
+            | (ValueView::Routine { package, name, .. }, ValueView::Sub(s)) => {
+                let handle = if crate::qualified::is_qualified(name) {
+                    name
+                } else {
+                    crate::qualified::qualified(package, name)
+                };
+                s.env.contains_key("__mutsu_multi_dispatch_candidates")
+                    && crate::qualified::qualified(s.package, s.name) == handle
+            }
             // Signature instances: compare by .raku string (structural equality)
             (
                 ValueView::Instance {

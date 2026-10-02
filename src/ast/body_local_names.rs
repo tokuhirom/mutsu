@@ -26,15 +26,15 @@ impl LocalNames<'_> {
     }
 }
 
-impl Visit for LocalNames<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for LocalNames<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         // A nested routine or package body is a scope of its own.
         if !is_scope_declaration(stmt) {
             walk_stmt(self, stmt);
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         // A closure is a scope of its own. A bare `{}` value is walked: the
         // parser lowers some condition-position blocks to it.
         if !matches!(
@@ -46,7 +46,7 @@ impl Visit for LocalNames<'_> {
     }
 
     // A regex code block is a closure of its own.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::VarDecl | NameKind::BlockParam) {

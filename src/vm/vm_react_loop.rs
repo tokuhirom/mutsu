@@ -313,6 +313,10 @@ impl Interpreter {
                             continue;
                         }
                         // Handle on-demand supplies: execute the callback to produce values
+                        // Set when this whenever's LAST phasers wait on a live
+                        // inner subscription of its `supply { }` body instead of
+                        // firing as soon as the body has run.
+                        let defer_last;
                         if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
                             // Execute the on-demand callback, which calls emit on the
                             // emitter. Use a tracked emitter supplier id so that `done`
@@ -428,6 +432,11 @@ impl Interpreter {
                             // transform actually pass values downstream (e.g. Cro
                             // pipelines).
                             let mut early_done = false;
+                            let outer_last_cbs = items
+                                .get(2)
+                                .and_then(crate::runtime::Interpreter::value_array_items)
+                                .unwrap_or_default();
+                            let mut tagged_live = false;
                             for v in emitted {
                                 if crate::runtime::Interpreter::is_supply_subscription_registration(
                                     &v,
@@ -436,15 +445,19 @@ impl Interpreter {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         // Only tag this nested subscription as
                                         // emitter-owned when there is an outer
-                                        // QUIT handler to actually route a die
-                                        // to (the shadow subscription pushed
-                                        // below, which alone polls
-                                        // `on_demand_done`) — otherwise leave
-                                        // it None so a LAST-phaser die keeps
-                                        // propagating raw exactly as before,
-                                        // with no shadow entry to observe it.
-                                        if !quit_callbacks.is_empty() {
+                                        // QUIT handler to route a die to, or
+                                        // outer LAST phasers to fire on its
+                                        // completion (both live on the shadow
+                                        // subscription pushed below, which alone
+                                        // polls `on_demand_done`) — otherwise
+                                        // leave it None so a LAST-phaser die
+                                        // keeps propagating raw exactly as
+                                        // before, with no shadow entry to
+                                        // observe it.
+                                        if !quit_callbacks.is_empty() || !outer_last_cbs.is_empty()
+                                        {
                                             rsub.emitter_supplier_id = Some(emitter_supplier_id);
+                                            tagged_live = true;
                                         }
                                         react_subs.push(rsub);
                                     } else if let Some(early) =
@@ -481,7 +494,17 @@ impl Interpreter {
                             // `closing` callback runs when the supply is closed.
                             let close_cbs =
                                 Self::extract_supply_on_close_callbacks(&attributes.as_map());
-                            if !close_cbs.is_empty() || !quit_callbacks.is_empty() {
+                            // The body only registered a live inner `whenever`
+                            // (`supply { whenever $supplier { emit ... } }`): the
+                            // supply is done when that subscription is, not when
+                            // the body returns. Hand this whenever's LAST phasers
+                            // to the shadow subscription below, whose
+                            // `on_demand_done` the inner one's `SinkEvent::Done`
+                            // resolves — firing them here ran LAST before any
+                            // value arrived.
+                            defer_last =
+                                tagged_live && !body_ran_done && !outer_last_cbs.is_empty();
+                            if !close_cbs.is_empty() || !quit_callbacks.is_empty() || defer_last {
                                 if body_ran_done {
                                     // Synchronous body that ran `done` — closed now.
                                     for close_cb in close_cbs {
@@ -503,6 +526,11 @@ impl Interpreter {
                                         whenever_id,
                                         close_callbacks: close_cbs,
                                         quit_callbacks: quit_callbacks.clone(),
+                                        last_callbacks: if defer_last {
+                                            outer_last_cbs
+                                        } else {
+                                            Vec::new()
+                                        },
                                         on_demand_done: Some(done_promise.clone()),
                                         ..ReactSubscription::new(callback.clone())
                                     });
@@ -527,10 +555,14 @@ impl Interpreter {
                             continue;
                         }
                         // Fire LAST callbacks after the on-demand supply completes
-                        let last_cbs = items
-                            .get(2)
-                            .and_then(crate::runtime::Interpreter::value_array_items)
-                            .unwrap_or_default();
+                        let last_cbs = if defer_last {
+                            Vec::new()
+                        } else {
+                            items
+                                .get(2)
+                                .and_then(crate::runtime::Interpreter::value_array_items)
+                                .unwrap_or_default()
+                        };
                         for last_cb in &last_cbs {
                             match self.call_react_callback(&last_cb.clone(), Vec::new()) {
                                 Err(e) if e.is_react_done() => return Ok(true),

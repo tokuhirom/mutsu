@@ -6,7 +6,7 @@ use crate::ast::Stmt;
 
 /// Visits every statement of `body` through [`Visit::visit_stmt`].
 // Cost: O(n), n = size of `body`'s subtree.
-pub(crate) fn walk_stmts<V: Visit + ?Sized>(v: &mut V, body: &[Stmt]) {
+pub(crate) fn walk_stmts<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, body: &'ast [Stmt]) {
     for stmt in body {
         v.visit_stmt(stmt);
     }
@@ -15,7 +15,7 @@ pub(crate) fn walk_stmts<V: Visit + ?Sized>(v: &mut V, body: &[Stmt]) {
 /// Visits every child of `s` (statements, expressions, parameters, regex
 /// nodes) and reports every identifier `s` itself holds.
 // Cost: O(n), n = size of `s`'s subtree.
-pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
+pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt) {
     match s {
         Stmt::VarDecl {
             name,
@@ -45,7 +45,8 @@ pub(crate) fn walk_stmt<V: Visit + ?Sized>(v: &mut V, s: &Stmt) {
         | Stmt::Succeed
         | Stmt::ReactDone
         | Stmt::SupplyBodyDone
-        | Stmt::SetLine(_) => {}
+        | Stmt::SetLine(_)
+        | Stmt::Trace { .. } => {}
         // A copy of declarations that stay in the tree, where they are walked.
         Stmt::NestedTypeShells(_) => {}
         Stmt::LoopExitGuard {

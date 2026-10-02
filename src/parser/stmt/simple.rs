@@ -74,7 +74,7 @@ pub(in crate::parser) use compile_consts::{
     lookup_compile_time_constant, mark_current_scope_routine_body,
     mark_current_scope_self_available, pop_scope, prepend_anon_state_decls, push_scope,
     record_anon_state_name, register_compile_time_constant, restore_worries, self_available,
-    suppress_worries, worries_suppressed,
+    set_trace_pragma, suppress_worries, trace_pragma_active, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
@@ -185,6 +185,11 @@ pub(in crate::parser) struct LexicalScope {
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).
     worries_suppressed: bool,
+    /// `use trace` lexical pragma: while true, every statement parsed in this
+    /// scope (and the scopes nested in it) gets a `Stmt::Trace` hook ahead of
+    /// it. Inherited via `push_scope`; `no trace` clears it for the rest of the
+    /// scope. See `parser::stmt::trace`.
+    trace_pragma: bool,
     /// `use attributes :D/:U/:_` smiley for unsmileyed attribute types; empty
     /// when no pragma is active. Lexical: a nested scope inherits it and its
     /// own `use attributes` ends with the block.

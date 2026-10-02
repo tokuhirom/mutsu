@@ -175,12 +175,17 @@ impl Interpreter {
         let names = Self::collect_quantified_names_for_token(token);
         if atom_caps.is_empty() {
             // Zero iterations still marks the quantified names, so `$/<name>` is
-            // an empty list rather than one empty Match (see the twin comment in
+            // an empty list rather than one empty Match, and reserves the
+            // positional slots as empty lists (see the twin comment in
             // `match_separated_quantifier`).
-            let mut caps = RegexCaptures::default();
-            for n in names {
-                caps.named.slot_mut(Symbol::intern(&n)).quantified = true;
-            }
+            let caps = separated_capture_delta(
+                &names,
+                &[],
+                &[],
+                None,
+                count_capture_groups(&token.atom),
+                separator_stride(&sep.pattern),
+            );
             return (start, caps);
         }
         let atom_stride = count_capture_groups(&token.atom);

@@ -197,6 +197,11 @@ pub(crate) fn try_interpolate_var<'a>(
             } else {
                 parse_one(content)
             };
+            // The subscript is a `semilist`: its statements are numbered for
+            // `use trace` like those of one written outside a string.
+            if let Some(semilist) = crate::parser::stmt::trace::semilist_open(after_bracket) {
+                semilist.close_at(&after_bracket[end..]);
+            }
             return (
                 Expr::Index {
                     target: Box::new(target),
@@ -245,6 +250,14 @@ pub(crate) fn try_interpolate_var<'a>(
                             .map(|(_, e)| e)
                     };
                     if let Some(index) = index {
+                        // The subscript is a `semilist`: its statements are
+                        // numbered for `use trace` like those of one written
+                        // outside a string.
+                        if let Some(semilist) =
+                            crate::parser::stmt::trace::semilist_open(after_brace)
+                        {
+                            semilist.close_at(&after_brace[end..]);
+                        }
                         return (
                             Expr::Index {
                                 target: Box::new(target),

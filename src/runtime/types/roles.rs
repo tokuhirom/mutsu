@@ -4,11 +4,7 @@ use crate::value::ValueView;
 
 impl Interpreter {
     fn is_runtime_stub_method_def(def: &MethodDef) -> bool {
-        let body: Vec<_> = def
-            .body
-            .iter()
-            .filter(|stmt| !matches!(stmt, Stmt::SetLine(_)))
-            .collect();
+        let body: Vec<_> = def.body.iter().filter(|stmt| !stmt.is_marker()).collect();
         body.len() == 1
             && matches!(
                 body[0],

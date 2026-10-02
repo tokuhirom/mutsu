@@ -106,12 +106,6 @@ impl Lifter<'_> {
 }
 
 impl VisitMut for Lifter<'_> {
-    // TODO: lift from a parameter default too, as rakudo does. A default is
-    // compiled into a standalone chunk that resolves names through the env
-    // (ADR-0133), where the lifted phaser's temp, a level-local slot, is not
-    // visible, so the default would read `Any`. See #10551.
-    fn visit_param_mut(&mut self, _param: &mut crate::ast::ParamDef) {}
-
     // TODO: lift from a regex code block too, as rakudo does. The regex a
     // match runs is not always this tree: a code block that closes over a
     // lexical runs from the copy the literal's value carries (and its source

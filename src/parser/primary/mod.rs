@@ -69,6 +69,12 @@ struct SourceOrigin {
     ptr: usize,
     len: usize,
     newlines: Option<NewlineIndex>,
+    /// The positions at which rakudo's `statement` rule would have been
+    /// attempted (see [`record_statement_attempt`]). `None` unless the source
+    /// mentions `trace`, the only pragma that makes the numbering observable.
+    /// Shared (`Rc`) because [`snapshot_source_state`] clones the origin around
+    /// every nested sub-parse, which must keep appending to its own unit's list.
+    attempts: Option<std::rc::Rc<RefCell<StatementAttempts>>>,
 }
 
 impl SourceOrigin {
@@ -77,6 +83,7 @@ impl SourceOrigin {
         ptr: 0,
         len: 0,
         newlines: None,
+        attempts: None,
     };
 
     fn newlines(&self) -> &[usize] {
@@ -112,9 +119,94 @@ pub(super) fn set_original_source(source: &str) {
             ptr: source.as_ptr() as usize,
             len: source.len(),
             newlines: Some(newlines),
+            attempts: source
+                .contains("trace")
+                .then(|| std::rc::Rc::new(RefCell::new(StatementAttempts::default()))),
         };
     });
     LEAKED_REGIONS.with(|r| r.borrow_mut().clear());
+}
+
+/// The positions at which rakudo's `statement` rule is attempted in the unit
+/// being parsed, which is what its `$*STATEMENT_ID` counts for `use trace`.
+///
+/// mutsu cannot keep a counter: its parser backtracks, and a statement can be
+/// parsed several times -- and, through a speculative pass, *before* the
+/// statement that encloses it has been seen. Each attempt is instead recorded
+/// by source position, once, and a statement's number is the rank of its
+/// position among all of them once the unit is fully parsed
+/// ([`take_statement_numbering`]).
+#[derive(Default)]
+pub(in crate::parser) struct StatementAttempts {
+    /// Sorted source offsets of the attempts.
+    positions: Vec<usize>,
+    /// Whether any `use trace` hook was made, i.e. whether the numbering will
+    /// be read at all.
+    hooked: bool,
+}
+
+/// Record that rakudo's `statement` rule is attempted at `input`, returning the
+/// position's source offset, and whether this call is what recorded it (which a
+/// caller that may have to take the attempt back needs to know, see
+/// [`forget_statement_attempt`]).
+///
+/// `None` when the unit never mentions `trace` (nothing can observe the
+/// numbering, so nothing is recorded) or `input` is not in the source buffer.
+// Cost: O(log a) to locate the position plus O(a) to insert it out of order, a = attempts recorded; an in-order parse appends.
+pub(in crate::parser) fn record_statement_attempt(input: &str) -> Option<(usize, bool)> {
+    let attempts = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone())?;
+    let offset = source_offset(input)?;
+    let mut attempts = attempts.borrow_mut();
+    let fresh = match attempts.positions.binary_search(&offset) {
+        Ok(_) => false,
+        Err(index) => {
+            attempts.positions.insert(index, offset);
+            true
+        }
+    };
+    Some((offset, fresh))
+}
+
+/// Take back an attempt [`record_statement_attempt`] reported as new: the
+/// speculative parse that made it failed, so rakudo never made it either.
+// Cost: O(log a) to locate the position plus O(a) to remove it.
+pub(in crate::parser) fn forget_statement_attempt(input: &str) {
+    let Some(attempts) = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone()) else {
+        return;
+    };
+    let Some(offset) = source_offset(input) else {
+        return;
+    };
+    let mut attempts = attempts.borrow_mut();
+    if let Ok(index) = attempts.positions.binary_search(&offset) {
+        attempts.positions.remove(index);
+    }
+}
+
+/// Whether the unit being parsed records statement attempts at all, i.e.
+/// mentions `trace`. A cheap guard for callers that would do work to find
+/// the position of an attempt.
+pub(in crate::parser) fn records_statement_attempts() -> bool {
+    ORIGINAL_SOURCE.with(|s| s.borrow().attempts.is_some())
+}
+
+/// Note that a `use trace` hook refers to the numbering, so the finished unit
+/// has to have it applied.
+pub(in crate::parser) fn note_statement_hook() {
+    if let Some(attempts) = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone()) {
+        attempts.borrow_mut().hooked = true;
+    }
+}
+
+/// The sorted attempt positions of the unit just parsed, if a `use trace` hook
+/// needs them: the statement with the hook at offset `p` is number
+/// `positions.partition_point(|&q| q < p) + 1`.
+pub(in crate::parser) fn take_statement_numbering() -> Option<Vec<usize>> {
+    let attempts = ORIGINAL_SOURCE.with(|s| s.borrow().attempts.clone())?;
+    let mut attempts = attempts.borrow_mut();
+    attempts
+        .hooked
+        .then(|| std::mem::take(&mut attempts.positions))
 }
 
 /// Opaque snapshot of the parser's source-location state (the `$?LINE` origin

@@ -172,7 +172,9 @@ fn collect_declared_names(
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
-        Stmt::SetLine(_) => Ok(None),
+        // The `use trace` hook is bookkeeping too: rakudo models the trace as a
+        // flag on the traced statement, not as a statement of its own.
+        Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),
         // An expression statement modified by `with`/`without` is wrapped in a
         // `DoStmt` so it keeps expression semantics. The wrapper has no RakuAST
         // counterpart, so convert the `Given` it carries instead of rendering a
@@ -1301,33 +1303,32 @@ fn var_declaration(
     })
 }
 
-/// A `Name.from-identifier("<s>")` node.
+/// The `Name` for an identifier. A `::`-qualified one (`A::B`) is stored as
+/// simple name parts, which Rakudo renders as
+/// `Name.from-identifier-parts("A","B")` — for a declaration's name, a type,
+/// a call or a regex subrule alike (measured on 2026.09); retaining one opaque
+/// `A::B` string would lose observable RakuAST structure. Anything else,
+/// including an operator name that merely contains `::` (`infix:<::=>`),
+/// stays one `Name.from-identifier("<s>")` string.
 fn name_from_identifier(s: &str) -> RakuAstNode {
+    let mut segments = name_parts::identifier_segments(s);
+    let qualified = segments.clone().nth(1).is_some()
+        && segments.all(|seg| {
+            !seg.is_empty()
+                && seg
+                    .chars()
+                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+        });
+    if qualified {
+        return name_parts::name_from_parts(
+            name_parts::identifier_segments(s)
+                .map(name_parts::simple_part)
+                .collect(),
+        );
+    }
     RakuAstNode {
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str(s.to_string()))],
-    }
-}
-
-/// A qualified identifier is represented by simple name-part nodes. Rakudo's
-/// renderer exposes the segment boundary through
-/// `Name.from-identifier-parts(...)`, so retaining one opaque `G::foo` string
-/// would lose observable RakuAST structure.
-fn name_from_identifier_parts(s: &str) -> RakuAstNode {
-    name_parts::name_from_parts(
-        name_parts::identifier_segments(s)
-            .map(name_parts::simple_part)
-            .collect(),
-    )
-}
-
-/// The `Name` for a possibly qualified identifier: `from-identifier` for a
-/// plain one, the segmented parts for a `::`-qualified one.
-fn name_from_possibly_qualified(name: &str) -> RakuAstNode {
-    if name_parts::identifier_segments(name).nth(1).is_some() {
-        name_from_identifier_parts(name)
-    } else {
-        name_from_identifier(name)
     }
 }
 
@@ -2485,7 +2486,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             args,
             ..
         } => {
-            let name_node = name_from_possibly_qualified(name);
+            let name_node = name_from_identifier(name);
             let mut fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
@@ -2510,7 +2511,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             capturing,
             args,
         } => {
-            let name_node = name_from_possibly_qualified(name);
+            let name_node = name_from_identifier(name);
             let mut assertion_fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
@@ -3482,7 +3483,20 @@ fn desugared(name: &str) -> RuntimeError {
 }
 
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
+/// A variable reference. A package-qualified one (`$Foo::v`, `@A::B::c`) is a
+/// `Var::Package` carrying the segmented `Name` and the sigil, as Rakudo
+/// 2026.09 renders it; anything else is a `Var::Lexical` of the whole
+/// spelling.
 fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    if name_parts::is_qualified_identifier(name) {
+        return RakuAstNode {
+            class: RakuAstClass::VarPackage,
+            fields: vec![
+                node_field(Some("name"), name_parts::qualified_name(name)),
+                leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+            ],
+        };
+    }
     RakuAstNode {
         class: RakuAstClass::VarLexical,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],

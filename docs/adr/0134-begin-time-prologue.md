@@ -472,9 +472,10 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   the pragma:
   - `strict`, `newline` and `no strict` / `no fatal` set interpreter modes
     that the block's `ImportScope` region saves and restores. `soft`, `nqp`,
-    `isms`, `v6`, `oo`, `class`, `experimental`, `customtrait`, `warnings`, and
-    `no` of `isms`, `worries`, `precompilation` or `soft`, are no-ops in mutsu.
-    They are repeated.
+    `isms`, `v6`, `oo`, `class`, `experimental`, `customtrait`, `warnings`,
+    `trace` (the parser has already put its `Stmt::Trace` hooks into the body),
+    and `no` of `isms`, `worries`, `precompilation`, `soft` or `trace`, are
+    no-ops in mutsu. They are repeated.
   - `use fatal` also marks a routine compiled after it, and `use variables` /
     `use dynamic-scope` change a variable declaration compiled after it. The
     block puts its pragmas ahead of its copied declarations, so each of these
@@ -483,8 +484,8 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   - Any other pragma still blocks the scope. `use lib` and `use if` act beyond
     the block (mutsu does not yet apply a nested `use lib` at BEGIN time
     either), `use attributes` is not restored on block exit, and a pragma mutsu
-    does not implement (`use worries`, `use trace`) fails at run time, which
-    repeating it would move to startup.
+    does not implement fails at run time, which repeating it would move to
+    startup.
 - **Still not lifted.** A BEGIN that relies on `no strict` to auto-declare a
   variable, since the undeclared name resolves to nothing the unit declares,
   and the pragmas listed above.
@@ -644,7 +645,7 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   binds one object into every frame.
 - **Not lifted.** A phaser of a method of a class declared inside code
   (`sub f { my class K { method m { my $z; INIT $z = 5; $z } } }`): the class
-  does not exist at the unit's level (#10645).
+  does not exist at the unit's level. Lifted since: see the #10645 section below.
 
 **A phaser that ends a routine — implemented** (#10644,
 `src/runtime/begin_prologue/package_phasers.rs`).
@@ -660,3 +661,55 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   walk reads its own), so a list value flattens into an `@` variable
   (`my @a = INIT (1, 2, 3)` has three elements). It was assigned as one
   itemized list.
+
+**INIT and CHECK in a method of a class declared inside code — implemented**
+(#10645, `src/runtime/begin_prologue/nested/phasers.rs`,
+`t/routines/init-check-class-in-routine.t`).
+
+- **The gap.** The walk above enters a class only when every scope around it is a
+  package, because the lifted phaser re-enters each package by name. A class (or
+  role) declared inside a routine or block has no package to re-enter at the
+  unit's level: a `my` class is stored under its declaration site (ADR-0047) and
+  exists only once the code has run its declaration. `sub f { my class K { method
+  m { my $z; INIT $z = 5; $z } }; K.m }` was `(Any)`.
+- **The decision.** A phaser that reads only the lexicals of its method needs no
+  package at all. Its static cells are unit-level slots, and the lifted body
+  names nothing the class declares. So a type the phaser cannot re-enter is
+  walked as a *detached* scope (`Frame::role`, which a role already used): its
+  routines are walked, the phaser is lifted to the unit's INIT/CHECK sequence
+  with no `PackageRuntimeBody` around it, and `movable` (the `package_phasers`
+  rule, with `in_role`) refuses a body that reads `self`, an attribute, `EVAL` or
+  a symbolic name, or a `$?` compile-time variable, while the scope's own
+  declarations are opaque bindings, so a body that reads one is left where it is.
+  A class nested in such a type is walked the same way.
+- **What it did not cover.** A phaser of such a class that reads nothing of its
+  method was not lifted (`needs_scope`), so it still ran when the enclosing code
+  ran the declaration, and not at all when that code never ran (#10711, below).
+
+**INIT and CHECK in a class declared inside code, whatever they read — implemented**
+(#10711, `src/runtime/begin_prologue/nested/phasers.rs`,
+`t/control/init-check-class-in-code-timing.t`).
+
+- **The gap.** Every `INIT`/`CHECK` of a class declared inside a routine or block
+  (in its body or in a method) ran when the enclosing code ran the declaration:
+  never, if that code never ran, and otherwise at that call and not at program
+  start.
+- **The decision.** The earlier section's observation holds for every such
+  phaser: one that reads nothing of the class needs no package either. What it
+  may still read of the class is its own scope, so the body of a class declared
+  inside code is walked like a routine's body (`walk_list`), not as an opaque set
+  of members: its `my` lexicals get static cells (the class declaration runs its
+  body each time the code runs, as a block does), and a routine its body declares
+  is copied into the lifted phaser (a `sub` of a package, by contrast, is reached
+  by re-entering the package). A phaser in such a class is lifted whether or not
+  it reads something of an inner scope (`needs_scope` is waived in a detached
+  type), since the per-level handling it replaces is wrong for all of them.
+- **What stays.** The class itself does not exist at the unit's level, so a phaser
+  that names it keeps the per-level handling (the class is a type with no copy,
+  `TypeDecl::copy`, in its own scope). So does a phaser in a class whose body
+  declares a `token`, `rule` or `proto` (a grammar), which blocks the scope, and
+  `BEGIN` in the body of a class declared inside code, which was never lifted.
+- **A fix on the way.** A `sub` declared in a *method* of a package class was not
+  recorded as a routine of that scope (the walk skipped every routine inside a
+  package), so an `INIT` of the method that called it failed with `Unknown
+  function`. Only the routines a package's own body declares are skipped now.

@@ -8,8 +8,8 @@ fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSe
     struct DeclScan<'a> {
         out: &'a mut std::collections::HashSet<String>,
     }
-    impl crate::ast_visit::Visit for DeclScan<'_> {
-        fn visit_stmt(&mut self, stmt: &Stmt) {
+    impl<'ast> crate::ast_visit::Visit<'ast> for DeclScan<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             if let Stmt::VarDecl { name, is_our, .. } = stmt
                 && !*is_our
             {
@@ -17,7 +17,7 @@ fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSe
             }
             super::scope_scan::walk_stmt_own_scope(self, stmt);
         }
-        fn visit_expr(&mut self, expr: &Expr) {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
             if !super::scope_scan::opens_own_scope(expr) {
                 crate::ast_visit::walk_expr(self, expr);
             }
@@ -1488,8 +1488,8 @@ struct TopicMutationScan {
     found: bool,
 }
 
-impl crate::ast_visit::Visit for TopicMutationScan {
-    fn visit_expr(&mut self, e: &Expr) {
+impl<'ast> crate::ast_visit::Visit<'ast> for TopicMutationScan {
+    fn visit_expr(&mut self, e: &'ast Expr) {
         if self.found || super::scope_scan::is_code_object(e) {
             return;
         }
