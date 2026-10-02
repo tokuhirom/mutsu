@@ -3266,6 +3266,7 @@ impl Interpreter {
             lexsub_latest_cells: Default::default(),
             escaped_our_lexical_cells: ValueMap::default(),
             escaping_our_lexical_names: Default::default(),
+            escaping_our_env_param_names: Default::default(),
             escaped_our_sub_names: Default::default(),
             our_scalar_cell_names: Default::default(),
             state_vars: HashMap::new(),

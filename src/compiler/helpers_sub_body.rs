@@ -782,6 +782,20 @@ impl Compiler {
                         .is_some_and(|c| c.is_ascii_alphabetic())
                 })
             });
+            // A slotless `for -> $i` parameter has no declaration site to box
+            // at; a `GLOBAL` mainline block (which does not bind per-activation
+            // aliases, see `binds_lexsub_free_vars`) hands it to `RegisterSub`.
+            if !self.binds_lexsub_free_vars() {
+                for sym in &esc {
+                    let name = sym.resolve();
+                    if !self.local_map.contains_key(&name)
+                        && self.for_param_names.contains(&name)
+                        && !self.code.escaping_our_env_params.contains(sym)
+                    {
+                        self.code.escaping_our_env_params.push(*sym);
+                    }
+                }
+            }
             self.code.escaping_our_sub_captures.push(esc);
         }
         let key = crate::symbol::Symbol::intern(&key);
