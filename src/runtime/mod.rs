@@ -921,6 +921,7 @@ mod resolution_lazy;
 pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
 mod resolution_method;
+mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) mod return_target;
