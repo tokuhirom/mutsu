@@ -3298,13 +3298,15 @@ impl Interpreter {
                     if let Some(constraint) = &pd.type_constraint {
                         value = wrap_native_int_for_binding(constraint, value)?;
                     }
-                    // Implicit Any constraint: untyped $ parameters default to Any,
-                    // which rejects Junction (a direct subtype of Mu, not Any).
+                    // Untyped routine $ parameters default to Any, which
+                    // rejects Junction (a direct subtype of Mu, not Any).
+                    // A block parameter defaults to Mu and accepts it.
                     // Skip when a where constraint is present: the where clause
                     // handles the type checking, and junctions should be passed
                     // through to the where clause for proper checking.
                     if pd.type_constraint.is_none()
                         && pd.where_constraint.is_none()
+                        && !pd.block_param
                         && !pd.name.starts_with('@')
                         && !pd.name.starts_with('%')
                         && !pd.name.starts_with('&')
