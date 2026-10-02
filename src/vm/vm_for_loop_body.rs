@@ -372,6 +372,20 @@ impl Interpreter {
                         .as_ref()
                         .map(Value::view)
                     {
+                        // When every item already IS an element cell, the
+                        // container-aware `.values` producer has done the
+                        // aliasing (`hash_element_producer`): each iteration
+                        // binds the cell and retires its writeback, so neither
+                        // the keys nor the per-iteration `HashValue` re-lookup
+                        // they enable would ever be used. This is the `%` twin
+                        // of `plan_for_element_alias` declining `@a.values`.
+                        Some(ValueView::Hash(_))
+                            if source.starts_with('%')
+                                && !chunked_items.is_empty()
+                                && chunked_items.iter().all(Value::is_container_ref) =>
+                        {
+                            None
+                        }
                         Some(ValueView::Hash(hash_items)) if source.starts_with('%') => {
                             Some(hash_items.keys().cloned().collect())
                         }

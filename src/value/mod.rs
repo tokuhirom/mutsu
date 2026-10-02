@@ -621,6 +621,7 @@ pub(crate) use map_grep_items::MapGrepItems;
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;
+mod hash_slot;
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
