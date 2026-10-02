@@ -662,7 +662,8 @@ impl Interpreter {
                 ));
             }
         };
-        let single = format!("{opkg}::{oname}");
+        let single = crate::qualified::qualified(Symbol::intern(&opkg), Symbol::intern(&oname));
+        let single = single.as_str();
         let multi_prefix = format!("{single}/");
         let defs: Vec<_> = self
             .registry()
@@ -679,6 +680,8 @@ impl Interpreter {
                 "Cannot add dispatchee: no routine named '{oname}' found"
             )));
         }
+        let proto_key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        let proto_key = proto_key.as_str();
         for def in defs {
             let positional: Vec<_> = def
                 .param_defs
@@ -692,9 +695,9 @@ impl Interpreter {
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let key = if types.iter().any(|t| *t != "Any") {
-                format!("{package}::{name}/{}:{}", positional.len(), types.join(","))
+                format!("{proto_key}/{}:{}", positional.len(), types.join(","))
             } else {
-                format!("{package}::{name}/{}", positional.len())
+                format!("{proto_key}/{}", positional.len())
             };
             self.insert_multi_overload(&key, (*def).clone());
         }
