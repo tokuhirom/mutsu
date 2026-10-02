@@ -44,7 +44,7 @@ impl Interpreter {
         match args[1].as_str() {
             Some(name)
                 if self.registry().any_raw_invocant_method
-                    || crate::runtime::raw_invocant::native_method_returns_raw_invocant(name) => {}
+                    || crate::runtime::raw_invocant::native_method_boxes_lvalue_invocant(name) => {}
             // A non-`Str` method name cannot happen from the compiler, but a
             // dynamic spelling could in principle; fall back to the full oracle
             // rather than silently declining.
@@ -77,7 +77,7 @@ impl Interpreter {
         };
         let method = args[1].to_string_value();
         let method_args = Self::lvalue_method_args(&args[2]);
-        if !self.method_returns_raw_invocant(&inner, &method, &method_args) {
+        if !self.lvalue_call_boxes_invocant(&inner, &method, &method_args) {
             return;
         }
         if let Some(cell) = self.capture_lvalue_invocant_cell(code, &name, inner, slot_hint) {

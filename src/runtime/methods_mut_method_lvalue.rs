@@ -214,6 +214,12 @@ impl Interpreter {
         {
             return Ok(assigned);
         }
+        // A native method that writes through its raw invocant
+        // (`native_method_writes_raw_invocant`): the VM boxed the invocant, so
+        // hand the container itself to the method's own write.
+        if method == "substr-rw" && target.is_container_ref() {
+            return self.assign_substr_rw(target_var, target, method_args, value);
+        }
         // The invocant was boxed for the gate above but no raw-invocant write
         // happened (the callee handed back a plain value, or a user method
         // declined). Every path below matches on `Instance`/`Array`/`Hash`
