@@ -548,7 +548,24 @@ impl Interpreter {
             // `.gist`/`.Str` call poisoning a following `self.pairs`). The real
             // dispatch always re-resolves WITH the invocant, so deferring the
             // decision to it loses nothing.
-            if !default_winner && mro_narrowed.len() > 1 && !all_named && invocant.is_some() {
+            // A bind-check winner (a `where`, a subset, a literal or a
+            // destructuring sub-signature) is never ambiguous either: rakudo
+            // trial-binds tied candidates and the first declared that binds
+            // wins (#11027), as the sub dispatch's
+            // `candidate_uses_order_sensitive_dispatch` does.
+            let bind_check_winner = self.params_use_order_sensitive_dispatch(
+                all_matches[best_idx]
+                    .1
+                    .param_defs
+                    .iter()
+                    .filter(|p| !p.is_invocant),
+            );
+            if !default_winner
+                && !bind_check_winner
+                && mro_narrowed.len() > 1
+                && !all_named
+                && invocant.is_some()
+            {
                 self.dispatch_ambiguous = true;
             }
         }

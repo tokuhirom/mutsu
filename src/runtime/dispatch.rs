@@ -78,10 +78,28 @@ impl Interpreter {
         visible
     }
 
+    /// Whether `def` is a bind-check candidate: tied with another, the one
+    /// declared first that binds wins instead of the call being ambiguous.
     pub(super) fn candidate_uses_order_sensitive_dispatch(&self, def: &FunctionDef) -> bool {
-        Self::dispatch_visible_params(def).into_iter().any(|p| {
+        self.params_use_order_sensitive_dispatch(Self::dispatch_visible_params(def))
+    }
+
+    /// The per-parameter half of
+    /// [`Interpreter::candidate_uses_order_sensitive_dispatch`], shared with
+    /// method dispatch: a literal, a `where` clause, a subset type, or a
+    /// destructuring sub-signature (`@ ($x)`, whatever it nests -- rakudo
+    /// trial-binds it, #11027). A named parameter's rename parens
+    /// (`:key($k)`) are not a destructure.
+    // Cost: O(p), p = parameters; one registry lookup per typed parameter.
+    pub(crate) fn params_use_order_sensitive_dispatch<'a>(
+        &self,
+        params: impl IntoIterator<Item = &'a ParamDef>,
+    ) -> bool {
+        params.into_iter().any(|p| {
             p.literal_value.is_some()
                 || p.where_constraint.is_some()
+                || (p.sub_signature.is_some()
+                    && !crate::runtime::types::is_named_rename_sub_signature(p))
                 || p.type_constraint
                     .as_deref()
                     .map(Self::constraint_base_name)
