@@ -22,6 +22,12 @@ use super::*;
 use crate::builtins::methods_0arg::raku_repr::{needs_raku_dispatch, raku_value};
 use crate::runtime::container_needs_raku_dispatch;
 
+/// The interned `raku` method name.
+fn raku_sym() -> crate::symbol::Symbol {
+    static SYM: std::sync::OnceLock<crate::symbol::Symbol> = std::sync::OnceLock::new();
+    *SYM.get_or_init(|| crate::symbol::Symbol::intern("raku"))
+}
+
 impl Interpreter {
     /// The `(repr)` suffix naming `val` in a type-check message, or `""` when it
     /// has none. A value the pure renderer can spell (numbers, strings, `Pair`s,
@@ -49,7 +55,17 @@ impl Interpreter {
             Some(Ok(text)) => Some(text),
             _ => None,
         };
+        // A built-in object type keeps its `.raku` in a native method handler,
+        // not in the user-class attribute dump below (#10677): the pure table
+        // for a `Blob`/`Buf`, the native instance handlers for an `IO::Path`.
         let text = user
+            .or_else(
+                || match crate::builtins::native_method_0arg(val, raku_sym()) {
+                    Some(Ok(text)) => Some(text),
+                    _ => None,
+                },
+            )
+            .or_else(|| self.native_instance_raku(val))
             .or_else(|| match self.default_instance_repr(val, "raku", &[]) {
                 Some(Ok(text)) => Some(text),
                 _ => None,
@@ -57,6 +73,25 @@ impl Interpreter {
             .map(|text| text.to_string_value())
             .unwrap_or_else(|| raku_value(val));
         utils::short_repr_of_raku(&text)
+    }
+
+    /// `.raku` from the native instance handlers of a built-in class
+    /// (`IO::Path`, ...), when the class has one.
+    fn native_instance_raku(&mut self, val: &Value) -> Option<Value> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = val.view()
+        else {
+            return None;
+        };
+        let class_name = class_name.resolve();
+        if !self.is_native_method(&class_name, "raku") {
+            return None;
+        }
+        self.call_native_instance_method(&class_name, &attributes.as_map(), "raku", Vec::new())
+            .ok()
     }
 
     /// The `X::TypeCheck::Assignment` for storing `val` into `var_name`
