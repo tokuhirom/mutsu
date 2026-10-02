@@ -849,6 +849,31 @@ pub(crate) enum DoBlockIsolation {
     Lexical,
 }
 
+/// Which routines an [`OpCode::GetLexicalStash`] adds to the frame's baked
+/// lexicals. Routines and imports are not compiler scope-frame entries (a
+/// `use` installs them at run time), so the compiler records instead which
+/// kind of pad the stash names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LexicalStashRoutines {
+    /// A compunit or routine root: every routine visible here by name.
+    // TODO: a routine's own pad does not hold the routines it merely sees
+    // from outer scopes (rakudo's `sub r { MY::<&foo> }` is Nil); narrowing
+    // this needs the compiler to keep a per-unit routine table.
+    All,
+    /// A nested block that imports nothing itself: no routine beyond the
+    /// `&name` entries its own declarations put in the baked frame.
+    None,
+    /// A nested block with a `use`/`import` of its own: the routines that
+    /// block imported, read from its run-time import scope, which sits `skip`
+    /// import scopes below the innermost one.
+    OwnImports { skip: u32 },
+}
+
+/// The slot an [`OpCode::GetLexicalStash`] spec entry carries for a routine
+/// the frame declares (as opposed to a variable: a slot, or -1 for an
+/// env-only one). Its value is resolved by name as a routine.
+pub(crate) const LEXICAL_STASH_ROUTINE_SLOT: i64 = -2;
+
 /// Which jump target of an [`OpCode::LoopExitGuard`] to patch.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LoopExitGuardField {
@@ -1326,7 +1351,11 @@ pub(crate) enum OpCode {
     /// Build a lexical pseudo-stash from a compiler-baked scope description.
     /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an
     /// inner `MY::` cannot accidentally expose captured outer variables.
-    GetLexicalStash(u32),
+    /// `routines` says which routines the pad holds besides those entries.
+    GetLexicalStash {
+        spec_idx: u32,
+        routines: LexicalStashRoutines,
+    },
     /// Replace the role *group* type object on the stack with the INDIVIDUAL
     /// parametric role that was just declared (the group's current candidate).
     /// Emitted right after a `role` declaration used in expression position, so
@@ -9031,7 +9060,7 @@ impl CompiledCode {
                 | OpCode::GetCallerOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
                 | OpCode::GetPseudoStashKeyed(_)
-                | OpCode::GetLexicalStash(_)
+                | OpCode::GetLexicalStash { .. }
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,

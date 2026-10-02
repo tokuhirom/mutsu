@@ -1,6 +1,7 @@
 //! Pseudo-stash reads: `Pkg::`, `OUTER::`, `MY::`, `DYNAMIC::`, `CALLER::`, and the
 //! fused one-key read `Pkg::<$x>` (`GetPseudoStashKeyed`).
 use super::*;
+use crate::opcode::{LEXICAL_STASH_ROUTINE_SLOT, LexicalStashRoutines};
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -215,7 +216,12 @@ impl Interpreter {
     /// compiler. Each entry is `[display-key, bare-name, depth, slot]`; a
     /// non-negative slot is live in this frame, while an outer-frame entry is
     /// resolved through the same captured lexical path as `GetOuterVar`.
-    pub(super) fn exec_get_lexical_stash_op(&mut self, code: &CompiledCode, spec_idx: u32) {
+    pub(super) fn exec_get_lexical_stash_op(
+        &mut self,
+        code: &CompiledCode,
+        spec_idx: u32,
+        routines: LexicalStashRoutines,
+    ) {
         let mut entries: ValueMap = ValueMap::default();
         let Some(ValueView::Array(spec, _)) =
             code.constants.get(spec_idx as usize).map(Value::view)
@@ -246,7 +252,12 @@ impl Interpreter {
                 continue;
             };
             let depth = depth.max(0) as usize;
-            let value = if depth == 0 {
+            let value = if slot == LEXICAL_STASH_ROUTINE_SLOT
+                && let Some(routine) = name.strip_prefix('&')
+            {
+                // A routine the frame declares (`Compiler::scope_routine_decls`).
+                self.resolve_code_var(routine)
+            } else if depth == 0 {
                 if slot >= 0 {
                     self.locals
                         .get(slot as usize)
@@ -277,10 +288,23 @@ impl Interpreter {
             entries.entry(display).or_insert_with(|| value.clone());
         }
         // Imports are not compiler declarations, but Raku exposes their
-        // aliases through the importing compunit's lexical pad. Keep them
+        // aliases through the importing scope's lexical pad. Keep them
         // separate from the flattened environment so `MY::` still excludes
-        // enclosing lexicals (and `OUTER::MY::` can see the import).
+        // enclosing lexicals (and `OUTER::MY::` can see the import). A nested
+        // block's pad holds only what its own `use`s imported (#10626).
+        let own_imports = match routines {
+            LexicalStashRoutines::All => None,
+            LexicalStashRoutines::None => Some(None),
+            LexicalStashRoutines::OwnImports { skip } => {
+                Some(self.import_scopes().len().checked_sub(skip as usize + 1))
+            }
+        };
         for (key, display) in &self.imported_env_aliases {
+            if let Some(scope) = own_imports
+                && !scope.is_some_and(|i| self.import_scopes()[i].imported_env_keys.contains(key))
+            {
+                continue;
+            }
             let key = key.resolve();
             if self.should_hide_from_my_global_stash(&key) {
                 continue;
@@ -291,9 +315,33 @@ impl Interpreter {
                     .or_insert_with(|| value.clone());
             }
         }
-        self.add_visible_routines_to_pseudo_stash(&mut entries);
+        match own_imports {
+            None => self.add_visible_routines_to_pseudo_stash(&mut entries),
+            Some(Some(scope)) => self.add_scope_imported_routines(scope, &mut entries),
+            Some(None) => {}
+        }
         let stash = self.pseudo_stash_hash(entries);
         self.stack.push(stash);
+    }
+
+    /// Add the routines the block owning `import_scopes()[scope]` imported.
+    // Cost: O(a * p), a = routines that block imported, p = bare-name packages.
+    fn add_scope_imported_routines(&self, scope: usize, entries: &mut ValueMap) {
+        let packages = self.bare_name_packages_syms();
+        for &alias in &self.import_scopes()[scope].own_routine_imports {
+            let name = crate::qualified::unqualified_part(alias);
+            if !packages
+                .iter()
+                .any(|&package| crate::qualified::qualified(package, name) == alias)
+            {
+                continue;
+            }
+            let name = name.resolve();
+            let value = self.resolve_code_var(&name);
+            if !value.is_nil() {
+                entries.entry(format!("&{name}")).or_insert(value);
+            }
+        }
     }
 
     /// Wrap a lexical-pad snapshot as a `PseudoStash`.
