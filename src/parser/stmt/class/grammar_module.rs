@@ -100,6 +100,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         return Err(null_regex_error());
     }
     let source_pattern = normalize_token_pattern(&pattern);
+    reject_attribute_in_regex_decl(&source_pattern)?;
     let regex_kind = if is_rule {
         crate::regex_tree::RegexDeclKind::Rule
     } else if is_regex {
@@ -366,4 +367,30 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     }
     stmts.push(package_stmt);
     Ok((rest, Stmt::SyntheticBlock(stmts)))
+}
+
+/// Reject an attribute variable used inside a `token`/`regex`/`rule` body at
+/// compile time, as rakudo does (`X::Attribute::Regex`: a regex is a method on
+/// the Cursor, so `$!a` is never the enclosing class's attribute).
+///
+/// TODO: run the full structural regex validation on declaration bodies (as
+/// regex literals already get) instead of surfacing only this one error. The
+/// other errors it reports have not yet been checked against real grammars in
+/// declaration bodies, so they stay deferred to match time for now.
+fn reject_attribute_in_regex_decl(pattern: &str) -> Result<(), PError> {
+    let Err(err) = crate::runtime::regex_parse::validate_regex_structurally(pattern) else {
+        return Ok(());
+    };
+    let Some(ex) = err.exception else {
+        return Ok(());
+    };
+    let is_attribute_error = matches!(
+        ex.view(),
+        crate::value::ValueView::Instance { class_name, .. }
+            if class_name.resolve() == "X::Attribute::Regex"
+    );
+    if is_attribute_error {
+        return Err(PError::fatal_with_exception(err.message.into_owned(), ex));
+    }
+    Ok(())
 }
