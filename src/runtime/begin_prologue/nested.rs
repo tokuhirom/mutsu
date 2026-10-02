@@ -53,7 +53,10 @@
 //!   calls a routine that is neither one of the scope's nor a core one (which
 //!   may evaluate a string where it was called from), in a scope that declares
 //!   a routine or a type, since it cannot say which one it needs;
-//! - it sits in a package body;
+//! - it sits in a body that cannot give it what it reads (a role or a class
+//!   declared in code that reads `self`, a `$?` variable or `$*PACKAGE`; see
+//!   [`phasers`]). A `BEGIN` of a class or package body, or of one of its
+//!   routines, is run at BEGIN time (#10328);
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);
 //! - it reads a `state`, `constant` or group-declared inner lexical.
@@ -88,6 +91,10 @@ pub(super) struct Lifted {
     pub(super) decls: Vec<Stmt>,
     /// One statement-form `BEGIN` per lifted effect, in source order.
     pub(super) effects: Vec<Stmt>,
+    /// The `BEGIN`s lifted out of the routines of a package body, in source
+    /// order. Each re-enters its package, so it follows the statement's own
+    /// declaration in the prologue ([`phasers`]).
+    pub(super) package_effects: Vec<Stmt>,
     /// One top-level `INIT` or `CHECK` per phaser lifted out of the statement
     /// being walked ([`phasers`]). They precede the statement; the caller
     /// takes them after each statement.
@@ -160,10 +167,6 @@ struct Frame {
     routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
-    /// A package body only: the member being walked, and the `BEGIN`s lifted
-    /// out of it, which are inserted ahead of that member ([`phasers`]).
-    member: usize,
-    inserts: Vec<(usize, Stmt)>,
     /// The package this scope is the body of, when a lifted `INIT` or `CHECK`
     /// has to re-enter it ([`phasers`]).
     package: Option<Enclosing>,
@@ -349,23 +352,22 @@ impl Walker<'_> {
         }
         let inner = vec![Stmt::Block(FrameBlock::nest(blocks, inner))];
         if begin {
-            let effect = Stmt::Phaser {
+            // A BEGIN written in a routine of a package re-enters the package,
+            // so it runs once the package is declared: it follows the
+            // declaration in the prologue (#10328).
+            let in_package = self.innermost_package_frame().is_some();
+            let body = self.run_in_packages(inner);
+            let effects = if in_package {
+                &mut self.lifted.package_effects
+            } else {
+                &mut self.lifted.effects
+            };
+            effects.push(Stmt::Phaser {
                 kind: PhaserKind::Begin,
-                body: inner,
+                body,
                 condition: None,
                 end_index: None,
-            };
-            // A BEGIN written in a package runs while the package is declared,
-            // in source order with the body's own BEGINs: it becomes a member
-            // of the package body, ahead of the member it was written in
-            // (#10328). Any other goes to the prologue.
-            match self.innermost_package_frame() {
-                Some(frame) => {
-                    let member = self.frames[frame].member;
-                    self.frames[frame].inserts.push((member, effect));
-                }
-                None => self.lifted.effects.push(effect),
-            }
+            });
         } else {
             let body = self.run_in_packages(inner);
             self.lifted.phasers.push(Stmt::Phaser {

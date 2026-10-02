@@ -61,6 +61,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     };
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
+    let mut package_effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
     // The compile-time composition of the `our` types declared in each
     // statement's code (#10494) is a BEGIN-time effect too. It is collected
     // after the lift, so a type declared in a lifted BEGIN registers there
@@ -88,6 +89,9 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
             unit.strict_off = off;
         }
         effects.push(lifted.effects.split_off(before));
+        // A BEGIN of a package's routine follows the declaration it re-enters
+        // (#10328).
+        package_effects.push(std::mem::take(&mut lifted.package_effects));
         let shells = crate::compiler::nested_type_decls(stmt);
         composes_role |= shells
             .iter()
@@ -107,7 +111,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),
     // so the prologue reaches the last of them too.
     let last_effect = stmts.iter().rposition(is_begin_time_effect);
-    let last_lifted = effects.iter().rposition(|e| !e.is_empty());
+    let last_lifted = effects
+        .iter()
+        .zip(&package_effects)
+        .rposition(|(before, after)| !before.is_empty() || !after.is_empty());
     let last_shell = type_shells.iter().rposition(Option::is_some);
     let last_composed = composed_early.iter().rposition(|early| *early);
     let Some(last) = last_effect
@@ -138,9 +145,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     let mut prologue = moved_slots;
     prologue.extend(decls);
     let mut rest = Vec::new();
-    for (((stmt, stmt_effects), shells), phasers) in std::mem::take(stmts)
+    for ((((stmt, stmt_effects), late_effects), shells), phasers) in std::mem::take(stmts)
         .into_iter()
         .zip(effects)
+        .zip(package_effects)
         .zip(type_shells)
         .zip(moved_phasers)
     {
@@ -154,6 +162,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         // After the statement's own declaration part: a class whose methods
         // declare the nested types is registered by then.
         prologue.extend(shells);
+        prologue.extend(late_effects);
     }
     rest.extend(tail);
     *stmts = rest;

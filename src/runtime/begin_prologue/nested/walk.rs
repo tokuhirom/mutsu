@@ -56,21 +56,6 @@ impl Walker<'_> {
     pub(super) fn finish_scope(&mut self, list: &mut Vec<Stmt>) {
         let len = list.len();
         let frame = self.frames.pop().expect("a scope is being walked");
-        // The `BEGIN`s lifted into a package body go ahead of the member they
-        // were written in.
-        if !frame.inserts.is_empty() {
-            debug_assert!(frame.edits.is_empty(), "a package body takes no edits");
-            let mut inserts = frame.inserts;
-            inserts.reverse();
-            let mut out = Vec::with_capacity(len + inserts.len());
-            for (i, stmt) in std::mem::take(list).into_iter().enumerate() {
-                while inserts.last().is_some_and(|(at, _)| *at == i) {
-                    out.extend(inserts.pop().map(|(_, effect)| effect));
-                }
-                out.push(stmt);
-            }
-            *list = out;
-        }
         if frame.edits.is_empty() {
             return;
         }

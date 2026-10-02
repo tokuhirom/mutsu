@@ -1,5 +1,5 @@
 //! INIT and CHECK phasers that read a lexical of the routine they are written
-//! in (ADR-0134 §7, #10562).
+//! in (ADR-0134 §7, #10562), and the BEGINs of package bodies (#10328).
 //!
 //! Rakudo runs an `INIT` once, at the start of the program, and a `CHECK` once,
 //! at the end of compilation, wherever they are written. Both see the lexicals
@@ -45,6 +45,24 @@
 //!   the code runs the declaration, and never if that code never runs. A phaser
 //!   that names the class itself (which does not exist at the unit's level) stays
 //!   where it is.
+
+//! # BEGIN in a package body (#10328)
+//!
+//! A `BEGIN` written in a class, package or role body, or in one of its routines
+//! (a method included), runs at BEGIN time like any other:
+//!
+//! - **In the body itself of a class or package.** It stays where it is: it runs
+//!   while the package is declared, in source order with the declaration's other
+//!   effects, and it may change the package (`::?CLASS.^add_role(...)`) ahead of
+//!   the members that rely on the change. The unit declares such a package in the
+//!   prologue, so the declaration runs ahead of the mainline.
+//! - **In a routine of a class or package.** It is lifted like an `INIT`: static
+//!   cells for the routine's lexicals, and the lifted body runs inside a
+//!   [`Stmt::PackageRuntimeBody`] of each enclosing package. It follows the
+//!   package's declaration in the prologue, so the package is composed by then.
+//! - **In a role, or a class declared in code.** Lifted to the prologue with no
+//!   package, as the `INIT`s of such a type are. A body that reads `self`, a
+//!   `$?` variable or `$*PACKAGE` stays where it is.
 
 use super::routines::{Dependencies, FrameBlock};
 use super::{Binding, BindingKind, Frame, Walker};
@@ -238,11 +256,10 @@ impl Walker<'_> {
         let in_package = frame.package.is_some();
         self.frames.push(frame);
         // A BEGIN written directly in a package body already runs while the
-        // package is declared, so it stays; the package only has to be declared
-        // in the prologue (#10328).
+        // package is declared (it may change the package: `^add_role`), so it
+        // stays; the package only has to be declared in the prologue (#10328).
         let mut declares_begin = false;
         for (i, member) in body.iter_mut().enumerate() {
-            self.current_frame().member = i;
             let walked = match member {
                 Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => true,
                 // A class is walked in any body; a package only in a package.
@@ -266,7 +283,7 @@ impl Walker<'_> {
                 self.walk_stmt(member, Some((i, false)));
             }
         }
-        if in_package && (declares_begin || !self.current_frame().inserts.is_empty()) {
+        if declares_begin {
             self.lifted.needs_prologue = true;
         }
         self.finish_scope(body);
