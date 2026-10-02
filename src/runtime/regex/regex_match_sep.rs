@@ -134,7 +134,7 @@ impl Interpreter {
         let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
             return Vec::new();
         };
-        let atom_stride = count_capture_groups(&token.atom);
+        let atom_stride = count_capture_groups(token);
         let sep_stride = separator_stride(&sep.pattern);
         let names = Self::collect_quantified_names_for_token(token);
 
