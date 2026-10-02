@@ -6038,19 +6038,21 @@ impl Interpreter {
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 // A method call, for `resolve_onlystar` (#10746).
-                let result = self.in_method_call(|vm| {
-                    vm.exec_hyper_method_call_op(
-                        code,
-                        *name_idx,
-                        *arity,
-                        *modifier_idx,
-                        *quoted,
-                        *target_name_idx,
-                        *arg_sources_idx,
-                    )
+                let result = self.run_take_deferring_op(|vm| {
+                    vm.in_method_call(|vm| {
+                        vm.exec_hyper_method_call_op(
+                            code,
+                            *name_idx,
+                            *arity,
+                            *modifier_idx,
+                            *quoted,
+                            *target_name_idx,
+                            *arg_sources_idx,
+                        )
+                    })
                 });
                 match result {
-                    Ok(()) => {}
+                    Ok(()) => self.suspend_after_take_deferring_op(code, *ip)?,
                     Err(e) => {
                         // A per-element method may raise a resumable warn (the
                         // hyper op re-raises it carrying the full result); record
@@ -6074,16 +6076,18 @@ impl Interpreter {
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 // A method call, for `resolve_onlystar` (#10746).
-                let result = self.in_method_call(|vm| {
-                    vm.exec_hyper_method_call_dynamic_op(
-                        code,
-                        *arity,
-                        *modifier_idx,
-                        *arg_sources_idx,
-                    )
+                let result = self.run_take_deferring_op(|vm| {
+                    vm.in_method_call(|vm| {
+                        vm.exec_hyper_method_call_dynamic_op(
+                            code,
+                            *arity,
+                            *modifier_idx,
+                            *arg_sources_idx,
+                        )
+                    })
                 });
                 match result {
-                    Ok(()) => {}
+                    Ok(()) => self.suspend_after_take_deferring_op(code, *ip)?,
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
                             self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
@@ -6115,14 +6119,17 @@ impl Interpreter {
                 writeback,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_hyper_func_op(
-                    code,
-                    *name_idx,
-                    *dwim_left,
-                    *dwim_right,
-                    *writeback,
-                    compiled_fns,
-                )?;
+                self.run_take_deferring_op(|vm| {
+                    vm.exec_hyper_func_op(
+                        code,
+                        *name_idx,
+                        *dwim_left,
+                        *dwim_right,
+                        *writeback,
+                        compiled_fns,
+                    )
+                })?;
+                self.suspend_after_take_deferring_op(code, *ip)?;
                 *ip += 1;
             }
 
