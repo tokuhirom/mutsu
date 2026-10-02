@@ -2391,7 +2391,13 @@ impl Interpreter {
                     target.view(),
                     ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
-            let empty_array = Value::real_array(vec![]);
+            // A `$` variable holds the vivified Array in its Scalar
+            // container (raku: `my $x; $x.push(1); $x.raku` is `$[1]`).
+            let empty_array = if target_name.starts_with(['@', '%', '&']) {
+                Value::real_array(vec![])
+            } else {
+                Value::real_array(vec![]).item()
+            };
             // A writable loop parameter such as `for @rows <-> $row` names a
             // `ContainerRef` cell for the source element. Replacing the env
             // binding here detaches the vivified array from that element, so
@@ -2402,6 +2408,15 @@ impl Interpreter {
             } else {
                 self.env_mut()
                     .insert(target_name.to_string(), empty_array.clone());
+                // A package-qualified name (`$GLOBAL::n.push(1)`) is a package
+                // variable. The env write reaches only the running frame, whose
+                // exit drops a key it did not hold on entry, so persist the
+                // vivified array in `our_vars` as `SetGlobal` and the
+                // read-modify-write store do (#10620). The two share one
+                // array, so the mutation below lands in both.
+                if crate::qualified::is_qualified(Symbol::intern(target_name)) {
+                    self.set_our_var(target_name.to_string(), empty_array.clone());
+                }
             }
             empty_array
         } else {
