@@ -441,6 +441,11 @@ impl Interpreter {
         // since ?LINE in env may not reflect the call site yet.
         let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
             .or_else(|| self.pending_callsite_line());
+        // The call site's argument-source names belong to this call's own
+        // binder only. Held here and handed back right before it, so neither
+        // a TRIR run nor a light call below (which never consume them) leaves
+        // them for an unrelated nested call to bind against (mutsu#10520).
+        let arg_sources = self.take_pending_call_arg_sources();
         loan_env!(
             self,
             check_deprecation_for_def_with_line(def, callsite_line)
@@ -593,6 +598,7 @@ impl Interpreter {
             // routine, so this is never asked to alias anything.
             self.call_compiled_function_positional_light(&cf, &args, fns, &name, def.name, None)
         } else {
+            self.set_pending_call_arg_sources(arg_sources);
             self.call_compiled_function_named(&cf, args, fns, def.package, def.name)
         };
 
