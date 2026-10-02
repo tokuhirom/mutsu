@@ -1565,21 +1565,23 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// `has [Type] $.x` -> `Stmt::HasDecl`. The converter renders an attribute as a
-/// `VarDeclaration::Simple` with `scope => "has"` and a `twigil` (`.` public /
-/// `!` private); everything richer (traits, smileys, `required`, `where`,
-/// aliases, `my`/`our` attributes) is refused on the read side, so nothing that
-/// reaches here can carry it. An explicit `= EXPR` default is a
-/// `Trait::WillBuild` in raku, which the converter also refuses, so an
-/// `initializer` here would be a shape it never produced.
+/// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The converter renders
+/// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
+/// `twigil` (`.` public / `!` private); its `Trait::Is` flags are read by
+/// `rakuast::attribute`, and an `Initializer::Assign` is the default (the
+/// implicit `WillBuild` beside it carries the same expression).
 fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if node
-        .fields
-        .iter()
-        .any(|f| matches!(f.name, Some("traits") | Some("initializer")))
-    {
-        return Err(unsupported(node));
-    }
+    let traits = super::attribute::lower_traits(node)?;
+    let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
+        None => None,
+        Some(f) => {
+            let init = child_node(&f.value)?;
+            if init.class != RakuAstClass::InitializerAssign {
+                return Err(unsupported(node));
+            }
+            Some(lower_expr(named_child_or_positional(init)?)?)
+        }
+    };
     let sigil = leaf_str(node, "sigil")?;
     let mut chars = sigil.chars();
     let (Some(sigil_char), None) = (chars.next(), chars.next()) else {
@@ -1604,13 +1606,14 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // A typed attribute carries an implicit `BareWord(<TypeName>)` default
         // in the internal AST; the parser plants it, and the converter skips it
         // on the way out, so re-plant it here to keep the two sides symmetric.
-        default: type_constraint.as_ref().map(|t| Expr::BareWord(t.clone())),
+        default: initializer
+            .or_else(|| type_constraint.as_ref().map(|t| Expr::BareWord(t.clone()))),
         handles: Vec::new(),
-        is_rw: false,
-        is_readonly: false,
+        is_rw: traits.is_rw,
+        is_readonly: traits.is_readonly,
         type_constraint,
         type_smiley: None,
-        is_required: None,
+        is_required: traits.is_required.then_some(None),
         sigil: sigil_char,
         where_constraint: None,
         is_alias: false,
