@@ -2037,7 +2037,7 @@ impl Interpreter {
                         && ((skip_constraint_recheck
                             && self.constraint_is_user_subset(&resolved_constraint))
                             || if pd.is_some_and(|pd| pd.name == "__type_only__")
-                                && !resolved_constraint.starts_with("::")
+                                && !resolved_constraint.as_bytes().starts_with(b"::")
                                 && !self.is_resolvable_type(&resolved_constraint)
                             {
                                 // A bare enum value / constant (`method m(Store)`).
