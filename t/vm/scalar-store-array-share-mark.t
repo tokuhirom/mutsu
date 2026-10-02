@@ -5,7 +5,7 @@ use Test;
 # stored cannot be an Array/Hash (#10955), so each shape here pins that the
 # share still happens for aggregates and a plain copy still copies.
 
-plan 14;
+plan 16;
 
 {
     my $i = 1;
@@ -108,4 +108,22 @@ plan 14;
     my Int $s = 0;
     $s = $i;
     is $s, 4, 'typed scalar store';
+}
+
+{
+    # `CheckReadOnly` in a loop hot enough to be JIT-compiled: the refusal
+    # still surfaces as the ordinary error, and stores before it landed.
+    my $seen = 0;
+    sub f($p) {
+        my $i = 0;
+        while $i < 5000 {
+            $i = $i + 1;
+            $seen = $i;
+            if $i == 4000 { $p = 1 }
+        }
+    }
+    throws-like { f(3) }, Exception,
+        message => /'Cannot assign to a readonly variable'/,
+        'readonly refusal inside a hot loop';
+    is $seen, 4000, 'the loop ran up to the refused assignment';
 }
