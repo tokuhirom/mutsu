@@ -586,9 +586,15 @@ impl Registry {
         };
 
         for owner in BUILTIN_METHOD_OWNERS {
+            // Interned once per owner, not once per entry: every entry of
+            // `owner`'s table names the same owner (#10961).
+            let canonical_owner =
+                crate::builtins::builtin_type_methods::canonical_builtin_owner(owner);
+            let owner_sym = Symbol::intern(canonical_owner);
             for entry in builtin_method_entries(owner) {
+                debug_assert_eq!(entry.owner, canonical_owner);
                 let key = MethodEntryKey {
-                    owner: Symbol::intern(entry.owner),
+                    owner: owner_sym,
                     name: Symbol::intern(entry.name),
                 };
                 let slot = self.method_entries.entry(key).or_default();
