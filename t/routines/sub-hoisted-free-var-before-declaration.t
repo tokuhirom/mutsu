@@ -4,7 +4,7 @@ use Test;
 # free variables visible at that declaration, not a same-named `my` of its
 # caller (mutsu#9911; ADR-0024's "textual-order edge").
 
-plan 14;
+plan 15;
 
 my $c = 'outer';
 { my $c = 'inner'; is f(), 'outer', 'read from a shadowing block before the sub' }
@@ -57,3 +57,7 @@ my $n = 0;
 { my $n = 50; bump(); bump(); is $n, 50, 'shadowing local untouched by increments' }
 is $n, 2, 'increments reach the declaration-site variable';
 sub bump { $n++ }
+
+my @p;
+for 1..4 -> $pa, $pb { @p.push: pair-val(); sub pair-val { "$pa $pb" } }
+is @p.join(','), '1 2,3 4', 'loop parameters of the declaring scope';

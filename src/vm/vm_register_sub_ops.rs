@@ -701,9 +701,11 @@ impl Interpreter {
                     // before the declaration) already reads it rather than
                     // the caller's same-named binding (#9911, see
                     // `vm_hoist_capture_cells.rs`). A rebound name's binding
-                    // cell is left to the in-sequence pass.
+                    // cell is left to the in-sequence pass, and so is an `our`
+                    // sub's capture, which `escaped_our_lexical_cells` owns.
                     let seeded = if is_hoisted_pass
                         && baked.is_some()
+                        && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
                         && hoist_seed_slots.contains(&(slot_idx as u32))
                         && !rebound_syms.contains(&sym)
                         && !code.rebound_slots.contains(&(slot_idx as u32))
