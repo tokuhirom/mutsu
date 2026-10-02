@@ -30,6 +30,14 @@
 //! of each enclosing package, as in `package_phasers`. That keeps to a class or
 //! package at the unit's top level (or nested in one). A phaser that reads
 //! `self`, an attribute or a name it cannot see statically stays where it is.
+//!
+//! A type a phaser cannot re-enter is walked without a package: a role (it has
+//! no store, and runs once per composition), and a class declared inside code,
+//! which does not exist at the unit's level until that code runs (#10645). A
+//! phaser lifted from a method of one runs in no package, so it reads nothing
+//! the type declares or takes as a parameter, which is all it needs when it only
+//! reads the method's own lexicals. Whatever else such a phaser does, in a class
+//! declared inside code, still runs when that code runs (#10711).
 
 use super::routines::{Dependencies, FrameBlock};
 use super::{Binding, BindingKind, Frame, Walker};
@@ -127,24 +135,34 @@ impl Walker<'_> {
         );
     }
 
-    /// Walk the routines of a role at the unit's top level. A role body runs
-    /// once per composition and has no store of its own, so a phaser lifted
-    /// from a role's routine reads nothing the role declares or takes as a
-    /// parameter, and runs in no package.
-    pub(super) fn walk_role(&mut self, stmt: &mut Stmt) {
-        if !self.frames.is_empty() || !has_init_or_check(stmt) {
+    /// Walk the routines of a type a lifted phaser cannot re-enter: a role
+    /// (its body runs once per composition, and has no store of its own), and
+    /// a class declared inside code (it does not exist at the unit's level
+    /// until the code runs, so there is no package to re-enter by name). A
+    /// phaser lifted from one of their routines runs in no package, so it
+    /// reads nothing the type declares or takes as a parameter.
+    pub(super) fn walk_detached(&mut self, stmt: &mut Stmt) {
+        if !has_init_or_check(stmt) {
             return;
         }
-        let Stmt::RoleDecl {
-            type_params, body, ..
-        } = stmt
-        else {
-            return;
+        let (params, body) = match stmt {
+            Stmt::RoleDecl {
+                type_params, body, ..
+            } => (
+                type_params
+                    .iter()
+                    .map(|p| p.trim_start_matches(['$', '@', '%', '&']).to_string())
+                    .collect(),
+                body,
+            ),
+            Stmt::ClassDecl {
+                name_expr: None,
+                is_unit: false,
+                body,
+                ..
+            } => (Vec::new(), body),
+            _ => return,
         };
-        let params = type_params
-            .iter()
-            .map(|p| p.trim_start_matches(['$', '@', '%', '&']).to_string())
-            .collect();
         let bindings = declared_bindings(body, &[]);
         self.walk_members(
             body,
@@ -157,15 +175,17 @@ impl Walker<'_> {
     }
 
     /// Walk the routines and imports among the members of a package or role
-    /// body, in the scope `frame` stands for. A type nested in a package is
-    /// walked for its own phasers; one nested in a role is not.
+    /// body, in the scope `frame` stands for. A class nested in it is walked for
+    /// its own phasers.
     fn walk_members(&mut self, body: &mut [Stmt], frame: Frame) {
         let in_package = frame.package.is_some();
         self.frames.push(frame);
         for (i, member) in body.iter_mut().enumerate() {
             let walked = match member {
                 Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => true,
-                Stmt::ClassDecl { .. } | Stmt::Package { .. } => in_package,
+                // A class is walked in any body; a package only in a package.
+                Stmt::ClassDecl { .. } => true,
+                Stmt::Package { .. } => in_package,
                 // What the body imports, its routines see too.
                 Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
                     true

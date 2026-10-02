@@ -644,7 +644,7 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   binds one object into every frame.
 - **Not lifted.** A phaser of a method of a class declared inside code
   (`sub f { my class K { method m { my $z; INIT $z = 5; $z } } }`): the class
-  does not exist at the unit's level (#10645).
+  does not exist at the unit's level. Lifted since: see the #10645 section below.
 
 **A phaser that ends a routine — implemented** (#10644,
 `src/runtime/begin_prologue/package_phasers.rs`).
@@ -660,3 +660,29 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   walk reads its own), so a list value flattens into an `@` variable
   (`my @a = INIT (1, 2, 3)` has three elements). It was assigned as one
   itemized list.
+
+**INIT and CHECK in a method of a class declared inside code — implemented**
+(#10645, `src/runtime/begin_prologue/nested/phasers.rs`,
+`t/routines/init-check-class-in-routine.t`).
+
+- **The gap.** The walk above enters a class only when every scope around it is a
+  package, because the lifted phaser re-enters each package by name. A class (or
+  role) declared inside a routine or block has no package to re-enter at the
+  unit's level: a `my` class is stored under its declaration site (ADR-0047) and
+  exists only once the code has run its declaration. `sub f { my class K { method
+  m { my $z; INIT $z = 5; $z } }; K.m }` was `(Any)`.
+- **The decision.** A phaser that reads only the lexicals of its method needs no
+  package at all. Its static cells are unit-level slots, and the lifted body
+  names nothing the class declares. So a type the phaser cannot re-enter is
+  walked as a *detached* scope (`Frame::role`, which a role already used): its
+  routines are walked, the phaser is lifted to the unit's INIT/CHECK sequence
+  with no `PackageRuntimeBody` around it, and `movable` (the `package_phasers`
+  rule, with `in_role`) refuses a body that reads `self`, an attribute, `EVAL` or
+  a symbolic name, or a `$?` compile-time variable, while the scope's own
+  declarations are opaque bindings, so a body that reads one is left where it is.
+  A class nested in such a type is walked the same way.
+- **What it does not cover.** A phaser of such a class that reads nothing of its
+  method is not lifted (`needs_scope`), so it still runs when the enclosing code
+  runs the declaration, and not at all when that code never runs. That needs a
+  decision on how a unit-level phaser reaches a lexical class, and is
+  [#10711](https://github.com/tokuhirom/mutsu/issues/10711).
