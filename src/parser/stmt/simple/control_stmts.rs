@@ -602,7 +602,7 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     // Try to parse as a hash expression first (e.g. `{:a(4)}`, `{a => 1}`)
     if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
-        && matches!(hash_expr, Expr::Hash(_))
+        && matches!(hash_expr, Expr::Hash(..))
     {
         // A statement-leading hash literal may carry postfix operators
         // (`{a => 1}.keys`, `{a => 1}<b>`, `{a => 1}.map(...)`). Without this the

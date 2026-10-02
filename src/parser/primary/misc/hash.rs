@@ -20,7 +20,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected("hash value"));
             }
             if spread_args.is_empty() {
-                return Ok((rest, Expr::Hash(pairs)));
+                return Ok((rest, Expr::Hash(pairs, crate::ast::HashSpelling::Composer)));
             }
             let mut args = hash_args_from_pairs(pairs);
             args.append(&mut spread_args);

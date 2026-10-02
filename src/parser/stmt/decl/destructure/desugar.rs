@@ -60,7 +60,7 @@ fn expand_bare(decl: &SignatureDecl) -> Vec<Stmt> {
         } else if dvar.name.starts_with('@') {
             Expr::Literal(Value::real_array(Vec::new()))
         } else if dvar.name.starts_with('%') {
-            Expr::Hash(Vec::new())
+            Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
         } else {
             native_type_default(&effective_tc)
         };
@@ -165,7 +165,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             let expr = if dvar.name.starts_with('@') {
                 Expr::ArrayLiteral(Vec::new())
             } else if dvar.name.starts_with('%') {
-                Expr::Hash(Vec::new())
+                Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
             } else {
                 Expr::Literal(Value::NIL)
             };
@@ -249,7 +249,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             if is_array {
                 Expr::ArrayLiteral(Vec::new())
             } else if is_hash {
-                Expr::Hash(Vec::new())
+                Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
             } else {
                 Expr::Literal(Value::NIL)
             }

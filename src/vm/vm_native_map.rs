@@ -408,7 +408,7 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
             | Expr::ArrayLiteral(_)
             | Expr::BracketArray(..)
             | Expr::CaptureLiteral(_)
-            | Expr::Hash(_) => walk_expr(self, expr),
+            | Expr::Hash(..) => walk_expr(self, expr),
             // Anything else (do-blocks, gather, lambdas, try, symbolic deref,
             // …) may embed statements or reflective behavior we cannot vet
             // here: fall back.

@@ -762,7 +762,7 @@ impl Compiler {
                     Expr::HashVar(var_name) => {
                         // A hash target is greedy too: slurp the remaining pairs.
                         let rhs_expr = if seen_slurpy {
-                            Expr::Hash(Vec::new())
+                            Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
                         } else if offset > 0 {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),

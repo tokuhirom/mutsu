@@ -999,7 +999,7 @@ impl Compiler {
                 };
             }
             // Hash literal
-            Expr::Hash(pairs) => {
+            Expr::Hash(pairs, _) => {
                 self.compile_expr_hash(pairs);
             }
             // Environment variable access (%*ENV<key>)

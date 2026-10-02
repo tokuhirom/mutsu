@@ -49,6 +49,13 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
         return format!("{name}.{ctor}('{}')", s.as_str());
     }
 
+    // An empty `{}` composer: raku renders its absent `expression` as a blank
+    // positional line rather than as empty parens.
+    if node.class == RakuAstClass::CircumfixHashComposer && node.fields.is_empty() {
+        let pad = " ".repeat(indent + 2);
+        return format!("{name}.{ctor}(\n{pad}\n{})", " ".repeat(indent));
+    }
+
     // Inline when every field is a positional leaf or a colonpair adverb
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.

@@ -150,7 +150,7 @@ pub(in crate::parser::stmt) fn default_decl_expr(
             Expr::Literal(Value::real_array(Vec::new()))
         }
     } else if is_hash {
-        Expr::Hash(Vec::new())
+        Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
     } else if let Some(tc) = type_constraint {
         typed_default_expr(tc)
     } else {

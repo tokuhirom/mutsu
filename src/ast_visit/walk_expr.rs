@@ -263,7 +263,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         }
         Expr::ChainedCompare { operands, ops: _ } => exprs(v, operands),
         // Hash-literal keys are data.
-        Expr::Hash(pairs) => {
+        Expr::Hash(pairs, _) => {
             for (_key, value) in pairs {
                 if let Some(e) = value {
                     v.visit_expr(e);

@@ -3557,7 +3557,7 @@ impl Compiler {
                         quoted: false,
                     }
                 } else {
-                    Expr::Hash(Vec::new())
+                    Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
                 }
             });
             let slot = positional_slot;

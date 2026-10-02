@@ -20,7 +20,7 @@ impl Compiler {
                 crate::value::ValueView::Array(ad, _) => ad.items().is_empty(),
                 _ => false,
             },
-            Expr::Hash(pairs) => pairs.is_empty(),
+            Expr::Hash(pairs, _) => pairs.is_empty(),
             _ => false,
         }
     }

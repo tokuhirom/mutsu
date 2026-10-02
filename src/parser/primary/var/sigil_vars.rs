@@ -313,7 +313,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             return Ok(parsed);
         }
         if let Ok((r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
-            && !matches!(inner, crate::ast::Expr::Hash(_))
+            && !matches!(inner, crate::ast::Expr::Hash(..))
         {
             let block_src = &rest[..rest.len() - r2.len()];
             let deref_inner = block_src

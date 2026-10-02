@@ -837,6 +837,16 @@ pub(crate) const METHOD_LITERAL_MARKER: &str = "__method_literal";
 /// See [`RoutineDeclarator::literal_marker`].
 pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
 
+/// The source spelling of an [`Expr::Hash`] literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum HashSpelling {
+    /// `{a => 1}`, `{}`: raku's `Circumfix::HashComposer`. Also the spelling
+    /// of a hash literal the parser or compiler synthesizes.
+    Composer,
+    /// `%(a => 1)`, `%()`: raku's `Contextualizer::Hash`.
+    Contextualizer,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -1221,7 +1231,11 @@ pub(crate) enum Expr {
         operands: Vec<Expr>,
         ops: Vec<(TokenKind, bool)>,
     },
-    Hash(Vec<(String, Option<Expr>)>),
+    /// A hash literal with literal keys. The parser builds it from both the
+    /// `{a => 1}` composer and the `%(a => 1)` contextualizer; the compiler
+    /// treats the two alike, and [`HashSpelling`] says which one the source
+    /// wrote, so the RakuAST boundary renders the node raku has for it.
+    Hash(Vec<(String, Option<Expr>)>, HashSpelling),
     Call {
         name: Symbol,
         args: Vec<Expr>,

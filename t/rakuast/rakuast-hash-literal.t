@@ -2,38 +2,56 @@ use v6;
 use experimental :rakuast;
 use Test;
 
-# RakuAST slice 29 (ADR-0011): hash literals `{a => 1}` — read side (`.AST`).
-# raku models `{...}` as a `Block` whose body is a `FatArrow` pair (or a comma
-# list of `FatArrow`s), NOT a dedicated hash node. This file checks the `.AST`
-# gist matches Rakudo. It is read-only: EVAL of the produced `Block` yields a
-# block/Callable in raku (the block-vs-hash distinction is a parse-time decision
-# the RakuAST node does not carry), so the write direction is out of scope.
+# Hash literals across the RakuAST boundary. Measured against rakudo 2026.09,
+# the `{a => 1}` composer is a `Circumfix::HashComposer` and the `%(a => 1)`
+# contextualizer a `Contextualizer::Hash` over a `StatementSequence`; both
+# EVAL back to a Hash.
 
-plan 4;
+plan 17;
 
-# --- a single-entry hash literal --------------------------------------------
+# --- the composer -----------------------------------------------------------
 my $one = "\{a => 1}".AST.gist;
-ok $one.contains('RakuAST::Block.new(')
+ok $one.contains('RakuAST::Circumfix::HashComposer.new(')
     && $one.contains('RakuAST::FatArrow.new(')
     && $one.contains('key   => "a"')
     && $one.contains('RakuAST::IntLiteral.new(1)'),
-    'a single-entry hash literal renders as a Block wrapping a FatArrow';
+    'a single-entry composer is a HashComposer around a FatArrow';
+nok $one.contains('RakuAST::Block.new('), 'a composer is not a Block';
 
-# --- a two-entry hash literal is a comma list of FatArrows ------------------
 my $two = "\{a => 1, b => 2}".AST.gist;
 ok $two.contains('RakuAST::ApplyListInfix.new(')
     && $two.contains('key   => "a"')
     && $two.contains('key   => "b"'),
-    'a two-entry hash literal is a comma list of FatArrows';
+    'a two-entry composer holds a comma list of FatArrows';
+ok $two.index('RakuAST::Circumfix::HashComposer.new(') < $two.index('RakuAST::FatArrow.new('),
+    'the pairs live inside the composer';
 
-# --- the block wraps a Blockoid / StatementList -----------------------------
-ok $two.contains('RakuAST::Blockoid.new(')
-    && $two.index('RakuAST::Block.new(') < $two.index('RakuAST::FatArrow.new('),
-    'the pairs live inside the block body';
-
-# --- a string-value entry ---------------------------------------------------
 my $str = "\{name => \"x\"}".AST.gist;
-ok $str.contains('RakuAST::FatArrow.new(')
-    && $str.contains('key   => "name"')
-    && $str.contains('RakuAST::StrLiteral.new("x")'),
-    'a hash entry with a string value';
+ok $str.contains('key   => "name"') && $str.contains('RakuAST::StrLiteral.new("x")'),
+    'a composer entry with a string value';
+
+is "\{}".AST.statements[0].expression.^name, 'RakuAST::Circumfix::HashComposer',
+    'an empty composer is a HashComposer';
+is "\{a => 1}".AST.statements[0].expression.expression.^name, 'RakuAST::FatArrow',
+    'a composer exposes its contents as .expression';
+
+# --- the contextualizer -----------------------------------------------------
+my $ctx = "%(a => 1, b => 2)".AST.statements[0].expression;
+is $ctx.^name, 'RakuAST::Contextualizer::Hash', '%(…) is a Contextualizer::Hash';
+is $ctx.target.^name, 'RakuAST::StatementSequence', 'its target is a StatementSequence';
+is $ctx.target.statements.elems, 1, 'holding one statement';
+is "%()".AST.statements[0].expression.target.statements.elems, 0,
+    'an empty contextualizer holds an empty StatementSequence';
+
+# --- both EVAL back to a Hash -------------------------------------------------
+my %h = "\{a => 1, b => 2}".AST.EVAL;
+is-deeply %h, {a => 1, b => 2}, 'a composer EVALs to the hash';
+isa-ok "\{a => .5}".AST.EVAL, Hash, 'a one-pair composer EVALs to a Hash, not a Block';
+is-deeply "%(a => 1, b => 0)".AST.EVAL, %(a => 1, b => 0), 'a contextualizer EVALs to the hash';
+is "%(a => 1, b => 0)".AST.EVAL.Set.keys.sort, ('a',), 'and works as a Hash';
+isa-ok "%()".AST.EVAL, Hash, 'an empty contextualizer EVALs to a Hash';
+
+# --- a nested literal keeps each spelling ------------------------------------
+my $nested = "my \$x = \{a => %(b => 1)}".AST.gist;
+ok $nested.index('RakuAST::Circumfix::HashComposer.new(') < $nested.index('RakuAST::Contextualizer::Hash.new('),
+    'a contextualizer nested in a composer keeps both spellings';

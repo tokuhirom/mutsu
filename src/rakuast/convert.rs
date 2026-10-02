@@ -7,8 +7,8 @@
 //! silently-wrong node.
 
 use super::{
-    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, decl_traits, name_parts,
-    routine_traits,
+    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, decl_traits,
+    hash_literal, name_parts, routine_traits,
 };
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
@@ -2137,9 +2137,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A bare comma list `1, 2, 3` -> ApplyListInfix(infix => ",", operands).
         Expr::ArrayLiteral(items) => comma_list_node(items),
-        // A hash literal `{a => 1, b => 2}` -> a `Block` whose body is a comma
-        // list of `FatArrow` pairs (raku models `{...}` as a block).
-        Expr::Hash(pairs) => hash_literal_node(pairs),
+        // `{a => 1}` / `%(a => 1)` -> `Circumfix::HashComposer` /
+        // `Contextualizer::Hash`, by the spelling the parser recorded.
+        Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         Expr::BracketArray(items, _) => {
@@ -4003,56 +4003,6 @@ fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtim
     })
 }
 
-/// A hash literal `{a => 1, b => 2}` -> `Block(Blockoid(StatementList(
-/// Statement::Expression(<pairs>))))`, where `<pairs>` is a single `FatArrow` for
-/// one entry, or an `ApplyListInfix(",")` of `FatArrow`s for several. Value-less
-/// keys (`{:a}`) are the boundary.
-fn hash_literal_node(pairs: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
-    let mut fatarrows = Vec::with_capacity(pairs.len());
-    for (k, v) in pairs {
-        let value = v
-            .as_ref()
-            .ok_or_else(|| unsupported("value-less hash key"))?;
-        fatarrows.push(RakuAstNode {
-            class: RakuAstClass::FatArrow,
-            fields: vec![
-                leaf_field(Some("key"), Value::str(k.clone())),
-                node_field(Some("value"), convert_expr(value)?),
-            ],
-        });
-    }
-    let inner = if fatarrows.len() == 1 {
-        fatarrows.into_iter().next().unwrap()
-    } else {
-        let operands: Vec<Value> = fatarrows
-            .into_iter()
-            .map(|n| Value::rakuast(Box::new(n)))
-            .collect();
-        RakuAstNode {
-            class: RakuAstClass::ApplyListInfix,
-            fields: vec![
-                node_field(Some("infix"), plain_infix(",")),
-                RakuAstField {
-                    name: Some("operands"),
-                    value: RakuAstFieldValue::List(operands),
-                },
-            ],
-        }
-    };
-    let stmt_list = RakuAstNode {
-        class: RakuAstClass::StatementList,
-        fields: vec![node_field(None, statement_expression(inner))],
-    };
-    let blockoid = RakuAstNode {
-        class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, stmt_list)],
-    };
-    Ok(RakuAstNode {
-        class: RakuAstClass::Block,
-        fields: vec![node_field(Some("body"), blockoid)],
-    })
-}
-
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
 fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut operands = Vec::with_capacity(items.len());
@@ -4238,7 +4188,9 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let value = convert_expr(right)?;
     let is_direct_block = matches!(
         right.as_ref(),
-        Expr::AnonSub { is_block: true, .. } | Expr::Block(_) | Expr::Hash(_)
+        Expr::AnonSub { is_block: true, .. }
+            | Expr::Block(_)
+            | Expr::Hash(_, crate::ast::HashSpelling::Composer)
     ) || crate::regex_tree::is_scalar_placeholder_block(right)
         || crate::regex_tree::is_array_slurpy_placeholder_block(right)
         || crate::regex_tree::is_hash_slurpy_placeholder_block(right);
