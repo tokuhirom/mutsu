@@ -1648,11 +1648,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         },
                     ));
                 }
-                // A bare key is a stash lookup, not a qualified type name:
-                // `MY::<Foo>` asks whether the current lexical scope contains
-                // `Foo`, and `Foo::<Bar>` reads the entry `Bar` of `Foo`'s stash
-                // (a nested type, or a value stored with `Foo::{'Bar'} = ...`).
-                if !symbol.is_empty() {
+                // A bare key on a pseudo-package is a stash lookup, not a
+                // qualified type name: `MY::<Foo>` asks whether the current
+                // lexical scope contains `Foo`. Ordinary package names keep
+                // the `Foo::<Bar>` type-name interpretation below.
+                if crate::parser::primary::var::is_pseudo_package(&full_name) && !symbol.is_empty()
+                {
                     let stash_name = format!("{full_name}::");
                     return Ok((
                         &after_bracket[end + 1..],
