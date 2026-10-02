@@ -45,32 +45,6 @@ pub(crate) fn plain_iter_view(
     (view, caps.inline_view_slot(pos_base))
 }
 
-/// Does `atom`, taken as one iteration of a quantifier, apply a numbered alias
-/// (`$N=`) at its own level? The walk matches each iteration as a nested
-/// sub-pattern, so `N` is counted from the iteration's first slot (`[ $0=(\d)
-/// ]+` files one `$0` per iteration); the compiled engine numbers an inlined
-/// body against the whole level, so such a body needs a level of its own per
-/// iteration (`OpenPlainIter`). A capture group opens its own level already.
-// Cost: O(t), t = the tokens of `atom` outside its capture groups (run once,
-// when the pattern compiles).
-pub(crate) fn atom_has_numbered_alias(atom: &RegexAtom) -> bool {
-    let pattern_has = |p: &RegexPattern| {
-        p.tokens.iter().any(|t| {
-            t.named_capture
-                .as_ref()
-                .is_some_and(|n| n.parse::<usize>().is_ok())
-                || atom_has_numbered_alias(&t.atom)
-        })
-    };
-    match atom {
-        RegexAtom::Group(p) => pattern_has(p),
-        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
-            alts.iter().any(pattern_has)
-        }
-        _ => false,
-    }
-}
-
 /// The view and fold scope an iteration's atom matches under, when it needs
 /// one (`plain_iter_needs_view`). The scope stays armed while the guard lives.
 // Cost: O(c) when the atom needs the view, c = `caps`'s captures; else O(1).
