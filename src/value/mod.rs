@@ -3346,7 +3346,28 @@ impl ForLoopResumeState {
 
 /// Pre-compiled fast-path body for a closure sequence generator: the compiled
 /// code plus its associated compiled functions.
-pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<CompiledFns>);
+/// How many trailing elements a sequence generator or endpoint closure takes
+/// per call: Raku's `.count` of the closure, read once per sequence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SeqClosureCount {
+    /// The last `n` elements (`-> $a, $b { ... }` takes 2).
+    Fixed(usize),
+    /// Every element so far (a slurpy: `{ @_ }`, `-> *@h { ... }`).
+    All,
+}
+
+/// How a sequence generator is called, decided once per sequence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SeqGeneratorShape {
+    /// A closure, called through the value-call path with at most `count`
+    /// trailing elements.
+    Closure(SeqClosureCount),
+    /// A named routine called by name with exactly `n` trailing elements.
+    RoutineFixed(usize),
+    /// A named routine with a slurpy: every element, `Nil`-padded up to
+    /// `min_arity`.
+    RoutineSlurpy { min_arity: usize },
+}
 
 /// State for a lazy closure-based sequence (`1, 1, * + * ... *`).
 ///
@@ -3357,11 +3378,8 @@ pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<CompiledFns>);
 pub(crate) struct ClosureSeqState {
     /// The generator closure (`Value::Sub` or `Value::Routine`).
     pub(crate) generator: Value,
-    /// Mutable captured env for side-effecting generators (e.g. `my $i = 0; { $i++ } ... *`).
-    /// Persisted across pulls so side effects accumulate.
-    pub(crate) closure_env: Option<Env>,
-    /// Pre-compiled fast-path body for the generator (when the fast path applies).
-    pub(crate) precompiled: Option<CompiledClosureBody>,
+    /// How the generator is called (decided once per sequence).
+    pub(crate) generator_shape: SeqGeneratorShape,
     /// A value endpoint retained when a finite closure sequence is deferred.
     /// `None` is an unbounded `... *` sequence.
     pub(crate) endpoint: Option<Value>,

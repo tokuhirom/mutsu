@@ -535,7 +535,9 @@ impl Interpreter {
             .count() as i64
     }
 
-    fn signature_positional_count(info: &crate::value::signature::SigInfo) -> Option<i64> {
+    pub(super) fn signature_positional_count(
+        info: &crate::value::signature::SigInfo,
+    ) -> Option<i64> {
         let mut count = 0i64;
         for p in &info.params {
             if p.named || (p.slurpy && p.sigil == '%') {
