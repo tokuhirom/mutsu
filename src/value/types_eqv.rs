@@ -19,6 +19,14 @@ pub(crate) enum InstanceEqv {
 /// Decides same-class user-instance pairs for [`Value::eqv_with`].
 pub(crate) trait EqvInstanceHook {
     fn instance_eqv(&mut self, a: &Value, b: &Value) -> InstanceEqv;
+
+    /// Whether two routines the identity/name rules found distinct are still
+    /// `eqv` by Rakudo's `Any:D eqv Any:D` rule (same `.WHAT`, equal
+    /// `.raku`). Rendering `.raku` needs the interpreter, so the pure walk
+    /// answers `false`.
+    fn routine_eqv(&mut self, _a: &Value, _b: &Value) -> bool {
+        false
+    }
 }
 
 /// The interpreter-free hook: every attribute slot takes part.
@@ -286,15 +294,20 @@ impl Value {
             | (ValueView::Bool(_), ValueView::Bool(_))
             | (ValueView::Enum { .. }, ValueView::Enum { .. })
             | (ValueView::Regex(_), ValueView::Regex(_))
-            | (ValueView::RegexWithAdverbs { .. }, ValueView::RegexWithAdverbs { .. })
-            | (ValueView::Routine { .. }, ValueView::Routine { .. }) => self == other,
+            | (ValueView::RegexWithAdverbs { .. }, ValueView::RegexWithAdverbs { .. }) => {
+                self == other
+            }
+            (ValueView::Routine { .. }, ValueView::Routine { .. }) => {
+                self == other || seen.hook.routine_eqv(self, other)
+            }
             (ValueView::Sub(a), ValueView::Sub(b)) => {
                 if crate::gc::Gc::ptr_eq(&a, &b) {
                     return true;
                 }
                 let a_name = a.name.resolve();
                 let b_name = b.name.resolve();
-                !a_name.is_empty() && a_name == b_name && a.package == b.package
+                (!a_name.is_empty() && a_name == b_name && a.package == b.package)
+                    || seen.hook.routine_eqv(self, other)
             }
             // A multi dispatcher is one routine however it is reached: the Sub
             // carrying its captured candidates (`&name`, an import of it) and the
@@ -309,8 +322,9 @@ impl Value {
                 } else {
                     crate::qualified::qualified(package, name)
                 };
-                s.env.contains_key("__mutsu_multi_dispatch_candidates")
-                    && crate::qualified::qualified(s.package, s.name) == handle
+                (s.env.contains_key("__mutsu_multi_dispatch_candidates")
+                    && crate::qualified::qualified(s.package, s.name) == handle)
+                    || seen.hook.routine_eqv(self, other)
             }
             // Signature instances: compare by .raku string (structural equality)
             (

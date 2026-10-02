@@ -78,6 +78,22 @@ impl<'a> RakudoInstanceEqv<'a> {
 }
 
 impl EqvInstanceHook for RakudoInstanceEqv<'_> {
+    // Only a multi dispatcher's `.raku` is compared: it is its proto's, which
+    // spells neither an id nor a package, so two dispatchers reached from
+    // different packages are `eqv` when their protos read the same. A plain
+    // routine's `.raku` carries its id in Rakudo, so the identity/name rules
+    // already decided it.
+    // Cost: O(f + p) per side, as `Interpreter::dispatcher_raku`.
+    fn routine_eqv(&mut self, a: &Value, b: &Value) -> bool {
+        match (
+            self.interp.routine_dispatcher_raku(a),
+            self.interp.routine_dispatcher_raku(b),
+        ) {
+            (Some(ra), Some(rb)) => ra == rb,
+            _ => false,
+        }
+    }
+
     // Cost: O(1) plus `class_mode`'s miss cost; a class with a user `raku`
     // adds two calls of it.
     fn instance_eqv(&mut self, a: &Value, b: &Value) -> InstanceEqv {

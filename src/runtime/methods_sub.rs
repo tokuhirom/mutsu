@@ -280,67 +280,54 @@ impl Interpreter {
             return Some(Ok(Value::array(matching)));
         }
         if method == "signature" && args.is_empty() {
-            let candidates = self.routine_candidate_subs(package, name);
-            if candidates.is_empty() {
-                let cache_key = SubSignatureKey::from_routine_handle(package, name);
-                if let Some(cached) = cached_sub_signature(&cache_key) {
-                    return Some(Ok(cached));
-                }
-                let (params, param_defs) = self.callable_signature(target);
-                let defs = if !param_defs.is_empty() {
-                    param_defs
-                } else {
-                    params
-                        .into_iter()
-                        .map(|name| ParamDef {
-                            type_capture: None,
-                            name,
-                            default: None,
-                            multi_invocant: true,
-                            required: false,
-                            named: false,
-                            named_alias: false,
-                            slurpy: false,
-                            double_slurpy: false,
-                            onearg: false,
-                            sigilless: false,
-                            type_constraint: None,
-                            literal_value: None,
-                            sub_signature: None,
-                            where_constraint: None,
-                            traits: Vec::new(),
-                            optional_marker: false,
-                            outer_sub_signature: None,
-                            code_signature: None,
-                            is_invocant: false,
-                            shape_constraints: None,
-                            block_param: false,
-                            code: Default::default(),
-                            trait_args: Vec::new(),
-                        })
-                        .collect()
-                };
-                let return_type = self.routine_return_spec_by_name(name);
-                let info = param_defs_to_sig_info(&defs, return_type);
-                let signature = make_signature_value(info, Some(&*self));
-                cache_sub_signature(cache_key, signature.clone());
-                return Some(Ok(signature));
+            // A name with `multi` candidates is its dispatcher, whose
+            // signature is the proto's (declared or generated).
+            if let Some(sig) = self.dispatcher_signature(package, name) {
+                return Some(Ok(sig));
             }
-            if candidates.len() == 1 {
-                return Some(self.call_method_with_values(
-                    candidates[0].clone(),
-                    "signature",
-                    Vec::new(),
-                ));
+            let cache_key = SubSignatureKey::from_routine_handle(package, name);
+            if let Some(cached) = cached_sub_signature(&cache_key) {
+                return Some(Ok(cached));
             }
-            let mut signatures = Vec::new();
-            for candidate in candidates {
-                match self.call_method_with_values(candidate, "signature", Vec::new()) {
-                    Ok(sig) => signatures.push(sig),
-                    Err(e) => return Some(Err(e)),
-                }
-            }
-            return Some(Ok(Value::junction(JunctionKind::Any, signatures)));
+            let (params, param_defs) = self.callable_signature(target);
+            let defs = if !param_defs.is_empty() {
+                param_defs
+            } else {
+                params
+                    .into_iter()
+                    .map(|name| ParamDef {
+                        type_capture: None,
+                        name,
+                        default: None,
+                        multi_invocant: true,
+                        required: false,
+                        named: false,
+                        named_alias: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        onearg: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                        block_param: false,
+                        code: Default::default(),
+                        trait_args: Vec::new(),
+                    })
+                    .collect()
+            };
+            let return_type = self.routine_return_spec_by_name(name);
+            let info = param_defs_to_sig_info(&defs, return_type);
+            let signature = make_signature_value(info, Some(&*self));
+            cache_sub_signature(cache_key, signature.clone());
+            return Some(Ok(signature));
         }
         if matches!(method, "gist" | "Str") && args.is_empty() {
             // Rakudo: a Sub handle gists as `&name` and a builtin-method
@@ -508,11 +495,8 @@ impl Interpreter {
             return Some(Ok(Value::array(methods)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
-            let candidates = self.routine_candidate_subs(package, name);
-            if !candidates.is_empty() {
-                return Some(Ok(self
-                    .multi_candidate_arity_count(&candidates, method)
-                    .unwrap_or(Value::int(0))));
+            if let Some(sig) = self.dispatcher_signature(package, name) {
+                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
             }
 
             let (params, param_defs) = self.callable_signature(target);
@@ -909,7 +893,12 @@ impl Interpreter {
             return Some(Ok(Value::array(matches)));
         }
         if method == "signature" && args.is_empty() {
-            // Multi-dispatch dispatcher: try name-based lookup first
+            // A multi sub's dispatcher answers its proto's signature (declared
+            // or generated), never its candidates'.
+            if let Some(sig) = self.sub_dispatcher_signature(data) {
+                return Some(Ok(sig));
+            }
+            // A multi method's dispatcher: try name-based lookup first
             if let Some(ValueView::Str(disp_name)) =
                 data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
             {
@@ -1107,8 +1096,11 @@ impl Interpreter {
             return Some(Ok(Value::truth(!data.is_rw)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
-            // Multi-dispatch dispatcher (`&mm` for a `multi sub mm`, with or
-            // without an explicit `proto`): this Sub's OWN param_defs are
+            // A multi sub's dispatcher answers its proto's arity/count.
+            if let Some(sig) = self.sub_dispatcher_signature(data) {
+                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+            }
+            // Multi-dispatch dispatcher (a multi method's): this Sub's OWN param_defs are
             // empty (it is a synthesized dispatcher, not a declared body), so
             // reading `arity`/`count` off `data` directly always answered 0.
             // Mirrors the "signature"/"candidates"/"cando" handling just
