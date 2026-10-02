@@ -1532,13 +1532,14 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(unsupported(node)),
         },
     };
-    if node
-        .fields
-        .iter()
-        .any(|f| matches!(f.name, Some("type") | Some("twigil") | Some("traits")))
-    {
+    if node.fields.iter().any(|f| f.name == Some("twigil")) {
         return Err(unsupported(node));
     }
+    let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
+        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        None => None,
+    };
+    let mut custom_traits = super::decl_traits::lower(node)?;
     let sigil = leaf_str(node, "sigil")?;
     let desigil_node = named_child(node, "desigilname")?;
     let desigil = match positional_leaf(desigil_node)?.view() {
@@ -1569,15 +1570,13 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             false,
         ),
     };
-    let custom_traits = if has_initializer {
-        vec![("__has_initializer".to_string(), None)]
-    } else {
-        Vec::new()
-    };
+    if has_initializer {
+        custom_traits.push(("__has_initializer".to_string(), None));
+    }
     Ok(Stmt::VarDecl {
         name,
         expr,
-        type_constraint: None,
+        type_constraint,
         is_state,
         is_our,
         is_dynamic: false,
@@ -2782,8 +2781,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             })
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
-        // bareword term, which mutsu evaluates to the type object.
-        RakuAstClass::TypeSimple => Ok(Expr::BareWord(simple_type_name(node, node)?)),
+        // bareword term, which mutsu evaluates to the type object. `Nil` is
+        // the parser's `Nil` literal instead (`term_literals`), which is what
+        // `is default` restores on assignment.
+        RakuAstClass::TypeSimple => match simple_type_name(node, node)?.as_str() {
+            "Nil" => Ok(Expr::Literal(Value::NIL)),
+            name => Ok(Expr::BareWord(name.to_string())),
+        },
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.

@@ -12,6 +12,7 @@
 
 mod attribute;
 mod convert;
+mod decl_traits;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
