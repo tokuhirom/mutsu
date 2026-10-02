@@ -310,7 +310,10 @@ impl Walker<'_> {
             self.lifted.halted |= begin;
             return false;
         };
-        if !begin && !phasers::needs_scope(&deps, &blocks) {
+        // Outside a type declared in code, a phaser that reads nothing of an
+        // inner scope already runs at the right time. Inside one it does not:
+        // it runs when the code runs the declaration.
+        if !begin && !self.in_detached_type() && !phasers::needs_scope(&deps, &blocks) {
             return false;
         }
         self.add_routines(&deps, &mut blocks);
