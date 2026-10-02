@@ -100,7 +100,18 @@ impl Interpreter {
         )
     }
 
+    /// An iterator pulled on demand from a lazy source with no known logical
+    /// count cannot predict how many elements it has left. Rakudo's iterators
+    /// over such sources (`IntRangeUnending`, `SuccFromInf`, a `gather`) have no
+    /// `count-only` / `bool-only`, so neither does this one.
+    pub(super) fn iterator_is_unpredictive_lazy(attributes: &AttrMap) -> bool {
+        attributes.contains_key("lazy_source") && !attributes.contains_key("known_count")
+    }
+
     pub(super) fn iterator_supports_predictive_methods(attributes: &AttrMap) -> bool {
+        if Self::iterator_is_unpredictive_lazy(attributes) {
+            return false;
+        }
         matches!(
             attributes.get("items").map(Value::view),
             Some(ValueView::Array(..))
@@ -118,6 +129,9 @@ impl Interpreter {
         // the materialized `items` are only a bounded prefix of the true length.
         if let Some(count) = attributes.get("known_count") {
             return Ok(Some(count.clone()));
+        }
+        if Self::iterator_is_unpredictive_lazy(attributes) {
+            return Err(RuntimeError::method_not_found("count-only", "Iterator"));
         }
         if let Some(ValueView::Array(items, ..)) = attributes.get("items").map(Value::view) {
             let index = match attributes.get("index").map(Value::view) {

@@ -179,12 +179,41 @@ impl crate::Interpreter {
         let pulled = match needed_len(method, index, args) {
             Some(need) if need <= have => return None,
             Some(need) => self.force_lazy_list_vm_n(&list, need),
-            None => self.force_lazy_list_bridge(&list),
+            None => self.force_lazy_list_vm(&list),
         };
         // A source that cannot be forced (an infinite pipe answers
         // X::Cannot::Lazy) leaves the prefix as it was; the step then reports
         // exhaustion exactly as before.
         pulled.ok().filter(|items| items.len() > have)
+    }
+
+    /// The elements a built-in `Iterator` instance has left from its cursor on,
+    /// for a consumer that drains it whole (`List.from-iterator`, a
+    /// `PositionalBindFailover` coercion). An iterator over a lazy source holds
+    /// only the prefix pulled so far, so the source is forced to exhaustion
+    /// first, as `push-all` does.
+    ///
+    /// Cost: O(n), n = remaining elements (plus forcing the lazy source).
+    pub(crate) fn iterator_remaining_items(&mut self, attrs: &crate::value::AttrMap) -> Vec<Value> {
+        let mut all = match attrs.get("items").map(Value::view) {
+            Some(ValueView::Array(values, ..)) => values.to_vec(),
+            _ => Vec::new(),
+        };
+        let index = match attrs.get("index").map(Value::view) {
+            Some(ValueView::Int(i)) if i >= 0 => i as usize,
+            _ => 0,
+        };
+        if let Some(more) = self.iterator_topup_from_lazy_source(
+            attrs.get("lazy_source"),
+            "push-all",
+            index,
+            &[],
+            all.len(),
+        ) {
+            all = more;
+        }
+        let index = index.min(all.len());
+        all.split_off(index)
     }
 
     /// Append `vals` to the array passed as the `push-*` family's first

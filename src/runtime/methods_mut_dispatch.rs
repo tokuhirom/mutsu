@@ -2489,7 +2489,13 @@ impl Interpreter {
                     return Ok(step.ret);
                 }
 
+                // A lazy source with no known count cannot predict its length
+                // (see `iterator_is_unpredictive_lazy`).
+                let unpredictive = known_count.is_none() && updated.contains_key("lazy_source");
                 let ret = match method {
+                    "count-only" | "bool-only" if unpredictive => {
+                        return Err(RuntimeError::method_not_found(method, "Iterator"));
+                    }
                     "count-only" => {
                         known_count.unwrap_or_else(|| Value::int(len.saturating_sub(index) as i64))
                     }
@@ -2502,20 +2508,22 @@ impl Interpreter {
                             .first()
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        let supported = matches!(
-                            method_name.as_str(),
-                            "pull-one"
-                                | "count-only"
-                                | "bool-only"
-                                | "push-exactly"
-                                | "push-at-least"
-                                | "push-all"
-                                | "push-until-lazy"
-                                | "sink-all"
-                                | "skip-one"
-                                | "skip-at-least"
-                                | "skip-at-least-pull-one"
-                        );
+                        let supported = !(unpredictive
+                            && matches!(method_name.as_str(), "count-only" | "bool-only"))
+                            && matches!(
+                                method_name.as_str(),
+                                "pull-one"
+                                    | "count-only"
+                                    | "bool-only"
+                                    | "push-exactly"
+                                    | "push-at-least"
+                                    | "push-all"
+                                    | "push-until-lazy"
+                                    | "sink-all"
+                                    | "skip-one"
+                                    | "skip-at-least"
+                                    | "skip-at-least-pull-one"
+                            );
                         if supported {
                             return Ok(Value::array(vec![Value::str(method_name)]));
                         } else {
