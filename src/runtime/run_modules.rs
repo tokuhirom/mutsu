@@ -1988,7 +1988,7 @@ impl Interpreter {
                 continue;
             };
             if custom_traits.iter().any(|(t, _)| t == "__constant")
-                || name.contains("::")
+                || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
                 || name.contains("__ANON")
             {
                 continue;
