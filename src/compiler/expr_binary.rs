@@ -724,8 +724,18 @@ impl Compiler {
             // Mixed case: one side is a named variable (with a local slot holding
             // a HashEntryRef from `:=` binding), the other is an Index expression.
             // Use GetLocalRaw + IndexAutovivifyLazy + ContainerEqRaw.
-            let raw_eq_op = |var: &Expr| {
-                if matches!(var, Expr::ArrayVar(_) | Expr::HashVar(_)) {
+            // An element of an `@`/`%` variable is a Scalar container, so
+            // against an `@`/`%` variable only a shared bound cell makes the
+            // two identical. An element of a List (`$cap[1]` for
+            // `$cap = (0, @a)`) is the value itself and keeps the value
+            // comparison.
+            let raw_eq_op = |var: &Expr, index: &Expr| {
+                let aggregate_elem = matches!(
+                    index,
+                    Expr::Index { target, .. }
+                        if matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
+                );
+                if aggregate_elem && matches!(var, Expr::ArrayVar(_) | Expr::HashVar(_)) {
                     OpCode::ContainerEqRawAggregate
                 } else {
                     OpCode::ContainerEqRaw
@@ -738,7 +748,7 @@ impl Compiler {
                 self.scalar_bind_autovivify = true;
                 self.compile_expr(right);
                 self.scalar_bind_autovivify = false;
-                self.code.emit(raw_eq_op(left));
+                self.code.emit(raw_eq_op(left, right));
                 return;
             }
             if let Some(slot) = self.container_eq_var_slot(right)
@@ -748,7 +758,7 @@ impl Compiler {
                 self.compile_expr(left);
                 self.scalar_bind_autovivify = false;
                 self.code.emit(OpCode::GetLocalRaw(slot));
-                self.code.emit(raw_eq_op(right));
+                self.code.emit(raw_eq_op(right, left));
                 return;
             }
             // Both sides are Index expressions that `Expr::element_source_key` could

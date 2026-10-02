@@ -54,7 +54,9 @@ plan 15;
     my @sr = 1, 2;
     @sr ,= 3, 4;
     is @sr.elems, 2, ',= does not flatten-append';
-    ok @sr[0] =:= @sr, ',= self-reference (element 0 is the array itself)';
+    # The element holds the array itself in its own Scalar container:
+    # `===`, but not `=:=` (rakudo).
+    ok @sr[0] === @sr, ',= self-reference (element 0 is the array itself)';
 }
 
 # --- anonymous containers stay distinct (shared slot name) ---
