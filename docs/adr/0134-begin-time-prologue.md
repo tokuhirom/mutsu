@@ -344,7 +344,8 @@ status here.
     code variable (which can declare an operator), a type, a package or an
     import (a plain routine no longer does, and nor do most types, packages,
     imports and code variables: see the two follow-ups below);
-  - a BEGIN in a package body, including a method's;
+  - a BEGIN in a package body, including a method's (lifted since: see the
+    #10328 section below);
   - a blockless `BEGIN my %h = ...`, whose `my` declares into the enclosing
     scope;
   - a BEGIN whose body uses a placeholder, which is `X::Placeholder::Block`;
@@ -713,3 +714,48 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   recorded as a routine of that scope (the walk skipped every routine inside a
   package), so an `INIT` of the method that called it failed with `Unknown
   function`. Only the routines a package's own body declares are skipped now.
+
+**BEGIN in a class, role or package body, or in one of its routines — implemented**
+(#10328, `src/runtime/begin_prologue/nested/phasers.rs`,
+`t/modules/begin-in-package-body.t`).
+
+- **The gap.** The walk of slice 2 did not enter a package body, so a `BEGIN`
+  there kept its pre-ADR handling: in a method or in a role it never ran, and in
+  a class or package body it ran when the declaration ran, after the statements
+  that precede it (`class C { my $x = 5; BEGIN say $x.defined }` said `True`;
+  rakudo says `False`, since the body's lexical is in its static state).
+- **A BEGIN in the body of a class or package stays in the body.** It runs while
+  the package is declared, in source order with the declaration's other effects,
+  and it may change the package (`::?CLASS.^add_role(::('R'))`, #8573) ahead of
+  the members that rely on the change; hoisting it out of the declaration would
+  run it on a composed class. What was missing was that the declaration ran at
+  its source position: a package with a BEGIN in its body (or in a routine of it)
+  is now a BEGIN-time effect of the unit, so the prologue's bound reaches it and
+  the declaration runs there (`Lifted::needs_prologue`).
+- **A BEGIN in a routine of a class or package is lifted** the way an `INIT` is
+  (§7, #10562): static cells for the routine's lexicals, a value slot for the
+  value form, and the lifted body runs inside a `Stmt::PackageRuntimeBody` of each
+  enclosing package, so the body's `my` lexicals are in their static state and
+  `$?CLASS` and `$*PACKAGE` are the package's. It follows the package's
+  declaration in the prologue (`Lifted::package_effects`), once the package is
+  composed. It does not run inside the declaration, because the class body
+  chunks that run there write an outer lexical by name, which a method that reads
+  it does not see (#10751).
+- **Role bodies, and classes declared in code,** have no package to re-enter, so
+  a BEGIN in them is lifted to the prologue with no wrapper, as the INIT/CHECK of
+  such a type is. A body that reads `self`, an attribute, a `$?` variable, an
+  `EVAL`, a symbolic name or `$*PACKAGE` (the package being declared) stays where
+  it is, and so halts the lifting of the BEGINs after it (`Lifted::halted`).
+- **Deviations.**
+  - Within one class, a BEGIN of the body runs while the class is declared, and a
+    BEGIN of a routine runs after it, so their source order is only kept when the
+    body's come first. A routine's BEGIN that changes the class (`.^add_method`)
+    sees it composed.
+  - A `unit class` / `unit module` declaration is not covered, nor is a BEGIN in a
+    `has` default, in a `token`/`rule`/`proto` body, or in the value-form
+    initializer of a class-body variable.
+- **A bug fixed on the way.** The run-time part of a class body that the prologue
+  declares ahead (`Stmt::PackageRuntimeBody`) did not swallow the error of an
+  `EVAL` or `BEGIN` statement, as a class body registered in place does
+  (`register_class_decl`). `class C { EVAL q[has $.w] }` threw `X::Attribute::NoPackage`
+  as soon as any `BEGIN` followed the class; it is swallowed again.

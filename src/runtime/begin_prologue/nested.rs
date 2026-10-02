@@ -53,7 +53,10 @@
 //!   calls a routine that is neither one of the scope's nor a core one (which
 //!   may evaluate a string where it was called from), in a scope that declares
 //!   a routine or a type, since it cannot say which one it needs;
-//! - it sits in a package body;
+//! - it sits in a body that cannot give it what it reads (a role or a class
+//!   declared in code that reads `self`, a `$?` variable or `$*PACKAGE`; see
+//!   [`phasers`]). A `BEGIN` of a class or package body, or of one of its
+//!   routines, is run at BEGIN time (#10328);
 //! - it reads a name that resolves to nothing the unit declares (for example
 //!   an EVAL's caller lexical);
 //! - it reads a `state`, `constant` or group-declared inner lexical.
@@ -88,6 +91,10 @@ pub(super) struct Lifted {
     pub(super) decls: Vec<Stmt>,
     /// One statement-form `BEGIN` per lifted effect, in source order.
     pub(super) effects: Vec<Stmt>,
+    /// The `BEGIN`s lifted out of the routines of a package body, in source
+    /// order. Each re-enters its package, so it follows the statement's own
+    /// declaration in the prologue ([`phasers`]).
+    pub(super) package_effects: Vec<Stmt>,
     /// One top-level `INIT` or `CHECK` per phaser lifted out of the statement
     /// being walked ([`phasers`]). They precede the statement; the caller
     /// takes them after each statement.
@@ -290,6 +297,14 @@ impl Walker<'_> {
         if !begin && !self.may_lift_phaser(body) {
             return false;
         }
+        // A BEGIN written in a role or a class declared in code runs in the
+        // prologue, where only what the unit's level can give it exists
+        // (#10328). One that reads more keeps its old handling.
+        if begin && self.innermost_package_frame().is_none() && !self.body_reaches_unit_level(body)
+        {
+            self.lifted.halted = true;
+            return false;
+        }
         // A blockless `BEGIN my %h = ...` declares into the enclosing scope,
         // which the lifted body's block would hide. Its body is that one
         // declaration; `BEGIN { my $x ... }` keeps its `my` to itself.
@@ -337,9 +352,19 @@ impl Walker<'_> {
         }
         let inner = vec![Stmt::Block(FrameBlock::nest(blocks, inner))];
         if begin {
-            self.lifted.effects.push(Stmt::Phaser {
+            // A BEGIN written in a routine of a package re-enters the package,
+            // so it runs once the package is declared: it follows the
+            // declaration in the prologue (#10328).
+            let in_package = self.innermost_package_frame().is_some();
+            let body = self.run_in_packages(inner);
+            let effects = if in_package {
+                &mut self.lifted.package_effects
+            } else {
+                &mut self.lifted.effects
+            };
+            effects.push(Stmt::Phaser {
                 kind: PhaserKind::Begin,
-                body: inner,
+                body,
                 condition: None,
                 end_index: None,
             });

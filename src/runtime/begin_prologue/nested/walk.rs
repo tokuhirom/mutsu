@@ -48,7 +48,14 @@ impl Walker<'_> {
         for (i, stmt) in list.iter_mut().enumerate() {
             self.walk_stmt(unlabel(stmt), Some((i, i + 1 == len)));
         }
-        let frame = self.frames.pop().expect("frame pushed above");
+        self.finish_scope(list);
+    }
+
+    /// Leaves the scope whose statements `list` holds, and applies the edits
+    /// it collected to `list`.
+    pub(super) fn finish_scope(&mut self, list: &mut Vec<Stmt>) {
+        let len = list.len();
+        let frame = self.frames.pop().expect("a scope is being walked");
         if frame.edits.is_empty() {
             return;
         }
@@ -109,11 +116,9 @@ impl Walker<'_> {
                 let (Some((index, is_tail)), false) = (loc, self.frames.is_empty()) else {
                     return;
                 };
-                // A BEGIN in a package body is not lifted.
-                if self.in_package() {
-                    return;
-                }
-                // A BEGIN that ends its block is the block's value.
+                // A BEGIN that ends its block is the block's value. The value
+                // of a type's body is not observable.
+                let is_tail = is_tail && !self.directly_in_package();
                 let slot = is_tail.then(|| next_slot("__begin_value_"));
                 if self.lift(body, slot.as_deref(), &PhaserKind::Begin) {
                     self.edit_lifted(index, slot);
@@ -310,9 +315,6 @@ impl Walker<'_> {
                 kind: PhaserKind::Begin,
                 body,
             } => {
-                if self.in_package() {
-                    return;
-                }
                 let slot = next_slot("__begin_value_");
                 if self.lift(body, Some(&slot), &PhaserKind::Begin) {
                     *expr = slot_read(slot);

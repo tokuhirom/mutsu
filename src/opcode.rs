@@ -5758,7 +5758,7 @@ fn classify_class_body_stmt(stmt: &Stmt, decl_line: Option<i64>) -> ClassBodyOp 
 
 /// Whether a class-body statement is a `BEGIN` phaser or an `EVAL` call
 /// (ADR-0019 D10 follow-up) — see [`ClassBodyOp::Other::is_swallowable`].
-fn is_swallowable_class_body_stmt(stmt: &Stmt) -> bool {
+pub(crate) fn is_swallowable_class_body_stmt(stmt: &Stmt) -> bool {
     matches!(
         stmt,
         Stmt::Phaser {

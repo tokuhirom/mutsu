@@ -1,5 +1,5 @@
 //! INIT and CHECK phasers that read a lexical of the routine they are written
-//! in (ADR-0134 §7, #10562).
+//! in (ADR-0134 §7, #10562), and the BEGINs of package bodies (#10328).
 //!
 //! Rakudo runs an `INIT` once, at the start of the program, and a `CHECK` once,
 //! at the end of compilation, wherever they are written. Both see the lexicals
@@ -45,6 +45,24 @@
 //!   the code runs the declaration, and never if that code never runs. A phaser
 //!   that names the class itself (which does not exist at the unit's level) stays
 //!   where it is.
+
+//! # BEGIN in a package body (#10328)
+//!
+//! A `BEGIN` written in a class, package or role body, or in one of its routines
+//! (a method included), runs at BEGIN time like any other:
+//!
+//! - **In the body itself of a class or package.** It stays where it is: it runs
+//!   while the package is declared, in source order with the declaration's other
+//!   effects, and it may change the package (`::?CLASS.^add_role(...)`) ahead of
+//!   the members that rely on the change. The unit declares such a package in the
+//!   prologue, so the declaration runs ahead of the mainline.
+//! - **In a routine of a class or package.** It is lifted like an `INIT`: static
+//!   cells for the routine's lexicals, and the lifted body runs inside a
+//!   [`Stmt::PackageRuntimeBody`] of each enclosing package. It follows the
+//!   package's declaration in the prologue, so the package is composed by then.
+//! - **In a role, or a class declared in code.** Lifted to the prologue with no
+//!   package, as the `INIT`s of such a type are. A body that reads `self`, a
+//!   `$?` variable or `$*PACKAGE` stays where it is.
 
 use super::routines::{Dependencies, FrameBlock};
 use super::{Binding, BindingKind, Frame, Walker};
@@ -92,6 +110,18 @@ impl Walker<'_> {
         self.frames.iter().any(|f| f.role.is_some())
     }
 
+    /// The scope a `BEGIN` written here is a member of, when that is the body
+    /// of a package a declaration runs: the innermost package, role or class
+    /// declared in code around the statement, if it is a package.
+    // Cost: O(d), d = the nesting depth of the scopes around the statement.
+    pub(super) fn innermost_package_frame(&self) -> Option<usize> {
+        let frame = self
+            .frames
+            .iter()
+            .rposition(|f| f.package.is_some() || f.role.is_some())?;
+        self.frames[frame].package.is_some().then_some(frame)
+    }
+
     /// Whether the innermost scope is a package or role body, so a method
     /// declared now is a member of it.
     pub(super) fn directly_in_package(&self) -> bool {
@@ -108,6 +138,14 @@ impl Walker<'_> {
         if self.frames.is_empty() || super::decls::Mentions::of(body).has_begin {
             return false;
         }
+        self.body_reaches_unit_level(body)
+    }
+
+    /// Whether a phaser body written in a package, role or class declared in
+    /// code reads nothing that only that scope can give it: not `self`, an
+    /// attribute, a `$?` variable of a role, an `EVAL` or a symbolic name. A
+    /// body that is not in one reads what any scope gives it.
+    pub(super) fn body_reaches_unit_level(&self, body: &[Stmt]) -> bool {
         if !self.in_package() {
             return true;
         }
@@ -136,7 +174,7 @@ impl Walker<'_> {
     pub(super) fn walk_package(&mut self, stmt: &mut Stmt) {
         // A phaser lifted from here runs in the unit's own sequence, so every
         // package around it has to be reachable by name from the unit's level.
-        if !self.frames.iter().all(|f| f.package.is_some()) || !has_init_or_check(stmt) {
+        if !self.frames.iter().all(|f| f.package.is_some()) || !has_phaser(stmt) {
             return;
         }
         let Some((enclosing, _)) = super::super::package_phasers::Enclosing::of_decl(stmt) else {
@@ -164,7 +202,7 @@ impl Walker<'_> {
     /// reads what the role declares stays put. A class's body is walked as a
     /// scope of its own.
     pub(super) fn walk_detached(&mut self, stmt: &mut Stmt) {
-        if !has_init_or_check(stmt) {
+        if !has_phaser(stmt) {
             return;
         }
         let names = super::decls::declared_names(stmt);
@@ -214,15 +252,27 @@ impl Walker<'_> {
     /// Walk the routines and imports among the members of a package or role
     /// body, in the scope `frame` stands for. A class nested in it is walked for
     /// its own phasers.
-    fn walk_members(&mut self, body: &mut [Stmt], frame: Frame) {
+    fn walk_members(&mut self, body: &mut Vec<Stmt>, frame: Frame) {
         let in_package = frame.package.is_some();
         self.frames.push(frame);
+        // A BEGIN written directly in a package body already runs while the
+        // package is declared (it may change the package: `^add_role`), so it
+        // stays; the package only has to be declared in the prologue (#10328).
+        let mut declares_begin = false;
         for (i, member) in body.iter_mut().enumerate() {
             let walked = match member {
                 Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => true,
                 // A class is walked in any body; a package only in a package.
                 Stmt::ClassDecl { .. } => true,
                 Stmt::Package { .. } => in_package,
+                // A role's BEGIN is lifted to the prologue.
+                Stmt::Phaser {
+                    kind: PhaserKind::Begin,
+                    ..
+                } => {
+                    declares_begin |= in_package;
+                    !in_package
+                }
                 // What the body imports, its routines see too.
                 Stmt::Use { .. } | Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } => {
                     true
@@ -233,7 +283,10 @@ impl Walker<'_> {
                 self.walk_stmt(member, Some((i, false)));
             }
         }
-        self.frames.pop();
+        if declares_begin {
+            self.lifted.needs_prologue = true;
+        }
+        self.finish_scope(body);
     }
 }
 
@@ -261,21 +314,21 @@ fn declared_bindings(body: &[Stmt], shared: &[String]) -> Vec<Binding> {
     bindings
 }
 
-/// Whether a declaration holds an `INIT` or `CHECK` phaser anywhere.
+/// Whether a declaration holds a `BEGIN`, `INIT` or `CHECK` phaser anywhere.
 // Cost: O(n), n = size of the declaration.
-fn has_init_or_check(stmt: &Stmt) -> bool {
-    let mut found = HasInitOrCheck(false);
+fn has_phaser(stmt: &Stmt) -> bool {
+    let mut found = HasPhaser(false);
     found.visit_stmt(stmt);
     found.0
 }
 
-struct HasInitOrCheck(bool);
+struct HasPhaser(bool);
 
-impl<'ast> Visit<'ast> for HasInitOrCheck {
+impl<'ast> Visit<'ast> for HasPhaser {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::Phaser {
-                kind: PhaserKind::Init | PhaserKind::Check,
+                kind: PhaserKind::Begin | PhaserKind::Init | PhaserKind::Check,
                 ..
             } => self.0 = true,
             _ => walk_stmt(self, stmt),
@@ -285,7 +338,7 @@ impl<'ast> Visit<'ast> for HasInitOrCheck {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::PhaserExpr {
-                kind: PhaserKind::Init | PhaserKind::Check,
+                kind: PhaserKind::Begin | PhaserKind::Init | PhaserKind::Check,
                 ..
             } => self.0 = true,
             _ => walk_expr(self, expr),

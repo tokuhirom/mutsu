@@ -414,7 +414,8 @@ fn bare(name: &str) -> &str {
 
 /// Whether a phaser body may run away from its site: it reads none of
 /// `locals`, no attribute, and nothing it cannot name statically. In a role
-/// (`in_role`) a `$?` compile-time variable is local too.
+/// or a class declared in code (`in_role`) a `$?` compile-time variable is
+/// local too, and so is `$*PACKAGE`, which is the package being declared.
 pub(super) fn movable(body: &[Stmt], locals: &HashSet<String>, in_role: bool) -> bool {
     let mut names = Names::default();
     for stmt in body {
@@ -425,7 +426,9 @@ pub(super) fn movable(body: &[Stmt], locals: &HashSet<String>, in_role: bool) ->
     }
     !names.names.iter().any(|name| {
         let name = bare(name);
-        locals.contains(name) || name.starts_with(['!', '.']) || (in_role && name.contains('?'))
+        locals.contains(name)
+            || name.starts_with(['!', '.'])
+            || (in_role && (name.contains('?') || name == "*PACKAGE"))
     })
 }
 
