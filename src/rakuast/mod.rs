@@ -18,6 +18,7 @@ pub(crate) mod frontend;
 mod lower;
 mod name_parts;
 mod render;
+mod routine_traits;
 mod signature_decl;
 mod use_stmt;
 
