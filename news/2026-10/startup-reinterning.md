@@ -30,3 +30,10 @@ MRO, instead of re-walking and re-interning the chain, found a reusable parent o
 of 368, because most parents are hand-built classes. The memo's own map cost more than it saved,
 so it was dropped. What remains is close to the floor of one intern per distinct name. Going
 lower would mean pre-building the table of built-in names, which is a design change.
+
+The gate also turned up a crash-reporter bug. The symbolized backtrace at the end of a crash
+report is bounded by a 10-second `alarm`. On a loaded box, symbolizing a debug binary took longer
+than that, so the process died of SIGALRM's default action, and the wait status said 14 instead of
+the crash's own signal. The alarm now has a handler that re-raises the crash's signal with its
+default action. `tests/crash_report.rs` covers this with a selftest whose symbolization never
+finishes.

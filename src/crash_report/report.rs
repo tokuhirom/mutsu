@@ -8,8 +8,34 @@
 
 use std::backtrace::Backtrace;
 use std::ffi::c_int;
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use super::handler::{PREAMBLE, REPORT_DIR};
+
+/// The signal being reported, for [`symbolize_timed_out`].
+static CRASH_SIG: AtomicI32 = AtomicI32::new(0);
+
+/// How long the symbolized backtrace may take before it is abandoned.
+pub(super) static SYMBOLIZE_TIMEOUT_SECS: AtomicU32 = AtomicU32::new(10);
+
+/// SIGALRM handler armed around the symbolized backtrace: the report proper is
+/// already on disk, so die by the crash's own signal with its default action,
+/// keeping the wait status (and a core dump) what it would have been.
+extern "C" fn symbolize_timed_out(_: c_int, _: *mut libc::siginfo_t, _: *mut libc::c_void) {
+    let sig = CRASH_SIG.load(Ordering::SeqCst);
+    // SAFETY: signal/pthread_sigmask/raise/_exit are async-signal-safe. The
+    // crash's signal is blocked on the thread still inside its handler, so
+    // unblock it here before raising it with the default (fatal) action.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, sig);
+        libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
+        libc::raise(sig);
+        libc::_exit(128 + sig);
+    }
+}
 
 /// Header buffer size. Anything longer is truncated rather than allocated.
 const BUF_SIZE: usize = 2048;
@@ -93,10 +119,29 @@ pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t) {
 
     // Everything above is async-signal-safe and already on disk. What follows
     // allocates and takes locks, so it can deadlock outright if the fault was
-    // inside the allocator: bound it with an alarm and accept losing it.
-    // SAFETY: arming an alarm cannot fail.
-    unsafe { libc::alarm(10) };
+    // inside the allocator — or merely take a long time symbolizing a debug
+    // binary on a loaded box: bound it with an alarm and accept losing it. The
+    // alarm must end the process with the *crash's* signal, not SIGALRM's
+    // default, or the wait status a harness reads stops saying what happened.
+    CRASH_SIG.store(sig, Ordering::SeqCst);
+    // SAFETY: a zeroed sigaction carrying a valid handler; arming an alarm
+    // cannot fail.
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = symbolize_timed_out as *const () as usize;
+        sa.sa_flags = libc::SA_SIGINFO | libc::SA_ONSTACK;
+        libc::sigemptyset(&mut sa.sa_mask);
+        libc::sigaction(libc::SIGALRM, &sa, std::ptr::null_mut());
+        libc::alarm(SYMBOLIZE_TIMEOUT_SECS.load(Ordering::Relaxed));
+    }
     write_all(fd, b"--- backtrace (symbolized, best effort) ---\n");
+    if super::handler::STALL_SYMBOLIZE.load(Ordering::Relaxed) {
+        // Selftest only: stand in for a symbolization that never finishes.
+        loop {
+            // SAFETY: pause only waits for a signal.
+            unsafe { libc::pause() };
+        }
+    }
     let bt = Backtrace::force_capture().to_string();
     write_all(fd, bt.as_bytes());
     write_all(fd, b"\n");

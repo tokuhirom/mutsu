@@ -103,6 +103,23 @@ fn abort_is_reported_too() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A symbolized backtrace that outlives its alarm (a debug binary on a loaded
+/// box took over 10s) must still leave the crash's own signal as the wait
+/// status, not SIGALRM's, with everything before the backtrace on disk.
+#[test]
+fn a_symbolize_timeout_keeps_the_crash_signal() {
+    let (signal, dir) = run_crashing(
+        "segv-thread",
+        "segv-stall",
+        &[("MUTSU_CRASH_SELFTEST_STALL_SYMBOLIZE", "1")],
+    );
+    assert_eq!(signal, Some(libc::SIGSEGV));
+    let report = read_report(&dir);
+    assert_eq!(field(&report, "signal:"), "11 (SIGSEGV)");
+    assert!(report.contains("--- backtrace (raw) ---"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The half that used to be missing: a fatal signal on a *worker* thread.
 ///
 /// The handler's disposition is process-wide, so it always ran on such a
