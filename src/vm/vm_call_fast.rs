@@ -242,7 +242,11 @@ impl Interpreter {
             };
             match step {
                 Ok(()) => {}
-                Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                Err(e)
+                    if e.return_value.is_some()
+                        && !e.is_yield_signal()
+                        && !cf.code.lets_succeed_through(&e) =>
+                {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);

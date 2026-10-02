@@ -91,8 +91,13 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         b'&' => "&",
         _ => "",
     };
+    // A constant always has a user-written initializer, so it is marked like
+    // any other initialized declaration: `constant z = Nil` must keep its Nil
+    // rather than be taken for the synthesized default (re-seeded as `Any`,
+    // or — being package-scoped — loaded as a bare `our` redeclaration).
     let constant_traits = vec![
         ("__constant".to_string(), None),
+        ("__has_initializer".to_string(), None),
         (
             "__constant_sigil".to_string(),
             Some(Expr::Literal(Value::str(sigil_marker.to_string()))),

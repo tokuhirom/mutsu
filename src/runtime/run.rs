@@ -773,8 +773,24 @@ impl Interpreter {
         // sub body, or loop iteration never reaches this function -- see its
         // own doc comment), so catching it here cannot mask a succeed that
         // was meant for an enclosing scope.
+        //
+        // A succeed that reaches here from a mainline with no `when`/`default`
+        // of its own was raised by an explicit `succeed` (in a routine the
+        // mainline called, say) with no clause to leave: rakudo reports that as
+        // `X::ControlFlow` "succeed without when clause" rather than ending the
+        // program silently.
         let body_result = match body_result {
-            Err(e) if e.is_succeed() => Ok(e.return_value),
+            Err(e) if e.is_succeed() => {
+                if crate::compiler::Compiler::body_has_toplevel_when(&body_main) {
+                    Ok(e.return_value)
+                } else {
+                    Err(RuntimeError::control_flow_illegal(
+                        crate::value::Control::Succeed,
+                        "succeed",
+                        "when clause",
+                    ))
+                }
+            }
             other => other,
         };
         let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {

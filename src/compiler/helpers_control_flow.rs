@@ -879,7 +879,7 @@ impl Compiler {
     /// staying narrow rather than by being skipped. The walk is
     /// `body_scans::reaches_when` (ADR-0137).
     // Cost: O(n), n = size of the part of `stmts` in the block's own scope.
-    pub(super) fn body_has_toplevel_when(stmts: &[Stmt]) -> bool {
+    pub(crate) fn body_has_toplevel_when(stmts: &[Stmt]) -> bool {
         super::body_scans::reaches_when(stmts)
     }
 

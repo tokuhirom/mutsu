@@ -404,6 +404,14 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
+                // A `succeed` from a routine body with no `when`/`default` of
+                // its own is not this routine's return: it unwinds to the
+                // caller's `given` (see `CompiledCode::succeed_passes_through`).
+                Err(e) if cf.code.lets_succeed_through(&e) => {
+                    loan_env!(self, restore_let_saves(let_mark));
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this routine is the target.

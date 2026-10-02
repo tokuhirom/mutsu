@@ -6458,6 +6458,16 @@ pub(crate) struct CompiledCode {
     /// only at routine boundaries, allowing pointy-block returns to propagate
     /// up to the enclosing routine.
     pub(crate) is_routine: bool,
+    /// Whether a `CX::Succeed` raised inside this code (an explicit `succeed`,
+    /// directly or from a routine it calls) unwinds PAST its call boundary.
+    ///
+    /// Raku installs a succeed handler only on a block that lexically contains
+    /// a `when`/`default`; a routine or block without one lets the signal
+    /// propagate dynamically to the caller's enclosing `given`/`when`, exactly
+    /// as `last`/`next` reach a caller's loop. The routine and closure body
+    /// compilers set this to `!body_scans::reaches_when(body)`; it stays
+    /// `false` (absorb at the boundary) for every other chunk.
+    pub(crate) succeed_passes_through: bool,
     /// Whether the body references the topic `$_` (its constant pool contains
     /// the name `"_"`, emitted by any read/write of `$_`). A routine gets a
     /// fresh `$_` (Any), so a positional-light call must shadow the caller's
@@ -7481,6 +7491,14 @@ impl ConstKey {
 }
 
 impl CompiledCode {
+    /// Whether `err` is a `succeed` that must unwind past this code's call
+    /// boundary instead of becoming its return value (see
+    /// [`Self::succeed_passes_through`]).
+    // Cost: O(1).
+    pub(crate) fn lets_succeed_through(&self, err: &crate::value::RuntimeError) -> bool {
+        self.succeed_passes_through && err.is_succeed()
+    }
+
     /// True when this body declares a routine (`sub`/`subset`) directly in its
     /// own scope (not inside a nested `BlockScope`, which restores the
     /// registry itself) — such a routine is lexical to this body and must be
@@ -7703,6 +7721,7 @@ impl CompiledCode {
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            succeed_passes_through: false,
             reads_topic: false,
             mentions_native_scalar_type_name: false,
             has_once: false,

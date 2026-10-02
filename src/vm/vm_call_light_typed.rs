@@ -624,7 +624,11 @@ impl Interpreter {
                 };
                 match step {
                     Ok(()) => {}
-                    Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                    Err(e)
+                        if e.return_value.is_some()
+                            && !e.is_yield_signal()
+                            && !cf.code.lets_succeed_through(&e) =>
+                    {
                         // Non-local return: if the signal targets a specific
                         // callable, only catch it if this routine is the target
                         // (mirrors `call_compiled_function_named`'s decline
