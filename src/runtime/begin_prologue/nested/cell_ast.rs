@@ -98,7 +98,7 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
 /// Reads a value slot the way the BEGIN's own value would be read: the slot is
 /// a scalar, so it is decontainerized (`$slot<>`). Otherwise
 /// `my str @hex = BEGIN (^256)>>.fmt("%02x")` would assign one itemized list.
-pub(super) fn slot_read(slot: String) -> Expr {
+pub(in crate::runtime::begin_prologue) fn slot_read(slot: String) -> Expr {
     Expr::MethodCall {
         target: Box::new(Expr::Var(slot)),
         name: crate::symbol::Symbol::intern("__mutsu_zen_angle"),

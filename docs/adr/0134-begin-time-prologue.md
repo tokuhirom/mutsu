@@ -644,5 +644,19 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   binds one object into every frame.
 - **Not lifted.** A phaser of a method of a class declared inside code
   (`sub f { my class K { method m { my $z; INIT $z = 5; $z } } }`): the class
-  does not exist at the unit's level. A tail statement-form `INIT` the move
-  above took from a routine does not yield its value (`sub t { INIT 5 }`).
+  does not exist at the unit's level (#10645).
+
+**A phaser that ends a routine — implemented** (#10644,
+`src/runtime/begin_prologue/package_phasers.rs`).
+
+- A statement-form `INIT`/`CHECK` that is the last statement of a routine body
+  is the routine's value (`sub t { INIT 5 }` returns 5). The move above used to
+  delete it, so the routine returned `Nil`. It now stores its value into a
+  unit-level slot (`__init_value_N`) like a value-form phaser, and leaves a read
+  of the slot where it stood. This covers a top-level `sub`, a method, and the
+  method of a top-level role. The nested walk did this for the phasers it lifts
+  from the start.
+- A value-form phaser's slot is read decontainerized (`slot_read`, as the nested
+  walk reads its own), so a list value flattens into an `@` variable
+  (`my @a = INIT (1, 2, 3)` has three elements). It was assigned as one
+  itemized list.

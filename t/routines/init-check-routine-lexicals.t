@@ -5,7 +5,7 @@ use Test;
 # every frame of the routine starts from (#10562). Each expectation below is
 # what rakudo prints.
 
-plan 25;
+plan 33;
 
 sub f { my $z; INIT $z = 5; $z }
 is f(), 5, 'an INIT write to a routine lexical is the value the routine starts from';
@@ -90,3 +90,31 @@ is-deeply @order, ['o1', 'o2'], 'the phasers of different routines run in source
     INIT $z = 5;
     is $z, 5, 'a block lexical of the unit keeps what an INIT stored';
 }
+
+# A phaser that ends a routine is the routine's value (#10644).
+
+sub tail-init { INIT 5 }
+is tail-init(), 5, 'a routine that ends in an INIT returns its value';
+
+sub tail-check { CHECK 6 }
+is tail-check(), 6, 'the same for a CHECK';
+
+class TailC {
+    method m { INIT 7 }
+    method n { my @a = INIT (4, 5); @a.elems }
+}
+is TailC.m, 7, 'a method that ends in an INIT';
+is TailC.n, 2, 'a value-form INIT list flattens into an array';
+
+role TailR { method m { INIT 8 } }
+class TailUR does TailR { }
+is TailUR.m, 8, 'a role method that ends in an INIT';
+
+sub tail-after-decl { my $x = 1; INIT 9 }
+is tail-after-decl(), 9, 'an INIT after other statements';
+
+sub tail-list { INIT (1, 2, 3) }
+is-deeply tail-list(), (1, 2, 3), 'a list value stays a list';
+
+sub not-tail { INIT 10; 11 }
+is not-tail(), 11, 'an INIT that does not end the routine is not its value';
