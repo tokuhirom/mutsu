@@ -59,7 +59,8 @@ src/value/types_eqv.rs                                   4
 src/value/types_isa.rs                                   3
 src/value/value_async.rs                                 1
 src/value/value_buf.rs                                   2
-src/value/value_lazy_ctors.rs                            8
+src/value/value_lazy.rs                                  1
+src/value/value_lazy_ctors.rs                           10
 src/value/value_methods_b.rs                             3
 src/value/value_methods_c.rs                            17
 src/value/waker.rs                                       3

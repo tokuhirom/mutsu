@@ -11,7 +11,7 @@ parser, `Value`, `opcode`, `Env`, the GC, and the name/key leaf modules `symbol`
 `meta_ns`, `str_scan` and `type_id`. The parser counts as upward from below it too. Per-file
 counts live in `scripts/layer-deps-baseline.txt` and may only go down.
 
-The first moves took the count from 205 to 189:
+The first moves took the count from 208 to 192:
 
 - `MetaNs` moved from `src/runtime/meta_ns.rs` to `src/meta_ns.rs`, and the name-marker byte
   scans (`has_double_colon`, `has_routine_scope_marker`, ...) from `src/runtime/utils/` to
