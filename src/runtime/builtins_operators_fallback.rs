@@ -1319,17 +1319,21 @@ impl Interpreter {
     /// that package substituted (`Meta::index` -> `A::Meta::index`).
     // Cost: O(n) in the length of `name`, one env lookup.
     pub(crate) fn resolve_package_alias_prefix(&self, name: &str) -> Option<String> {
-        let (head, rest) = name.split_once("::")?;
-        if head.is_empty() || rest.is_empty() {
-            return None;
-        }
+        use crate::qualified::{package_ancestors, package_parent, qualified};
+        let name_sym = Symbol::intern(name);
+        // The outermost enclosing package of `name` is its leading component.
+        let head = package_ancestors(package_parent(name_sym)?).last()?;
         // A `constant` is a term (#9962), reached through `type_name_binding`.
-        let value = self.type_name_binding(head)?;
+        let value = self.type_name_binding(head.as_str())?;
         let ValueView::Package(pkg) = value.view() else {
             return None;
         };
-        let target = pkg.resolve();
-        (target.as_str() != head).then(|| format!("{target}::{rest}"))
+        if pkg == head {
+            return None;
+        }
+        // Skip the head and its `::` separator.
+        let rest = Symbol::intern(&name[head.as_str().len() + 2..]);
+        Some(qualified(pkg, rest).as_str().to_string())
     }
 
     pub(super) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
