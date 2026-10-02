@@ -141,12 +141,54 @@ impl Compiler {
         // A statically named `require` declares its placeholder at block entry.
         self.hoist_require_stubs(stmts);
         self.emit_body_let_frame(stmts, let_frame);
+        self.record_block_scope_protected_slots(idx);
         self.code.patch_block_body_end(idx);
         self.code.patch_block_keep_start(idx);
         self.code.patch_block_undo_start(idx);
         self.code.patch_block_post_start(idx);
         self.code.patch_loop_end(idx);
         self.lexically_in_block = saved_lexically_in_block;
+    }
+
+    /// Record, for the `BlockScope` at op index `idx`, the enclosing slots its
+    /// exit must not re-seed (see `CompiledCode::block_scope_protected_slots`).
+    ///
+    /// The innermost local-scope frame is this block's own (pushed by
+    /// `compile_block_construct`). For each name it shadows, the frame's `prev`
+    /// is the slot the name denotes after the block exits — the one slot the
+    /// exit restores. Every ancestor frame that itself shadowed the name
+    /// recorded the slot visible before *it*; those are live bindings further
+    /// out, which the name-keyed exit value does not describe.
+    pub(super) fn record_block_scope_protected_slots(&mut self, idx: usize) {
+        if !shadow_slots_active() {
+            return;
+        }
+        let Some((own, ancestors)) = self.local_scopes.split_last() else {
+            return;
+        };
+        let mut protected = Vec::new();
+        for (name, prev) in own {
+            let Some(visible) = *prev else {
+                continue;
+            };
+            if visible == u32::MAX {
+                continue;
+            }
+            let sym = crate::symbol::Symbol::intern(name);
+            for frame in ancestors {
+                if let Some(Some(slot)) = frame.get(name)
+                    && *slot != u32::MAX
+                    && *slot != visible
+                {
+                    protected.push((sym, *slot));
+                }
+            }
+        }
+        if !protected.is_empty() {
+            self.code
+                .block_scope_protected_slots
+                .insert(idx as u32, protected.into_boxed_slice());
+        }
     }
 
     /// Compile `stmts` as the body of a statement-position block, optionally

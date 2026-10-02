@@ -496,7 +496,8 @@ impl Interpreter {
     // Cost: O(b + w + d + R) per execution plus the body, b = ops in the block (scanned
     // for declarations/topic binders on every entry), w = names the block wrote by
     // name (the exit merges only its block tier), d = names it declared (their slots
-    // are reset), R = routine-registry entries (snapshot + restore). Once any
+    // are reset, each checked against the block's p protected further-out slots, so
+    // O(d * p) with p = 0 unless the block re-shadows a name), R = routine-registry entries (snapshot + restore). Once any
     // sigilless alias exists in the process the alias sync adds O(L), L = frame
     // locals. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_scope_op(
@@ -950,6 +951,13 @@ impl Interpreter {
             // chunk's name index, not by scanning every local of the frame
             // (#9170).
             let topic_sym = crate::symbol::Symbol::intern("_");
+            // Live enclosing bindings further out than the one each shadowed
+            // name denotes after exit: the name-keyed `restored_env` value is
+            // not theirs, so they keep their slot (#10856).
+            let protected_slots = code
+                .block_scope_protected_slots
+                .get(&((pre_start - 1) as u32))
+                .map_or(&[][..], |p| &p[..]);
             let reset_syms = block_declared
                 .iter()
                 .copied()
@@ -968,6 +976,8 @@ impl Interpreter {
                     if is_block_declared {
                         if owned_slots.contains(&idx) {
                             self.locals[idx] = Value::NIL;
+                        } else if protected_slots.contains(&(sym, idx as u32)) {
+                            continue;
                         } else {
                             // The block-entry shadow prelude clears the formerly
                             // visible outer slot before initializing the fresh
