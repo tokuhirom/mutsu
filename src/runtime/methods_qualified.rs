@@ -223,7 +223,7 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => match actual_method {
                 "gist" | "raku" | "perl" => {
                     let display_name = crate::value::user_facing_type_name(&cn);
-                    let public_attrs = self.collect_public_raku_attrs(&cn, &attributes.to_map());
+                    let public_attrs = self.collect_public_raku_attrs(&cn, &attributes.as_map());
                     let rendered = if public_attrs.is_empty() {
                         format!("{}.new", display_name)
                     } else {

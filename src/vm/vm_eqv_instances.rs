@@ -112,7 +112,17 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         if self.error.is_some() {
             return InstanceEqv::Decided(false);
         }
-        match self.class_mode(class_name) {
+        let mode = self.class_mode(class_name);
+        // The default `.raku` Rakudo compares reads every public attribute,
+        // which vivifies it (`nqp::attrinited` turns true, #11003). Two
+        // different types are decided before any `.raku` is taken.
+        if let (Some(private), ValueView::Instance { class_name: cb, .. }) = (&mode, b.view())
+            && cb == class_name
+        {
+            vivify_public_attrs(a, private);
+            vivify_public_attrs(b, private);
+        }
+        match mode {
             Some(private) if private.is_empty() => InstanceEqv::Structural,
             Some(private) => InstanceEqv::Public(private),
             None => {
@@ -129,6 +139,24 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
                 }
             }
         }
+    }
+}
+
+/// Mark every public attribute of the instance `value` as read, as the default
+/// `.raku` does by reading it; `private` names the attributes it skips.
+// Cost: O(a), a = attributes of the instance.
+fn vivify_public_attrs(value: &Value, private: &[String]) {
+    let ValueView::Instance { attributes, .. } = value.view() else {
+        return;
+    };
+    let map = attributes.as_map();
+    let public: Vec<Symbol> = map
+        .keys()
+        .filter(|k| !private.iter().any(|p| p == k.as_str()))
+        .copied()
+        .collect();
+    for key in public {
+        map.get_vivify(key);
     }
 }
 
