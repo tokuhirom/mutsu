@@ -83,7 +83,9 @@ impl CompiledFunction {
         // rejects that signature outright; mutsu just keeps it on the general
         // binder rather than deciding the question here.
         match FastParamCheck::of_param(pd) {
-            Some(FastParamCheck::Unconstrained) => Some(value),
+            // A filled literal or an unsupplied optional's `Any` is never
+            // `Mu`-only.
+            Some(FastParamCheck::Unconstrained | FastParamCheck::RequiresAny) => Some(value),
             // A filled `&c?` would need the general binder's `Callable` check.
             Some(FastParamCheck::ImplicitCallable) => None,
             Some(FastParamCheck::Fast { kind, name_sym }) => {

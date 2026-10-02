@@ -2329,6 +2329,19 @@ impl Interpreter {
                         if enforce_named_constraints {
                             bound_value =
                                 self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                            // An untyped routine `:$x` is implicitly `Any`, as
+                            // its positional counterpart is (#10878).
+                            if crate::opcode::FastParamCheck::implicitly_any(pd)
+                                && !self.light_arg_is_any(&bound_value)
+                            {
+                                return Err(self
+                                    .typecheck_binding_parameter_failure(
+                                        &param_display_name(pd),
+                                        "Any",
+                                        &bound_value,
+                                    )
+                                    .with_parameter_object(pd, Some(&*self)));
+                            }
                         }
                         // A named hash parameter (`:%params`) collects the
                         // entries nested in its named argument into a Hash.

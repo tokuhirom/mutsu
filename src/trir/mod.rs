@@ -170,6 +170,10 @@ pub(crate) struct TrParam {
     /// stand in for, so every door declines such an argument and admits
     /// only a computed value.
     pub(crate) sigilless: bool,
+    /// An untyped routine parameter, implicitly `Any`: a `Mu`-only argument
+    /// declines the call, so the untyped path raises (#10878). A block's
+    /// parameter is implicitly `Mu` and never sets this.
+    pub(crate) implicit_any: bool,
 }
 
 /// A boxed parameter's nominal type check.

@@ -214,6 +214,7 @@ impl TrirCompiler<'_> {
                 type_name,
                 check,
                 sigilless: pd.sigilless,
+                implicit_any: tc.is_none() && !pd.block_param,
             });
         }
         Some(())
