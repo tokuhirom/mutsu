@@ -21,9 +21,10 @@ use std::sync::Arc;
 
 use super::super::regex_match_delta::group_merge_delta;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
-use super::rx_call::CallTarget;
+use super::rx_call::{CallTarget, ResolvedCall};
 use super::rx_entry::{Goal, Scratch, program_for};
 use super::rx_frame::{Choice, FMark, Frame, FrameId, MAX_FRAME_DEPTH, Mark, ProtoChoice};
+use super::rx_scope::{UNDO_ENTER, UNDO_EXIT};
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
@@ -190,7 +191,7 @@ impl Interpreter {
         // and a frame that returns to `$ret_pc` in the caller.
         macro_rules! enter_frame {
             ($callee:expr, $callee_pkg:expr, $atom:expr, $entry:expr, $ret_pc:expr,
-             $commit:expr, $stack_base:expr, $proto:expr) => {{
+             $commit:expr, $stack_base:expr, $proto:expr, $window:expr) => {{
                 let callee: Arc<RxProgram> = $callee;
                 let callee_pkg: Symbol = $callee_pkg;
                 let entry: usize = $entry;
@@ -221,6 +222,7 @@ impl Interpreter {
                     proto: $proto,
                     depth,
                     cursor: RefCell::new(None),
+                    window: $window,
                 });
                 frame = Some((frames.len() - 1) as FrameId);
                 cur = Cur::Callee(callee);
@@ -434,142 +436,154 @@ impl Interpreter {
                             break 'run None;
                         };
                         let ic = program.atom_ic[atom as usize];
-                        // A call with arguments evaluates them once, here; a
-                        // bridge then passes them on instead of re-running them.
                         // `None`: an argument failed to evaluate, so no match.
-                        let resolved = if name.spec().arg_exprs.is_empty() {
-                            Some((self.rx_call_target_checked(name, pkg, ic), None))
-                        } else {
-                            self.rx_call_target_args(name, pkg, ic, levels.top().caps())
-                        };
-                        match resolved {
+                        match self.rx_call_resolve(name, pkg, ic, levels.top().caps()) {
                             None => false,
-                            Some((verdict, call_args)) => match verdict {
-                                Ok(CallTarget::Plain(callee, callee_pkg)) => {
-                                    if frame.is_some_and(|f| {
-                                        frames[f as usize].depth >= MAX_FRAME_DEPTH
-                                    }) {
-                                        false
-                                    } else {
-                                        let stack_base = stack.len();
-                                        enter_frame!(
-                                            callee,
-                                            callee_pkg,
-                                            atom,
-                                            pos,
-                                            pc + 1,
-                                            commit,
-                                            stack_base,
-                                            None
-                                        );
-                                        continue 'run;
-                                    }
-                                }
-                                Ok(CallTarget::Proto(cands)) => {
-                                    self.ltm_rank_proto(&cands, chars, pos, ltm_order, proto_rank);
-                                    match proto_rank.first().copied() {
-                                        // No candidate can match here.
-                                        None => false,
-                                        Some(_)
-                                            if frame.is_some_and(|f| {
-                                                frames[f as usize].depth >= MAX_FRAME_DEPTH
-                                            }) =>
-                                        {
+                            Some(ResolvedCall {
+                                verdict,
+                                args: call_args,
+                                window,
+                            }) => {
+                                // A frame's binding window: rewinding past the
+                                // call uninstalls it (`rx_scope`).
+                                let window = window.map(|saved| {
+                                    let k = Self::rx_window_adopt(&mut scopes, saved);
+                                    reg_trail.push((UNDO_ENTER, k));
+                                    k
+                                });
+                                match verdict {
+                                    Ok(CallTarget::Plain(callee, callee_pkg)) => {
+                                        if frame.is_some_and(|f| {
+                                            frames[f as usize].depth >= MAX_FRAME_DEPTH
+                                        }) {
                                             false
-                                        }
-                                        Some(first) => {
-                                            // The call is committed to the first ranked
-                                            // candidate that matches, and to its first
-                                            // end, so a cut at its return drops the
-                                            // rest of the ranking too.
+                                        } else {
                                             let stack_base = stack.len();
-                                            if proto_rank.len() > 1 {
-                                                push_choice!(Choice::Proto(Box::new(
-                                                    ProtoChoice {
-                                                        pc: pc + 1,
-                                                        pos,
-                                                        atom,
-                                                        cands: Arc::clone(&cands),
-                                                        ranked: Rc::from(&proto_rank[..]),
-                                                        next: 1,
-                                                        mark: mark!(),
-                                                    }
-                                                )));
-                                            }
-                                            let (parsed, sub_pkg, _) = &cands[first];
-                                            let Some(callee) = program_for(parsed) else {
-                                                debug_assert!(
-                                                    false,
-                                                    "a proto's candidates compile"
-                                                );
-                                                break 'run None;
-                                            };
                                             enter_frame!(
-                                                Arc::clone(callee),
-                                                *sub_pkg,
+                                                callee,
+                                                callee_pkg,
                                                 atom,
                                                 pos,
                                                 pc + 1,
-                                                true,
+                                                commit,
                                                 stack_base,
-                                                Some((Arc::clone(&cands), first))
+                                                None,
+                                                window
                                             );
                                             continue 'run;
                                         }
                                     }
-                                }
-                                Ok(CallTarget::Single) => {
-                                    walk_use(WalkUse::Leaf, "builtin-call");
-                                    pc += 1;
-                                    match self.regex_match_atom_with_capture_in_pkg(
-                                        &program.atoms[atom as usize],
-                                        chars,
-                                        pos,
-                                        levels.top().caps(),
-                                        pkg,
-                                        ic,
-                                    ) {
-                                        Some((end, delta)) => {
-                                            levels.edit(|s| s.merge_delta(delta));
-                                            pos = end;
-                                            farthest = farthest.max(pos);
-                                            true
+                                    Ok(CallTarget::Proto(cands)) => {
+                                        self.ltm_rank_proto(
+                                            &cands, chars, pos, ltm_order, proto_rank,
+                                        );
+                                        match proto_rank.first().copied() {
+                                            // No candidate can match here.
+                                            None => false,
+                                            Some(_)
+                                                if frame.is_some_and(|f| {
+                                                    frames[f as usize].depth >= MAX_FRAME_DEPTH
+                                                }) =>
+                                            {
+                                                false
+                                            }
+                                            Some(first) => {
+                                                // The call is committed to the first ranked
+                                                // candidate that matches, and to its first
+                                                // end, so a cut at its return drops the
+                                                // rest of the ranking too.
+                                                let stack_base = stack.len();
+                                                if proto_rank.len() > 1 {
+                                                    push_choice!(Choice::Proto(Box::new(
+                                                        ProtoChoice {
+                                                            pc: pc + 1,
+                                                            pos,
+                                                            atom,
+                                                            cands: Arc::clone(&cands),
+                                                            ranked: Rc::from(&proto_rank[..]),
+                                                            next: 1,
+                                                            mark: mark!(),
+                                                            window,
+                                                        }
+                                                    )));
+                                                }
+                                                let (parsed, sub_pkg, _) = &cands[first];
+                                                let Some(callee) = program_for(parsed) else {
+                                                    debug_assert!(
+                                                        false,
+                                                        "a proto's candidates compile"
+                                                    );
+                                                    break 'run None;
+                                                };
+                                                enter_frame!(
+                                                    Arc::clone(callee),
+                                                    *sub_pkg,
+                                                    atom,
+                                                    pos,
+                                                    pc + 1,
+                                                    true,
+                                                    stack_base,
+                                                    Some((Arc::clone(&cands), first)),
+                                                    window
+                                                );
+                                                continue 'run;
+                                            }
                                         }
-                                        None => false,
+                                    }
+                                    Ok(CallTarget::Single) => {
+                                        walk_use(WalkUse::Leaf, "builtin-call");
+                                        pc += 1;
+                                        match self.regex_match_atom_with_capture_in_pkg(
+                                            &program.atoms[atom as usize],
+                                            chars,
+                                            pos,
+                                            levels.top().caps(),
+                                            pkg,
+                                            ic,
+                                        ) {
+                                            Some((end, delta)) => {
+                                                levels.edit(|s| s.merge_delta(delta));
+                                                pos = end;
+                                                farthest = farthest.max(pos);
+                                                true
+                                            }
+                                            None => false,
+                                        }
+                                    }
+                                    Err(why) => {
+                                        walk_use(WalkUse::Bridged, why);
+                                        // A grammar method the call runs gets this
+                                        // invocation's own cursor, not a throwaway one:
+                                        // what it writes to its attributes is the Match's
+                                        // (#9803).
+                                        if self.subrule_names_user_method(name.spec(), pkg) {
+                                            let slot = frame.map_or(&root_cursor, |f| {
+                                                &frames[f as usize].cursor
+                                            });
+                                            let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
+                                            self.rx_cursor = Some(cursor);
+                                        }
+                                        let mut cands = self.regex_match_atom_all_with_arg_values(
+                                            &program.atoms[atom as usize],
+                                            chars,
+                                            pos,
+                                            levels.top().caps(),
+                                            pkg,
+                                            ic,
+                                            commit,
+                                            call_args,
+                                        );
+                                        self.rx_cursor = None;
+                                        // Ratchet commits to the highest-priority end, the
+                                        // last (the producer's order is lowest first).
+                                        if commit && cands.len() > 1 {
+                                            cands.drain(..cands.len() - 1);
+                                        }
+                                        pc += 1;
+                                        enter_cands!(cands)
                                     }
                                 }
-                                Err(why) => {
-                                    walk_use(WalkUse::Bridged, why);
-                                    // A grammar method the call runs gets this
-                                    // invocation's own cursor, not a throwaway one:
-                                    // what it writes to its attributes is the Match's
-                                    // (#9803).
-                                    if self.subrule_names_user_method(name.spec(), pkg) {
-                                        let slot = frame
-                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
-                                        let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
-                                        self.rx_cursor = Some(cursor);
-                                    }
-                                    let mut cands = self.regex_match_atom_all_with_arg_values(
-                                        &program.atoms[atom as usize],
-                                        chars,
-                                        pos,
-                                        levels.top().caps(),
-                                        pkg,
-                                        ic,
-                                        commit,
-                                        call_args,
-                                    );
-                                    self.rx_cursor = None;
-                                    // Ratchet commits to the highest-priority end, the
-                                    // last (the producer's order is lowest first).
-                                    if commit && cands.len() > 1 {
-                                        cands.drain(..cands.len() - 1);
-                                    }
-                                    pc += 1;
-                                    enter_cands!(cands)
-                                }
-                            },
+                            }
                         }
                     }
                     // Cost: O(k·m) for the k iterations the scan matches, m = one
@@ -856,6 +870,13 @@ impl Interpreter {
                                 if let Some((cands, idx)) = &f.proto {
                                     inner.set_sym(cands[*idx].2.as_deref().map(Symbol::intern));
                                 }
+                                // The callee's binding window, for its action.
+                                if let Some(k) = f.window {
+                                    let vars = inner.regex_vars_mut();
+                                    for (key, value) in self.rx_window_values(&scopes, k) {
+                                        vars.entry(key).or_insert(value);
+                                    }
+                                }
                                 // The grammar instance this invocation owned is
                                 // its Match's (#9803).
                                 if let Some(cursor) = f.cursor.borrow().as_ref() {
@@ -882,8 +903,8 @@ impl Interpreter {
                                         None,
                                     )
                                 });
-                                let (ret_pc, trail_base, window, ends_base) =
-                                    (f.ret_pc, f.trail_base, f.base, f.ends_base);
+                                let (ret_pc, trail_base, window, ends_base, binding) =
+                                    (f.ret_pc, f.trail_base, f.base, f.ends_base, f.window);
                                 frame = f.parent;
                                 match frame {
                                     Some(p) => {
@@ -907,6 +928,12 @@ impl Interpreter {
                                     regs.truncate(window);
                                     ends.truncate(ends_base);
                                     frames.truncate(fi);
+                                }
+                                // The callee's binding window ends with it;
+                                // backtracking into the callee installs it again.
+                                if let Some(k) = binding {
+                                    self.rx_scope_exit(&mut scopes, k);
+                                    reg_trail.push((UNDO_EXIT, k));
                                 }
                                 continue 'run;
                             }
@@ -961,6 +988,7 @@ impl Interpreter {
                                 ranked,
                                 next,
                                 mark,
+                                window,
                             } = *proto;
                             // The call's own height: its entry is popped.
                             let stack_base = stack.len();
@@ -974,9 +1002,10 @@ impl Interpreter {
                                     ranked: Rc::clone(&ranked),
                                     next: next + 1,
                                     mark,
+                                    window,
                                 })));
                             }
-                            enter_proto = Some((atom, pos, pc, cands, idx, stack_base));
+                            enter_proto = Some((atom, pos, pc, cands, idx, stack_base, window));
                             (pc, pos, mark)
                         }
                         Choice::Run {
@@ -1062,7 +1091,7 @@ impl Interpreter {
                         }
                         frame = target_frame;
                         match enter_proto {
-                            Some((atom, entry, ret_pc, cands, idx, stack_base)) => {
+                            Some((atom, entry, ret_pc, cands, idx, stack_base, window)) => {
                                 let (parsed, sub_pkg, _) = &cands[idx];
                                 let Some(callee) = program_for(parsed) else {
                                     debug_assert!(false, "a proto's candidates compile");
@@ -1076,7 +1105,8 @@ impl Interpreter {
                                     ret_pc,
                                     true,
                                     stack_base,
-                                    Some((Arc::clone(&cands), idx))
+                                    Some((Arc::clone(&cands), idx)),
+                                    window
                                 );
                             }
                             None => {
@@ -1087,7 +1117,7 @@ impl Interpreter {
                         continue 'run;
                     }
                     match enter_proto {
-                        Some((atom, entry, ret_pc, cands, idx, stack_base)) => {
+                        Some((atom, entry, ret_pc, cands, idx, stack_base, window)) => {
                             let (parsed, sub_pkg, _) = &cands[idx];
                             let Some(callee) = program_for(parsed) else {
                                 debug_assert!(false, "a proto's candidates compile");
@@ -1101,7 +1131,8 @@ impl Interpreter {
                                 ret_pc,
                                 true,
                                 stack_base,
-                                Some((Arc::clone(&cands), idx))
+                                Some((Arc::clone(&cands), idx)),
+                                window
                             );
                             continue 'run;
                         }

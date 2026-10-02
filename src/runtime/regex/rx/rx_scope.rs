@@ -1,38 +1,56 @@
-//! Closure scopes the compiled engine keeps live across a sub-pattern
-//! (ADR-0135 Slice E): a spliced Regex value that closed over its own scope
-//! (`CaptureIsolatedGroupScoped`) runs its body with that scope installed in
-//! the env.
+//! Env bindings the compiled engine keeps live across a sub-pattern or a call
+//! (ADR-0135 Slice E):
 //!
-//! The body is part of the program, so the run can backtrack into it after
-//! leaving it, and out of it before it finished. Each install and uninstall is
+//! - a spliced Regex value that closed over its own scope
+//!   (`CaptureIsolatedGroupScoped`) runs its body with that scope installed;
+//! - a `<subrule>` call frame runs its callee with the call's binding window
+//!   installed: the callee's `$*` parameters and the object or closure
+//!   arguments baking cannot carry into its code blocks
+//!   (`install_subrule_dynamic_params`), which the walk installs around the
+//!   callee's whole match.
+//!
+//! The body is part of the run, so the run can backtrack into it after leaving
+//! it, and out of it before it finished. Each install and uninstall is
 //! therefore also an entry on the register trail, under a tag no register
-//! index reaches: rewinding past a `ScopeEnter` uninstalls the scope, and
-//! rewinding past a `ScopeExit` installs it again. The trail is not touched by
-//! a ratchet's cut, so a committed body still unwinds its scope when the run
-//! backtracks past it. Whatever is still installed when the run ends (it failed
-//! inside a body whose trail entries a settled return or an empty stack had
-//! already dropped) is uninstalled by [`Interpreter::rx_scopes_unwind`].
+//! index reaches: rewinding past an install uninstalls, and rewinding past an
+//! uninstall installs again. The trail is not touched by a ratchet's cut, so a
+//! committed body still unwinds its bindings when the run backtracks past it.
+//! Whatever is still installed when the run ends (it failed inside a body
+//! whose trail entries a settled return or an empty stack had already dropped)
+//! is uninstalled by [`Interpreter::rx_scopes_unwind`].
 
 use std::sync::Arc;
 
 use crate::runtime::Interpreter;
+use crate::runtime::regex::regex_dynparams::SavedDynParams;
 use crate::runtime::seq_helpers::RegexClosureBinding;
-use crate::value::ValueMap;
+use crate::value::{Value, ValueMap};
 
-/// Register-trail tag: undo a `ScopeEnter` (uninstall the scope).
+/// Register-trail tag: undo an install (uninstall).
 pub(super) const UNDO_ENTER: usize = usize::MAX;
-/// Register-trail tag: undo a `ScopeExit` (install the scope again).
+/// Register-trail tag: undo an uninstall (install again).
 pub(super) const UNDO_EXIT: usize = usize::MAX - 1;
 
-/// One scope the run has installed at least once.
-struct ScopeSave {
-    scope: Arc<ValueMap>,
-    /// What the install shadowed, while the scope is installed.
-    saved: Option<Vec<RegexClosureBinding>>,
+/// One set of bindings the run has installed at least once.
+enum ScopeSave {
+    /// A Regex value's closure scope, and what its install shadowed while it
+    /// is installed.
+    Closure {
+        scope: Arc<ValueMap>,
+        saved: Option<Vec<RegexClosureBinding>>,
+    },
+    /// A call's binding window. While installed, `saved` holds what each key
+    /// shadowed (in install order); while not, `live` holds the values the
+    /// window had when it was last uninstalled, so a write the callee's code
+    /// made to a `$*` parameter survives backtracking into the callee.
+    Window {
+        live: Vec<(String, Option<Value>)>,
+        saved: Option<SavedDynParams>,
+    },
 }
 
-/// The scopes of one run, indexed by the value a `ScopeEnter` keeps in its
-/// register (and the trail entries carry).
+/// The bindings of one run, indexed by the handle an install returns (and the
+/// trail entries carry).
 #[derive(Default)]
 pub(super) struct Scopes {
     saves: Vec<ScopeSave>,
@@ -43,48 +61,120 @@ impl Interpreter {
     // Cost: O(b), b = the scope's bindings (one env insert each).
     pub(super) fn rx_scope_enter(&mut self, scopes: &mut Scopes, scope: &Arc<ValueMap>) -> usize {
         let saved = self.install_env_scope(scope);
-        scopes.saves.push(ScopeSave {
+        scopes.saves.push(ScopeSave::Closure {
             scope: Arc::clone(scope),
             saved: Some(saved),
         });
         scopes.saves.len() - 1
     }
 
-    /// Uninstall the scope `k`.
-    // Cost: O(b), b = the scope's bindings.
+    /// Record a call's binding window, which `install_subrule_dynamic_params`
+    /// has just installed (`saved` is what it shadowed); the index is its
+    /// handle.
+    // Cost: O(1).
+    pub(super) fn rx_window_adopt(scopes: &mut Scopes, saved: SavedDynParams) -> usize {
+        scopes.saves.push(ScopeSave::Window {
+            live: Vec::new(),
+            saved: Some(saved),
+        });
+        scopes.saves.len() - 1
+    }
+
+    /// The current values of the call window `k`'s bindings, while it is
+    /// installed. The callee's action runs later, in the reduce walk, and must
+    /// still see its `$*` parameters (CSS::Specification's `usage` action reads
+    /// `$*USAGE`), so its return records them on its Match, as the walk does
+    /// (`attach_grammar_dynvars_to_named_caps`).
+    // Cost: O(b), b = the bindings.
+    pub(super) fn rx_window_values(&self, scopes: &Scopes, k: usize) -> Vec<(String, Value)> {
+        match scopes.saves.get(k) {
+            Some(ScopeSave::Window {
+                saved: Some(shadowed),
+                ..
+            }) => shadowed
+                .iter()
+                .filter_map(|(key, _)| self.env.get(key).map(|v| (key.clone(), v.clone())))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Uninstall the bindings `k`.
+    // Cost: O(b), b = the bindings.
     pub(super) fn rx_scope_exit(&mut self, scopes: &mut Scopes, k: usize) {
-        if let Some(save) = scopes.saves.get_mut(k) {
-            let saved = save.saved.take();
-            self.uninstall_regex_closure_scope(saved);
+        match scopes.saves.get_mut(k) {
+            Some(ScopeSave::Closure { saved, .. }) => {
+                let saved = saved.take();
+                self.uninstall_regex_closure_scope(saved);
+            }
+            Some(ScopeSave::Window { live, saved }) => {
+                let Some(shadowed) = saved.take() else {
+                    return;
+                };
+                live.clear();
+                live.extend(
+                    shadowed
+                        .iter()
+                        .map(|(key, _)| (key.clone(), self.env.get(key).cloned())),
+                );
+                self.restore_subrule_dynamic_params(shadowed);
+            }
+            None => {}
         }
     }
 
-    /// Undo one tagged register-trail entry for the scope `k`: an enter is
-    /// undone by uninstalling, an exit by installing again.
-    // Cost: O(b), b = the scope's bindings.
+    /// Install the bindings `k` again, after an uninstall.
+    // Cost: O(b), b = the bindings.
+    fn rx_scope_reinstall(&mut self, scopes: &mut Scopes, k: usize) {
+        match scopes.saves.get_mut(k) {
+            Some(ScopeSave::Closure { scope, saved }) => {
+                if saved.is_some() {
+                    return;
+                }
+                let scope = Arc::clone(scope);
+                let installed = self.install_env_scope(&scope);
+                if let Some(ScopeSave::Closure { saved, .. }) = scopes.saves.get_mut(k) {
+                    *saved = Some(installed);
+                }
+            }
+            Some(ScopeSave::Window { live, saved }) => {
+                if saved.is_some() {
+                    return;
+                }
+                let mut shadowed = Vec::with_capacity(live.len());
+                for (key, value) in live.iter() {
+                    shadowed.push((key.clone(), self.env.get(key).cloned()));
+                    match value {
+                        Some(value) => {
+                            self.env.insert(key.clone(), value.clone());
+                        }
+                        None => {
+                            self.env.remove(key);
+                        }
+                    }
+                }
+                *saved = Some(shadowed);
+            }
+            None => {}
+        }
+    }
+
+    /// Undo one tagged register-trail entry for the bindings `k`: an install
+    /// is undone by uninstalling, an uninstall by installing again.
+    // Cost: O(b), b = the bindings.
     pub(super) fn rx_scope_undo(&mut self, scopes: &mut Scopes, tag: usize, k: usize) {
-        let Some(save) = scopes.saves.get_mut(k) else {
-            return;
-        };
         if tag == UNDO_ENTER {
-            let saved = save.saved.take();
-            self.uninstall_regex_closure_scope(saved);
+            self.rx_scope_exit(scopes, k);
         } else {
-            let scope = Arc::clone(&save.scope);
-            let saved = self.install_env_scope(&scope);
-            if let Some(save) = scopes.saves.get_mut(k) {
-                save.saved = Some(saved);
-            }
+            self.rx_scope_reinstall(scopes, k);
         }
     }
 
-    /// Uninstall every scope still installed, innermost first.
-    // Cost: O(s·b), s = the scopes the run installed, b = their bindings.
+    /// Uninstall every binding still installed, innermost first.
+    // Cost: O(s·b), s = the binding sets the run installed, b = their bindings.
     pub(super) fn rx_scopes_unwind(&mut self, scopes: &mut Scopes) {
-        for save in scopes.saves.iter_mut().rev() {
-            if let Some(saved) = save.saved.take() {
-                self.uninstall_regex_closure_scope(Some(saved));
-            }
+        for k in (0..scopes.saves.len()).rev() {
+            self.rx_scope_exit(scopes, k);
         }
     }
 }
