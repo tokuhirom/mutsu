@@ -181,6 +181,13 @@ impl crate::Interpreter {
         let Some(ValueView::LazyList(list)) = source.map(Value::view) else {
             return Ok(None);
         };
+        // Sinking a source whose elements have no side effects observes
+        // nothing, so `sink-all` need not generate them: `(42 xx *).iterator
+        // .sink-all` returns at once, as Rakudo's repeat iterator does
+        // (S03-operators/repeat.t), instead of forcing an infinite source.
+        if method == "sink-all" && Self::lazy_source_sink_is_inert(&list) {
+            return Ok(None);
+        }
         let pulled = match needed_len(method, index, args) {
             Some(need) if need <= have => return Ok(None),
             Some(need) => self.force_lazy_list_vm_n(&list, need)?,
@@ -219,6 +226,36 @@ impl crate::Interpreter {
         }
         let index = index.min(all.len());
         Ok(all.split_off(index))
+    }
+
+    /// Whether producing `list`'s elements runs no user code and has no
+    /// other observable effect: a pure sequence spec (`1..*`, `1, 3 ... *`),
+    /// or `xx` repeating a plain (non-callable) value.
+    ///
+    /// Cost: O(1).
+    fn lazy_source_sink_is_inert(list: &crate::value::LazyList) -> bool {
+        if matches!(
+            list.sequence_spec,
+            Some(
+                crate::value::SequenceSpec::Arithmetic { .. }
+                    | crate::value::SequenceSpec::GeometricRat { .. }
+                    | crate::value::SequenceSpec::Geometric { .. }
+                    | crate::value::SequenceSpec::Succ
+            )
+        ) {
+            return true;
+        }
+        let Some(pipe) = list.lazy_pipe.as_ref() else {
+            return false;
+        };
+        let pipe = pipe.lock().unwrap();
+        matches!(
+            pipe.adaptor.as_deref(),
+            Some(crate::value::PipeAdaptor::Repeat { .. })
+        ) && !matches!(
+            pipe.func.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+        )
     }
 
     /// Append `vals` to the array passed as the `push-*` family's first
