@@ -100,8 +100,9 @@ process-global collector state. CI and `make test`, however, already run
    - It also runs **on demand** (`workflow_dispatch`, any branch). A PR that changes the cycle
      collector, the JIT or the concurrency runtime should dispatch it before merging and link the
      run.
-4. **Branch protection**: `gc-stress` is no longer a required check. The required checks are
-   `test` and `wasm-e2e`.
+4. **Required checks** (the repository ruleset for `main`): `gc-stress` and `jit-stress` are no
+   longer required. The required checks are `test`, `wasm-e2e`, `lint-configs`, `miri` and
+   `changes`.
 
 ## Consequences
 

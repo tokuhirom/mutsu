@@ -11,7 +11,8 @@
 #
 # Why an allowlist and not a `paths-ignore` denylist: `paths-ignore` at the
 # workflow level makes GitHub never create the check run at all, which leaves
-# the required status checks (`test`, `wasm-e2e`) pending forever
+# the required status checks (`test`, `wasm-e2e`, ... -- see the
+# repository ruleset for `main`) pending forever
 # and the PR unmergeable. The supported way to skip a *required* check is to
 # let the job exist and skip it with a job-level `if:` — a skipped job counts
 # as success for branch protection. This script feeds that `if:`.
