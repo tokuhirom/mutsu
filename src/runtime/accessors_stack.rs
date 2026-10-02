@@ -1166,6 +1166,7 @@ mod call_site_file_tests {
             is_method: false,
             is_submethod: false,
             is_block,
+            is_inlined_block: false,
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id: 1,
