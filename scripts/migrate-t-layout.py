@@ -9,6 +9,12 @@ to take the diff on trust -- run this and diff the plan against `git ls-files`.
     scripts/migrate-t-layout.py            # print the plan, and any unplaced files
     scripts/migrate-t-layout.py --apply    # git mv every file into place
     scripts/migrate-t-layout.py --check    # exit 1 if the tree disagrees with the plan
+    scripts/migrate-t-layout.py --where NAME...   # the path a (new) test file must have
+
+`--where` is how a NEW test is placed: the directory is a function of the
+basename alone, so pick the name first and let this print the path. It takes a
+bare name, `name.t` or a full path, and exits 1 when any name is unruled or (for
+a path) sits somewhere else, or when the basename is already taken elsewhere.
 
 Placement is decided in two layers, in this order:
 
@@ -322,8 +328,66 @@ def plan(root: str) -> tuple[list[tuple[str, str]], list[str]]:
     return moves, unplaced
 
 
+def existing_paths(basename: str) -> list[str]:
+    """Every `t/**/<basename>` already on disk (basenames are unique, §5)."""
+    return sorted(
+        os.path.join(dirpath, basename)
+        for dirpath, _, names in os.walk("t")
+        if basename in names
+    )
+
+
+def where(args: list[str]) -> int:
+    """Print the path each named test file must have; see the module doc."""
+    if not args:
+        print("usage: scripts/migrate-t-layout.py --where NAME|NAME.t|PATH...", file=sys.stderr)
+        return 2
+    status = 0
+    for arg in args:
+        basename = os.path.basename(arg)
+        if not basename.endswith(".t"):
+            basename += ".t"
+        want = category_for(basename[:-2])
+        if want is None:
+            print(
+                f"{basename}: matches no rule and has no override -- rename it so a "
+                "RULES pattern matches, or add an OVERRIDES entry",
+                file=sys.stderr,
+            )
+            status = 1
+            continue
+        target = f"t/{want}/{basename}"
+        print(target)
+        given = os.path.normpath(arg) if os.sep in arg else None
+        if given is not None and given != target:
+            print(
+                f"    {given} is in the wrong directory: the rules key on the basename, "
+                "so move it there or pick a name that matches the directory you meant",
+                file=sys.stderr,
+            )
+            status = 1
+        others = [p for p in existing_paths(basename) if p != target and p != given]
+        if others:
+            print(
+                f"    basename already taken by {', '.join(others)}; basenames are unique "
+                "across t/ (docs/t-directory-layout.md section 5)",
+                file=sys.stderr,
+            )
+            status = 1
+    return status
+
+
 def main() -> int:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if "--where" in sys.argv:
+        # Resolve relative paths against the caller's directory, then work from
+        # the root like every other mode.
+        names = [
+            os.path.relpath(os.path.abspath(a), root) if os.sep in a else a
+            for a in sys.argv[sys.argv.index("--where") + 1:]
+        ]
+        os.chdir(root)
+        return where(names)
     os.chdir(root)
     apply = "--apply" in sys.argv
     check = "--check" in sys.argv

@@ -263,7 +263,8 @@ scripts/dev stop <id>
   standard naming (`snake_case`, `CamelCase` types, `SCREAMING_SNAKE_CASE` constants). Prefer ASCII in source. Don't rewrite or reformat unrelated code.
 - **Every feature or fix carries a test**: a focused `.t` in the right `t/` category
   ([docs/t-directory-layout.md](docs/t-directory-layout.md), enforced by `make check-t-layout`; never
-  at `t/` top level), or `#[test]` for internal helpers. Never hardcode a port in a test — listen on
+  at `t/` top level), or `#[test]` for internal helpers. The directory follows from the basename:
+  pick the name, then write the file at the path `scripts/migrate-t-layout.py --where <name>` prints. Never hardcode a port in a test — listen on
   0 and read `.socket-port`.
 - A temporary workaround carries a `// TODO:` saying what the correct approach is and why this one
   falls short.
