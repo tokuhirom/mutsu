@@ -1593,11 +1593,7 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            if ll.in_list_context() {
-                Value::array(items)
-            } else {
-                Value::seq(items)
-            }
+            ll.reified_value(items)
         } else {
             target
         };

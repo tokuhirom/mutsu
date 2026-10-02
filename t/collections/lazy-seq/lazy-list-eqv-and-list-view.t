@@ -11,12 +11,7 @@ sub takes-two() { take 1; take 2 }
 
 my $inline = (gather takes-two()).List;
 is $inline.^name, 'List', '(gather ...).List reports List';
-# (mutsu still loses the scalar ITEMIZATION here -- it renders `(1, 2)` where
-# raku renders `$(1, 2)`, because the value in `$inline` is still an unforced
-# lazy list at assignment time; see
-# todo/tickets/lazy-list-in-scalar-loses-itemization.md. What must not happen
-# is rendering it as a Seq, which is what this pins.)
-unlike $inline.raku, /'.Seq'/, '(gather ...).List does not render as a Seq';
+is $inline.raku, '$(1, 2)', '(gather ...).List keeps scalar itemization';
 
 my $g = gather takes-two();
 my $viavar = $g.List;
