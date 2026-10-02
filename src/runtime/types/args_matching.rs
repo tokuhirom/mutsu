@@ -306,11 +306,7 @@ impl Interpreter {
                     continue;
                 }
                 positional_max_count += 1;
-                if pd.default.is_none()
-                    && !pd.optional_marker
-                    && !pd.name.starts_with('@')
-                    && !pd.name.starts_with('%')
-                {
+                if pd.default.is_none() && !pd.optional_marker {
                     required_positional_count += 1;
                 }
             }
