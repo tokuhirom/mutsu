@@ -12,8 +12,10 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
-use crate::ast::{Expr, Stmt};
-use crate::ast_visit::{Visit, walk_expr, walk_stmts as walk_ast_stmts};
+use crate::ast::{DoBlockOrigin, Expr, Stmt};
+use crate::ast_visit::{
+    Visit, walk_expr, walk_stmt as walk_ast_stmt, walk_stmts as walk_ast_stmts,
+};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use crate::value::ValueView;
@@ -27,6 +29,7 @@ pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
     // argument, ...). Scan the whole tree for gather blocks and warn their
     // bodies, independently of the enclosing statement's own context.
     scan_gathers_stmts(stmts);
+    scan_source_do_blocks(stmts);
 }
 
 /// Like [`add_sink_warnings`], but for a unit evaluated for its value (EVAL /
@@ -44,6 +47,46 @@ pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
         walk_stmt(stmt, false, &line);
     }
     scan_gathers_stmts(stmts);
+    scan_source_do_blocks(stmts);
+}
+
+/// A source `do` block evaluates every statement but its last in sink context,
+/// regardless of whether the block's result is used. Scan all expression
+/// positions, including initializers and routine bodies. The outer sink walk
+/// handles the last statement when the block's result is also discarded.
+// Cost: O(n), n = size of the AST (plus the sink walk of each do-block prefix).
+fn scan_source_do_blocks(stmts: &[Stmt]) {
+    walk_ast_stmts(
+        &mut SourceDoScan {
+            line: std::cell::Cell::new(1),
+        },
+        stmts,
+    );
+}
+
+struct SourceDoScan {
+    line: std::cell::Cell<i64>,
+}
+
+impl<'ast> Visit<'ast> for SourceDoScan {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if let Stmt::SetLine(line) = stmt {
+            self.line.set(*line);
+        }
+        walk_ast_stmt(self, stmt);
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if let Expr::DoBlock {
+            body,
+            origin: DoBlockOrigin::SourceBlock,
+            ..
+        } = expr
+        {
+            walk_stmts(sunk_prefix(body), false, &self.line);
+        }
+        walk_expr(self, expr);
+    }
 }
 
 /// Walk the entire program looking for `gather` blocks. For each one, emit sink
@@ -199,6 +242,23 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     match expr {
         Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint, line),
+        Expr::DoBlock {
+            body,
+            origin: DoBlockOrigin::SourceBlock,
+            ..
+        } => {
+            if let Some(last) =
+                crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
+            {
+                let current_line = std::cell::Cell::new(line);
+                for stmt in &body[..last] {
+                    if let Stmt::SetLine(n) = stmt {
+                        current_line.set(*n);
+                    }
+                }
+                walk_stmt(&body[last], nil_hint, &current_line);
+            }
+        }
         // A bare comma list `1, 2` distributes sink to each element. An empty
         // `()` is itself a useless value.
         Expr::ArrayLiteral(elems) => {

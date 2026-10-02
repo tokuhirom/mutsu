@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 39;
+plan 42;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -25,6 +25,15 @@ is_run '1,2', { :0status, :err(/"Useless use" .* "Useless use"/) },
 # Bare blocks stay in sink context.
 is_run '{ 1,2 }', { :0status, :err(/"Useless use" .* "Useless use"/) },
     'bare block distributes sink to its statements';
+
+# A source do block sinks its prefix in every expression position. Its final
+# statement is also sunk when the do block itself is a discarded statement.
+is_run 'do { 1; 2 }; say "x"', { :0status, :out("x\n"), :err(/"integer 2" .* "integer 1"/) },
+    'a discarded do block sinks both statements';
+is_run 'my $x = do { 1; 2 }; say $x', { :0status, :out("2\n"), :err(/"integer 1"/) },
+    'a do block used as a value still sinks its prefix';
+is_run 'sub f() { do { 1; 2 } }; say f()', { :0status, :out("2\n"), :err(/"integer 1"/) },
+    'a do block in a routine still sinks its prefix';
 
 # Statement modifiers suggest Nil.
 is_run '1 while 0', { :0status, :err(/"Useless use" .* 'Nil'/) },
