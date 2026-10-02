@@ -1371,6 +1371,19 @@ impl Interpreter {
                         self.call_supply_quit_handler(quit_fn, reason)?;
                     }
                 }
+                // A `.share`d block belongs to the share, not to whichever tap
+                // happened to start it: raku's `Supply.share` taps its source
+                // once and never closes that tap, so closing one consumer
+                // (even the last) only drops that consumer's own subscription
+                // on the shared supplier -- the block's `whenever`s, CLOSE
+                // phasers and act-loop workers keep running for every other
+                // tap (issue #10831). Handing the teardown to the starting
+                // tap's handle let its `.close` silence all the others.
+                if shared_on_demand {
+                    close_supplier_id = None;
+                    upstream_taps.clear();
+                    act_loop_close_ids.clear();
+                }
                 if let Some(cid) = close_supplier_id {
                     tap_handle_attrs
                         .insert("close_supplier_id".to_string(), Value::int(cid as i64));
