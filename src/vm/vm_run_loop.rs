@@ -223,8 +223,9 @@ impl Interpreter {
     /// `run` does not move `self.interpreter` out (the caller must always get the
     /// interpreter back, even on panic).
     // Cost: O(L) entry (env->locals seeding, L = the chunk's own locals; label
-    // validation is O(1) amortized) and exit (state/env sync), then O(1) per dispatched op: one cached `vm_poll::armed()`
-    // load (a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
+    // validation is O(1) amortized) and exit (state/env sync), then O(1) per dispatched op:
+    // an `ip` compare (a poll only at entry and on a backward transfer, or every op while
+    // the profiler is armed; a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
     fn run_inner(
         &mut self,
         code: &CompiledCode,
@@ -1004,7 +1005,7 @@ impl Interpreter {
 
     /// The interpreter loop of [`Self::run_range`], entered at `from` (== `start`
     /// except when resuming mid-range after a JIT'd body's goto/warn).
-    // Cost: O(1) per dispatched op (cached safepoint-poll load plus `exec_one`); a `goto`
+    // Cost: O(1) per dispatched op (an `ip` compare for the back-edge poll plus `exec_one`); a `goto`
     // pays `find_label_target`, O(p), p = ops of the chunk.
     fn run_range_from(
         &mut self,

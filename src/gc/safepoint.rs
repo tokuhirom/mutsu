@@ -398,8 +398,10 @@ pub(crate) fn note_candidate_push() {
 /// is armed. Keeping the gate outside this function lets `vm_poll` make one
 /// composite cached-load decision for GC and the profiler.
 ///
-/// This runs on **every executed opcode** in a default (GC-on) run, so what it
-/// costs to *decline* is what the whole VM pays for the safepoint's existence.
+/// This runs on every dispatch-loop back-edge, compound-loop iteration and
+/// call in a default (GC-on) run — every executed opcode before #8821 moved
+/// the polls (`vm_poll::DispatchPolls`) — so what it costs to *decline* is
+/// still a large share of what the VM pays for the safepoint's existence.
 /// It used to cost ~31 instructions there: an out-of-line call, a `park`
 /// helper, an `OnceLock` deref for [`triggers`], and a four-term disjunction.
 /// Everything a decline actually depends on is now three relaxed-ish loads,
