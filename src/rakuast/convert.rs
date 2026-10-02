@@ -1299,20 +1299,8 @@ fn var_declaration(
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
 pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
-    let mut segments = name_parts::identifier_segments(s);
-    let qualified = segments.clone().nth(1).is_some()
-        && segments.all(|seg| {
-            !seg.is_empty()
-                && seg
-                    .chars()
-                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-        });
-    if qualified {
-        return name_parts::name_from_parts(
-            name_parts::identifier_segments(s)
-                .map(name_parts::simple_part)
-                .collect(),
-        );
+    if name_parts::is_qualified_identifier(s) {
+        return name_parts::qualified_name(s);
     }
     RakuAstNode {
         class: RakuAstClass::Name,
