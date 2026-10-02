@@ -3816,7 +3816,9 @@ impl Interpreter {
             if !is_public {
                 continue;
             }
-            if let Some(val) = attributes.get(attr_name) {
+            // Reading the attribute to render it vivifies it, as Rakudo's
+            // `.raku` does through `Attribute.get_value` (#11003).
+            if let Some(val) = attributes.get_vivify(attr_name.as_str()) {
                 // Render what the slot holds, not the cell a `:=` bind or an
                 // `=` value share (Slice 2e) put around it.
                 let val = &val.deref_container();

@@ -259,7 +259,9 @@ impl InstanceAttrs {
         let cell = self.cell();
         let thread_id = std::thread::current().id();
         let mut side = self.side.write().expect("instance side lock poisoned");
-        let value = read_attrs(cell).get(key).cloned();
+        // `Attribute.get_value` is a user-level read: it vivifies the slot
+        // (`nqp::attrinited` turns true), like MoarVM's `getattr` (#11003).
+        let value = read_attrs(cell).get_vivify(key).cloned();
         if value.is_none() {
             *side
                 .pending_attr_initializers
