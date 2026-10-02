@@ -77,6 +77,13 @@ pub(crate) fn regex_source_placeholders(src: &str) -> RegexPlaceholders {
                 }
                 i += 1;
             }
+            '<' if depth == 0 && subrule_arg_list_start(&chars, i).is_some() => {
+                // `<name(...)>` / `<name: ...>`: the arguments are ordinary
+                // Raku code, and a `{ ... }` there is a closure argument that
+                // may take placeholders of its own (`<word(:x{ $^c eq 1 })>`).
+                // Neither interpolated nor a code block: skip it.
+                i = skip_subrule_args(&chars, subrule_arg_list_start(&chars, i).unwrap_or(i));
+            }
             '{' => {
                 depth += 1;
                 i += 1;
@@ -119,6 +126,66 @@ pub(crate) fn regex_source_placeholders(src: &str) -> RegexPlaceholders {
         }
     }
     out
+}
+
+/// For a `<` at `lt` that opens a subrule call with arguments (`<name(` or
+/// `<name: `, the name optionally prefixed by `.`, `?`, `!` or `&`), the index
+/// of the `(` / `:` that starts the argument list.
+// Cost: O(k), k = length of the subrule name.
+fn subrule_arg_list_start(chars: &[char], lt: usize) -> Option<usize> {
+    let mut j = lt + 1;
+    while matches!(chars.get(j), Some('.' | '?' | '!' | '&')) {
+        j += 1;
+    }
+    let name_start = j;
+    while chars.get(j).is_some_and(|c| {
+        // `_`, and a `-` / `::` joining two name parts (`foo-bar`, `A::b`).
+        let joins_next =
+            matches!(c, '-' | ':') && chars.get(j + 1).is_some_and(|n| n.is_alphabetic());
+        c.is_alphanumeric() || *c == '_' || joins_next
+    }) {
+        j += 1;
+    }
+    if j == name_start {
+        return None;
+    }
+    match chars.get(j) {
+        Some('(') => Some(j),
+        Some(':') if chars.get(j + 1).is_some_and(|c| c.is_whitespace()) => Some(j),
+        _ => None,
+    }
+}
+
+/// Skip a subrule argument list starting at `start` (a `(` or `:`): to the
+/// matching `)` for the parenthesized form, to the closing `>` for the colon
+/// form. Quoted strings are skipped whole. Returns the index after it.
+// Cost: O(n), n = length of the argument list.
+fn skip_subrule_args(chars: &[char], start: usize) -> usize {
+    let colon_form = chars[start] == ':';
+    let mut parens = 0usize;
+    let mut i = start;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 1,
+            q @ ('\'' | '"') => {
+                i += 1;
+                while i < chars.len() && chars[i] != q {
+                    i += if chars[i] == '\\' { 2 } else { 1 };
+                }
+            }
+            '(' | '{' | '[' => parens += 1,
+            ')' | '}' | ']' => {
+                parens = parens.saturating_sub(1);
+                if !colon_form && parens == 0 {
+                    return i + 1;
+                }
+            }
+            '>' if colon_form && parens == 0 => return i + 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    i
 }
 
 /// Finds the first placeholder written inside a regex code block anywhere in
@@ -193,6 +260,16 @@ mod tests {
                 vec!["^b".to_string()]
             )
         );
+    }
+
+    #[test]
+    fn subrule_arguments_are_skipped() {
+        assert_eq!(
+            scan("<word(:expected{ $^c eq 1 })> $^a"),
+            (vec!["^a".to_string()], vec![])
+        );
+        assert_eq!(scan("<.ws: { $^d }> b"), (vec![], vec![]));
+        assert_eq!(scan("<?{ $^e }>"), (vec![], vec!["^e".to_string()]));
     }
 
     #[test]
