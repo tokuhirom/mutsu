@@ -67,7 +67,14 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
         // (`for Buf.new(1,2,3) { }` yields 1, 2, 3), so the iterator does too.
         bytes
     } else {
-        crate::runtime::utils::value_to_list(target)
+        // `target` is the RECEIVER of `.iterator`, and a method call
+        // decontainerizes its invocant, so the receiver's own itemization (a
+        // `$`-held / element-stored Hash's flag, a `Scalar` wrapper) must not
+        // make it one opaque item: `my $s = {a => 1}; $s.iterator.pull-one` is
+        // the Pair `:a(1)`, not the whole Hash. `value_to_list` answers "does
+        // this flatten as an ELEMENT of another container" (ADR-0040), which is
+        // a different question; the receiver-decomposition twin answers this one.
+        crate::runtime::utils::value_to_list_for_receiver(target)
     };
     let mut attrs = HashMap::new();
     attrs.insert("items".to_string(), Value::array(items));
