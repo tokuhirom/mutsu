@@ -37,6 +37,11 @@ unsafe impl Send for OldActions {}
 unsafe impl Sync for OldActions {}
 static OLD_ACTIONS: OnceLock<OldActions> = OnceLock::new();
 
+/// Selftest only (`MUTSU_CRASH_SELFTEST_STALL_SYMBOLIZE=1`): make the
+/// symbolized backtrace hang so the timeout path can be tested. Read at
+/// install time because the handler must not touch the environment.
+pub(super) static STALL_SYMBOLIZE: AtomicBool = AtomicBool::new(false);
+
 static INSTALLED: AtomicBool = AtomicBool::new(false);
 static IN_HANDLER: AtomicBool = AtomicBool::new(false);
 
@@ -52,6 +57,10 @@ pub(super) fn install() {
     }
     REPORT_DIR.get_or_init(report_dir);
     PREAMBLE.get_or_init(preamble);
+    if std::env::var("MUTSU_CRASH_SELFTEST_STALL_SYMBOLIZE").as_deref() == Ok("1") {
+        STALL_SYMBOLIZE.store(true, Ordering::Relaxed);
+        super::report::SYMBOLIZE_TIMEOUT_SECS.store(1, Ordering::Relaxed);
+    }
     // SAFETY: `sa` is a zeroed sigaction carrying a valid handler, and each
     // `old[i]` is a live, writable `sigaction`.
     let old = unsafe {

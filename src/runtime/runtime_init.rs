@@ -3030,7 +3030,17 @@ impl Interpreter {
                 .class_does_only_roles
                 .insert(class_name.clone(), does_only);
         }
-        let class_names: Vec<String> = registry.classes.keys().cloned().collect();
+        // Only a class with attributes has accessor rows to add, and a fresh
+        // registry has none to clear, so attribute-less classes (most of the
+        // built-in `X::` tree) are skipped rather than interned for a no-op
+        // sync (#10961).
+        debug_assert!(registry.owner_accessor_names.is_empty());
+        let class_names: Vec<String> = registry
+            .classes
+            .iter()
+            .filter(|(_, class_def)| !class_def.attributes.is_empty())
+            .map(|(name, _)| name.clone())
+            .collect();
         for class_name in class_names {
             registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
         }

@@ -56,17 +56,27 @@ impl Interpreter {
     /// builtin native-method DESTROYs (IO::Handle etc.) live in
     /// `native_methods` and are not queued through the GC finalize path, so
     /// they do not count. Used to skip the program-end cycle collect when no
-    /// DESTROY could possibly fire (`gc::collect_at_program_end`). O(types),
-    /// called once at exit.
+    /// DESTROY could possibly fire (`gc::collect_at_program_end`). Called once
+    /// at exit.
+    ///
+    /// Scans the method table's rows for a user `DESTROY` and checks the
+    /// owner is a class, instead of probing `(class, "DESTROY")` for every
+    /// registered class: that interned two names per class — 892 interns of
+    /// already-interned names on a bare script's exit (#10961).
+    // Cost: O(m + r), m = method-table rows, r = roles.
     pub(crate) fn registry_has_destroy_methods(&self) -> bool {
         let reg = self.registry();
-        reg.classes
-            .keys()
-            .any(|name| reg.user_method_overloads(name, "DESTROY").is_some())
-            || reg
-                .roles
-                .values()
-                .any(|rd| rd.methods.contains_key("DESTROY"))
+        // A name nothing ever interned cannot be a method-table key.
+        Symbol::lookup("DESTROY").is_some_and(|destroy| {
+            reg.method_entries.iter().any(|(key, entry)| {
+                key.name == destroy
+                    && !entry.user_candidates.is_empty()
+                    && reg.classes.contains_key(key.owner.as_str())
+            })
+        }) || reg
+            .roles
+            .values()
+            .any(|rd| rd.methods.contains_key("DESTROY"))
     }
 
     /// Whether a type was declared under Raku 6.e+ semantics, keyed on the
@@ -645,3 +655,7 @@ impl Interpreter {
         sigs
     }
 }
+
+#[cfg(test)]
+#[path = "class_destroy_detect_tests.rs"]
+mod destroy_detect_tests;

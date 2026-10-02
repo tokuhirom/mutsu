@@ -144,7 +144,11 @@ thread_local! {
     /// difference on its own — the per-intern cost is the string hash and
     /// compare, not the TLS access. It is here for consistency with the
     /// siblings, not as a claimed win.)
-    static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> =
+    ///
+    /// Keyed by the global table's own leaked `&'static str`, not an owned
+    /// copy: a `String` key cost one allocation per distinct name on its first
+    /// intern and one free per name at thread exit (#10961).
+    static INTERN_CACHE: RefCell<FxHashMap<&'static str, Symbol>> =
         const { RefCell::new(FxHashMap::with_hasher(rustc_hash::FxBuildHasher)) };
 
     /// How many times this thread has called [`Symbol::intern`].
@@ -674,9 +678,9 @@ impl Symbol {
         if let Some(sym) = INTERN_CACHE.with(|c| c.borrow().get(s).copied()) {
             return sym;
         }
-        let sym = Self::intern_global(s);
+        let (sym, key) = Self::intern_global(s);
         INTERN_CACHE.with(|c| {
-            c.borrow_mut().insert(s.to_owned(), sym);
+            c.borrow_mut().insert(key, sym);
         });
         sym
     }
@@ -691,31 +695,33 @@ impl Symbol {
         if let Some(sym) = INTERN_CACHE.with(|c| c.borrow().get(s).copied()) {
             return Some(sym);
         }
-        let sym = {
+        let (key, sym) = {
             let table = global_table().read().unwrap();
-            table.str_to_id.get(s).copied()
+            table.str_to_id.get_key_value(s).map(|(k, v)| (*k, *v))
         }?;
         INTERN_CACHE.with(|c| {
-            c.borrow_mut().insert(s.to_owned(), sym);
+            c.borrow_mut().insert(key, sym);
         });
         Some(sym)
     }
 
     /// Intern via the globally-shared table (the source of truth for id
-    /// assignment). Only reached on a thread-local cache miss.
-    fn intern_global(s: &str) -> Symbol {
+    /// assignment). Only reached on a thread-local cache miss. Also returns
+    /// the table's leaked copy of the text, which the thread-local memo keys
+    /// on.
+    fn intern_global(s: &str) -> (Symbol, &'static str) {
         // Fast path: read lock only.
         {
             let table = global_table().read().unwrap();
-            if let Some(&sym) = table.str_to_id.get(s) {
-                return sym;
+            if let Some((&key, &sym)) = table.str_to_id.get_key_value(s) {
+                return (sym, key);
             }
         }
         // Slow path: acquire write lock and insert.
         let mut table = global_table().write().unwrap();
         // Double-check after acquiring write lock.
-        if let Some(&sym) = table.str_to_id.get(s) {
-            return sym;
+        if let Some((&key, &sym)) = table.str_to_id.get_key_value(s) {
+            return (sym, key);
         }
         let id = table.id_to_str.len() as u32;
         let sym = Symbol(id);
@@ -751,7 +757,7 @@ impl Symbol {
                 CaptureShape::Angle => shaped.1.push(sym),
             }
         }
-        sym
+        (sym, leaked)
     }
 
     /// Borrow the symbol's string without allocating. The returned `&'static
@@ -1076,6 +1082,28 @@ mod tests {
         let a = Symbol::intern("hello");
         let b = Symbol::intern("hello");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn intern_cache_keys_on_the_tables_leaked_text() {
+        // The thread-local memo borrows the global table's own copy rather
+        // than owning one (#10961).
+        let sym = Symbol::intern("intern_cache_key_test");
+        let key_ptr = INTERN_CACHE.with(|c| {
+            c.borrow()
+                .get_key_value("intern_cache_key_test")
+                .map(|(k, _)| k.as_ptr())
+        });
+        assert_eq!(key_ptr, Some(sym.as_str().as_ptr()));
+        // A fresh thread's memo is filled from the table by both entry points
+        // and agrees with this thread.
+        std::thread::spawn(move || {
+            assert_eq!(Symbol::lookup("intern_cache_key_test"), Some(sym));
+            assert_eq!(Symbol::intern("intern_cache_key_test"), sym);
+            assert_eq!(Symbol::lookup("intern_cache_key_test_absent"), None);
+        })
+        .join()
+        .unwrap();
     }
 
     #[test]
