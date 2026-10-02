@@ -5719,7 +5719,7 @@ impl Interpreter {
                         || key.starts_with('%')
                         || key.starts_with('&')
                     {
-                        key
+                        key.clone()
                     } else {
                         format!("${key}")
                     };
@@ -5730,6 +5730,15 @@ impl Interpreter {
                         format!("{pkg}::{key_name}")
                     };
                     self.env_mut().insert(fq, val.clone());
+                    // An unsigiled key (`Pkg::{$k} = v`) is the package variable
+                    // `$Pkg::k`, as `bind_stash_key` installs it: keep it in the
+                    // `our` store too so another frame (a sub, a method) reads it.
+                    if !key.starts_with(['$', '@', '%', '&']) {
+                        let pkg = Self::normalize_stash_package(&package);
+                        let qualified = Self::qualify_stash_name(&pkg, &key);
+                        self.env_mut().insert(qualified.clone(), val.clone());
+                        self.set_our_var(qualified, val.clone());
+                    }
                 }
                 self.stack.push(val);
             }
