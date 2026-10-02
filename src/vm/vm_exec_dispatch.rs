@@ -6561,6 +6561,11 @@ impl Interpreter {
                     call.suggestions.clone(),
                 ));
             }
+            // Cost: O(1).
+            OpCode::EndBeginPrologue => {
+                self.begin_prologue_pending = false;
+                *ip += 1;
+            }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).
             OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);

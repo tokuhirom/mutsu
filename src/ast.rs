@@ -1662,6 +1662,10 @@ pub(crate) enum Stmt {
     /// call's only explanation: when every one of them was False, nothing
     /// declared the routine (ADR-0134 §2.1.6, #10331).
     UndeclaredRoutine(Box<UndeclaredRoutineCall>),
+    /// Marks the end of the main unit's BEGIN prologue and its
+    /// undeclared-routine guards (ADR-0134). An error raised before this
+    /// point is a compile-time failure, which skips the END phasers (#10977).
+    BeginPrologueEnd,
     /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
     ///
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.

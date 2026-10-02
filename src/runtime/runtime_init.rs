@@ -3080,6 +3080,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             exit_status_locked: false,
+            begin_prologue_pending: false,
             main_hidden_from_usage: Default::default(),
             explicit_run_main: false,
             nested_mode: false,

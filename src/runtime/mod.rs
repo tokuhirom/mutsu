@@ -2227,6 +2227,13 @@ pub struct Interpreter {
     /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
     /// exits 42. See `Interpreter::finish` and `builtin_exit`.
     exit_status_locked: bool,
+    /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
+    /// still running: `run` raises it before the mainline starts and the
+    /// `EndBeginPrologue` opcode lowers it once the prologue and its
+    /// undeclared-routine guards are done. An error that escapes the mainline
+    /// while it is still raised is a compile-time failure, so `run` skips the
+    /// END phasers for it (#10977).
+    pub(crate) begin_prologue_pending: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).

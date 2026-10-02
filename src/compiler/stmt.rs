@@ -887,6 +887,9 @@ impl Compiler {
             Stmt::UndeclaredRoutine(call) => {
                 self.code.emit(OpCode::ThrowUndeclaredRoutine(call.clone()));
             }
+            Stmt::BeginPrologueEnd => {
+                self.code.emit(OpCode::EndBeginPrologue);
+            }
             Stmt::NestedMethodCapture {
                 index,
                 closure,
