@@ -1,6 +1,6 @@
 //! Generator and verifier for [`super::unicode_script_data`].
 //!
-//! Test-only; the shared machinery is in [`super::unicode_table_gen`], whose
+//! Test-only; the shared machinery is in [`crate::ucd::table_gen`], whose
 //! header explains why deriving from `regex-syntax` makes the table's answers
 //! identical to the ordered-regex probe's by construction. Regenerate with:
 //!
@@ -9,7 +9,7 @@
 //! ```
 
 use super::unicode_script_data as data;
-use super::unicode_table_gen as tbl;
+use crate::ucd::table_gen as tbl;
 use std::fmt::Write as _;
 
 /// Every Script `unicode_script_name` used to probe, in the order it probed
@@ -253,7 +253,12 @@ fn scripts_are_disjoint() {
 fn verify_committed_tables_match_unicode_data() {
     let table = tbl::derive_table(&patterns());
     let built = tbl::build_tables(&table);
-    tbl::maybe_regenerate("unicode_script_data.rs", &built, HEADER, &render_names());
+    tbl::maybe_regenerate(
+        "builtins/unicode_script_data.rs",
+        &built,
+        HEADER,
+        &render_names(),
+    );
 
     tbl::assert_committed_matches(
         &tbl::Committed {

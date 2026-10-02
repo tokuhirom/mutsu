@@ -142,7 +142,7 @@ cranelift-native = { version = "0.136", optional = true }
 # build script pulls in phf_codegen + rand, which is why it is not a runtime
 # dependency.
 unicode_names2 = "3"
-# Used only by tests: `builtins::unicode_gc_gen` cross-checks the committed
+# Used only by tests: `ucd::gc_gen` cross-checks the committed
 # General_Category tables against the ordered `regex` probe they replaced, and
 # the scanners that replaced runtime `regex` patterns (#10439) are pinned
 # against those patterns. Keep `regex-syntax` on the same minor as `regex`'s.

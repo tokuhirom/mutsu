@@ -516,10 +516,10 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '\''
             || c == '*'
             || c.is_ascii_digit()
-            || crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
+            || crate::ucd::numeric::unicode_decimal_digit_value(c).is_some()
             || c.is_alphabetic()
-            || crate::builtins::unicode::unicode_rat_value(c).is_some()
-            || crate::builtins::unicode::unicode_numeric_int_value(c).is_some()
+            || crate::ucd::numeric::unicode_rat_value(c).is_some()
+            || crate::ucd::numeric::unicode_numeric_int_value(c).is_some()
     };
     // A symbolic prefix (`+`, `-`, `~`) may be followed by ANOTHER prefix
     // operator: `+!$x` is `+(!$x)`, `-?$x` is `-(?$x)`. Without this the leading

@@ -43,8 +43,11 @@ _spec.loader.exec_module(_ps)
 # Lower-layer roots (directories and single-file modules), relative to src/.
 LOWER = [
     "ast", "ast.rs", "parser", "value", "opcode.rs", "env.rs", "gc",
-    # Leaf modules below all of them: name and key construction.
+    # Leaf modules below all of them: name and key construction (including the
+    # sigil-less constant term keys), native type names, and the Unicode
+    # tables the parser reads.
     "symbol.rs", "qualified.rs", "type_id.rs", "meta_ns.rs", "str_scan.rs",
+    "native_types.rs", "term_names.rs", "ucd",
 ]
 # Modules above every lower layer. `crate::Interpreter` is lib.rs's re-export.
 UPPER = ["runtime", "vm", "compiler", "builtins", "trir", "interpreter", "Interpreter"]
@@ -100,7 +103,7 @@ def read_baseline() -> dict[str, int]:
 HEADER = """\
 # Upward references (crate::runtime / vm / compiler / builtins / trir /
 # Interpreter, and crate::parser from below the parser) from the lower layers
-# (ast, parser, value, opcode, env, gc), per file. See
+# (ast, parser, value, opcode, env, gc and the leaf modules), per file. See
 # scripts/check-layer-deps.py and issue #10779. Format: <path> <count>
 # Counts may only go down: move the helper down, or route the call through a
 # trait, and re-cut with

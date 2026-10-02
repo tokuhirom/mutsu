@@ -38,8 +38,7 @@ pub(super) fn optional_param_default(tc: &Option<String>) -> Expr {
     let Some(t) = tc.as_deref() else {
         return Expr::BareWord("Mu".to_string());
     };
-    if crate::runtime::native_types::is_native_int_type(t)
-        || matches!(t, "num" | "num32" | "num64" | "str")
+    if crate::native_types::is_native_int_type(t) || matches!(t, "num" | "num32" | "num64" | "str")
     {
         return native_type_default(tc);
     }

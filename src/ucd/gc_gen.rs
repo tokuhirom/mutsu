@@ -1,16 +1,16 @@
-//! Generator and verifier for [`super::unicode_gc_data`].
+//! Generator and verifier for [`super::gc_data`].
 //!
-//! Test-only; the shared machinery is in [`super::unicode_table_gen`], whose
+//! Test-only; the shared machinery is in [`super::table_gen`], whose
 //! header explains why deriving from `regex-syntax` makes the table's answers
 //! identical to the ordered-regex probe's by construction. Regenerate with:
 //!
 //! ```text
-//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib unicode_gc_gen
+//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib ucd::gc_gen
 //! ```
 
-use super::unicode_gc::GeneralCategory;
-use super::unicode_gc_data as data;
-use super::unicode_table_gen as tbl;
+use super::gc::GeneralCategory;
+use super::gc_data as data;
+use super::table_gen as tbl;
 
 /// The category abbreviations, in the order `unicode_general_category` used to
 /// try them. `Cs` is absent for the reason [`GeneralCategory`] documents.
@@ -25,13 +25,13 @@ const HEADER: &str = "\
 //! Regenerate with:
 //!
 //! ```text
-//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib unicode_gc_gen
+//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib ucd::gc_gen
 //! ```
 //!
 //! Derived from `regex-syntax`'s Unicode tables -- the same data `regex`'s
 //! `\\p{...}` classes match against -- folded in the priority order the
 //! ordered-regex probe used, so every answer is identical to the
-//! implementation this replaced. `super::unicode_gc_gen` re-derives them on
+//! implementation this replaced. `super::gc_gen` re-derives them on
 //! every test run and fails if this file has drifted.
 
 ";
@@ -73,7 +73,7 @@ fn categories_are_disjoint() {
 fn verify_committed_tables_match_unicode_data() {
     let table = tbl::derive_table(&patterns());
     let built = tbl::build_tables(&table);
-    tbl::maybe_regenerate("unicode_gc_data.rs", &built, HEADER, "");
+    tbl::maybe_regenerate("ucd/gc_data.rs", &built, HEADER, "");
 
     tbl::assert_committed_matches(
         &tbl::Committed {
@@ -87,7 +87,7 @@ fn verify_committed_tables_match_unicode_data() {
         &built,
     );
 
-    tbl::assert_lookup_matches_table(&table, |ch| super::unicode_gc::general_category(ch) as u8);
+    tbl::assert_lookup_matches_table(&table, |ch| super::gc::general_category(ch) as u8);
 }
 
 /// Tie the tables back to the *original* implementation: the ordered
@@ -136,7 +136,7 @@ fn matches_the_ordered_regex_probe_it_replaced() {
             continue;
         };
         assert_eq!(
-            super::unicode_gc::general_category(ch).as_str(),
+            super::gc::general_category(ch).as_str(),
             probe(ch),
             "U+{cp:04X}"
         );

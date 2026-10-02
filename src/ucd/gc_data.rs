@@ -3,13 +3,13 @@
 //! Regenerate with:
 //!
 //! ```text
-//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib unicode_gc_gen
+//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib ucd::gc_gen
 //! ```
 //!
 //! Derived from `regex-syntax`'s Unicode tables -- the same data `regex`'s
 //! `\p{...}` classes match against -- folded in the priority order the
 //! ordered-regex probe used, so every answer is identical to the
-//! implementation this replaced. `super::unicode_gc_gen` re-derives them on
+//! implementation this replaced. `super::gc_gen` re-derives them on
 //! every test run and fails if this file has drifted.
 
 /// Code of every ASCII codepoint, indexed directly.

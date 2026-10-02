@@ -1742,7 +1742,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
-                || (crate::runtime::native_types::is_native_type_name(&full_name)
+                || (crate::native_types::is_native_type_name(&full_name)
                     && !r[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')))
         {
             let smiley = &r[..2];
@@ -2356,8 +2356,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // A Unicode numeric literal (vulgar fraction `⅔`, superscript, ...)
             // also starts a term, so `atan2 ⅔, ⅓` parses as a call rather than
             // stranding the fraction as a separate statement.
-            || crate::builtins::unicode::unicode_rat_value(next).is_some()
-            || crate::builtins::unicode::unicode_numeric_int_value(next).is_some()
+            || crate::ucd::numeric::unicode_rat_value(next).is_some()
+            || crate::ucd::numeric::unicode_numeric_int_value(next).is_some()
             // A hyper-prefix operator (`+«`, `-«`, `~«`, `+<<`, ...) is an
             // unambiguous term start — the hyper marker can never begin an
             // infix continuation — so `unique +«(1,2,2,3)` parses as a call.

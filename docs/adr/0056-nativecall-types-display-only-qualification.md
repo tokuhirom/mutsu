@@ -81,7 +81,7 @@ current `main`:
   `Pointer[T]` legal syntax at all.
 - `src/runtime/methods_aggregate_ctor.rs` — `base_class_name == "CArray"` (multiple sites).
 - `src/runtime/nativecall_fnptr.rs:131` — `if base == "CArray"`.
-- `src/runtime/native_types.rs` — literal `"long"`/`"ulong"`/`"longlong"`/`"ulonglong"`/
+- `src/native_types.rs` — literal `"long"`/`"ulong"`/`"longlong"`/`"ulonglong"`/
   `"size_t"`/`"ssize_t"`/`"bool"` throughout (bounds, width, signedness tables).
 - The full list (~15 sites) is preserved verbatim in the closed-out `todo/deep/` finding's
   git history; every one checked still matches literally, unqualified.
