@@ -1237,14 +1237,19 @@ pub fn construct(
         }))));
     }
     if class_name == "RakuAST::StatementList" && method == "new" {
-        if !args.is_empty() {
-            return Err(RuntimeError::new(
-                "RakuAST::StatementList.new expects no arguments",
-            ));
+        for arg in args {
+            require_any_rakuast(arg, "RakuAST::StatementList.new", "statements")?;
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::StatementList,
-            fields: Vec::new(),
+            fields: args
+                .iter()
+                .cloned()
+                .map(|value| RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(value),
+                })
+                .collect(),
         }))));
     }
     if class_name == "RakuAST::ArgList" && method == "new" {
