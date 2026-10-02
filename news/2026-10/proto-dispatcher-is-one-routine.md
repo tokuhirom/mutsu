@@ -45,7 +45,7 @@ rakudo's `.raku` comparison.
 
 ## Tests
 
-`t/routines/proto-dispatcher-is-one-routine.t` (18 rows, all measured on rakudo 2026.07 and passing
+`t/routines/dispatch/proto-dispatcher-is-one-routine.t` (18 rows, all measured on rakudo 2026.07 and passing
 under it): `.candidates` through both names, both `.raku` spellings, `.is_dispatcher` on a
 dispatcher and on a candidate, `multi sub` for a candidate, the `is-proto` helper above, the declared
 and generated proto signatures, a plain sub staying a plain sub, and a `my`-scoped proto staying
