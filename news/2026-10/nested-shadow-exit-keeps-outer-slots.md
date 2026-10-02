@@ -15,4 +15,4 @@ now records those further-out slots in `CompiledCode::block_scope_protected_slot
 the exit leaves them alone. The restore itself stays, because it still repairs by-name
 writebacks that land in the immediately enclosing slot.
 
-Regression test: `t/vm/scope/nested-shadow-exit-keeps-outer-slots.t` (#10856).
+Regression test: `t/vm/scope/shadow-slot-nested-exit-keeps-outer-slots.t` (#10856).
