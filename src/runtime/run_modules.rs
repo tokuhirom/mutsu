@@ -1311,6 +1311,18 @@ impl Interpreter {
                             .insert(name.clone(), cell);
                     }
                 }
+                // A unit's ordinary `our $x` loses its bare binding too: rakudo
+                // reaches it as `$Unit::x`, or bare only through a real import
+                // of an `is export` one, which `import_module` installs in the
+                // scope of the `use` that asked for it -- never through the
+                // body's own binding, which ran in the caller's env (#11009).
+                // Unlike a constant it gets no `unit_lexicals` copy: the
+                // module's own routines already resolve it to its package
+                // cell (`vm_our_package_vars`), and a unit-lexical alias would
+                // outrank a routine's own `my $x` captured by a closure.
+                for name in Self::collect_unit_our_var_names(&stmts) {
+                    self.env.remove(&name);
+                }
                 for name in &package_scope_names {
                     self.env.remove(name);
                     // An enum value's bare binding lives in the enum-key namespace
@@ -1941,6 +1953,54 @@ impl Interpreter {
                     }
                 }
                 _ => {}
+            }
+        }
+        names
+    }
+
+    /// The env keys of a `unit` compunit's own ordinary `our` variables
+    /// (`our $x` / `our @a` / `our %h`, exported or not), declared after its
+    /// `unit` statement. A `constant` (also `is_our`) and an `our $*x` are
+    /// excluded; see [`Self::collect_unit_package_scope_names`] for the
+    /// constant case and the "after `unit`" rule.
+    // Cost: O(n), n = the unit's top-level statements.
+    fn collect_unit_our_var_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let after_unit = stmts
+            .iter()
+            .position(|s| {
+                matches!(
+                    s,
+                    crate::ast::Stmt::Package { is_unit: true, .. }
+                        | crate::ast::Stmt::ClassDecl { is_unit: true, .. }
+                )
+            })
+            .map_or(0, |i| i + 1);
+        let mut names: Vec<String> = Vec::new();
+        for s in &stmts[after_unit..] {
+            let crate::ast::Stmt::VarDecl {
+                name,
+                is_our: true,
+                is_dynamic: false,
+                custom_traits,
+                ..
+            } = s
+            else {
+                continue;
+            };
+            if custom_traits.iter().any(|(t, _)| t == "__constant")
+                || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
+                || name.contains("__ANON")
+            {
+                continue;
+            }
+            let bare = name.strip_prefix(['@', '%']).unwrap_or(name);
+            if bare
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && !names.iter().any(|n| n == name)
+            {
+                names.push(name.clone());
             }
         }
         names
