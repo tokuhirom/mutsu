@@ -600,8 +600,19 @@ impl Interpreter {
     /// not a function of its key.
     pub(super) fn note_regex_parse_ambient_read() {
         crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+        super::regex_value_keyed_parse::note_unkeyed_read();
         // The parameterized-subrule memo stores PARSED candidates, so a parse
         // that is not a function of its own key makes that entry impure too.
+        crate::runtime::regex::regex_arg_purity::note_opaque_read();
+    }
+
+    /// [`Self::note_regex_parse_ambient_read`] for a `<$var>` read whose whole
+    /// effect on the tree is a function of the value's identity
+    /// (`regex_value_keyed_parse::is_keyable_read`): the text-keyed memos still
+    /// refuse the parse, but the value-keyed one may store it (#10716).
+    pub(super) fn note_regex_parse_value_read(var_name: &str, value: &Value) {
+        crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+        super::regex_value_keyed_parse::note_value_read(var_name, value);
         crate::runtime::regex::regex_arg_purity::note_opaque_read();
     }
 
@@ -3774,41 +3785,37 @@ impl Interpreter {
                                         // Reads the scalar's VALUE at parse time (and
                                         // recompiles it as a regex), so the tree is not a
                                         // function of the pattern text alone.
-                                        Self::note_regex_parse_ambient_read();
-                                        let value =
-                                            match self.env.get(var_name).cloned().or_else(|| {
-                                                self.env.get(&format!("${var_name}")).cloned()
-                                            }) {
-                                                Some(v) => v.into_deref(),
-                                                None => {
-                                                    // Variable not declared — X::Undeclared
-                                                    let symbol = format!("${var_name}");
-                                                    let msg = format!(
-                                                        "Variable '{symbol}' is not declared"
-                                                    );
-                                                    let mut attrs =
-                                                        std::collections::HashMap::new();
-                                                    attrs.insert(
-                                                        "symbol".to_string(),
-                                                        Value::str(symbol),
-                                                    );
-                                                    attrs.insert(
-                                                        "message".to_string(),
-                                                        Value::str(msg.clone()),
-                                                    );
-                                                    let ex = Value::make_instance(
-                                                        Symbol::intern("X::Undeclared"),
-                                                        attrs,
-                                                    );
-                                                    let mut err =
-                                                        RuntimeError::new(msg.to_string());
-                                                    err.exception = Some(Box::new(ex));
-                                                    PENDING_REGEX_ERROR.with(|e| {
-                                                        *e.borrow_mut() = Some(err);
-                                                    });
-                                                    return None;
-                                                }
-                                            };
+                                        // The read is noted below, once the value's
+                                        // pattern text tells whether it is keyable.
+                                        let value = match self.regex_value_var(var_name) {
+                                            Some(v) => v,
+                                            None => {
+                                                Self::note_regex_parse_ambient_read();
+                                                // Variable not declared — X::Undeclared
+                                                let symbol = format!("${var_name}");
+                                                let msg =
+                                                    format!("Variable '{symbol}' is not declared");
+                                                let mut attrs = std::collections::HashMap::new();
+                                                attrs.insert(
+                                                    "symbol".to_string(),
+                                                    Value::str(symbol),
+                                                );
+                                                attrs.insert(
+                                                    "message".to_string(),
+                                                    Value::str(msg.clone()),
+                                                );
+                                                let ex = Value::make_instance(
+                                                    Symbol::intern("X::Undeclared"),
+                                                    attrs,
+                                                );
+                                                let mut err = RuntimeError::new(msg.to_string());
+                                                err.exception = Some(Box::new(ex));
+                                                PENDING_REGEX_ERROR.with(|e| {
+                                                    *e.borrow_mut() = Some(err);
+                                                });
+                                                return None;
+                                            }
+                                        };
                                         // A genuine `Regex`/`RegexWithAdverbs` value can only
                                         // have been built by actual regex literal syntax
                                         // (rx//, m//, token/rule/regex) — its embedded
@@ -3831,6 +3838,13 @@ impl Interpreter {
                                             ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                                             _ => value.to_string_value(),
                                         };
+                                        if super::regex_value_keyed_parse::is_keyable_read(
+                                            &value, &pat_str,
+                                        ) {
+                                            Self::note_regex_parse_value_read(var_name, &value);
+                                        } else {
+                                            Self::note_regex_parse_ambient_read();
+                                        }
                                         // Check for longname alias first
                                         if Self::contains_longname_alias(&pat_str) {
                                             PENDING_REGEX_ERROR.with(|e| {

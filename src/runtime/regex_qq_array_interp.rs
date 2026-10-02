@@ -254,6 +254,7 @@ impl Interpreter {
             if ignore_case { ":i " } else { "" }
         );
         crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+        super::regex_value_keyed_parse::note_unkeyed_read();
         let prev = REGEX_QQ_FALLBACK_PARSE.with(|f| f.replace(true));
         let fallback =
             self.parse_regex_uncached(&text, crate::runtime::regex_parse::RegexParseMode::Match);
