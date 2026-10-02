@@ -4,7 +4,7 @@ use Test;
 # (not force the source). Regression pin for S02-types/lazy-lists.t 24-26.
 # Also verifies the produced values match the eager equivalents.
 
-plan 21;
+plan 26;
 
 my $was-lazy;
 sub make-lazy-list($num) { gather { take $_ for 0 ..^ $num; $was-lazy = 0 }.lazy };
@@ -73,3 +73,14 @@ ok (1 .. *).pairs.is-lazy, 'pairs over an infinite range reports is-lazy True';
 ok (^Inf).kv.is-lazy, 'kv over ^Inf reports is-lazy True';
 is (5 .. *).antipairs.head(2).List, (5 => 0, 6 => 1),
     'antipairs over an infinite range starting past zero';
+
+# The same holds for a non-integer start: the elements keep the start's type.
+ok (1.5 .. *).pairs.is-lazy, 'pairs over a Rat-start infinite range reports is-lazy True';
+is (1.5 .. *).pairs.head(2).List, (0 => 1.5, 1 => 2.5),
+    'pairs over a Rat-start infinite range';
+is-deeply (1.5 .. *).kv.head(4).map(*.^name).List, <Int Rat Int Rat>,
+    'kv over a Rat-start infinite range keeps Rat values';
+is (1.5 ^.. *).antipairs.head(2).List, (2.5 => 0, 3.5 => 1),
+    'antipairs over an excluded-start Rat range';
+is (1e0 .. Inf).kv.head(4).List, (0, 1e0, 1, 2e0),
+    'kv over a Num-start infinite range';

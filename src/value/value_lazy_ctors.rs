@@ -4,13 +4,22 @@ use super::*;
 // `value_lazy.rs` (which holds the `Debug`/`Clone` impls and the accessor
 // methods) to keep both files under the repo's 500-line-per-file convention.
 
+/// Whether `range` starts at a number, which `pull_source_element` can step
+/// without reifying the range (a `Str` range like `'a'..*` cannot).
+fn range_start_is_numeric(range: &Value) -> bool {
+    match range.view() {
+        ValueView::GenericRange { start, .. } => start.is_numeric(),
+        _ => true,
+    }
+}
+
 impl LazyList {
     /// A zero-argument `.pairs`/`.antipairs`/`.kv` over a lazy invocant, as a
     /// lazy index-pipe stage instead of a forced (possibly infinite) source;
     /// `None` for any other method or a non-lazy invocant. The invocant is a
     /// genuinely-lazy `LazyList` (also `needs_vm_lazy_dispatch` when
-    /// `vm_dispatch`), or an infinite integer range (`1..*`, `^Inf`), which
-    /// Rakudo also reports `.is-lazy` through these methods.
+    /// `vm_dispatch`), or an infinite numeric range (`1..*`, `^Inf`,
+    /// `1.5..*`), which Rakudo also reports `.is-lazy` through these methods.
     ///
     /// Cost: O(1) — builds the stage only; elements are pulled on demand.
     pub(crate) fn index_pipe_method(
@@ -30,9 +39,13 @@ impl LazyList {
             {
                 target.clone()
             }
-            _ => Value::lazy_list(crate::gc::Gc::new(
-                crate::runtime::utils::infinite_int_range_sequence(target)?,
-            )),
+            // `pull_source_element` steps an infinite numeric range by one
+            // per element, keeping the start's type (`1..*` Int, `1.5..*`
+            // Rat, `1e0..Inf` Num; `-Inf..Inf` repeats `-Inf`, as in Rakudo).
+            _ if crate::builtins::is_infinite_range(target) && range_start_is_numeric(target) => {
+                target.clone()
+            }
+            _ => return None,
         };
         Some(Value::lazy_list(crate::gc::Gc::new(
             LazyList::new_index_pipe(source, transform),
