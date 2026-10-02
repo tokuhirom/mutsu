@@ -121,13 +121,14 @@ impl VisitMut for SupplyBody<'_> {
     // registered before the loop runs — e.g.
     //   supply { until my $done { emit(...) } CLOSE { $done = True } }
     // relies on the CLOSE phaser being able to break the loop.
+    //
+    // A registration is hoisted no further than the block's own `my`
+    // declarations its body reads, though: the phaser closes over those
+    // lexicals, and a closure built before `my $id = ...` runs would capture
+    // the not-yet-initialised variable (#10832).
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         walk_stmts_mut(self, body);
-        let (mut closes, rest): (Vec<Stmt>, Vec<Stmt>) = std::mem::take(body)
-            .into_iter()
-            .partition(is_close_registration);
-        closes.extend(rest);
-        *body = closes;
+        *body = hoist_close_registrations(std::mem::take(body));
     }
 
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -226,6 +227,78 @@ impl VisitMut for SupplyBody<'_> {
     }
 
     fn visit_regex_node_mut(&mut self, _node: &mut RegexNode) {}
+}
+
+/// Moves each CLOSE registration up to the earliest point of `stmts` that
+/// follows every top-level declaration of a variable its body reads (the head
+/// of the block when it reads none), keeping the registrations in source
+/// order.
+// Cost: O(n * d), n = size of the registrations' subtrees plus the statement
+// count, d = names declared at the top level of `stmts`.
+fn hoist_close_registrations(stmts: Vec<Stmt>) -> Vec<Stmt> {
+    let mut rest: Vec<Stmt> = Vec::with_capacity(stmts.len());
+    // (number of `rest` statements the registration goes after, registration)
+    let mut closes: Vec<(usize, Stmt)> = Vec::new();
+    for stmt in stmts {
+        if !is_close_registration(&stmt) {
+            rest.push(stmt);
+            continue;
+        }
+        let mut reads = VarReads::default();
+        crate::ast_visit::Visit::visit_stmt(&mut reads, &stmt);
+        let after_decl = rest
+            .iter()
+            .rposition(|s| declared_names(s).iter().any(|n| reads.names.contains(*n)))
+            .map_or(0, |i| i + 1);
+        let floor = closes.last().map_or(0, |(pos, _)| *pos);
+        closes.push((after_decl.max(floor), stmt));
+    }
+    let mut out = Vec::with_capacity(rest.len() + closes.len());
+    let mut closes = closes.into_iter().peekable();
+    for (i, stmt) in rest.into_iter().enumerate() {
+        while let Some((_, close)) = closes.next_if(|(pos, _)| *pos == i) {
+            out.push(close);
+        }
+        out.push(stmt);
+    }
+    out.extend(closes.map(|(_, close)| close));
+    out
+}
+
+/// The variables a statement declares at its own level, spelled the way
+/// [`VarReads`] records a read (a scalar without its sigil).
+fn declared_names(stmt: &Stmt) -> Vec<&str> {
+    match stmt {
+        Stmt::VarDecl { name, .. } => vec![name.as_str()],
+        Stmt::SyntheticBlock(inner) => inner
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::VarDecl { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Every variable a subtree reads, in `VarDecl` spelling: `$x` as `x`, `@a`
+/// as `@a`, `%h` as `%h`.
+#[derive(Default)]
+struct VarReads {
+    names: std::collections::HashSet<String>,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for VarReads {
+    fn visit_name(&mut self, name: &str, kind: crate::ast_visit::NameKind) {
+        use crate::ast_visit::NameKind;
+        let spelled = match kind {
+            NameKind::Var => name.to_string(),
+            NameKind::ArrayVar => format!("@{name}"),
+            NameKind::HashVar => format!("%{name}"),
+            _ => return,
+        };
+        self.names.insert(spelled);
+    }
 }
 
 /// True if `stmt` is the registration call a CLOSE phaser is lowered to.
