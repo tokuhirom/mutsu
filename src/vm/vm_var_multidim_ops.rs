@@ -1161,8 +1161,7 @@ impl Interpreter {
         // See the element-store twin: gated on the monotonic latch so a program
         // with no shaped-array declaration never builds the key.
         let has_declared_shape = crate::env::shaped_array_dims_possible() && {
-            let declared_shape_key =
-                crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&var_name);
+            let declared_shape_key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&var_name);
             self.env().contains_key_sym(declared_shape_key)
         };
         // Read through a capture cell: an escaping closure's `@a[3;3]` is a

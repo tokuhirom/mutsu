@@ -2,7 +2,7 @@
 //! atoms (`/"x @a[0]"/`) to qq thunks — see [`crate::regex_qq_atoms`].
 
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Compiler {

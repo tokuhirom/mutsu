@@ -850,7 +850,7 @@ impl Interpreter {
                         || s == "%_"
                         // `$!` is per-routine; see the merge loop above.
                         || (bang_is_callee_private
-                            && crate::runtime::utils::is_routine_scoped_implicit_var(s))
+                            && crate::symbol::is_routine_scoped_implicit_var(s))
                         || rw_sources.contains(s)
                         // Compiler-internal bookkeeping symbols (e.g. the
                         // `__mutsu_sigilless_readonly::p` marker emitted for a

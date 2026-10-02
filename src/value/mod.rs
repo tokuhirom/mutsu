@@ -1,4 +1,4 @@
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
@@ -547,6 +547,7 @@ mod array_data_ops;
 mod attr_map;
 mod attr_site;
 mod bareword_site;
+pub(crate) mod buf_class_names;
 pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
@@ -583,9 +584,11 @@ pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
 mod signature_smartmatch;
+pub(crate) mod state_scope_reaper;
 mod str_body;
 mod str_iter;
 mod sync_cell;
+pub(crate) mod type_name;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
@@ -1435,7 +1438,7 @@ pub struct SubData {
     /// guard (shared by every Rust-level copy of this `SubData`) reports the
     /// id as dead when the last copy is dropped, so the store can release the
     /// clone's entries instead of keeping one per clone forever (#9504).
-    pub(crate) state_scope_guard: Option<Arc<crate::runtime::state_scope_reaper::StateScopeGuard>>,
+    pub(crate) state_scope_guard: Option<Arc<crate::value::state_scope_reaper::StateScopeGuard>>,
     /// The readonly state, at creation, of the scalar free variables this code
     /// object WRITES: `Some` holds exactly those marked readonly then (a
     /// non-`is rw` parameter of the creating routine, a `:=`-bound alias) with
@@ -1573,8 +1576,8 @@ impl SubData {
                     // The parameter's own type-constraint metadata is
                     // call-local too: it must not be written back over a
                     // same-named typed lexical in the caller (#9965).
-                    call_local.insert(crate::runtime::meta_ns::MetaNs::Type.key(name_sym));
-                    call_local.insert(crate::runtime::meta_ns::MetaNs::HashKeyType.key(name_sym));
+                    call_local.insert(crate::meta_ns::MetaNs::Type.key(name_sym));
+                    call_local.insert(crate::meta_ns::MetaNs::HashKeyType.key(name_sym));
                     if let Some(bare) = pd.name.strip_prefix('^') {
                         call_local.insert(Symbol::intern(bare));
                     } else if let Some(bare) = pd.name.strip_prefix("&^") {

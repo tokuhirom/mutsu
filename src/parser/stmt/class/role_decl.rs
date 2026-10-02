@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;

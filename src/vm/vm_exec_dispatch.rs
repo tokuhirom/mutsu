@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -1489,7 +1489,7 @@ impl Interpreter {
                 let is_bound_container = name.starts_with(['@', '%'])
                     && matches!(
                         self.env()
-                            .get_sym(crate::runtime::meta_ns::MetaNs::Bound.key_for_str(&name))
+                            .get_sym(crate::meta_ns::MetaNs::Bound.key_for_str(&name))
                             .map(Value::view),
                         Some(ValueView::Bool(true))
                     )
@@ -6717,7 +6717,7 @@ impl Interpreter {
                 // program never creates either marker — skipping the two
                 // `format!` allocations plus env lookups entirely.
                 if crate::env::bound_marker_possible() {
-                    let bound_key = crate::runtime::meta_ns::MetaNs::Bound.key_for_str(name);
+                    let bound_key = crate::meta_ns::MetaNs::Bound.key_for_str(name);
                     if matches!(
                         self.env().get_sym(bound_key).map(Value::view),
                         Some(ValueView::Bool(true))

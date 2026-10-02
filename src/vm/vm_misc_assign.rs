@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// `@!attr = ...` / `@.attr = ...` (and the `%` twins): the declared
@@ -403,7 +403,7 @@ impl Interpreter {
                     if !crate::env::shaped_array_dims_possible() {
                         return None;
                     }
-                    let key = crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&name);
+                    let key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&name);
                     self.env().get_sym(key).and_then(|v| {
                         if let ValueView::Array(dims, ..) = v.view() {
                             Some(

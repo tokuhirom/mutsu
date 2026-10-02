@@ -8,7 +8,7 @@
 # profile happened to walk through, and the pattern grew back, because nothing
 # stopped the next site being written.
 #
-# `MetaNs` (src/runtime/meta_ns.rs) is the memoizing constructor that builds
+# `MetaNs` (src/meta_ns.rs) is the memoizing constructor that builds
 # every one of these keys, and as of stage 3 of #8087 it builds ALL of them:
 # this script started life as a ratchet over a 276-site baseline, which stage 2
 # took to 174 and stage 3 to zero. With the debt gone the baseline file went
@@ -56,12 +56,12 @@ cd "$(dirname "$0")/.."
 # to keep its `format!` -- but it must keep the single-underscore shape, or this
 # gate will (correctly) start counting it.
 #
-# src/runtime/meta_ns.rs is exempt -- it is the constructor those sites are
+# src/meta_ns.rs is exempt -- it is the constructor those sites are
 # supposed to be using, and its own `format!` is the one that is allowed.
 # Comment lines are skipped: prose that quotes a key is not a call site.
 sites=$(
     grep -rnE '"__mutsu_[A-Za-z0-9_]*(::|__)\{' src/ --include='*.rs' \
-        | grep -v '^src/runtime/meta_ns.rs:' \
+        | grep -v '^src/meta_ns.rs:' \
         | grep -vE '^[^:]*:[0-9]+: *(//|\*)' \
         || true
 )
@@ -71,7 +71,7 @@ if [ -n "$sites" ]; then
     echo "$sites" | sed 's/^/  /' >&2
     cat >&2 <<'MSG'
 
-  Build these with MetaNs instead (src/runtime/meta_ns.rs):
+  Build these with MetaNs instead (src/meta_ns.rs):
 
       MetaNs::Type.key(sym)               -> Symbol, memoized; probe with
                                              Env::get_sym / contains_key_sym

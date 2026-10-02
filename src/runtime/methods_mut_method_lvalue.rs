@@ -1,5 +1,5 @@
 use super::*;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 impl Interpreter {
     /// Whether the role attribute backing a mixin override key
     /// (`__mutsu_attr__{method}`) is declared `is rw`. Scans the mixin's

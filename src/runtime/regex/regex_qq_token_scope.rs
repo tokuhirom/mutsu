@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::super::*;
 use super::regex_dynparams::SavedDynParams;
-use crate::runtime::meta_ns::MetaNs;
+use crate::meta_ns::MetaNs;
 
 /// Set the first time a rule whose body carries a qq thunk is registered, so
 /// every other program skips the per-subrule lookup behind one relaxed load.

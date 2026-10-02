@@ -351,7 +351,7 @@ impl Interpreter {
                     || k == "%_"
                     || k == "__mutsu_callable_id"
                     || (bang_is_callee_private
-                        && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
+                        && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
                     || cf.is_callee_local_sym(k)
             };
             // A full method dispatch in the body runs `flatten_scoped_env`, after
@@ -385,7 +385,7 @@ impl Interpreter {
                 let mut restored_env = saved_env;
                 for (k, v) in self.env().iter() {
                     if bang_is_callee_private
-                        && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var)
+                        && k.with_str(crate::symbol::is_routine_scoped_implicit_var)
                     {
                         continue;
                     }

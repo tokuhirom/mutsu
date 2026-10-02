@@ -945,7 +945,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+            } if crate::value::buf_class_names::is_buf_or_blob_class(&class_name.resolve()) => {
                 crate::value::value_buf::with_buf_elems(&attributes, |bytes| {
                     if bytes.is_empty() {
                         // An empty Blob/Buf *instance* gists as `Blob:0x<>` (the
