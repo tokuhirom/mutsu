@@ -62,9 +62,11 @@ impl Interpreter {
             // `ContainerRef`; replace-the-binding would sever that alias and
             // make `substr(...) = ...` report success without changing the
             // original scalar. Assign through the existing cell instead.
-            self.env.insert_through(var.to_string(), result.clone());
+            self.env.insert_through(var.to_string(), result);
         }
-        Ok(result)
+        // The assignment's value is the substring now stored through the lvalue
+        // (the `substr-rw` Proxy's FETCH), not the whole rewritten invocant.
+        Ok(Value::str(replacement))
     }
 
     /// Resolve substr-rw start and end positions from arguments.
