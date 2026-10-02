@@ -221,24 +221,6 @@ pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
     })
 }
 
-/// Is any token under `pattern` a numbered alias (`$0=…`)? The walk matches a
-/// `||` branch in a capture scope of its own, so such an alias there numbers
-/// from the branch's start, not from the enclosing level's.
-pub(super) fn has_numbered_alias(pattern: &RegexPattern) -> bool {
-    pattern.tokens.iter().any(|t| {
-        t.named_capture
-            .as_ref()
-            .is_some_and(|n| n.parse::<usize>().is_ok())
-            || match &t.atom {
-                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => has_numbered_alias(p),
-                RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
-                    alts.iter().any(has_numbered_alias)
-                }
-                _ => false,
-            }
-    })
-}
-
 /// The fewest characters any match of `pattern` consumes (for the patterns
 /// this compiler accepts).
 pub(super) fn min_len(pattern: &RegexPattern) -> usize {

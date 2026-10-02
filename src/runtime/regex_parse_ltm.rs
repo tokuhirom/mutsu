@@ -1548,6 +1548,9 @@ impl Interpreter {
     /// than a deep clone of the whole token tree (the previous owned-`RegexPattern`
     /// cache cloned the tree on every hit — ANALYSIS §8.4).
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<std::sync::Arc<RegexPattern>> {
+        // A regex parsed (and cached) on its own, even when a `<$var>` splice
+        // asks for it in the middle of another pattern's parse.
+        let _independent = super::regex_parse_numbering::IndependentParseScope::enter();
         let package = self.current_package_sym();
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
@@ -1650,6 +1653,7 @@ impl Interpreter {
     /// runtime code, and trees outside the current execution subset, retain
     /// the established string parser path.
     pub(super) fn parse_regex_value(&self, value: &Value) -> Option<std::sync::Arc<RegexPattern>> {
+        let _independent = super::regex_parse_numbering::IndependentParseScope::enter();
         let pattern = match value.view() {
             ValueView::Regex(pattern) => pattern.to_string(),
             ValueView::RegexWithAdverbs(adverbs) => adverbs.pattern.to_string(),

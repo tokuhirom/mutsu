@@ -1478,16 +1478,13 @@ pub(super) fn adopt_inline_ast(dst: &mut RegexCaptures, src: &mut RegexCaptures)
 }
 
 fn named_alias_hides_positional_group(token: &RegexToken) -> bool {
-    matches!(token.atom, RegexAtom::CaptureGroup(_))
-        && token
-            .named_capture
-            .as_deref()
-            .is_some_and(|name| name.parse::<usize>().is_err())
+    matches!(token.atom, RegexAtom::CaptureGroup(_)) && token.named_capture.is_some()
 }
 
-/// Count how many positional capture groups the token will produce. A named
-/// alias takes the capture group's slot into the named axis; a numbered alias
-/// still names a positional slot.
+/// Count how many positional capture groups the token will produce. An alias
+/// takes the capture group's slot into the named axis — a numbered one too: its
+/// level files every positional capture by its static number and settles them
+/// into the positional axis when it finishes (`regex_parse_numbering`).
 pub(super) fn count_capture_groups(token: &RegexToken) -> usize {
     if named_alias_hides_positional_group(token) {
         return 0;

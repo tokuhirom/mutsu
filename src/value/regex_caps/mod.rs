@@ -11,6 +11,7 @@ mod captures;
 mod marks;
 mod match_target;
 mod named_caps;
+mod numbered;
 pub(crate) mod stats;
 
 pub(crate) use cap_node::{
@@ -21,6 +22,7 @@ pub(crate) use captures::{CaptureAliasMap, RegexCaptures};
 pub(crate) use marks::strip_marks_text;
 pub(crate) use match_target::MatchTarget;
 pub(crate) use named_caps::*;
+pub(crate) use numbered::{has_numbered_captures, settle_numbered_captures};
 
 /// The `:my $var = …` regex-variable map shape, Fx-hashed for the same
 /// reason as the regex capture maps.

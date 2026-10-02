@@ -49,6 +49,20 @@ impl Value {
         cursor: Option<Value>,
         target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
+        // A level a numbered alias renumbered files its positional captures by
+        // name until it is settled (#10895); a caller holding such axes
+        // unsettled gets them settled here.
+        let mut settled = None;
+        if crate::value::regex_caps::has_numbered_captures(named) {
+            let mut pos = positional.to_vec();
+            let mut names = named.clone();
+            crate::value::regex_caps::settle_numbered_captures(&mut pos, &mut names);
+            settled = Some((pos, names));
+        }
+        let (positional, named) = match &settled {
+            Some((pos, names)) => (pos.as_slice(), names),
+            None => (positional, named),
+        };
         let positional = &positional[..crate::value::regex_caps::PosSlot::bound_len(positional)];
         let has_children = !named.is_empty()
             || !positional.is_empty()

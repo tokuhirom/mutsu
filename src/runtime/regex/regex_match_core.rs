@@ -481,29 +481,6 @@ impl Interpreter {
         let Some(name) = token.named_capture.as_ref() else {
             return;
         };
-        // Numbered scalar capture alias `$N=<atom>`: the alias name is all
-        // digits, so route the capture to positional index N (padding lower
-        // indices) and let subsequent groups continue numbering from N+1.
-        // (Named captures always start with a letter/underscore, so an
-        // all-digit name can only come from `$N=`.)
-        if let Ok(forced_idx) = name.parse::<usize>() {
-            // Drop the auto-positional entry a capturing group atom produced;
-            // the alias decides this capture's index explicitly.
-            if matches!(token.atom, RegexAtom::CaptureGroup(_))
-                && store.caps().positional.len() > pos_base
-            {
-                store.truncate_positional(pos_base);
-            }
-            while store.caps().positional.len() < forced_idx {
-                store.push_positional(PosSlot::default());
-            }
-            if store.caps().positional.len() == forced_idx {
-                store.push_positional(PosSlot::span(from, to));
-            } else {
-                store.overwrite_positional(forced_idx, PosSlot::span(from, to));
-            }
-            return;
-        }
         // A named capture group `$<x>=(...)` aliases the group to the name and
         // does NOT consume a positional number (Raku: `/$<x>=(\w)(\d)/` makes
         // `$<x>` the \w and `$0` the \d). When this named token's atom is itself

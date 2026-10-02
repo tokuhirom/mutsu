@@ -11,9 +11,11 @@ use crate::runtime::RegexCaptures;
 impl RegexCaptures {
     /// Settle a match that ran from `start` to `end`: `.from`/`.to` take the
     /// `<(` / `)>` markers when any fired, and the cursor span is kept
-    /// alongside them in that case.
-    // Cost: O(1).
+    /// alongside them in that case. Numbered captures move to the positional
+    /// slots they name (#10895).
+    // Cost: O(n + p), n = the distinct capture names, p = the positional slots.
     pub(crate) fn finish_span(&mut self, start: usize, end: usize) {
+        self.settle_numbered_captures();
         self.from = self.capture_start.unwrap_or(start);
         self.to = self.capture_end.unwrap_or(end);
         if (self.from, self.to) != (start, end) {
