@@ -1506,8 +1506,16 @@ pub(crate) struct ParamNameSyms {
     ///
     /// A signature carrying any `ParamDef` is out of scope by construction: it
     /// takes the general binder's *real* path, with defaults, type
-    /// constraints, `where` clauses, traits and sub-signatures.
+    /// constraints, `where` clauses, traits and sub-signatures. The plain
+    /// subset of those signatures is [`Self::light_def_params`].
     pub(crate) light_bindable: bool,
+    /// The `ParamDef` twin of [`Self::light_bindable`] (#10702): `Some` when
+    /// every `ParamDef` is an untyped, plain positional `$` parameter — at most
+    /// `is raw`, no default, `where`, coercion, sub-signature or other trait —
+    /// the shape a WhateverCode (`* + *`) and a multi-parameter pointy block
+    /// (`-> $a, $b { … }`) have. Classified by
+    /// [`crate::vm::light_def_params`]; see there for what is refused.
+    pub(crate) light_def_params: Option<Box<[crate::vm::LightDefParam]>>,
 }
 
 /// Whether a legacy-path parameter name is a bare identifier the light closure
@@ -1578,10 +1586,12 @@ impl SubData {
             let light_bindable = !self.params.is_empty()
                 && self.param_defs.is_empty()
                 && self.params.iter().all(|p| is_light_bindable_param_name(p));
+            let light_def_params = crate::vm::light_def_params(&self.param_defs);
             Arc::new(ParamNameSyms {
                 params,
                 call_local,
                 light_bindable,
+                light_def_params,
             })
         })
     }

@@ -54,7 +54,10 @@ impl Interpreter {
         args: &[Value],
     ) -> bool {
         if !param_syms.light_bindable {
-            return false;
+            return match param_syms.light_def_params.as_deref() {
+                Some(params) => self.closure_light_def_bind(data, params, args),
+                None => false,
+            };
         }
         // Exact arity only. A short or over-supplied call is the general
         // binder's to diagnose (or, for a `^`-placeholder signature, to accept)

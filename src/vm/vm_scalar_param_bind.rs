@@ -68,7 +68,7 @@ impl Interpreter {
     }
 
     #[inline]
-    fn apply_scalar_param_bind(mode: ScalarParamBind, val: Value) -> Value {
+    pub(super) fn apply_scalar_param_bind(mode: ScalarParamBind, val: Value) -> Value {
         match mode {
             ScalarParamBind::Itemize => Self::itemize_scalar_store_value(val),
             ScalarParamBind::Keep => val,
