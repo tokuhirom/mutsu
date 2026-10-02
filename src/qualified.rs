@@ -214,11 +214,16 @@ mod flags {
     }
 
     /// Whether a sigil-stripped `Pkg::name` addresses a real package stash,
-    /// not a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...).
+    /// not a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...) or the
+    /// compiler's internal spelling of one (`@__mutsu_outer::0:a`, the
+    /// resolved slot of an `@OUTER::a` past a shadowing `my @a`).
     fn names_package_stash(rest: &str) -> bool {
         let Some((head, tail)) = rest.split_once("::") else {
             return false;
         };
+        if head.starts_with("__mutsu") {
+            return false;
+        }
         tail.contains("::")
             || !matches!(
                 head,
@@ -339,7 +344,15 @@ mod tests {
         for name in ["%GLOBAL::h", "%OUR::h", "%P::h", "%CORE::P::h"] {
             assert!(is_package_hash(Symbol::intern(name)), "{name}");
         }
-        for name in ["%MY::h", "%OUTER::h", "%CALLER::h", "%h", "@P::h", "$P::h"] {
+        for name in [
+            "%MY::h",
+            "%OUTER::h",
+            "%CALLER::h",
+            "%h",
+            "@P::h",
+            "$P::h",
+            "%__mutsu_outer::0:h",
+        ] {
             assert!(!is_package_hash(Symbol::intern(name)), "{name}");
         }
     }

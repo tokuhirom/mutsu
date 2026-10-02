@@ -1206,6 +1206,20 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 )));
             }
         }
+        // A `where` clause on a destructured leaf (`*@ ($x where { ... })`)
+        // rejects the value like a top-level parameter's does (#10989).
+        if sub_pd.where_constraint.is_some() && !sub_pd.name.is_empty() {
+            let name_sym = Symbol::intern(&sub_pd.name);
+            interpreter.check_positional_param_where_constraint(
+                sub_pd,
+                &sub_pd.name,
+                name_sym,
+                &candidate,
+                false,
+                true,
+                false,
+            )?;
+        }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
             bind_sub_param_name(interpreter, &sub_pd.name, candidate.clone());

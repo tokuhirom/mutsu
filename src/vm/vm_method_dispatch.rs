@@ -11,8 +11,8 @@ impl Interpreter {
     pub(crate) fn call_compiled_method(
         &mut self,
         receiver_class_name: &str,
-        owner_class: &str,
-        method_name: &str,
+        owner_sym: Symbol,
+        method_sym: Symbol,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
         attributes: &AttrMap,
@@ -20,6 +20,12 @@ impl Interpreter {
         invocant: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // The owner and the method name arrive interned: the callers resolved
+        // them as `Symbol`s, and re-interning their text here cost a
+        // thread-local string-hash probe per call for a name that never
+        // changes (#10961).
+        let owner_class: &str = owner_sym.as_str();
+        let method_name: &str = method_sym.as_str();
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
@@ -329,8 +335,8 @@ impl Interpreter {
                 self.pending_skip_constraint_recheck = skip_constraint_recheck;
                 return self.call_compiled_method_fast(
                     receiver_class_name,
-                    owner_class,
-                    method_name,
+                    owner_sym,
+                    method_sym,
                     method_def,
                     cc,
                     args,
@@ -388,7 +394,6 @@ impl Interpreter {
         // The owner's role-ness is asked here once per call and handed to the
         // frame, so the body's attribute accesses never ask it again.
         let owner_is_role = self.is_role(owner_class);
-        let owner_sym = crate::symbol::Symbol::intern(owner_class);
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // Keep the method name and invocant available to native deferral
         // fallbacks when this body can invoke a dispatcher builtin. The outer
@@ -905,10 +910,10 @@ impl Interpreter {
         self.push_method_routine_with_location(
             owner_sym,
             method_def.lexical_package,
-            Symbol::intern(method_name),
+            method_sym,
             self.current_source_line(),
             self.executing_source_file_sym(),
-            method_def.source_file.as_deref().map(Symbol::intern),
+            method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
         );
@@ -1650,7 +1655,9 @@ impl Interpreter {
     /// snapshot, so each newly-marked name is recorded on the current call frame
     /// and dropped in `pop_call_frame`.
     fn mark_fast_method_params_readonly(&mut self, method_def: &crate::runtime::MethodDef) {
-        for pd in &method_def.param_defs {
+        // Interned once per def, not per call (#10961).
+        let name_syms = method_def.param_def_name_syms();
+        for (pd, &sym) in method_def.param_defs.iter().zip(name_syms) {
             if pd.name.is_empty()
                 || pd.name == "__type_only__"
                 || pd.name == "__subsig__"
@@ -1672,18 +1679,18 @@ impl Interpreter {
                 // variable (the readonly set is keyed by bare name, shared across
                 // frames). Drop the mark and record it so `pop_call_frame`
                 // restores the caller's state.
-                if self.is_readonly(&pd.name) {
+                if self.is_readonly_sym(sym) {
                     // The frame's readonly journal records the removal, so
                     // `pop_call_frame` restores the caller's mark.
-                    self.unmark_readonly(&pd.name);
+                    self.unmark_readonly_sym(sym);
                 }
                 continue;
             }
-            if self.is_readonly(&pd.name) {
+            if self.is_readonly_sym(sym) {
                 continue; // already read-only (e.g. caller-owned same name)
             }
             // Journaled — dropped again at `pop_call_frame`.
-            self.mark_readonly(&pd.name);
+            self.mark_readonly_sym(sym);
         }
     }
 
@@ -1704,10 +1711,10 @@ impl Interpreter {
     /// [`crate::env::note_env_key`] — a placeholder parameter (`$^a`) is stored
     /// under a `^`-prefixed key, and dropping that latch would leave
     /// `placeholder_var_possible()` reading false while such a key is live.
-    fn insert_fast_param_values(env: &mut crate::env::Env, param_values: &[(&str, Value)]) {
-        for (param_name, param_val) in param_values {
+    fn insert_fast_param_values(env: &mut crate::env::Env, param_values: &[(&str, Symbol, Value)]) {
+        for (param_name, param_sym, param_val) in param_values {
             crate::env::note_env_key(param_name);
-            env.insert_sym(crate::symbol::Symbol::intern(param_name), param_val.clone());
+            env.insert_sym(*param_sym, param_val.clone());
         }
     }
 
@@ -1715,8 +1722,8 @@ impl Interpreter {
     pub(super) fn call_compiled_method_fast(
         &mut self,
         receiver_class_name: &str,
-        owner_class: &str,
-        method_name: &str,
+        owner_sym: Symbol,
+        method_sym: Symbol,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
         args: Vec<Value>,
@@ -1728,6 +1735,9 @@ impl Interpreter {
         // (`pending_skip_constraint_recheck`); taken at entry so it describes
         // only this method's own parameter checks below.
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
+        // See `call_compiled_method`: interned by the caller (#10961).
+        let owner_class: &str = owner_sym.as_str();
+        let method_name: &str = method_sym.as_str();
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
@@ -1790,7 +1800,6 @@ impl Interpreter {
         // The owner's role-ness is asked here once per call and handed to the
         // frame, so the body's attribute accesses never ask it again.
         let owner_is_role = self.is_role(owner_class);
-        let owner_sym = crate::symbol::Symbol::intern(owner_class);
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // See the matching comment in `call_compiled_method`.
         if cc.uses_dispatcher {
@@ -1851,17 +1860,40 @@ impl Interpreter {
         // the invocant's live attribute cell exactly like `bind_param_value`.
         crate::alloc_scope_end!(_sc_pro);
         crate::alloc_scope_named!(_sc_bind, "mfast:param-bind");
-        let mut param_values: Vec<(&str, Value)> = Vec::new();
+        // Undo the frame/package/env setup above when binding fails, before
+        // the binding error is returned.
+        macro_rules! unwind_fast_bind {
+            () => {{
+                self.restore_var_bindings(saved_var_bindings);
+                if cc.uses_dispatcher {
+                    self.pop_method_samewith_context();
+                }
+                self.pop_method_class();
+                if let Some(pkg) = saved_package {
+                    self.set_current_package(pkg);
+                }
+                self.stack.truncate(saved_stack_depth);
+                if pushed_caller {
+                    self.pop_caller_env();
+                }
+                let frame = self.pop_call_frame();
+                self.set_env(frame.saved_env);
+            }};
+        }
+        // (name, interned name, value): the name for matching against the
+        // body's local names, the symbol for the env insert.
+        let mut param_values: Vec<(&str, Symbol, Value)> = Vec::new();
         // (name, is-readonly) for a sigilless raw invocant, applied once the
         // param values are installed below.
         let mut raw_invocant_readonly: Option<(&str, bool)> = None;
         let mut arg_idx = 0;
+        let param_syms = method_def.param_syms();
         for (idx, param_name) in method_def.params.iter().enumerate() {
             let pd = method_def.param_defs.get(idx);
-            let binding_name = if pd.is_some_and(|pd| pd.declares_self_lexical()) {
-                crate::env::LEX_SELF
+            let (binding_name, binding_sym) = if pd.is_some_and(|pd| pd.declares_self_lexical()) {
+                (crate::env::LEX_SELF, crate::symbol::wk::lex_self())
             } else {
-                param_name.as_str()
+                (param_name.as_str(), param_syms[idx])
             };
             let is_invocant = pd
                 .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
@@ -1877,7 +1909,7 @@ impl Interpreter {
                     .or_else(|| self.take_implicit_self_invocant_arrival(method_name, pd));
                 let bound_to_container = arrival.is_some() || base.is_container_ref();
                 let invocant_value = arrival.unwrap_or_else(|| base.clone());
-                param_values.push((binding_name, invocant_value));
+                param_values.push((binding_name, binding_sym, invocant_value));
                 // See the twin in `call_compiled_method`: with no container the
                 // invocant is an immutable value with no location, and the
                 // body's write to it must be refused rather than dropped.
@@ -1944,7 +1976,7 @@ impl Interpreter {
                     // `:$!c` does not overwrite the `%!c` slot.
                     let sigil = crate::value::attr_twigil_sigil(&pd.name).unwrap_or('$');
                     let attr_sym = Self::attr_key_in_map(
-                        Some(crate::symbol::Symbol::intern(owner_class)),
+                        Some(owner_sym),
                         bare_sym,
                         is_private,
                         sigil,
@@ -1954,7 +1986,7 @@ impl Interpreter {
                     self.record_build_attr_write(cell, attr_sym);
                     cell.insert(attr_sym, val.clone());
                 }
-                param_values.push((binding_name, val));
+                param_values.push((binding_name, binding_sym, val));
                 continue;
             }
             // Positional param: skip named (string-Pair) args, as the slow
@@ -2003,7 +2035,7 @@ impl Interpreter {
                             && self.constraint_is_user_subset(&resolved_constraint))
                             || self.type_matches_value(&resolved_constraint, &val))
                     {
-                        param_values.push((binding_name, val));
+                        param_values.push((binding_name, binding_sym, val));
                         arg_idx += 1;
                         continue;
                     }
@@ -2022,20 +2054,7 @@ impl Interpreter {
                         resolved_constraint.as_str()
                     };
                     // Type mismatch — fall back to slow path for proper error
-                    self.restore_var_bindings(saved_var_bindings);
-                    if cc.uses_dispatcher {
-                        self.pop_method_samewith_context();
-                    }
-                    self.pop_method_class();
-                    if let Some(pkg) = saved_package {
-                        self.set_current_package(pkg);
-                    }
-                    self.stack.truncate(saved_stack_depth);
-                    if pushed_caller {
-                        self.pop_caller_env();
-                    }
-                    let frame = self.pop_call_frame();
-                    self.set_env(frame.saved_env);
+                    unwind_fast_bind!();
                     if let Some(e) = native_err {
                         return Err(e);
                     }
@@ -2057,10 +2076,17 @@ impl Interpreter {
                         )
                         .with_parameter_object(pd.unwrap(), Some(&*self)));
                 }
-                param_values.push((binding_name, val));
+                param_values.push((binding_name, binding_sym, val));
                 arg_idx += 1;
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
-                param_values.push((binding_name, Self::missing_optional_param_value(pd)));
+                // An omitted optional's implicit default still has to satisfy
+                // a subset constraint (`method m(S $s?)`), as in the slow binder.
+                let val = self.omitted_optional_param_value(pd);
+                if let Err(e) = self.check_omitted_optional_subset(pd, &val) {
+                    unwind_fast_bind!();
+                    return Err(e);
+                }
+                param_values.push((binding_name, binding_sym, val));
             }
         }
 
@@ -2257,7 +2283,8 @@ impl Interpreter {
                     "__mutsu_callable_id" => Value::int(method_callable_id as i64),
                     name => {
                         // Check params first (handles $_ invocant binding too)
-                        if let Some((_, val)) = param_values.iter().find(|(n, _)| *n == name) {
+                        if let Some((_, _, val)) = param_values.iter().find(|(n, _, _)| *n == name)
+                        {
                             val.clone()
                         } else if name == "_" {
                             any_val.clone()
@@ -2284,7 +2311,9 @@ impl Interpreter {
                             attr_get(&name[2..]).unwrap_or(Value::NIL)
                         }
                         // Outer env (read-only, no deep clone)
-                        else if let Some(val) = self.env().get(name) {
+                        else if let Some(val) =
+                            cc.local_sym(i).and_then(|sym| self.env().get_sym(sym))
+                        {
                             val.clone()
                         } else {
                             Value::NIL
@@ -2344,10 +2373,10 @@ impl Interpreter {
         self.push_method_routine_with_location(
             owner_sym,
             method_def.lexical_package,
-            Symbol::intern(method_name),
+            method_sym,
             self.current_source_line(),
             self.executing_source_file_sym(),
-            method_def.source_file.as_deref().map(Symbol::intern),
+            method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
         );

@@ -4,9 +4,9 @@
 Decision and rationale: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md
 
     scripts/dev run <name> -- <command...>   start a detached job, print its id
-    scripts/dev gate [--only a,b] [--fresh]  run checks/fmt/lint/test/roast as one job
+    scripts/dev gate [--only a,b] [--fresh]  run branch/checks/fmt/lint/test/roast as one job
         [--quick|--full] [--focus PATH...]   the quick profile (default in a remote
-                                             container) builds debug only: checks, fmt,
+                                             container) builds debug only: branch, checks, fmt,
                                              default clippy, cargo test, and the t/ and
                                              roast files the change touches or --focus names
     scripts/dev wait <id> [--max SECONDS]    block until done, at most --max (540)
@@ -14,6 +14,9 @@ Decision and rationale: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md
     scripts/dev report <id>                  the gate's report.json
     scripts/dev log <id> [--tail N]          the job's output
     scripts/dev stop <id>                    SIGTERM the job's process group
+    scripts/dev branch-check                 list files changed vs the merge base with
+                                             origin/main; fail if one is back at an older
+                                             main state (a stale tree on a newer main)
     scripts/dev self-test                    exercise the pieces above
 
 A job is the directory tmp/jobs/<id>/ -- meta.json, log, exit, and for a gate
@@ -52,8 +55,9 @@ EXIT_LOST = 70
 EXIT_RUNNING = 75
 
 DEFAULT_WAIT_MAX = 540
-GATE_STAGES = ("checks", "fmt", "lint", "test", "roast")
+GATE_STAGES = ("branch", "checks", "fmt", "lint", "test", "roast")
 STAGE_COMMANDS = {
+    "branch": ["scripts/dev", "branch-check"],
     "checks": ["make", "-k", "checks"],
     "fmt": ["cargo", "fmt", "--all", "--", "--check"],
     "lint": ["make", "lint"],
@@ -65,7 +69,7 @@ STAGE_COMMANDS = {
 # build), or does not format or lint, is not going to be published, and running an hour of suites
 # on it only delays the answer. `test` and `roast` both run regardless, so one
 # gate shows every red file.
-BLOCKING_STAGES = ("checks", "fmt", "lint", "clippy")
+BLOCKING_STAGES = ("branch", "checks", "fmt", "lint", "clippy")
 
 # The quick profile, for the ~4-core remote container (ADR-0126, amendment 2026-10-02). The
 # full gate compiles the crate about seven times (four lint configurations,
@@ -75,7 +79,7 @@ BLOCKING_STAGES = ("checks", "fmt", "lint", "clippy")
 # debug test build -- and runs only the t/ and roast files the change touches
 # (or `--focus` names) on the debug binary that `cargo test` already left
 # behind. CI's full matrix stays the net for the rest.
-QUICK_STAGES = ("checks", "fmt", "clippy", "cargo-test", "t-focus", "roast-focus")
+QUICK_STAGES = ("branch", "checks", "fmt", "clippy", "cargo-test", "t-focus", "roast-focus")
 STAGE_COMMANDS.update({
     "clippy": ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
     "cargo-test": ["bash", "-o", "pipefail", "-c",
@@ -820,10 +824,11 @@ def self_test(root: str) -> int:
     result = judge_stage("checks", 2, "check-t-layout: t/foo.t is at t/ top level\n",
                          SAMPLE_KNOWN, conds)
     check("judge: a failing static guard fails its stage", result == {"status": "fail"})
-    check("gate: the static guards run first and block",
-          GATE_STAGES[0] == "checks" and "checks" in BLOCKING_STAGES)
-    check("quick gate: the static guards run first and block, clippy blocks",
-          QUICK_STAGES[0] == "checks" and "clippy" in BLOCKING_STAGES)
+    check("gate: the branch check, then the static guards, run first and block",
+          GATE_STAGES[:2] == ("branch", "checks")
+          and {"branch", "checks"} <= set(BLOCKING_STAGES))
+    check("quick gate: the branch check and static guards run first and block, clippy blocks",
+          QUICK_STAGES[:2] == ("branch", "checks") and "clippy" in BLOCKING_STAGES)
     check("quick gate: every stage has a command",
           all(s in STAGE_COMMANDS or s in ("t-focus", "roast-focus") for s in QUICK_STAGES))
     cmds = focus_commands(["t/a/x.t"], [])
@@ -890,11 +895,127 @@ def self_test(root: str) -> int:
         check("job: dead supervisor is lost", job_state(tmp, lost)["state"] == "lost")
         check("wait: lost job", cmd_wait(tmp, argparse.Namespace(id=lost, max=5)) == EXIT_LOST)
 
+    check("branch check: a stale tree on a newer main is caught, own changes are not",
+          stale_tree_self_test())
+
     if failures:
         for f in failures:
             print(f"dev self-test: FAIL: {f}", file=sys.stderr)
         return 1
     print("dev self-test: ok")
+    return 0
+
+
+# --- branch check ---------------------------------------------------------------
+
+# How far back along main's first-parent history a changed file is compared.
+BRANCH_CHECK_DEPTH = 200
+
+
+def blob_states(root: str, commit: str, paths: list[str]) -> dict:
+    """The blob id of each of `paths` at `commit` (absent paths are missing)."""
+    out = git_lines(root, "ls-tree", "-r", commit, "--", *paths) or []
+    states = {}
+    for line in out:
+        meta, path = line.split("\t", 1)
+        states[path] = meta.split()[2]
+    return states
+
+
+def worktree_state(root: str, path: str) -> str | None:
+    full = os.path.join(root, path)
+    if not os.path.isfile(full):
+        return None
+    out = git_lines(root, "hash-object", "--", path)
+    return out[0] if out else None
+
+
+def stale_files(root: str, base: str, paths: list[str]) -> list[tuple[str, str]]:
+    """The changed `paths` whose working-tree content is an OLDER main version
+    of the file (or a deletion of a file main added recently) rather than the
+    merge base's: the shape a branch takes when its old tree is committed on
+    top of a newer main (`git reset --soft origin/main` after a fetch), which
+    silently reverts everything main merged in between."""
+    history = git_lines(root, "rev-list", "--first-parent", "-n", str(BRANCH_CHECK_DEPTH), base) or []
+    at_base = blob_states(root, base, paths)
+    current = {p: worktree_state(root, p) for p in paths}
+    found = {}
+    for commit in history[1:]:
+        older = blob_states(root, commit, paths)
+        for path in paths:
+            if path in found or current[path] == at_base.get(path):
+                continue
+            if current[path] == older.get(path):
+                found[path] = commit
+    return sorted(found.items())
+
+
+def stale_tree_self_test() -> bool:
+    """main gains `other` after the branch point; a branch whose own tree is
+    then committed on top of that main must have `other` flagged, its own
+    file not."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as repo:
+        def git(*argv):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *argv],
+                           cwd=repo, check=True, capture_output=True)
+
+        def write(name, text):
+            with open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+
+        git("init", "-q", "-b", "main")
+        write("own", "1\n")
+        write("other", "1\n")
+        git("add", ".")
+        git("commit", "-q", "-m", "base")
+        git("branch", "topic")
+        write("other", "2\n")
+        git("commit", "-q", "-am", "main moves on")
+        newer_main = git_lines(repo, "rev-parse", "HEAD")[0]
+        git("checkout", "-q", "topic")
+        write("own", "2\n")
+        git("commit", "-q", "-am", "own change")
+        clean = stale_files(repo, newer_main, ["own"])
+        git("reset", "-q", "--soft", newer_main)
+        git("commit", "-q", "-m", "squash onto the newer main")
+        paths = git_lines(repo, "diff", "--name-only", newer_main) or []
+        stale = [path for path, _ in stale_files(repo, newer_main, paths)]
+        return clean == [] and stale == ["other"] and "own" in paths
+
+
+def cmd_branch_check(root: str, _args) -> int:
+    """List the files this branch changes against its merge base with
+    origin/main, and fail when one of them is back at an older main state."""
+    try:
+        subprocess.run(["git", "fetch", "--quiet", "origin", "main"], cwd=root,
+                       capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        pass
+    lines = git_lines(root, "merge-base", "HEAD", "origin/main")
+    if not lines:
+        print("branch-check: no merge base with origin/main; skipped")
+        return 0
+    base = lines[0]
+    paths = git_lines(root, "diff", "--name-only", base) or []
+    paths += git_lines(root, "ls-files", "--others", "--exclude-standard") or []
+    paths = sorted(set(paths))
+    print(f"branch-check: {len(paths)} file(s) differ from merge base {base[:12]}:")
+    for path in paths:
+        print(f"  {path}")
+    messages = git_lines(root, "log", "--format=%B", f"{base}..HEAD") or []
+    if any(line.startswith("This reverts commit") for line in messages):
+        print("branch-check: the branch carries a `git revert`; older states are expected")
+        return 0
+    stale = stale_files(root, base, paths)
+    for path, commit in stale:
+        print(f"branch-check: {path} is back at its state in older main commit {commit[:12]}: "
+              f"this branch would revert main's later changes to it")
+    if stale:
+        print("branch-check: the branch's tree was probably committed on top of a newer main "
+              "(e.g. `git reset --soft origin/main` after a fetch). Rebuild it from its own "
+              "commits; see AGENTS.md (Git, PRs and CI).")
+        return 1
     return 0
 
 
@@ -938,10 +1059,13 @@ def main(argv: list[str]) -> int:
     p.add_argument("--tail", type=int, default=0)
     p = sub.add_parser("stop", help="SIGTERM a running job's process group")
     p.add_argument("id")
+    sub.add_parser("branch-check",
+                   help="list files changed vs the merge base; fail on a stale-tree revert")
     sub.add_parser("self-test", help="exercise the runner")
     args = ap.parse_args(argv)
     return {"run": cmd_run, "gate": cmd_gate, "wait": cmd_wait, "status": cmd_status,
             "report": cmd_report, "log": cmd_log, "stop": cmd_stop,
+            "branch-check": cmd_branch_check,
             "self-test": lambda r, _a: self_test(r)}[args.cmd](root, args)
 
 

@@ -391,8 +391,8 @@ impl Interpreter {
                         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                         let method_result = self.call_compiled_method(
                             cn,
-                            &owner_class,
-                            method,
+                            crate::symbol::Symbol::intern(&owner_class),
+                            method_sym,
                             &method_def,
                             &cc,
                             &attributes,

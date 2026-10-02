@@ -255,7 +255,7 @@ pub(crate) fn multidim_delete_pos(
     indices: &[Value],
 ) -> Result<Value, RuntimeError> {
     assert!(!indices.is_empty());
-    let ValueView::Array(items, _) = target.view() else {
+    let ValueView::Array(items, kind) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional DELETE-POS on non-Array",
         ));
@@ -272,7 +272,8 @@ pub(crate) fn multidim_delete_pos(
     if indices.len() == 1 {
         // The innermost level deletes like the single-dimension form, trailing
         // holes trimmed included (#10926).
-        return Ok(Interpreter::delete_pos_in_array_data(data, i));
+        let shaped = kind == crate::value::ArrayKind::Shaped;
+        return Ok(Interpreter::delete_pos_in_array_data(data, i, shaped));
     }
     let child = multidim_level(&data[i]);
     multidim_delete_pos(&child, &indices[1..])

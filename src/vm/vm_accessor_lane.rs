@@ -53,7 +53,7 @@ impl Interpreter {
         }
         let layout_id = map.layout()?.id();
         let slot = *self.accessor_lane.get(&(layout_id, method_sym))?;
-        let value = map.slot(slot as usize)?.deref_container();
+        let value = map.slot_vivify(slot as usize)?.deref_container();
         if matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             return None;
         }

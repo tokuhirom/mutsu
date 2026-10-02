@@ -112,6 +112,28 @@ impl Interpreter {
         self.monkey_typing
     }
 
+    /// Install the callback that prints an uncaught mainline exception. `run`
+    /// calls it *before* the END phasers, matching rakudo (the exception is
+    /// reported first, then END runs). Without one, `run` just returns the
+    /// error and the caller prints it.
+    pub fn set_uncaught_reporter(&mut self, reporter: super::UncaughtReporter) {
+        self.uncaught_reporter = Some(reporter);
+    }
+
+    /// True when the installed reporter already printed the error `run` returned.
+    pub fn uncaught_reported(&self) -> bool {
+        self.uncaught_reported
+    }
+
+    // Cost: O(1) plus the reporter's own rendering.
+    pub(crate) fn report_uncaught_early(&mut self, err: &RuntimeError) {
+        if let Some(mut reporter) = self.uncaught_reporter.take() {
+            reporter(self, err);
+            self.uncaught_reported = true;
+            self.uncaught_reporter = Some(reporter);
+        }
+    }
+
     pub fn exit_code(&self) -> i64 {
         self.exit_code
     }

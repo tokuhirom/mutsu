@@ -61,6 +61,9 @@ use crate::value::{
     SharedPromise, Value, make_rat, take_pending_instance_destroys,
 };
 
+/// Callback printing an uncaught exception; see [`Interpreter::set_uncaught_reporter`].
+pub type UncaughtReporter = Box<dyn FnMut(&mut Interpreter, &RuntimeError) + Send>;
+
 /// The `X::Phaser::PrePost` a falsy `PRE`/`POST` phaser throws.
 ///
 /// The message is derived from the phaser and its condition source text, and it
@@ -628,6 +631,7 @@ mod builtins_system_run;
 mod builtins_unbase;
 mod call_helpers;
 mod calls;
+mod calls_static_refute;
 mod class;
 mod class_attr_table;
 mod class_dispatch;
@@ -659,6 +663,7 @@ pub(crate) mod decl_gate;
 mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
+mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) use self::decl_types::*;
@@ -1090,6 +1095,11 @@ pub(crate) struct ClassAttributeDef {
     /// allocation per attribute per clone (#10090).
     pub(crate) source_line: Option<i64>,
     pub(crate) source_file: Option<crate::symbol::Symbol>,
+    /// `default` is the seed the parser synthesizes for a typed scalar with
+    /// no initializer (`has Int $.x`), not one the source wrote: construction
+    /// stores it as the slot's seed, which `nqp::attrinited` reports as not
+    /// initialized (ADR-0121 D4).
+    pub(crate) default_is_seed: bool,
 }
 
 /// Attribute declarations with the same bare name but different sigils are
@@ -2218,6 +2228,11 @@ pub struct Interpreter {
     /// move (lever B). Access only through `self.tap`'s methods.
     tap: TapState,
     halted: bool,
+    /// Prints an uncaught mainline exception; `run` calls it before the END
+    /// phasers, as rakudo's top-level handler does. See [`Self::set_uncaught_reporter`].
+    uncaught_reporter: Option<UncaughtReporter>,
+    /// Set once `uncaught_reporter` has printed the error `run` returns.
+    uncaught_reported: bool,
     exit_code: i64,
     /// Set while the END phasers run for a program that is already exiting, and
     /// once any END phaser has itself called `exit`. A further `exit` still
@@ -2225,6 +2240,13 @@ pub struct Interpreter {
     /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
     /// exits 42. See `Interpreter::finish` and `builtin_exit`.
     exit_status_locked: bool,
+    /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
+    /// still running: `run` raises it before the mainline starts and the
+    /// `EndBeginPrologue` opcode lowers it once the prologue and its
+    /// undeclared-routine guards are done. An error that escapes the mainline
+    /// while it is still raised is a compile-time failure, so `run` skips the
+    /// END phasers for it (#10977).
+    pub(crate) begin_prologue_pending: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
@@ -4879,6 +4901,12 @@ pub struct Interpreter {
         crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
         Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
     >,
+    /// `(operator, candidate, argument type keys) -> does the core candidate
+    /// set out-rank this user infix candidate` (#10111,
+    /// `native_infix_dispatch.rs`). The candidate's `Arc` is held so a hit can
+    /// be confirmed by identity.
+    pub(crate) core_infix_wins_cache:
+        GenCache<crate::runtime::native_infix_dispatch::CoreInfixWinsKey, (Arc<FunctionDef>, bool)>,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a

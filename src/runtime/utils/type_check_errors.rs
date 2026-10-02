@@ -92,6 +92,22 @@ pub(crate) fn got_type_name(val: &Value) -> String {
             let name = enum_type.resolve();
             crate::value::enum_display_name(&name).unwrap_or(name)
         }
+        // `value_type_name` collapses a native `array[T]` to `Array`, which
+        // would read "expected Array, got Array" when an `Array` parameter
+        // rejects one (they are distinct types). The declared type travels in
+        // the array's own backing data.
+        ValueView::Array(items, _)
+            if items
+                .declared_type
+                .as_deref()
+                .is_some_and(|d| d == "array" || d.starts_with("array[")) =>
+        {
+            items
+                .declared_type
+                .as_deref()
+                .unwrap_or("array")
+                .to_string()
+        }
         _ => value_type_name(val).to_string(),
     }
 }

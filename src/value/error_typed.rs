@@ -737,6 +737,24 @@ impl RuntimeError {
         self
     }
 
+    /// Append Rakudo's explanation for a constraint failure of an omitted
+    /// optional parameter (`sub f(Int $x? where * > 0) {}; f()`), whose
+    /// implicit default -- not a caller's argument -- was what got rejected.
+    pub(crate) fn with_omitted_optional_note(mut self) -> Self {
+        const NOTE: &str = "The parameter is optional and was not passed an argument, so its\n\
+            implicit default value was checked against the constraint. Give the\n\
+            parameter a default value that satisfies the constraint, mark it as\n\
+            required, or make the constraint accept the implicit default.";
+        let message = format!("{}\n{NOTE}", self.message);
+        if let Some(ValueView::Instance { attributes, .. }) =
+            self.exception.as_deref().map(Value::view)
+        {
+            attributes.insert("message", Value::str(message.clone()));
+        }
+        self.message = message.into();
+        self
+    }
+
     /// X::TypeCheck::Binding::Parameter for a callable signature mismatch.
     pub(crate) fn typecheck_binding_parameter_signature(
         param: &str,

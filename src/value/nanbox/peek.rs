@@ -614,6 +614,55 @@ impl NanBox {
         )
     }
 
+    /// Whether this word is certainly not, and cannot stand for, an `Array` or
+    /// `Hash`: an `Int`/`Num`/`Str`/`Bool`, another numeric kind, a type object,
+    /// a pair or a range. Such a value never takes the `$s = $src`
+    /// array-share lane, which only fires when the stored value derefs to an
+    /// `Array`/`Hash`.
+    ///
+    /// An allowlist on purpose. A wrapper (`ContainerRef`, `Proxy`,
+    /// `HashEntryRef`, `Scalar`, a thunk, ...) can resolve to an aggregate,
+    /// and a kind added later must not be presumed scalar, so anything not
+    /// named here answers `false` and keeps the share check.
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn is_never_array_share_source(&self) -> bool {
+        self.is_inert_scalar_store_payload()
+            || matches!(
+                classify(self.0.get()),
+                Classified::Kind(
+                    Kind::Range | Kind::RangeExcl | Kind::RangeExclStart | Kind::RangeExclBoth
+                )
+            )
+    }
+
+    /// Whether a `$` scalar store keeps this word exactly as it is: it is not
+    /// an aggregate, wrapper, range or lazy value, so the store's itemization
+    /// (`Interpreter::itemize_scalar_store_value`) returns it unchanged and it
+    /// cannot be an identity re-store of an array. An allowlist, for the same
+    /// reason as [`Self::is_never_array_share_source`].
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn is_inert_scalar_store_payload(&self) -> bool {
+        match classify(self.0.get()) {
+            Classified::Int(_) | Classified::Num(_) => true,
+            Classified::Kind(k) => matches!(
+                k,
+                Kind::Str
+                    | Kind::BigInt
+                    | Kind::IntBoxed
+                    | Kind::Rat
+                    | Kind::FatRat
+                    | Kind::BigRat
+                    | Kind::Complex
+                    | Kind::Bool
+                    | Kind::Package
+                    | Kind::Pair
+                    | Kind::ValuePair
+            ),
+        }
+    }
+
     /// Whether a local slot holding this word can be overwritten outright by a
     /// plain scalar store. The three write-through holders cannot: a
     /// `ContainerRef` stores into its shared cell, a `Proxy` runs its `STORE`,

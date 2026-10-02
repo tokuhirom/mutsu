@@ -416,7 +416,7 @@ impl Interpreter {
     /// same argument types (`foo(Inf)` then `foo(NaN)`, roast
     /// S06-multi/type-based.t).
     // Cost: O(p), p = parameters of `def`.
-    fn candidate_rank_reads_value(&self, def: &FunctionDef) -> bool {
+    pub(super) fn candidate_rank_reads_value(&self, def: &FunctionDef) -> bool {
         Self::dispatch_visible_params(def)
             .iter()
             .filter(|p| !p.named)

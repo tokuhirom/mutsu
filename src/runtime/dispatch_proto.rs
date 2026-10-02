@@ -262,6 +262,7 @@ impl Interpreter {
         proto: FunctionDef,
     ) -> Result<Value, RuntimeError> {
         let mut method_def = MethodDef {
+            syms: Default::default(),
             lexical_package: proto.package,
             params: proto.params.clone(),
             param_defs: proto.param_defs.clone(),

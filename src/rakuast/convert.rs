@@ -58,6 +58,17 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
+/// The leading `scope => "my"` of a lexical package declaration (`my class`),
+/// measured on rakudo 2026.09; a package's default scope is `our`, which
+/// renders no field.
+fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
+    if is_lexical {
+        vec![leaf_field(Some("scope"), Value::str_from("my"))]
+    } else {
+        Vec::new()
+    }
+}
+
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
 
@@ -295,6 +306,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // expressions; it is the same `Call::Name` as an expression call.
         Stmt::Call { name, args } => {
             if is_desugar_marker(name.as_str()) {
+                let args = call_args_as_exprs(args)?;
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
+                    return Ok(Some(statement_expression(method_lvalue_assignment(
+                        convert_expr(&call)?,
+                        convert_expr(value)?,
+                    ))));
+                }
                 return Err(desugared(name.as_str()));
             }
             let args = call_args_as_exprs(args)?;
@@ -879,7 +897,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if name_expr.is_some()
                     || *class_is_rw
                     || *is_hidden
-                    || *is_lexical
                     || !hidden_parents.is_empty()
                     || !does_parents.is_empty()
                     || repr.is_some()
@@ -890,24 +907,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 {
                     return Err(unsupported("grammar with inheritance / scope / traits"));
                 }
+                let mut fields = lexical_scope_field(*is_lexical);
+                fields.push(node_field(
+                    Some("name"),
+                    name_from_identifier(&name.resolve()),
+                ));
+                fields.push(node_field(
+                    Some("body"),
+                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                ));
                 return Ok(Some(statement_expression(RakuAstNode {
                     class: RakuAstClass::Grammar,
-                    fields: vec![
-                        node_field(Some("name"), name_from_identifier(&name.resolve())),
-                        node_field(
-                            Some("body"),
-                            block_node(&crate::parser::unhoist_nested_methods(body))?,
-                        ),
-                    ],
+                    fields,
                 })));
             }
             // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
             // Inheritance and `rw` are `traits`, the repr is its own leaf field.
-            // `my`/unit scope, `hides`, computed names and user traits carry
-            // extra RakuAST shape, deferred.
+            // A `my` class leads with `scope => "my"` (`our` is the default
+            // and renders none). Unit scope, `hides`, computed names and user
+            // traits carry extra RakuAST shape, deferred.
             if name_expr.is_some()
                 || *is_hidden
-                || *is_lexical
                 || !hidden_parents.is_empty()
                 || !custom_traits.is_empty()
                 || *is_unit
@@ -916,10 +936,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "class with inheritance / scope / repr / traits",
                 ));
             }
-            let mut fields = vec![node_field(
+            let mut fields = lexical_scope_field(*is_lexical);
+            fields.push(node_field(
                 Some("name"),
                 name_from_identifier(&name.resolve()),
-            )];
+            ));
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
@@ -1113,6 +1134,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             deprecated_message,
             unknown_traits,
             is_built,
+            default_is_seed,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
@@ -1124,11 +1146,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // `is required` are `Trait::Is` (`rakuast::attribute`); other
             // traits, type smileys, `where`, aliases and `my`/`our`
             // attributes are deferred.
-            let explicit_default = match default {
-                None => None,
-                Some(Expr::BareWord(w)) if type_constraint.as_deref() == Some(w.as_str()) => None,
-                Some(e) => Some(e),
-            };
+            let explicit_default = default.as_ref().filter(|_| !*default_is_seed);
             if !handles.is_empty()
                 || type_smiley.is_some()
                 || matches!(is_required, Some(Some(_)))
@@ -1243,6 +1261,54 @@ fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
             node_field(Some("right"), convert_expr(rhs)?),
         ],
     })
+}
+
+/// `$o.attr = EXPR` parses to the internal `__mutsu_assign_method_lvalue(target,
+/// "attr", [args], value, var-name)` writeback call. Rakudo models it as a plain
+/// assignment whose left side is the method call: this returns that method call
+/// and the assigned value. `None` when `name` is another marker or the method
+/// name is not a literal (a dynamic `$o."$n"() = v` stays the boundary).
+fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
+    if name != "__mutsu_assign_method_lvalue" {
+        return None;
+    }
+    let [target, method, Expr::ArrayLiteral(method_args), value, ..] = args else {
+        return None;
+    };
+    let (Expr::Literal(method) | Expr::LiteralSrc(method, _)) = method else {
+        return None;
+    };
+    let ValueView::Str(method) = method.view() else {
+        return None;
+    };
+    let (modifier, method) = match method.strip_prefix('!') {
+        Some(private) => (Some('!'), private),
+        None => (None, &method[..]),
+    };
+    let call = Expr::MethodCall {
+        target: Box::new(target.clone()),
+        name: crate::symbol::Symbol::intern(method),
+        args: method_args.clone(),
+        modifier,
+        quoted: false,
+    };
+    Some((call, value))
+}
+
+/// `ApplyInfix(left, Assignment, right)` over already converted operands.
+fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
+    let assignment = RakuAstNode {
+        class: RakuAstClass::Assignment,
+        fields: vec![],
+    };
+    RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), left),
+            node_field(Some("infix"), assignment),
+            node_field(Some("right"), right),
+        ],
+    }
 }
 
 /// A plain `Infix.new("<op>")` node from a literal operator string.
@@ -1519,6 +1585,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
             if is_desugar_marker(name.as_str()) {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
+                    return Ok(method_lvalue_assignment(
+                        convert_expr(&call)?,
+                        convert_expr(value)?,
+                    ));
+                }
                 return Err(desugared(name.as_str()));
             }
             Ok(call_name(name.as_str(), args, false)?)

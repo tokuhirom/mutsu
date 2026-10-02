@@ -253,15 +253,29 @@ fn claim_end(end: &str) -> &str {
 /// Record the declaration spanning `start..end` (to the end of the source
 /// when `extends_to_eof`).
 fn attach(start: &str, end: &str, ident: SiteIdent, extends_to_eof: bool) {
-    let (Some(s), Some(e)) = (source_offset(start), source_offset(end)) else {
-        return;
-    };
     // A block's documentation is written inside it (`my $b = {;\n#= doc\n}`):
     // a `#=` after a block used as a value -- the `where { ... }` of a
     // `subset` -- documents the declaration the block is part of.
-    let claim = match ident {
-        SiteIdent::Anon { block: true, .. } => e,
-        _ => source_offset(claim_end(end)).unwrap_or(e),
+    let claims_trailing = !matches!(ident, SiteIdent::Anon { block: true, .. });
+    attach_claiming(start, end, ident, extends_to_eof, claims_trailing);
+}
+
+/// [`attach`], saying whether a `#=` in the whitespace after the
+/// declaration (past one `;`/`,`, see [`claim_end`]) still documents it.
+fn attach_claiming(
+    start: &str,
+    end: &str,
+    ident: SiteIdent,
+    extends_to_eof: bool,
+    claims_trailing: bool,
+) {
+    let (Some(s), Some(e)) = (source_offset(start), source_offset(end)) else {
+        return;
+    };
+    let claim = if claims_trailing {
+        source_offset(claim_end(end)).unwrap_or(e)
+    } else {
+        e
     };
     with_table(|t| {
         let e = if extends_to_eof { t.len } else { e };
@@ -405,7 +419,47 @@ pub(in crate::parser) fn attach_param(start: &str, end: &str, param: &ParamDef) 
     }
     let sig = crate::value::signature::param_def_to_sig_param(param);
     let sigiled = format!("{}{}", sig.sigil, sig.name);
-    attach(start, end, SiteIdent::Param { sigiled }, false);
+    // Rakudo lets a `#=` document the parameter only right after its
+    // variable (`$a #= doc`, `Int $a? #= doc`) or after the `,` that ends it.
+    // After a default, a `where` or a trait with no `,` in between
+    // (`$a = 1 #= doc\n)`), and after a sigilless `\a` either way, the
+    // comment documents the routine instead (#10953).
+    let decorated =
+        param.default.is_some() || param.where_constraint.is_some() || !param.traits.is_empty();
+    // The parameter parser hands back its input past the trailing whitespace,
+    // so a `#=` there sits inside `start..end`; cut the extent where it starts.
+    let end = trailing_doc_start(start, end).unwrap_or(end);
+    // The `,` must come before the comment: `$a = 1 #= doc\n, $b` documents
+    // the routine.
+    let after_comma = end.trim_start().starts_with(',');
+    let claims_trailing = !param.sigilless && (after_comma || !decorated);
+    attach_claiming(
+        start,
+        end,
+        SiteIdent::Param { sigiled },
+        false,
+        claims_trailing,
+    );
+}
+
+/// The first `#=` comment inside `start..end` that only whitespace (and
+/// further comments) follows up to `end`, as a suffix of `start`. Only
+/// comments `ws` actually recorded count, so a `#` inside a string default
+/// cannot be mistaken for one.
+fn trailing_doc_start<'a>(start: &'a str, end: &str) -> Option<&'a str> {
+    let (s, e) = (source_offset(start)?, source_offset(end)?);
+    // Collected first: `ws` below records the comments it skips in the table.
+    let candidates: Vec<usize> = with_table(|t| {
+        t.comments
+            .range(s..e)
+            .filter(|(_, comment)| comment.trailing)
+            .map(|(&at, _)| at)
+            .collect()
+    })?;
+    candidates
+        .into_iter()
+        .map(|at| &start[at - s..])
+        .find(|from| ws(from).is_ok_and(|(r, _)| r.len() == end.len()))
 }
 
 /// Name every documented declaration of the unit being parsed and publish

@@ -132,6 +132,12 @@ impl Interpreter {
         name: &str,
         name_sym: Symbol,
     ) -> bool {
+        // With a spliced prelude the answer also depends on which compunit is
+        // executing (`prelude_visible_here`), which the key does not carry —
+        // answer uncached then rather than leak one unit's answer into another.
+        if self.has_prelude_functions() {
+            return self.has_declared_function(name);
+        }
         let generation = self.fn_resolve_gen;
         let key = self.bare_name_ctx_key(name_sym);
         if let Some(&cached) = self.declared_fn_cache.get(generation, &key) {

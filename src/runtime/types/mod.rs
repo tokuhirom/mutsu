@@ -9,6 +9,7 @@ mod binding_helpers;
 mod binding_signature;
 mod coercion;
 mod native_backed_class;
+mod omitted_optional;
 mod param_exprs;
 mod readonly_capture;
 mod role_candidate;

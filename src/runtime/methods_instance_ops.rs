@@ -2041,7 +2041,7 @@ impl Interpreter {
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
                             }
-                            let stored = attributes.as_map().get(method).cloned();
+                            let stored = attributes.as_map().get_vivify(method).cloned();
                             let val = match stored {
                                 Some(val) => val,
                                 // A grammar cursor is minted without BUILD

@@ -250,6 +250,7 @@ impl Interpreter {
                         .map(|p| p.name.clone())
                         .collect();
                     let def = MethodDef {
+                        syms: Default::default(),
                         lexical_package: self.current_package_sym(),
                         params: effective_params.clone(),
                         param_defs: effective_param_defs.clone(),
@@ -605,6 +606,7 @@ impl Interpreter {
                             declared_shape,
                             source_line: None,
                             source_file: None,
+                            default_is_seed: decl.default_is_seed,
                         });
                         if decl.where_constraint.is_some() {
                             Self::mark_attr_where_constraint_seen();

@@ -404,6 +404,7 @@ impl Interpreter {
                     declared_shape: None,
                     source_line: None,
                     source_file: None,
+                    default_is_seed: false,
                 }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));
@@ -881,6 +882,7 @@ impl Interpreter {
                     declared_shape: None,
                     source_line: None,
                     source_file: None,
+                    default_is_seed: false,
                 }],
                 native_methods: [
                     "path",
@@ -1515,6 +1517,7 @@ impl Interpreter {
                             declared_shape: None,
                             source_line: None,
                             source_file: None,
+                            default_is_seed: false,
                         })
                         .collect(),
                     native_methods: HashSet::new(),
@@ -2842,6 +2845,7 @@ impl Interpreter {
                     args: vec![],
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
                     param_defs: Vec::new(),
@@ -2905,6 +2909,7 @@ impl Interpreter {
                     args: vec![],
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
                     param_defs: Vec::new(),
@@ -3076,8 +3081,11 @@ impl Interpreter {
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: TapState::default(),
             halted: false,
+            uncaught_reporter: None,
+            uncaught_reported: false,
             exit_code: 0,
             exit_status_locked: false,
+            begin_prologue_pending: false,
             main_hidden_from_usage: Default::default(),
             explicit_run_main: false,
             nested_mode: false,
@@ -3482,6 +3490,7 @@ impl Interpreter {
             func_multi_resolve_cache: Default::default(),
             func_multi_argkey_cacheable: Default::default(),
             bare_multi_plan_cache: Default::default(),
+            core_infix_wins_cache: Default::default(),
             func_multi_type_cacheable: Default::default(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
             given_pointy_capture_slots: Vec::new(),

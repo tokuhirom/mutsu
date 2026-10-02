@@ -604,9 +604,18 @@ impl Interpreter {
                     declaring_package: attr.declaring_package,
                     build_override: None,
                     seed: val.clone(),
+                    default_is_seed: attr.default_is_seed,
                 });
             }
-            attributes.insert(attr_sym, Self::itemize_attr_store_value(*sigil, val));
+            // What no initializer wrote is the slot's seed: an attribute with
+            // no initializer, the parser's synthesized type-object default,
+            // and one whose initializer waits for BUILD (`nqp::attrinited`).
+            let val = Self::itemize_attr_store_value(*sigil, val);
+            if default.is_none() || attr.default_is_seed || is_deferred {
+                attributes.insert_seed(attr_sym, val);
+            } else {
+                attributes.insert(attr_sym, val);
+            }
         }
         crate::alloc_scope_end!(_sc_defaults);
         crate::alloc_scope_named!(_sc_named, "bless:named-args");
@@ -1144,6 +1153,9 @@ impl Interpreter {
             };
             attributes.insert(attr_name, val);
         }
+        // `CREATE` runs no initializer at all: every slot holds only its seed
+        // (`nqp::attrinited`, ADR-0121 D4).
+        attributes.mark_all_seeded();
         attributes
     }
 

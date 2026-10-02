@@ -314,6 +314,11 @@ impl InstanceAttrs {
         write_attrs(self.cell()).insert(key, value)
     }
 
+    /// In-place [`AttrMap::insert_seed`] through the shared cell.
+    pub(crate) fn insert_seed<K: AttrKey>(&self, key: K, value: Value) {
+        write_attrs(self.cell()).insert_seed(key, value);
+    }
+
     /// Store (`Some`) or remove (`None`) several keys under one write lock.
     /// When this thread holds a read guard on the cell the write is queued, as
     /// [`Self::commit_attrs`] queues one, rather than self-deadlocking.

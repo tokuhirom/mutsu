@@ -4,6 +4,7 @@ mod enum_decl;
 mod enum_decl_traits;
 mod handles;
 mod has_decl;
+pub(crate) use has_decl::auto_default_expr_for_type;
 mod helpers;
 mod my_decl;
 mod my_decl_assign;
