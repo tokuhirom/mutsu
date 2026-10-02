@@ -19,6 +19,11 @@ pub(crate) type MultiCandidateList = std::sync::Arc<Vec<std::sync::Arc<FunctionD
 /// `(package, name, argument type keys)`.
 pub(crate) type FuncMultiResolveKey = (Symbol, Symbol, Vec<Symbol>);
 
+/// Key of the `CallMethodMut` plain-method lane (`plain_method_lane`):
+/// `(receiver class, method name, argument type keys)`, the last empty for a
+/// call without arguments. See `vm_call_method_plain_lane`.
+pub(crate) type PlainMethodLaneKey = (Symbol, Symbol, Vec<Symbol>);
+
 /// `is export`-ed regex declarator bodies, keyed by the module that declared
 /// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
 type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
@@ -4757,17 +4762,17 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
-    /// #8880: `(receiver class, method name)` pairs whose `CallMethodMut`
-    /// dispatch has been observed to walk the entire pre-dispatch probe chain
-    /// without a single probe claiming the call, so the chain can be skipped.
-    /// Written only from the dispatch tail that proves it, and cleared with the
-    /// other method caches on a registry generation change. See
-    /// `vm_call_method_plain_lane`.
-    pub(crate) plain_method_lane: rustc_hash::FxHashSet<(Symbol, Symbol)>,
+    /// #8880: `(receiver class, method name, argument type keys)` triples
+    /// whose `CallMethodMut` dispatch has been observed to walk the entire
+    /// pre-dispatch probe chain without a single probe claiming the call, so
+    /// the chain can be skipped. Written only from the dispatch tail that
+    /// proves it, and cleared with the other method caches on a registry
+    /// generation change. See `vm_call_method_plain_lane`.
+    pub(crate) plain_method_lane: rustc_hash::FxHashSet<PlainMethodLaneKey>,
     /// The key the *current* `CallMethodMut` dispatch may install into
     /// [`Interpreter::plain_method_lane`]. Set (or cleared) by that opcode's
     /// gate on every dispatch, so it always describes the innermost one.
-    pub(crate) plain_method_lane_candidate: Option<(Symbol, Symbol)>,
+    pub(crate) plain_method_lane_candidate: Option<PlainMethodLaneKey>,
     /// One-shot flag handing a proven-inert dispatch straight to the
     /// user-method tail; consumed by
     /// `try_compiled_method_mut_or_interpret_sym`.

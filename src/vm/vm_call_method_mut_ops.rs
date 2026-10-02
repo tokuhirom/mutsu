@@ -744,10 +744,17 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        match Self::plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
-            Some(lane_key) if self.plain_method_lane_hit(lane_key) => {
+        match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
+            Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
                 self.plain_method_lane_candidate = None;
-                return self.run_plain_method_lane(code, target_name, target, method, method_sym);
+                return self.run_plain_method_lane(
+                    code,
+                    target_name,
+                    target,
+                    method,
+                    method_sym,
+                    args,
+                );
             }
             other => self.plain_method_lane_candidate = other,
         }
