@@ -1139,11 +1139,11 @@ impl Interpreter {
         resolved_constraint: &str,
         arg: &Value,
     ) -> bool {
-        if let Some(expected_val) = self.enum_bare_value(&resolved_constraint).cloned() {
+        if let Some(expected_val) = self.enum_bare_value(resolved_constraint).cloned() {
             if *arg != expected_val {
                 return false;
             }
-        } else if let Some(expected_val) = self.type_name_binding(&resolved_constraint) {
+        } else if let Some(expected_val) = self.type_name_binding(resolved_constraint) {
             // A `constant` bound to a value (`multi f(G)`):
             // rakudo smartmatches the argument against it,
             // which for a definite object is `===` -- WHICH
@@ -1160,16 +1160,16 @@ impl Interpreter {
             // Int` that reached `multi infix:<*>(Int $n where
             // ..., G)` (#9967).
             if let ValueView::Instance { class_name, .. } = expected_val.view()
-                && !self.type_matches_value(&class_name.resolve(), &arg)
+                && !self.type_matches_value(&class_name.resolve(), arg)
             {
                 return false;
             }
-            self.warm_which_identity_for_identity(&arg);
+            self.warm_which_identity_for_identity(arg);
             self.warm_which_identity_for_identity(&expected_val);
-            if !crate::runtime::values_identical(&arg, &expected_val) {
+            if !crate::runtime::values_identical(arg, &expected_val) {
                 return false;
             }
-        } else if !self.type_matches_value(&resolved_constraint, &arg) {
+        } else if !self.type_matches_value(resolved_constraint, arg) {
             return false;
         }
         true
