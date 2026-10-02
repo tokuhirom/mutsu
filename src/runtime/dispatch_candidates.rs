@@ -26,8 +26,8 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 ///    or a `subset` type: rakudo draws no line between the two), sub-signature
 ///    count, `rw`/`raw` count (higher is narrower);
 ///
-/// then whether it declares any named parameter, optional-positional count,
-/// required-named count, and declaration order.
+/// then whether it needs a named bind check (an explicit named parameter, or a
+/// `where` on a slurpy), optional-positional count, and declaration order.
 ///
 /// The tier split is rakudo's rule, not a mutsu invention: its `is_narrower`
 /// compares the candidates' nominal parameter types first and only consults a
@@ -40,7 +40,6 @@ pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
     (usize, usize, usize),
-    usize,
     usize,
     usize,
     u64,
@@ -104,10 +103,16 @@ impl Interpreter {
 
     /// The narrowness key a multi candidate is ranked by, in
     /// `candidate_rank_cmp` order: the nominal tier, the type-hierarchy
-    /// distance, the refinement tier, whether it declares any named parameter,
-    /// optional-positional count, required-named count, declaration order.
+    /// distance, the refinement tier, whether it needs a named bind check,
+    /// optional-positional count, declaration order.
     /// See [`CandidateRankKey`] for why nominal narrowness outranks a
     /// refinement rather than the other way round.
+    ///
+    /// There is deliberately no required-named step: rakudo leaves
+    /// `multi f(:$x!)` and `multi f(:$x)` (or `multi f(*%m where ...)`) tied
+    /// and declaration order decides. The one case where a required named
+    /// wins — `multi j(*%m)` vs `multi j(:$x!)` — is already decided by the
+    /// bind-check step.
     pub(super) fn candidate_rank_key(
         &mut self,
         def: &Arc<FunctionDef>,
@@ -116,26 +121,24 @@ impl Interpreter {
         let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
-        let has_named = usize::from(Self::candidate_declares_named(def));
+        let bind_check = usize::from(Self::candidate_needs_named_bind_check(def));
         let opt = Self::candidate_optional_positional_count(def);
-        let req_named = Self::candidate_required_named_count(def);
         (
             (literal, typed),
             dist,
             (constrained, subsig, writable),
-            has_named,
+            bind_check,
             opt,
-            req_named,
             def.decl_order,
         )
     }
 
     /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher nominal
     /// tier first, then lower type distance, then higher refinement tier, then
-    /// a candidate that declares nameds over one that declares none, then fewer
-    /// optional positionals (a required param is narrower than an optional
-    /// one), then higher required named, and finally — for candidates tied on
-    /// all of that — the one declared first, which is what Rakudo runs.
+    /// a candidate that needs a named bind check over one that does not, then
+    /// fewer optional positionals (a required param is narrower than an
+    /// optional one), and finally — for candidates tied on all of that — the
+    /// one declared first, which is what Rakudo runs.
     pub(super) fn candidate_rank_cmp(
         a: CandidateRankKey,
         b: CandidateRankKey,
@@ -145,8 +148,7 @@ impl Interpreter {
             .then(b.2.cmp(&a.2))
             .then(b.3.cmp(&a.3))
             .then(a.4.cmp(&b.4))
-            .then(b.5.cmp(&a.5))
-            .then(a.6.cmp(&b.6))
+            .then(a.5.cmp(&b.5))
     }
 
     /// `key` with its declaration-order component cleared, so two candidates
@@ -157,7 +159,7 @@ impl Interpreter {
     /// opposed to `candidate_rank_cmp` on the full key, which is the total
     /// order the winner is picked by.
     pub(super) fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
-        key.6 = 0;
+        key.5 = 0;
         key
     }
 
@@ -397,15 +399,14 @@ impl Interpreter {
         // `matches` is ALREADY in narrowest-first order — the scan walked the
         // pre-ranked list and broke at the first candidate strictly wider than
         // `matches[0]`. So `matches[0]` is the winner, and every entry ties
-        // with it on all five narrowness components (specificity rank, type
-        // distance, declares-a-named, optional-positional count, required-named
-        // count) by construction: the loop's break condition is exactly "that
-        // five-component key compares Greater". The separate re-sort and the
+        // with it on all four narrowness components (specificity rank, type
+        // distance, named bind check, optional-positional count) by
+        // construction: the loop's break condition is exactly "that
+        // four-component key compares Greater". The separate re-sort and the
         // `tied` re-filter this used to do — both of which recomputed
         // `candidate_specificity_rank_for_args` and `candidate_type_distance`
         // per match — are therefore redundant.
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
-        let best_has_named = Self::candidate_declares_named(&matches[0]);
         let tied: Vec<Arc<FunctionDef>> = matches.clone();
         // Compare dispatch shapes as sorted multisets so that candidates with
         // the same set of typed parameters in a different order are still
@@ -430,46 +431,24 @@ impl Interpreter {
             if default_candidates.len() == 1 {
                 return Some(default_candidates[0].clone());
             }
-            // Two candidates whose *entire* declared signature (not just its
-            // dispatch shape, which drops named-parameter names) is
-            // byte-identical are not a meaningful overload — they are a
-            // duplicate declaration, e.g. a module `is export`ing a
-            // `multi sub trait_mod:<is>(Routine:D $r, :$test-assertion!)`
-            // that a user file also declares verbatim itself (both
-            // `Test.rakumod` and a test file legitimately do this, since
-            // Rakudo's own trait handlers work the same way). Rakudo does
-            // not raise X::Multi::Ambiguous for this — it silently runs
-            // whichever was declared first, exactly like `matches[0]`
-            // already is post-sort.
-            //
-            // BUT this is only true when the candidates declare a named
-            // parameter at all (`best_has_named`, already computed above).
-            // Rakudo's dispatcher does NOT extend the same leniency to two
-            // purely *positional* duplicate declarations — a named param
-            // (typed or not) routes dispatch through a trial-bind/"first one
-            // that binds wins" path that never reaches the strict LTM/MRO
-            // narrowness comparison a purely-positional signature does:
+            // Candidates that tie while needing a named bind check (an
+            // explicit named parameter, or a `where` on a slurpy) are never
+            // ambiguous: rakudo routes them through its trial-bind path, where
+            // the first one declared that binds wins.
             //
             // ```raku
             // multi sub f(Int $x, :$bar!) {"first"}; multi sub f(Int $x, :$bar!) {"second"};
             // f(1, :bar);      # "first", not ambiguous
+            // multi sub h(:$a) {"a"};                multi sub h(:$b) {"b"};
+            // h();             # "a"
             // multi sub g($x) {"first"};             multi sub g($x) {"second"};
             // g(1);            # X::Multi::Ambiguous
             // ```
             //
-            // (`roast/integration/advent2011-day24.t` pins the positional
-            // case staying ambiguous: two verbatim-duplicate
-            // `multi sub Slurp($filename) {...}` with no named param at all.)
-            // A pair that merely *ties on narrowness* while differing in some
-            // way the shape comparison above can't see (e.g. two
-            // distinctly-named-but-untyped named params) is NOT covered by
-            // this either and still falls through to the ambiguity error
-            // below.
-            if best_has_named
-                && tied
-                    .iter()
-                    .all(|def| Self::candidate_signatures_identical(&matches[0], def))
-            {
+            // Two purely *positional* ties stay ambiguous —
+            // `roast/integration/advent2011-day24.t` pins two verbatim
+            // duplicate `multi sub Slurp($filename) {...}` with no named param.
+            if Self::candidate_needs_named_bind_check(&matches[0]) {
                 return Some(matches.remove(0));
             }
             self.pending_dispatch_error =
@@ -478,38 +457,6 @@ impl Interpreter {
         }
 
         Some(matches.remove(0))
-    }
-
-    /// True when `a` and `b` declare the exact same *full* parameter list
-    /// (every declared param, not just the dispatch-visible ones), position
-    /// for position: same type constraint, same
-    /// `named`/`required`/`slurpy`/`multi_invocant` flags, and — for a
-    /// *named* parameter only — the same name (a positional parameter's
-    /// variable name is not semantically significant for dispatch: `foo(Int
-    /// $x)` and `foo(Int $y)` are the same declaration as far as a caller is
-    /// concerned).
-    ///
-    /// Deliberately over `def.param_defs` rather than
-    /// [`Self::dispatch_visible_params`] (used for narrowness comparison):
-    /// two candidates that agree on every dispatch-visible param but differ
-    /// after a `;;` long-name separator — `multi f(;; Any $v)` vs
-    /// `multi f(;; Int $v)` — have empty (and therefore trivially "equal")
-    /// dispatch-visible lists, yet are genuinely different declarations that
-    /// Rakudo *does* still report as ambiguous (`t/multi-sig.t`). Comparing
-    /// the full list also catches named-parameter *names* that
-    /// [`Self::candidate_dispatch_shape`] does not carry, so `:$bar!` and
-    /// `:$baz!` are correctly seen as different even though both are untyped
-    /// named params of the same shape.
-    fn candidate_signatures_identical(a: &FunctionDef, b: &FunctionDef) -> bool {
-        a.param_defs.len() == b.param_defs.len()
-            && a.param_defs.iter().zip(b.param_defs.iter()).all(|(x, y)| {
-                (x.name == y.name || !x.named)
-                    && x.named == y.named
-                    && x.required == y.required
-                    && x.slurpy == y.slurpy
-                    && x.multi_invocant == y.multi_invocant
-                    && x.type_constraint == y.type_constraint
-            })
     }
 
     /// Whether any *named* parameter of `def` carries a type constraint.
@@ -651,7 +598,10 @@ impl Interpreter {
             .iter()
             .zip(effective.iter())
             .filter(|(p, tc)| {
-                p.where_constraint.is_some()
+                // A `where` on a slurpy refines nothing positional; it ranks
+                // in the named bind-check step instead (see
+                // `candidate_needs_named_bind_check`).
+                (p.where_constraint.is_some() && !p.is_variadic())
                     || tc
                         .map(Self::constraint_base_name)
                         .is_some_and(|base| self.constraint_is_subset(base))
@@ -781,14 +731,23 @@ impl Interpreter {
             .any(|p| p.named && !p.slurpy && !p.double_slurpy)
     }
 
-    /// Count required named parameters — used as a tertiary tiebreaker
-    /// AFTER rank and type distance, so it only matters when type constraints
-    /// are equally specific.
-    fn candidate_required_named_count(def: &FunctionDef) -> usize {
-        Self::dispatch_visible_params(def)
-            .iter()
-            .filter(|p| p.named && p.required)
-            .count()
+    /// Whether binding the candidate needs a check on the *named* side: it
+    /// declares an explicit named parameter (see
+    /// [`Self::candidate_declares_named`]) or puts a `where` clause on a
+    /// slurpy. This is rakudo's `bind_check` flag for the named half of a
+    /// signature, a boolean narrowness step below every positional one.
+    ///
+    /// A `where` on a slurpy is not a positional refinement (it is excluded
+    /// from the refinement tier's constrained count): rakudo ties
+    /// `multi f(*%m where .elems == 1)` with `multi f(:x($y)!)` and runs the
+    /// one declared first, while either beats a bare `multi f(*%m)`
+    /// (CSS::Properties' `measure` multis,
+    /// [#10519](https://github.com/tokuhirom/mutsu/issues/10519)).
+    fn candidate_needs_named_bind_check(def: &FunctionDef) -> bool {
+        Self::candidate_declares_named(def)
+            || Self::dispatch_visible_params(def)
+                .iter()
+                .any(|p| p.is_variadic() && p.where_constraint.is_some())
     }
 
     /// Count *optional* positional parameters — an optional, defaulted, or
@@ -799,7 +758,7 @@ impl Interpreter {
     /// `f(42)`; `f(Int $a)` beats `f(*@a)` and `f($a, $b?)`).  Fewer optionals
     /// wins.  Used as a tiebreaker AFTER type distance (a narrower type still
     /// wins even when it is the optional one — `f(Int $y?)` beats `f(Cool $x)`
-    /// for `f(42)`), and BEFORE required-named ranking.  Once both candidates
+    /// for `f(42)`), and as the last step before declaration order.  Once both candidates
     /// declare named parameters, however, an omitted optional positional does
     /// not make one candidate narrower: `multi f($x = 1, :$a)` and
     /// `multi f(:$b)` tie and declaration order decides.  The positional
@@ -809,9 +768,12 @@ impl Interpreter {
         if Self::candidate_declares_named(def) {
             return 0;
         }
+        // A slurpy hash (`*%m`) is not a positional at all: rakudo finds
+        // `multi f(*%m)` and `multi f()` ambiguous for `f()`.
         Self::dispatch_visible_params(def)
             .iter()
-            .filter(|p| !p.named && (p.is_variadic() || p.optional_marker || p.default.is_some()))
+            .filter(|p| !p.named && !(p.slurpy && p.name.starts_with('%')))
+            .filter(|p| p.is_variadic() || p.optional_marker || p.default.is_some())
             .count()
     }
 
@@ -835,6 +797,13 @@ impl Interpreter {
             // the two is declared first). Nameds also never consume a
             // positional slot, so skipping them leaves `pos_idx` correct.
             if pd.named {
+                continue;
+            }
+            // A slurpy hash (`*%m`) takes only named arguments, so it is
+            // skipped for the same reason: charging it the flat 1000 below
+            // made `multi f(*%m where .elems == 1)` lose to `multi f(:$x!)`
+            // whatever their declaration order (#10519).
+            if pd.slurpy && pd.name.starts_with('%') {
                 continue;
             }
             if let Some(constraint) = &pd.type_constraint {
