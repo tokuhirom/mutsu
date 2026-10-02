@@ -275,8 +275,12 @@ impl TierB {
     /// `Add`/`Sub`/`Mul`: pop two Int (or two Num) words, push the result.
     /// Fast-path conditions mirror the interpreter arm exactly: small Int
     /// operands whose result stays in the small-Int range (else the helper
-    /// boxes it), or two Num operands; `Add` additionally requires no user
-    /// `infix:<+>` declaration (the only arith arm with an override check).
+    /// boxes it), or two Num operands, and in both cases no user
+    /// `infix:<op>` declaration anywhere: each interpreter arm
+    /// (`exec_add_op`/`exec_sub_op`/`exec_mul_op`) checks for one before its
+    /// own fast paths. Only `Add` used to be guarded here, so a JIT-compiled
+    /// loop stopped calling a user `multi infix:<*>`/`infix:<->` candidate
+    /// once the loop got hot.
     pub(super) fn emit_int_num_arith(&self, b: &mut FunctionBuilder, op: IntArith, slow_fn: usize) {
         let ptr = self.stack_ptr(b);
         let len = self.stack_len(b);
@@ -288,14 +292,9 @@ impl TierB {
         let pb = self.page(b, wb);
         let a_int = self.is_int_page(b, pa);
         let b_int = self.is_int_page(b, pb);
-        let mut both_int = b.ins().band(a_int, b_int);
-        let no_override = if matches!(op, IntArith::Add) {
-            let no = self.no_user_infix(b);
-            both_int = b.ins().band(both_int, no);
-            Some(no)
-        } else {
-            None
-        };
+        let no_override = self.no_user_infix(b);
+        let both_int = b.ins().band(a_int, b_int);
+        let both_int = b.ins().band(both_int, no_override);
 
         let int_blk = b.create_block();
         let num_chk = b.create_block();
@@ -340,10 +339,8 @@ impl TierB {
         b.switch_to_block(num_chk);
         let a_num = self.is_num_page(b, pa);
         let b_num = self.is_num_page(b, pb);
-        let mut both_num = b.ins().band(a_num, b_num);
-        if let Some(no) = no_override {
-            both_num = b.ins().band(both_num, no);
-        }
+        let both_num = b.ins().band(a_num, b_num);
+        let both_num = b.ins().band(both_num, no_override);
         b.ins().brif(both_num, num_blk, &[], slow_blk, &[]);
         b.switch_to_block(num_blk);
         let fa = self.decode_num(b, wa);
