@@ -161,6 +161,9 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(var));
             self.code.emit(OpCode::PostIncrement(name_idx, slot));
         } else if let Expr::Var(name) = expr {
+            // `$OUTER::x++` writes the visible `$x` (#10676).
+            let outer_target = self.outer_write_target(name);
+            let name = outer_target.as_ref().unwrap_or(name);
             if name.starts_with('!') && name.len() > 1 {
                 self.alloc_local(name);
             }
@@ -277,6 +280,9 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(var));
             self.code.emit(OpCode::PostDecrement(name_idx, slot));
         } else if let Expr::Var(name) = expr {
+            // `$OUTER::x++` writes the visible `$x` (#10676).
+            let outer_target = self.outer_write_target(name);
+            let name = outer_target.as_ref().unwrap_or(name);
             if name.starts_with('!') && name.len() > 1 {
                 self.alloc_local(name);
             }

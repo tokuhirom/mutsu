@@ -2722,6 +2722,24 @@ impl Compiler {
         self.emit_outer_resolution(bare, res);
     }
 
+    /// The plain name a write through `OUTER::` (`$OUTER::x := $y`,
+    /// `$OUTER::x = 5`) targets, when that is the same binding an unqualified
+    /// `$x` names here (see [`lex_scope::outer_is_visible_binding`]). The write
+    /// is then compiled exactly as a write to `$x`, so a rebind aliases the
+    /// declaring slot / captured cell instead of storing under the literal
+    /// `OUTER::x` key (#10676).
+    /// A sigiled target (`@OUTER::a`, `%OUTER::h`) keeps its sigil, which is
+    /// how the scope frames key non-scalar names.
+    pub(crate) fn outer_write_target(&self, name: &str) -> Option<String> {
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'@' | b'%' | b'&') => name.split_at(1),
+            _ => ("", name),
+        };
+        let (bare, depth) = Self::parse_outer_prefix(rest)?;
+        let key = format!("{sigil}{bare}");
+        lex_scope::outer_is_visible_binding(&self.full_scope_chain(), &key, depth).then_some(key)
+    }
+
     /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
     fn emit_outers_var_access(&mut self, bare: String) {
         let res = lex_scope::resolve_outers(&self.full_scope_chain(), &self.local_map, &bare);
