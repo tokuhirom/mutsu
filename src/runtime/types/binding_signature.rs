@@ -1931,6 +1931,13 @@ impl Interpreter {
                     }
                 } else {
                     let mut items = Vec::new();
+                    // Indices into `items` of genuinely lazy arguments (an
+                    // infinite `...` sequence, a lazy pipe, an unbounded Range,
+                    // slipped with `|` or passed as is): the slurpy keeps them
+                    // as lazy parts of its own sequence, as Rakudo's lazy `*@`
+                    // does (`g(0, (1, 3 ... *))` reads `0, 1, 3, ...`), instead
+                    // of one nested element (#10888).
+                    let mut lazy_slots: Vec<usize> = Vec::new();
                     // `*@v is raw` / `*@v is rw`: each caller argument is aliased,
                     // so a body mutation of `@v[i]` (or `for @v { $_++ }`) flows
                     // back to the i-th caller source. Build the slurpy with the
@@ -2101,6 +2108,16 @@ impl Interpreter {
                             positional_idx += 1;
                             continue;
                         }
+                        if !is_alias_slurpy
+                            && crate::runtime::types::signature::collect_lazy_slurpy_arg(
+                                &arg,
+                                &mut items,
+                                &mut lazy_slots,
+                            )
+                        {
+                            positional_idx += 1;
+                            continue;
+                        }
                         match arg.view() {
                             ValueView::Pair(..) => {
                                 // Named arg -- leave for *%_ slurpy or post-loop check
@@ -2143,6 +2160,12 @@ impl Interpreter {
                     // that through `rw_bindings` — leave those items alone.
                     let slurpy_value = if is_alias_slurpy {
                         Value::real_array(items)
+                    } else if !lazy_slots.is_empty() {
+                        Self::lazy_literal_with_slipped_tail(
+                            items.into_iter().map(Value::into_deref).collect(),
+                            &lazy_slots,
+                            true,
+                        )
                     } else {
                         Value::real_array(items.into_iter().map(Value::into_deref).collect())
                     };
