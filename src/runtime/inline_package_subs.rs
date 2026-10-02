@@ -439,8 +439,9 @@ impl<'ast> Visit<'ast> for InlinePackageSubCollector {
                 decl: crate::ast::PackageRuntimeDecl::Package,
                 ..
             } => self.in_package(*name, body, false),
-            // A named, package-scoped class inside a package: only its
-            // exported routines, which the enclosing packages export too.
+            // A named, package-scoped class (at the top of the unit or inside
+            // a package): only its exported routines, which the enclosing
+            // packages export too.
             Stmt::ClassDecl {
                 name,
                 body,
@@ -448,7 +449,24 @@ impl<'ast> Visit<'ast> for InlinePackageSubCollector {
                 is_lexical: false,
                 is_unit: false,
                 ..
-            } if !self.packages.is_empty() => {
+            } => {
+                let saved = std::mem::replace(&mut self.nested, false);
+                self.in_package(*name, body, true);
+                self.nested = saved;
+            }
+            // The run-time half of a package-scoped class body the BEGIN
+            // prologue split off: a routine nested in one of its bare
+            // statements (`class K { if True { sub g is export { } } }`) lives
+            // only here, and is exported from the class like a direct one.
+            Stmt::PackageRuntimeBody {
+                name,
+                body,
+                decl:
+                    crate::ast::PackageRuntimeDecl::Class {
+                        is_lexical: false, ..
+                    },
+                ..
+            } => {
                 let saved = std::mem::replace(&mut self.nested, false);
                 self.in_package(*name, body, true);
                 self.nested = saved;
