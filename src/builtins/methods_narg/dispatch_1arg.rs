@@ -1077,6 +1077,10 @@ pub(crate) fn native_method_1arg(
                     let items: Vec<Value> = (a..=b).take(n).map(Value::int).collect();
                     Some(Ok(Value::seq(items)))
                 }
+                // An unbounded range of any element type: step `n` times.
+                _ if let Some(mut steps) = crate::runtime::unbounded_range::Steps::new(target) => {
+                    Some(Ok(Value::seq(steps.take(n))))
+                }
                 _ => Some(Ok(Value::seq(runtime::with_receiver_items(
                     target,
                     |items| items[..n.min(items.len())].to_vec(),
@@ -2538,14 +2542,19 @@ pub(crate) fn native_method_1arg(
 /// range materializes its (finite) element list.
 fn range_at_pos(range: &Value, idx: usize) -> Value {
     if crate::builtins::functions::flat::is_infinite_range(range) {
-        if let Some((start, _end, excl_start, _)) =
-            crate::builtins::arith::range::range_bounds(range)
-            && let ValueView::Int(a) = start.view()
-        {
-            let first = if excl_start { a + 1 } else { a };
-            return Value::int(first + idx as i64);
+        // Element `idx` of an unbounded range of any element type: `first +
+        // idx` for a numeric start, `idx` `.succ` steps otherwise.
+        let Some(first) = crate::runtime::unbounded_range::first(range) else {
+            return Value::NIL;
+        };
+        if let Some(v) = crate::runtime::unbounded_range::nth(&first, idx) {
+            return v;
         }
-        return Value::NIL;
+        let mut steps = crate::runtime::unbounded_range::Steps::new(range);
+        return steps
+            .as_mut()
+            .and_then(|s| s.take(idx + 1).pop())
+            .unwrap_or(Value::NIL);
     }
     crate::runtime::value_to_list(range)
         .get(idx)

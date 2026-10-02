@@ -187,6 +187,17 @@ impl Interpreter {
                 ValueView::RangeExcl(a, b) => Some((a, b, false)), // a..^b (exclusive end)
                 ValueView::RangeExclStart(a, b) => Some((a + 1, b, true)),
                 ValueView::RangeExclBoth(a, b) => Some((a + 1, b, false)),
+                // An unbounded range with an Int first element (`^Inf`,
+                // `0^..Inf`) counts up like `a..*`.
+                ValueView::GenericRange { .. } => {
+                    match crate::runtime::unbounded_range::first(&iterable)
+                        .as_ref()
+                        .map(Value::view)
+                    {
+                        Some(ValueView::Int(a)) => Some((a, i64::MAX, true)),
+                        _ => None,
+                    }
+                }
                 _ => None,
             };
             if let Some((start, end_val, inclusive)) = int_range {
@@ -207,6 +218,12 @@ impl Interpreter {
             }
         }
 
+        // Any other unbounded range (`1.5..*`, `"a"..*`) iterates as its
+        // `.succ` sequence through the lazy path below.
+        iterable = match crate::runtime::unbounded_range::lazy_list(&iterable) {
+            Some(ll) => Value::lazy_list(crate::gc::Gc::new(ll)),
+            None => iterable,
+        };
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.

@@ -75,9 +75,13 @@ impl Interpreter {
             // A non-finite *start* (`-Inf..0`, `NaN..NaN`, `Inf..Inf`) is too:
             // it cannot be eagerly materialized and `.map`/`.grep` must pull it
             // (`-Inf`/`NaN` yield their start ad infinitum; `+Inf` yields none).
-            ValueView::GenericRange { start, end, .. } => {
-                let end_f = end.to_f64();
-                (end_f.is_infinite() && end_f.is_sign_positive()) || !start.to_f64().is_finite()
+            //
+            // "Unbounded" is decided by `unbounded_range::first` for every
+            // element type, so `"a"..*` (whose `*` end has no f64 value) is a
+            // lazy pipe source too.
+            ValueView::GenericRange { start, .. } => {
+                crate::runtime::unbounded_range::first(target).is_some()
+                    || !start.to_f64().is_finite()
             }
             // A lazy pipe, or an infinite arithmetic/geometric/closure sequence
             // (`1..*`, `1,2,3...*`, `1,1,*+*...*`): `.map`/`.grep` append another
@@ -156,14 +160,11 @@ impl Interpreter {
         match v.view() {
             ValueView::LazyList(_) => true,
             ValueView::Array(_, kind) if kind.is_lazy() => true,
-            ValueView::Range(_, end)
-            | ValueView::RangeExcl(_, end)
-            | ValueView::RangeExclStart(_, end)
-            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
-            ValueView::GenericRange { end, .. } => {
-                let end_f = end.to_f64();
-                end_f.is_infinite() && end_f.is_sign_positive()
-            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => crate::builtins::is_infinite_range(v),
             _ => false,
         }
     }

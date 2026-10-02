@@ -134,6 +134,11 @@ pub(super) fn dispatch(
                     Some(Ok(Value::int(start + 1)))
                 }
             }
+            ValueView::GenericRange { .. }
+                if let Some(first) = crate::runtime::unbounded_range::first(target) =>
+            {
+                Some(Ok(first))
+            }
             ValueView::GenericRange {
                 start, excl_start, ..
             } => {

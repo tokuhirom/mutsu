@@ -36,14 +36,11 @@ impl AdaptorStep {
 pub(crate) fn is_unbounded_operand(v: &Value) -> bool {
     match v.view() {
         ValueView::LazyList(_) => true,
-        ValueView::Range(_, b)
-        | ValueView::RangeExcl(_, b)
-        | ValueView::RangeExclStart(_, b)
-        | ValueView::RangeExclBoth(_, b) => b == i64::MAX,
-        ValueView::GenericRange { end, .. } => {
-            let f = end.to_f64();
-            f.is_infinite() && f.is_sign_positive()
-        }
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => crate::builtins::is_infinite_range(v),
         _ => extended_list(v).is_some() || lazy_segments(v).is_some(),
     }
 }
@@ -98,7 +95,7 @@ pub(super) fn pull_operand_of(v: &Value) -> PullOperand {
     }
     match lazy_segments(v) {
         Some(items) => PullOperand::Segments(items),
-        None => PullOperand::Source(v.clone()),
+        None => PullOperand::Source(crate::runtime::unbounded_range::pipe_source(v.clone())),
     }
 }
 

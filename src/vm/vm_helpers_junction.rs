@@ -413,6 +413,11 @@ impl Interpreter {
                     let n = last.to_f64();
                     Value::num(n * ratio)
                 }
+                crate::value::SequenceSpec::Succ => {
+                    // `unbounded_range::first` only seeds a value that has a
+                    // successor, and `.succ` of one has one too.
+                    crate::builtins::value_succ(&last).unwrap_or(last)
+                }
                 crate::value::SequenceSpec::RollPool(pool) => {
                     let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
                         % pool.len();

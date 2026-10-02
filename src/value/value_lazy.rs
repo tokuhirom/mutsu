@@ -237,16 +237,12 @@ impl LazyList {
         match source.view() {
             ValueView::Array(..) | ValueView::Seq(_) => true,
             ValueView::Slip(_) => true,
-            // A finite integer range has a concrete end (`i64::MAX` is the
-            // sentinel for `..*`/`..Inf`, i.e. infinite).
-            ValueView::Range(_, b)
-            | ValueView::RangeExcl(_, b)
-            | ValueView::RangeExclStart(_, b)
-            | ValueView::RangeExclBoth(_, b) => b != i64::MAX,
-            ValueView::GenericRange { end, .. } => {
-                let end_f = end.to_f64();
-                !(end_f.is_infinite() && end_f.is_sign_positive())
-            }
+            // A range is finite unless it is unbounded upward (`..*`, `..Inf`).
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => !crate::builtins::is_infinite_range(source),
             ValueView::LazyList(ll) => {
                 if ll.lazy_pipe.is_some() {
                     ll.pipe_bottoms_out_finite()

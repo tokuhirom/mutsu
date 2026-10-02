@@ -2006,7 +2006,7 @@ impl Interpreter {
                                     // A bare infinite range (`f(1..Inf)` / `f(1..*)`)
                                     // also stays lazy: convert it to the same
                                     // reify-on-index lazy array `my @a = 1..*` produces.
-                                    crate::runtime::utils::infinite_int_range_to_lazy_array(only)
+                                    crate::runtime::utils::infinite_range_to_lazy_array(only)
                                 }
                             }
                             _ => None,

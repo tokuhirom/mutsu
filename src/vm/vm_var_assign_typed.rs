@@ -241,6 +241,16 @@ impl Interpreter {
         } else {
             value
         };
+        // A lazy list (an unbounded Range's `.succ` sequence, `1, 2 ... *`)
+        // cannot initialize a native typed array either.
+        if var_name.starts_with('@')
+            && let ValueView::LazyList(ll) = value.view()
+            && ll.is_genuinely_lazy()
+            && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
+            && crate::runtime::native_types::is_native_array_element_type(&constraint)
+        {
+            return Err(native_array_lazy_init_error(&constraint));
+        }
         if var_name.starts_with('@')
             && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
             && let ValueView::Array(items, kind) = value.view()
@@ -249,23 +259,7 @@ impl Interpreter {
             if kind.is_lazy()
                 && crate::runtime::native_types::is_native_array_element_type(&constraint)
             {
-                let declared = format!("array[{}]", constraint);
-                return Err(RuntimeError::typed(
-                    "X::Cannot::Lazy",
-                    [
-                        (
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Cannot initialize an array of {} with a lazy list",
-                                constraint
-                            )),
-                        ),
-                        ("action".to_string(), Value::str_from("initialize")),
-                        ("what".to_string(), Value::str(declared)),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ));
+                return Err(native_array_lazy_init_error(&constraint));
             }
             let coerced_items = self.coerce_typed_array_elements(
                 var_name,
@@ -1149,4 +1143,27 @@ impl Interpreter {
         }
         Ok(new_val)
     }
+}
+
+/// `X::Cannot::Lazy` for initializing an `array[<constraint>]` from a lazy list.
+fn native_array_lazy_init_error(constraint: &str) -> RuntimeError {
+    RuntimeError::typed(
+        "X::Cannot::Lazy",
+        [
+            (
+                "message".to_string(),
+                Value::str(format!(
+                    "Cannot initialize an array of {} with a lazy list",
+                    constraint
+                )),
+            ),
+            ("action".to_string(), Value::str_from("initialize")),
+            (
+                "what".to_string(),
+                Value::str(format!("array[{}]", constraint)),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    )
 }

@@ -1809,10 +1809,8 @@ impl Interpreter {
                     // the generic `_` arm below like any other Seq.
                     // An infinite integer range (`1..*`) stays a reify LazyList
                     // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
-                    _ if runtime::utils::infinite_int_range_to_lazy_array(&raw_popped)
-                        .is_some() =>
-                    {
-                        runtime::utils::infinite_int_range_to_lazy_array(&raw_popped).unwrap()
+                    _ if runtime::utils::infinite_range_to_lazy_array(&raw_popped).is_some() => {
+                        runtime::utils::infinite_range_to_lazy_array(&raw_popped).unwrap()
                     }
                     _ => {
                         // Resolve bound-element sentinels before coercing to

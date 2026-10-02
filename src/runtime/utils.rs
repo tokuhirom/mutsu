@@ -178,43 +178,15 @@ pub(crate) fn no_zero_arg_meaning_failure(op: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
-/// If `value` is an infinite *integer* range (`1..*`, `^Inf`, `0..^*`, …),
-/// return a reify-on-demand `LazyList` (arithmetic sequence, step 1) tagged as
-/// living in `@` array context, so `my @a = 1..*` stays lazy (`@a[200000]`
-/// reifies, `@a.gist` is `[...]`, `.elems` throws) instead of being capped to a
-/// 100k `ArrayKind::Lazy` Array. Returns `None` for finite or non-integer
-/// ranges (the caller falls back to `coerce_to_array`).
-pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
-    use crate::value::{LazyList, SequenceSpec};
-    let start = match value.view() {
-        ValueView::Range(a, i64::MAX) | ValueView::RangeExcl(a, i64::MAX) => a,
-        ValueView::RangeExclStart(a, i64::MAX) | ValueView::RangeExclBoth(a, i64::MAX) => a + 1,
-        ValueView::GenericRange { start, end, .. } => {
-            let end_f = end.to_f64();
-            if !(end_f.is_infinite() && end_f.is_sign_positive()) {
-                return None;
-            }
-            match start.as_ref().view() {
-                ValueView::Int(a) => a,
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-    // Seed the cache with just the start element — true memory-laziness (L2b).
-    // The `SequenceSpec` lets every read op extend the cache on demand:
-    // `@a[N]` (`force_lazy_list_vm_n`), `.head(n)`/`.first` (bounded pull),
-    // `.map`/`.grep` (lazy pipe over the sequence). This makes `my @a = 1..*`
-    // O(1) memory instead of materializing a 100k-element prefix.
-    let seeds: Vec<Value> = vec![Value::int(start)];
-    let ll = LazyList::new_sequence(
-        seeds,
-        SequenceSpec::Arithmetic {
-            step: 1,
-            all_int: true,
-        },
-    )
-    .with_array_context();
+/// If `value` is an unbounded range of any element type (`1..*`, `^Inf`,
+/// `1.5..*`, `"a"..*`; see `runtime::unbounded_range`), return it as a
+/// reify-on-demand `LazyList` tagged as living in `@` array context, so
+/// `my @a = 1..*` stays lazy (`@a[200000]` reifies, `@a.gist` is `[...]`,
+/// `.elems` throws) instead of being capped to a 100k `ArrayKind::Lazy` Array.
+/// Returns `None` for anything else (the caller falls back to
+/// `coerce_to_array`).
+pub(crate) fn infinite_range_to_lazy_array(value: &Value) -> Option<Value> {
+    let ll = crate::runtime::unbounded_range::lazy_list(value)?.with_array_context();
     Some(Value::lazy_list(crate::gc::Gc::new(ll)))
 }
 
