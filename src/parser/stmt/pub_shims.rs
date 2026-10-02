@@ -68,6 +68,11 @@ pub(crate) fn expr_position_method_decl_pub(input: &str, is_submethod: bool) -> 
     expr_position_method_decl(input, is_submethod)
 }
 
+/// Public accessor for `proto ...` in expression position (input at `proto`).
+pub(crate) fn proto_decl_pub(input: &str) -> PResult<'_, Stmt> {
+    class::proto_decl(input)
+}
+
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
 pub(crate) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)

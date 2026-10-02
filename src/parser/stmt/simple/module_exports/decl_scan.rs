@@ -383,6 +383,20 @@ impl<'ast> Visit<'ast> for DeclScan {
                     self.out.dynamic_export_stash = true;
                 }
             }
+            // `%EXPORT<&slack> := &trampoline;` (Object::Delayed): a module
+            // that hands out its routines through a `sub EXPORT { %EXPORT }`
+            // hook names them as literal keys of a lexical `%EXPORT`, which
+            // the importer's parse must know are routines (a listop call
+            // `slack { ... }` is otherwise "two terms in a row").
+            Expr::IndexAssign { target, index, .. } if matches!(target.as_ref(), Expr::HashVar(h) if h == "EXPORT") => {
+                if let Expr::Literal(key) = index.as_ref()
+                    && let crate::value::ValueView::Str(key) = key.view()
+                    && let Some(routine) = key.strip_prefix('&')
+                    && !routine.is_empty()
+                {
+                    self.export(routine.to_string());
+                }
+            }
             _ => {}
         }
         self.off_spine(|v| walk_expr(v, expr));
