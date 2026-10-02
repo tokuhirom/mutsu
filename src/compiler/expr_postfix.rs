@@ -383,6 +383,17 @@ impl Compiler {
     /// 4. Write back tmp_val (which now has new value) via IndexAssign
     /// 5. Return tmp_old (the old value before increment)
     fn compile_nested_postfix_incdec(&mut self, expr: &Expr, increment: bool) {
+        let op = if increment {
+            TokenKind::PlusPlus
+        } else {
+            TokenKind::MinusMinus
+        };
+        if self.compile_incdec_through_bound_root(expr, |elem| Expr::PostfixOp {
+            op,
+            expr: Box::new(elem),
+        }) {
+            return;
+        }
         if let Expr::Index {
             target,
             index,
@@ -426,60 +437,6 @@ impl Compiler {
 
             // 4. Push the old value as the result of the post-increment expression
             self.code.emit(OpCode::GetGlobal(tmp_old_idx));
-        }
-    }
-
-    /// Compile prefix ++/-- on a nested index expression (e.g. `++$foo[0][0]`).
-    /// `expr` is the full Index expression (the operand of UnaryOp).
-    /// `increment` is true for ++, false for --.
-    ///
-    /// Strategy:
-    /// 1. Read old value into tmp_val
-    /// 2. PreIncrement/PreDecrement on tmp_val (returns new value, stores new)
-    /// 3. Write back tmp_val via IndexAssign
-    /// 4. Return the new value
-    pub(super) fn compile_nested_prefix_incdec(&mut self, expr: &Expr, increment: bool) {
-        if let Expr::Index {
-            target,
-            index,
-            is_positional,
-            ..
-        } = expr
-        {
-            let tmp_val = format!("__mutsu_nested_preincdec_val_{}", self.code.constants.len());
-            let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
-
-            // 1. Read current value and store in tmp_val
-            self.compile_expr(expr);
-            self.code.emit(OpCode::SetGlobal(tmp_val_idx));
-
-            // 2. PreIncrement/PreDecrement on tmp_val:
-            //    - modifies tmp_val in place
-            //    - pushes new value on stack
-            if increment {
-                self.code.emit(OpCode::PreIncrement(tmp_val_idx, None));
-            } else {
-                self.code.emit(OpCode::PreDecrement(tmp_val_idx, None));
-            }
-            // Stack now has new value; tmp_val also has new value
-            // Save new value, we'll push it back at the end
-            let tmp_new = format!("__mutsu_nested_preincdec_new_{}", self.code.constants.len());
-            let tmp_new_idx = self.code.add_constant(Value::str(tmp_new));
-            self.code.emit(OpCode::SetGlobal(tmp_new_idx));
-
-            // 3. Write back the new value via IndexAssign (preserve subscript kind
-            //    so `%h<a><b>` autovivifies a Hash, `@a[0][1]` an Array).
-            let assign_expr = Expr::IndexAssign {
-                target: target.clone(),
-                index: index.clone(),
-                value: Box::new(Expr::Var(tmp_val)),
-                is_positional: *is_positional,
-            };
-            self.compile_expr(&assign_expr);
-            self.code.emit(OpCode::Pop);
-
-            // 4. Push the new value as the result
-            self.code.emit(OpCode::GetGlobal(tmp_new_idx));
         }
     }
 }
