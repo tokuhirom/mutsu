@@ -6733,6 +6733,17 @@ pub(crate) struct CompiledCode {
     /// that capture can decline it (`roast/S02-names-vars/variables-and-packages.t`,
     /// three sibling blocks each declaring `my $a` plus a sub over it).
     pub(crate) multi_scope_slots: std::collections::HashSet<u32>,
+    /// Per statement-position `OpCode::BlockScope` (keyed by the op's index):
+    /// the slots of every name the block shadows that belong to a STILL-LIVE
+    /// enclosing binding other than the one the name denotes once the block
+    /// exits. Block exit restores a block-declared name's formerly visible
+    /// slot from the name-keyed `restored_env`; that one value is right only for
+    /// the immediately enclosing binding, so these further-out slots must be
+    /// left untouched (`my $x = 1; { my $x = 2; { my $x = 3 }; say $OUTER::x }`
+    /// must keep the outermost slot at `1`, #10856). Recorded only under shadow
+    /// slots, and only for blocks that shadow a name declared two or more
+    /// scopes out.
+    pub(crate) block_scope_protected_slots: rustc_hash::FxHashMap<u32, Box<[(Symbol, u32)]>>,
     /// Names `my`-declared (or `constant`-declared) in THIS code's body — the
     /// block's own fresh lexical bindings. The closure-exit caller-writeback
     /// scan must not propagate them to a same-named caller lexical: with the
@@ -7870,6 +7881,7 @@ impl CompiledCode {
             dup_named_locals: Vec::new(),
             has_dup_named_locals: false,
             multi_scope_slots: std::collections::HashSet::new(),
+            block_scope_protected_slots: rustc_hash::FxHashMap::default(),
             is_supply_block_body: false,
             eval_context_target_callable_id: None,
             supply_emitter_sym: None,
