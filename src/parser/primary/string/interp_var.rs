@@ -309,13 +309,20 @@ pub(crate) fn try_interpolate_var<'a>(
             }
             let key = &after_lt[..end];
             let var_expr = Expr::Var("/".to_string());
-            let index = Expr::Literal(literal_str(key.to_string()));
-            let expr = Expr::Index {
-                target: Box::new(var_expr),
-                index: Box::new(index),
-                is_positional: false,
-            };
             let var_rest = &after_lt[end + 1..];
+            let (expr, var_rest) = if key.is_empty() {
+                // `$<>` is the zen slice of `$/` (the Match itself), so a
+                // following subscript indexes the Match: `"$<>[0]"`.
+                parse_postcircumfix_index(var_rest, var_expr)
+            } else {
+                let index = Expr::Literal(literal_str(key.to_string()));
+                let expr = Expr::Index {
+                    target: Box::new(var_expr),
+                    index: Box::new(index),
+                    is_positional: false,
+                };
+                (expr, var_rest)
+            };
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
             return Some(var_rest);
