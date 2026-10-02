@@ -1744,14 +1744,12 @@ impl Interpreter {
             // name, but a user class declared `is Mu` has no `Any` in its MRO
             // and so is not an `Any`. Its MRO is authoritative.
             if constraint == "Any" && self.registry().classes.contains_key(cn) {
-                // The internal MRO may stop at a built-in parent without
-                // expanding it (`Exception`), so a built-in ancestor other
-                // than `Mu` stands for its own `Any`-rooted chain.
-                return self.class_mro(cn).iter().any(|p| {
-                    let p = p.as_str();
-                    p == "Any"
-                        || (p != "Mu" && Self::is_builtin_type(p) && Self::type_matches("Any", p))
-                });
+                let mro = self.class_mro(cn);
+                if mro.iter().any(|p| p.as_str() == "Mu")
+                    && !mro.iter().any(|p| p.as_str() == "Any")
+                {
+                    return false;
+                }
             }
             if Self::type_matches(constraint, cn)
                 || Self::type_matches(constraint, &crate::value::user_facing_type_name(cn))
