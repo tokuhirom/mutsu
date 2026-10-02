@@ -430,7 +430,7 @@ impl Interpreter {
             // Add .default: explicit `is default(...)` value, or type object
             // for typed variables, or (Any) for untyped. Prefer the value-carried
             // default (HashData/ArrayData) so it survives raw-parameter binding
-            // and list construction, where the name-keyed `var_defaults` lookup
+            // and list construction, where the by-name `var_default` lookup
             // (the variable's original name) no longer resolves.
             let default_val = if let Some(def) = Self::value_carried_default(&target) {
                 def

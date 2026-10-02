@@ -1203,7 +1203,7 @@ impl Interpreter {
         }
         // A redeclaration (`my @a` in a new scope) must not inherit the
         // `is default(...)` trait from an earlier same-named variable,
-        // since var_defaults is keyed only by name. Drop any stale entry;
+        // which is looked up by name in the scope. Drop any inherited entry;
         // if the current decl has its own `is default(...)` trait, the
         // trait op will re-set it immediately after.
         if is_vardecl {

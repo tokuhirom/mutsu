@@ -890,8 +890,8 @@ impl Interpreter {
             // copied into the child env, so the child must keep walking the chain.
             atomic_var_seen: self.atomic_var_seen,
             sigilless_alias_seen: self.sigilless_alias_seen,
-            var_defaults: self.var_defaults.clone(),
-            var_defaults_epoch: self.var_defaults_epoch,
+            attr_var_defaults: self.attr_var_defaults.clone(),
+            attr_var_defaults_epoch: self.attr_var_defaults_epoch,
             attr_var_defaults_current: Default::default(),
             // Per-thread snapshot (not a shared-handle clone), but an O(1) share
             // of the inner `Arc` (docs/per-task-clone-slimming.md slice 4): a

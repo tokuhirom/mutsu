@@ -250,7 +250,7 @@ impl Interpreter {
         visit_map_values(visitor, &self.closure_captured_state);
         self.once_values
             .visit_done_values(|v| visitor.visit_value(v));
-        visit_map_values(visitor, &self.var_defaults);
+        visit_map_values(visitor, &self.attr_var_defaults);
         for save in &self.let_saves {
             visitor.visit_value(&save.value);
             if let Some((container, key)) = &save.elem {

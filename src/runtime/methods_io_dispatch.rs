@@ -385,7 +385,7 @@ impl Interpreter {
     /// The value-carried `is default(...)` of a Hash/Array, if any. Embedded in
     /// `HashData`/`ArrayData` so it travels with the value through copy-on-write,
     /// raw-parameter binding, and list construction — unlike the name-keyed
-    /// `var_defaults` table, which only resolves for a value still held under its
+    /// `var_default` lookup, which only resolves for a value still held under its
     /// original variable name.
     pub(crate) fn value_carried_default(target: &Value) -> Option<Value> {
         match target.view() {

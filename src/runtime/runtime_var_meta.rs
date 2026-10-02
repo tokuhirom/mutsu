@@ -653,106 +653,6 @@ impl Interpreter {
         self.sigilless_alias_seen = true;
     }
 
-    /// Set the default value for a variable declared with `is default(...)`.
-    pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
-        self.var_defaults.insert(name.to_string(), value);
-        self.var_defaults_epoch += 1;
-    }
-
-    /// Whether method dispatch's attribute-default registration for
-    /// `(owner_class, receiver_class)` is still in effect: nothing has
-    /// changed `var_defaults` or the class tables since it last ran. The
-    /// registration re-derives the same values on every call otherwise —
-    /// two table probes per attribute plus the six-name check per defaulted
-    /// one, on each of the dozens of calls a Text::CSV field makes (#9494).
-    // Cost: O(1) expected.
-    pub(crate) fn attr_var_defaults_are_current(
-        &self,
-        owner_class: &str,
-        receiver_class: &str,
-    ) -> bool {
-        let key = (
-            crate::symbol::Symbol::intern(owner_class),
-            crate::symbol::Symbol::intern(receiver_class),
-        );
-        self.attr_var_defaults_current.get(&key)
-            == Some(&(self.var_defaults_epoch, self.registry().method_generation))
-    }
-
-    /// Record that `(owner_class, receiver_class)`'s attribute defaults were
-    /// just registered (see [`Self::attr_var_defaults_are_current`]).
-    // Cost: O(1) expected.
-    pub(crate) fn note_attr_var_defaults_current(
-        &mut self,
-        owner_class: &str,
-        receiver_class: &str,
-    ) {
-        let key = (
-            crate::symbol::Symbol::intern(owner_class),
-            crate::symbol::Symbol::intern(receiver_class),
-        );
-        let stamp = (self.var_defaults_epoch, self.registry().method_generation);
-        self.attr_var_defaults_current.insert(key, stamp);
-    }
-
-    /// Register `value` as the `is default(...)` of attribute `attr_name` under
-    /// every name a method body reads it by (`$!x`, `$.x`, and the `@`/`%`
-    /// forms, so `.VAR.default` works on container attributes too).
-    ///
-    /// Method dispatch re-registers the receiver class's attribute defaults on
-    /// every call, and the value is nearly always the one already registered,
-    /// so an unchanged entry is left alone: re-inserting it built and dropped
-    /// six key strings per defaulted attribute per call — Text::CSV's
-    /// `CSV::Field` (five `is default` attributes) paid ~30 of them on each of
-    /// the dozens of method calls a parsed CSV field makes (#9494).
-    // Cost: O(1) expected (six hash probes; an insert only on a changed value).
-    pub(crate) fn set_attr_var_defaults(&mut self, attr_name: &str, value: Value) {
-        let names = crate::qualified::attr_twigil_names(crate::symbol::Symbol::intern(attr_name));
-        for name in names {
-            let name = name.as_str();
-            if self
-                .var_defaults
-                .get(name)
-                .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, &value))
-            {
-                continue;
-            }
-            self.var_defaults.insert(name.to_string(), value.clone());
-            self.var_defaults_epoch += 1;
-        }
-    }
-
-    /// Whether any variable in this program carries an `is default(...)` trait.
-    /// When false, no store has a default to substitute for a `Nil` and no
-    /// declaration has a stale one to clear — the gate the plain-scalar store
-    /// fast path asks before committing.
-    #[inline(always)]
-    pub(crate) fn has_var_defaults(&self) -> bool {
-        !self.var_defaults.is_empty()
-    }
-
-    /// Get the default value for a variable, if one was set with `is default(...)`.
-    pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
-        if self.var_defaults.is_empty() {
-            return None;
-        }
-        self.var_defaults.get(name)
-    }
-
-    /// Remove a variable's cached `is default(...)` value. Called on
-    /// variable redeclaration so a new `my @a` does not inherit the
-    /// default from an earlier same-named variable.
-    pub(crate) fn clear_var_default(&mut self, name: &str) {
-        // Runs on every `my` declaration; `is default(...)` is rare, so the
-        // common program's map is empty and the (SipHash-keyed) probe is waste.
-        if self.var_defaults.is_empty() {
-            return;
-        }
-        if self.var_defaults.remove(name).is_some() {
-            self.var_defaults_epoch += 1;
-        }
-    }
-
     /// Get the evaluated `is default(...)` value for a class attribute.
     pub(crate) fn class_attribute_default(
         &self,
@@ -837,7 +737,7 @@ impl Interpreter {
     /// `class_attribute_defaults`) into the freshly-constructed instance's
     /// containers, so a missing-element read returns the declared default and
     /// the value survives copy-on-write. Scalar attributes are skipped (their
-    /// default is carried via `var_defaults` and the unassigned-scalar read).
+    /// default is carried via `attr_var_defaults` and the unassigned-scalar read).
     pub(crate) fn apply_container_attribute_defaults(
         &mut self,
         class_name: &str,

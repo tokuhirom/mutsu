@@ -887,7 +887,7 @@ impl Interpreter {
                 // e.g. `my @a is default(42); @a[0]++` should increment 42.
                 // Prefer the value-carried default (HashData/ArrayData) so it
                 // works when the container arrived via a parameter (whose name
-                // is not in the name-keyed `var_defaults` table).
+                // does not resolve through the by-name `var_default`).
                 let def = container
                     .as_ref()
                     .and_then(Self::value_carried_default)
