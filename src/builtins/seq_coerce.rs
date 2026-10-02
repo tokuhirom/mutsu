@@ -26,6 +26,13 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         | ValueView::RangeExclStart(..)
         | ValueView::RangeExclBoth(..)
         | ValueView::GenericRange { .. } => Some(Value::seq(value_to_list(target))),
+        // `Any.Seq` is `self.list.Seq`, and a hash's (or Set/Bag/Mix's) list is its
+        // Pairs: `%h.Seq` is `(:a(1),).Seq`, NOT a one-element Seq holding the
+        // hash (#10758). The receiver is decontainerized, so an itemized hash
+        // decomposes too.
+        ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
+            Value::seq(crate::runtime::utils::value_to_list_for_receiver(target)),
+        ),
         // Supply (carrier), LazyList (lazy bridge), and any Instance (Buf/Blob
         // byte read, or the generic 1-element wrap) are left to the interpreter.
         ValueView::LazyList(_) | ValueView::Instance { .. } => None,

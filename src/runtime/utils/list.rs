@@ -597,6 +597,46 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
     value_to_list(&bare)
 }
 
+/// The list-iteration methods `Hash`/`Map` and the QuantHashes (`Set`/`Bag`/
+/// `Mix` and their mutable forms) inherit from `Any`, which defines each as
+/// `self.list.METHOD`: on such a receiver the invocant IS its list of Pairs.
+/// (`Any.reverse`, `Any.unique`, `Any.squish`, `Any.eager`, `Any.Supply`,
+/// `Any.minmax` and `Any.produce` all go through `self.list`.)
+/// Methods that already have an arm of their own for these receivers (`keys`,
+/// `values`, `kv`, `pairs`, `sort`, `map`, `grep`, `first`, `tail`, ...) are
+/// deliberately not listed, and neither is `Seq`, whose single shared
+/// implementation (`builtins::seq_coerce::to_seq_structural`) has its own arm.
+const HASHLIKE_ANY_LIST_METHODS: &[&str] = &[
+    "reverse", "unique", "squish", "eager", "minmax", "produce", "Supply",
+];
+
+/// For a `Hash`/`Map`/`Set`/`Bag`/`Mix` invocant of one of
+/// [`HASHLIKE_ANY_LIST_METHODS`], the `List` of Pairs it stands for, so the
+/// caller re-dispatches the SAME method on that list (`%h.unique` is
+/// `%h.list.unique`; `bag(<a a b>).reverse` is `(:b(1), :a(2))`). `None` for
+/// every other receiver or method, so the common path pays one `view()` probe.
+///
+/// The receiver's own itemization is ignored (a method call decontainerizes
+/// its invocant), and an object hash / typed QuantHash yields its key OBJECTS,
+/// because the pairs come from [`value_to_list_for_receiver`].
+// Cost: O(1) for any other receiver or an unlisted method; O(e) for a hash-like
+// receiver, e = entries (the Pairs are materialized once).
+pub(crate) fn hashlike_receiver_as_pairs_list(target: &Value, method: &str) -> Option<Value> {
+    if !matches!(
+        target.view(),
+        ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+    ) || !HASHLIKE_ANY_LIST_METHODS.contains(&method)
+    {
+        return None;
+    }
+    Some(Value::array_with_kind(
+        crate::gc::Gc::new(crate::value::ArrayData::new(value_to_list_for_receiver(
+            target,
+        ))),
+        crate::value::ArrayKind::List,
+    ))
+}
+
 /// True when a subscript range dimension has no usable finite end: `1..*` /
 /// `1^..Inf` style (a Whatever end lowers to `Inf`, and an integer-range end of
 /// `i64::MAX` is the same thing forced through an int range). Expanding such a
