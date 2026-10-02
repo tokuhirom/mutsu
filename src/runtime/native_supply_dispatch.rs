@@ -507,6 +507,8 @@ impl Interpreter {
                     supplier_register_promise(supplier_id, promise.clone());
                 } else if let Some(reason) = attributes.get("quit_reason").cloned() {
                     promise.break_with(reason, String::new(), String::new());
+                } else if attributes.contains_key("derived_on_demand") {
+                    self.derived_supply_promise(attributes, &promise)?;
                 } else if attributes.contains_key("on_demand_callback") {
                     // For on-demand supplies (created by `supply { ... }` blocks),
                     // run the supply body through the react event loop to handle
@@ -757,6 +759,24 @@ impl Interpreter {
                 let has_channel = !has_supplier
                     && (attributes.get("supply_id").is_some()
                         || attributes.get("parent_supply_id").is_some());
+                // An on-demand source (`supply { ... }`) is tapped per tap of
+                // the derived supply, never run eagerly here: its `whenever`s
+                // may never finish.
+                if !has_supplier
+                    && !has_channel
+                    && attributes.contains_key("on_demand_callback")
+                    && let Some(count) = match args.first().map(Value::view) {
+                        None => Some(1),
+                        Some(ValueView::Int(n)) => Some(n.max(0) as usize),
+                        Some(ValueView::Whatever) => Some(usize::MAX),
+                        Some(ValueView::Num(f)) if f.is_infinite() => Some(usize::MAX),
+                        _ => None,
+                    }
+                {
+                    let attrs_map: ValueMap = attributes.into();
+                    let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+                    return Ok(Self::make_on_demand_head_supply(source, count));
+                }
                 let source_values = self.supply_get_values(attributes)?;
                 let count = if args.is_empty() {
                     1

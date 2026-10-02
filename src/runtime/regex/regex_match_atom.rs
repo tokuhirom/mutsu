@@ -664,7 +664,8 @@ impl Interpreter {
             // `die` inside the method) must propagate out of the parse rather than
             // being swallowed as a silent non-match.
             if raw_empty
-                && let Some(result) = self.try_regex_subrule_as_method(&spec, chars, pos, pkg)
+                && let Some(result) =
+                    self.try_regex_subrule_as_method(&spec, chars, pos, pkg, &arg_values)
             {
                 return result;
             }
@@ -1096,6 +1097,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         pkg: Symbol,
+        args: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         // The cursor the engine published for this one call, if any: taken at
         // once so a call nested inside the method never sees it.
@@ -1134,7 +1136,7 @@ impl Interpreter {
             None => self.new_grammar_cursor(chars, pos, pkg),
         };
         let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
-            interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new())
+            interp.call_method_with_values(invocant, &spec.lookup_name, args.to_vec())
         });
         match called {
             Err(e) => {
