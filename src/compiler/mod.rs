@@ -1119,6 +1119,7 @@ mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod hoist_nested_types;
 pub(crate) mod lex_scope;
+mod lexical_stash;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
 mod numeric_operand_names;
@@ -1188,6 +1189,17 @@ pub(crate) struct Compiler {
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
     local_scopes: Vec<HashMap<String, Option<u32>>>,
+    /// The `local_scopes` depths (frame index + 1) of the frames that hold a
+    /// `use`/`import`/`no` statement of their own, ascending. Each such block
+    /// runs inside a run-time `ImportScope`, which is where its imports are
+    /// recorded; a `MY::` naming the frame reads its routines from there
+    /// (see [`Self::emit_lexical_stash`]).
+    import_scope_levels: Vec<usize>,
+    /// The routines (`sub`/`multi`/`proto` declarations) each active scope
+    /// frame declares, as `(local_scopes depth, name)`. Routines are not
+    /// scope-frame entries (an `&name` entry there means a `my &name`
+    /// binding), so a `MY::` naming the frame lists them from here.
+    scope_routine_decls: Vec<(usize, Symbol)>,
     /// Declarations the NEXT [`Self::push_local_scope`] starts its frame with.
     /// A multi-parameter `for` loop declares its parameters before its body's
     /// scope frame is pushed; they belong to that frame (Raku puts a block's
@@ -1842,6 +1854,8 @@ impl Compiler {
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
+            import_scope_levels: Vec::new(),
+            scope_routine_decls: Vec::new(),
             pending_scope_frame: None,
             retired_loop_param_slots: HashMap::new(),
             enclosing_scopes: Vec::new(),
@@ -2466,75 +2480,6 @@ impl Compiler {
         self.code.add_lex_scope_chain(chain)
     }
 
-    /// Emit a pseudo-stash for exactly one lexical frame when `name` is a
-    /// literal `MY::`/`LEXICAL::` spelling, optionally preceded by one or more
-    /// `OUTER::` prefixes. The ordinary runtime pseudo-stash path is backed by
-    /// the flattened environment, which is intentionally broader than one
-    /// lexical frame and therefore makes `MY::` leak enclosing variables.
-    /// Whether `name` spells a lexical pseudo-stash (`MY::`/`LEXICAL::`,
-    /// optionally behind `OUTER::` prefixes) — the stashes
-    /// [`Self::emit_lexical_stash`] may compile to a fixed scope description.
-    pub(crate) fn is_lexical_stash_name(name: &str) -> bool {
-        let Some(mut remaining) = name.strip_suffix("::") else {
-            return false;
-        };
-        while let Some(rest) = remaining.strip_prefix("OUTER::") {
-            remaining = rest;
-        }
-        matches!(remaining, "MY" | "LEXICAL")
-    }
-
-    pub(crate) fn emit_lexical_stash(&mut self, name: &str) -> bool {
-        let Some(stash_name) = name.strip_suffix("::") else {
-            return false;
-        };
-        let mut remaining = stash_name;
-        let mut depth = 0usize;
-        while let Some(rest) = remaining.strip_prefix("OUTER::") {
-            depth += 1;
-            remaining = rest;
-        }
-        if !matches!(remaining, "MY" | "LEXICAL") {
-            return false;
-        }
-
-        let scopes = self.full_scope_chain();
-        let Some(target_index) = scopes.len().checked_sub(depth + 1) else {
-            return false;
-        };
-        let target = &scopes[target_index];
-        let entries = target
-            .keys()
-            .map(|var_name| {
-                let slot = match lex_scope::resolve_outer(&scopes, &self.local_map, var_name, depth)
-                {
-                    lex_scope::OuterResolution::Read { slot, .. } => slot,
-                    lex_scope::OuterResolution::NotDeclared => None,
-                };
-                let display_name =
-                    if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
-                        // A sigil-less constant is listed under its spelling (#9962).
-                        term.to_string()
-                    } else if var_name.starts_with(['$', '@', '%', '&'])
-                        || var_name.chars().next().is_some_and(|c| c.is_uppercase())
-                    {
-                        var_name.clone()
-                    } else {
-                        format!("${var_name}")
-                    };
-                Value::array(vec![
-                    Value::str(display_name),
-                    Value::str(var_name.clone()),
-                    Value::int(depth as i64),
-                    Value::int(slot.map_or(-1, |slot| slot as i64)),
-                ])
-            })
-            .collect();
-        let spec_idx = self.code.add_constant(Value::array(entries));
-        self.code.emit(OpCode::GetLexicalStash(spec_idx));
-        true
-    }
-
     /// Record the compiler-authoritative positional-parameter → local-slot map
     /// into `code.param_local_slots`, so the VM's `precompute_param_local_slots`
     /// need not re-resolve parameter names by searching `locals` (§1.5).
@@ -2841,6 +2786,10 @@ impl Compiler {
         let Some(frame) = self.local_scopes.pop() else {
             return;
         };
+        let depth = self.local_scopes.len();
+        self.import_scope_levels.retain(|&level| level <= depth);
+        self.scope_routine_decls
+            .retain(|&(level, _)| level <= depth);
         if !shadow_slots_active() {
             // DEFAULT build: behavior-preserving no-op (frame already dropped).
             return;

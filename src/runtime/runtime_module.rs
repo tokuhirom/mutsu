@@ -39,6 +39,12 @@ impl Interpreter {
         !self.module_load_stack.is_empty()
     }
 
+    /// The open import scopes, outermost first: one per running block that
+    /// holds a `use`/`import`/`no` of its own.
+    pub(crate) fn import_scopes(&self) -> &[crate::runtime::ImportScopeSnapshot] {
+        &self.import_scope_stack
+    }
+
     /// Save current function/class/proto keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
         self.push_import_scope_scoping_classes(true);
@@ -73,6 +79,7 @@ impl Interpreter {
                 imported_env_keys: HashSet::new(),
                 shadowed_env_values: HashMap::new(),
                 imported_routine_aliases: self.imported_routine_aliases.clone(),
+                own_routine_imports: HashSet::new(),
                 imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
@@ -121,8 +128,11 @@ impl Interpreter {
     /// declaration may replace this alias, while another declaration after
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
-        self.imported_routine_aliases
-            .insert(Symbol::intern(&format!("{package}::{name}")));
+        let alias = Symbol::intern(&format!("{package}::{name}"));
+        if let Some(top) = self.import_scope_stack.last_mut() {
+            top.own_routine_imports.insert(alias);
+        }
+        self.imported_routine_aliases.insert(alias);
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
@@ -303,6 +313,7 @@ impl Interpreter {
                 mut shadowed_env_values,
                 imported_env_aliases,
                 imported_routine_aliases,
+                own_routine_imports: _,
                 imported_exported_proto_tags,
                 newline_mode,
                 strict_mode,

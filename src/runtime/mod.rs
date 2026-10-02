@@ -5283,6 +5283,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// The routine aliases (`Pkg::name`) imported while this scope was the
+    /// innermost one, including re-imports of an alias an enclosing scope
+    /// already had: the block's own `MY::` lists exactly these (#10626).
+    pub(crate) own_routine_imports: HashSet<Symbol>,
     /// Export tags inherited by local multis extending imported exported protos.
     pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
     pub(crate) newline_mode: NewlineMode,

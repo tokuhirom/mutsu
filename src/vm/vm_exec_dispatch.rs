@@ -1100,10 +1100,12 @@ impl Interpreter {
                 self.exec_get_pseudo_stash_keyed_op(code, *name_idx)?;
                 *ip += 1;
             }
-            // Cost: O(s + v), s = compiler-selected lexicals, v = env overlay entries
-            // (scanned for package aliases). Rakudo's MY:: measured the same order.
-            OpCode::GetLexicalStash(spec_idx) => {
-                self.exec_get_lexical_stash_op(code, *spec_idx);
+            // Cost: O(s + v + r), s = compiler-selected lexicals, v = env overlay entries
+            // (scanned for package aliases), r = registered routines at a unit/routine
+            // root (a nested block reads only its own imports). Rakudo's MY:: measured
+            // the same order.
+            OpCode::GetLexicalStash { spec_idx, routines } => {
+                self.exec_get_lexical_stash_op(code, *spec_idx, *routines);
                 *ip += 1;
             }
             // Cost: O(1) (one registry probe).

@@ -868,6 +868,12 @@ impl Compiler {
             return;
         }
         self.note_construct_body_block(stmt);
+        if matches!(
+            stmt,
+            Stmt::Use { .. } | Stmt::Import { .. } | Stmt::No { .. }
+        ) {
+            self.note_import_in_scope();
+        }
         match stmt {
             Stmt::NestedTypeShells(shells) => {
                 for shell in shells {
@@ -3946,6 +3952,9 @@ impl Compiler {
                         self.add_sub_decl_plan(stmt)
                     };
                 self.code.emit(OpCode::RegisterDecl(idx));
+                if name_expr.is_none() {
+                    self.note_scope_routine(*name);
+                }
                 // Also compile the body to bytecode for VM-native dispatch. This
                 // runs even for a runtime-resolved name (`sub ::($n) {...}`): the
                 // compiled_fns key below is an internal lookup symbol keyed off
