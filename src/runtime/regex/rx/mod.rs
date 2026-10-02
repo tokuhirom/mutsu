@@ -385,6 +385,9 @@ pub(super) struct ZeroArmPlan {
 pub(super) struct LtmAltTable {
     pub(super) tok: u32,
     pub(super) pcs: Box<[u32]>,
+    /// The NFA of all the branches, measured once per ranking
+    /// (`ltm_rank_alternation`).
+    pub(super) nfa: super::regex_ltm_nfa::LtmNfaSlots,
 }
 
 /// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.
