@@ -3787,6 +3787,8 @@ pub struct Interpreter {
     /// the invocation's ends are produced and files the instance on each of them
     /// (#9803). Empty outside a walked rule body.
     pub(crate) walk_cursors: Vec<Option<Value>>,
+    /// The built invocant `.parse` hands its start rule (#10848).
+    pub(crate) start_invocant: regex::regex_grammar_cursor::StartRuleInvocant,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry

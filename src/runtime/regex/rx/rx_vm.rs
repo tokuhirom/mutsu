@@ -89,6 +89,9 @@ impl Interpreter {
         // The grammar instance the run's own pattern owns, as `Frame::cursor` is
         // the callee's (#9803). Filed on the result at the pattern's `Match`.
         let root_cursor: RefCell<Option<Value>> = RefCell::new(None);
+        // The built invocant of `.parse`'s start rule, when this run is the
+        // start rule's own (#10848): its root frame's code blocks run on it.
+        let root_invocant = self.take_rx_start_invocant();
         // The register window and package of the frame being run.
         let mut base = 0usize;
         let mut pkg = root_pkg;
@@ -768,6 +771,15 @@ impl Interpreter {
                     | RxOp::GoalFail { .. }
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
+                        if let RxOp::Code(_) = op {
+                            match if FRAMES { frame } else { None } {
+                                Some(_) => self.publish_rx_code_invocant(None),
+                                None if root_invocant.is_some() => {
+                                    self.publish_rx_code_invocant(root_invocant.clone())
+                                }
+                                None => {}
+                            }
+                        }
                         match self.rx_capture_op(
                             program,
                             op,
@@ -1098,6 +1110,7 @@ impl Interpreter {
             frames.clear();
         }
         self.rx_scopes_unwind(&mut scopes);
+        self.restore_rx_start_invocant(root_invocant);
         super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }
