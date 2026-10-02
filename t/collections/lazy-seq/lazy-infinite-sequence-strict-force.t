@@ -1,6 +1,6 @@
 use Test;
 
-plan 27;
+plan 28;
 
 # Every sequence-spec lazy list (an unbounded Range stepped by `.succ`, an
 # arithmetic/geometric `...` sequence, `.roll(*)`) is infinite. A strict
@@ -10,6 +10,9 @@ plan 27;
 # mutators keep the array lazy as Rakudo does.
 
 # Draining an infinite source through the Iterator protocol does not truncate.
+throws-like { my $i = (1..*).iterator; my @o; $i.push-all(@o) }, X::Cannot::Lazy,
+    'push-all on an unbounded Range iterator throws (the #10846 repro)';
+
 {
     my @s = 1..*;
     my @o;
