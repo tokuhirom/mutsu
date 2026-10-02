@@ -1880,7 +1880,21 @@ impl Interpreter {
                 names.push(name.to_string());
             }
         };
-        for s in stmts {
+        // Only declarations AFTER the `unit` statement belong to the unit's
+        // package. A `constant`/`enum` written before `unit class Foo;` sits in
+        // the compunit's mainline (GLOBAL), so rakudo leaves it visible to the
+        // importer (Dist::META's `constant %phases-eq` read by its test).
+        let after_unit = stmts
+            .iter()
+            .position(|s| {
+                matches!(
+                    s,
+                    crate::ast::Stmt::Package { is_unit: true, .. }
+                        | crate::ast::Stmt::ClassDecl { is_unit: true, .. }
+                )
+            })
+            .map_or(0, |i| i + 1);
+        for s in &stmts[after_unit..] {
             match s {
                 crate::ast::Stmt::VarDecl {
                     name,
