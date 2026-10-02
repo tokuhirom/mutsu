@@ -210,9 +210,52 @@ identical code costs 5x more once modules are loaded.
 
 ## 7. Implementation status
 
-Not started, tracked by
-[#7817](https://github.com/tokuhirom/mutsu/issues/7817). Nothing here has been
-implemented; the measurements in §1 are from
-`MUTSU_VM_STATS`, a `#[track_caller]` dump in `Env::cow_mut`, and `callgrind`,
-all reproducible from a plain `Promise(supply { whenever … })` loop with and
-without `use Cro::HTTP2::RequestParser`.
+Tracked by [#7817](https://github.com/tokuhirom/mutsu/issues/7817). The
+measurements in §1 are from `MUTSU_VM_STATS`, a `#[track_caller]` dump in
+`Env::cow_mut`, and `callgrind`, all reproducible from a plain
+`Promise(supply { whenever … })` loop with and without
+`use Cro::HTTP2::RequestParser`.
+
+### 7.1 Re-measured before the first slice (2026-10-02)
+
+The composition had moved since §1 (the enum-key namespace of #7914 and the
+`MetaNs` key funnel of #8087 had landed), but not the conclusion. A deep-copied
+frame env of the loaded program held **824** entries:
+
+| kind | count |
+| --- | --- |
+| qualified names — type/package objects | 244 |
+| qualified names — enum values (`E::K`, `Pkg::E::K`, `Pkg::K`) | 204 |
+| `__mutsu_callable_id::Pkg::name` markers | **197** |
+| `__mutsu_enum_bare_*` keys | 48 |
+| bare lowercase subs/terms | 42 |
+| `__mutsu_constant_var::` markers | 35 |
+| other `__mutsu_*` markers, sigilled names, constants | 54 |
+
+Per loop iteration (20 iterations minus 0, so module loading is excluded) the
+loaded program deep-copied **24,293** entries in 36 copies; the bare program
+248 entries in 35 copies.
+
+### 7.2 Slice 1 — group 1 for a module's top-level routines
+
+A routine a loaded module's mainline registers **directly** — at the routine
+and block-scope depths the mainline started at — records its registration
+clone id in a per-interpreter table (`Interpreter::toplevel_callable_ids`,
+`runtime/toplevel_callable_ids.rs`) instead of the importing frame's env. A
+module's mainline runs once per process, so that id is fixed for the program's
+life and has no lexical extent to track. Every other registration (a sub
+declared inside a routine, a block or a loop body, and everything the main
+program and `EVAL` declare) keeps its env marker, so the lexical behaviour §2
+calls out — a fresh id per clone, a block restoring the enclosing marker — is
+untouched. Readers go through `Interpreter::registration_callable_id`: env
+first, so a lexical registration shadows, then the table. A thread clone shares
+the table copy-on-write like the other program tables (#7796).
+
+Result on the same program: the 197 markers leave the frame env, and the
+per-iteration deep-copy volume falls from 24,293 to **18,955** entries (−22%).
+The non-local `return` test of §3 is unaffected: it reads the plain
+`__mutsu_callable_id` key a call frame sets from the id it resolves, which
+still lands in the callee's own frame.
+
+Groups 2 and 3, and group 1 for the main program's own top-level routines,
+remain.

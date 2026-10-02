@@ -1131,7 +1131,9 @@ impl Interpreter {
                 &stmts,
                 module_docs,
             ) {
-                Ok(()) => self.run_compunit(|interp| interp.run_block(&stmts)),
+                Ok(()) => self.run_compunit(|interp| {
+                    interp.run_module_mainline(|interp| interp.run_block(&stmts))
+                }),
                 Err(err) => Err(err),
             };
             self.import_target_package = saved_import_target;

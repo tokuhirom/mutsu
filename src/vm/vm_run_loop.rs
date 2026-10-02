@@ -690,10 +690,7 @@ impl Interpreter {
             return data.id;
         }
         let key = crate::runtime::Interpreter::callable_id_key_for_syms(data.package, data.name);
-        self.env()
-            .get_sym(key)
-            .and_then(|v| v.as_int())
-            .filter(|i| *i != 0)
+        self.registration_callable_id(key)
             .map_or(data.id, |i| i as u64)
     }
 

@@ -502,9 +502,7 @@ impl Interpreter {
             return false;
         };
         let key = Self::callable_id_key_for_syms(frame.package, frame.name);
-        self.env()
-            .get_sym(key)
-            .and_then(|value| value.as_int())
+        self.registration_callable_id(key)
             .is_some_and(|id| id == scope as i64)
     }
 

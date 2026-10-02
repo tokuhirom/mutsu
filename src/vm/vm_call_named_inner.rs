@@ -119,14 +119,7 @@ impl Interpreter {
             // used to run on every named call (#7573).
             let callable_key =
                 crate::runtime::Interpreter::callable_id_key_for_syms(fn_package_sym, fn_name_sym);
-            let resolved_callable_id = self
-                .env()
-                .get_sym(callable_key)
-                .and_then(|v| match v.view() {
-                    ValueView::Int(i) => Some(i),
-                    _ => None,
-                })
-                .unwrap_or(0);
+            let resolved_callable_id = self.registration_callable_id(callable_key).unwrap_or(0);
             callable_id = (resolved_callable_id != 0).then_some(resolved_callable_id as u64);
             // Only insert __mutsu_callable_id when non-zero; readers handle
             // the missing/None case correctly. This avoids triggering

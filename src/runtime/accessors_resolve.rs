@@ -375,11 +375,7 @@ impl Interpreter {
             return None;
         }
         let key = MetaNs::CallableId.key_pair_for_strs(package, name);
-        self.env
-            .get_sym(key)
-            .and_then(|v| v.as_int())
-            .filter(|i| *i != 0)
-            .map(|i| i as u64)
+        self.registration_callable_id(key).map(|i| i as u64)
     }
 
     /// Build a first-class Sub which dispatches back to a named routine.
