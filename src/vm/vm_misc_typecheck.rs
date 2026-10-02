@@ -13,6 +13,9 @@ impl Interpreter {
         smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
+        // Set again below only when this check fully matched the value, so the
+        // declaration store right after it can skip a second match.
+        self.decl_typechecked_context().set(false);
         // A `use variables :D/:U` smiley is already part of the constraint:
         // the compiler applies the (lexical) pragma to the declaration.
         let effective_constraint = std::borrow::Cow::Borrowed(Self::const_str(code, tc_idx));
@@ -342,7 +345,11 @@ impl Interpreter {
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {
-            if !value.is_nil() && !self.type_matches_value(constraint, &value) {
+            let matched = !value.is_nil() && self.type_matches_value(constraint, &value);
+            if matched {
+                self.decl_typechecked_context().set(true);
+            }
+            if !value.is_nil() && !matched {
                 // A subset `where { … or fail "msg" }` that failed by throwing
                 // surfaces its own exception (custom message) rather than the
                 // generic type-check error.
@@ -460,10 +467,11 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Comp::Group", group_attrs));
             }
         }
-        if !value.is_nil()
-            && !self.type_matches_value(constraint, &value)
-            && !self.is_container_subclass(constraint)
-        {
+        let matched = !value.is_nil() && self.type_matches_value(constraint, &value);
+        if matched {
+            self.decl_typechecked_context().set(true);
+        }
+        if !value.is_nil() && !matched && !self.is_container_subclass(constraint) {
             // A subset `where { … or fail "msg" }` that failed by throwing surfaces
             // its own exception (custom message), not the generic type-check error.
             if let Some(fail) = self.subset_where_fail.take() {

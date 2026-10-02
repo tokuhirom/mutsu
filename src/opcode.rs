@@ -1063,7 +1063,19 @@ pub(crate) enum OpCode {
     /// two context flags before running the identical `SetLocal` body, so the
     /// semantics are unchanged. Fusion happens in `emit()`, which can only see —
     /// and therefore only ever rewrite — a marker pair it just emitted itself.
-    SetLocalDecl { slot: u32, explicit_init: bool },
+    ///
+    /// `typechecked` is set when the declaration's own `TypeCheck` /
+    /// `TypeCheckBind` immediately precedes the markers. The store then trusts
+    /// the mark that check sets when it fully matched the value against the
+    /// declared type, and does not match it a second time (a `where` block or
+    /// subset predicate runs once per assignment, as in Rakudo). A check that
+    /// took a narrower path (a native type, a Proxy bind) sets no mark, so the
+    /// store still matches.
+    SetLocalDecl {
+        slot: u32,
+        explicit_init: bool,
+        typechecked: bool,
+    },
     /// `our $x = <expr>` for a plain untyped scalar (no `:=` bind, no type
     /// constraint, no container sigil, not a `constant`): installs ONE shared
     /// `ContainerRef` cell under the lexical local slot, the bare env name,
@@ -4792,6 +4804,7 @@ mod const_pool_dedup {
         code.ops.push(OpCode::SetLocalDecl {
             slot: 0,
             explicit_init: true,
+            typechecked: false,
         });
         code.compute_needs_env_sync();
 
@@ -11011,12 +11024,18 @@ impl CompiledCode {
         let explicit_init =
             n >= 2 && matches!(self.ops[n - 2], OpCode::MarkExplicitInitializerContext);
         let keep = if explicit_init { n - 2 } else { n - 1 };
+        let typechecked = keep > 0
+            && matches!(
+                self.ops[keep - 1],
+                OpCode::TypeCheck(..) | OpCode::TypeCheckBind(..)
+            );
         self.ops.truncate(keep);
         self.op_lines.truncate(keep);
         let idx = self.ops.len();
         self.ops.push(OpCode::SetLocalDecl {
             slot,
             explicit_init,
+            typechecked,
         });
         self.op_lines.push(self.emit_line);
         Some(idx)

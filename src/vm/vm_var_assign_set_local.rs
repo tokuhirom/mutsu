@@ -988,6 +988,8 @@ impl Interpreter {
         let is_constant = marks.constant();
         let has_explicit_initializer = marks.explicit_initializer();
         let is_vardecl = marks.vardecl();
+        // The declaration's `TypeCheck` already matched this value.
+        let decl_typechecked = is_vardecl && marks.decl_typechecked();
         let is_shaped_decl = self.shaped_decl_context;
         let scalar_bind = marks.scalar_bind();
         let param_raw_bind = marks.param_raw_bind();
@@ -2160,7 +2162,8 @@ impl Interpreter {
                     binding.then(|| val.deref_container())
                 };
                 let check_val = bind_derefed.as_ref().unwrap_or(&val);
-                if (!check_val.is_nil() || binding && val.is_proxy_value())
+                if !decl_typechecked
+                    && (!check_val.is_nil() || binding && val.is_proxy_value())
                     && !self.type_matches_value(constraint, check_val)
                 {
                     return Err(if binding {
