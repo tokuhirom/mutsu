@@ -170,7 +170,7 @@ mod tests {
                         .is_some()
                     {
                         assert!(
-                            guard.contains(c),
+                            guard.admits_at(&chars, 0),
                             "{pattern}: the matcher accepts {c:?} followed by {follow:?}, the guard rejects it"
                         );
                     }
