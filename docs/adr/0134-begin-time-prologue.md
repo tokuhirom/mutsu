@@ -600,3 +600,49 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   the prologue took (a nested or value-form one the move above leaves) are now
   lifted to the remainder's level as well, their slots declared at the head
   of the prologue.
+
+**INIT and CHECK that read a routine's own lexical — implemented** (#10562,
+`src/runtime/begin_prologue/nested/phasers.rs`,
+`t/routines/init-check-routine-lexicals.t`).
+
+- **The gap.** An `INIT` or `CHECK` that names a lexical of the routine it is
+  written in (`sub f { my $z; INIT $z = 5; $z }`) was lifted to the unit's
+  INIT/CHECK sequence without the lexical, so the write went nowhere and `f()`
+  was `(Any)`. The move above refuses such a phaser, and the per-level lift
+  reached it.
+- **The mechanism is slice 2's, with another sink.** The nested-BEGIN walk
+  (`Walker`) lifts an `INIT`/`CHECK`, statement or value form, from a routine,
+  closure, loop, conditional or block. The body gets its static cells, its
+  copy-in blocks and its copies of the scope's routines, imports and pragmas
+  exactly as a lifted BEGIN does, and the routine's declaration starts from the
+  cell on each frame entry. The lifted body is a top-level `INIT`/`CHECK`
+  ahead of the statement that contains it, so the unit's reordering puts it
+  among the unit's own phasers (source order for `INIT`, reverse for `CHECK`),
+  after the ones the move above took from the same statement. The cells and
+  value slots (`__init_value_N`) are declared in the prologue's head, or at the
+  head of the remainder when the unit has no prologue. A BEGIN and an INIT of
+  one scope share a cell.
+- **Only a phaser that reads an inner scope is lifted.** One that reads
+  nothing of an enclosing inner scope (no binding, routine or type of it) is
+  already run at the right time by the per-level lift or by the move above, so
+  it is left to them. A failed lift of an INIT or CHECK does not halt the BEGIN
+  lifting (`Lifted::halted`): the two sequences are independent. A phaser whose
+  body holds a phaser of its own is not lifted.
+- **Methods and roles.** The walk enters the routines of a class or package at
+  the unit's top level (or nested in one), and of a top-level role, for the
+  sake of their `INIT`/`CHECK` phasers only (a BEGIN there is still not
+  lifted). A method's phaser runs inside a `Stmt::PackageRuntimeBody` of each
+  enclosing package, as the move above does, so the package is composed in the
+  prologue and the body's `my` lexicals are reached through its static store.
+  A role has no store, so a phaser lifted from a role's routine runs in no
+  package and reads nothing the role declares or takes as a parameter. A
+  phaser that reads `self`, an attribute, an `EVAL` or symbolic name, or a
+  package variable the store does not hold (`our`, `state`, dynamic, a
+  constant) is not lifted.
+- **Static cells of an array or hash.** The deviation of slice 2 holds here:
+  an `@`/`%` lexical is copied from its cell on each frame entry, where rakudo
+  binds one object into every frame.
+- **Not lifted.** A phaser of a method of a class declared inside code
+  (`sub f { my class K { method m { my $z; INIT $z = 5; $z } } }`): the class
+  does not exist at the unit's level. A tail statement-form `INIT` the move
+  above took from a routine does not yield its value (`sub t { INIT 5 }`).

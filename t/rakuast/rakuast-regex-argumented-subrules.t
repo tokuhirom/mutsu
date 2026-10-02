@@ -53,7 +53,7 @@ RakuAST::StatementList.new(
   RakuAST::Statement::Expression.new(
     expression => RakuAST::QuotedRegex.new(
       body => RakuAST::Regex::Assertion::Named::Args.new(
-        name      => RakuAST::Name.from-identifier-parts("GArg", "word"),
+        name      => RakuAST::Name.from-identifier-parts("GArg","word"),
         args      => RakuAST::ArgList.new(
           RakuAST::QuotedString.new(
             segments   => (

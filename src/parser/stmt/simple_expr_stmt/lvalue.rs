@@ -1,12 +1,13 @@
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{AssignOp, Expr, LvaluePeel, LvalueRoot, Stmt};
 use crate::symbol::Symbol;
-use crate::value::{Value, ValueView};
+use crate::value::Value;
 
 /// Extract the writeback variable name from a declaration used in expression
 /// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
 /// Without this the assignment would target a detached value and the mutation
 /// would be lost. Handles both a bare `VarDecl` and the `SyntheticBlock`-wrapped
 /// declarations the parser produces for `:=` binds and readonly scalar binds.
+// Cost: O(s), s = statements of a SyntheticBlock.
 pub(crate) fn decl_target_var_name(stmt: &crate::ast::Stmt) -> Option<String> {
     match stmt {
         crate::ast::Stmt::VarDecl { name, .. } => Some(name.clone()),
@@ -16,6 +17,19 @@ pub(crate) fn decl_target_var_name(stmt: &crate::ast::Stmt) -> Option<String> {
         }),
         _ => None,
     }
+}
+
+/// The variable a method-call lvalue (`$s.substr-rw(0, 1) = "x"`,
+/// `x.AT-KEY(k) = v` for a sigil-less `x`) writes the updated invocant back
+/// through, or `None` when the invocant is not a variable. The parentheses
+/// are transparent and a declaration is its variable: `(my $x = $s).substr-rw(...)
+/// = $c` writes back through `$x`. A sigil-less invocant is keyed by its
+/// spelling (the parser cannot tell a `constant` from a `my \x`).
+// Cost: O(w + |name|), w = wrappers peeled.
+pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
+    target
+        .lvalue_root(LvaluePeel::GROUPED | LvaluePeel::DECL | LvaluePeel::SIGILLESS)
+        .map(LvalueRoot::into_spelled_key)
 }
 
 pub(super) fn method_lvalue_assign_expr(
@@ -65,28 +79,10 @@ pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
 
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Var(name) => Some(name.clone()),
-        Expr::ArrayVar(name) => Some(format!("@{}", name)),
-        Expr::HashVar(name) => Some(format!("%{}", name)),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.container_var_key(),
         // For indexed expressions like @a[1], encode as "@a\x00idx\x001"
         // so that binding can track the specific array/hash element.
-        Expr::Index { target, index, .. } => {
-            let target_name = match target.as_ref() {
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                Expr::Var(name) => Some(name.clone()),
-                _ => None,
-            }?;
-            let idx_str = match index.as_ref() {
-                Expr::Literal(lit) => match lit.view() {
-                    ValueView::Int(n) => n.to_string(),
-                    ValueView::Str(s) => s.to_string(),
-                    _ => return None,
-                },
-                _ => return None,
-            };
-            Some(format!("{}\x00idx\x00{}", target_name, idx_str))
-        }
+        Expr::Index { .. } => expr.element_source_key(),
         // Inline declaration on the RHS of a bind, e.g. `@a[1] := my $x` or
         // `$y := my $x`. The `my $x` parses to a `DoStmt(VarDecl { .. })` whose
         // `name` already carries the sigil convention used by bind metadata

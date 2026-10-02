@@ -4,7 +4,7 @@ use Test;
 # anonymous declarator term is a distinct value, while every alias of one
 # value is the same object (#10670).
 
-plan 16;
+plan 23;
 
 {
     my @r = (^2).map({ regex {a} });
@@ -48,4 +48,26 @@ plan 16;
     is %h{$r}, 1, 'a regex value is an object-hash key by identity';
     nok %h{/a/}:exists, 'another evaluation of the same literal is a different key';
     ok 'xa' ~~ $r, 'a regex value still matches';
+}
+
+{
+    my $r = rx:i/a/;
+    $r.set_name('q');
+    is $r.name, 'q', 'set_name renames an adverbed regex';
+    my $alias = $r;
+    is $alias.name, 'q', 'the name is seen through an alias';
+    my $s = /a/;
+    $s.set_name('p');
+    is $s.name, 'p', 'set_name on a plain literal';
+    my sub mk { /a/ }
+    mk().set_name('z');
+    is mk().name, '', 'renaming one evaluation does not leak into the next';
+    my @t = (^2).map({ rx:i/b/ });
+    @t[0].set_name('first');
+    is @t[1].name, '', 'renaming one adverbed evaluation does not leak into another';
+    (my $c = rx:s/a b/).set_name('c');
+    is $c.name, 'c', 'set_name on a sigspace regex';
+    my $tok = token { x };
+    $tok.set_name('tk');
+    is $tok.name, 'tk', 'set_name on an anonymous token';
 }

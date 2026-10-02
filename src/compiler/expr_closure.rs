@@ -1141,7 +1141,7 @@ impl Compiler {
             self.compile_expr_index_assign(&rewritten, index, value, outer_positional);
             return;
         }
-        if let Some(name) = Self::index_assign_target_name(target) {
+        if let Some(name) = self.index_assign_target_name(target) {
             let target_slot = self.local_map.get(&name).copied();
             if Self::index_assign_target_requires_eval(target) {
                 self.compile_expr(target);
@@ -1182,7 +1182,7 @@ impl Compiler {
                 target_slot,
                 concat_append: false,
             });
-        } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
+        } else if let Some((name, chain)) = self.index_assign_deep_nested_target(target) {
             // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
             // chain contains (index_expr, is_positional) from innermost to outermost
             // We also have the IndexAssign's own (index, outer_positional) as the final level.
@@ -1207,7 +1207,7 @@ impl Compiler {
                 positional_flags_idx,
             });
         } else if let Some((name, inner_index, inner_positional)) =
-            Self::index_assign_nested_target(target)
+            self.index_assign_nested_target(target)
         {
             // `outer_positional` (the outermost subscript flag) is passed in
             // from the IndexAssign AST node. `inner_positional` is the inner
@@ -1234,7 +1234,7 @@ impl Compiler {
             let writeback_name = if var_name.is_empty() {
                 method_args
                     .first()
-                    .and_then(Self::index_assign_target_name)
+                    .and_then(|t| self.index_assign_target_name(t))
                     .unwrap_or_default()
             } else {
                 var_name
@@ -1256,7 +1256,7 @@ impl Compiler {
                 args,
             };
             self.compile_expr(&rewritten);
-        } else if let Some(arr_name) = Self::map_rw_identity_target_name(target) {
+        } else if let Some(arr_name) = self.map_rw_identity_target_name(target) {
             // @arr.map(-> $v is rw {$v})[idx] = val  →  @arr[idx] = val
             // When map's closure has an `is rw` parameter and returns it unchanged,
             // the result is a list of containers bound to the original array elements.
@@ -1352,7 +1352,7 @@ impl Compiler {
         value: &Expr,
         is_positional: bool,
     ) {
-        if let Some(var_name) = Self::index_assign_target_name(target) {
+        if let Some(var_name) = self.index_assign_target_name(target) {
             self.compile_expr(value);
             for dim in dimensions {
                 self.compile_expr(dim);
@@ -1363,7 +1363,7 @@ impl Compiler {
                 ndims: dimensions.len() as u32,
                 is_positional,
             });
-        } else if let Some((name, chain)) = Self::index_chain_target(target) {
+        } else if let Some((name, chain)) = self.index_chain_target(target) {
             // `%o<inner>{1;2} = 5`: the target is a subscript chain rooted at a
             // named variable. `MultiDimIndexAssignGeneric` would pop the chain's
             // *value* and mutate that detached copy, so an autovivified level

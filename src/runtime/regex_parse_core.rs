@@ -605,6 +605,46 @@ impl Interpreter {
         crate::runtime::regex::regex_arg_purity::note_opaque_read();
     }
 
+    /// The `<alias=$var>` spelling of a scalar sigil alias (`$<alias>=<$var>`)
+    /// on a call of a Regex-valued variable, else `None`.
+    ///
+    /// Rakudo's `subrule_alias` renames a subrule call under a sigil alias, so
+    /// `$<a>=<$re>` is `<a=$re>`: `a` holds the called regex's own Match, with
+    /// its nested captures. The plain `<$var>` path wraps the parsed regex in a
+    /// capture-isolated group, which discards those captures, so the alias would
+    /// only see the matched span. A numbered alias (`$0=`) is positional, and a
+    /// non-Regex value (a Str pattern) keeps the textual path, which the
+    /// match-time lookup of `<a=$var>` does not serve.
+    // Cost: O(1) env lookup; the call spelling is not rescanned.
+    fn sigil_aliased_regex_call(&self, alias: &str, call: &str) -> Option<String> {
+        let call = call.trim();
+        let var_name = call.strip_prefix('$')?;
+        if !Self::is_interpolated_alias_target(call)
+            || !alias
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            || !alias
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+        {
+            return None;
+        }
+        // Reads the variable's VALUE at parse time, like the `<$var>` arm.
+        Self::note_regex_parse_ambient_read();
+        let value = self
+            .env
+            .get(var_name)
+            .cloned()
+            .or_else(|| self.env.get(&format!("${var_name}")).cloned())?
+            .into_deref();
+        matches!(
+            value.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        )
+        .then(|| format!("{alias}={call}"))
+    }
+
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
     /// compile each element as a regex pattern, collapsing to a character class
@@ -3305,6 +3345,23 @@ impl Interpreter {
                                                 name = rhs.to_string();
                                             }
                                         }
+                                    }
+                                    // A scalar sigil alias (`$<a>=<$re>`) on a call of a
+                                    // Regex-valued variable is `<a=$re>`: see
+                                    // `sigil_aliased_regex_call`.
+                                    // TODO: `@<a>=<$re>` (a forced List) stays on the
+                                    // isolated path: the compiled matcher only files an
+                                    // alias that sits on the token, not one on the
+                                    // subrule's own spec, so the list marking is lost.
+                                    if mode != RegexParseMode::Validate
+                                        && !pending_named_capture_is_angle_alias
+                                        && !pending_named_capture_is_array
+                                        && let Some(alias) = pending_named_capture.as_deref()
+                                        && let Some(call) =
+                                            self.sigil_aliased_regex_call(alias, &name)
+                                    {
+                                        name = call;
+                                        pending_named_capture = None;
                                     }
                                     // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
                                     // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>

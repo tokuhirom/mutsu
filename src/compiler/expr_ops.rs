@@ -302,7 +302,7 @@ impl Compiler {
                 } => {
                     // For slice hyper-assign like @a[0..2] >>~=>> "x",
                     // compile an IndexAssign to write the hyper result back.
-                    if let Some(name) = Self::index_assign_target_name(target) {
+                    if let Some(name) = self.index_assign_target_name(target) {
                         let target_slot = self.local_map.get(&name).copied();
                         self.compile_expr(index);
                         let name_idx = self.code.add_constant(Value::str(name));

@@ -156,21 +156,29 @@ impl Interpreter {
         let scope = (!scope.is_empty()).then(|| std::sync::Arc::new(scope));
         let topic_only = scope.is_none();
         match base.view() {
-            ValueView::Regex(p) => Value::regex_closure(
-                std::sync::Arc::clone(&p),
-                scope,
-                // An anonymous declarator term's signature rides on the value;
-                // attaching the defining scope must not drop it.
-                base.regex_signature(),
-                // A topic-only capture changes nothing about the pattern, so
-                // its source tree survives whole.
-                base.regex_source_tree_arc().filter(|tree| {
-                    topic_only
-                        || tree.contains_array_interpolation()
-                        || tree.contains_regex_value_interpolation()
-                }),
-                topic,
-            ),
+            ValueView::Regex(p) => {
+                let closure = Value::regex_closure(
+                    std::sync::Arc::clone(&p),
+                    scope,
+                    // An anonymous declarator term's signature rides on the value;
+                    // attaching the defining scope must not drop it.
+                    base.regex_signature(),
+                    // A topic-only capture changes nothing about the pattern, so
+                    // its source tree survives whole.
+                    base.regex_source_tree_arc().filter(|tree| {
+                        topic_only
+                            || tree.contains_array_interpolation()
+                            || tree.contains_regex_value_interpolation()
+                    }),
+                    topic,
+                );
+                // A `set_name` given to the literal's code object survives
+                // attaching the defining scope.
+                if let Some(name) = base.regex_name() {
+                    closure.set_regex_name(name);
+                }
+                closure
+            }
             ValueView::RegexWithAdverbs(a) => {
                 let mut adv = a.clone();
                 adv.captured = scope;

@@ -248,6 +248,11 @@ pub(crate) struct Registry {
     /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
     /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
     pub(crate) lexical_classes: HashSet<String>,
+    /// Classes with a method whose body declares a class or role (see
+    /// `runtime::method_type_decls`). Method dispatch anchors
+    /// `current_package` to the owner of such a method so the nested type is
+    /// named under it (`Q::X`).
+    pub(crate) classes_with_method_type_decls: HashSet<String>,
     /// Registry keys whose `::` segments come from a **compound declared name**
     /// (`class Foo::List { ... }` written at file scope) rather than from real
     /// lexical nesting (`unit module NL; class Searcher { ... }`).

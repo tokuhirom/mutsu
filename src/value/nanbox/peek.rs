@@ -333,6 +333,17 @@ impl NanBox {
         Some(unsafe { peek_arc::<crate::value::RegexClosure>(bits) })
     }
 
+    /// The payload of a `RegexWithAdverbs` value.
+    #[inline]
+    pub(in crate::value) fn regex_adverbs_payload(&self) -> Option<&RegexAdverbs> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexWithAdverbs)) {
+            return None;
+        }
+        // SAFETY: kind-checked above; the word is live for this borrow.
+        Some(unsafe { peek_arc::<RegexAdverbs>(bits) })
+    }
+
     /// The never-reused id of a regex value's payload (`Regex.WHICH`); `None`
     /// for a plain synthesized `Regex`, which has no id field, and for every
     /// non-regex word.

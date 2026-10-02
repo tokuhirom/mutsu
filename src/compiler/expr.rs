@@ -720,7 +720,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
-            } if Self::is_mutating_method_on_index(target, name) => {
+            } if self.is_mutating_method_on_index(target, name) => {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
             // Compile-time fold: Nil.gist / Nil.raku / Nil.perl → "Nil"

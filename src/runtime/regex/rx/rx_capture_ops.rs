@@ -3,7 +3,9 @@
 //! `Levels::edit` so a backtrack undoes it.
 
 use super::super::regex_helpers::{count_capture_groups, merge_regex_captures};
-use super::super::regex_match_delta::{alternation_tail_delta, capture_group_delta};
+use super::super::regex_match_delta::{
+    alternation_tail_delta, capture_group_delta, group_merge_delta,
+};
 use super::super::regex_match_sep::{separated_capture_delta_syms, separator_stride};
 use super::rx_levels::Levels;
 use super::{RxOp, RxProgram};
@@ -52,6 +54,17 @@ impl Interpreter {
                     (0, atom_stride)
                 };
                 levels.open_inline(Some(folded), Some(fold));
+            }
+            // Cost: O(c), c = the captures the enclosing level sees (one fold,
+            // one flattened copy), as the walk pays per iteration.
+            RxOp::OpenPlainIter { tok, pos_base } => {
+                let stride = count_capture_groups(&program.toks[tok as usize].atom);
+                levels.open_plain_iter(regs[pos_base as usize], stride);
+            }
+            // Cost: O(c), c = the iteration's captures (one snapshot).
+            RxOp::ClosePlainIter => {
+                let inner = levels.close();
+                levels.edit(|s| s.merge_delta(group_merge_delta(inner)));
             }
             // Cost: O(1).
             RxOp::OpenIsolated => levels.open(pos, false),

@@ -58,4 +58,30 @@ impl Compiler {
             && !self.enclosing_sigilless.contains(name)
             && !self.enclosing_local_names.contains(name)
     }
+
+    /// The storage key of the sigil-less term `name` used as an lvalue root
+    /// (`x[0] = 1`): its term key when it names a sigil-less constant, its
+    /// spelling (a `my \x` / `\x` binding) otherwise.
+    // Cost: O(|name|).
+    pub(super) fn sigilless_storage_key(&self, name: &str) -> String {
+        if self.names_term_constant(name) {
+            crate::runtime::term_names::term_key(name)
+        } else {
+            name.to_string()
+        }
+    }
+
+    /// [`crate::ast::Expr::lvalue_root`] resolved to a storage key: a
+    /// sigil-less root goes through [`Compiler::sigilless_storage_key`].
+    // Cost: O(w + |name|), w = wrappers peeled.
+    pub(super) fn lvalue_root_key(
+        &self,
+        target: &crate::ast::Expr,
+        peel: crate::ast::LvaluePeel,
+    ) -> Option<String> {
+        Some(match target.lvalue_root(peel)? {
+            crate::ast::LvalueRoot::Key(key) => key,
+            crate::ast::LvalueRoot::Sigilless(name) => self.sigilless_storage_key(name),
+        })
+    }
 }

@@ -54,13 +54,12 @@
 use super::super::*;
 use super::regex_prefilter_analysis::{Analyzer, Ctx, Info, MAX_DEPTH, Seq, walk_pattern};
 use super::regex_prefilter_firstset::FirstSet;
-use super::regex_token_resolve::ParsedTokenCandidate;
 use crate::symbol::Symbol;
 
 /// A resolved subrule: its candidate bodies, plus the `(pkg, name)` node that
 /// identifies it for the analysis's recursion guard.
 pub(super) struct ResolvedSubrule {
-    pub(super) candidates: std::sync::Arc<Vec<ParsedTokenCandidate>>,
+    pub(super) candidates: std::sync::Arc<super::regex_token_candidates::TokenCandidates>,
     pub(super) node: (Symbol, Symbol),
 }
 

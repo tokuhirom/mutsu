@@ -896,10 +896,7 @@ impl Interpreter {
         // `body_main` regardless of its original textual position (see
         // `run()`'s PRE/POST re-splicing), so it must not shadow the actual
         // last value-producing statement that precedes it.
-        stmts
-            .iter()
-            .rev()
-            .find(|s| !matches!(s, Stmt::SetLine(_) | Stmt::Phaser { .. }))
+        crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::MarkersAndPhasers)
             .is_some_and(Self::stmt_tail_is_fresh_rvalue)
     }
 

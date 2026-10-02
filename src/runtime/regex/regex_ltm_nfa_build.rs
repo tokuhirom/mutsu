@@ -22,7 +22,7 @@
 use super::super::*;
 use super::regex_helpers::{bounded_declarative_max, named_lookup_is_ws};
 use super::regex_ltm_litend::{open_after_token, open_at_pattern_start, token_keeps_open};
-use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode, SubKind};
+use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode, NfaRoot, SubKind};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use super::regex_token_resolve::ParsedTokenCandidate;
 use rustc_hash::FxHashMap as HashMap;
@@ -94,6 +94,34 @@ impl<'a> NfaBuilder<'a> {
         LtmNfa {
             nodes: self.nodes,
             start,
+            roots: Vec::new(),
+        }
+    }
+
+    /// One NFA for all of a proto's `candidates`, the way Rakudo builds one for
+    /// the proto (#9643): each candidate is compiled as `build` compiles a
+    /// pattern measured on its own, so the proto's measurement of a candidate
+    /// is that candidate's own. The rules the candidates call are compiled
+    /// once for all of them, which is what keeps this NFA the size of the
+    /// grammar and not the number of candidates times it.
+    // Cost: O(s), s = nodes of the result, plus one candidate resolution per
+    // distinct rule it can call.
+    pub(super) fn build_proto(mut self, candidates: &[ParsedTokenCandidate]) -> LtmNfa {
+        let mut roots = Vec::with_capacity(candidates.len());
+        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
+            let accept = self.push(NfaNode::AcceptAt(idx as u32));
+            // A candidate ends in a `Return` of its own, which pops its root
+            // frame and lands on `accept`: threads of different candidates
+            // then never meet at one node (a node reached with several stacks
+            // in one position is the slow case of `Seen`).
+            let ret = self.push(NfaNode::Return);
+            let entry = self.build_pattern(parsed, *sub_pkg, false, true, ret);
+            roots.push(NfaRoot { entry, accept });
+        }
+        LtmNfa {
+            nodes: self.nodes,
+            start: 0,
+            roots,
         }
     }
 

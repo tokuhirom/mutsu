@@ -30,7 +30,7 @@ use std::sync::Arc;
 /// A frame's index in the arena.
 pub(super) type FrameId = u32;
 
-use super::super::regex_token_resolve::ParsedTokenCandidate;
+use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
 use crate::runtime::regex_types::RegexCaptures;
 use crate::symbol::Symbol;
@@ -64,7 +64,7 @@ pub(super) struct Frame {
     pub(super) ends_base: usize,
     /// A proto candidate's call: the candidates and which one this frame runs,
     /// whose `:sym<…>` the callee's Match carries.
-    pub(super) proto: Option<(Arc<Vec<ParsedTokenCandidate>>, usize)>,
+    pub(super) proto: Option<(Arc<TokenCandidates>, usize)>,
     /// How many frames deep this call is.
     pub(super) depth: u32,
     /// The grammar instance this invocation owns (Rakudo's cursor), created when
@@ -111,7 +111,7 @@ pub(super) struct ProtoChoice {
     pub(super) pc: u32,
     pub(super) pos: usize,
     pub(super) atom: u32,
-    pub(super) cands: Arc<Vec<ParsedTokenCandidate>>,
+    pub(super) cands: Arc<TokenCandidates>,
     pub(super) ranked: Rc<[usize]>,
     pub(super) next: usize,
     pub(super) mark: Mark,

@@ -45,6 +45,19 @@ impl ViewFold {
         }
     }
 
+    /// The placement of the captures a level takes after its first `n` own
+    /// ones: they continue its numbering, so they fold into the iteration
+    /// slots the first `n` left free and follow the rest.
+    // Cost: O(1).
+    fn shifted(&self, n: usize) -> Self {
+        let used = n.min(self.folded);
+        ViewFold {
+            start: self.start + used,
+            folded: self.folded - used,
+            base: self.base + n - used,
+        }
+    }
+
     /// The view slot the level's own capture `k` ends up in.
     // Cost: O(1).
     pub(crate) fn slot(&self, k: usize) -> usize {
@@ -117,7 +130,7 @@ impl OuterBackrefCaps {
         match self.parent.as_ref() {
             Some(parent) => {
                 parent.append_captures(out);
-                let fold = ViewFold::new(out.positional.len(), parent.merge_positional);
+                let fold = parent.child_fold();
                 for (k, slot) in self.positional.iter().enumerate() {
                     fold.place(&mut out.positional, k, slot);
                 }
@@ -130,14 +143,35 @@ impl OuterBackrefCaps {
     }
 
     /// How many positional slots `append_captures` leaves.
-    // Cost: O(d), d = the nesting depth.
+    // Cost: O(d²), d = the nesting depth.
     fn merged_len(&self) -> usize {
-        let Some(parent) = self.parent.as_ref() else {
-            return self.positional.len();
-        };
-        let base = parent.merged_len();
-        let fold = ViewFold::new(base, parent.merge_positional);
-        base + self.positional.len() - fold.folded.min(self.positional.len())
+        let fold = self.own_fold();
+        fold.base + self.positional.len() - fold.folded.min(self.positional.len())
+    }
+
+    /// The placement of this link's own captures in the view: the enclosing
+    /// link's [`Self::child_fold`]; the outermost link's are the view's first
+    /// slots.
+    // Cost: O(d²), d = the nesting depth.
+    fn own_fold(&self) -> ViewFold {
+        match self.parent.as_ref() {
+            Some(parent) => parent.child_fold(),
+            None => ViewFold::new(0, None),
+        }
+    }
+
+    /// The placement, in the view, of the captures a level nested in this
+    /// link takes. Under a quantifier's fold (`merge_positional`) they fold
+    /// into the iteration's slots. Otherwise they are this link's level's own
+    /// later captures, placed as its next ones would be, so a `[ … ]` inside a
+    /// quantifier's iteration folds into that iteration's slots too
+    /// (`[ (\d) [ (x) { … } ] ]+`: the `x` is the iteration's second slot).
+    // Cost: O(d²), d = the nesting depth.
+    pub(crate) fn child_fold(&self) -> ViewFold {
+        match self.merge_positional {
+            Some(merge) => ViewFold::new(self.merged_len(), Some(merge)),
+            None => self.own_fold().shifted(self.positional.len()),
+        }
     }
 }
 
@@ -148,16 +182,16 @@ impl RegexCaptures {
     /// is the level's own captures before it (so a capture taken before a
     /// `[ … ]` that holds the quantifier keeps its own slot) plus the
     /// iteration's offset in the quantifier's slots.
-    // Cost: O(d), d = the nesting depth of inline levels.
+    // Cost: O(d²), d = the nesting depth of inline levels.
     pub(crate) fn inline_view_slot(&self, k: usize) -> usize {
         self.inline_view_fold().slot(k)
     }
 
     /// The placement of this level's own captures in the view it reads.
-    // Cost: O(d), d = the nesting depth of inline levels.
+    // Cost: O(d²), d = the nesting depth of inline levels.
     pub(crate) fn inline_view_fold(&self) -> ViewFold {
         match self.outer_backref() {
-            Some(outer) => ViewFold::new(outer.merged_len(), outer.merge_positional),
+            Some(outer) => outer.child_fold(),
             None => ViewFold::new(0, None),
         }
     }
@@ -181,7 +215,7 @@ impl RegexCaptures {
         };
         outer.append_captures(&mut visible);
 
-        let fold = ViewFold::new(visible.positional.len(), outer.merge_positional);
+        let fold = outer.child_fold();
         for (k, slot) in self.positional.iter().enumerate() {
             fold.place(&mut visible.positional, k, slot);
         }
@@ -194,8 +228,10 @@ impl RegexCaptures {
     /// The slot a backreference `$idx` names. An inline `[ … ]` / `||` level
     /// continues the enclosing level's numbering (`/ (a) [ (b) $0 ] /`: `$0`
     /// is the `a`, as in raku), so its own slots come after the enclosing
-    /// ones; under a separated quantifier's fold, the innermost slot wins.
-    // Cost: O(d²), d = the nesting depth of inline levels.
+    /// ones; under a quantifier's fold, the level's own capture in the slot
+    /// (`inline_view_fold`) wins, then the innermost one.
+    // Cost: O(d² + k), d = the nesting depth of inline levels, k = the level's
+    // own captures.
     pub(crate) fn backref_positional(&self, idx: usize) -> Option<&PosSlot> {
         let Some(outer) = self.outer_backref() else {
             return self.positional.get(idx);
@@ -203,10 +239,14 @@ impl RegexCaptures {
         match outer.visible_len() {
             Some(n) if idx < n => outer.visible_positional(idx),
             Some(n) => self.positional.get(idx - n),
-            None => self
-                .positional
-                .get(idx)
-                .or_else(|| outer.lookup_positional(idx)),
+            None => {
+                let fold = self.inline_view_fold();
+                (0..self.positional.len())
+                    .rev()
+                    .find(|&k| fold.slot(k) == idx)
+                    .and_then(|k| self.positional.get(k))
+                    .or_else(|| outer.lookup_positional(idx))
+            }
         }
     }
 }

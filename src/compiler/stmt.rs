@@ -236,13 +236,11 @@ impl Compiler {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return false;
         }
-        let source = match expr {
-            Expr::ArrayVar(n) => format!("@{}", n),
-            Expr::HashVar(n) => format!("%{}", n),
-            // Chained share: `$r = $q` where `$q` may hold a container. The
-            // runtime no-ops when `$q` is a plain scalar, so this stays a copy.
-            Expr::Var(n) => n.clone(),
-            _ => return false,
+        // A chained share (`$r = $q` where `$q` may hold a container) is
+        // included: the runtime no-ops when `$q` is a plain scalar, so this
+        // stays a copy.
+        let Some(source) = expr.container_var_key() else {
+            return false;
         };
         self.with_escape(true, |c| c.compile_expr(expr));
         let name_idx = self.code.add_constant(Value::str(source));
@@ -383,12 +381,12 @@ impl Compiler {
     /// assignable lvalue (e.g. `%h<k>`, `@a[i]`, `%h<a><b>`)? Function-call and
     /// other non-lvalue roots are excluded so we never synthesize a writeback
     /// assignment into a temporary (which would error where Raku is silent).
+    // Cost: O(d), d = subscript depth.
     fn for_element_container_is_lvalue(expr: &Expr) -> bool {
-        match expr {
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_) => true,
-            Expr::Index { target, .. } => Self::for_element_container_is_lvalue(target),
-            _ => false,
-        }
+        matches!(
+            expr.index_root(),
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BareWord(_)
+        )
     }
 
     /// Rewrite `for <ELEM>.values { ... }`, where `<ELEM>` is a var-rooted
@@ -795,14 +793,12 @@ impl Compiler {
     /// bare form do not — verified against raku 2026-08-09).
     fn stmt_value_is_assignment(expr: &Expr) -> bool {
         fn tail_is_assignment(stmts: &[Stmt]) -> bool {
-            stmts
-                .iter()
-                .rev()
-                .find(|s| !matches!(s, Stmt::SetLine(_)))
-                .is_some_and(|s| match s {
+            crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers).is_some_and(|s| {
+                match s {
                     Stmt::Expr(e) => Compiler::stmt_value_is_assignment(e),
                     _ => false,
-                })
+                }
+            })
         }
         match expr {
             Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
@@ -3068,12 +3064,9 @@ impl Compiler {
                     let source_name = if is_copy_topic {
                         None
                     } else {
-                        match topic {
-                            Expr::Var(name) => Some(name.clone()),
-                            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                            Expr::HashVar(name) => Some(format!("%{}", name)),
-                            _ => topic_decl_scalar.clone(),
-                        }
+                        topic
+                            .container_var_key()
+                            .or_else(|| topic_decl_scalar.clone())
                     };
                     if let Some(source_name) = source_name {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();

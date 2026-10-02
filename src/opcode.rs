@@ -4983,10 +4983,13 @@ pub(crate) struct CompiledSubDeclPlan {
 /// `$p`, `@a` for `@a`); `var_slot` is the declaring frame's own slot for it,
 /// or `None` when it belongs to an enclosing frame and reaches this one as a
 /// captured binding; `alias` / `alias_slot` name the hidden local.
+/// `env_param` marks a slotless variable the declaring frame itself binds by
+/// name in its env: a single `for ... -> $i` loop parameter (mutsu#10512).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct LexSubFreeAlias {
     pub(crate) var: Symbol,
     pub(crate) var_slot: Option<u32>,
+    pub(crate) env_param: bool,
     pub(crate) alias: Symbol,
     pub(crate) alias_slot: u32,
 }

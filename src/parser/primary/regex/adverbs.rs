@@ -506,5 +506,6 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
         topic: None,
         source_tree: None,
         id: Default::default(),
+        name: Default::default(),
     })
 }

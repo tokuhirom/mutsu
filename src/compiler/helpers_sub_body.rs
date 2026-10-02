@@ -431,7 +431,7 @@ impl Compiler {
             // would not be detected as the block result. Use the ENTER-result stack
             // (PushEnterResult / LoadEnterResult) to bridge the two sections.
             let last_is_enter = matches!(
-                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers),
                 Some(Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     ..
@@ -1379,17 +1379,17 @@ impl Compiler {
             // closure's implicit return value (Raku semantics). Capture it in the
             // ENTER section and re-materialize it on the value stack at the end of
             // the body (the closure returns its value via the stack, not the topic).
+            let tail = crate::ast::last_value_stmt(body, crate::ast::TailSkip::Markers);
             let last_is_enter = matches!(
-                body.iter().rev().find(|s| !matches!(s, Stmt::SetLine(_))),
+                tail,
                 Some(Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     ..
                 })
             );
-            let enter_last_idx = body
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)))
-                .unwrap_or(usize::MAX);
+            let enter_last_idx =
+                crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
+                    .unwrap_or(usize::MAX);
             // ENTER phasers
             for (i, stmt) in body.iter().enumerate() {
                 if let Stmt::Phaser {
@@ -1445,11 +1445,14 @@ impl Compiler {
                     )
                 })
                 .collect();
-            // The value-producing statement is the last non-`SetLine` statement;
-            // trailing markers must not become the closure's value.
-            let last_value_idx = body_stmts
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
+            // The value-producing statement is the last non-marker statement;
+            // trailing markers must not become the closure's value. A trailing
+            // LEAVE/KEEP/UNDO/PRE/POST makes the value Nil, as in rakudo.
+            let last_value_idx = if tail.is_some_and(crate::ast::is_nil_valued_tail_phaser) {
+                None
+            } else {
+                crate::ast::last_value_stmt_index(&body_stmts, crate::ast::TailSkip::Markers)
+            };
             for (i, stmt) in body_stmts.iter().enumerate() {
                 let is_value = !last_is_enter && Some(i) == last_value_idx;
                 if is_value && let Stmt::Expr(expr) = stmt {

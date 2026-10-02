@@ -216,6 +216,7 @@ mod tests {
             topic: None,
             source_tree: None,
             id: Default::default(),
+            name: Default::default(),
         });
         let plain = Value::regex("a".to_string());
         for v in [adverbs, plain] {

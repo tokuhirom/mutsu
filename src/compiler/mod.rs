@@ -3134,13 +3134,9 @@ impl Compiler {
 
     fn positional_arg_source_name(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
-            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
+            Expr::DoStmt(stmt) => stmt.declared_var_key(),
             // For FatArrow (named args like `:into(%h)`), encode "key=varname"
             // so the VM can write back to the variable after a builtin call.
             Expr::Binary {
@@ -3160,36 +3156,16 @@ impl Compiler {
                     None
                 }
             }
-            _ => None,
+            other => other.var_key(),
         }
     }
 
     /// Extract variable name from an expression, including through DoStmt/SyntheticBlock.
+    // Cost: O(s + |name|), s = statements of a declaration's SyntheticBlock.
     fn extract_inner_varname(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::CodeVar(name) => Some(format!("&{}", name)),
-            Expr::DoStmt(stmt) => Self::extract_varname_from_stmt(stmt),
-            _ => None,
-        }
-    }
-
-    /// Extract variable name from a statement, handling VarDecl and SyntheticBlock.
-    fn extract_varname_from_stmt(stmt: &Stmt) -> Option<String> {
-        match stmt {
-            Stmt::VarDecl { .. } => crate::runtime::term_names::stmt_decl_storage_name(stmt),
-            Stmt::Assign { name, .. } => Some(name.clone()),
-            Stmt::SyntheticBlock(stmts) => {
-                for s in stmts {
-                    if let Some(name) = Self::extract_varname_from_stmt(s) {
-                        return Some(name);
-                    }
-                }
-                None
-            }
-            _ => None,
+            Expr::DoStmt(stmt) => stmt.declared_var_key(),
+            other => other.var_key(),
         }
     }
 
@@ -3999,15 +3975,8 @@ impl Compiler {
 
     fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
         match iterable {
-            Expr::Var(name) => Some(name.clone()),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
-                Expr::Var(name) => Some(name.clone()),
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                _ => None,
-            },
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => iterable.container_var_key(),
+            Expr::ArrayLiteral(items) if items.len() == 1 => items[0].container_var_key(),
             // Handle @a.values, @a.kv, @a.pairs, $pair.value → source is @a / $pair
             Expr::MethodCall {
                 target, name, args, ..
@@ -4572,10 +4541,7 @@ impl Compiler {
         // entry-time value becomes the block's result value (Raku semantics).
         // Capture that value in the ENTER section via PushEnterResult and load it
         // back as the block result at the end of the body via LoadEnterResult.
-        // Ignore trailing `SetLine` markers when locating the last statement.
-        let last_idx = stmts
-            .iter()
-            .rposition(|s| !matches!(s, Stmt::SetLine(_)))
+        let last_idx = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers)
             .unwrap_or(usize::MAX);
         let last_is_enter = matches!(
             stmts.get(last_idx),
@@ -4669,9 +4635,16 @@ impl Compiler {
             // trailing `SetLine` markers (emitted between statements once real line
             // numbers differ) must not become the block's value, or a phaser-only
             // block would yield a spurious `True` and run KEEP instead of UNDO.
-            let last_value_idx = body_stmts
-                .iter()
-                .rposition(|s| !matches!(s, Stmt::SetLine(_)));
+            // A trailing LEAVE/KEEP/UNDO/PRE/POST is the block's last statement
+            // and makes its value Nil (`do { 42; LEAVE { } }` is Nil in rakudo).
+            let last_value_idx = if stmts
+                .get(last_idx)
+                .is_some_and(crate::ast::is_nil_valued_tail_phaser)
+            {
+                None
+            } else {
+                crate::ast::last_value_stmt_index(&body_stmts, crate::ast::TailSkip::Markers)
+            };
             for (i, s) in body_stmts.iter().enumerate() {
                 if Some(i) == last_value_idx {
                     match mode {
