@@ -280,9 +280,9 @@ impl Interpreter {
     /// [`Interpreter::absolutify_unit_name`] must leave them alone: rakudo
     /// reports a bare `-e` for `$?FILE` under `raku -e`, not `$*CWD/-e`.
     ///
-    /// An `EVAL` unit name (`EVAL_0`) is deliberately NOT in this set -- it is
-    /// absolutified, and `t/modules/compunit/eval-compunit-introspection.t`
-    /// pins that.
+    /// A synthesized `EVAL` unit name (`EVAL_0`) is not in this set, but the
+    /// EVAL path never absolutifies it either (rakudo's `$?FILE` is bare
+    /// `EVAL_0`); an explicit relative `:filename` is still absolutified.
     pub(crate) fn is_pseudo_unit_name(name: &str) -> bool {
         name == "-e" || name == "-" || (name.starts_with('<') && name.ends_with('>'))
     }
@@ -430,9 +430,9 @@ impl Interpreter {
         // is what `Code.file` reports, while `$?FILE` reports it absolutified
         // against `$*CWD` -- the same as-invoked / absolute split the mainline
         // compilation unit already has.
-        let unit_name = Self::named_value(args, "filename")
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(Self::next_eval_unit_name);
+        let explicit_name = Self::named_value(args, "filename").map(|v| v.to_string_value());
+        let synthesized = explicit_name.is_none();
+        let unit_name = explicit_name.unwrap_or_else(Self::next_eval_unit_name);
         let saved_env_file = self.env.get("?FILE").cloned();
         // Record which unit this EVAL was compiled inside. `EVAL` compiles in
         // the caller's lexical scope, so an operator declared in the enclosing
@@ -454,8 +454,14 @@ impl Interpreter {
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
-        let saved_source_file =
-            crate::parser::set_parser_source_file(Some(self.absolutify_unit_name(&unit_name)));
+        // rakudo: a synthesized `EVAL_<N>` is its own `$?FILE`; only an explicit
+        // relative `:filename` is joined onto `$*CWD`.
+        let file_spelling = if synthesized {
+            unit_name.clone()
+        } else {
+            self.absolutify_unit_name(&unit_name)
+        };
+        let saved_source_file = crate::parser::set_parser_source_file(Some(file_spelling));
         let mut result = if check_only {
             self.eval_eval_string_check_only(&code)
         } else {
