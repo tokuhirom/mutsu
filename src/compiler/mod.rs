@@ -1134,6 +1134,7 @@ mod regex_qq_thunks;
 pub(crate) mod routine_scans;
 mod static_call_args;
 mod stmt;
+mod subset_decl;
 mod subst_thunk;
 mod term_constants;
 mod trir_call;

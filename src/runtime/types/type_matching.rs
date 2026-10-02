@@ -490,7 +490,7 @@ impl Interpreter {
                 } => Some((base.clone(), predicate.clone(), version.clone())),
                 _ => None,
             })?;
-        self.register_subset_decl(&name, &base, predicate.as_ref(), &version, true, 0);
+        self.register_subset_decl(&name, &base, predicate.as_ref(), None, &version, true, 0);
         self.inline_subset_constraints
             .insert(constraint.to_string(), name.clone());
         Some(name)
@@ -500,7 +500,7 @@ impl Interpreter {
     /// throwing (a `fail "msg"` inside the `where`). Only genuine failures /
     /// user exceptions are kept — a control-flow signal (`return`/`last`/…) is
     /// not a type-check message. See `subset_where_fail`.
-    fn record_subset_where_fail(&mut self, e: RuntimeError) {
+    pub(super) fn record_subset_where_fail(&mut self, e: RuntimeError) {
         if e.is_fail() || e.exception.is_some() {
             self.subset_where_fail = Some(Box::new(e));
         }
@@ -1285,7 +1285,10 @@ impl Interpreter {
             // matching a multi candidate's signature during dispatch, before
             // any method body has been entered (#8003).
             let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
-            let ok = if let Some(pred) = &subset.predicate {
+            let ok = if let Some(closure) = &subset.predicate_closure {
+                // Built at the declaration site over its lexicals (#10868).
+                self.call_subset_predicate(closure.clone(), predicate_value)
+            } else if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
                 // variable bound — no closure, no `call_sub_value` round-trip.
@@ -1358,32 +1361,7 @@ impl Interpreter {
                         // Evaluate to get a callable, then call with the value
                         match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                             Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
-                                let compiled = matches!(callable.view(),
-                                    ValueView::Sub(ref data) if data.compiled_code.is_some());
-                                let called = if compiled {
-                                    self.vm_call_on_value(callable, vec![predicate_value], None)
-                                } else {
-                                    self.call_sub_value(callable, vec![predicate_value], false)
-                                };
-                                match called {
-                                    // A `fail "msg"` inside the predicate body
-                                    // returns an unhandled Failure (not an Err) from
-                                    // the sub call; capture its message too.
-                                    Ok(v) => {
-                                        if let Some(e) =
-                                            self.failure_to_runtime_error_if_unhandled(&v)
-                                        {
-                                            self.record_subset_where_fail(e);
-                                            false
-                                        } else {
-                                            v.truthy()
-                                        }
-                                    }
-                                    Err(e) => {
-                                        self.record_subset_where_fail(e);
-                                        false
-                                    }
-                                }
+                                self.call_subset_predicate(callable, predicate_value)
                             }
                             Ok(v) => v.truthy(),
                             Err(e) => {

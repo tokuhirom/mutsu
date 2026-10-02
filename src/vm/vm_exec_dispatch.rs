@@ -6575,9 +6575,14 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) (one registry insert).
-            OpCode::RegisterSubset(idx) => {
+            OpCode::RegisterSubset { idx, with_closure } => {
                 self.sync_source_line(code, *ip);
-                self.exec_register_subset_op(code, *idx)?;
+                let closure = if *with_closure {
+                    self.stack.pop()
+                } else {
+                    None
+                };
+                self.exec_register_subset_op(code, *idx, closure)?;
                 *ip += 1;
             }
             // Cost: O(L) env/locals reconcile, L = frame locals, plus the react body and its event loop.
