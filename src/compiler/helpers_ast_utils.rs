@@ -267,6 +267,13 @@ impl Compiler {
     /// over an outer `my \x`) is still resolved by name at run time.
     // Cost: O(w + |name|), w = wrappers peeled.
     pub(super) fn index_assign_target_name(&self, target: &Expr) -> Option<String> {
+        // `@OUTER::a[0] = v` names a binding of an enclosing scope, which no
+        // by-name store reaches past a shadow: assign into the container the
+        // lexical `OUTER::` read yields instead (it is reference-shared), like
+        // `$r[0] = v` on a `$r` holding an Array (#10857).
+        if matches!(target, Expr::ArrayVar(n) | Expr::HashVar(n) if n.starts_with("OUTER::")) {
+            return None;
+        }
         self.lvalue_root_key(
             target,
             LvaluePeel::ASSIGN
