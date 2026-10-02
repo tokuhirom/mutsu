@@ -223,9 +223,16 @@ impl Interpreter {
     }
 
     pub(super) fn routine_candidate_subs(&self, package: &str, name: &str) -> Vec<Value> {
-        let exact_local = format!("{package}::{name}");
+        // A package-qualified `&Pkg::name` reference is a handle whose `name`
+        // already spells the whole registry key (its package is only the
+        // current one), so prefixing the package again looks up
+        // `GLOBAL::Pkg::name` and finds no candidate of the proto it names.
+        let (exact_local, prefix_local) = if crate::qualified::is_qualified(Symbol::intern(name)) {
+            (name.to_string(), format!("{name}/"))
+        } else {
+            (format!("{package}::{name}"), format!("{package}::{name}/"))
+        };
         let exact_global = format!("GLOBAL::{name}");
-        let prefix_local = format!("{package}::{name}/");
         let prefix_global = format!("GLOBAL::{name}/");
         let mut candidates = Vec::new();
         let registry = self.registry();
