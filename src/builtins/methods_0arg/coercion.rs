@@ -1114,9 +1114,11 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         ValueView::Seq(items) => Ok(items_to_capture_value(&items)),
         ValueView::Slip(items) => Ok(items_to_capture_value(&items)),
         ValueView::LazyList(ll) => {
-            // A LazyList is considered lazy if it has a body or compiled code
-            // (i.e., it's a gather/take or similar lazy generator)
-            let is_lazy = !ll.body.is_empty() || ll.compiled_code.is_some();
+            // A LazyList is lazy if it is a gather/take or similar generator
+            // (a body or compiled code) or a genuinely lazy sequence/pipe
+            // (an unbounded Range's `.list`, `1, 2 ... *`).
+            let is_lazy =
+                ll.is_genuinely_lazy() || !ll.body.is_empty() || ll.compiled_code.is_some();
             if is_lazy {
                 Err(RuntimeError::cannot_lazy_with_action(
                     "create a Capture from",
