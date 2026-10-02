@@ -1116,11 +1116,18 @@ impl Interpreter {
         // (`ParamDef::binds_caller_container`), the chain is carried by the
         // shared cell itself and needs no by-name reach, so the splice can be
         // narrowed to the one frame it belongs in.
-        for frame in self.call_frames.iter_mut().rev() {
-            if frame.saved_env.contains_key_own_tier(name) {
+        let spliced = self.call_frames.iter_mut().rev().any(|frame| {
+            let owns = frame.saved_env.contains_key_own_tier(name);
+            if owns {
                 frame.saved_env.insert(name.to_string(), container.clone());
-                return;
             }
+            owns
+        });
+        // The splice reaches the ancestor's env, not its slot. Have the call
+        // site that returns into it drain the cell into the slot too, so the
+        // slot holds the container its overlay now names (ADR-0097 §15).
+        if spliced {
+            self.record_caller_var_writeback(name);
         }
     }
 

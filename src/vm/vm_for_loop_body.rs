@@ -694,6 +694,7 @@ impl Interpreter {
             code,
             spec,
             container_binding.as_deref(),
+            container_source_slot,
             container_reversed,
             arity,
             param_name.as_deref(),

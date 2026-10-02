@@ -357,10 +357,12 @@ impl Interpreter {
             Err(mut e) if e.is_succeed() => {
                 // Take the container name before moving `return_value` out (a
                 // method borrow of `e` cannot coexist with a partial move).
-                // The signal carries only the name — no compile-time slot.
-                self.container_ref_var = e
-                    .take_container_name()
-                    .map(|n| (n, None, Self::resume_code_fp(code)));
+                // The slot was resolved in the frame that raised the signal;
+                // keep it only where it names the same variable here.
+                self.container_ref_var = e.take_container_ref().map(|(n, slot)| {
+                    let slot = slot.filter(|&s| code.locals.get(s as usize) == Some(&n));
+                    (n, slot, Self::resume_code_fp(code))
+                });
                 if let Some(v) = e.return_value {
                     last = v;
                 }
@@ -541,7 +543,7 @@ impl Interpreter {
                     self.stack.truncate(stack_base);
                     let mut sig = RuntimeError::succeed_signal();
                     sig.return_value = Some(last);
-                    sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
+                    sig.set_container_ref(self.take_container_ref_for(code));
                     return Err(sig);
                 }
             } else {
@@ -636,7 +638,7 @@ impl Interpreter {
         self.stack.truncate(stack_base);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
-        sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
+        sig.set_container_ref(self.take_container_ref_for(code));
         *ip = end;
         Err(sig)
     }

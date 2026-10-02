@@ -1446,6 +1446,10 @@ impl Interpreter {
         if let Some(callable) = self.export_hook_callable(&name, name_sym, code) {
             let result =
                 self.call_lexical_callable_with_sources(callable, args, &arg_sources, None)?;
+            // A raw/rw parameter binds the caller's container under its source
+            // name; drain that into the caller's slot, as the wrap-chain path
+            // below does, so the slot holds the cell its env names.
+            self.apply_pending_rw_writeback(code);
             self.stack.push(result);
             return Ok(());
         }

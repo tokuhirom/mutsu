@@ -686,8 +686,9 @@ impl TierB {
 
     /// `GetLocal` of a statically-eligible plain local (ADR-0004 J4d): when
     /// no dynamic spoiler exists (`vm_jit::LOCAL_READ_SPOILERS` is zero — no
-    /// `ContainerRef` cell anywhere in the process, no `$CALLER::x := ...`
-    /// alias, no atomic variable, no sigilless attribute alias) and the slot
+    /// `$CALLER::x := ...` alias, no atomic variable, no sigilless attribute
+    /// alias; a cell is ruled out per slot by the tag test below and the
+    /// ADR-0097 §15 env/slot invariant) and the slot
     /// word is a refcount-free scalar (small Int / Num / Bool / Package), the
     /// interpreter arm reduces to `stack.push(locals[idx].clone())`, which is
     /// emitted here as two loads and a store. Every other combination calls
@@ -708,9 +709,10 @@ impl TierB {
         let done = b.create_block();
 
         // -- one process-global spoiler latch (vm_jit::LOCAL_READ_SPOILERS):
-        // zero ⟺ `resolve_binding`, the env cell-adoption probe, the
-        // atomic-variable read and the sigilless-alias lookup are all no-ops
-        // everywhere, so the arm reduces to the slot read below.
+        // zero ⟺ `resolve_binding`, the atomic-variable read and the
+        // sigilless-alias lookup are all no-ops everywhere; with the slot word
+        // a plain scalar, the env/slot invariant (ADR-0097 §15) makes the env
+        // cell-adoption probe a no-op too, so the arm reduces to the slot read.
         let spoil_addr = std::ptr::addr_of!(super::vm_jit::LOCAL_READ_SPOILERS) as usize;
         let spoil_addr = b.ins().iconst(self.ptr_ty, spoil_addr as i64);
         let spoiled = b.ins().load(types::I32, Self::mf(), spoil_addr, 0);

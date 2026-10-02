@@ -617,6 +617,18 @@ impl Compiler {
     }
 
     /// Compile Expr::Var -- variable access with all special cases.
+    /// The placeholder parameter a bare `$x` names, if any: a block that
+    /// declares `$^x` makes a later bare `$x` that same parameter, stored
+    /// under `^x`, not a same-named lexical of the caller.
+    pub(super) fn placeholder_name_for(&self, name: &str) -> Option<String> {
+        if name.starts_with('^') || self.local_map.contains_key(name) {
+            return None;
+        }
+        let caret = format!("^{name}");
+        (self.local_map.contains_key(&caret) || self.prebound_placeholder_params.contains(&caret))
+            .then_some(caret)
+    }
+
     pub(super) fn compile_expr_var(&mut self, name: &str) {
         // `$0`, `$1`, ... are `$/[0]`, `$/[1]`, ...: when this block declares
         // its own `$/` (a `-> $/ { }` / `method m($/)` parameter, `my $/`, a
@@ -643,14 +655,9 @@ impl Compiler {
         // block) recompiles the body, the parameter is already bound in env
         // under `^x` (`prebound_placeholder_params`) and a by-name `x` would
         // find the caller's instead.
-        if !name.starts_with('^') && !self.local_map.contains_key(name) {
-            let caret = format!("^{name}");
-            if self.local_map.contains_key(&caret)
-                || self.prebound_placeholder_params.contains(&caret)
-            {
-                self.compile_expr_var(&caret);
-                return;
-            }
+        if let Some(caret) = self.placeholder_name_for(name) {
+            self.compile_expr_var(&caret);
+            return;
         }
         // $.attr (public twigil) — compile as self.attr() method call.
         // In Raku, $.attr is syntactic sugar for self.attr(), not a variable lookup.

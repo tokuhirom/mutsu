@@ -2631,10 +2631,17 @@ impl Interpreter {
             if let Some(idx) = code.locals.iter().rposition(|n| n == &name) {
                 self.locals[idx] = container.clone();
             }
+            let mut spliced = false;
             for frame in self.call_frames.iter_mut().rev() {
                 if frame.saved_env.contains_key_own_tier(&name) {
                     frame.saved_env.insert(name.clone(), container.clone());
+                    spliced = true;
                 }
+            }
+            // The owning frame's slot is out of reach here; have its call site
+            // drain the cell into it (ADR-0097 §15 env/slot invariant).
+            if spliced {
+                self.record_caller_var_writeback(&name);
             }
             if self.shared_vars_active {
                 loan_env!(self, set_shared_var(&name, container.clone()));
@@ -2653,7 +2660,22 @@ impl Interpreter {
 
     pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
+            // A slot that holds the very cell `name` resolves to already shows
+            // the value the caller just stored through that cell; replacing it
+            // with the bare value would leave the env naming a container the
+            // slot no longer holds (ADR-0097 §15).
+            if let ValueView::ContainerRef(slot_cell) = self.locals[slot].view()
+                && !val.is_container_ref()
+                && matches!(
+                    self.env().get(name).map(Value::view),
+                    Some(ValueView::ContainerRef(env_cell))
+                        if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
+                )
+            {
+                return;
+            }
             self.locals[slot] = val.clone();
+            self.adopt_overlay_container(code, slot);
         }
     }
 

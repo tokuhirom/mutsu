@@ -85,12 +85,10 @@ pub(crate) fn note_user_infix_decl() {
 
 /// Process-wide, monotonic count of `ContainerRef` cell words ever packed
 /// (bumped at the single NaN-box encode chokepoint for `Kind::ContainerRef`).
-/// Zero proves no shared `:=`/capture cell exists anywhere in the process, so
-/// the Tier B inline `GetLocal` fast path (vm_jit_tier_b.rs) can skip the
-/// env cell-adoption probe (`exec_get_local_op`'s per-read `env().get_sym`)
-/// outright; nonzero conservatively routes every inline read through the
-/// helper, which re-runs the full interpreter arm. Never decremented — a
-/// program that stops using cells only loses speed, never correctness.
+/// A statistic only (`MUTSU_VM_STATS`): a cell no longer spoils the `GetLocal`
+/// fast paths, which rely on the ADR-0097 §15 env/slot invariant instead — a
+/// slot holding a cell is refused by its own tag test, and no frame's env names
+/// a container its slot does not hold.
 pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
@@ -98,24 +96,12 @@ pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
 #[inline]
 pub(crate) fn note_container_cell() {
     CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    note_local_read_spoiler();
-}
-
-/// Record one `Proxy` packing: like a `ContainerRef` cell, a `Proxy` reachable
-/// from an env overlay is something the `GetLocal` cell-adoption probe will
-/// adopt, so its existence spoils the inline local read (see
-/// [`LOCAL_READ_SPOILERS`]). Bumped at the single NaN-box encode chokepoint for
-/// `Kind::Proxy`; never decremented.
-#[inline]
-pub(crate) fn note_proxy_value() {
-    note_local_read_spoiler();
 }
 
 /// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
 /// aliases ever created (`Interpreter::var_bindings` inserts). Zero proves
 /// `resolve_binding` is a no-op everywhere, letting the Tier B inline
-/// `GetLocal` fast path skip it; same conservative monotonic contract as
-/// [`CONTAINER_CELLS`].
+/// `GetLocal` fast path skip it; never decremented.
 pub(crate) static CALLER_VAR_BINDS: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
@@ -132,8 +118,6 @@ pub(crate) fn note_caller_var_binding() {
 /// a no-op everywhere, so the inline read may go straight from the slot word
 /// to the stack:
 ///
-/// - a `ContainerRef` cell was packed ([`CONTAINER_CELLS`]) — the env
-///   cell-adoption probe could find something;
 /// - a `$CALLER::x := ...` alias was registered ([`CALLER_VAR_BINDS`]) —
 ///   `resolve_binding` could answer;
 /// - an atomic variable was registered (`Interpreter::mark_atomic_var_seen`) —
@@ -141,11 +125,14 @@ pub(crate) fn note_caller_var_binding() {
 /// - a sigilless attribute alias was materialized
 ///   (`Interpreter::sigilless_attrs_active`) — the alias table must be
 ///   consulted;
-/// - a `Proxy` was packed ([`note_proxy_value`]) — the same env cell-adoption
-///   probe adopts a `Proxy` as readily as a `ContainerRef`, so a zero
-///   [`CONTAINER_CELLS`] alone does not prove the probe is a no-op.
 ///
-/// **One counter, not four latches.** Each input is already monotonic and is
+/// A packed `ContainerRef` cell or `Proxy` used to be a source too, for
+/// the env cell-adoption probe. They are not any more (ADR-0097 §15): the
+/// probe can only find a container the slot does not hold, and every site
+/// that installs one into an env overlay installs it into the slot too —
+/// asserted on every fast read in debug builds.
+///
+/// **One counter, not three latches.** Each input is already monotonic and is
 /// never cleared, so their OR *is* a counter that every source bumps — and the
 /// emitted form is what makes the difference: four loads, three `or`s and a
 /// test were 12 of the 48 instructions one inline local read cost on

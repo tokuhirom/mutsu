@@ -182,9 +182,10 @@ impl Interpreter {
         // 2. `local_read_unspoiled` — nothing the arm looks for *at runtime*
         //    has ever been created anywhere in the process: no `$CALLER::x :=`
         //    alias for `resolve_binding` to answer, no atomic variable, no
-        //    shared cell or `Proxy` for the env cell-adoption probe to adopt,
-        //    no sigilless attribute alias. Monotonic and never cleared, so it
-        //    can only ever turn pessimistic.
+        //    sigilless attribute alias. Monotonic and never cleared, so it can
+        //    only ever turn pessimistic. A cell or `Proxy` is not on this list
+        //    (ADR-0097 §15): the env cell-adoption probe only finds a container
+        //    the slot does not hold, and the env/slot invariant rules that out.
         // 3. `is_plain_local_read` — the slot's own word is none of the kinds
         //    the arm's TAIL still inspects after cloning (`ContainerRef`,
         //    `Proxy`, `HashEntryRef`, `LazyThunk`, `Nil`). A pure tag probe, so
@@ -200,21 +201,20 @@ impl Interpreter {
         //
         // Ordered cheapest-refusal-first: the latch is one relaxed load of a
         // static, `local_read_plain` a `OnceLock` acquire and an indexed load,
-        // so a program that has spoiled the latch (any `:=` cell will do) pays
-        // only the load before falling through to the chain below.
+        // so a program that has spoiled the latch pays only the load before
+        // falling through to the chain below.
         if crate::vm::vm_jit::local_read_unspoiled()
             && code.local_read_plain(idx)
             && let Some(val) = self.locals.get(idx)
             && val.is_plain_local_read()
         {
-            // The latch is one counter shared by four sources, so a NEW spoiler
+            // The latch is one counter shared by three sources, so a NEW spoiler
             // mechanism added without bumping it would silently break this path
-            // instead of failing. These restate its contract for the three
-            // sources that are readable from here (the fourth, a packed
-            // `ContainerRef`/`Proxy` word, is what condition 3 excludes), so a
-            // missing bump surfaces as a debug-build assertion in the
-            // `gc-stress-tap` / `jit-stress-tap` suite runs rather than as a
-            // wrong answer in release.
+            // instead of failing. These restate its contract for those sources,
+            // and the env/slot invariant that replaced the cell/`Proxy` sources
+            // (ADR-0097 §15), so a missing bump or a new divergence surfaces as
+            // a debug-build assertion in the `gc-stress-tap` / `jit-stress-tap`
+            // suite runs rather than as a wrong answer in release.
             debug_assert!(
                 !self.atomic_var_seen(),
                 "GetLocal fast path taken with an atomic variable registered"
@@ -228,6 +228,15 @@ impl Interpreter {
                     .get(idx)
                     .is_none_or(|name| self.resolve_binding(name).is_none()),
                 "GetLocal fast path taken with a $CALLER:: binding alias live"
+            );
+            // ADR-0097 §15: a cell or `Proxy` no longer spoils the latch, so
+            // the fast path relies on the env/slot invariant instead — no
+            // overlay container this slot does not already hold.
+            debug_assert!(
+                self.local_cell_adoption_target(code, idx).is_none(),
+                "GetLocal fast path taken while the env overlay holds a container \
+                 slot {idx} ({:?}) does not (ADR-0097 §15 env/slot invariant)",
+                code.locals.get(idx)
             );
             let val = val.clone();
             self.stack.push(val);
@@ -374,56 +383,8 @@ impl Interpreter {
         // Lazy sync: if the local is not a ContainerRef but env has one
         // (e.g., a cross-scope `:=` binding was established during a function/method
         // call and propagated back to env but not to locals), adopt the ContainerRef.
-        // Skip for type objects and complex values that should not be replaced.
-        //
-        // Overlay-only lookup (`overlay_get`/`overlay_get_sym`), NOT `get`/`get_sym`:
-        // this frame's own local slot must never adopt a same-named ANCESTOR call
-        // frame's container. `call_compiled_function_positional_light` (and the
-        // other scoped-env call paths) chain the callee's env as a *scoped child*
-        // of the live caller env for perf (no per-call flatten/clone); when a
-        // recursive call's own by-name env mirror is skipped for this param
-        // (`needs_env_sync` false — the common case for a plain scalar param only
-        // ever read via its slot), a plain `get`/`get_sym` here falls through the
-        // parent chain and can find the CALLER's own same-named variable instead —
-        // e.g. a recursive `sub rec($n) { my @v = ($n,); ... rec($n - 1) ... }`
-        // where the trailing-comma list literal boxes `$n`'s slot into a shared
-        // `ContainerRef` (so `@v`'s element aliases `$n`'s container) and mirrors
-        // it into env: the callee's fresh `$n = 0` binding got silently replaced
-        // by the caller's own boxed `$n` cell (still holding `1`), which never
-        // decremented — an Raku-level infinite recursion that overflowed the
-        // native Rust stack (`todo/deep/recursive-sub-trailing-comma-array-
-        // literal-of-own-param-stack-overflow.md`). `overlay_get`/`overlay_get_sym`
-        // read only this frame's own overlay (still enough for the *intended*
-        // same-call-frame propagation case in the comment above, since a plain
-        // function/method body runs under a single env tier — nested blocks do
-        // not push their own `scoped_child`), so an ancestor frame's container can
-        // never be picked up here.
-        if !self.locals[idx].is_container_ref() && !self.locals[idx].is_proxy_value()
-            // A lazy Match counts as an Instance here — probed by tag so this
-            // per-GetLocal check cannot materialize it.
-            && !self.locals[idx].is_lazy_match_value()
-            && !matches!(
-                self.locals[idx].view(),
-                ValueView::Package(_)
-                    | ValueView::Array(..)
-                    | ValueView::Hash(..)
-                    | ValueView::Sub(..)
-                    | ValueView::Instance { .. }
-            )
-            // Probe via the pre-interned Symbol (this read runs on every
-            // GetLocal — a by-name lookup would re-intern per read).
-            && let Some(env_hit) = code.locals_sym.get(idx).map_or_else(
-                || self.env().overlay_get(name),
-                |sym| self.env().overlay_get_sym(*sym),
-            )
-            && let Some(container) = match env_hit.view() {
-                ValueView::ContainerRef(arc) => Some(Value::container_ref(arc.clone())),
-                ValueView::Proxy { .. } => Some(env_hit.clone()),
-                _ => None,
-            }
-        {
-            self.locals[idx] = container;
-        }
+        // See `local_cell_adoption_target` for why the probe is overlay-only.
+        self.adopt_overlay_container(code, idx);
         // Phase 3 Stage 2 (scalar slice): scalar instance attributes read straight
         // from `self`'s shared cell, so a mutation made in a nested method frame
         // is visible here. Gated on a non-container slot so `$!x := outer`

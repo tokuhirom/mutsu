@@ -2479,7 +2479,9 @@ impl Interpreter {
                 }
                 let container = Value::container_ref(cell);
                 self.locals[idx] = container.clone();
-                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &effective_source) {
+                if let Some(source_idx) =
+                    Self::bind_source_local_slot(code, bind_source_slot, &effective_source)
+                {
                     self.locals[source_idx] = container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
@@ -2576,25 +2578,23 @@ impl Interpreter {
                 // it off from `$x`'s, so a write through `$d` never reached `$x`
                 // (nor, for an rw param, the caller). Mirrors the whole-container
                 // bind path, which already reuses the source cell.
-                let source_cell = code
-                    .locals
-                    .iter()
-                    .rposition(|n| n == &source_name)
-                    .and_then(|s| match self.locals[s].view() {
-                        ValueView::ContainerRef(arc) => Some(arc.clone()),
-                        _ => None,
-                    })
-                    .or_else(|| match self.env().get(&resolved_source).map(Value::view) {
-                        Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
-                        _ => None,
-                    })
-                    // ADR-0024: an intervening frame's own identically-named
-                    // local (e.g. a raw-captured constructor parameter that
-                    // happens to share a mainline lexical's bare name) can
-                    // shadow the source in both lookups above; fall back to
-                    // the mainline capture store before minting a
-                    // disconnected cell.
-                    .or_else(|| self.mainline_lexical_cell(&resolved_source));
+                let source_cell =
+                    Self::bind_source_local_slot(code, bind_source_slot, &source_name)
+                        .and_then(|s| match self.locals[s].view() {
+                            ValueView::ContainerRef(arc) => Some(arc.clone()),
+                            _ => None,
+                        })
+                        .or_else(|| match self.env().get(&resolved_source).map(Value::view) {
+                            Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+                            _ => None,
+                        })
+                        // ADR-0024: an intervening frame's own identically-named
+                        // local (e.g. a raw-captured constructor parameter that
+                        // happens to share a mainline lexical's bare name) can
+                        // shadow the source in both lookups above; fall back to
+                        // the mainline capture store before minting a
+                        // disconnected cell.
+                        .or_else(|| self.mainline_lexical_cell(&resolved_source));
                 // A source that holds a binding cell (`binding_cell_of`, #9237)
                 // is bound through to its container: the new name aliases the
                 // container, not the source's binding, so a later rebind of the
@@ -2606,11 +2606,9 @@ impl Interpreter {
                         _ => arc,
                     }
                 });
-                let source_keeps_binding_cell = code
-                    .locals
-                    .iter()
-                    .rposition(|n| n == &resolved_source)
-                    .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some());
+                let source_keeps_binding_cell =
+                    Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
+                        .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some());
                 let container = match (val.view(), source_cell) {
                     (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),
@@ -2644,7 +2642,7 @@ impl Interpreter {
                 // Update source in locals if present
                 if !source_keeps_binding_cell
                     && let Some(source_idx) =
-                        code.locals.iter().rposition(|n| n == &resolved_source)
+                        Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
                 {
                     self.locals[source_idx] = container.clone();
                     self.flush_local_to_env(code, source_idx);

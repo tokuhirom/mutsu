@@ -259,6 +259,12 @@ impl Compiler {
         }
         self.suppress_list_var_alias = saved_suppress;
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+            // `for $b` in a block that declares `$^b` iterates the placeholder,
+            // which lives under `^b`: tag that name and its slot, as the read
+            // of the iterable itself resolved it.
+            let source_name = self
+                .placeholder_name_for(&source_name)
+                .unwrap_or(source_name);
             let source_slot = self.local_map.get(source_name.as_str()).copied();
             let source_idx = self.code.add_constant(Value::str(source_name));
             self.code.note_rebind_target(source_slot);
@@ -377,6 +383,7 @@ impl Compiler {
         let source_var_names = Self::for_iterable_var_names(iterable);
         let source_var_locals = self.for_source_var_locals(&source_var_names);
         let source_container_local = Self::for_iterable_source_name(iterable).and_then(|name| {
+            let name = self.placeholder_name_for(&name).unwrap_or(name);
             self.local_map.get(&name).copied().or_else(|| {
                 name.strip_prefix('$')
                     .and_then(|bare| self.local_map.get(bare).copied())
