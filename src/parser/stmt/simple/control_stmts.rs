@@ -650,7 +650,21 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     // `{ ... }` as a term via `block_or_hash_expr` and continues into the
     // infix expression.
     let ws_before_next = &rest[..rest.len() - r_ws.len()];
-    if !ws_before_next.contains('\n') && starts_with_infix_operand_marker(r_ws) {
+    // `{*}` is the proto "onlystar" term (`{*} + 7`): a symbolic infix after
+    // it always continues the expression, as nothing else can follow a `{*}`
+    // statement on the same line.
+    let only_star_operand = {
+        let mut stmts = body.iter().filter(|s| !s.is_marker());
+        matches!(
+            (stmts.next(), stmts.next()),
+            (Some(Stmt::Expr(Expr::Whatever)), None)
+        )
+    } && r_ws.starts_with([
+        '+', '-', '*', '/', '~', '%', '<', '>', '=', '&', '|', '^', '?',
+    ]);
+    if !ws_before_next.contains('\n')
+        && (only_star_operand || starts_with_infix_operand_marker(r_ws))
+    {
         return Err(PError::expected("statement (block is an infix operand)"));
     }
     parse_statement_modifier(rest, Stmt::Block(body))
