@@ -2552,7 +2552,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                     right,
                     op: crate::token_kind::TokenKind::FatArrow,
                     ..
-                } if matches!(right.as_ref(), crate::ast::Expr::Hash(_))
+                } if matches!(right.as_ref(), crate::ast::Expr::Hash(..))
             );
             (is_pair || is_block || is_hash_composer)
                 && parts.get(index).is_some_and(|part| {

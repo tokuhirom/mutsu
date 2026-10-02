@@ -14,7 +14,7 @@ fn is_hash(src: &str) -> bool {
     let (rest, expr) = block_or_hash_expr(src).unwrap_or_else(|e| panic!("{src:?}: {e:?}"));
     assert_eq!(rest, "", "{src:?} left unparsed input");
     match expr {
-        Expr::Hash(_) => true,
+        Expr::Hash(..) => true,
         // A body that mixes pairs with a spread compiles to a `hash(...)` call
         // rather than an `Expr::Hash`; still the hash-composer reading.
         Expr::Call { ref name, .. } => name.resolve() == "hash",

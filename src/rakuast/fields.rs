@@ -281,6 +281,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
         RegexBlock => "block",
         StatementLanguageVersion => "version",
+        CircumfixHashComposer => "expression",
+        ContextualizerHash => "target",
         ColonPairTrue | ColonPairFalse => "key",
         StatementModifierGiven
         | StatementModifierIf

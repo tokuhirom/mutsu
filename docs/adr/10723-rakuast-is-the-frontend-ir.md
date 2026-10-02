@@ -248,6 +248,12 @@ before the flip, not after.
 - Slices that only needed a converter/lowerer arm for a construct the parser already keeps
   distinct: subscript assignment (`assignee` / `Assignment` over a subscript, #10794) and the
   terms the parser folds to a value (`Any`, `1e0`/`Inf`/`NaN`, `Empty`, #10802).
+- **A spelling the parser normalizes** gets a flag on the internal node rather than a new node,
+  the way `Stmt::If` keeps `is_unless` / `with_kind`: `Expr::Hash` carries a `HashSpelling`
+  (`{…}` composer or `%(…)` contextualizer), which `convert` reads to pick
+  `Circumfix::HashComposer` / `Contextualizer::Hash` and `lower` restores. Before it, both
+  rendered as a `Block` that lowered to a closure — a wrong answer, not a refusal, which is
+  why the `MUTSU_RAKUAST=1` failures that *run* deserve the same attention as the refusals.
 - **The pattern for a parser expansion** (first used for `my ($a, @b) = …`): the parser splits
   the construct into a parse step that builds a *source-form record* and an expansion function
   that turns the record into the statements the compiler runs. The expansion opens with the

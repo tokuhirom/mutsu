@@ -699,7 +699,7 @@ mod tests {
         let (rest, expr) = primary("%(:a)").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Hash(pairs) => {
+            Expr::Hash(pairs, _) => {
                 assert_eq!(pairs.len(), 1);
                 assert_eq!(pairs[0].0, "a");
                 assert!(
@@ -715,7 +715,7 @@ mod tests {
         let (rest, expr) = primary("{ a => 1, \"b\", 2 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Hash(pairs) => {
+            Expr::Hash(pairs, _) => {
                 assert_eq!(pairs.len(), 2);
                 assert_eq!(pairs[0].0, "a");
                 assert!(
@@ -735,7 +735,7 @@ mod tests {
         let (rest, expr) = primary("{ status => * != 0 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Hash(pairs) => {
+            Expr::Hash(pairs, _) => {
                 assert_eq!(pairs.len(), 1);
                 assert_eq!(pairs[0].0, "status");
                 assert!(pairs[0].1.is_some());
@@ -1046,7 +1046,7 @@ mod tests {
     fn parse_hash_literal_with_semicolon_separator() {
         let (rest, expr) = primary("{ out => \"x\"; }").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Hash(ref pairs) if pairs.len() == 1));
+        assert!(matches!(expr, Expr::Hash(ref pairs, _) if pairs.len() == 1));
     }
 
     #[test]

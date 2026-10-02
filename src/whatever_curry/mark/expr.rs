@@ -285,7 +285,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             mark_expr(source);
             mark_expr(sink);
         }
-        Expr::Hash(pairs) => {
+        Expr::Hash(pairs, _) => {
             for (_, value) in pairs {
                 mark_opt_value_leaf(value);
             }

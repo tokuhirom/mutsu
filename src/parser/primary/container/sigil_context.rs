@@ -147,7 +147,7 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, inner) = crate::parser::primary::misc::block_or_hash_expr(rest)?;
     // When the inner expression is a Hash literal, ${ } creates an itemized hash
     // (wrapped in a Scalar container), not a Capture.
-    if is_contextualizer || matches!(inner, Expr::Hash(_)) {
+    if is_contextualizer || matches!(inner, Expr::Hash(..)) {
         Ok((
             rest,
             Expr::MethodCall {

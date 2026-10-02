@@ -492,7 +492,7 @@ fn is_empty_vardecl_init(expr: &Expr) -> bool {
     match expr {
         Expr::Literal(v) if v.is_nil() => true,
         Expr::Literal(v) => matches!(v.view(), ValueView::Array(items, _) if items.is_empty()),
-        Expr::Hash(items) => items.is_empty(),
+        Expr::Hash(items, _) => items.is_empty(),
         _ => false,
     }
 }

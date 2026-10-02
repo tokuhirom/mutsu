@@ -400,7 +400,10 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(rest) = r.strip_prefix('}') {
         crate::parser::stmt_ending_brace::mark_stmt_ending_brace(rest);
         crate::parser::stmt_ending_brace::mark_block_term(rest);
-        return Ok((rest, Expr::Hash(Vec::new())));
+        return Ok((
+            rest,
+            Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer),
+        ));
     }
 
     // Try to detect if this is a hash literal: { key => val, ... }

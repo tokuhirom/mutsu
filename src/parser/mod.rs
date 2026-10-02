@@ -986,7 +986,7 @@ mod tests {
                 assert!(
                     matches!(&args[0], Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "say 42"))
                 );
-                assert!(matches!(&args[1], Expr::Hash(_)));
+                assert!(matches!(&args[1], Expr::Hash(..)));
                 assert!(
                     matches!(&args[2], Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "msg"))
                 );

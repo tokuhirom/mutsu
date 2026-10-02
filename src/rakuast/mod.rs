@@ -17,6 +17,7 @@ mod decl_traits;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
+mod hash_literal;
 mod lower;
 mod name_parts;
 mod render;
@@ -227,6 +228,11 @@ pub enum RakuAstClass {
     ParameterSlurpyUnflattened,
     // Phase 2 slice 33: array-composer literal (`[1, 2, 3]`).
     CircumfixArrayComposer,
+    // A hash composer `{a => 1}` and the `%(…)` hash contextualizer, whose
+    // contents are a `StatementSequence`.
+    CircumfixHashComposer,
+    ContextualizerHash,
+    StatementSequence,
     // Phase 2 slice 34: the `*` whatever term.
     TermWhatever,
     // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
@@ -440,6 +446,9 @@ impl RakuAstClass {
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
+            CircumfixHashComposer => "RakuAST::Circumfix::HashComposer",
+            ContextualizerHash => "RakuAST::Contextualizer::Hash",
+            StatementSequence => "RakuAST::StatementSequence",
             TermWhatever => "RakuAST::Term::Whatever",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
             TermHyperWhatever => "RakuAST::Term::HyperWhatever",
@@ -984,6 +993,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ParameterSlurpyFlattened,
     RakuAstClass::ParameterSlurpyUnflattened,
     RakuAstClass::CircumfixArrayComposer,
+    RakuAstClass::CircumfixHashComposer,
+    RakuAstClass::ContextualizerHash,
+    RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
     RakuAstClass::WhateverCodeArgument,
     RakuAstClass::TermHyperWhatever,
@@ -2565,7 +2577,12 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             return Some(field_to_value(&f.value));
         }
     }
-    if method == "statements" && matches!(node.class, RakuAstClass::StatementList) {
+    if method == "statements"
+        && matches!(
+            node.class,
+            RakuAstClass::StatementList | RakuAstClass::StatementSequence
+        )
+    {
         let items = node
             .fields
             .iter()

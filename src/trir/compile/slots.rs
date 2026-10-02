@@ -47,7 +47,7 @@ impl TrirCompiler<'_> {
         // compile.
         if name.starts_with(['@', '%']) {
             let empty = match expr {
-                Expr::Hash(entries) if entries.is_empty() => TrOp::NewHash,
+                Expr::Hash(entries, _) if entries.is_empty() => TrOp::NewHash,
                 Expr::Literal(v) => match v.view() {
                     crate::value::ValueView::Array(items, _) if items.is_empty() => TrOp::NewArray,
                     _ => {

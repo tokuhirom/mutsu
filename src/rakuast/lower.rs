@@ -1582,7 +1582,7 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => (
             match sigil.as_str() {
                 "@" => Expr::Literal(Value::real_array(Vec::new())),
-                "%" => Expr::Hash(Vec::new()),
+                "%" => Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer),
                 _ => Expr::Literal(Value::NIL),
             },
             false,
@@ -1913,6 +1913,9 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
         } else if let Some(body) = block_body {
             let body = block_value_source(body).ok_or_else(|| unsupported(node))?;
             format!(":{key}{body}")
+        } else if let Expr::Hash(pairs, crate::ast::HashSpelling::Composer) = &value {
+            let body = hash_composer_source(pairs).ok_or_else(|| unsupported(node))?;
+            format!(":{key}{body}")
         } else {
             let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
             format!(":{key}({value})")
@@ -2091,6 +2094,22 @@ fn block_value_source(body: &[crate::ast::Stmt]) -> Option<String> {
         }
     }
     Some(format!("{{ {} }}", expressions.join("; ")))
+}
+
+/// The source of a `{a => 1, b => 2}` composer used as a colonpair value.
+fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
+    let entries = pairs
+        .iter()
+        .map(|(key, value)| {
+            let pair = Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(key.clone()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value.clone()?),
+            };
+            crate::regex_tree::expression_source(&pair)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(format!("{{ {} }}", entries.join(", ")))
 }
 
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
@@ -2693,6 +2712,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(lowered)
         }
+        RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),
+        RakuAstClass::ContextualizerHash => super::hash_literal::lower_contextualizer(node),
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {

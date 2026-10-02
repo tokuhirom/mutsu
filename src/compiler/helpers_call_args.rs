@@ -276,7 +276,7 @@ impl Compiler {
     /// Rewrite block values inside a hash literal to anonymous subs.
     /// Used for `is_run`'s expectation hash: `{ out => { ... } }`.
     pub(super) fn rewrite_hash_block_values(expr: &Expr) -> Expr {
-        if let Expr::Hash(pairs) = expr {
+        if let Expr::Hash(pairs, spelling) = expr {
             let rewritten_pairs = pairs
                 .iter()
                 .map(|(name, value)| {
@@ -290,7 +290,7 @@ impl Compiler {
                     (name.clone(), rewritten_value)
                 })
                 .collect();
-            Expr::Hash(rewritten_pairs)
+            Expr::Hash(rewritten_pairs, *spelling)
         } else {
             expr.clone()
         }

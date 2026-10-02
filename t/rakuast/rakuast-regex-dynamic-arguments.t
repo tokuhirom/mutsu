@@ -439,11 +439,11 @@ my $hash_ast = Q[/<word(:expected{ a => $value, b => 2 })>/].AST;
 my $hash_gist = $hash_ast.gist;
 ok $hash_gist.contains('RakuAST::ColonPair::Value'),
     'a hash-composer colonpair argument keeps its value node';
-ok $hash_gist.contains('value => RakuAST::Block.new('),
-    'a hash-composer colonpair keeps its direct block value';
+ok $hash_gist.contains('value => RakuAST::Circumfix::HashComposer.new('),
+    'a hash-composer colonpair keeps its HashComposer value';
 ok $hash_gist.contains('RakuAST::ApplyListInfix.new(')
     && $hash_gist.comb('RakuAST::FatArrow.new(').elems >= 2,
-    'a hash-composer block keeps its comma-separated pairs';
+    'a hash composer keeps its comma-separated pairs';
 ok EVAL($hash_ast) ~~ Regex,
     'a constructed hash-composer colonpair regex lowers successfully';
 

@@ -237,7 +237,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             v.visit_expr_mut(right);
         }
         Expr::ChainedCompare { operands, ops: _ } => exprs_mut(v, operands),
-        Expr::Hash(pairs) => {
+        Expr::Hash(pairs, _) => {
             for (_key, value) in pairs {
                 if let Some(e) = value {
                     v.visit_expr_mut(e);

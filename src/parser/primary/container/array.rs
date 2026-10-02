@@ -278,7 +278,10 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
     let mut pairs = Vec::new();
 
     if let Ok((rest_after, _)) = parse_char(rest, ')') {
-        return Ok((rest_after, Expr::Hash(pairs)));
+        return Ok((
+            rest_after,
+            Expr::Hash(pairs, crate::ast::HashSpelling::Contextualizer),
+        ));
     }
 
     loop {
@@ -307,7 +310,10 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r_after, _)) = parse_char(r, ')') {
-                return Ok((r_after, Expr::Hash(pairs)));
+                return Ok((
+                    r_after,
+                    Expr::Hash(pairs, crate::ast::HashSpelling::Contextualizer),
+                ));
             }
             rest = r;
             continue;
@@ -320,6 +326,9 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
             continue;
         }
         let (r, _) = parse_char(r, ')')?;
-        return Ok((r, Expr::Hash(pairs)));
+        return Ok((
+            r,
+            Expr::Hash(pairs, crate::ast::HashSpelling::Contextualizer),
+        ));
     }
 }
