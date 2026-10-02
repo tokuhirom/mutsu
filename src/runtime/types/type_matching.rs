@@ -1740,6 +1740,17 @@ impl Interpreter {
             // string. Trying the raw string FIRST keeps a caller that already
             // passes a mangled constraint (e.g. a recursive same-identity
             // check elsewhere in this file) working unchanged.
+            // `Any` is the exception: `type_matches` answers it for every
+            // name, but a user class declared `is Mu` has no `Any` in its MRO
+            // and so is not an `Any`. Its MRO is authoritative.
+            if constraint == "Any" && self.registry().classes.contains_key(cn) {
+                let mro = self.class_mro(cn);
+                if mro.iter().any(|p| p.as_str() == "Mu")
+                    && !mro.iter().any(|p| p.as_str() == "Any")
+                {
+                    return false;
+                }
+            }
             if Self::type_matches(constraint, cn)
                 || Self::type_matches(constraint, &crate::value::user_facing_type_name(cn))
             {
