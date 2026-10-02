@@ -291,8 +291,10 @@ impl Value {
                 .unwrap_or("@")
                 .to_string();
             let elem = &mut data[idx];
-            if let ValueView::ContainerRef(cell) = elem.view() {
-                return Some(Value::ContainerRef(cell.clone()));
+            // An already-promoted element hands out its own word, so a
+            // holder's itemized flavour (ADR-0079) survives into the binding.
+            if elem.is_container_ref() {
+                return Some(elem.clone());
             }
             // Only promote a *scalar* leaf to a cell. A container element
             // (Array/Hash) is an intermediate level of a deeper path
