@@ -93,41 +93,53 @@ impl Interpreter {
     pub(super) fn array_delete_pos_value(&mut self, target: &Value, index: usize) -> Value {
         let mut container = target.clone();
         let deleted = container.with_array_mut(|gc, _| {
-            let data = crate::value::gc_data_mut(gc);
-            if index >= data.items().len() {
-                return Value::NIL;
-            }
-            // ADR-0049 slice 5: the vacated slot gets the standard
-            // `Package("Any")` gap marker, not a raw `Value::NIL` -- `Nil` is
-            // no longer a hole sentinel, only `ArrayData::initialized` (which
-            // is already correctly cleared for `index` below) is. The RETURN
-            // value (the element's old content, handed back to the caller as
-            // `.DELETE-POS`'s result) is unaffected -- only the slot left
-            // behind changes.
-            let gap_marker = Self::native_fill_for_constraint(data.value_type.as_deref());
-            let old_len = data.items().len();
-            let old = std::mem::replace(&mut data.live_mut()[index], gap_marker);
-            // Materialize the "all present" range (`None` means every
-            // in-range index exists) before removing `index`, so a
-            // previously bulk-constructed array (`initialized == None`)
-            // correctly records the vacated slot as a hole instead of the
-            // removal being a silent no-op on a nonexistent set.
-            data.initialized
-                .get_or_insert_with(|| (0..old_len).collect())
-                .remove(&index);
-            while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
-                let last = data.items().len() - 1;
-                data.pop();
-                if let Some(set) = data.initialized.as_mut() {
-                    set.remove(&last);
-                }
-            }
-            match old.view() {
-                ValueView::Scalar(inner) => inner.clone(),
-                ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
-                _ => old.clone(),
-            }
+            Self::delete_pos_in_array_data(crate::value::gc_data_mut(gc), index)
         });
         deleted.unwrap_or(Value::NIL)
+    }
+
+    /// `.DELETE-POS` of `index` on one array level, in place: the slot becomes
+    /// a hole and trailing holes are trimmed, so deleting the last element
+    /// shrinks the array. Shared by the single- and multi-dimension forms
+    /// (`multidim_delete_pos` reaches the innermost level and calls this).
+    /// Returns the deleted element's value, or `Nil` past the end.
+    // Cost: O(t), t = trailing holes trimmed.
+    pub(crate) fn delete_pos_in_array_data(
+        data: &mut crate::value::ArrayData,
+        index: usize,
+    ) -> Value {
+        if index >= data.items().len() {
+            return Value::NIL;
+        }
+        // ADR-0049 slice 5: the vacated slot gets the standard
+        // `Package("Any")` gap marker, not a raw `Value::NIL` -- `Nil` is
+        // no longer a hole sentinel, only `ArrayData::initialized` (which
+        // is already correctly cleared for `index` below) is. The RETURN
+        // value (the element's old content, handed back to the caller as
+        // `.DELETE-POS`'s result) is unaffected -- only the slot left
+        // behind changes.
+        let gap_marker = Self::native_fill_for_constraint(data.value_type.as_deref());
+        let old_len = data.items().len();
+        let old = std::mem::replace(&mut data.live_mut()[index], gap_marker);
+        // Materialize the "all present" range (`None` means every
+        // in-range index exists) before removing `index`, so a
+        // previously bulk-constructed array (`initialized == None`)
+        // correctly records the vacated slot as a hole instead of the
+        // removal being a silent no-op on a nonexistent set.
+        data.initialized
+            .get_or_insert_with(|| (0..old_len).collect())
+            .remove(&index);
+        while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
+            let last = data.items().len() - 1;
+            data.pop();
+            if let Some(set) = data.initialized.as_mut() {
+                set.remove(&last);
+            }
+        }
+        match old.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            _ => old.clone(),
+        }
     }
 }

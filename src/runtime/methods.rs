@@ -268,22 +268,9 @@ pub(crate) fn multidim_delete_pos(
     // value::aliased_mut); no borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(&items) };
     if indices.len() == 1 {
-        // ADR-0049 slice 5: the vacated slot gets the standard
-        // `Package("Any")` gap marker and leaves `initialized` -- `Nil` is no
-        // longer a hole sentinel (mirrors the single-dimension `.DELETE-POS`,
-        // `array_delete_pos_value` in methods_subscript_protocol.rs).
-        let len = data.len();
-        data.initialized
-            .get_or_insert_with(|| (0..len).collect())
-            .remove(&i);
-        let old = std::mem::replace(
-            &mut data.live_mut()[i],
-            Value::package(crate::symbol::wk::any()),
-        );
-        return Ok(match old.view() {
-            ValueView::Scalar(inner) => inner.clone(),
-            _ => old,
-        });
+        // The innermost level deletes like the single-dimension form, trailing
+        // holes trimmed included (#10926).
+        return Ok(Interpreter::delete_pos_in_array_data(data, i));
     }
     let child = multidim_level(&data[i]);
     multidim_delete_pos(&child, &indices[1..])
