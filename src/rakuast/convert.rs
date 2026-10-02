@@ -10,8 +10,8 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, name_par
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
-use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
+use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
