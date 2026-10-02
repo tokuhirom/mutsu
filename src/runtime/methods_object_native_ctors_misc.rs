@@ -220,6 +220,9 @@ impl Interpreter {
                 && !attributes.contains_key(
                     crate::runtime::iterator_map_grep_stream::MAP_GREP_STREAM_ATTR,
                 )
+                // An iterator over a lazy source holds only the prefix pulled
+                // so far; the deferred Seq pulls the rest on demand.
+                && !attributes.contains_key("lazy_source")
             {
                 let map = attributes.as_map();
                 if let Some(ValueView::Array(items, ..)) = map

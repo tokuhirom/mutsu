@@ -413,15 +413,7 @@ impl Interpreter {
             if let Some(rest) = self.map_grep_stream_drain(&attributes) {
                 rest?
             } else {
-                let all = match attributes.as_map().get("items").map(Value::view) {
-                    Some(ValueView::Array(values, ..)) => values.to_vec(),
-                    _ => Vec::new(),
-                };
-                let index = match attributes.as_map().get("index").map(Value::view) {
-                    Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
-                    _ => 0,
-                };
-                all[index..].to_vec()
+                self.iterator_remaining_items(&attributes.as_map())
             }
         } else {
             let mut items = Vec::new();
