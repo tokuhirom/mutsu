@@ -574,6 +574,7 @@ mod accessors_state;
 mod any_cool_method_gate;
 mod attr_build_defaults;
 mod builtins;
+mod builtins_accessor_elem_in_place;
 mod builtins_atomic;
 mod builtins_atomic_cas;
 mod builtins_atomic_cas_code;

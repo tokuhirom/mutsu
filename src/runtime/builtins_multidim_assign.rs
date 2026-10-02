@@ -3,7 +3,7 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
-    fn deref_lvalue_value(mut value: Value) -> Value {
+    pub(super) fn deref_lvalue_value(mut value: Value) -> Value {
         for _ in 0..256 {
             match value.view() {
                 ValueView::ContainerRef(_) => value = value.deref_container(),
@@ -650,6 +650,21 @@ impl Interpreter {
             && let Some(err) = self.scalar_subscript_protocol_error(&current, index_is_positional)
         {
             return Err(err);
+        }
+
+        // The accessor handed back the attribute's own container: store into
+        // it, so every `:=` alias of the attribute sees the write (#10897).
+        if bound_cell.is_none()
+            && method_args.is_empty()
+            && Self::store_accessor_element_in_place(
+                &target,
+                &method,
+                &current,
+                &index,
+                &effective_value,
+            )
+        {
+            return Ok(effective_value);
         }
 
         // Modify the container
