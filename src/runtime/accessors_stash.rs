@@ -284,7 +284,9 @@ impl Interpreter {
     pub(crate) fn make_stash_instance(package: &str, symbols: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
-        attrs.insert("symbols".to_string(), Value::hash(symbols));
+        // A stash is a `Map` of symbols, not a `Hash` of element containers:
+        // `Pkg::<@a>` is the Array itself (`[1, 2]`, not `$[1, 2]`), #10757.
+        attrs.insert("symbols".to_string(), Value::hash_bare_values(symbols));
         Value::make_instance(
             Symbol::intern(Self::stash_class_for_package(package)),
             attrs,
@@ -445,7 +447,7 @@ impl Interpreter {
             })
             .unwrap_or_default();
         symbols.insert(raw_key.to_string(), binding);
-        attributes.insert("symbols".to_string(), Value::hash(symbols));
+        attributes.insert("symbols".to_string(), Value::hash_bare_values(symbols));
         Ok(value)
     }
 
