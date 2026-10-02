@@ -92,8 +92,9 @@ impl Interpreter {
     /// its length, matching raku.
     pub(super) fn array_delete_pos_value(&mut self, target: &Value, index: usize) -> Value {
         let mut container = target.clone();
-        let deleted = container.with_array_mut(|gc, _| {
-            Self::delete_pos_in_array_data(crate::value::gc_data_mut(gc), index)
+        let deleted = container.with_array_mut(|gc, kind| {
+            let shaped = *kind == crate::value::ArrayKind::Shaped;
+            Self::delete_pos_in_array_data(crate::value::gc_data_mut(gc), index, shaped)
         });
         deleted.unwrap_or(Value::NIL)
     }
@@ -107,6 +108,7 @@ impl Interpreter {
     pub(crate) fn delete_pos_in_array_data(
         data: &mut crate::value::ArrayData,
         index: usize,
+        shaped: bool,
     ) -> Value {
         if index >= data.items().len() {
             return Value::NIL;
@@ -129,12 +131,10 @@ impl Interpreter {
         data.initialized
             .get_or_insert_with(|| (0..old_len).collect())
             .remove(&index);
-        while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
-            let last = data.items().len() - 1;
-            data.pop();
-            if let Some(set) = data.initialized.as_mut() {
-                set.remove(&last);
-            }
+        // A shaped array is fixed-size: the slot becomes a hole but the
+        // array keeps every slot, as the `:delete` op does (#10925).
+        if !shaped {
+            data.trim_trailing_holes();
         }
         match old.view() {
             ValueView::Scalar(inner) => inner.clone(),

@@ -80,13 +80,7 @@ impl Interpreter {
             // for retirement) instead of the array's own embedded
             // `value_type`, which could diverge for a bound/aliased array
             // whose name carries no constraint of its own.
-            while !arr.is_empty() && arr.hole_at(arr.len() - 1) {
-                let idx = arr.len() - 1;
-                arr.pop();
-                if let Some(s) = arr.initialized.as_mut() {
-                    s.remove(&idx);
-                }
-            }
+            arr.trim_trailing_holes();
         });
     }
 
