@@ -843,6 +843,17 @@ impl SeqBody {
         state.lazy && matches!(state.source, SeqSource::Iterator(_))
     }
 
+    /// The iterator a `Seq.new($iterator)` body will pull from, while it has
+    /// not been pulled yet; `None` once it is reified, taken, or for any other
+    /// source. Read to ask the iterator its `is-lazy`.
+    // Cost: O(1).
+    pub(crate) fn unpulled_iterator(&self) -> Option<Value> {
+        match &self.core.state.lock().unwrap().source {
+            SeqSource::Iterator(iterator) => Some(iterator.clone()),
+            _ => None,
+        }
+    }
+
     /// Whether the source has already been handed away (and never reified in
     /// between) — a later `reify`/`take` on this body will throw.
     pub(crate) fn is_consumed(&self) -> bool {

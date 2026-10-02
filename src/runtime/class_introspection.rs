@@ -34,7 +34,7 @@ impl Interpreter {
             .class_has_method(class_name, method_name)
     }
 
-    pub(super) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         // See `class_has_method` above for why the read guard comes first.
         if let Some(answer) = self
             .registry()
