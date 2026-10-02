@@ -37,10 +37,12 @@ mod nested;
 mod nested_exports;
 mod package_body;
 mod package_phasers;
+mod use_if;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
+use use_if::{IF_CONDITION_SLOT, if_condition_check};
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and
 /// run-time remainder, as described in the module docs. The prologue is
@@ -75,10 +77,13 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         let mut moved = package_phasers::Moved::default();
         package_phasers::move_package_phasers(stmt, &mut moved);
         moved_slots.append(&mut moved.slots);
-        composed_early.push(moved.needs_prologue);
-        moved_phasers.push(moved.phasers);
         let before = lifted.effects.len();
         nested::lift_in_stmt(stmt, &unit_names, unit, &mut lifted);
+        // The phasers nested code gave up because they read a lexical of it
+        // (#10562) follow the ones moved out of a declaration.
+        moved.phasers.append(&mut lifted.phasers);
+        composed_early.push(moved.needs_prologue || std::mem::take(&mut lifted.needs_prologue));
+        moved_phasers.push(moved.phasers);
         if let Some(off) = strict_pragma(stmt) {
             unit.strict_off = off;
         }
@@ -110,8 +115,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         .max(last_shell)
         .max(last_composed)
     else {
-        // No prologue: the moved phasers still precede their declarations.
+        // No prologue: the moved phasers still precede their declarations, and
+        // the cells and slots they read are declared ahead of them.
         let mut out = moved_slots;
+        out.extend(decls);
         for (stmt, phasers) in std::mem::take(stmts).into_iter().zip(moved_phasers) {
             out.extend(phasers);
             out.push(stmt);
@@ -511,51 +518,4 @@ impl crate::runtime::Interpreter {
         let (code, compiled_fns) = compiler.compile(prologue);
         self.run_top(&code, &compiled_fns).map(|_| ())
     }
-}
-
-/// The unit-level slot a conditional `use` reads its evaluated `:if` value from.
-const IF_CONDITION_SLOT: &str = "__begin_use_if";
-
-/// `use Foo:if(EXPR)` under the `if` pragma evaluates `EXPR` as a BEGIN-time
-/// effect (ADR-0134 §2.1.6). Running in the prologue, it sees lexicals in
-/// their static state, so a condition that only a run-time assignment would
-/// define is undefined here. That is the rakudo `if` module's compile error.
-/// Each conditional `use` stores its value in the same slot just before the
-/// `use` reads it, so one slot serves them all.
-fn if_condition_check(condition: Expr) -> Vec<Stmt> {
-    let slot = || Expr::Var(IF_CONDITION_SLOT.to_string());
-    vec![
-        Stmt::VarDecl {
-            name: IF_CONDITION_SLOT.to_string(),
-            expr: condition,
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: vec![],
-            custom_traits: vec![("__has_initializer".to_string(), None)],
-            where_constraint: None,
-        },
-        Stmt::If {
-            cond: Expr::Unary {
-                op: crate::token_kind::TokenKind::Bang,
-                expr: Box::new(Expr::MethodCall {
-                    target: Box::new(slot()),
-                    name: crate::symbol::Symbol::intern("defined"),
-                    args: vec![],
-                    modifier: None,
-                    quoted: false,
-                }),
-            },
-            then_branch: vec![Stmt::Die(Expr::Literal(crate::value::Value::str(
-                "Did not provide compile-time-value for :if adverb in use statement".to_string(),
-            )))],
-            else_branch: vec![],
-            binding_var: None,
-            is_statement_modifier: true,
-            is_unless: false,
-            with_kind: None,
-        },
-    ]
 }

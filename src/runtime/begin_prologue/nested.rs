@@ -60,14 +60,16 @@
 
 mod cell_ast;
 mod decls;
+mod phasers;
 mod pragmas;
 mod routines;
 mod walk;
 
+use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
 use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, slot_read, static_scalar};
 use decls::TypeDecl;
-use routines::{Access, FrameBlock, Routine, Scan};
+use routines::{Access, Dependencies, FrameBlock, Routine, Scan};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -85,6 +87,13 @@ pub(super) struct Lifted {
     pub(super) decls: Vec<Stmt>,
     /// One statement-form `BEGIN` per lifted effect, in source order.
     pub(super) effects: Vec<Stmt>,
+    /// One top-level `INIT` or `CHECK` per phaser lifted out of the statement
+    /// being walked ([`phasers`]). They precede the statement; the caller
+    /// takes them after each statement.
+    pub(super) phasers: Vec<Stmt>,
+    /// A lifted phaser re-enters a package, so the statement that declares it
+    /// must be composed in the prologue.
+    pub(super) needs_prologue: bool,
     /// A BEGIN-time effect could not be lifted. It keeps its pre-ADR handling,
     /// which runs it later than the prologue, so no later effect is lifted
     /// either: that would run it ahead of an effect that precedes it in the
@@ -150,6 +159,11 @@ struct Frame {
     routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
+    /// The package this scope is the body of, when a lifted `INIT` or `CHECK`
+    /// has to re-enter it ([`phasers`]).
+    package: Option<Enclosing>,
+    /// The scope is the body of a role, with the names of its type parameters.
+    role: Option<Vec<String>>,
 }
 
 struct Binding {
@@ -168,6 +182,9 @@ enum BindingKind {
         cell: Option<String>,
     },
     Opaque,
+    /// A `my` variable of a package body. The package's static store holds it,
+    /// and a phaser run inside the package reaches it there ([`phasers`]).
+    PackageLexical,
 }
 
 enum Edit {
@@ -253,16 +270,23 @@ impl Walker<'_> {
             return;
         }
         let slot = next_slot("__begin_value_");
-        if self.lift(&body, Some(&slot)) {
+        if self.lift(&body, Some(&slot), &PhaserKind::Begin) {
             *expr = slot_read(slot);
         }
     }
 
-    /// Lift `body` into the prologue when every name it reads can be supplied
-    /// there. With `slot`, the body's value is stored in that unit-level slot.
-    /// Returns whether the body was lifted.
-    fn lift(&mut self, body: &[Stmt], slot: Option<&str>) -> bool {
-        if self.lifted.halted {
+    /// Lift `body`, the body of a phaser of `kind`, out of the scopes around it
+    /// when every name it reads can be supplied outside them. A `BEGIN` goes
+    /// into the prologue. An `INIT` or `CHECK` goes into the unit's own
+    /// sequence of those, and only when it reads something of an inner scope
+    /// ([`phasers`]). With `slot`, the body's value is stored in that
+    /// unit-level slot. Returns whether the body was lifted.
+    fn lift(&mut self, body: &[Stmt], slot: Option<&str>, kind: &PhaserKind) -> bool {
+        let begin = *kind == PhaserKind::Begin;
+        if begin && self.lifted.halted {
+            return false;
+        }
+        if !begin && !self.may_lift_phaser(body) {
             return false;
         }
         // A blockless `BEGIN my %h = ...` declares into the enclosing scope,
@@ -280,10 +304,56 @@ impl Walker<'_> {
         let mut blocks: BTreeMap<usize, FrameBlock> = BTreeMap::new();
         let deps = deps.filter(|deps| self.add_declarations(body, deps, &mut blocks).is_some());
         let Some(deps) = deps else {
-            self.lifted.halted = true;
+            // A BEGIN that stays behind keeps every later one behind it. An
+            // INIT or CHECK that does is independent of the rest.
+            self.lifted.halted |= begin;
             return false;
         };
+        if !begin && !phasers::needs_scope(&deps, &blocks) {
+            return false;
+        }
         self.add_routines(&deps, &mut blocks);
+        self.add_bindings(deps, &mut blocks);
+        let mut inner = Vec::new();
+        match slot {
+            Some(slot) => {
+                self.lifted.decls.push(static_scalar(slot));
+                inner.push(Stmt::Assign {
+                    name: slot.to_string(),
+                    expr: Expr::DoBlock {
+                        body: body.to_vec(),
+                        label: phasers::check_label(kind),
+                        origin: crate::ast::DoBlockOrigin::Desugar,
+                    },
+                    op: crate::ast::AssignOp::Assign,
+                    target_is_sigilless: false,
+                });
+            }
+            None => inner.extend_from_slice(body),
+        }
+        let inner = vec![Stmt::Block(FrameBlock::nest(blocks, inner))];
+        if begin {
+            self.lifted.effects.push(Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body: inner,
+                condition: None,
+                end_index: None,
+            });
+        } else {
+            let body = self.run_in_packages(inner);
+            self.lifted.phasers.push(Stmt::Phaser {
+                kind: kind.clone(),
+                body,
+                condition: None,
+                end_index: None,
+            });
+        }
+        true
+    }
+
+    /// Give the lifted body each inner binding it reads: a copy of the
+    /// parameter or `our` variable, or the lexical's static cell.
+    fn add_bindings(&mut self, deps: Dependencies, blocks: &mut BTreeMap<usize, FrameBlock>) {
         for ((frame, binding), access) in deps.bindings {
             let block = blocks.entry(frame).or_default();
             match access {
@@ -295,31 +365,6 @@ impl Walker<'_> {
                 }
             }
         }
-        let mut inner = Vec::new();
-        match slot {
-            Some(slot) => {
-                self.lifted.decls.push(static_scalar(slot));
-                inner.push(Stmt::Assign {
-                    name: slot.to_string(),
-                    expr: Expr::DoBlock {
-                        body: body.to_vec(),
-                        label: None,
-                        origin: crate::ast::DoBlockOrigin::Desugar,
-                    },
-                    op: crate::ast::AssignOp::Assign,
-                    target_is_sigilless: false,
-                });
-            }
-            None => inner.extend_from_slice(body),
-        }
-        let inner = FrameBlock::nest(blocks, inner);
-        self.lifted.effects.push(Stmt::Phaser {
-            kind: PhaserKind::Begin,
-            body: vec![Stmt::Block(inner)],
-            condition: None,
-            end_index: None,
-        });
-        true
     }
 
     /// The copy-in declaration and copy-out assignment for an inner lexical,
