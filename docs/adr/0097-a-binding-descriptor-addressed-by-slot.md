@@ -360,9 +360,9 @@ seven properties join `shaped_array_dims` behind the runtime half, whose
 closure-capture story (§11.5, generalized by §13.2) is now the thing to
 design before any of them can move.
 
-**The §11 spoiler latch has a plan but no implementation** (§15, #9914): the
-data-only slice (§11.4) is merged; the env/slot invariant that replaces the
-process-global cell/`Proxy` latch is not started.
+**The §11 spoiler latch is replaced for cells and `Proxy`** (§15, §15.6,
+#9914): the env/slot invariant is in force and asserted in debug builds. The
+per-interpreter flags still feed the process-global word (§15.6).
 
 ## 10. Slice 2 is five properties of different shapes, not one fold (2026-09-15)
 
@@ -945,3 +945,46 @@ lands, it is removed rather than kept as write-only data.
   step 2 runs. Removing it is a separate step after the invariant has held in
   CI for a while.
 - Any change to `CALLER_VAR_BINDS` semantics.
+
+### 15.6 Implementation (#9914, 2026-10-02)
+
+Packing a `ContainerRef` or `Proxy` no longer bumps `LOCAL_READ_SPOILERS`;
+`CONTAINER_CELLS` remains as a `MUTSU_VM_STATS` statistic. The adoption probe
+is one function, `local_cell_adoption_target`
+(`src/vm/vm_local_cell_adoption.rs`). The slow `GetLocal` chain calls it, and
+a `debug_assert!` on every fast-path hit calls it too.
+
+§15.4 step 2 was run over all of `t/` and the whitelisted roast files on a
+debug build. It found seven producers. Each was fixed where it writes:
+
+| Producer | Fix |
+| --- | --- |
+| `update_local_if_exists` stored a bare value over a slot cell that the env still named (the topic writeback of `for $a { $_ = ... }`) | It keeps a slot cell that is identical to the env's cell. After a bare store it calls `adopt_overlay_container`. |
+| `propagate_bind_to_ancestor_frames` spliced a cell into an ancestor's `saved_env` but not into its slot (`sub f { $alias := $var }`) | It queues a caller-var writeback, which the ancestor's call site drains into the slot. |
+| `box_carrier_free_var_writes` (EVAL) boxed a caller variable in the env only | Same caller-var writeback. |
+| The export-hook lexical-callable call path never drained pending rw writebacks (raw parameters) | It drains them, as the wrap-chain path already did. |
+| `for $b` over a bare placeholder name tagged `b` with no slot, while the read compiled to `^b` | The tag and `source_container_local` resolve the placeholder name (`placeholder_name_for`). |
+| A `for` over an expression whose `TagContainerRef` names a slot (`for do given 1 { when True { $a } }`) ignored that slot | The alias plan falls back to the tag's slot. The `when` succeed signal now carries the slot alongside the name. |
+| `:=`-source slot lookups by name picked a shadowed sibling slot | They prefer the compiler's `varref_slot` (`bind_source_local_slot`). |
+
+§15.4 step 3 (a per-frame divergence flag) was not needed: every producer
+could reach the right slot.
+
+**Not done:** the per-interpreter word for `atomic_var_seen` and
+`sigilless_attrs_active` (§15.3 item 3, second row). Those flags still bump the
+process-global latch. This costs speed only, and nothing measured here pays
+for it.
+
+**Measured** (#8748 repro, `--profile profiling`, callgrind, 4-core container,
+120,000 loop iterations):
+
+| | `nospoil` | `spoil` | |
+| --- | ---: | ---: | --- |
+| Ir, JIT on | 362,731,547 | 369,754,295 | +1.9% (was +21.7%) |
+| Ir, JIT off | 522,221,368 | 529,233,585 | +1.3% (was +11.6%) |
+| `exec_get_local_op_inner` calls | 120,004 | 120,004 | equal (were 120,207 / 360,010) |
+
+The `GetLocal` side is identical. The residual is the store side: a
+sigilless-alias key written by the bind makes every scalar `SetLocal` probe the
+env (`slot_has_sigilless_meta`, about 48 Ir per store). That latch is a
+different one, tracked in #10691.
