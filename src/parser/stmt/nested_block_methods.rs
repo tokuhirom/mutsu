@@ -89,6 +89,19 @@ impl crate::ast_visit::VisitMut for Hoister {
         self.routines.truncate(depth);
     }
 
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        // A named `method` in expression position (`has $.x = method m { }`)
+        // has its own hoisting (#9474), which leaves an in-place copy behind;
+        // only its body is scanned here.
+        if let Expr::DoStmt(stmt) = expr
+            && matches!(stmt.as_ref(), Stmt::MethodDecl { .. })
+        {
+            crate::ast_visit::walk_stmt_mut(self, stmt);
+            return;
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
+    }
+
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         if owns_its_scope(stmt) || matches!(stmt, Stmt::NestedMethodCapture { .. }) {
             return;
