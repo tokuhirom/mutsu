@@ -6651,7 +6651,9 @@ impl Interpreter {
             OpCode::GetCallerVar { name_idx, depth } => {
                 let name = Self::const_str(code, *name_idx);
                 let val = loan_env!(self, get_caller_var(name, *depth as usize))?;
-                self.stack.push(val);
+                // An rvalue read: the frame's cell must not travel onto the
+                // stack, or `our $*d = CALLERS::<$*d>` stores a cell into itself.
+                self.stack.push(val.into_deref());
                 *ip += 1;
             }
             // Cost: O(s) with cascade, s = caller frames walked (Rakudo's dynamic lookup walks them too); O(1) otherwise.
@@ -6662,7 +6664,9 @@ impl Interpreter {
             } => {
                 let name = Self::const_str(code, *name_idx);
                 let val = loan_env!(self, get_callers_var(name, *depth as usize, *cascade))?;
-                self.stack.push(val);
+                // An rvalue read: the frame's cell must not travel onto the
+                // stack, or `our $*d = CALLERS::<$*d>` stores a cell into itself.
+                self.stack.push(val.into_deref());
                 *ip += 1;
             }
             // Cost: O(1).

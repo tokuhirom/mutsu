@@ -319,6 +319,12 @@ impl Interpreter {
         let type_name = self
             .get_attr_type_constraint(class_name, attr)
             .unwrap_or_else(|| "Any".to_string());
+        // A coercion-typed attribute (`has Str() $.x`) resets to its target
+        // type object (`Str`), not the `Str()` coercion type itself.
+        let type_name = match crate::runtime::types::parse_coercion_type(&type_name) {
+            Some((target, _src)) => target.to_string(),
+            None => type_name,
+        };
         Value::package(Symbol::intern(&type_name))
     }
 

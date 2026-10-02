@@ -583,6 +583,13 @@ impl Interpreter {
                     out.push(item.clone());
                 }
             }
+            ValueView::Hash(map) if !val.hash_is_itemized() => {
+                out.extend(
+                    map.map
+                        .iter()
+                        .map(|(k, v)| Value::pair(k.to_string(), v.clone())),
+                );
+            }
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 // List-kind (uncontainerized): flatten fully, e.g.
                 // `f (1,(2,3))` is 3 elements.

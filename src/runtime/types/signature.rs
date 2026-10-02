@@ -241,6 +241,15 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
             ValueView::Array(arr, _kind) => {
                 flatten_into_slurpy(&arr, out);
             }
+            // A Hash/Map that is not itemized (a `{...}`/`%h` argument, not a
+            // `$h` scalar) flattens into its Pairs, like any other Iterable.
+            ValueView::Hash(map) if !val.hash_is_itemized() => {
+                out.extend(
+                    map.map
+                        .iter()
+                        .map(|(k, v)| Value::pair(k.to_string(), v.clone())),
+                );
+            }
             ValueView::Seq(items) => {
                 flatten_into_slurpy(&items, out);
             }

@@ -457,6 +457,18 @@ impl Interpreter {
                         } else {
                             Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
                         };
+                        // A coercion-typed attribute (`has Str() $.x`) coerces a
+                        // provided value through its target type, as `.new` does.
+                        let coerced = match plan.attr_constraints[i].as_ref() {
+                            Some(tc)
+                                if attr.sigil == '$'
+                                    && !coerced.is_nil()
+                                    && crate::runtime::types::is_coercion_constraint(tc) =>
+                            {
+                                self.coerce_value_for_constraint(tc, coerced)
+                            }
+                            _ => coerced,
+                        };
                         // Raku: assigning `Nil` to a scalar container resets it
                         // to the container's declared type default, exactly
                         // like `has $.x = Nil` and plain `$x = Nil` do — not
@@ -624,6 +636,16 @@ impl Interpreter {
                             self.coerce_value_to_is_type(type_name, sigil, value.clone())?
                         } else {
                             Self::coerce_provided_attr_value_by_sigil(value.clone(), sigil)
+                        };
+                        let coerced = match plan.attr_constraints[i].as_ref() {
+                            Some(tc)
+                                if sigil == '$'
+                                    && !coerced.is_nil()
+                                    && crate::runtime::types::is_coercion_constraint(tc) =>
+                            {
+                                self.coerce_value_for_constraint(tc, coerced)
+                            }
+                            _ => coerced,
                         };
                         // Raku: assigning `Nil` to a scalar container resets it
                         // to the container's declared type default (see the
