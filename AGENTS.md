@@ -162,6 +162,11 @@ While iterating, run only the tests your change touches.
   differently is `unexpected` too. Never dismiss an `unexpected` file as "pre-existing".
 - The result is keyed by the working tree (`git write-tree`): `gate` on a tree that already has a
   result reports it instead of running again, so a no-op rebase costs nothing. `--fresh` forces a run.
+- **In a remote container `gate` defaults to the quick profile** (ADR-0126, amendment 2026-10-02):
+  `checks`, `fmt`, default clippy and the debug `cargo test`, then `prove` on the *debug* binary
+  over the `t/`/`roast/` files your branch touches plus any `--focus PATH...` you name. Name the
+  tests that exercise what you changed (`--focus t/regex roast/S05-match`) — a change to shared
+  machinery without a focus has not been run. CI runs the rest; `--full` runs the whole gate.
 - Quote the `scripts/dev status <id>` summary in the PR body.
 - A **documentation-only** change (CI skips the build jobs too, see `docs/ci-pipeline.md`): verify
   with `git diff --check`, plus a focused check only if it touches generated output, an executable
@@ -169,7 +174,7 @@ While iterating, run only the tests your change touches.
 
 A local timeout on a heavy file under a *debug* build (~3.3x slower than release) is not by itself a
 failure; confirm on `target/release/mutsu`. Wall-clock figures in the repo (`make lint` ≈ 5 min)
-are 12-core numbers — budget more on a smaller box; that makes the gate slower, not optional.
+are 12-core numbers — budget more on a smaller box.
 
 ### Long jobs — `scripts/dev run` and `scripts/dev wait`, never a hand-written wait
 

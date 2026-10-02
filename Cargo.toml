@@ -17,6 +17,19 @@ version = "0.24.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "Artistic-2.0"
+# Integration tests are two binaries, not one per `tests/*.rs` file: each
+# target links the whole library, and forty-odd links dominated the debug
+# test build. The roots declare every file as a module (see
+# `tests/integration.rs`); `make check-integration-tests` keeps them complete.
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[[test]]
+name = "alloc_budget"
+path = "tests/alloc_budget.rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

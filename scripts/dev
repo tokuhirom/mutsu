@@ -5,6 +5,10 @@ Decision and rationale: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md
 
     scripts/dev run <name> -- <command...>   start a detached job, print its id
     scripts/dev gate [--only a,b] [--fresh]  run checks/fmt/lint/test/roast as one job
+        [--quick|--full] [--focus PATH...]   the quick profile (default in a remote
+                                             container) builds debug only: checks, fmt,
+                                             default clippy, cargo test, and the t/ and
+                                             roast files the change touches or --focus names
     scripts/dev wait <id> [--max SECONDS]    block until done, at most --max (540)
     scripts/dev status [<id>]                running / passed / failed / lost
     scripts/dev report <id>                  the gate's report.json
@@ -61,7 +65,26 @@ STAGE_COMMANDS = {
 # build), or does not format or lint, is not going to be published, and running an hour of suites
 # on it only delays the answer. `test` and `roast` both run regardless, so one
 # gate shows every red file.
-BLOCKING_STAGES = ("checks", "fmt", "lint")
+BLOCKING_STAGES = ("checks", "fmt", "lint", "clippy")
+
+# The quick profile, for the ~4-core remote container (ADR-0126, amendment 2026-10-02). The
+# full gate compiles the crate about seven times (four lint configurations,
+# rustdoc, release, debug tests) and runs the whole TAP and roast suites on
+# the release binary; on that box it takes longer than the CI run that repeats
+# it. The quick profile compiles twice -- the default clippy pass and the
+# debug test build -- and runs only the t/ and roast files the change touches
+# (or `--focus` names) on the debug binary that `cargo test` already left
+# behind. CI's full matrix stays the net for the rest.
+QUICK_STAGES = ("checks", "fmt", "clippy", "cargo-test", "t-focus", "roast-focus")
+STAGE_COMMANDS.update({
+    "clippy": ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+    "cargo-test": ["bash", "-o", "pipefail", "-c",
+                   "RUST_MIN_STACK=8388608 cargo test -- --test-threads=1"
+                   " && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp"],
+})
+# A debug binary is about 3.3x slower than release; the suites' per-file
+# timeouts are sized for release.
+DEBUG_TIMEOUT_SCALE = 4
 
 
 def repo_root() -> str:
@@ -291,6 +314,7 @@ def run_gate(root: str, path: str, meta: dict, log, stopped) -> int:
     known = load_known_failures(root)
     conditions = host_conditions()
     report = {"tree": meta["tree"], "commit": meta.get("commit"), "host": meta["host"],
+              "profile": meta.get("profile", "full"), "focus": meta.get("focus"),
               "conditions": sorted(conditions), "stages": {}, "verdict": "running"}
     report_path = os.path.join(path, "report.json")
     blocked = False
@@ -301,7 +325,8 @@ def run_gate(root: str, path: str, meta: dict, log, stopped) -> int:
         stage_log_path = os.path.join(path, f"stage-{stage}.log")
         with open(stage_log_path, "w", encoding="utf-8", errors="replace") as stage_log:
             started = time.time()
-            code = run_command(STAGE_COMMANDS[stage], root, stage_log, stopped)
+            command = meta.get("commands", {}).get(stage) or STAGE_COMMANDS[stage]
+            code = run_command(command, root, stage_log, stopped)
         with open(stage_log_path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
         log.write(f"== {stage}: exit {code} ({time.time() - started:.0f}s)\n")
@@ -342,7 +367,7 @@ def judge_stage(stage: str, code: int, text: str, known: list, conditions: set) 
         if cargo:
             unexpected.extend(cargo)
         else:
-            unexpected.append(f"`make {stage}` exited {code} without a TAP failure summary; "
+            unexpected.append(f"stage `{stage}` exited {code} without a TAP failure summary; "
                               f"see stage-{stage}.log")
     files = parse_prove_file_count(text)
     result = {"status": "pass" if not unexpected else "fail", "known_env": known_env,
@@ -511,26 +536,109 @@ def cmd_run(root: str, args) -> int:
     return 0
 
 
+def is_remote_container() -> bool:
+    """The ephemeral Claude Code remote container (docs/agent-environments.md)."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
+def git_lines(root: str, *argv: str) -> list[str] | None:
+    out = subprocess.run(["git", *argv], cwd=root, capture_output=True, text=True)
+    return out.stdout.splitlines() if out.returncode == 0 else None
+
+
+def focus_files(root: str, extra: list[str]) -> tuple[list[str], list[str]]:
+    """The t/ and roast files a quick gate runs: every `.t` under t/ or roast/
+    that differs from the merge base with origin/main (committed, staged,
+    unstaged or untracked), every file added to roast-whitelist.txt, and every
+    `--focus` path (a file, or a directory searched for `.t` files)."""
+    # A remote container's clone can carry an origin/main far behind the
+    # branch, whose merge base would put every file main changed since in
+    # focus; refresh it first (best effort -- offline, the stale ref stands).
+    try:
+        subprocess.run(["git", "fetch", "--quiet", "origin", "main"], cwd=root,
+                       capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        pass
+    base = None
+    for ref in ("origin/main", "main"):
+        lines = git_lines(root, "merge-base", "HEAD", ref)
+        if lines:
+            base = lines[0]
+            break
+    paths: list[str] = []
+    if base:
+        paths += git_lines(root, "diff", "--name-only", "--diff-filter=AMR", base) or []
+        for line in git_lines(root, "diff", "--unified=0", base, "--",
+                              "roast-whitelist.txt") or []:
+            if line.startswith("+") and not line.startswith("+++"):
+                paths.append(line[1:].strip())
+    paths += git_lines(root, "ls-files", "--others", "--exclude-standard", "t") or []
+    for item in extra:
+        full = os.path.join(root, item)
+        if os.path.isdir(full):
+            for dirpath, _dirs, files in os.walk(full):
+                paths += [os.path.relpath(os.path.join(dirpath, f), root)
+                          for f in files if f.endswith(".t")]
+        else:
+            paths.append(os.path.normpath(item))
+    t_files, roast_files = set(), set()
+    for path in paths:
+        if not path.endswith(".t") or not os.path.isfile(os.path.join(root, path)):
+            continue
+        if path.startswith("t/"):
+            t_files.add(path)
+        elif path.startswith("roast/"):
+            roast_files.add(path)
+    return sorted(t_files), sorted(roast_files)
+
+
+def focus_commands(t_files: list[str], roast_files: list[str]) -> dict:
+    """prove over the debug binary; an empty selection is a no-op that passes."""
+    jobs = str(max(1, min(4, os.cpu_count() or 1)))
+    commands = {}
+    for stage, files, runner, env in (
+            ("t-focus", t_files, "scripts/run-t-test.sh",
+             [f"MUTSU_T_TIMEOUT={30 * DEBUG_TIMEOUT_SCALE}"]),
+            ("roast-focus", roast_files, "scripts/run-roast-test.sh",
+             [f"MUTSU_ROAST_TIMEOUT_SCALE={DEBUG_TIMEOUT_SCALE}"])):
+        commands[stage] = (["env", "MUTSU_BIN=target/debug/mutsu", *env, "prove", "-j", jobs,
+                            "-e", runner, *files] if files else ["true"])
+    return commands
+
+
 def cmd_gate(root: str, args) -> int:
-    stages = [s for s in GATE_STAGES if not args.only or s in args.only.split(",")]
-    unknown = set(args.only.split(",")) - set(GATE_STAGES) if args.only else set()
+    quick = args.quick or (is_remote_container() and not args.full)
+    profile = QUICK_STAGES if quick else GATE_STAGES
+    stages = [s for s in profile if not args.only or s in args.only.split(",")]
+    unknown = set(args.only.split(",")) - set(profile) if args.only else set()
     if unknown:
-        print(f"dev gate: unknown stage(s): {', '.join(sorted(unknown))}", file=sys.stderr)
+        print(f"dev gate: unknown stage(s) for the {'quick' if quick else 'full'} profile: "
+              f"{', '.join(sorted(unknown))}", file=sys.stderr)
         return EXIT_USAGE
+    if args.focus and not quick:
+        print("dev gate: --focus applies to the quick profile only", file=sys.stderr)
+        return EXIT_USAGE
+    meta = {"kind": "gate", "profile": "quick" if quick else "full", "stages": stages}
+    if quick:
+        t_files, roast_files = focus_files(root, args.focus or [])
+        meta["focus"] = {"t": t_files, "roast": roast_files}
+        meta["commands"] = focus_commands(t_files, roast_files)
+        print(f"dev gate: quick profile (debug build; {len(t_files)} t/ and "
+              f"{len(roast_files)} roast file(s) in focus; --full for the whole gate)",
+              file=sys.stderr)
     tree = tree_id(root)
     if not args.fresh:
         for job_id in reversed(list_jobs(root)):
             st = job_state(root, job_id)
-            meta = st["meta"]
-            if (meta and meta.get("kind") == "gate" and meta.get("tree") == tree
-                    and meta.get("stages") == stages
+            old = st["meta"]
+            if (old and old.get("kind") == "gate" and old.get("tree") == tree
+                    and old.get("stages") == stages and old.get("focus") == meta.get("focus")
                     and st["state"] in ("running", "passed", "failed")):
                 print(job_id)
                 print(f"dev gate: reusing {st['state']} gate {job_id} for tree {tree[:12]} "
                       f"(--fresh to run again)", file=sys.stderr)
                 return 0
-    job_id = start_job(root, "gate", {"kind": "gate", "stages": stages, "tree": tree,
-                                      "commit": head_commit(root)})
+    job_id = start_job(root, "gate", {**meta, "tree": tree, "commit": head_commit(root)})
     print(job_id)
     return 0
 
@@ -548,15 +656,18 @@ def summarize(root: str, job_id: str) -> str:
     lines = [head]
     report = read_json(os.path.join(job_path(root, job_id), "report.json"))
     if report:
-        lines.append(f"  verdict: {report['verdict']}  tree {report['tree'][:12]}  "
-                     f"commit {report.get('commit')}")
+        lines.append(f"  verdict: {report['verdict']}  profile {report.get('profile', 'full')}  "
+                     f"tree {report['tree'][:12]}  commit {report.get('commit')}")
+        focus = report.get("focus")
+        if focus is not None:
+            lines.append(f"  focus: {len(focus['t'])} t/, {len(focus['roast'])} roast file(s)")
         for stage, res in report["stages"].items():
             extra = ""
             if res.get("known_env"):
                 extra += f"  known-env: {len(res['known_env'])}"
             if res.get("seconds") is not None:
                 extra += f"  {res['seconds']}s"
-            lines.append(f"  {stage:<6} {res['status']}{extra}")
+            lines.append(f"  {stage:<11} {res['status']}{extra}")
             for item in res.get("unexpected", []):
                 lines.append(f"      unexpected: {item}")
     return "\n".join(lines)
@@ -711,6 +822,14 @@ def self_test(root: str) -> int:
     check("judge: a failing static guard fails its stage", result == {"status": "fail"})
     check("gate: the static guards run first and block",
           GATE_STAGES[0] == "checks" and "checks" in BLOCKING_STAGES)
+    check("quick gate: the static guards run first and block, clippy blocks",
+          QUICK_STAGES[0] == "checks" and "clippy" in BLOCKING_STAGES)
+    check("quick gate: every stage has a command",
+          all(s in STAGE_COMMANDS or s in ("t-focus", "roast-focus") for s in QUICK_STAGES))
+    cmds = focus_commands(["t/a/x.t"], [])
+    check("quick gate: focus runs prove on the debug binary",
+          "MUTSU_BIN=target/debug/mutsu" in cmds["t-focus"] and cmds["t-focus"][-1] == "t/a/x.t")
+    check("quick gate: an empty focus is a passing no-op", cmds["roast-focus"] == ["true"])
     check("ranges", compress_ranges([1, 2, 3, 5, 7, 8]) == "1-3, 5, 7-8")
 
     real_known = load_known_failures(root)
@@ -801,6 +920,12 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("gate", help="run the pre-publication gate as one job")
     p.add_argument("--only", help=f"comma-separated subset of {','.join(GATE_STAGES)}")
     p.add_argument("--fresh", action="store_true", help="run even if this tree has a result")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--quick", action="store_true",
+                      help="debug-build profile (the default in a remote container)")
+    mode.add_argument("--full", action="store_true", help="the full gate, even remotely")
+    p.add_argument("--focus", nargs="+", metavar="PATH",
+                   help="quick profile: also run these t/ or roast files or directories")
     p = sub.add_parser("wait", help="block until the job ends, at most --max seconds")
     p.add_argument("id")
     p.add_argument("--max", type=int, default=DEFAULT_WAIT_MAX)

@@ -20,7 +20,7 @@
 //! that cannot flake: a `sleep` is excluded from the weighting by
 //! construction, so the gap it opens can only ever grow under load.
 
-mod profile_doc;
+use crate::profile_doc;
 
 use profile_doc::{fixture_path, profile};
 

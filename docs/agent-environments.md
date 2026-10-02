@@ -119,9 +119,14 @@ boxes.
 
 The same ratio applies to timings quoted anywhere in the repo: `make lint` at "about 5 minutes" and
 the roast suite's wall-clock are 12-core numbers, so budget more on a smaller container. Run only
-the specific tests your change touches while you iterate — but the pre-publication gate (`make test`
-and `make roast` once each, both green, before opening the PR) is the same in both environments. A
-smaller box makes that gate slower, not optional.
+the specific tests your change touches while you iterate. The pre-publication gate differs: on the
+local box `scripts/dev gate` runs the full profile (`make lint`, `make test` and `make roast` on
+the release binary), while in a remote container it defaults to the **quick profile**
+(ADR-0126, amendment 2026-10-02). That profile runs the static checks, fmt, the default clippy
+and the debug `cargo test`, then `prove` on the debug binary over the `t/`/`roast/` files the
+branch touches and any `--focus PATH...`. It compiles the crate twice instead of about seven
+times and builds no release binary; CI covers the other lint configurations and the full suites.
+`scripts/dev gate --full` still runs everything when a change warrants it.
 
 ## Environment-only `make roast` failures — the remote container's fixed set
 

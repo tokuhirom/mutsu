@@ -288,6 +288,12 @@ jobs:
         # docs/t-directory-layout.md.
         run: make check-t-layout
 
+      - name: Every tests/*.rs is in an integration-test binary
+        # Cargo.toml sets `autotests = false` (two test binaries instead of
+        # one link of the whole library per file), so a tests/*.rs file that
+        # neither root declares as a module would silently never run.
+        run: make check-integration-tests
+
       - name: Flaky quarantine ledger is valid and unexpired
         # Fails when an entry in flaky-tests.txt is past its review date, so a
         # quarantine cannot quietly become permanent. See

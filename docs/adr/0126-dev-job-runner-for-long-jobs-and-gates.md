@@ -222,3 +222,35 @@ after `make lint` — minutes of clippy before a misplaced `t/` file was reporte
 and take well under a minute, so the gate now opens with a blocking `checks` stage (`make -k
 checks`, so one run names every failing guard), ahead of `fmt`. `make test` still depends on
 `checks`, so it stays meaningful on its own; the repeat inside the gate costs seconds.
+
+### Amendment (2026-10-02): a quick profile, the default in the remote container
+
+On the ~4-core remote container the full gate compiles the crate about seven times: four lint
+configurations, rustdoc, the release build, and the debug test build (`cargo test`). It also runs
+the whole TAP and roast suites on the release binary. As a result the gate took longer than the
+CI run that repeats every one of those checks on several runners in parallel, and it was the
+dominant cost of a remote session.
+
+`scripts/dev gate` therefore has two profiles:
+
+- **full** — the stages above, unchanged. It is the default on the local box and is forced
+  with `--full`.
+- **quick** — the default when `CLAUDE_CODE_REMOTE=true`, and selected explicitly with
+  `--quick`. Its stages are `checks`, `fmt`, `clippy` (the default configuration only),
+  `cargo-test` (the debug `cargo test` and `cargo test -p mutsu-lsp`, exactly as `make test`
+  runs them), then `t-focus` and `roast-focus`.
+
+The two focus stages run `prove` over the **debug** binary that `cargo-test` already built, with
+the per-file timeouts scaled ×4. They run only these files:
+
+- every `t/` or `roast/` `.t` file that differs from the merge base with a freshly fetched
+  `origin/main`;
+- every file added to `roast-whitelist.txt`;
+- whatever `--focus PATH...` names (a file, or a directory searched for `.t` files).
+
+The quick profile compiles the crate twice instead of about seven times and builds no release
+binary. What it leaves out — the other lint configurations, rustdoc, the full suites and the
+release build — is exactly what CI's lint and test jobs run, so CI remains the net for it. The
+report records `profile` and `focus`, and `status` prints both, so a PR body that quotes the
+summary says which gate it passed. The agent is still responsible for choosing the focus: a
+change to shared machinery names the t/ categories and roast synopses that exercise it.
