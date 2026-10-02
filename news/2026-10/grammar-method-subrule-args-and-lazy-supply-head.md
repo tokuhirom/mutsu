@@ -13,3 +13,8 @@ Found by working the `Stomp` distribution.
 
 `Stomp`'s `t/parser.rakutest` now passes in full. `t/client.rakutest` and `t/server.rakutest` still
 need grep/map/head over a `.share`d on-demand supply to start it (#10740).
+
+A ratcheted `[ $ || <.panic(...)> ]` after a subrule call also ran its panic branch (or a code
+block) spuriously: the walk treated the zero-width `$` as provisional and went on to the next branch
+even when the rest of the pattern had matched. It now commits once the rest matched, which `Cro::Uri`
+needs now that method subrules actually run.
