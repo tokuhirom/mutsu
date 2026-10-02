@@ -47,7 +47,7 @@ impl Interpreter {
     /// the `n` it needs, as Rakudo's does, so an unbounded iterator that does
     /// not claim `is-lazy` still answers (#9353).
     // Cost: O(limit) `pull-one` calls.
-    fn pull_iterator_prefix_to_vec(
+    pub(crate) fn pull_iterator_prefix_to_vec(
         &mut self,
         iterator: &Value,
         limit: usize,
@@ -485,8 +485,21 @@ impl Interpreter {
             }
             return Ok(target);
         };
-        if matches!(method, "is-lazy" | "gist") {
+        if matches!(method, "is-lazy" | "gist" | "map" | "grep") {
             self.resolve_seq_iterator_laziness(&body)?;
+        }
+        // `.map`/`.grep` on a lazy, untouched iterator Seq consumes the Seq
+        // but must not drain the (possibly infinite) iterator: hand the
+        // iterator to a fresh lazy Seq, which `is_lazy_pipe_source` turns into
+        // a pull-on-demand stage (#10891).
+        if matches!(method, "map" | "grep")
+            && body.is_lazy()
+            && body.is_empty()
+            && let Some(iterator) = body.take_iterator_source()?
+        {
+            let fresh = SeqBody::deferred(SeqSource::Iterator(iterator));
+            fresh.mark_lazy();
+            return Ok(Value::seq_body(fresh));
         }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);

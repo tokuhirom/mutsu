@@ -235,8 +235,10 @@ impl LazyList {
 
     fn value_source_is_finite(source: &Value) -> bool {
         match source.view() {
-            ValueView::Array(..) | ValueView::Seq(_) => true,
-            ValueView::Slip(_) => true,
+            ValueView::Array(..) | ValueView::Slip(_) => true,
+            // A lazy Seq over a not-yet-pulled iterator (#10891) is as lazy as
+            // its iterator said it is; any other Seq holds its elements.
+            ValueView::Seq(body) => !(body.is_lazy() && body.unpulled_iterator().is_some()),
             // A range is finite unless it is unbounded upward (`..*`, `..Inf`).
             ValueView::Range(..)
             | ValueView::RangeExcl(..)

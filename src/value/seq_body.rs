@@ -486,6 +486,13 @@ impl SeqBody {
                 items.extend(rest);
                 items
             }
+            // An iterator already advanced by `extend_from_iterator` resumes
+            // where that prefix ended.
+            SeqSource::Iterator(_) if !self.live_generation().is_empty() => {
+                let mut items = self.live_generation().clone();
+                items.extend(rest);
+                items
+            }
             _ => rest,
         }
     }
@@ -1006,6 +1013,53 @@ impl SeqBody {
         // reachable through outstanding `&Vec<Value>` borrows) are never
         // rewritten, only superseded by a longer one.
         unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
+        if exhausted {
+            self.core
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .source = SeqSource::Reified;
+        }
+        Ok(())
+    }
+
+    /// Bounded pull from a `Seq.new($iterator)` source: pull up to `needed`
+    /// elements in total through `pull` (which drives the iterator's
+    /// `pull-one` at most the count it is given) and append them to the live
+    /// generation, keeping the iterator in place for the next pull unless it
+    /// ran out. What a lazy `.map`/`.grep` stage over such a Seq reads its
+    /// source with, so an infinite iterator is never drained (#10891). A no-op
+    /// for any other source.
+    // Cost: `pull`'s cost, plus a copy of the prefix already pulled.
+    pub(crate) fn extend_from_iterator(
+        &self,
+        needed: usize,
+        pull: impl FnOnce(&Value, usize) -> Result<Vec<Value>, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        let have = self.live_generation().len();
+        if have >= needed {
+            return Ok(());
+        }
+        let iterator = match &self
+            .core
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .source
+        {
+            SeqSource::Iterator(iterator) => iterator.clone(),
+            _ => return Ok(()),
+        };
+        let new_items = pull(&iterator, needed - have)?;
+        let exhausted = new_items.len() < needed - have;
+        if !new_items.is_empty() {
+            let mut combined = self.live_generation().clone();
+            combined.extend(new_items);
+            // SAFETY: same reasoning as `pull_and_store` — no reference into
+            // `gens` is held across this push, and earlier generations are
+            // never rewritten, only superseded by a longer one.
+            unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
+        }
         if exhausted {
             self.core
                 .state
