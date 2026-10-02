@@ -365,8 +365,8 @@ fn expr_is_droppable(expr: &Expr) -> bool {
     struct DroppableScan {
         droppable: bool,
     }
-    impl crate::ast_visit::Visit for DroppableScan {
-        fn visit_expr(&mut self, expr: &Expr) {
+    impl<'ast> crate::ast_visit::Visit<'ast> for DroppableScan {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
             if !self.droppable {
                 return;
             }

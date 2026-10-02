@@ -21,14 +21,14 @@ pub(super) fn stmts_have_enter_expr(stmts: &[Stmt]) -> bool {
 /// compiled: one in a closure or a nested routine runs on entry to *that*.
 struct EnterProbe(bool);
 
-impl Visit for EnterProbe {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for EnterProbe {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if !self.0 && !is_own_frame_stmt(stmt) {
             walk_stmt(self, stmt);
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.0 {
             return;
         }

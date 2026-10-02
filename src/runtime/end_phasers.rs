@@ -611,8 +611,8 @@ impl EndWalker<'_> {
 /// arms below do not list) is still pre-installed, just without the seed of
 /// that body's own lexicals -- it then resolves them against the live
 /// exit-time env, as every `END` did before this pass existed.
-impl Visit for EndWalker<'_> {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for EndWalker<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::Phaser {
                 kind: PhaserKind::End,
@@ -737,7 +737,7 @@ impl Visit for EndWalker<'_> {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Block(body)
             | Expr::AnonSub { body, .. }

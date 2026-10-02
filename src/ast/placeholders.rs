@@ -77,7 +77,10 @@ fn is_compile_time_declaration(stmt: &Stmt) -> bool {
 /// not entered. A variable's `where` thunk is: rakudo makes `$^a` in
 /// `{ my $x where $^a > 0 = 1 }` the block's parameter.
 // Cost: O(n), n = size of the part of `stmt` in the enclosing placeholder scope.
-pub(crate) fn walk_stmt_placeholder_scope<V: Visit + ?Sized>(v: &mut V, stmt: &Stmt) {
+pub(crate) fn walk_stmt_placeholder_scope<'ast, V: Visit<'ast> + ?Sized>(
+    v: &mut V,
+    stmt: &'ast Stmt,
+) {
     match stmt {
         s if is_scope_declaration(s) || is_compile_time_declaration(s) => {}
         // A variable's type constraint and traits are compile-time; its
@@ -110,7 +113,10 @@ pub(crate) fn walk_stmt_placeholder_scope<V: Visit + ?Sized>(v: &mut V, stmt: &S
 /// oracle says [`PlaceholderBodyKind::Transparent`] — a WhateverCode, a bare
 /// `{}` value, a `do {}` block.
 // Cost: O(n), n = size of the part of `expr` in the enclosing placeholder scope.
-pub(crate) fn walk_expr_placeholder_scope<V: Visit + ?Sized>(v: &mut V, expr: &Expr) {
+pub(crate) fn walk_expr_placeholder_scope<'ast, V: Visit<'ast> + ?Sized>(
+    v: &mut V,
+    expr: &'ast Expr,
+) {
     if opens_own_scope(expr) && placeholder_body_kind_expr(expr) != PlaceholderBodyKind::Transparent
     {
         return;
@@ -123,7 +129,7 @@ pub(crate) fn walk_expr_placeholder_scope<V: Visit + ?Sized>(v: &mut V, expr: &E
 /// compile-time declarations. A `role` body is entered: it is a
 /// signature-capable nested block (ADR-0048 D7).
 // Cost: O(n), n = size of the part of `stmt` outside nested routines/packages.
-pub(crate) fn walk_stmt_deep_scope<V: Visit + ?Sized>(v: &mut V, stmt: &Stmt) {
+pub(crate) fn walk_stmt_deep_scope<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
     match stmt {
         Stmt::RoleDecl { .. } => walk_stmt(v, stmt),
         s if is_scope_declaration(s) || is_compile_time_declaration(s) => {}
@@ -240,15 +246,15 @@ impl PlaceholderCollector {
     }
 }
 
-impl Visit for PlaceholderCollector {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for PlaceholderCollector {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match self.scope {
             Scope::Own => walk_stmt_placeholder_scope(self, stmt),
             Scope::Deep => walk_stmt_deep_scope(self, stmt),
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match self.scope {
             Scope::Own => walk_expr_placeholder_scope(self, expr),
             Scope::Deep => walk_expr(self, expr),
@@ -260,7 +266,7 @@ impl Visit for PlaceholderCollector {
     // regex (`/$^a/`) belongs to the enclosing block, but mutsu keeps that
     // regex as a pre-parsed literal whose source the AST does not expose.
     // TODO(#10542): report regex interpolations once the regex literal carries its tree.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         match kind {
@@ -315,12 +321,12 @@ struct UnattachedCollector {
     out: Vec<String>,
 }
 
-impl Visit for UnattachedCollector {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for UnattachedCollector {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         walk_stmt_placeholder_scope(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         // Unlike the signature collector, stop at a `do {}` block and a bare
         // `{}` value too: each rejects its own stray placeholder with the
         // "surrounding block does not take a signature" error, as rakudo
@@ -344,7 +350,7 @@ impl Visit for UnattachedCollector {
     }
 
     // See `PlaceholderCollector::visit_regex_node`.
-    fn visit_regex_node(&mut self, _node: &RegexNode) {}
+    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         let sigil = match kind {

@@ -7,7 +7,7 @@ fn parse(src: &str) -> Vec<Stmt> {
 #[derive(Default)]
 struct Names(Vec<(String, NameKind)>);
 
-impl Visit for Names {
+impl<'ast> Visit<'ast> for Names {
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         self.0.push((name.to_string(), kind));
     }

@@ -5639,70 +5639,65 @@ fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
     })
 }
 
-/// `has` declarations nested inside a `sub`/`method` within a class body, or
-/// inside any control-flow block nested within either (#8441 — rakudo treats
-/// `has` as a compile-time declarator that installs the attribute wherever it
-/// lexically sits in the class, regardless of the runtime control flow
-/// enclosing it: `class C { method m($go) { if $go { has $.g = 3 } } }`
-/// installs `$!g`, with default `3`, on every instance whether or not `$go`
-/// is ever true), as statement references rather than just names (unlike
-/// [`collect_nested_has_decl_names`]) — unfiltered, so a class-level
-/// `our`/`my` nested `has` gets its own `Attr` op too (its `raw` field is
-/// `class_body_has_decl`'s only source for it, since `attr_decls` excludes
-/// it). Never descends into a nested `class`/`role`, which owns its own
-/// attribute scope.
+/// `has` declarations nested anywhere below a class body's own statements —
+/// in a `sub`/`method`, a control-flow block, a closure, a phaser or a `do`
+/// block (#8441: rakudo treats `has` as a compile-time declarator that
+/// installs the attribute wherever it lexically sits in the class, regardless
+/// of the runtime control flow enclosing it: `class C { method m($go) { if $go
+/// { has $.g = 3 } } }` installs `$!g`, with default `3`, on every instance
+/// whether or not `$go` is ever true), in source order, as statement
+/// references rather than just names (unlike [`collect_nested_has_decl_names`])
+/// — unfiltered, so a class-level `our`/`my` nested `has` gets its own `Attr`
+/// op too (its `raw` field is `class_body_has_decl`'s only source for it, since
+/// `attr_decls` excludes it). The body's own `has` statements are not
+/// collected; a nested type or package owns its own attribute scope and is not
+/// entered.
+// Cost: O(n), n = size of the class body's subtree outside nested types.
 pub(crate) fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-    for s in crate::ast::scope_members(stmts) {
-        match s {
-            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-            Stmt::SubDecl { body, .. } | Stmt::MethodDecl { body, .. } => {
-                collect_has_decls_in_scope(body, out);
-            }
-            other => {
-                for body in nested_scope_bodies(other) {
-                    collect_has_decls_in_scope(body, out);
-                }
-            }
+    let mut scan = NestedHasDecls { out };
+    for member in crate::ast::scope_members(stmts) {
+        if !matches!(member, Stmt::HasDecl { .. }) {
+            crate::ast_visit::Visit::visit_stmt(&mut scan, member);
         }
     }
 }
 
-/// A `has`-attribute scan of one `sub`/`method`/control-flow BODY already
-/// entered by [`collect_nested_has_decl_stmts`]: every `HasDecl` of the
-/// body's own scope (including one from a `has ($a, $b)` list form's
-/// `SyntheticBlock`), plus a further recursive descent via
-/// [`collect_nested_has_decl_stmts`] for anything nested deeper still.
-fn collect_has_decls_in_scope<'a>(body: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-    out.extend(crate::ast::scope_members(body).filter(|s| matches!(s, Stmt::HasDecl { .. })));
-    collect_nested_has_decl_stmts(body, out);
+/// The walk of [`collect_nested_has_decl_stmts`].
+struct NestedHasDecls<'a, 'o> {
+    out: &'o mut Vec<&'a Stmt>,
 }
 
-/// The nested statement lists of a control-flow construct that shares its
-/// enclosing routine's attribute/package scope — a Raku block does not open a
-/// new package — i.e. everything [`collect_nested_has_decl_stmts`] should
-/// look inside without treating it as a `sub`/`method` boundary of its own.
-/// Deliberately excludes `Stmt::SyntheticBlock`: its callers already look
-/// through it with [`crate::ast::scope_members`], so it is not a container
-/// this list needs to name.
-fn nested_scope_bodies(stmt: &Stmt) -> Vec<&[Stmt]> {
-    match stmt {
-        Stmt::Block(body)
-        | Stmt::While { body, .. }
-        | Stmt::Loop { body, .. }
-        | Stmt::For { body, .. }
-        | Stmt::React { body, .. }
-        | Stmt::Whenever { body, .. }
-        | Stmt::Given { body, .. }
-        | Stmt::When { body, .. }
-        | Stmt::Default(body)
-        | Stmt::Catch(body)
-        | Stmt::Control(body) => vec![body.as_slice()],
-        Stmt::If {
-            then_branch,
-            else_branch,
-            ..
-        } => vec![then_branch.as_slice(), else_branch.as_slice()],
-        _ => vec![],
+impl<'a> crate::ast_visit::Visit<'a> for NestedHasDecls<'a, '_> {
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        match stmt {
+            Stmt::HasDecl { .. } => self.out.push(stmt),
+            // A nested type or package declares its own attributes.
+            Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::Package { .. }
+            | Stmt::PackageRuntimeBody { .. }
+            | Stmt::AugmentClass { .. } => {}
+            // A BEGIN/CHECK runs while the class is being defined: a `has` it
+            // executes attaches itself to the open class (`RuntimeHasDecl`).
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Begin | crate::ast::PhaserKind::Check,
+                ..
+            } => {}
+            _ => crate::ast_visit::walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        // The value form of a BEGIN/CHECK, likewise.
+        if !matches!(
+            expr,
+            Expr::PhaserExpr {
+                kind: crate::ast::PhaserKind::Begin | crate::ast::PhaserKind::Check,
+                ..
+            }
+        ) {
+            crate::ast_visit::walk_expr(self, expr);
+        }
     }
 }
 

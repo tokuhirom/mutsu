@@ -57,8 +57,8 @@ impl WheneverScope {
     }
 }
 
-impl Visit for WheneverScope {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for WheneverScope {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() {
             return;
         }
@@ -75,7 +75,7 @@ impl Visit for WheneverScope {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.found.is_some() {
             return;
         }

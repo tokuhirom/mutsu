@@ -121,20 +121,26 @@ pub(crate) enum NameKind {
 /// A read-only AST visitor. Every hook defaults to plain recursion, so an
 /// implementation overrides only the hooks it needs and calls the matching
 /// `walk_*` function to keep descending.
-pub(crate) trait Visit {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+///
+/// `'ast` is the lifetime of the tree being walked: a hook receives nodes
+/// borrowed for all of it, so an analysis can collect `&'ast Stmt` /
+/// `&'ast Expr` references to the nodes it finds instead of cloning them.
+/// Names are reported as plain `&str` because some are computed (a resolved
+/// symbol) rather than borrowed from the tree.
+pub(crate) trait Visit<'ast> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         walk_stmt(self, stmt);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         walk_expr(self, expr);
     }
 
-    fn visit_param(&mut self, param: &ParamDef) {
+    fn visit_param(&mut self, param: &'ast ParamDef) {
         walk_param(self, param);
     }
 
-    fn visit_regex_node(&mut self, node: &RegexNode) {
+    fn visit_regex_node(&mut self, node: &'ast RegexNode) {
         walk_regex_node(self, node);
     }
 
@@ -144,7 +150,7 @@ pub(crate) trait Visit {
 
 // Cost: O(n), n = size of the parameter's subtree (default, `where`, traits,
 // sub-signatures).
-pub(crate) fn walk_param<V: Visit + ?Sized>(v: &mut V, p: &ParamDef) {
+pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast ParamDef) {
     let ParamDef {
         name,
         default,
@@ -203,7 +209,7 @@ pub(crate) fn walk_param<V: Visit + ?Sized>(v: &mut V, p: &ParamDef) {
 /// Reports the names a literal value carries: a type object's or a
 /// routine's. Literal data (strings, numbers, ...) is not a name.
 // Cost: O(1).
-pub(crate) fn walk_literal<V: Visit + ?Sized>(v: &mut V, value: &Value) {
+pub(crate) fn walk_literal<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, value: &Value) {
     match value.view() {
         ValueView::Package(name) => v.visit_name(name.as_str(), NameKind::Type),
         ValueView::Routine { name, .. } => v.visit_name(name.as_str(), NameKind::LiteralRoutine),
@@ -212,7 +218,7 @@ pub(crate) fn walk_literal<V: Visit + ?Sized>(v: &mut V, value: &Value) {
 }
 
 // Cost: O(n), n = size of the argument's subtree.
-pub(crate) fn walk_call_arg<V: Visit + ?Sized>(v: &mut V, arg: &CallArg) {
+pub(crate) fn walk_call_arg<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, arg: &'ast CallArg) {
     match arg {
         CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => v.visit_expr(e),
         // The key of a named argument is data, like a hash-literal key.
@@ -225,7 +231,7 @@ pub(crate) fn walk_call_arg<V: Visit + ?Sized>(v: &mut V, arg: &CallArg) {
 }
 
 // Cost: O(n), n = size of the spec's subtree.
-pub(crate) fn walk_handle_spec<V: Visit + ?Sized>(v: &mut V, spec: &HandleSpec) {
+pub(crate) fn walk_handle_spec<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, spec: &'ast HandleSpec) {
     match spec {
         HandleSpec::Name(name) => v.visit_name(name, NameKind::Method),
         HandleSpec::Expr(e) => v.visit_expr(e),
@@ -240,7 +246,7 @@ pub(crate) fn walk_handle_spec<V: Visit + ?Sized>(v: &mut V, spec: &HandleSpec) 
 }
 
 // Cost: O(n), n = size of the regex tree.
-pub(crate) fn walk_regex_tree<V: Visit + ?Sized>(v: &mut V, tree: &RegexTree) {
+pub(crate) fn walk_regex_tree<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, tree: &'ast RegexTree) {
     let RegexTree {
         body,
         match_immediately: _,
@@ -254,7 +260,7 @@ pub(crate) fn walk_regex_tree<V: Visit + ?Sized>(v: &mut V, tree: &RegexTree) {
     }
 }
 
-fn walk_subrule_args<V: Visit + ?Sized>(v: &mut V, args: &SubruleArgs) {
+fn walk_subrule_args<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, args: &'ast SubruleArgs) {
     let SubruleArgs {
         args,
         source,
@@ -269,7 +275,7 @@ fn walk_subrule_args<V: Visit + ?Sized>(v: &mut V, args: &SubruleArgs) {
 }
 
 // Cost: O(n), n = size of the node's subtree.
-pub(crate) fn walk_regex_node<V: Visit + ?Sized>(v: &mut V, node: &RegexNode) {
+pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'ast RegexNode) {
     match node {
         RegexNode::Literal(_) | RegexNode::Quote(_) => {}
         RegexNode::Sequence(nodes)
@@ -371,19 +377,19 @@ pub(crate) fn walk_regex_node<V: Visit + ?Sized>(v: &mut V, node: &RegexNode) {
     }
 }
 
-fn exprs<V: Visit + ?Sized>(v: &mut V, items: &[Expr]) {
+fn exprs<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, items: &'ast [Expr]) {
     for e in items {
         v.visit_expr(e);
     }
 }
 
-fn params<V: Visit + ?Sized>(v: &mut V, items: &[ParamDef]) {
+fn params<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, items: &'ast [ParamDef]) {
     for p in items {
         v.visit_param(p);
     }
 }
 
-fn names<'a, V: Visit + ?Sized>(
+fn names<'ast, 'a, V: Visit<'ast> + ?Sized>(
     v: &mut V,
     items: impl IntoIterator<Item = &'a String>,
     kind: NameKind,
@@ -394,7 +400,7 @@ fn names<'a, V: Visit + ?Sized>(
 }
 
 /// Custom traits: `(name, optional argument)`.
-fn traits<V: Visit + ?Sized>(v: &mut V, items: &[(String, Option<Expr>)]) {
+fn traits<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, items: &'ast [(String, Option<Expr>)]) {
     for (name, arg) in items {
         v.visit_name(name, NameKind::Trait);
         if let Some(e) = arg {

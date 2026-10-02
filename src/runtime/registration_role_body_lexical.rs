@@ -151,13 +151,13 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
         params: Vec<&'a str>,
         found: bool,
     }
-    impl Visit for Mentions<'_> {
-        fn visit_stmt(&mut self, stmt: &Stmt) {
+    impl<'ast> Visit<'ast> for Mentions<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             if !self.found {
                 walk_stmt(self, stmt);
             }
         }
-        fn visit_expr(&mut self, expr: &Expr) {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
             if !self.found {
                 walk_expr(self, expr);
             }

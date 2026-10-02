@@ -151,15 +151,15 @@ fn nested_exported_decls(stmt: &Stmt) -> Vec<Stmt> {
     let mut lifted: HashSet<String> = HashSet::new();
     let mut copies = Vec::new();
     for decl in finder.found {
-        let own = names_of(&decl, is_declaration);
-        let blocked = names_of(&decl, is_reference).into_iter().any(|name| {
+        let own = names_of(decl, is_declaration);
+        let blocked = names_of(decl, is_reference).into_iter().any(|name| {
             declared.contains(&name) && !own.contains(&name) && !lifted.contains(&name)
         });
         if blocked {
             continue;
         }
         lifted.extend(own);
-        copies.push(decl);
+        copies.push(decl.clone());
     }
     copies
 }
@@ -168,23 +168,23 @@ fn nested_exported_decls(stmt: &Stmt) -> Vec<Stmt> {
 /// `enum`, and a lexical class (an `our` class is already installed at
 /// compile time, by its nested type shell).
 #[derive(Default)]
-struct ExportedDecls {
-    found: Vec<Stmt>,
+struct ExportedDecls<'ast> {
+    found: Vec<&'ast Stmt>,
 }
 
-impl Visit for ExportedDecls {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ExportedDecls<'ast> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
             Stmt::VarDecl {
                 is_export: true,
                 custom_traits,
                 ..
             } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
-                self.found.push(stmt.clone());
+                self.found.push(stmt);
             }
             Stmt::EnumDecl {
                 is_export: true, ..
-            } => self.found.push(stmt.clone()),
+            } => self.found.push(stmt),
             Stmt::ClassDecl {
                 is_lexical: true,
                 name_expr: None,
@@ -194,7 +194,7 @@ impl Visit for ExportedDecls {
                 .iter()
                 .any(|(t, _)| t == "__mutsu_export_type") =>
             {
-                self.found.push(stmt.clone());
+                self.found.push(stmt);
             }
             // Another package's body, or code that already runs at BEGIN time.
             Stmt::ClassDecl { .. }
@@ -249,7 +249,7 @@ fn names_of(stmt: &Stmt, keep: fn(NameKind) -> bool) -> HashSet<String> {
         keep: fn(NameKind) -> bool,
         out: HashSet<String>,
     }
-    impl Visit for Names {
+    impl<'ast> Visit<'ast> for Names {
         fn visit_name(&mut self, name: &str, kind: NameKind) {
             if (self.keep)(kind) {
                 self.out.insert(

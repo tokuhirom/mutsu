@@ -494,8 +494,8 @@ fn body_contains_last(body: &[Stmt]) -> bool {
 
 struct ContainsLast(bool);
 
-impl Visit for ContainsLast {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
+impl<'ast> Visit<'ast> for ContainsLast {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.0 {
             return;
         }
@@ -506,7 +506,7 @@ impl Visit for ContainsLast {
         }
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         if self.0 {
             return;
         }

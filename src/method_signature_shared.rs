@@ -231,8 +231,8 @@ pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         positional: bool,
         named: bool,
     }
-    impl crate::ast_visit::Visit for ImplicitArgsScan {
-        fn visit_stmt(&mut self, stmt: &Stmt) {
+    impl<'ast> crate::ast_visit::Visit<'ast> for ImplicitArgsScan {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             // A nested routine, package or captured nested method binds its
             // own `@_`/`%_`.
             if !crate::compiler::scope_scan::is_scope_declaration(stmt)
