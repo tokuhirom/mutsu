@@ -98,6 +98,9 @@ RULES = [
 # Basename (without `.t`) -> category. Judgment calls and rule mistakes.
 # Keep sorted; every entry should be obvious from the file's subject.
 OVERRIDES: dict[str, str] = {
+    # A variable's `is default(...)` trait following its declaration's lexical
+    # scope is a scoping question, not a parameter-default one (#10796).
+    "is-default-scoped-to-declaration": "vm/scope",
     # A Junction operand autothreading through a user `infix:<eq>` multi is a
     # Junction question, not a threading (`concurrency`) one.
     "junction-threads-through-user-infix-eq": "types",

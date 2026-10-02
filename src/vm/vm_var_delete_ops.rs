@@ -708,7 +708,7 @@ impl Interpreter {
         // same-named container must not leak into the new container.
         // Prefer the value-carried default (HashData/ArrayData) so `:delete` of
         // an absent key yields the default even when the container arrived via a
-        // parameter (whose name is not in the name-keyed `var_defaults` table).
+        // parameter (whose name does not resolve through the by-name `var_default`).
         let saved_default = self
             .env()
             .get(&var_name)

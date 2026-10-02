@@ -489,7 +489,7 @@ impl Interpreter {
     /// Resolve the value to restore, applying `is default(...)` when restoring Nil.
     fn resolve_restore_value(&self, name: &str, val: &Value) -> Value {
         if val.is_nil()
-            && let Some(default) = self.var_defaults.get(name)
+            && let Some(default) = self.var_default(name)
         {
             return default.clone();
         }

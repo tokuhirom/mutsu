@@ -950,6 +950,7 @@ pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
 mod runtime_thread_decl_mask;
 mod runtime_var_bind_meta;
+pub(crate) mod runtime_var_default;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
@@ -3730,12 +3731,14 @@ pub struct Interpreter {
     /// walk (and its key construction) is skipped. Set at every alias-insert site (see
     /// `sigilless_alias_key`). Never cleared, so removing an alias still resolves.
     sigilless_alias_seen: bool,
-    /// Variable default values set by `is default(...)` trait.
-    var_defaults: ValueMap,
-    /// Bumped on every change to `var_defaults`; see
+    /// Attribute `is default(...)` values, keyed by the twigil names a method
+    /// body reads them by (`!x`, `.x`, `@!x`, ...). A lexical's default is NOT
+    /// here: it lives in the env under `MetaNs::VarDefault` (#10796).
+    attr_var_defaults: ValueMap,
+    /// Bumped on every change to `attr_var_defaults`; see
     /// `Interpreter::attr_var_defaults_are_current`.
-    var_defaults_epoch: u64,
-    /// `(owner class, receiver class)` -> the `(var_defaults_epoch, method
+    attr_var_defaults_epoch: u64,
+    /// `(owner class, receiver class)` -> the `(attr_var_defaults_epoch, method
     /// generation)` at which method dispatch last registered that pair's
     /// attribute defaults. See `Interpreter::attr_var_defaults_are_current`.
     attr_var_defaults_current:

@@ -301,7 +301,7 @@ impl Interpreter {
         // container-carried default comes first -- it is a property of the
         // container, not of the variable's declared type, and it travels with
         // the value through the binds and rebuilds that leave the name-keyed
-        // `var_defaults` entry behind.
+        // `var_default` entry behind.
         let default_val = container
             .as_ref()
             .and_then(|c| self.container_default(c))
