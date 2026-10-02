@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast_visit::{VisitMut, walk_expr_mut, walk_stmt_mut};
+use crate::compiler::scope_scan::is_code_object;
 
 fn dispatch_call() -> Expr {
     Expr::Call {
@@ -21,12 +22,57 @@ pub(crate) fn is_only_star_block(body: &[Stmt]) -> bool {
 /// Rewrites every `{*}` of a proto body, in any position: rakudo dispatches
 /// from a `{*}` in a call argument, a `say`, a `given`/`when` or an
 /// interpolation too. A nested routine or type declaration has its own `{*}`.
-struct ProtoDispatch;
+///
+/// A `{*}` in a closure *inside a method call's arguments* (`.map({ {*} })`) is
+/// not a dispatch point: rakudo looks the dispatcher up through the closure's
+/// callers, and the method the closure is handed to -- a builtin like `map`, a
+/// user method, a `multi` -- is the nearest routine that has one, so the `{*}`
+/// evaluates to `Nil` instead of reaching the proto. (A closure the proto body
+/// calls itself, `my &c = { {*} }; c()`, or hands to a plain `sub`, has no such
+/// routine in between and dispatches.) A `{*}` that is itself an argument
+/// (`.map({*})`) is evaluated at the call, as any argument is, and dispatches.
+// TODO: rakudo decides this from the callers at run time, so a closure kept in
+// a variable and a routine the body calls behave differently than this static
+// rule says. See #10746.
+#[derive(Default)]
+struct ProtoDispatch {
+    /// How many method-call argument lists enclose the node being walked.
+    method_args: u32,
+    /// How many closures enclose it that sit in such an argument list.
+    callbacks: u32,
+}
+
+impl ProtoDispatch {
+    /// What a `{*}` becomes here: the dispatch, or `Nil` inside a callback.
+    fn star(&self) -> Expr {
+        if self.callbacks > 0 {
+            Expr::Literal(Value::NIL)
+        } else {
+            dispatch_call()
+        }
+    }
+
+    /// One argument of a method call: a bare `{*}` is evaluated at the call, so
+    /// it dispatches; a closure is a callback, whose `{*}`s are `Nil`; anything
+    /// else is walked as it is. It looks at the argument's own shape and leaves
+    /// everything below it to the visitor, so it is not a walk of its own.
+    fn walk_method_arg(&mut self, arg: &mut Expr) {
+        match arg {
+            Expr::AnonSub { body, .. } if is_only_star_block(body) => *arg = self.star(),
+            _ if is_code_object(arg) => {
+                self.callbacks += 1;
+                walk_expr_mut(self, arg);
+                self.callbacks -= 1;
+            }
+            _ => walk_expr_mut(self, arg),
+        }
+    }
+}
 
 impl VisitMut for ProtoDispatch {
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         match stmt {
-            Stmt::Expr(Expr::Whatever) => *stmt = Stmt::Expr(dispatch_call()),
+            Stmt::Expr(Expr::Whatever) => *stmt = Stmt::Expr(self.star()),
             // A `{*}` in a nested routine or type body is that routine's.
             Stmt::SubDecl { .. }
             | Stmt::MethodDecl { .. }
@@ -43,18 +89,20 @@ impl VisitMut for ProtoDispatch {
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         match expr {
-            Expr::AnonSub { body, .. } if is_only_star_block(body) => *expr = dispatch_call(),
-            // TODO: rewrite method-call arguments too, as rakudo does
-            // (`.map({ {*} })`). A callback a builtin method invokes runs
-            // outside the proto's dispatch context here, so the rewritten
-            // `{*}` would die "used outside proto"; it is left a block, as
-            // before the port. See #10555.
+            Expr::AnonSub { body, .. } if is_only_star_block(body) => *expr = self.star(),
             Expr::MethodCall { args, .. }
             | Expr::HyperMethodCall { args, .. }
             | Expr::DynamicMethodCall { args, .. }
             | Expr::HyperMethodCallDynamic { args, .. } => {
-                let args = std::mem::take(args);
+                // The invocant and the rest of the call are ordinary
+                // expressions; the arguments are walked as callback context.
+                let mut args = std::mem::take(args);
                 walk_expr_mut(self, expr);
+                self.method_args += 1;
+                for arg in &mut args {
+                    self.walk_method_arg(arg);
+                }
+                self.method_args -= 1;
                 if let Expr::MethodCall { args: slot, .. }
                 | Expr::HyperMethodCall { args: slot, .. }
                 | Expr::DynamicMethodCall { args: slot, .. }
@@ -62,6 +110,11 @@ impl VisitMut for ProtoDispatch {
                 {
                     *slot = args;
                 }
+            }
+            _ if self.method_args > 0 && is_code_object(expr) => {
+                self.callbacks += 1;
+                walk_expr_mut(self, expr);
+                self.callbacks -= 1;
             }
             _ => walk_expr_mut(self, expr),
         }
@@ -75,7 +128,7 @@ impl Interpreter {
     // Cost: O(n), n = size of `stmt`'s subtree.
     pub(super) fn rewrite_proto_dispatch_stmt(stmt: &Stmt) -> Stmt {
         let mut out = stmt.clone();
-        ProtoDispatch.visit_stmt_mut(&mut out);
+        ProtoDispatch::default().visit_stmt_mut(&mut out);
         out
     }
 
