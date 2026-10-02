@@ -184,6 +184,7 @@ impl Interpreter {
             method_name_chunks,
             method_decls,
             method_outer_lexical_slots,
+            body_bind_source_slots,
             declared_static_names,
             parent_arg_chunks,
             body_plan,
@@ -440,6 +441,17 @@ impl Interpreter {
                 } else {
                     (false, false)
                 };
+            // A body `my $w := $z` aliases the declaring frame's `$z`, but the
+            // body runs as separate chunks that reach `$z` by name only. Box
+            // each such source into a shared cell (slot and env alike) first,
+            // so the bind adopts that cell and the frame's later writes, the
+            // body static and the methods that capture it stay one container
+            // (#10682; ADR-0018's shared-cell rule for captured lexicals).
+            if !is_hoisted_shell {
+                for slot in body_bind_source_slots {
+                    self.box_decl_local_cell(code, *slot as usize);
+                }
+            }
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(

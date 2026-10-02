@@ -257,6 +257,8 @@ impl Compiler {
             )
         });
         let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
+        // See the matching flag in `compile_stmt`'s `Stmt::SyntheticBlock` arm.
+        let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
         // Names marked readonly by a preceding `MarkReadonly` statement. A `:=`
         // scalar bind to a readonly RHS (`my $x := 42`) is lowered to
         // `[MarkReadonly(x), VarDecl{__scalar_bind}]`; when that VarDecl is in
@@ -417,6 +419,26 @@ impl Compiler {
                         ) =>
                     {
                         self.compile_expr_do_stmt(stmt);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    // A block-final scalar `:=` declaration (`my $w := $z`)
+                    // must alias the RHS container exactly like the statement
+                    // form: the hand-inlined arm below only stores a copy of the
+                    // RHS value, so the binding silently became a snapshot. A
+                    // class body compiles every statement as its own chunk, so
+                    // each of its `my $w := $z` is block-final here and the
+                    // class's methods then read a stale value (#10682). Route
+                    // the declaration through the statement compile (which
+                    // emits the `WrapVarRef` + `MarkBindContext` bind) and read
+                    // the bound variable back as the block's value.
+                    Stmt::VarDecl { name, .. }
+                        if has_mark_bind && !name.starts_with(['@', '%']) =>
+                    {
+                        self.bind_vardecl = true;
+                        self.sigilless_bind_vardecl = has_mark_sigilless;
+                        self.compile_stmt(stmt);
+                        self.emit_get_named_var(name);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
@@ -643,6 +665,7 @@ impl Compiler {
             }
             if has_mark_bind && matches!(stmt, Stmt::VarDecl { .. }) {
                 self.bind_vardecl = true;
+                self.sigilless_bind_vardecl = has_mark_sigilless;
             }
             self.compile_stmt(stmt);
             // ADR-0052: a `given`/`when`/`default` statement nets one stack
