@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 9.9,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 96.93,
+        "secs": 60.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 10.02,
+        "secs": 5.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 7.45,
+        "secs": 4.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 11.02,
+        "secs": 5.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 7.4,
+        "secs": 5.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 16.55,
+        "secs": 44.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,30 +127,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 7.77,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'set_name' for invocant of type 'Regex'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 9.16,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.94,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-rule-to-regex-conversion.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.54,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,10 +169,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -184,13 +183,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAMMAR_TOKENPROCESSING/c49d1343847b218fc3d094fb69162bf20dcbbceb.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 24,
     "baseline_files": 5,
-    "mutsu_assertions": 18,
-    "parity_files": 4,
-    "regressed_files": 1
+    "mutsu_assertions": 24,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.1.10"
 }

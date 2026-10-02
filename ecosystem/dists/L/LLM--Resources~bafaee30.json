@@ -56,16 +56,16 @@
   "files": [],
   "load": {
     "LLM::Resources": "raku_also_fails",
-    "LLM::Resources::AgentSkillValidator": "Failed to parse module 'LLM::Resources::AgentSkillValidator': Confused. Two terms in a row [at LLM/Resources/AgentSkillValidator.rakumod:330]",
+    "LLM::Resources::AgentSkillValidator": "ok",
     "LLM::Resources::DSLTranslation": "ok",
     "LLM::Resources::Graphs": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -76,7 +76,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_RESOURCES/feadf5ba83e42f0a84975d8330c9ec9ddb837925.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

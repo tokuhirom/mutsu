@@ -92,14 +92,14 @@
       "cmp": "no_baseline",
       "path": "t/00-use.rakutest",
       "raku": {
-        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 171.85,
+        "secs": 240.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       }
     }
   ],
@@ -108,10 +108,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

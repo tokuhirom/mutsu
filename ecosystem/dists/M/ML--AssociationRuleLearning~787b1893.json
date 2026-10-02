@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 42.42,
+        "secs": 57.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 118.66,
+        "secs": 77.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.09,
+        "secs": 240.06,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 13.88,
+        "secs": 27.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 47.01,
+        "secs": 65.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.69,
+        "secs": 8.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 178.05,
+        "secs": 222.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +126,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 7.35,
+        "secs": 11.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 112.45,
+        "secs": 144.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 7.95,
+        "secs": 13.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,10 +165,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

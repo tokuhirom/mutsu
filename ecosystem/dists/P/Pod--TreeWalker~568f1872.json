@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.27,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,29 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.82,
+        "secs": 5.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/declarators.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,34 +63,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/declarators.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/document.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.09,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.27,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.07,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.23,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +128,7 @@
     "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

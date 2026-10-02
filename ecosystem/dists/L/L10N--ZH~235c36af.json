@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.97,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 0.21,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 10.66,
+        "secs": 10.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,11 +56,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: Use { module: \"lib\", arg: Some(Literal(Str(\"lib\"))), tags: [], condition: None }",
+        "first_failure": "RakuAST: `.AST` does not yet support this construct: Import { module: \"TestModule\", tags: [] }",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 0.14,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.13,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,118 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.42,
+        "secs": 3.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-package.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 5.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "RakuAST: `.AST` does not yet support this construct: regex declaration without a source tree",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-routine.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 5.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-modifier.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 7.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/16-enum-subset.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-control-flow.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,123 +220,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/13-package.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 5.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: regex declaration without a source tree",
-        "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 0.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/14-routine.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 6.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/15-modifier.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 8.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/16-enum-subset.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/17-control-flow.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/19-logic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.3,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,10 +238,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -256,7 +256,7 @@
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 10,
-    "mutsu_assertions": 43,
+    "mutsu_assertions": 44,
     "parity_files": 7,
     "regressed_files": 3
   },

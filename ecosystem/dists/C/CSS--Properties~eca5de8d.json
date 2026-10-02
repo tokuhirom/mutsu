@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.02,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 9.31,
+        "secs": 58.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.53,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 5.51,
+        "secs": 8.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 1.81,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.61,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.77,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.26,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 1.6,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 1.81,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.54,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -150,7 +150,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.25,
+        "secs": 4.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 1.83,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -173,7 +173,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 5.21,
+        "secs": 7.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -186,7 +186,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 1.89,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,7 +196,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 20,
-        "secs": 2.07,
+        "secs": 2.53,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -205,11 +205,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'font-size' for invocant of type 'CSS::Properties'",
+        "first_failure": "Could not instantiate role 'CSS::Units' because it died with X::Redeclaration; exception details:",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.85,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -219,53 +219,53 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.87,
+        "secs": 2.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Parameter '$v' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "serialization",
+        "nok": 7,
+        "ok": 22,
         "plan": 33,
-        "secs": 1.72,
+        "secs": 5.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/colors.t",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 2.31,
+        "secs": 3.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Int'",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "serialization",
+        "nok": 2,
+        "ok": 2,
         "plan": 4,
-        "secs": 3.24,
+        "secs": 23.99,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/css-fonts.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.01,
+        "secs": 4.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -274,11 +274,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Parameter '$v' expects a writable container (variable) as an argument,",
+        "first_failure": "No such method 'azimuth' for invocant of type 'CSS::Properties'",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 47,
-        "secs": 2.04,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -288,7 +288,7 @@
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 2.26,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -301,7 +301,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.65,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -311,7 +311,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.1,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -324,7 +324,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 22,
-        "secs": 1.79,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -334,7 +334,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.76,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -343,11 +343,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::Assignment::RO: rw method 'important' does not expose an assignable attribute",
+        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
         "nok": 0,
-        "ok": 1,
+        "ok": 11,
         "plan": 14,
-        "secs": 1.93,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -357,7 +357,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.03,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -370,7 +370,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 23,
-        "secs": 2.01,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -380,7 +380,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 2.23,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -393,7 +393,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 32,
-        "secs": 1.91,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -403,30 +403,29 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 2.4,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Parameter '$v' expects a writable container (variable) as an argument,",
         "nok": 0,
-        "ok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 1.57,
+        "secs": 3.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/modules.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.42,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -439,7 +438,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 2.54,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -449,7 +448,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.12,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -462,7 +461,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 1.81,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -472,7 +471,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 4.0,
+        "secs": 5.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -485,7 +484,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.27,
+        "secs": 2.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -495,7 +494,7 @@
         "nok": 0,
         "ok": 58,
         "plan": 58,
-        "secs": 2.35,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -508,7 +507,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -518,7 +517,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 15.25,
+        "secs": 22.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -531,7 +530,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.14,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -541,7 +540,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.29,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -554,7 +553,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.67,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -564,7 +563,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.74,
+        "secs": 2.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -577,7 +576,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 25,
-        "secs": 1.53,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -587,7 +586,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 2.29,
+        "secs": 3.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -610,10 +609,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -624,13 +623,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_PROPERTIES/f1b1015317c03fb74197067930bc3cdd939038eb.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 462,
     "baseline_files": 25,
-    "mutsu_assertions": 3,
-    "parity_files": 0,
-    "regressed_files": 25
+    "mutsu_assertions": 47,
+    "parity_files": 1,
+    "regressed_files": 24
   },
   "version": "0.10.9"
 }

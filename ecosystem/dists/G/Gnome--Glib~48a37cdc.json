@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.4,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 13.7,
+        "secs": 8.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.37,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.29,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.41,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.5,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.56,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 7.89,
+        "secs": 4.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +108,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.37,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.9,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +130,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.36,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.88,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +153,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.47,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.98,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -175,7 +175,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.09,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -185,7 +185,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 9.47,
+        "secs": 6.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,7 +198,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.77,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -208,7 +208,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.63,
+        "secs": 2.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -217,11 +217,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $vt; expected Gnome::Glib::VariantType but got N-GObject",
+        "first_failure": "Type check failed in assignment to $vt; expected Gnome::Glib::VariantType but got N-GObject (N-GObject.new)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.47,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -231,7 +231,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.48,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -252,10 +252,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

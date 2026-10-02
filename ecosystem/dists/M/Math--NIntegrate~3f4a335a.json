@@ -25,12 +25,12 @@
   "dist": "Math::NIntegrate",
   "files": [],
   "load": {
-    "Math::NIntegrate": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
-    "Math::NIntegrate::Builder": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
+    "Math::NIntegrate": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:222]",
+    "Math::NIntegrate::Builder": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:222]",
     "Math::NIntegrate::Codes": "ok",
     "Math::NIntegrate::NumericalFunction": "ok",
     "Math::NIntegrate::Processing::Actions::MethodSpec": "ok",
-    "Math::NIntegrate::Processing::Grammar": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
+    "Math::NIntegrate::Processing::Grammar": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:222]",
     "Math::NIntegrate::Region": "ok",
     "Math::NIntegrate::Rule": "ok",
     "Math::NIntegrate::Rule::Cartesian": "ok",
@@ -41,7 +41,7 @@
     "Math::NIntegrate::Rule::MultiDimensional": "ok",
     "Math::NIntegrate::Rule::NewtonCotes": "ok",
     "Math::NIntegrate::Rule::Trapezoidal": "ok",
-    "Math::NIntegrate::Spec": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:219]",
+    "Math::NIntegrate::Spec": "Failed to parse module 'Math::NIntegrate::Processing::Grammar': X::Syntax::Missing: Missing block [at NIntegrate/Processing/Grammar.rakumod:222]",
     "Math::NIntegrate::Strategy": "ok",
     "Math::NIntegrate::Strategy::AdaptiveMonteCarlo": "ok",
     "Math::NIntegrate::Strategy::Decorator": "ok",
@@ -62,10 +62,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -74,7 +74,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/M/AT/MATH_NINTEGRATE/8fb45d14206189b4b953151b532d9067c876e1cc.tar.gz"
+    "url": "https://360.zef.pm/M/AT/MATH_NINTEGRATE/9cd060f8f01d710c2abd732ef79645db934aadcd.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -84,5 +84,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.2"
+  "version": "0.0.3"
 }

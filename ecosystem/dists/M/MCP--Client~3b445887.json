@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.33,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 6.32,
+        "secs": 8.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.39,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.8,
+        "secs": 5.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 11,
         "ok": 3,
         "plan": 14,
-        "secs": 3.13,
+        "secs": 4.68,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 3.1,
+        "secs": 4.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.37,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.81,
+        "secs": 4.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.03,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,7 +135,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 13.74,
+        "secs": 19.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +147,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.89,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.69,
+        "secs": 3.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -166,11 +166,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP protocol error:",
+        "first_failure": "MCP protocol error: Method not found: initialize (code -32601)",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 0.6,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -180,7 +180,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 17.06,
+        "secs": 24.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -189,11 +189,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP request timed out after",
+        "first_failure": "MCP request timed out after 60s (method 'initialize') (id 2)",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 65.53,
+        "secs": 65.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 9.17,
+        "secs": 12.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,11 +212,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP request timed out after",
+        "first_failure": "MCP request timed out after 60s (method 'initialize') (id 2)",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 65.59,
+        "secs": 65.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 11.33,
+        "secs": 16.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -240,7 +240,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.47,
+        "secs": 10.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -254,7 +254,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.63,
+        "secs": 15.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,7 +266,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.99,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -276,7 +276,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.39,
+        "secs": 5.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -285,11 +285,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP protocol error:",
+        "first_failure": "MCP protocol error: Method not found: initialize (code -32601)",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.68,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -299,7 +299,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.84,
+        "secs": 3.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -312,7 +312,7 @@
         "nok": 1,
         "ok": 13,
         "plan": 14,
-        "secs": 2.23,
+        "secs": 3.35,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -322,7 +322,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 14.16,
+        "secs": 18.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -331,11 +331,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP protocol error:",
+        "first_failure": "MCP protocol error: Method not found: initialize (code -32601)",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.72,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -345,7 +345,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.03,
+        "secs": 4.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -358,7 +358,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 9,
-        "secs": 1.19,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -368,7 +368,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.34,
+        "secs": 6.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -380,7 +380,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.68,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -390,7 +390,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.0,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -402,7 +402,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.8,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -412,7 +412,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.72,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -424,7 +424,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.58,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -434,7 +434,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.05,
+        "secs": 5.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -447,7 +447,7 @@
         "nok": 4,
         "ok": 21,
         "plan": 25,
-        "secs": 5.12,
+        "secs": 5.49,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -457,7 +457,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 22.57,
+        "secs": 26.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -469,7 +469,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.76,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -479,7 +479,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.48,
+        "secs": 5.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -491,7 +491,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.71,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -501,7 +501,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.62,
+        "secs": 3.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -514,7 +514,7 @@
         "nok": 5,
         "ok": 0,
         "plan": 5,
-        "secs": 1.45,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -524,7 +524,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.9,
+        "secs": 2.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -536,7 +536,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.89,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -546,7 +546,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.56,
+        "secs": 3.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -558,7 +558,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.85,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -568,7 +568,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.78,
+        "secs": 5.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -577,11 +577,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "MCP protocol error:",
+        "first_failure": "MCP protocol error: Method not found: initialize (code -32601)",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.8,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -591,7 +591,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.33,
+        "secs": 3.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -621,10 +621,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

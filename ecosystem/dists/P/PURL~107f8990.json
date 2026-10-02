@@ -23,7 +23,7 @@
         "nok": 2,
         "ok": 31,
         "plan": 33,
-        "secs": 1.61,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 23.01,
+        "secs": 22.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hp088les/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
+        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7o__w75d/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
         "nok": 32,
         "ok": 2,
         "plan": 34,
-        "secs": 59.11,
+        "secs": 55.8,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.81,
+        "secs": 2.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.78,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.45,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,10 +91,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-01",
+    "date": "2026-10-02",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10a1dda8",
+    "mutsu_commit": "387bd201",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
