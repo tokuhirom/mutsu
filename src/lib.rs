@@ -59,6 +59,7 @@ mod vm;
 pub(crate) mod wasm_sched;
 pub(crate) mod whatever_curry;
 pub(crate) mod with_desugar;
+pub(crate) mod word_wrap;
 
 pub use interpreter::Interpreter;
 pub use value::{HashKey, RuntimeError, RuntimeErrorCode, Value};

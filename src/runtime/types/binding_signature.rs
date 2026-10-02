@@ -641,21 +641,13 @@ impl Interpreter {
                     source_name,
                     source_type_constraint,
                 ) {
-                    // Rakudo names a `%` parameter's argument by its type alone.
-                    let err = if pd.name.starts_with('%') {
-                        RuntimeError::typecheck_binding_parameter_with_repr(
-                            &param_display_name(pd),
-                            &expected,
-                            &value,
-                            "",
-                        )
-                    } else {
-                        self.typecheck_binding_parameter_failure(
-                            &param_display_name(pd),
-                            &expected,
-                            &value,
-                        )
-                    };
+                    // An Associative expectation names the argument by its
+                    // type alone (`typecheck_binding_parameter_failure`).
+                    let err = self.typecheck_binding_parameter_failure(
+                        &param_display_name(pd),
+                        &expected,
+                        &value,
+                    );
                     return Err(err.with_parameter_object(pd, Some(&*self)));
                 }
             } else if !self.type_matches_value(&resolved_constraint, &value) {
@@ -3343,14 +3335,13 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Associative", &value)
                     {
-                        // Rakudo names a `%` parameter's argument by its type alone.
-                        return Err(RuntimeError::typecheck_binding_parameter_with_repr(
-                            &param_display_name(pd),
-                            "Associative",
-                            &value,
-                            "",
-                        )
-                        .with_parameter_object(pd, Some(&*self)));
+                        return Err(self
+                            .typecheck_binding_parameter_failure(
+                                &param_display_name(pd),
+                                "Associative",
+                                &value,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
                     }
                     // Implicit Callable constraint: untyped &-sigiled parameters
                     // require the argument to be Callable (Sub, Block, etc.).

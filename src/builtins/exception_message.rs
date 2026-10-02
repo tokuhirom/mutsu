@@ -106,7 +106,7 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
                 ),
                 _ => format!("A {what} is not a Str, so using '{method}' will not work."),
             };
-            Some(naive_word_wrap(
+            Some(crate::word_wrap::naive_word_wrap(
                 &format!("{head} The 'decode' method should be used to convert a {what} to a Str."),
                 72,
             ))
@@ -284,26 +284,6 @@ fn attr_str(attrs: &AttrMap, key: &str) -> String {
         .get(key)
         .map(|v| v.to_string_value())
         .unwrap_or_default()
-}
-
-/// Rakudo's `Str.naive-word-wrapper`: greedily fill lines of at most `max`
-/// columns, breaking only at spaces.
-pub(crate) fn naive_word_wrap(text: &str, max: usize) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut line_len = 0;
-    for word in text.split(' ').filter(|w| !w.is_empty()) {
-        let wlen = word.chars().count();
-        if line_len > 0 && line_len + 1 + wlen > max {
-            out.push('\n');
-            line_len = 0;
-        } else if line_len > 0 {
-            out.push(' ');
-            line_len += 1;
-        }
-        out.push_str(word);
-        line_len += wlen;
-    }
-    out
 }
 
 /// Extract a string attribute with a custom default.

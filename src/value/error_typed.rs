@@ -684,7 +684,7 @@ impl RuntimeError {
                 quoted(&nogo)
             ));
         }
-        let msg = crate::builtins::exception_message::naive_word_wrap(
+        let msg = crate::word_wrap::naive_word_wrap(
             &format!("{text} passed to {what} on '{source}'."),
             72,
         );
@@ -793,11 +793,18 @@ but got '{}' ({}) as a value without a container.",
     /// `repr` is the `(repr)` tail (`""` for none). An object's repr is its
     /// `.raku`, a method call, so `Interpreter::typecheck_binding_parameter_failure`
     /// supplies it; `runtime::utils::value_short_repr` answers for every other value.
-    pub(crate) fn typecheck_binding_parameter_with_repr(
+    /// `hint` is rakudo's optional beginner hint (`X::TypeCheck.explain`),
+    /// appended to the explanation, e.g. "You have to pass an explicitly typed
+    /// array, ..." (`Interpreter::container_binding_hint`). As in rakudo, the
+    /// explanation (`expected ... but got ...` plus the hint) is passed
+    /// through `naive-word-wrapper`; the `Type check failed in binding to
+    /// parameter '...'; ` lead-in is not.
+    pub(crate) fn typecheck_binding_parameter_with_hint(
         param: &str,
         expected: &str,
         value: &Value,
         repr: &str,
+        hint: Option<&str>,
     ) -> Self {
         let got_type = crate::runtime::utils::got_type_name(value);
         // Unlike several sibling constructors in this file, the class name is
@@ -805,17 +812,19 @@ but got '{}' ({}) as a value without a container.",
         // both the top-level uncaught display AND the exception's own
         // `.message`/`.Str`, and raku's own text for this exception has no
         // "X::...: " prefix on either.
-        let msg = if repr.is_empty() {
-            format!(
-                "Type check failed in binding to parameter '{}'; expected {} but got {}",
-                param, expected, got_type
-            )
+        let mut explain = if repr.is_empty() {
+            format!("expected {expected} but got {got_type}")
         } else {
-            format!(
-                "Type check failed in binding to parameter '{}'; expected {} but got {} {}",
-                param, expected, got_type, repr
-            )
+            format!("expected {expected} but got {got_type} {repr}")
         };
+        if let Some(hint) = hint {
+            explain.push_str(". ");
+            explain.push_str(hint);
+        }
+        let msg = format!(
+            "Type check failed in binding to parameter '{param}'; {}",
+            crate::word_wrap::naive_word_wrap(&explain, 72)
+        );
         let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));

@@ -23,7 +23,7 @@ src/parser/stmt/simple/module_exports/dynamic_stash.rs   1
 src/parser/stmt/simple/slang_use.rs                      5
 src/value/display.rs                                     5
 src/value/error_construct.rs                             2
-src/value/error_typed.rs                                10
+src/value/error_typed.rs                                 9
 src/value/list_gen.rs                                    2
 src/value/map_grep_items.rs                              1
 src/value/match_view.rs                                  1

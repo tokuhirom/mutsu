@@ -132,8 +132,100 @@ impl Interpreter {
         expected: &str,
         value: &Value,
     ) -> RuntimeError {
-        let repr = self.type_check_got_repr(value);
-        RuntimeError::typecheck_binding_parameter_with_repr(param, expected, value, &repr)
+        let expected_is = self.expected_container_kind(expected);
+        // Rakudo's `X::TypeCheck.gotn` names the argument by its type alone
+        // when the expected type is Associative.
+        let repr = if expected_is.associative {
+            String::new()
+        } else {
+            self.type_check_got_repr(value)
+        };
+        let hint = self.container_binding_hint(expected, expected_is, value);
+        RuntimeError::typecheck_binding_parameter_with_hint(param, expected, value, &repr, hint)
+    }
+
+    /// Whether the expected type (a type name as a type-check message spells
+    /// it: `Positional[Int]`, `Hash`, `Array:D`, ...) is Positional and/or
+    /// Associative, i.e. `$!expected ~~ Positional` in rakudo's terms.
+    // Cost: O(1) type-object checks (plus the MRO walk of a user class).
+    fn expected_container_kind(&mut self, expected: &str) -> ExpectedContainerKind {
+        let (base, _) = crate::runtime::types::strip_type_smiley(expected);
+        let ty = Value::package(crate::symbol::Symbol::intern(base));
+        ExpectedContainerKind {
+            positional: self.type_matches_value("Positional", &ty),
+            associative: self.type_matches_value("Associative", &ty),
+        }
+    }
+
+    /// Rakudo's beginner hint for a container binding failure
+    /// (`X::TypeCheck.explain`): a Positional expectation of Arrays suggests an
+    /// array of Arrays was meant; otherwise a Positional or Associative
+    /// expectation given an argument whose `.of` is `Mu` (an untyped `Array`,
+    /// `List`, `Hash`, `Map`, `Pair`, `Range`, or such a type object) is told
+    /// to pass an explicitly typed container.
+    // Cost: O(1) type-object checks.
+    fn container_binding_hint(
+        &mut self,
+        expected: &str,
+        kind: ExpectedContainerKind,
+        value: &Value,
+    ) -> Option<&'static str> {
+        const ARRAY_HINT: &str = "You have to pass an explicitly typed array, not one that just might happen to contain elements of the correct type.";
+        const HASH_HINT: &str = "You have to pass an explicitly typed hash, not one that just might happen to contain elements of the correct type.";
+        let mut hint = None;
+        if kind.positional {
+            if self.expected_of_is_array(expected) {
+                hint = Some("Did you mean to expect an array of Arrays?");
+            } else if self.got_of_is_mu(value) {
+                hint = Some(ARRAY_HINT);
+            }
+        }
+        // Rakudo tests Associative after Positional and lets it win, exactly
+        // as here (no built-in type is both).
+        if kind.associative && self.got_of_is_mu(value) {
+            hint = Some(HASH_HINT);
+        }
+        hint
+    }
+
+    /// `$!expected.of ~~ Array` for a parameterized expectation
+    /// (`Positional[Array]`, `Array[Array[Int]]`).
+    fn expected_of_is_array(&mut self, expected: &str) -> bool {
+        let (base, _) = crate::runtime::types::strip_type_smiley(expected);
+        let Some(open) = base.find('[') else {
+            return false;
+        };
+        let Some(of) = base[open + 1..].strip_suffix(']') else {
+            return false;
+        };
+        let (of, _) = crate::runtime::types::strip_type_smiley(of);
+        let of_ty = Value::package(crate::symbol::Symbol::intern(of));
+        self.type_matches_value("Array", &of_ty)
+    }
+
+    /// `$!got.^can('of') && $!got.of =:= Mu`: an untyped `Array`/`List`/
+    /// `Hash`/`Map`, a `Pair` or a `Range` (or the bare type object of one).
+    /// A typed container, a QuantHash, a `Buf`, a `Seq` or a non-container
+    /// answers false.
+    fn got_of_is_mu(&self, value: &Value) -> bool {
+        let value = utils::decont_for_repr(value);
+        match value.view() {
+            ValueView::Package(name) => matches!(
+                name.resolve().as_str(),
+                "Array" | "List" | "Hash" | "Map" | "Pair" | "Range"
+            ),
+            ValueView::Array(..) | ValueView::Hash(_) => self
+                .container_type_metadata(&value)
+                .is_none_or(|info| info.value_type == "Mu"),
+            ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => true,
+            _ => false,
+        }
     }
 
     /// The `X::TypeCheck::Assignment` for storing `val` as an element of the typed
@@ -162,4 +254,12 @@ impl Interpreter {
         let repr = self.type_check_got_repr(val);
         RuntimeError::typecheck_assignment_with_repr(expected, val, symbol, &repr)
     }
+}
+
+/// Which container roles an expected type does (see
+/// `Interpreter::expected_container_kind`).
+#[derive(Clone, Copy)]
+struct ExpectedContainerKind {
+    positional: bool,
+    associative: bool,
 }
