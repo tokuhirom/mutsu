@@ -51,6 +51,22 @@ impl ProtoDispatch {
             dispatch_call()
         }
     }
+
+    /// One argument of a method call: a bare `{*}` is evaluated at the call, so
+    /// it dispatches; a closure is a callback, whose `{*}`s are `Nil`; anything
+    /// else is walked as it is. It looks at the argument's own shape and leaves
+    /// everything below it to the visitor, so it is not a walk of its own.
+    fn walk_method_arg(&mut self, arg: &mut Expr) {
+        match arg {
+            Expr::AnonSub { body, .. } if is_only_star_block(body) => *arg = self.star(),
+            _ if is_code_object(arg) => {
+                self.callbacks += 1;
+                walk_expr_mut(self, arg);
+                self.callbacks -= 1;
+            }
+            _ => walk_expr_mut(self, arg),
+        }
+    }
 }
 
 impl VisitMut for ProtoDispatch {
@@ -84,7 +100,7 @@ impl VisitMut for ProtoDispatch {
                 walk_expr_mut(self, expr);
                 self.method_args += 1;
                 for arg in &mut args {
-                    self.visit_expr_mut(arg);
+                    self.walk_method_arg(arg);
                 }
                 self.method_args -= 1;
                 if let Expr::MethodCall { args: slot, .. }
