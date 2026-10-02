@@ -5,7 +5,7 @@ use Test;
 # through the exhaustive mutable visitor (ADR-10499); each expectation was
 # checked against rakudo.
 
-plan 9;
+plan 14;
 
 my @log;
 @log.push('main');
@@ -36,3 +36,12 @@ $x += INIT { @log.push('compound'); 3 };
 ok before-main('compound'), 'INIT on the right of a compound assignment';
 is $x, 8, '... runs once and is the operand\'s value';
 is @log.grep('compound').elems, 1, '... exactly once';
+
+my &dflt = sub ($a = INIT { @log.push('param-init'); 4 }) { $a };
+ok before-main('param-init'), 'INIT in a parameter default runs before the mainline';
+is dflt(), 4, '... and the default is the phaser\'s value';
+is dflt(), 4, '... on every call';
+is @log.grep('param-init').elems, 1, '... but the phaser runs once';
+
+sub chk($a = CHECK { @log.push('param-check'); 5 }) { $a }
+ok before-main('param-check') && chk() == 5, 'CHECK in a parameter default of a named sub';
