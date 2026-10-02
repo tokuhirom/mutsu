@@ -408,7 +408,10 @@ impl Interpreter {
                 for (k, v) in map.iter() {
                     match self.duckmap_element(block, v, true) {
                         Ok(mapped) => {
-                            result.insert(k.clone(), mapped);
+                            // The result is a real Hash, so each value goes in
+                            // as a Hash element does (a raw Boolean renders
+                            // `:a(Bool::True)`, not the Pair shorthand `:a`).
+                            result.insert(k.clone(), mapped.itemize_for_hash_element());
                         }
                         Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last() => break,
@@ -610,7 +613,8 @@ impl Interpreter {
                                             .insert(k.clone(), new_src);
                                     }
                                 }
-                                result.insert(k.clone(), val);
+                                // A real Hash element store (see `duckmap`'s Hash arm).
+                                result.insert(k.clone(), val.itemize_for_hash_element());
                             }
                             Err(e) if e.is_next() => continue,
                             Err(e) => return Err(e),
@@ -626,7 +630,7 @@ impl Interpreter {
                             {
                                 continue;
                             }
-                            result.insert(k.clone(), val);
+                            result.insert(k.clone(), val.itemize_for_hash_element());
                         }
                         Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
@@ -707,7 +711,8 @@ impl Interpreter {
                 for (k, v) in map.iter() {
                     match self.call_sub_value(block.clone(), vec![v.clone()], false) {
                         Ok(mapped) => {
-                            result.insert(k.clone(), mapped);
+                            // A real Hash element store (see `duckmap`'s Hash arm).
+                            result.insert(k.clone(), mapped.itemize_for_hash_element());
                         }
                         Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),

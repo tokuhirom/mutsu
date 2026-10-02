@@ -906,6 +906,16 @@ impl Interpreter {
                 );
             }
         }
+        // `Hash`/`Map` and the QuantHashes inherit `reverse`/`unique`/`squish`/
+        // `eager`/`Supply`/`minmax`/`produce` from `Any`, which defines each as
+        // `self.list.METHOD`: re-dispatch on the receiver's list of Pairs
+        // (#10758). A user method of the same name on the receiver's own class
+        // (`augment`) still wins, so it is checked first.
+        if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(&target, method)
+            && !self.has_user_method(crate::runtime::utils::value_type_name(&target), method)
+        {
+            return self.call_method_with_values(pairs, method, args);
+        }
         // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
         // `.raku`/`.gist`. A user `.raku` wraps its body in
         // `self.rakuseen(self.^name, { ... })`; on the first sight of an id we run

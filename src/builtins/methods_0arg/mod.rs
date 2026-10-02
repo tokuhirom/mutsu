@@ -323,6 +323,19 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(&target.clone().with_hash_itemized(false), method_sym);
     }
 
+    // `Hash`/`Map` and the QuantHashes inherit `reverse`/`unique`/`squish`/
+    // `eager`/`Supply`/`minmax` from `Any`, which defines each as
+    // `self.list.METHOD` (#10758): on such a receiver the invocant is its
+    // list of Pairs. The interpreter entry
+    // (`call_method_with_values`) does the same for the methods that take
+    // arguments, and checks for a user `augment` first; this is the
+    // zero-argument native twin every VM call op reaches.
+    // Cost: O(1) for any other receiver or an unlisted method (one `view()`
+    // probe); O(e) for a listed method on a hash-like receiver, e = entries.
+    if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(target, method) {
+        return native_method_0arg(&pairs, method_sym);
+    }
+
     // Cost: O(1), one lookup in the Attribute metadata map.
     if method == "DEPRECATED"
         && let ValueView::Instance {
