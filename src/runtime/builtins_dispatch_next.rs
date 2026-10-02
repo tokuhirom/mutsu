@@ -1590,22 +1590,27 @@ impl Interpreter {
             // same candidate forever (stack overflow in
             // `t/multi-where-otf-dispatch.t`). It also must not push a samewith
             // context, matching the interpreter entry this replaces.
-            let cf = match &next_def.compiled {
-                Some(compiled) => std::sync::Arc::clone(compiled),
-                None => self.otf_compile_function_def(&next_def),
+            let result = if let Some(code) = &next_def.dispatchee {
+                // An `add_dispatchee` code value runs as itself (#10929).
+                self.vm_call_on_value(code.clone(), call_args.clone(), None)
+            } else {
+                let cf = match &next_def.compiled {
+                    Some(compiled) => std::sync::Arc::clone(compiled),
+                    None => self.otf_compile_function_def(&next_def),
+                };
+                // Prefer the candidate's own nested-sub table over an empty one
+                // (ADR-0019 C6e-3c) — this deferral chain owns no `CompiledFns` of
+                // its own to offer.
+                let empty_fns = crate::opcode::CompiledFns::default();
+                let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
+                self.call_compiled_function_named(
+                    &cf,
+                    call_args.clone(),
+                    fns,
+                    next_def.package,
+                    next_def.name,
+                )
             };
-            // Prefer the candidate's own nested-sub table over an empty one
-            // (ADR-0019 C6e-3c) — this deferral chain owns no `CompiledFns` of
-            // its own to offer.
-            let empty_fns = crate::opcode::CompiledFns::default();
-            let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
-            let result = self.call_compiled_function_named(
-                &cf,
-                call_args.clone(),
-                fns,
-                next_def.package,
-                next_def.name,
-            );
             if have_rw_source {
                 self.set_pending_call_arg_sources(None);
             }
@@ -1876,6 +1881,9 @@ impl Interpreter {
         self.multi_dispatch_stack[stack_len - 1] =
             (_name, remaining, orig_args, rw_params, dispatch_token);
         // Return as a callable Sub value
+        if let Some(code) = &next_def.dispatchee {
+            return Ok(code.clone());
+        }
         Ok(Value::make_sub_for_routine(
             next_def.package,
             next_def.name,

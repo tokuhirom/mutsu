@@ -558,6 +558,7 @@ impl Interpreter {
             source_line: None,
             decl_order: 0,
             compiled: None,
+            dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
