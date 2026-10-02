@@ -59,6 +59,7 @@
 //! - it reads a `state`, `constant` or group-declared inner lexical.
 
 mod cell_ast;
+pub(super) use cell_ast::slot_read;
 mod decls;
 mod phasers;
 mod pragmas;
@@ -67,7 +68,7 @@ mod walk;
 
 use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
-use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, slot_read, static_scalar};
+use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, static_scalar};
 use decls::TypeDecl;
 use routines::{Access, Dependencies, FrameBlock, Routine, Scan};
 use std::collections::{BTreeMap, HashSet};

@@ -35,12 +35,21 @@
 //!
 //! Any phaser this module does not move keeps the per-level handling.
 
+use super::nested::slot_read;
 use crate::ast::{AssignOp, Expr, PackageRuntimeDecl, PhaserKind, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SLOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// The name of a fresh unit-level slot for a value-form phaser.
+fn next_value_slot() -> String {
+    format!(
+        "__init_value_{}",
+        SLOT_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
 
 /// What moving the phasers out of one top-level statement produced.
 #[derive(Default)]
@@ -252,8 +261,17 @@ impl Mover<'_> {
                 } if movable(phaser_body, locals, false) => {
                     let kind = kind.clone();
                     let phaser_body = std::mem::take(phaser_body);
-                    self.push_phaser(kind, phaser_body, None);
-                    body.remove(i);
+                    if i + 1 == body.len() {
+                        // A phaser that ends the routine is its value: leave
+                        // a read of the slot it stores into.
+                        let slot = next_value_slot();
+                        self.push_phaser(kind, phaser_body, Some(&slot));
+                        body[i] = Stmt::Expr(slot_read(slot));
+                        i += 1;
+                    } else {
+                        self.push_phaser(kind, phaser_body, None);
+                        body.remove(i);
+                    }
                     continue;
                 }
                 Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
@@ -265,12 +283,9 @@ impl Mover<'_> {
                     {
                         let kind = kind.clone();
                         let phaser_body = std::mem::take(phaser_body);
-                        let slot = format!(
-                            "__init_value_{}",
-                            SLOT_COUNTER.fetch_add(1, Ordering::Relaxed)
-                        );
+                        let slot = next_value_slot();
                         self.push_phaser(kind, phaser_body, Some(&slot));
-                        *expr = Expr::Var(slot);
+                        *expr = slot_read(slot);
                     }
                 }
                 _ => {}
@@ -310,18 +325,30 @@ impl Mover<'_> {
     /// A role's routine: as [`Mover::routine_body`], with the role's own
     /// restrictions on what a moved body reads.
     fn role_routine_body(&mut self, body: &mut Vec<Stmt>, locals: &HashSet<String>) {
-        body.retain_mut(|stmt| match stmt {
-            Stmt::Phaser {
-                kind: kind @ (PhaserKind::Init | PhaserKind::Check),
-                body: phaser_body,
-                ..
-            } if movable(phaser_body, locals, true) => {
-                let kind = kind.clone();
-                let phaser_body = std::mem::take(phaser_body);
-                self.push_phaser(kind, phaser_body, None);
-                false
+        let last = body.len().saturating_sub(1);
+        let mut at = 0;
+        body.retain_mut(|stmt| {
+            at += 1;
+            match stmt {
+                Stmt::Phaser {
+                    kind: kind @ (PhaserKind::Init | PhaserKind::Check),
+                    body: phaser_body,
+                    ..
+                } if movable(phaser_body, locals, true) => {
+                    let kind = kind.clone();
+                    let phaser_body = std::mem::take(phaser_body);
+                    if at - 1 == last {
+                        let slot = next_value_slot();
+                        self.push_phaser(kind, phaser_body, Some(&slot));
+                        *stmt = Stmt::Expr(slot_read(slot));
+                        true
+                    } else {
+                        self.push_phaser(kind, phaser_body, None);
+                        false
+                    }
+                }
+                _ => true,
             }
-            _ => true,
         });
     }
 
