@@ -9,45 +9,91 @@
   "dist": "JSON::Mask",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "'self' used where no object is available",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "did we throws-like Exception?",
+        "nok": 4,
+        "ok": 6,
         "plan": 10,
-        "secs": 0.1,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/00-positive.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.76,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "'self' used where no object is available",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "not ok 1 -",
+        "nok": 6,
+        "ok": 1,
         "plan": 7,
-        "secs": 0.1,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-negative.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 4 -",
+        "nok": 7,
+        "ok": 5,
+        "plan": 12,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-nested.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-complex.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
         "secs": 0.55,
         "skip": 0,
         "todo": 0,
@@ -55,92 +101,44 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "'self' used where no object is available",
-        "nok": 0,
-        "ok": 0,
-        "plan": 12,
-        "secs": 0.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-nested.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "'self' used where no object is available",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-complex.rakutest",
-      "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.35,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "'self' used where no object is available",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
       "path": "t/04-array.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "'self' used where no object is available",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.09,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-compile.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.38,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +150,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -166,13 +164,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_MASK/e1ce7d4530aef04562779cf26718786b6ac92195.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 6,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 15,
+    "parity_files": 2,
+    "regressed_files": 4
   },
   "version": "1.0"
 }

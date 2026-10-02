@@ -9,23 +9,23 @@
   "dist": "hide-methods",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'package' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "did A.bar get called",
+        "nok": 5,
+        "ok": 9,
         "plan": 27,
-        "secs": 0.17,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.69,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-30",
+    "date": "2026-10-01",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "6748c2a6",
+    "mutsu_commit": "10a1dda8",
     "mutsu_version": "0.24.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -55,7 +55,7 @@
   "totals": {
     "baseline_assertions": 27,
     "baseline_files": 1,
-    "mutsu_assertions": 4,
+    "mutsu_assertions": 9,
     "parity_files": 0,
     "regressed_files": 1
   },
