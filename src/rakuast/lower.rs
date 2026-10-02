@@ -666,7 +666,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents,
         class_is_rw,
         is_hidden: false,
-        is_lexical: false,
+        is_lexical: package_is_lexical(node)?,
         hidden_parents: Vec::new(),
         does_parents,
         repr,
@@ -676,12 +676,26 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: false,
         implicit_grammar_parent: false,
         is_grammar: false,
-        // A hand-built or lowered declaration has no parse-time site, which is
-        // exactly what `decl_id: 0` means.
-        decl_id: 0,
+        // Lowering is the parser's counterpart, so the declaration gets its
+        // own site id as a parsed one does: a lexical class is registered
+        // under a name mangled with it, which is what keeps it lexical.
+        decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     })
+}
+
+/// A package declaration's `scope`: `my` is lexical, `our` (the default,
+/// rendered as no field) is not; any other scope stays the boundary.
+fn package_is_lexical(node: &RakuAstNode) -> Result<bool, RuntimeError> {
+    match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => Ok(false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => Ok(true),
+            "our" => Ok(false),
+            _ => Err(unsupported(node)),
+        },
+    }
 }
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -693,7 +707,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         parents: vec!["Grammar".to_string()],
         class_is_rw: false,
         is_hidden: false,
-        is_lexical: false,
+        is_lexical: package_is_lexical(node)?,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
         repr: None,
@@ -703,7 +717,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: false,
         implicit_grammar_parent: true,
         is_grammar: true,
-        decl_id: 0,
+        decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     })

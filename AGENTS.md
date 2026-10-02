@@ -108,6 +108,8 @@ and every `cargo`/`make`/`prove` command are identical in both. On the local box
 `dotenvx run --` (the `GH_TOKEN` in `.env` is stale and would override the working token).
 
 **Both containers are disposable** — commit and push promptly; anything not on `origin` is not saved.
+Those in-progress commits are the branch's history: give each a real message (never a bare `wip`),
+and never squash them (see *Git, PRs and CI*).
 A remote container is provisioned by `.claude/hooks/session-start.sh` (rustc, `raku`, the native
 libraries batteries `dlopen`, `bubblewrap`), so **do not hand-install any of them**; if a build dies
 with `E0658`, the hook did not run and `.claude/skills/rustc-too-old/SKILL.md` applies. Its disk is a
@@ -151,6 +153,9 @@ work, so free space with the `reclaim-disk` skill and continue.
 ### Before publishing a PR — `scripts/dev gate`
 
 Run **`scripts/dev gate`** and **do not publish until its verdict is `pass`.** It is one job that runs
+the branch check (`scripts/dev branch-check`: lists every file the branch changes against its merge
+base with `origin/main`, and fails when one is back at an *older* `main` state — the shape of a stale
+tree committed on a newer `main`; read that list against what you meant to change), then
 `make checks` (the build-free static guards: `t/` layout, ratchets, self-tests — first, so they fail in
 seconds), `cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
 writes a structured `report.json` ([ADR-0126](docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md)).
@@ -337,7 +342,12 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
 
 ## Git, PRs and CI
 
-1. Branch from `main`; commit; push with `git push -u origin <branch>`.
+1. Branch from `main`; commit; push with `git push -u origin <branch>`. **Never squash or otherwise
+   rewrite a branch's commits** — merge commits carry the PR title, so a branch of small commits costs
+   nothing. The one history rewrite is `git rebase origin/main` to resolve a conflict (step 4), which
+   replays the branch's own commits. Above all never `git reset --soft origin/main` (or onto any ref you
+   just fetched): that commits the branch's *old* tree on top of the newer `main`, and the merge
+   silently reverts every PR merged in between (#10983 reverted three; #11005 restored them).
 2. Open the PR (`gh pr create` / `create_pull_request`) with a `type:` or `type(scope):` title —
    it drives the category label and release-note section. No version-bump label.
 3. Enable auto-merge with **merge**, not squash (`gh pr merge --auto --merge <n>` /

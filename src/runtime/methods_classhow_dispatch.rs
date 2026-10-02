@@ -1420,6 +1420,7 @@ impl Interpreter {
                     Some(env)
                 };
                 let def = MethodDef {
+                    syms: Default::default(),
                     lexical_package: sub_data.package,
                     params: filtered_params,
                     param_defs: filtered_param_defs,
@@ -1531,6 +1532,7 @@ impl Interpreter {
                     Some(env)
                 };
                 let def = MethodDef {
+                    syms: Default::default(),
                     lexical_package: sub_data.package,
                     params: sub_data.params.to_vec(),
                     param_defs: sub_data.param_defs.to_vec(),

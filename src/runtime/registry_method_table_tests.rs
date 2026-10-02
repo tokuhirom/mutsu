@@ -2,6 +2,7 @@ use super::*;
 
 fn dummy_method_def() -> MethodDef {
     MethodDef {
+        syms: Default::default(),
         lexical_package: crate::symbol::wk::global_package(),
         params: Vec::new(),
         param_defs: Vec::new(),

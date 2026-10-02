@@ -238,18 +238,6 @@ impl Interpreter {
         )
     }
 
-    /// [`Self::enhance_binding_error`] for a binding failure of the call the
-    /// current `CallFunc` site published (`static_call_args`).
-    pub(crate) fn enhance_binding_error_at_site(
-        &self,
-        err: RuntimeError,
-        func_name: &str,
-        param_defs: &[crate::ast::ParamDef],
-        args: &[Value],
-    ) -> RuntimeError {
-        Self::enhance_binding_error(err, func_name, param_defs, args, self.static_call_args)
-    }
-
     /// Enhance a binding error with function name, call profile, and signature info.
     ///
     /// `static_site` says whether the call site's argument types are all known

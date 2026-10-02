@@ -344,7 +344,11 @@ impl Interpreter {
             }
             // Skip <...> angle brackets — don't interpolate variables inside them.
             // The tokenizer handles <$var>, <@var>, <{code}>, etc. directly.
-            if ch == '<' {
+            // A `<` inside a quoted literal (`'<' $tag`) is a literal char:
+            // skipping it as an angle construct swallowed the pattern up to the
+            // next `>`, so a following `$tag` was never interpolated
+            // (Template::HAML's `find-and-preserve`, #10638).
+            if ch == '<' && !is_inside_regex_quote_literal(&chars, i) {
                 out.push(ch);
                 let rest = &chars[i + 1..];
                 let consumed = super::regex_parse_core::scan_angle_assertion_consumed(rest);

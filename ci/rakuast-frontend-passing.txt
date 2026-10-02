@@ -33,6 +33,7 @@ t/collections/hash/hash-attr-map-default-element-assign.t
 t/collections/hash/hash-first-positional.t
 t/collections/hash/hash-junction-key.t
 t/collections/hash/hash-key-single-itemize.t
+t/collections/hash/hash-key-type-object-list.t
 t/collections/hash/hash-list-coercion.t
 t/collections/hash/hash-predicate-iteration.t
 t/collections/hash/hash-term.t
@@ -46,6 +47,7 @@ t/collections/lazy-seq/eager-ops-cannot-lazy.t
 t/collections/lazy-seq/element-store-seq-itemization.t
 t/collections/lazy-seq/empty-map-preserves-lazy-contract.t
 t/collections/lazy-seq/eval-statement-sinks-lazy-result.t
+t/collections/lazy-seq/finite-lazy-seq-raku.t
 t/collections/lazy-seq/for-live-array-iteration.t
 t/collections/lazy-seq/from-iterator.t
 t/collections/lazy-seq/gather-body-compile-cache.t
@@ -89,6 +91,7 @@ t/collections/lazy-seq/stash-iterates-pairs.t
 t/collections/lazy-seq/take-gather-nested.t
 t/collections/lazy-seq/take-trailing-comma.t
 t/collections/lazy-seq/take-without-gather.t
+t/collections/lazy-seq/walk-lazy.t
 t/collections/lazy-seq/whatever-index-on-lazy-cannot-lazy.t
 t/collections/list-cache-no-args.t
 t/collections/list-fmt.t
@@ -213,6 +216,7 @@ t/concurrency/promise/await-slip-flatten.t
 t/concurrency/promise/awaitable-role-composition.t
 t/concurrency/promise/promise-chain-lexical-callable-shadow.t
 t/concurrency/promise/promise-raku-repr.t
+t/concurrency/promise/promise-subclass-factory-methods.t
 t/concurrency/promise/start-block-inline-arg-locals-clobber.t
 t/concurrency/promise/start-block-keeps-distinct-aggregate-param-bindings.t
 t/concurrency/promise/start-block-tap-output-order.t
@@ -273,11 +277,13 @@ t/control/for-live-array-name-collision.t
 t/control/for-modifier-trailing-comma.t
 t/control/for-paren-comment-semicolon.t
 t/control/if-given-value-propagation.t
+t/control/init-check-class-in-code-timing.t
 t/control/keep-undo-leave-order.t
 t/control/keep-undo-loop-last-next.t
 t/control/keep-undo.t
 t/control/leave-in-if-branch.t
 t/control/leave-keep-undo-in-map-block.t
+t/control/leave-phaser-in-tail-block.t
 t/control/leave-return-prioritization.t
 t/control/loop-keep-trailing-say.t
 t/control/loop-spec-malformed.t
@@ -333,6 +339,7 @@ t/exceptions/issue-7770-failure-method-rethrow.t
 t/exceptions/mainline-exception-not-masked-by-plan.t
 t/exceptions/malformed-elsif.t
 t/exceptions/missing-block-exception.t
+t/exceptions/no-such-symbol.t
 t/exceptions/nyi-exception-message.t
 t/exceptions/obsolete-dot-concat.t
 t/exceptions/p5-foreach.t
@@ -452,6 +459,7 @@ t/lang/angle-bracket-hyphen.t
 t/lang/code-variable.t
 t/lang/double-array-sigil-context.t
 t/lang/eval-angle-list-whitespace.t
+t/lang/eval-class-redeclaration-cross-boundary.t
 t/lang/eval-core-term-constant-call-undeclared-class.t
 t/lang/eval-imported-main.t
 t/lang/eval-lang-adverb.t
@@ -464,6 +472,7 @@ t/lang/fatal-mode-call-argument-failure.t
 t/lang/issue-7749-adjacent-colonpairs.t
 t/lang/literal-hex-float.t
 t/lang/operators/amp-bracket-nested-metaop.t
+t/lang/operators/andthen-orelse-instance-rhs.t
 t/lang/operators/categorical-operator-term-call.t
 t/lang/operators/compound-assign-indexed-lvalue.t
 t/lang/operators/compound-assign-item-precedence.t
@@ -471,6 +480,7 @@ t/lang/operators/compound-assign-ops.t
 t/lang/operators/compound-assign-precedence.t
 t/lang/operators/constant-term-operator-name.t
 t/lang/operators/core-operator-stash.t
+t/lang/operators/dot-assign-adverb-args.t
 t/lang/operators/fat-arrow-autoquotes-so-and-not.t
 t/lang/operators/fat-arrow-loose-logical-precedence.t
 t/lang/operators/hyper-array-mutators.t
@@ -522,6 +532,7 @@ t/lang/parsing/semicolon-list-literal.t
 t/lang/parsing/slang-l10n-vocabulary.t
 t/lang/parsing/slang-unknown-variable.t
 t/lang/parsing/syntax-missing.t
+t/lang/parsing/syntax-noself.t
 t/lang/pod-abbreviated.t
 t/lang/pod-begin-at-end-of-input.t
 t/lang/pod-begin-without-identifier.t
@@ -572,6 +583,7 @@ t/modules/batteries/json-module-ladder.t
 t/modules/batteries/json-strict-parse.t
 t/modules/begin-once-in-module-routine.t
 t/modules/begin-package-dynvar.t
+t/modules/block-declares-in-its-own-package.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
 t/modules/classhow-methods-package.t
@@ -593,6 +605,7 @@ t/modules/compunit/repo-need.t
 t/modules/compunit/require-toplevel-routine-scoped-to-compunit.t
 t/modules/compunit/resources-outside-distribution-is-nil.t
 t/modules/core-skip-list.t
+t/modules/eval-context-package.t
 t/modules/eval-module-lexical-subs.t
 t/modules/gather-module-lexical-helper.t
 t/modules/import-export/augment-in-export-hook-runs-once.t
@@ -699,8 +712,10 @@ t/modules/our-sub-closes-over-for-param.t
 t/modules/our-sub-sibling-block-redeclaration.t
 t/modules/package-array-push-vivify.t
 t/modules/package-block-my-sub-hoist.t
+t/modules/package-hash-subscript-vivify.t
 t/modules/package-main-lexical-capture.t
 t/modules/package-quote-language-names.t
+t/modules/package-scalar-push-vivify.t
 t/modules/package-scope-outer-lexical-preserved.t
 t/modules/package-stash-sigiled-entry-not-itemized.t
 t/modules/package-sub-lexical-mutation.t
@@ -757,10 +772,12 @@ t/nativecall/native-io-path-lexical.t
 t/nativecall/native-io-path-open.t
 t/nativecall/native-io-path-two-path.t
 t/nativecall/native-iterationbuffer-construct.t
+t/nativecall/native-junction-ctor.t
 t/nativecall/native-literal-multi-dispatch.t
 t/nativecall/native-lock-ctor.t
 t/nativecall/native-mixhash-coerce.t
 t/nativecall/native-multi-candidates.t
+t/nativecall/native-namespaced-and-exception-ctor.t
 t/nativecall/native-num32-truncation.t
 t/nativecall/native-proc-async-ctor.t
 t/nativecall/native-quanthash-coerce-mut-path.t
@@ -803,6 +820,8 @@ t/oo/attribute/rw-arg-attribute-source-writeback.t
 t/oo/attribute/self-accessor-decontainerizes.t
 t/oo/attribute/sigil-context-accessor.t
 t/oo/attribute/slip-to-array-attribute.t
+t/oo/attribute/ternary-paren-accessor-assign.t
+t/oo/attribute/undeclared-attribute-in-every-position.t
 t/oo/block-scope-trailing-value-does-not-clobber-topic.t
 t/oo/class/c3-mro-long-chain.t
 t/oo/class/class-allomorph-inheritance.t
@@ -810,6 +829,7 @@ t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-static-compound-assignment.t
 t/oo/class/class-body-static-in-sub.t
 t/oo/class/class-body-sub-forward-ref.t
+t/oo/class/class-decl-tail-value.t
 t/oo/class/class.t
 t/oo/class/classhow-lookup-mro.t
 t/oo/class/classify-bucket-itemized.t
@@ -1113,6 +1133,7 @@ t/regex/regex-make.t
 t/regex/regex-parse-cache.t
 t/regex/regex-perl5-adverb-not-allowed.t
 t/regex/regex-quantified-scalar-interpolation.t
+t/regex/regex-subrule-parse-cache.t
 t/regex/regex-tree-angle-interpolation.t
 t/regex/regex-tree-array-interpolation.t
 t/regex/regex-tree-array-lookaround.t
@@ -1218,6 +1239,7 @@ t/routines/dispatch/seq-skip-multiarg-v6c.t
 t/routines/dispatch/sprintf-user-str-dispatch.t
 t/routines/dispatch/whatevercode-multiarg-subscript.t
 t/routines/dispatch/wrap-candidate-unwrap-restore.t
+t/routines/eval-context-caller-routine-attr.t
 t/routines/eval-routine-magical-outside-routine.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/gather-infinite-coroutine.t
@@ -1284,6 +1306,7 @@ t/routines/signature/signature-return-type-comment.t
 t/routines/signature/start-body-param-compiled.t
 t/routines/signature/too-few-positionals-fixed-arity.t
 t/routines/signature/too-many-positionals-fixed-arity.t
+t/routines/signature/typed-array-param-seq-argument-reported-as-seq.t
 t/routines/standalone-str-funcs.t
 t/routines/sub-rw-writeback-attr-source-no-leak.t
 t/routines/subdata-nested-sub-compiled-fns.t
@@ -1341,6 +1364,7 @@ t/types/coercion/type-check.t
 t/types/coercion/type-coercion-functions.t
 t/types/coercion/type-constraints.t
 t/types/coercion/type-named-scalar-decl.t
+t/types/coercion/type-object-numeric-coercion.t
 t/types/coercion/type-object-sequence-succ.t
 t/types/coercion/type-object-stringify.t
 t/types/coercion/typecheck-assignment-message-prefix.t
@@ -1548,6 +1572,8 @@ t/vm/scope/dynamic-var-read-not-found.t
 t/vm/scope/escaped-our-sub-lexical-write.t
 t/vm/scope/eval-read-caller-lexicals.t
 t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t
+t/vm/scope/lexical-class-identity.t
+t/vm/scope/lexical-class-sibling-identity.t
 t/vm/scope/lexical-shadow-slots.t
 t/vm/scope/lexical-shadows-builtin-call.t
 t/vm/scope/my-reserved-shape.t
@@ -1601,3 +1627,4 @@ t/vm/writeback/container-ref-tag-frame-leak.t
 t/vm/writeback/dualstore-slot-local-gate.t
 t/vm/writeback/eval-carrier-scalar-writeback-coherence.t
 t/vm/writeback/shared-array-mutate-keeps-container-cell.t
+t/vm/writeback/shared-elem-assign.t

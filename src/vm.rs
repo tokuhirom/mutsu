@@ -122,6 +122,7 @@ macro_rules! loan_env {
     }};
 }
 
+mod vm_amp_var_scope;
 mod vm_arith_int_ops;
 mod vm_arith_ops;
 mod vm_baggy_subclass_delegate;
@@ -187,9 +188,11 @@ mod vm_control_ops;
 mod vm_core_helpers;
 mod vm_data_io_ops;
 pub(crate) use vm_data_io_ops::OutputKind;
+mod vm_array_share_mark;
 mod vm_attr_share;
 mod vm_backtrace;
 mod vm_backtrace_lazy;
+mod vm_check_read_only;
 mod vm_closure_build;
 mod vm_data_ops;
 mod vm_data_push_ops;

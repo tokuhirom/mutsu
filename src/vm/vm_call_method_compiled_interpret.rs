@@ -448,8 +448,8 @@ impl Interpreter {
                         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                         let method_result = self.call_compiled_method(
                             cn,
-                            &owner_class,
-                            method,
+                            crate::symbol::Symbol::intern(&owner_class),
+                            method_sym,
                             &method_def,
                             &cc,
                             &attributes,
@@ -611,14 +611,14 @@ impl Interpreter {
                 let shares_scalar_container =
                     self.method_shares_container_into_scalar_param(&entry.method_def, &args);
                 if !needs_default_eval && !has_attr_aliases && !shares_scalar_container {
-                    let owner_class = entry.owner_class.as_str();
+                    let owner_class = entry.owner_class;
                     let method_def = entry.method_def.clone();
                     let cc = entry.compiled_code.clone();
                     let can_skip_merge = entry.can_skip_merge;
                     return self.dispatch_compiled_method(
                         cn,
                         owner_class,
-                        method,
+                        method_sym,
                         &method_def,
                         &cc,
                         target,
@@ -672,7 +672,7 @@ impl Interpreter {
                 }
                 if let Some(result) = self.check_method_wrap_chain(
                     cn,
-                    owner_class.as_str(),
+                    owner_class,
                     method,
                     &method_def,
                     &target,
@@ -722,8 +722,8 @@ impl Interpreter {
 
                     return self.dispatch_compiled_method(
                         cn,
-                        owner_class.as_str(),
-                        method,
+                        owner_class,
+                        method_sym,
                         &method_def,
                         &cc,
                         target,

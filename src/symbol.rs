@@ -500,6 +500,9 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The `$self` lexical a `self`-declaring invocant parameter binds
+        /// (`crate::env::LEX_SELF`).
+        lex_self => "$self";
         /// The hidden variable a multi-parameter `for` loop hands each batch of
         /// source elements to its parameter binds through, so `$_` stays the
         /// enclosing topic (`for @a -> $x, $y { $_ }`).

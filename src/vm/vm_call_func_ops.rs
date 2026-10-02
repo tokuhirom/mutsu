@@ -1195,7 +1195,7 @@ impl Interpreter {
             // key carries the name, so `has_function` is false), and the
             // multi-candidates full-map scan runs last, memoized.
             if !self.fn_base_name_registered_sym(name_str, name_sym)
-                || !self.has_function(name_str)
+                || !self.has_declared_function_cached_sym(name_str, name_sym)
                 || self.has_proto_cached_sym(name_str, name_sym)
                 || self.has_multi_candidates_cached_sym(name_sym)
             {
@@ -1208,23 +1208,27 @@ impl Interpreter {
                 // call anywhere within that unit's reach, so it is not gated
                 // by `free_var_syms`.
                 let is_export_override = self.export_amp_override_names.contains(&name_sym);
-                let candidate = dispatch_key::with_amp_name(name_str, |ampname| {
-                    // First check local slots (parameter bindings live here).
-                    self.locals_get_by_name(code, ampname).or_else(|| {
+                // `&name` is fixed by the call site: memoized per name rather
+                // than rebuilt and re-interned on every call (#10961).
+                let amp_sym = dispatch_key::amp_sym(name_sym);
+                // First check local slots (parameter bindings live here).
+                let candidate = code
+                    .local_slots_of(amp_sym)
+                    .first()
+                    .map(|&slot| self.locals[slot as usize].clone())
+                    .or_else(|| {
                         // An inherited `&name` in the live caller environment is
                         // not automatically a lexical binding of this closure.
                         // Only use it when this code explicitly captured that
                         // code variable; otherwise a callback invoked by a
                         // method with a same-named `&` parameter can recursively
                         // replace the callback's own bare `name(...)` call.
-                        let sym = Symbol::intern(ampname);
-                        let captured = code.free_var_syms.contains(&sym);
+                        let captured = code.free_var_syms.contains(&amp_sym);
                         (is_export_override || captured)
-                            .then(|| self.env().get(ampname).cloned())
+                            .then(|| self.env().get_sym(amp_sym).cloned())
                             .flatten()
                             .filter(|v| captured || !Self::callable_declared_in_unit_of(v, code))
-                    })
-                });
+                    });
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
             }
         };
@@ -1755,7 +1759,7 @@ impl Interpreter {
             .map(Value::into_deref)
             .unwrap_or(Value::NIL);
         if target.is_nil() {
-            target = loan_env!(self, resolve_code_var(&name));
+            target = self.resolve_amp_var_for(code, &name);
         }
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
         // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,
