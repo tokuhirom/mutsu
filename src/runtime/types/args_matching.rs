@@ -407,7 +407,18 @@ impl Interpreter {
                     && !is_capture_param
                     && !is_subsig_capture
                 {
-                    let mut missing = Self::missing_optional_param_value(pd);
+                    // With no default, the parameter binds its implicit
+                    // default (the nominal type object -- a subset's refinee),
+                    // which a subset constraint must accept. A defaulted one
+                    // binds its default instead, which is only evaluated at
+                    // bind time, so the stand-in here is the constraint's own
+                    // type object and the nominal check stays a no-op
+                    // (`multi xz(CAT $x = * <=> *)`, roast S12-subset/multi-dispatch.t).
+                    let mut missing = if pd.default.is_some() {
+                        Self::missing_optional_param_value(pd)
+                    } else {
+                        self.omitted_optional_param_value(pd)
+                    };
                     if let Some(constraint) = &pd.type_constraint
                         && (pd.name.starts_with('@') || pd.name.starts_with('%'))
                     {
