@@ -93,12 +93,22 @@ impl Interpreter {
         if self.method_call_depth > 0 || deferral_token.is_some() {
             return Ok(None);
         }
+        // The innermost code object that was actually called names the error
+        // (#10786): a called block or closure has no name (a `Block`'s `.name`
+        // is empty; mutsu's internal `<pointy-block>` label is not one), while
+        // an inlined bare block is no frame of its own.
         let routine = self
             .routine_stack
             .iter()
             .rev()
-            .find(|f| !f.is_block)
-            .map(|f| f.name.resolve());
+            .find(|f| !f.is_inlined_block)
+            .map(|f| {
+                if f.is_block {
+                    String::new()
+                } else {
+                    f.name.resolve()
+                }
+            });
         Err(Self::no_dispatcher_error(
             routine.as_deref().unwrap_or("<unit>"),
         ))

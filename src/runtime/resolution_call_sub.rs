@@ -928,6 +928,7 @@ impl Interpreter {
                 is_method: false,
                 is_submethod: false,
                 is_block: true,
+                is_inlined_block: false,
                 is_hidden_from_backtrace: false,
                 // The file this block's body was DECLARED in, exactly as the
                 // compiled closure dispatch records it
