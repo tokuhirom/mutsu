@@ -37,5 +37,5 @@ distribution, that rakudo parses and mutsu did not:
 - `my T $.attr .= new(...)` at class level (RPi::Device::ST7036).
 - `role Exception is ::Exception` (SQL::Abstract).
 
-`t/lang/parsing/two-terms-statement-shapes-split.t` pins each one against
+`t/lang/parsing/parser-two-terms-statement-shapes.t` pins each one against
 rakudo's answer.
