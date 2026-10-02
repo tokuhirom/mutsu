@@ -530,9 +530,7 @@ impl Interpreter {
         });
         let map = attributes.as_map();
         let key = Symbol::lookup(bare_str)
-            .and_then(|bare| {
-                Self::attr_key_in_map(owner, bare, bare_str != name, sigil, &map)
-            })
+            .and_then(|bare| Self::attr_key_in_map(owner, bare, bare_str != name, sigil, &map))
             .or_else(|| Symbol::lookup(name).filter(|key| map.contains_key(*key)));
         key.is_some_and(|key| map.is_inited(key))
     }
@@ -607,7 +605,13 @@ impl Interpreter {
         }
         attrs
             .get_vivify(bare)
-            .or_else(|| if bare == name { None } else { attrs.get_vivify(name) })
+            .or_else(|| {
+                if bare == name {
+                    None
+                } else {
+                    attrs.get_vivify(name)
+                }
+            })
             .cloned()
     }
 }

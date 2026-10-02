@@ -317,7 +317,11 @@ impl PristineSlots {
     // Cost: O(1); O(s / 64) the first time a slot past 64 is set, s = slots.
     fn set(&mut self, slot: usize, slots: usize) {
         if slot >= 64 && self.hi.is_none() {
-            self.hi = Some((0..slots.div_ceil(64) - 1).map(|_| AtomicU64::new(0)).collect());
+            self.hi = Some(
+                (0..slots.div_ceil(64) - 1)
+                    .map(|_| AtomicU64::new(0))
+                    .collect(),
+            );
         }
         if let Some((word, mask)) = self.word(slot) {
             word.fetch_or(mask, Ordering::Relaxed);
@@ -348,7 +352,6 @@ impl PristineSlots {
         *self.lo.get_mut() = 0;
         self.hi = None;
     }
-
 }
 
 impl PartialEq for AttrMap {
