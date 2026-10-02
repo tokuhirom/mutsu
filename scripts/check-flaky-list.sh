@@ -8,6 +8,9 @@
 #   - the quarantined file actually exists
 #   - a quarantined roast file is on the whitelist (otherwise it never runs and
 #     the entry is dead weight)
+#   - a quarantined battery file (`battery:<Name>/<file>`, an upstream test the
+#     release gate fetches, so it has no path in this tree) is on
+#     batteries-whitelist.txt, which is what scripts/battery-testsuite.sh runs
 #   - no duplicate entries, list is sorted
 #   - the review date is in the future and at most 180 days past `added`
 #
@@ -27,7 +30,31 @@ set -uo pipefail
 # same one `LC_ALL=C sort` gives (matching how roast-whitelist.txt is checked).
 export LC_ALL=C
 
+# --self-test: the battery-entry rules above, against a scratch ledger.
+if [ "${1:-}" = "--self-test" ]; then
+  scratch="$(mktemp -d)"
+  trap 'rm -rf "$scratch"' EXIT
+  printf 'Crypt::Random\t03-uniform.t\n' > "$scratch/whitelist"
+  expect() {
+    local want="$1" entry="$2" got=0
+    printf '%s 2026-10-02 2027-01-02 self-test entry\n' "$entry" > "$scratch/list"
+    BATTERIES_WHITELIST="$scratch/whitelist" FLAKY_TODAY=2026-10-02 \
+      "$0" "$scratch/list" > /dev/null 2>&1 || got=1
+    if [ "$got" -ne "$want" ]; then
+      echo "self-test FAILED: '$entry' exited $got, expected $want" >&2
+      exit 1
+    fi
+  }
+  expect 0 'battery:Crypt::Random/03-uniform.t'
+  expect 1 'battery:Crypt::Random/04-missing.t'
+  expect 1 'battery:Other::Lib/03-uniform.t'
+  expect 1 'battery:03-uniform.t'
+  echo "check-flaky-list self-test OK"
+  exit 0
+fi
+
 LIST="${1:-flaky-tests.txt}"
+BATTERIES_WHITELIST="${BATTERIES_WHITELIST:-batteries-whitelist.txt}"
 TODAY="${FLAKY_TODAY:-$(date -u +%Y-%m-%d)}"
 
 if [ ! -f "$LIST" ]; then
@@ -64,7 +91,18 @@ while IFS= read -r line || [ -n "$line" ]; do
     continue
   fi
 
-  if [ ! -f "$path" ]; then
+  if [[ "$path" == battery:* ]]; then
+    # `battery:Crypt::Random/03-uniform.t` names the whitelist row
+    # `Crypt::Random<TAB>03-uniform.t`; the file itself is fetched at gate time.
+    battery_entry="${path#battery:}"
+    battery_name="${battery_entry%/*}"
+    battery_file="${battery_entry##*/}"
+    if [ "$battery_name" = "$battery_entry" ] \
+       || ! grep -qxF "$battery_name"$'\t'"$battery_file" "$BATTERIES_WHITELIST"; then
+      echo "$LIST:$lineno: $path is not in $BATTERIES_WHITELIST, so it never runs" >&2
+      status=1
+    fi
+  elif [ ! -f "$path" ]; then
     echo "$LIST:$lineno: quarantined file does not exist: $path" >&2
     status=1
   fi
