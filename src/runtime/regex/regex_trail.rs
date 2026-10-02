@@ -30,11 +30,6 @@ pub(super) enum Undo {
     /// Restore a previously truncated positional tail (truncate to `at`,
     /// then re-extend with the saved slots).
     PosTail(Box<PosTailRec>),
-    /// Restore a single overwritten positional slot (`$N=` alias writes).
-    PosOverwrite {
-        idx: usize,
-        slot: Box<PosSlot>,
-    },
     /// Restore a named slot: remove the key if it was newly created, else
     /// truncate its nodes to `len` and restore the quantified flag.
     NamedTrunc {
@@ -167,11 +162,6 @@ impl CapStore {
                     let r = *rec;
                     caps.positional.truncate(r.at);
                     caps.positional.extend(r.slots);
-                }
-                Undo::PosOverwrite { idx, slot } => {
-                    if idx < caps.positional.len() {
-                        caps.positional[idx] = *slot;
-                    }
                 }
                 Undo::NamedTrunc {
                     key,
@@ -386,7 +376,7 @@ impl CapStore {
     }
 
     /// Truncate the positional slots to `to`, saving the removed tail so
-    /// rewind can restore it (the `$<name>=(...)` / `$N=` alias surgery drops
+    /// rewind can restore it (the `$<name>=(...)` alias surgery drops
     /// the group's auto-positional entry).
     pub(super) fn truncate_positional(&mut self, to: usize) {
         let slots = split_off_clamped(&mut self.caps.positional, to);
@@ -394,19 +384,6 @@ impl CapStore {
             at: self.caps.positional.len(),
             slots,
         })));
-    }
-
-    /// Overwrite the positional slot at `idx` (`$N=` re-assigning an existing
-    /// slot), saving the previous value.
-    pub(super) fn overwrite_positional(&mut self, idx: usize, slot: PosSlot) {
-        let caps = &mut self.caps;
-        if idx < caps.positional.len() {
-            let prev = std::mem::replace(&mut caps.positional[idx], slot);
-            self.trail.push(Undo::PosOverwrite {
-                idx,
-                slot: Box::new(prev),
-            });
-        }
     }
 
     /// Trailed `reserve_nil_capture_slots` (unmatched `(x)?` Nil/empty-list
@@ -516,20 +493,19 @@ mod tests {
     }
 
     #[test]
-    fn truncate_and_overwrite_rewind() {
+    fn truncate_rewind() {
         let mut store = store_with_base();
         let m = store.mark();
         store.push_positional(PosSlot::span(1, 2));
         store.truncate_positional(0);
         assert!(store.caps().positional.is_empty());
         store.push_positional(PosSlot::span(5, 6));
-        store.overwrite_positional(0, PosSlot::span(9, 9));
         assert_eq!(
             (
                 store.caps().positional[0].from,
                 store.caps().positional[0].to
             ),
-            (9, 9)
+            (5, 6)
         );
         store.rewind(m);
         assert_base(&store);

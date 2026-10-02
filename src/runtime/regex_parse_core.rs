@@ -1047,7 +1047,25 @@ impl Interpreter {
     /// Parse a pattern whose runtime interpolation has already been performed.
     /// This is used by the top-level interpolated-pattern cache so a cache miss
     /// does not interpolate the same source twice before the structural parse.
+    ///
+    /// An outermost parse holds whole capture levels, so it is where the
+    /// static numbering of numbered aliases runs (#10895); the trees this
+    /// memoizes stay unnumbered, since the same text can also be a
+    /// sub-pattern of a level numbered around it.
     pub(super) fn parse_regex_uncached_interpolated(
+        &self,
+        interpolated: &str,
+        mode: RegexParseMode,
+    ) -> Option<RegexPattern> {
+        let scope = super::regex_parse_numbering::NumberingParseScope::enter();
+        let mut parsed = self.parse_regex_uncached_interpolated_unnumbered(interpolated, mode)?;
+        if scope.outermost() {
+            super::regex_parse_numbering::number_positional_captures(&mut parsed);
+        }
+        Some(parsed)
+    }
+
+    fn parse_regex_uncached_interpolated_unnumbered(
         &self,
         interpolated: &str,
         mode: RegexParseMode,
@@ -1761,10 +1779,11 @@ impl Interpreter {
                 }
                 // A trailing `=` (after optional whitespace) makes this a numbered
                 // capture alias: `$N=<atom>` stores the atom's capture at index N
-                // and continues auto-numbering from N+1. We reuse the
-                // `named_capture` channel with an all-digit "name", which
-                // `apply_named_capture` recognizes and routes to the positional
-                // slot instead of the named hash.
+                // and continues auto-numbering from N+1. It travels as an
+                // all-digit capture name; the outermost parse numbers the whole
+                // capture level around it statically
+                // (`regex_parse_numbering`), and a finished level moves the
+                // digit-named captures into its positional axis.
                 let mut lookahead = chars.clone();
                 while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
                     lookahead.next();

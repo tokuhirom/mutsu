@@ -48,6 +48,7 @@ pub(crate) struct PosSlot {
 
 impl PosSlot {
     /// A plain matched slot: span only.
+    #[cfg(test)]
     pub(crate) fn span(from: usize, to: usize) -> Self {
         PosSlot {
             from,
@@ -309,6 +310,7 @@ impl RegexCaptures {
         // Take the cold payload whole: a leaf (the common case) never had one,
         // so the conversion neither allocates nor touches the fields below.
         let rare = self.rare.take().map(|rare| *rare);
+        self.settle_numbered_captures();
         self.positional
             .truncate(PosSlot::bound_len(&self.positional));
         let (sym, action_name) = (self.sym(), self.action_name());

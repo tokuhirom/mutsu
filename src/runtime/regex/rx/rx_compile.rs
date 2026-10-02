@@ -10,7 +10,7 @@
 use super::super::regex_helpers::{
     AlternationListFlags, atom_contains_alternation, atom_contains_backref, count_capture_groups,
 };
-use super::super::regex_match_plain_view::{atom_has_numbered_alias, plain_iter_needs_view};
+use super::super::regex_match_plain_view::plain_iter_needs_view;
 use super::{RxOp, RxProgram};
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
 
@@ -216,24 +216,6 @@ pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
                 RegexAtom::Alternation(alts)
                 | RegexAtom::SequentialAlternation(alts)
                 | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_reads_enclosing_state),
-                _ => false,
-            }
-    })
-}
-
-/// Is any token under `pattern` a numbered alias (`$0=…`)? The walk matches a
-/// `||` branch in a capture scope of its own, so such an alias there numbers
-/// from the branch's start, not from the enclosing level's.
-pub(super) fn has_numbered_alias(pattern: &RegexPattern) -> bool {
-    pattern.tokens.iter().any(|t| {
-        t.named_capture
-            .as_ref()
-            .is_some_and(|n| n.parse::<usize>().is_ok())
-            || match &t.atom {
-                RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => has_numbered_alias(p),
-                RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
-                    alts.iter().any(has_numbered_alias)
-                }
                 _ => false,
             }
     })
@@ -799,13 +781,9 @@ impl Compiler {
             self.ops.push(RxOp::Height(h));
         }
         let alt_body = atom_contains_alternation(&token.atom);
-        // Code in the body sees the iterations so far folded; a `$N=` in the
-        // body numbers from the iteration's first slot, as the walk's nested
-        // match of the body does.
-        let iter_level = fold.filter(|_| {
-            plain_iter_needs_view(&token.atom, count_capture_groups(token))
-                || atom_has_numbered_alias(&token.atom)
-        });
+        // Code in the body sees the iterations so far folded.
+        let iter_level =
+            fold.filter(|_| plain_iter_needs_view(&token.atom, count_capture_groups(token)));
         if let Some((pos_base, tok)) = iter_level {
             self.ops.push(RxOp::OpenPlainIter { tok, pos_base });
         }

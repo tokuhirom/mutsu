@@ -198,9 +198,16 @@ impl RegexCaptures {
 
     /// Build the capture state visible to inline regex code. An inline walk
     /// has its own local accumulator, but code in a same-scope group sees the
-    /// captures already taken by the enclosing regex as well.
+    /// captures already taken by the enclosing regex as well. Numbered
+    /// captures are seen at the slots they name (#10895).
     // Cost: O(c), c = the captures along the chain of enclosing levels.
     pub(crate) fn inline_capture_view(&self) -> RegexCaptures {
+        let mut visible = self.inline_capture_view_unsettled();
+        visible.settle_numbered_captures();
+        visible
+    }
+
+    fn inline_capture_view_unsettled(&self) -> RegexCaptures {
         let Some(outer) = self.outer_backref() else {
             return self.clone();
         };

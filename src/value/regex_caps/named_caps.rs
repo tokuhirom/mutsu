@@ -286,6 +286,20 @@ impl NamedCaptureMap {
         self.slots.iter().map(|(_, v)| v)
     }
 
+    /// Move out the slots whose name satisfies `pred`, in filing order,
+    /// keeping the others in theirs.
+    // Cost: O(n), n = the distinct names.
+    pub(crate) fn take_where(
+        &mut self,
+        mut pred: impl FnMut(&Symbol) -> bool,
+    ) -> Vec<(Symbol, NamedSlot)> {
+        let (taken, kept) = std::mem::take(&mut self.slots)
+            .into_iter()
+            .partition(|(key, _)| pred(key));
+        self.slots = kept;
+        taken
+    }
+
     /// Move every slot out, in filing order.
     pub(crate) fn drain(&mut self) -> std::vec::Drain<'_, (Symbol, NamedSlot)> {
         self.slots.drain(..)

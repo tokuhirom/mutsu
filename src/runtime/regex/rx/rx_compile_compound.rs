@@ -8,8 +8,8 @@ use super::super::regex_helpers::{
 };
 use super::RxOp;
 use super::rx_compile::{
-    Compiler, Decline, atom_captures, has_numbered_alias, min_len, pattern_captures,
-    pattern_contains_backref, pattern_contains_code, pattern_reads_enclosing_state,
+    Compiler, Decline, atom_captures, min_len, pattern_captures, pattern_contains_backref,
+    pattern_contains_code, pattern_reads_enclosing_state,
 };
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
 
@@ -36,10 +36,6 @@ fn atom_files_names_only(atom: &RegexAtom) -> bool {
 fn pattern_files_names_only(pattern: &RegexPattern) -> bool {
     pattern.tokens.iter().all(|t| {
         !t.subrule_call_capture
-            && !t
-                .named_capture
-                .as_ref()
-                .is_some_and(|n| n.parse::<usize>().is_ok())
             && atom_files_names_only(&t.atom)
             && t.separator
                 .as_ref()
@@ -61,9 +57,6 @@ impl Compiler {
         token: &RegexToken,
         alts: &[RegexPattern],
     ) -> Result<(), Decline> {
-        if alts.iter().any(has_numbered_alias) {
-            return Err("seqalt-numbered-alias");
-        }
         if token.ratchet
             && alts
                 .iter()
@@ -124,9 +117,6 @@ impl Compiler {
         token: &RegexToken,
         alts: &[RegexPattern],
     ) -> Result<(), Decline> {
-        if alts.iter().any(has_numbered_alias) {
-            return Err("alt-numbered-alias");
-        }
         let alt = self.alts.len() as u32;
         self.alts.push(alternation_list_flags(alts));
         let pos_base = self.reg();
