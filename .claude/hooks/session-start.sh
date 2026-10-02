@@ -208,10 +208,37 @@ setup_bwrap
 cargo fetch --locked >/dev/null 2>&1 || cargo fetch >/dev/null 2>&1 || \
   warn "cargo fetch failed; the first build will download crates itself"
 
+# Start the debug test build in the background. A fresh container has no
+# target/, and nearly every session ends in `cargo test` or a debug run, which
+# need exactly this build. That cold build is ~4.5 min on 4 cores, and it can
+# proceed while the agent is still reading AGENTS.md and the issue. It runs as a `scripts/dev` job, so it outlives this
+# hook and is visible to `scripts/dev status`. It runs under `nice`, so an
+# interactive build the agent starts meanwhile gets the cores first. A cargo
+# command on the same profile waits on cargo's own build lock and then
+# reuses what was built, so nothing is compiled twice.
+# MUTSU_SETUP_NO_WARM_BUILD=1 skips it.
+if [ "${MUTSU_SETUP_NO_WARM_BUILD:-}" != "1" ]; then
+  if job=$(scripts/dev run warm-build -- nice -n 10 cargo test --no-run 2>/dev/null); then
+    say "warm build started in the background: $job (scripts/dev status $job)"
+  else
+    say "warm build not started (one is already running, or scripts/dev failed)"
+  fi
+fi
+
 # Persist PATH for the session: ~/.local/bin holds the raku symlinks,
 # ~/.cargo/bin the rustup shims.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   printf 'export PATH="%s/.local/bin:%s/.cargo/bin:$PATH"\n' "$HOME" "$HOME" >> "$CLAUDE_ENV_FILE"
+  # Incremental release builds, for this container only. The interpreter is one
+  # very large crate and release is not incremental by default, so touching one
+  # file rebuilt it in ~500 s on 4 cores. Incremental, the rebuild takes ~30 s,
+  # and the binary measured 0-5% slower on benchmarks and the same on roast
+  # files. Shipped binaries come from CI, which never sees this variable. A perf
+  # PR's final wall-clock A/B sets it to false (.agents/skills/perf-tuning).
+  # MUTSU_SETUP_NO_INCREMENTAL_RELEASE=1 skips it.
+  if [ "${MUTSU_SETUP_NO_INCREMENTAL_RELEASE:-}" != "1" ]; then
+    echo 'export CARGO_PROFILE_RELEASE_INCREMENTAL="${CARGO_PROFILE_RELEASE_INCREMENTAL:-true}"' >> "$CLAUDE_ENV_FILE"
+  fi
 fi
 
 say "environment ready"

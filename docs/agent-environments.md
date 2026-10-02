@@ -101,6 +101,21 @@ the default sandbox; `--sandbox none` is for the case where the hook warned that
 A *corpus* sweep still does not belong in a remote container — 4 cores and the disk allowance, not
 the sandbox, are what rule it out (`docs/ecosystem-parity.md` §8.1 dispatches it to CI instead).
 
+Last, the hook starts a **warm build**: `scripts/dev run warm-build -- nice -n 10 cargo test
+--no-run`. A fresh container has no `target/`, and the debug test build is what `cargo test`
+and every debug run need (~4.5 min cold on 4 cores), so it runs while the
+session is still reading. `scripts/dev status` shows it. A cargo command on the same profile waits
+on cargo's build lock and then reuses the result, and `nice` gives an interactive build the cores
+first. `MUTSU_SETUP_NO_WARM_BUILD=1` skips it.
+
+The hook also makes **release builds incremental** for the session by exporting
+`CARGO_PROFILE_RELEASE_INCREMENTAL=true` through `CLAUDE_ENV_FILE`. Release is not incremental by
+default, so touching one file of the one large crate rebuilt it in ~500 s on 4 cores; incremental,
+the rebuild takes ~30 s. The binary measured 0-5% slower on the benchmarks and the same on 150
+roast files. Shipped binaries come from CI, which never sees the variable, and a perf PR's final
+wall-clock A/B sets it to `false` (see the `perf-tuning` skill).
+`MUTSU_SETUP_NO_INCREMENTAL_RELEASE=1` skips it.
+
 So **do not hand-install rustc, rakudo or bubblewrap at the start of a remote session** — it has
 already happened, and `raku` is available as the oracle. If a build still fails with `E0658`, the
 hook did not run (look for its `session-start: environment ready` line) and
