@@ -90,6 +90,13 @@ where release takes ~5min. Do not default to release just because the task is pe
 reserve it for the final wall-clock measurement. (`[profile.release]` sets `debug = false`,
 which is why line-level profiling needs `--profile profiling`.)
 
+**In a remote container, release is incremental.** The SessionStart hook exports
+`CARGO_PROFILE_RELEASE_INCREMENTAL=true`, which cuts a one-file release rebuild from ~500 s to
+~30 s on 4 cores. The binary measured 0-5% slower on the benchmarks and the same on roast files
+(`news/2026-10/remote-incremental-release-and-warm-build.md`). That is fine for iterating but not
+for the final wall-clock number of a perf PR: build both sides of that A/B with
+`CARGO_PROFILE_RELEASE_INCREMENTAL=false cargo build --release`, which is what ships.
+
 ### The raw `perf` CLI: path, sudo, hybrid CPU
 
 This box's `perf` binary and its sudoers entry break every time the kernel updates. `perf` lives
