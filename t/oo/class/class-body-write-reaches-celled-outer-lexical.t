@@ -6,7 +6,7 @@ use Test;
 # over the outer binding by value, which cut a method's capture (a shared cell)
 # off the outer variable.
 
-plan 8;
+plan 10;
 
 my $z = 1;
 class Reader { method m { $z } }
@@ -36,3 +36,15 @@ sub in-routine {
     InRoutine.new.m ~ ',' ~ $q
 }
 is in-routine(), '4,4', 'a routine-scoped class body writes the routine lexical';
+
+# After a body bind, a body write to the source shows through the bound name.
+my $b = 1;
+class BindThenWrite {
+    my $w := $b;
+    $b = 5;
+    our $seen = $w;
+    method m { $w }
+}
+is $BindThenWrite::seen, 5, 'a body write to a bind source is seen through the bound name';
+$b = 7;
+is BindThenWrite.new.m, 7, '... and the method still follows the outer variable';
