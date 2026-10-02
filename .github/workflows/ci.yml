@@ -172,16 +172,14 @@ jobs:
       # stuffing the whole multi-GB `target/` into actions/cache. `shared-key`
       # is what lets jobs share one entry instead of each keeping its own.
       #
-      # This job owns the RELEASE key and the debug-compiling jobs
-      # (`test-check`, `debug-tap`) share "ci-linux"
-      # between them. Two keys, not one, because rust-cache caches whatever
-      # dependency artifacts `target/` happens to hold: while every job built
-      # both profiles, one entry held both, but this job now builds only
-      # release and those two only debug. On a single shared key the save
-      # would be a race whose winner decides which profile everyone else has
-      # to recompile from scratch on every run. GC/JIT are still runtime env
-      # vars rather than cargo features, so the debug jobs (here and in `stress.yml`) do compile
-      # byte-identical artifacts and one key genuinely serves them.
+      # This job owns the RELEASE key; `test-check` owns "ci-linux" (debug,
+      # opt-level 0, which `stress.yml`'s TAP jobs also restore) and
+      # `debug-tap` owns "ci-linux-debug-tap" (debug at opt-level 1). One key
+      # per build flavour because rust-cache caches whatever dependency
+      # artifacts `target/` happens to hold: on a shared key the save would be
+      # a race whose winner decides which flavour everyone else has to
+      # recompile from scratch on every run. GC/JIT are runtime env vars, not
+      # cargo features, so they never need a key of their own.
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -395,9 +393,8 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      # The "ci-linux" dependency cache, shared with the other two jobs that
-      # compile a debug build — see the `build` job for why the release build
-      # keeps a separate key.
+      # The "ci-linux" dependency cache (opt-level 0 debug) — see the `build`
+      # job for why the release build and `debug-tap` keep separate keys.
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -1121,6 +1118,20 @@ jobs:
       MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
       # Link with mold (installed below); shared with the other native jobs.
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      # `opt-level=1` on the dev profile: the binary keeps `debug_assert!`s
+      # and overflow checks (both follow `debug-assertions`, not the opt
+      # level), so this job still checks exactly what it exists to check, but
+      # runs the suite ~3.4x faster -- 951 sampled t/ files took 74s at
+      # opt-level 0 and 22s at 1 (4-core box, -j4). At 0 this job was the
+      # workflow's critical path (14 min, 12 of them `prove`). The price is
+      # compile time: the mutsu crate alone took 366s at opt-level 1 against
+      # 102s at 0 (same box, CARGO_INCREMENTAL=0), so the job trades ~4 min of
+      # build for ~8 min of `prove`. The dependency cache is per opt level,
+      # hence its own rust-cache key below.
+      # `line-tables-only` keeps file:line in a panic backtrace and drops the
+      # rest of the debuginfo nobody reads here (a 600 MB binary to link).
+      CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1128,13 +1139,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
 
-      # The "ci-linux" dependency cache, shared with `test-check`, the other job
-      # that compiles a debug build — see the `build` job for why the release
-      # build keeps a separate key.
+      # Its own dependency cache: the profile overrides above make these
+      # artifacts differ from `test-check`'s opt-level-0 debug build, and on a
+      # shared key the two jobs' saves would race for which one the other has
+      # to recompile from scratch (the same reasoning as the `build` job's
+      # separate release key).
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "ci-linux"
+          shared-key: "ci-linux-debug-tap"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Link with mold instead of GNU ld — see the `build` job for why it comes
@@ -1167,7 +1180,8 @@ jobs:
         # under interleaved `-j` output.
         #
         # `MUTSU_T_TIMEOUT` 90 (release runs use 60): the per-file budget has to
-        # cover a debug binary (~3.3x slower than release) plus CPU contention
+        # cover a debug-assertion binary (slower than release even at
+        # opt-level 1) plus CPU contention
         # from three sibling test processes. Headroom on a budget that only
         # ever fires for the heaviest file is free; a timeout that fires because
         # the runner was busy is not (docs/flaky-test-policy.md 3).
