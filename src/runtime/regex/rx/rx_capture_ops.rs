@@ -2,7 +2,9 @@
 //! capture transform (ADR-0135 D4) to the innermost capture level, through
 //! `Levels::edit` so a backtrack undoes it.
 
-use super::super::regex_helpers::{count_capture_groups, merge_regex_captures};
+use super::super::regex_helpers::{
+    count_capture_groups, merge_goal_captures, merge_regex_captures,
+};
 use super::super::regex_match_delta::{
     alternation_tail_delta, capture_group_delta, group_merge_delta,
 };
@@ -264,12 +266,8 @@ impl Interpreter {
                     .pop()
                     .map(|(_, caps)| caps)
                     .unwrap_or_default();
-                // As the walk's `GoalMatch` arm merges them: the goal's
-                // captures first, as it is written first.
-                let merged = merge_regex_captures(
-                    RegexCaptures::default(),
-                    merge_regex_captures(goal_caps, inner_caps),
-                );
+                // As the walk's `GoalMatch` arm merges them.
+                let merged = merge_goal_captures(goal_caps, inner_caps);
                 levels.edit(|s| s.merge_delta(merged));
             }
             // Cost: O(1).

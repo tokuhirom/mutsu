@@ -1,7 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{
     AlternationListFlags, LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, alternation_list_flags,
-    merge_regex_captures,
+    merge_goal_captures, merge_regex_captures,
 };
 use super::regex_lr_state::{LrKey, lr_end_activation, lr_seed_was_consulted, lr_store_seed};
 use super::regex_ltm_fate::ltm_record_fate;
@@ -561,10 +561,7 @@ impl Interpreter {
                     continue;
                 }
                 for (goal_end, goal_caps) in goal_matches {
-                    let new_caps = merge_regex_captures(
-                        RegexCaptures::default(),
-                        merge_regex_captures(goal_caps, inner_caps.clone()),
-                    );
+                    let new_caps = merge_goal_captures(goal_caps, inner_caps.clone());
                     out.push((goal_end, new_caps));
                 }
             }

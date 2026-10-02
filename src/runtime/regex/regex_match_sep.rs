@@ -397,8 +397,15 @@ impl Interpreter {
             let slot = fold_group(&all_sep, g);
             caps.positional.push(slot);
         }
-        // Named captures: merge every iteration's named captures (as arrays).
-        for src in atom_caps.iter().chain(all_sep.iter().copied()) {
+        // Named captures: merge every iteration's named captures (as arrays)
+        // in match order -- a0, s0, a1, s1, ..., then a trailing separator --
+        // so a name both sides capture lists its entries as rakudo does
+        // (#10574). Positional slots above stay side by side: they are
+        // numbered by source position.
+        let interleaved = (0..atom_caps.len().max(sep_caps.len()))
+            .flat_map(|i| atom_caps.get(i).into_iter().chain(sep_caps.get(i)))
+            .chain(trailing_sep);
+        for src in interleaved {
             for (k, v) in &src.named {
                 let slot = caps.named.slot_mut(*k);
                 slot.merge(v.clone());
