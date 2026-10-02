@@ -200,9 +200,37 @@ impl Value {
         self.match_attr("list")
     }
 
+    /// The positional-capture list as `.list` presents it to Raku code.
+    ///
+    /// The stored `list` attribute renders an unbound interior slot (an
+    /// unmatched `(x)?` before a later capture) as `Nil`, which is what the
+    /// subscript reads (`$m[0]`, `$0`) answer. Rakudo's capture list is an
+    /// nqp list with a *hole* there, and the access modes disagree on it:
+    /// `$m.list[0]` is `Nil` (List `AT-POS` on a null) and `:exists` is
+    /// False, while iterating the list (`.raku`, `.values`, `.pairs`, a
+    /// list assignment) HLL-ises the null to `Mu`. This view keeps both: the
+    /// slot holds the `Mu` type object and the embedded `initialized` set
+    /// leaves it out, so `ArrayData::hole_at` reports it as a hole and the
+    /// element read turns it back into `Nil`. Empty for a non-Match.
+    // Cost: O(1) (shared) for a list without an unbound slot; O(p), p =
+    // positional captures, to scan it, and to copy it when it has one.
+    pub(crate) fn match_list_view(&self) -> Value {
+        let Some(list) = self.match_list() else {
+            return Value::array(Vec::new());
+        };
+        let has_hole = matches!(
+            list.view(),
+            ValueView::Array(items, _) if items.iter().any(Value::is_nil)
+        );
+        if !has_hole {
+            return list;
+        }
+        Value::capture_list_with_holes(crate::runtime::utils::value_to_list(&list), false)
+    }
+
     /// The positional captures as the list `Any`'s iteration methods walk:
-    /// `Capture.list`, so an `Array` for `.Array` and a `List` otherwise.
-    /// Empty for a non-Match.
+    /// `Capture.list` (see [`Self::match_list_view`] for an unbound slot), so
+    /// an `Array` for `.Array` and a `List` otherwise. Empty for a non-Match.
     // Cost: O(p), p = positional captures (copied once).
     pub(crate) fn match_positional_list(&self, as_array: bool) -> Value {
         let items = self
@@ -210,10 +238,45 @@ impl Value {
             .as_ref()
             .map(crate::runtime::utils::value_to_list)
             .unwrap_or_default();
+        Value::capture_list_with_holes(items, as_array)
+    }
+
+    /// Build a `List` from positional capture slots, turning each unbound
+    /// `Nil` slot into a `Mu` hole that `ArrayData::hole_at` recognises (see
+    /// [`Self::match_list_view`]). With `as_array` the result is an `Array`
+    /// whose elements are copied out of the list, so a hole becomes a plain
+    /// `Mu` element (raku: `my @a = $m.list` is `[Mu, ...]`).
+    // Cost: O(p), p = positional captures.
+    pub(crate) fn capture_list_with_holes(items: Vec<Value>, as_array: bool) -> Value {
         if as_array {
-            Value::real_array(items)
+            return Value::real_array(items.into_iter().map(Value::unbound_capture_as_mu).collect());
+        }
+        if !items.iter().any(Value::is_nil) {
+            return Value::array(items);
+        }
+        let initialized = items
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| !v.is_nil())
+            .map(|(i, _)| i)
+            .collect();
+        let items = items
+            .into_iter()
+            .map(Value::unbound_capture_as_mu)
+            .collect();
+        let mut data = ArrayData::new(items);
+        data.initialized = Some(initialized);
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::List)
+    }
+
+    /// An unbound positional capture slot (`Nil`) as iteration presents it:
+    /// the `Mu` type object (rakudo HLL-ises the nqp-list hole to `Mu`).
+    /// Every other slot is returned unchanged.
+    pub(crate) fn unbound_capture_as_mu(self) -> Value {
+        if self.is_nil() {
+            Value::package(crate::symbol::Symbol::intern("Mu"))
         } else {
-            Value::array(items)
+            self
         }
     }
 

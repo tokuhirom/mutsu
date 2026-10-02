@@ -2129,9 +2129,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 ))));
             }
             "list" => {
-                return Some(Ok(target
-                    .match_list()
-                    .unwrap_or_else(|| Value::array(Vec::new()))));
+                return Some(Ok(target.match_list_view()));
             }
             // Cost: O(p), p = positional captures (copied once into the result).
             // The 0-arg members of `is_capture_list_method` that arrays answer
@@ -2162,7 +2160,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         keys.push(Value::str(k.clone()));
                     }
                 }
-                return Some(Ok(Value::array(keys)));
+                return Some(Ok(Value::seq(keys)));
             }
             "values" => {
                 let mut vals = Vec::new();
@@ -2175,7 +2173,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         if let ValueView::Array(inner, _) = v.view() {
                             vals.extend(inner.iter().cloned());
                         } else {
-                            vals.push(v.clone());
+                            vals.push(v.clone().unbound_capture_as_mu());
                         }
                     }
                 }
@@ -2194,14 +2192,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                 }
-                return Some(Ok(Value::array(vals)));
+                return Some(Ok(Value::seq(vals)));
             }
             "pairs" => {
                 // ADR-0021 I2: data-minted pairs default positional.
                 let mut pairs = Vec::new();
                 if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for (i, v) in list.iter().enumerate() {
-                        pairs.push(Value::value_pair(Value::int(i as i64), v.clone()));
+                        pairs.push(Value::value_pair(
+                            Value::int(i as i64),
+                            v.clone().unbound_capture_as_mu(),
+                        ));
                     }
                 }
                 if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
@@ -2211,7 +2212,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         pairs.push(Value::value_pair(Value::str(k.clone()), v.clone()));
                     }
                 }
-                return Some(Ok(Value::array(pairs)));
+                return Some(Ok(Value::seq(pairs)));
             }
             "kv" => {
                 let mut kv = Vec::new();
@@ -2223,7 +2224,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         if let ValueView::Array(inner, _) = v.view() {
                             kv.extend(inner.iter().cloned());
                         } else {
-                            kv.push(v.clone());
+                            kv.push(v.clone().unbound_capture_as_mu());
                         }
                     }
                 }
@@ -2244,7 +2245,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                 }
-                return Some(Ok(Value::array(kv)));
+                return Some(Ok(Value::seq(kv)));
             }
             "elems" => {
                 let count = match list_v.as_ref().map(Value::view) {
