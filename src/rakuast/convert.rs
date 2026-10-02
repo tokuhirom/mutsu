@@ -1409,6 +1409,40 @@ fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
+/// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,
+/// with the assigned value as the postcircumfix's `assignee` when there is one.
+fn subscript_node(
+    target: &Expr,
+    index: &Expr,
+    is_positional: bool,
+    assignee: Option<&Expr>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let semilist = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
+    };
+    let mut index_node = RakuAstNode {
+        class: if is_positional {
+            RakuAstClass::PostcircumfixArrayIndex
+        } else {
+            RakuAstClass::PostcircumfixHashIndex
+        },
+        fields: vec![node_field(Some("index"), semilist)],
+    };
+    if let Some(value) = assignee {
+        index_node
+            .fields
+            .push(node_field(Some("assignee"), convert_expr(value)?));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyPostfix,
+        fields: vec![
+            node_field(Some("operand"), convert_expr(target)?),
+            node_field(Some("postfix"), index_node),
+        ],
+    })
+}
+
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
@@ -2000,27 +2034,37 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             index,
             is_positional,
-        } => {
-            let semilist = RakuAstNode {
-                class: RakuAstClass::SemiList,
-                fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
-            };
-            let index_node = RakuAstNode {
-                class: if *is_positional {
-                    RakuAstClass::PostcircumfixArrayIndex
-                } else {
-                    RakuAstClass::PostcircumfixHashIndex
-                },
-                fields: vec![node_field(Some("index"), semilist)],
-            };
-            Ok(RakuAstNode {
-                class: RakuAstClass::ApplyPostfix,
-                fields: vec![
-                    node_field(Some("operand"), convert_expr(target)?),
-                    node_field(Some("postfix"), index_node),
-                ],
-            })
-        }
+        } => subscript_node(target, index, *is_positional, None),
+        // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
+        // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
+        // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
+        // `%h<…>` from `%h{…}` yet (#10654) and renders both as `HashIndex`,
+        // so an associative assignment takes the `HashIndex` form.
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            is_positional: true,
+        } => subscript_node(target, index, true, Some(value)),
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            is_positional: false,
+        } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(Some("left"), subscript_node(target, index, false, None)?),
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    },
+                ),
+                node_field(Some("right"), convert_expr(value)?),
+            ],
+        }),
         // A bare `{ ... }` block in expression position.
         Expr::Block(body) => block_node(body),
         Expr::AnonSub {

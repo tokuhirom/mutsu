@@ -277,7 +277,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
-        RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
+        RakuAstClass::ApplyInfix if infix_is_assignment(node) => match subscript_assign(node)? {
+            Some(assign) => Ok(Stmt::Expr(assign)),
+            None => lower_assign(node),
+        },
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
         RakuAstClass::CallName if call_name_stash(node).is_some() => {
@@ -1369,6 +1372,30 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
 }
 
 /// Lower `$x = EXPR` (statement position) to `Stmt::Assign`.
+/// `ApplyInfix(left => <subscript>, Assignment, right)` -- the form rakudo
+/// keeps for a `%h{…}` subscript -- as the parser's `IndexAssign`, or `None`
+/// when the left side is not a subscript.
+fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    if left.class != RakuAstClass::ApplyPostfix {
+        return Ok(None);
+    }
+    let Expr::Index {
+        target,
+        index,
+        is_positional,
+    } = lower_expr(left)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Expr::IndexAssign {
+        target,
+        index,
+        value: Box::new(lower_expr(named_child(node, "right")?)?),
+        is_positional,
+    }))
+}
+
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (name, expr) = lower_assign_parts(node)?;
     Ok(Stmt::Assign {
@@ -2733,6 +2760,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // `($x = EXPR)` in expression position -> an assignment expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
+            if let Some(assign) = subscript_assign(node)? {
+                return Ok(assign);
+            }
             let (name, expr) = lower_assign_parts(node)?;
             Ok(Expr::AssignExpr {
                 name,
@@ -2960,13 +2990,23 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     } else {
                         lower_expr(named_child_or_positional(index_node)?)?
                     };
+                    let is_positional =
+                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
+                    // `@a[0] = 1`: rakudo folds an assignment to a subscript
+                    // into the postcircumfix's `assignee`; the parser keeps it
+                    // as `IndexAssign`.
+                    if let Ok(assignee) = named_child(postfix, "assignee") {
+                        return Ok(Expr::IndexAssign {
+                            target: Box::new(operand),
+                            index: Box::new(index),
+                            value: Box::new(lower_expr(assignee)?),
+                            is_positional,
+                        });
+                    }
                     Ok(Expr::Index {
                         target: Box::new(operand),
                         index: Box::new(index),
-                        is_positional: matches!(
-                            postfix.class,
-                            RakuAstClass::PostcircumfixArrayIndex
-                        ),
+                        is_positional,
                     })
                 }
                 _ => Err(unsupported(node)),
