@@ -4873,6 +4873,12 @@ pub struct Interpreter {
         crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
         Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
     >,
+    /// `(operator, candidate, argument type keys) -> does the core candidate
+    /// set out-rank this user infix candidate` (#10111,
+    /// `native_infix_dispatch.rs`). The candidate's `Arc` is held so a hit can
+    /// be confirmed by identity.
+    pub(crate) core_infix_wins_cache:
+        GenCache<crate::runtime::native_infix_dispatch::CoreInfixWinsKey, (Arc<FunctionDef>, bool)>,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a

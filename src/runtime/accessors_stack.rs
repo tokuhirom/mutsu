@@ -40,6 +40,7 @@ impl Interpreter {
         self.func_multi_type_cacheable.clear();
         self.func_multi_argkey_cacheable.clear();
         self.bare_multi_plan_cache.clear();
+        self.core_infix_wins_cache.clear();
         self.light_call_cache.clear();
         self.pos_light_call_cache.clear();
         self.otf_call_cache.clear();

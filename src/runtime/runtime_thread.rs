@@ -1101,6 +1101,7 @@ impl Interpreter {
             func_multi_resolve_cache: Default::default(),
             func_multi_argkey_cacheable: Default::default(),
             bare_multi_plan_cache: Default::default(),
+            core_infix_wins_cache: Default::default(),
             func_multi_type_cacheable: Default::default(),
             user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
