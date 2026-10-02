@@ -448,6 +448,17 @@ impl Compiler {
                         });
                         loop_body.push(Stmt::Take(Expr::Var(cap_var), false));
                     }
+                    // `say`/`print`/`put`/`note` return True, so a loop body
+                    // ending in one of them has a defined value (KEEP, not UNDO).
+                    Stmt::Say(_) | Stmt::Print(_) | Stmt::Put(_) | Stmt::Note(_) => {
+                        loop_body.push(last.clone());
+                        loop_body.push(Stmt::Assign {
+                            name: cap_var,
+                            expr: Expr::Literal(Value::TRUE),
+                            op: AssignOp::Assign,
+                            target_is_sigilless: false,
+                        });
+                    }
                     other => {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
