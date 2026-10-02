@@ -15,7 +15,7 @@
 //! [`region_rows_are_a_function_of_the_bytecode`] pins exactly that property,
 //! because it is the one that makes every other assertion here legitimate.
 
-mod profile_doc;
+use crate::profile_doc;
 
 use profile_doc::{Profiled, fixture_path, profile};
 

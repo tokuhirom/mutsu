@@ -12,7 +12,7 @@
 //! the only other coverage builds a `CompiledCode` by hand and calls
 //! `record_line` directly, which no codegen change can break.
 
-mod profile_doc;
+use crate::profile_doc;
 
 use profile_doc::{fixture_path, profile};
 

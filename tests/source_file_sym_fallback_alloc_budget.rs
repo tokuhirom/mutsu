@@ -29,42 +29,7 @@
 
 #![cfg(not(feature = "alloc-stats"))]
 
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
-
-struct CountingAllocator;
-
-thread_local! {
-    static ALLOCS: Cell<u64> = const { Cell::new(0) };
-}
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let _ = ALLOCS.try_with(|c| c.set(c.get().wrapping_add(1)));
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        unsafe { System.dealloc(ptr, layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let _ = ALLOCS.try_with(|c| c.set(c.get().wrapping_add(1)));
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let _ = ALLOCS.try_with(|c| c.set(c.get().wrapping_add(1)));
-        unsafe { System.realloc(ptr, layout, new_size) }
-    }
-}
-
-#[global_allocator]
-static ALLOC: CountingAllocator = CountingAllocator;
-
-fn allocs_now() -> u64 {
-    ALLOCS.with(Cell::get)
-}
+use crate::allocs_now;
 
 /// Allocations made running `src` as a top-level program, with `program_path`
 /// set the way the CLI always sets it, measured after a warm-up run so
