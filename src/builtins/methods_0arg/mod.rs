@@ -2136,6 +2136,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // natively: a Match is never coerced to its `.Str` for them.
             "Array" | "List" | "Slip" | "Seq" | "flat" | "cache" | "eager" | "reverse" => {
                 let list = target.match_positional_list(method == "Array");
+                // `Capture.List` is the positional list itself; a `List`'s own
+                // `.List` would materialize an unbound slot's hole as `Nil`.
+                if method == "List" {
+                    return Some(Ok(list));
+                }
                 return native_method_0arg(&list, Symbol::intern(method));
             }
             "hash" | "Hash" => {
