@@ -166,7 +166,13 @@ impl Interpreter {
         //   * `Formatter::Syntax.parse($fmt)` -> a Match of the format grammar.
         //   * `Formatter.CODE($fmt)`          -> a Callable rendering the format.
         //   * `Formatter.AST($fmt)`           -> a RakuAST::Node (see below).
-        if let ValueView::Package(name) = target.view() {
+        //
+        // A user-declared class that shadows one of these names (Template::HAML
+        // declares its own `class Formatter`) owns its methods: `Formatter.new`
+        // must build an instance of it, not compile a sprintf format (#10638).
+        if let ValueView::Package(name) = target.view()
+            && !self.has_class(&name.resolve())
+        {
             match (name.resolve().as_str(), method) {
                 ("Formatter::Syntax", "parse" | "subparse") => {
                     let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
@@ -194,7 +200,8 @@ impl Interpreter {
 
         // Format.new("...")
         if method == "new"
-            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Format")
+            && matches!(target.view(), ValueView::Package(name)
+                if name.resolve() == "Format" && !self.has_class("Format"))
         {
             let fmt = args
                 .iter()
@@ -207,6 +214,10 @@ impl Interpreter {
         }
 
         let fmt = Self::format_string_of(target)?;
+        // A user class named `Format` is not the 6.e builtin (#10638).
+        if self.has_class("Format") {
+            return None;
+        }
         let count = super::sprintf::sprintf_directive_count(&fmt);
         match method {
             "Str" | "gist" | "Stringy" => Some(Ok(Value::str(fmt))),
@@ -227,7 +238,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let format_arg = args.first()?;
-        if !Self::is_format_instance(format_arg) {
+        if !Self::is_format_instance(format_arg) || self.has_class("Format") {
             return None;
         }
         let fmt = Self::format_string_of(format_arg)?;

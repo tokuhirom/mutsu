@@ -1954,6 +1954,20 @@ impl Interpreter {
                     let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
                     val = self.array_container_writethrough_value(&name, val, &old)?;
                 }
+                // `@!a = @e` / `%!h = %e` has copy semantics: the attribute gets
+                // its own container. The name-keyed `@` path above copies through
+                // `array_container_writethrough_value`, which attribute twigils
+                // skip, and an attribute's container is mutated in place through
+                // its shared cell -- so without detaching here `@!a.push` also
+                // grew `@e` (#10638).
+                if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && is_attr_twigil
+                    && (name.starts_with('@') || name.starts_with('%'))
+                {
+                    val = val.detach_shared_container();
+                }
                 // An attribute twigil (`@!c = ...` as a statement lands on
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
