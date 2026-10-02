@@ -974,12 +974,7 @@ impl Interpreter {
                                 .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
                     });
             if already_installed {
-                let callable_key =
-                    MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
-                self.env.insert_sym_noting(
-                    callable_key,
-                    Value::int(crate::value::next_instance_id() as i64),
-                );
+                self.note_registration_callable_id(&self.current_package(), name);
                 return Ok(SubRegisterOutcome::Unchanged);
             }
         }
@@ -1047,11 +1042,7 @@ impl Interpreter {
                 if pkg != "GLOBAL" {
                     self.mark_my_scoped_package_item(fq);
                 }
-                let callable_key = MetaNs::CallableId.key_pair_for_strs(&pkg, name);
-                self.env.insert_sym_noting(
-                    callable_key,
-                    Value::int(crate::value::next_instance_id() as i64),
-                );
+                self.note_registration_callable_id(&pkg, name);
                 return Ok(SubRegisterOutcome::Installed);
             }
         }
@@ -1401,12 +1392,7 @@ impl Interpreter {
                     crate::runtime::cow_table_mut(&mut self.registered_stub_decl_sites)
                         .insert((single_key_sym, fp));
                 }
-                let callable_key =
-                    MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
-                self.env.insert_sym_noting(
-                    callable_key,
-                    Value::int(crate::value::next_instance_id() as i64),
-                );
+                self.note_registration_callable_id(&self.current_package(), name);
                 return Ok(SubRegisterOutcome::Unchanged);
             }
             // When re-registering a hoisted sub with custom traits, skip redeclaration
@@ -1425,12 +1411,7 @@ impl Interpreter {
                 let decl_body_is_empty =
                     metadata.map_or_else(|| body.is_empty(), |m| m.body_is_empty);
                 if decl_body_is_empty && same_signature {
-                    let callable_key =
-                        MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
-                    self.env.insert_sym_noting(
-                        callable_key,
-                        Value::int(crate::value::next_instance_id() as i64),
-                    );
+                    self.note_registration_callable_id(&self.current_package(), name);
                     return Ok(SubRegisterOutcome::Unchanged);
                 }
             }
@@ -1493,12 +1474,7 @@ impl Interpreter {
                         .registered_stub_decl_sites
                         .contains(&(single_key_sym, fp))
                 {
-                    let callable_key =
-                        MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
-                    self.env.insert_sym_noting(
-                        callable_key,
-                        Value::int(crate::value::next_instance_id() as i64),
-                    );
+                    self.note_registration_callable_id(&self.current_package(), name);
                     return Ok(SubRegisterOutcome::Unchanged);
                 }
                 return Err(RuntimeError::redeclaration_routine(name));
@@ -1729,11 +1705,7 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package(), name);
             self.mark_my_scoped_package_item(fq);
         }
-        let callable_key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
-        self.env.insert_sym_noting(
-            callable_key,
-            Value::int(crate::value::next_instance_id() as i64),
-        );
+        self.note_registration_callable_id(&self.current_package(), name);
         if is_method_value_decl {
             // Build from the def just installed so the value carries the
             // plan's bytecode — a `my method foo {...}` used as a wrap

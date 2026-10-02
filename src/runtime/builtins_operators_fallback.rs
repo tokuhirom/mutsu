@@ -746,12 +746,8 @@ impl Interpreter {
             // capture the correct target for non-local return.
             let callable_key = MetaNs::CallableId.key_pair(def.package, def.name);
             let mut registration_id: Option<u64> = None;
-            if let Some(id_val) = self.env.get_sym(callable_key).cloned()
-                && let ValueView::Int(id) = id_val.view()
-            {
-                if id != 0 {
-                    registration_id = Some(id as u64);
-                }
+            if let Some(id) = self.registration_callable_id(callable_key) {
+                registration_id = Some(id as u64);
                 self.env
                     .insert("__mutsu_callable_id".to_string(), Value::int(id));
             }

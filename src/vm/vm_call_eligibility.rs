@@ -96,12 +96,7 @@ impl Interpreter {
             return None;
         }
         let key = crate::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
-        let id = self
-            .env()
-            .get_sym(key)
-            .and_then(|v| v.as_int())
-            .filter(|i| *i != 0)
-            .map(|i| i as u64);
+        let id = self.registration_callable_id(key).map(|i| i as u64);
         let saved = self.state_scope_id.get();
         if id.is_some() {
             self.state_scope_id.set(id);

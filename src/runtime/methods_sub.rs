@@ -1195,25 +1195,10 @@ impl Interpreter {
                 .unwrap_or_else(|| data.name.resolve());
             let current_callable_id = if !func_name.is_empty() {
                 let key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), &func_name);
-                self.env
-                    .get_sym(key)
-                    .and_then(|v| {
-                        if let ValueView::Int(n) = v.view() {
-                            Some(n)
-                        } else {
-                            None
-                        }
-                    })
-                    .or_else(|| {
-                        let key = MetaNs::CallableId.key_pair_for_strs("GLOBAL", &func_name);
-                        self.env.get_sym(key).and_then(|v| {
-                            if let ValueView::Int(n) = v.view() {
-                                Some(n)
-                            } else {
-                                None
-                            }
-                        })
-                    })
+                self.registration_callable_id(key).or_else(|| {
+                    let key = MetaNs::CallableId.key_pair_for_strs("GLOBAL", &func_name);
+                    self.registration_callable_id(key)
+                })
             } else {
                 None
             };

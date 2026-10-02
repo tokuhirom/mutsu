@@ -677,6 +677,7 @@ pub(crate) mod enum_bare_names;
 mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
+pub(crate) mod toplevel_callable_ids;
 pub(crate) use self::decl_types::*;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
@@ -2883,6 +2884,14 @@ pub struct Interpreter {
     /// loading chain. Saved/restored around each top-level `use_module_with_tags`
     /// call so it only contains packages from the current loading chain.
     pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
+    /// Registration clone ids of routines a loaded module's mainline declared
+    /// at its top level, keyed by their `__mutsu_callable_id::` marker symbol.
+    /// Kept here rather than in the env the module body ran in (ADR-0084 §2
+    /// group 1); see `runtime::toplevel_callable_ids`.
+    pub(crate) toplevel_callable_ids: std::sync::Arc<rustc_hash::FxHashMap<Symbol, i64>>,
+    /// The depths the executing module mainline started at, while one runs.
+    /// See `Interpreter::run_module_mainline`.
+    pub(crate) module_toplevel_depth: Option<toplevel_callable_ids::ModuleToplevelDepth>,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
     module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
