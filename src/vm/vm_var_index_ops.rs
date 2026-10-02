@@ -1081,7 +1081,14 @@ impl Interpreter {
         // uniform handling in the match below.
         let is_lazy_index = matches!(index.view(), ValueView::LazyList(..));
         let index = if let ValueView::LazyList(ll) = index.view() {
-            let items = self.force_lazy_list_vm(&ll)?;
+            let within = match target.view() {
+                ValueView::Array(items, _) => self.lazy_index_prefix_within(&ll, items.len()),
+                _ => None,
+            };
+            let items = match within {
+                Some(items) => items?,
+                None => self.force_lazy_list_vm(&ll)?,
+            };
             Value::array(items)
         } else if let ValueView::Seq(items) = index.view() {
             Value::array_with_kind(

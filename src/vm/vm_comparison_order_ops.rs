@@ -785,12 +785,14 @@ impl Interpreter {
         // `eqv` on two lazy iterables of the SAME type cannot be answered without
         // iterating them, so it throws X::Cannot::Lazy (action `eqv`). Two lazy
         // iterables of DIFFERENT type are trivially not-eqv (no iteration needed),
-        // and a single lazy operand falls through to the normal element compare,
-        // which short-circuits on the length/laziness mismatch.
+        // and so is a lazy operand against a non-lazy one: Rakudo's `eqv`
+        // compares `.is-lazy` before any element, and an infinite list cannot
+        // be forced to compare its elements anyway (#10846).
         match (Self::lazy_eqv_type(&left), Self::lazy_eqv_type(&right)) {
             (Some(a), Some(b)) if a == b => return Err(RuntimeError::cannot_lazy("eqv")),
             (Some(_), Some(_)) => return Ok(Value::FALSE),
-            _ => {}
+            (Some(_), None) | (None, Some(_)) => return Ok(Value::FALSE),
+            (None, None) => {}
         }
         if let Some(answer) = self.eqv_arrays_lockstep(&left, &right)? {
             return Ok(Value::truth(answer));

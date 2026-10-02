@@ -413,7 +413,7 @@ impl Interpreter {
             if let Some(rest) = self.map_grep_stream_drain(&attributes) {
                 rest?
             } else {
-                self.iterator_remaining_items(&attributes.as_map())
+                self.iterator_remaining_items(&attributes.as_map())?
             }
         } else {
             let mut items = Vec::new();

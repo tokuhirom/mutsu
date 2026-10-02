@@ -1170,15 +1170,19 @@ impl Interpreter {
             ));
         }
 
-        // For sequence-spec lazy lists, a strict force cannot materialize the
-        // infinite tail, so return a bounded prefix (the historical 100k cap).
-        // With the L2b `[start]` seed the cache is O(1), so extend it to the cap
-        // here — every strict-force caller (front mutation reify, eager coerce,
-        // ...) expects the prefix, not the seed. Lazy *read* paths (index, head,
-        // first, map/grep pipes) use `force_lazy_list_vm_n` / pull and stay O(1).
-        if let Some(ref spec) = list.sequence_spec {
-            const MAX_ARRAY_EXPAND: usize = 100_000;
-            return Self::extend_sequence_cache(list, spec, MAX_ARRAY_EXPAND);
+        // Every sequence-spec lazy list (arithmetic/geometric `...`, `.roll(*)`,
+        // an unbounded `.succ` Range) is infinite: none of the specs has an
+        // endpoint. A strict force therefore cannot complete, and returning a
+        // bounded prefix as the whole list is a wrong answer (#10846). Throw
+        // X::Cannot::Lazy, the same verdict a strict force of an infinite
+        // map/grep pipe reaches above. Lazy *read* paths (index, head, first,
+        // map/grep pipes, `@`-array element reify) use `force_lazy_list_vm_n`
+        // / pull and stay bounded.
+        if list.sequence_spec.is_some() {
+            return Err(RuntimeError::typed_msg(
+                "X::Cannot::Lazy",
+                "Cannot coerce an infinite lazy list to a strict list",
+            ));
         }
 
         // A lazy `IO::CatHandle.lines` / `.handles` list is finite (it reads to

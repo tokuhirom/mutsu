@@ -4372,9 +4372,14 @@ impl Interpreter {
                         // value (`LazyList::itemized`) — raku's `sink` never
                         // forces an itemized Scalar, only a genuinely bare Seq
                         // (measured: `my $s = (gather die)[]; $s;` lives). A bare
-                        // lazy Seq still drains below.
+                        // lazy Seq still drains below. A lazy `@`-array is an
+                        // Array, whose `sink` is a no-op too: sinking
+                        // `my @a = 1..*; @a.unshift(0);` must not force the
+                        // infinite list (#10846).
                         ValueView::LazyList(list)
-                            if list.is_cached_no_sink() || list.is_itemized() => {}
+                            if list.is_cached_no_sink()
+                                || list.is_itemized()
+                                || list.in_array_context() => {}
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }

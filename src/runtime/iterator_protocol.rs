@@ -165,6 +165,11 @@ impl crate::Interpreter {
     /// actually needs, so an infinite source stays lazy.
     ///
     /// Returns the topped-up items, or `None` when there was nothing to do.
+    ///
+    /// A source that cannot be forced propagates its error: draining an
+    /// infinite source (`push-all` / `sink-all` over an infinite sequence or
+    /// pipe) answers X::Cannot::Lazy rather than appending whatever prefix
+    /// happened to be pulled and reporting the source as exhausted (#10846).
     pub(crate) fn iterator_topup_from_lazy_source(
         &mut self,
         source: Option<&Value>,
@@ -172,19 +177,23 @@ impl crate::Interpreter {
         index: usize,
         args: &[Value],
         have: usize,
-    ) -> Option<Vec<Value>> {
-        let ValueView::LazyList(list) = source?.view() else {
-            return None;
+    ) -> Result<Option<Vec<Value>>, crate::value::RuntimeError> {
+        let Some(ValueView::LazyList(list)) = source.map(Value::view) else {
+            return Ok(None);
         };
+        // Sinking a source whose elements have no side effects observes
+        // nothing, so `sink-all` need not generate them: `(42 xx *).iterator
+        // .sink-all` returns at once, as Rakudo's repeat iterator does
+        // (S03-operators/repeat.t), instead of forcing an infinite source.
+        if method == "sink-all" && Self::lazy_source_sink_is_inert(&list) {
+            return Ok(None);
+        }
         let pulled = match needed_len(method, index, args) {
-            Some(need) if need <= have => return None,
-            Some(need) => self.force_lazy_list_vm_n(&list, need),
-            None => self.force_lazy_list_vm(&list),
+            Some(need) if need <= have => return Ok(None),
+            Some(need) => self.force_lazy_list_vm_n(&list, need)?,
+            None => self.force_lazy_list_vm(&list)?,
         };
-        // A source that cannot be forced (an infinite pipe answers
-        // X::Cannot::Lazy) leaves the prefix as it was; the step then reports
-        // exhaustion exactly as before.
-        pulled.ok().filter(|items| items.len() > have)
+        Ok(Some(pulled).filter(|items| items.len() > have))
     }
 
     /// The elements a built-in `Iterator` instance has left from its cursor on,
@@ -194,7 +203,10 @@ impl crate::Interpreter {
     /// first, as `push-all` does.
     ///
     /// Cost: O(n), n = remaining elements (plus forcing the lazy source).
-    pub(crate) fn iterator_remaining_items(&mut self, attrs: &crate::value::AttrMap) -> Vec<Value> {
+    pub(crate) fn iterator_remaining_items(
+        &mut self,
+        attrs: &crate::value::AttrMap,
+    ) -> Result<Vec<Value>, crate::value::RuntimeError> {
         let mut all = match attrs.get("items").map(Value::view) {
             Some(ValueView::Array(values, ..)) => values.to_vec(),
             _ => Vec::new(),
@@ -209,11 +221,41 @@ impl crate::Interpreter {
             index,
             &[],
             all.len(),
-        ) {
+        )? {
             all = more;
         }
         let index = index.min(all.len());
-        all.split_off(index)
+        Ok(all.split_off(index))
+    }
+
+    /// Whether producing `list`'s elements runs no user code and has no
+    /// other observable effect: a pure sequence spec (`1..*`, `1, 3 ... *`),
+    /// or `xx` repeating a plain (non-callable) value.
+    ///
+    /// Cost: O(1).
+    fn lazy_source_sink_is_inert(list: &crate::value::LazyList) -> bool {
+        if matches!(
+            list.sequence_spec,
+            Some(
+                crate::value::SequenceSpec::Arithmetic { .. }
+                    | crate::value::SequenceSpec::GeometricRat { .. }
+                    | crate::value::SequenceSpec::Geometric { .. }
+                    | crate::value::SequenceSpec::Succ
+            )
+        ) {
+            return true;
+        }
+        let Some(pipe) = list.lazy_pipe.as_ref() else {
+            return false;
+        };
+        let pipe = pipe.lock().unwrap();
+        matches!(
+            pipe.adaptor.as_deref(),
+            Some(crate::value::PipeAdaptor::Repeat { .. })
+        ) && !matches!(
+            pipe.func.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+        )
     }
 
     /// Append `vals` to the array passed as the `push-*` family's first
