@@ -175,6 +175,9 @@ impl Interpreter {
             if let Some(err) = self.take_pending_dispatch_error() {
                 return Err(err);
             }
+            if !self.has_multi_candidates(&proto_name) {
+                return Err(self.multi_no_candidates_error(&proto_name, &args));
+            }
             return Err(self.multi_no_match_error(&proto_name, &args));
         };
         // Set up multi dispatch stack so nextsame/nextwith can walk through
@@ -352,6 +355,60 @@ impl Interpreter {
     /// `name` is the routine as the call named it (`"infix:<cross>"`) and is
     /// what the candidate lines are collected under.
     pub(crate) fn multi_no_match_error(&self, name: &str, args: &[Value]) -> RuntimeError {
+        let call_profile = Self::multi_call_profile(name, args);
+        let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
+        let sig_list = if sig_lines.is_empty() {
+            String::new()
+        } else {
+            format!(":\n{}", sig_lines.join("\n"))
+        };
+        let message = format!(
+            "Cannot resolve caller {}; none of these signatures matches{}",
+            call_profile, sig_list
+        );
+        Self::multi_no_match_exception(name, message)
+    }
+
+    /// The `X::Multi::NoMatch` a call to a `proto` that has no candidates at
+    /// all raises (mutsu#10531):
+    ///
+    /// ```text
+    /// Cannot resolve caller foo(Int:D); Routine does not have any candidates.  Is only the proto defined?
+    /// ```
+    ///
+    /// (Two spaces before "Is", as rakudo prints it.)
+    pub(crate) fn multi_no_candidates_error(&self, name: &str, args: &[Value]) -> RuntimeError {
+        let message = format!(
+            "Cannot resolve caller {}; Routine does not have any candidates.  Is only the proto defined?",
+            Self::multi_call_profile(name, args)
+        );
+        Self::multi_no_match_exception(name, message)
+    }
+
+    /// Whether `name` is a user `{*}`-only `proto` with no candidate
+    /// registered under it, i.e. a call to it can only end in
+    /// [`Self::multi_no_candidates_error`]. A proto with a body of its own
+    /// answers the call itself.
+    // Cost: O(k), k = registered routines sharing `name`'s base name.
+    pub(crate) fn is_candidate_less_proto(&mut self, name: &str) -> bool {
+        self.resolve_proto_function(name)
+            .is_some_and(|def| super::dispatch_proto_rewrite::is_only_star_block(&def.body))
+            && !self.has_multi_candidates(name)
+    }
+
+    fn multi_no_match_exception(name: &str, message: String) -> RuntimeError {
+        let mut err = RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Multi::NoMatch"),
+            attrs,
+        )));
+        err
+    }
+
+    /// `name(Type:D, ...)`: the call as an `X::Multi::NoMatch` message spells it.
+    fn multi_call_profile(name: &str, args: &[Value]) -> String {
         let arg_types: Vec<String> = args
             .iter()
             .map(|a| {
@@ -383,25 +440,7 @@ impl Interpreter {
                 })
             })
             .collect();
-        let call_profile = format!("{}({})", name, arg_types.join(", "));
-        let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
-        let sig_list = if sig_lines.is_empty() {
-            String::new()
-        } else {
-            format!(":\n{}", sig_lines.join("\n"))
-        };
-        let message = format!(
-            "Cannot resolve caller {}; none of these signatures matches{}",
-            call_profile, sig_list
-        );
-        let mut err = RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(message));
-        err.exception = Some(Box::new(Value::make_instance(
-            Symbol::intern("X::Multi::NoMatch"),
-            attrs,
-        )));
-        err
+        format!("{}({})", name, arg_types.join(", "))
     }
 
     /// Collect formatted signature lines from multi dispatch candidates.
