@@ -838,6 +838,23 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A named-variable receiver reaches CallMethodMut. Its list coercion
+        // must keep a live gather pullable, as the CallMethod path does for an
+        // inline receiver; forcing here runs a later die before `for` can see
+        // the elements already taken.
+        if let ValueView::LazyList(ll) = target.view()
+            && ll.coroutine.is_some()
+            && args.is_empty()
+            && matches!(method, "List" | "list" | "values")
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "gather-list-context",
+            );
+            self.stack
+                .push(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())));
+            return Ok(());
+        }
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
@@ -894,11 +911,7 @@ impl Interpreter {
             // `CallMethodMut` for a named-variable one). That made
             // `my $a = (gather {...}).List; $a.raku` render `(1, 2).Seq` while
             // the two-statement spelling rendered `$(1, 2)`.
-            if ll.in_list_context() {
-                Value::array(items)
-            } else {
-                Value::seq(items)
-            }
+            ll.reified_value(items)
         } else {
             target
         };
