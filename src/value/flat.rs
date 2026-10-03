@@ -47,6 +47,15 @@ pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
             Value::array_with_kind(items.clone(), kind.decontainerize())
         }
         ValueView::Scalar(inner) => (*inner).clone(),
+        // A `$`-held Seq (`ItemSeq`/`ItemList` view) un-itemizes too:
+        // `$s.flat` / `flat($s)` descend into it, while the same Seq as an
+        // element of a list stays single (see `flat_val`).
+        ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemSeq => {
+            Value::seq_body(body.as_bare_seq_view())
+        }
+        ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => {
+            Value::seq_body(body.as_list_view())
+        }
         // A top-level hash operand of `flat` flattens to its pairs
         // (`%h.flat` / `$hash.flat` / `flat(%h)` all yield the pairs). This is
         // done ONLY here, for the top-level operand — a hash that is merely an
