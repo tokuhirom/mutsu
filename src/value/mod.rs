@@ -604,6 +604,7 @@ pub(crate) use mix_weight::mix_weight_render;
 pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
+mod param_copy;
 pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;
 pub(crate) use nanbox::CONTAINER_CELLS;

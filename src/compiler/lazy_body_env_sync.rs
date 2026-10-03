@@ -393,6 +393,7 @@ impl Compiler {
             &HashSet::new(),
             &HashMap::new(),
             &HashSet::new(),
+            None,
         );
         chunk_reads(&chunk, out)
     }
