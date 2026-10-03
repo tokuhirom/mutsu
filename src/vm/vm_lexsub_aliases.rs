@@ -93,7 +93,20 @@ impl Interpreter {
         }
         let owner = Self::lexsub_plan_owner(plan, compiled_fns);
         for a in &plan.lexsub_free_aliases {
-            let Some(cell) = self.lexsub_alias_cell(code, a) else {
+            // The hoisted pass runs before a declaration in the sub's own
+            // scope has: whatever the slot holds is not that variable yet (a
+            // caller's same-named binding may show through), so boxing it
+            // would hand a closure made before the declaration a cell the
+            // declaration then replaces. Seed the cell the declaration adopts
+            // instead (#9911's mechanism, `vm_hoist_capture_cells.rs`).
+            let seeded = match a.var_slot {
+                Some(slot) if plan.hoist_seed_slots.contains(&slot) => {
+                    let name = a.var.resolve();
+                    self.seed_hoist_capture_cell(slot as usize, &name, "")
+                }
+                _ => None,
+            };
+            let Some(cell) = seeded.or_else(|| self.lexsub_alias_cell(code, a)) else {
                 // This activation has no cell for the variable (the hoisted
                 // pass before its `my` ran, or a variable that cannot be
                 // boxed): a stale entry from an earlier activation or the
