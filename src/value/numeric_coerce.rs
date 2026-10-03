@@ -167,7 +167,7 @@ pub(crate) fn to_int(v: &Value) -> i64 {
                 0
             }
         }
-        ValueView::Rat(n, d) => {
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
             if d != 0 {
                 n / d
             } else {
