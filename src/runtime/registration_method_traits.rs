@@ -28,6 +28,7 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         body: &[crate::ast::Stmt],
         is_rw: bool,
+        is_proto: bool,
         traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
@@ -46,6 +47,7 @@ impl Interpreter {
             param_defs,
             body,
             is_rw,
+            is_proto,
             traits,
         );
         match saved_package_var {
@@ -86,6 +88,7 @@ impl Interpreter {
             &effective_param_defs,
             body,
             false,
+            true,
             trait_args,
         )
     }
@@ -99,6 +102,7 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         body: &[crate::ast::Stmt],
         is_rw: bool,
+        is_proto: bool,
         traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
         for (trait_name, trait_arg) in traits {
@@ -116,7 +120,12 @@ impl Interpreter {
                 "__mutsu_lookup_method".to_string(),
                 Value::str(method_name.to_string()),
             );
-            trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+            // A `proto method` is the dispatcher itself, so it carries no
+            // candidate index: that absence is what makes `.is_dispatcher`
+            // answer True (`sub_multi_method_dispatcher_name`).
+            if !is_proto {
+                trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+            }
             // The code object passed to a user `trait_mod:<is>` candidate
             // must report as a `Method`, not a `Sub`, the same way
             // `sub_value_from_function_def` tags a real method's code

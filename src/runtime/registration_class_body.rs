@@ -594,6 +594,7 @@ impl Interpreter {
             &proto_param_defs,
             proto_body,
             false,
+            true,
             trait_args,
         )
     }
