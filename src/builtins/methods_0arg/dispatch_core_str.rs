@@ -319,6 +319,9 @@ pub(super) fn dispatch(
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
         "join" => {
+            if crate::builtins::is_join_lazy(target) {
+                return Some(Some(Ok(Value::str("...".to_string()))));
+            }
             if matches!(target.view(), ValueView::LazyList(_)) {
                 return Some(None); // fall through to runtime to force
             }

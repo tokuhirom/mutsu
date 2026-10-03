@@ -2,6 +2,14 @@ use crate::value::RuntimeError;
 use crate::value::flat::flat_val;
 use crate::value::{Value, ValueView};
 
+/// Whether `join` must render this collection as `...` without pulling it.
+/// A cache-backed finite lazy list is joinable after reification unless it was
+/// explicitly marked lazy, as reported by `is_genuinely_lazy`.
+pub(crate) fn is_join_lazy(value: &Value) -> bool {
+    crate::runtime::Interpreter::is_lazy_for_coerce(value)
+        || matches!(value.view(), ValueView::Seq(items) if items.is_lazy())
+}
+
 /// Does joining `v` need the interpreter, because some element it contributes
 /// may carry a *user-defined* `.Str` (a class instance, or a `but`/`does`
 /// role-mixed value), or is a `Proxy` whose FETCH has to run? [`join_flat`] can
@@ -48,6 +56,10 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
 pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<Result<String, RuntimeError>> {
     let mut items = Vec::new();
     for v in rest {
+        if crate::builtins::is_join_lazy(v) {
+            items.push(Value::str("...".to_string()));
+            continue;
+        }
         if let ValueView::LazyList(ll) = v.view()
             && ll.cache.lock().unwrap().is_none()
         {
