@@ -10,7 +10,7 @@ use Test;
 # exercised. Two-path ops (copy/rename/move/symlink/link) and handle-opening
 # `open` stay in the interpreter and are intentionally not covered here.
 
-plan 22;
+plan 23;
 
 my $dir = "tmp/native-io-mutate-$*PID";
 mkdir $dir;
@@ -57,6 +57,8 @@ $u.IO.spurt("x");
 ok $u.IO.e,                       'file exists before unlink';
 is $u.IO.unlink, True,            '.unlink returns True for an existing file';
 nok $u.IO.e,                      '.unlink removed the file';
+# A file that does not exist is already removed: True, as in Rakudo (#11468)
+is $u.IO.unlink, True,            '.unlink of a missing file returns True';
 
 # --- .chmod sets permission bits ---
 my $c = "$dir/perm.txt";
