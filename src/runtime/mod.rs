@@ -669,6 +669,7 @@ mod nqp_ops_bigint;
 mod nqp_ops_builtin;
 pub(crate) mod nqp_ops_list;
 pub(crate) mod nqp_ops_native;
+mod nqp_ops_numeric;
 mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;
