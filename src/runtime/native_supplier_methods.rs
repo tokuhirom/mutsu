@@ -83,9 +83,7 @@ impl Interpreter {
                 {
                     return res.map(|_| Value::NIL);
                 }
-                if let Some(buf) = self.supply_emit_frame_for(supplier_id_from_attrs(attributes)) {
-                    buf.push(value.clone());
-                }
+                self.supply_emit_collect(supplier_id_from_attrs(attributes), &value)?;
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_emit(supplier_id, value.clone());
                     // Dispatch tap callbacks (head_limit, unique, produce, etc.)
@@ -357,10 +355,9 @@ impl Interpreter {
                 {
                     return res.map(|_| (Value::NIL, attrs));
                 }
-                // Push to supply_emit_buffer if active
-                if let Some(buf) = self.supply_emit_frame_for(supplier_id_from_attrs(&attrs)) {
-                    buf.push(value.clone());
-                }
+                // Push to supply_emit_buffer if active (or stream it to the
+                // tap of the on-demand body that frame belongs to).
+                self.supply_emit_collect(supplier_id_from_attrs(&attrs), &value)?;
                 if let Some(buf) = self.async_state.supply_emit_timed_buffer.last_mut() {
                     buf.push((value.clone(), crate::thread_compat::Instant::now()));
                 }

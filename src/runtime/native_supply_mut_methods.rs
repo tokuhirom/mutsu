@@ -1,6 +1,7 @@
 //! Split out of native_supply_methods.rs. See that file for the shared
 //! helpers and the `QuitOutcome` enum.
 use super::native_methods::*;
+use super::supply_tap_stream::{TapStep, TapStream};
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -354,6 +355,10 @@ impl Interpreter {
                 // `whenever` sources); recorded on the Tap handle so `.close`
                 // can stop the workers.
                 let mut act_loop_close_ids: Vec<Value> = Vec::new();
+                // Values the on-demand body already streamed to this tap, and
+                // whether the tap callback stopped it (`done`/`last`).
+                let mut streamed = 0usize;
+                let mut tap_stopped = false;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned()
                     && (!shared_on_demand || !shared_started)
                 {
@@ -399,8 +404,38 @@ impl Interpreter {
                         None
                     };
                     let is_block_body = Self::is_supply_block_producer(&on_demand_cb);
-                    let (callback_result, emitted, body_ran_done) =
-                        self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
+                    // Stream the body's plain emits to this tap as they happen
+                    // (#11434). A shared block's first tap only starts it for
+                    // every joined consumer, so it keeps collecting.
+                    let do_cbs = Self::supply_do_callbacks(&attrs);
+                    let stream = (!shared_on_demand
+                        && (Self::supply_has_active_callback(&tap_cb) || !do_cbs.is_empty()))
+                    .then(|| {
+                        TapStream::new(
+                            tap_cb.clone(),
+                            do_cbs,
+                            delay_seconds,
+                            Self::supply_throttle_limit(&attrs),
+                        )
+                    });
+                    let (callback_result, emitted, body_ran_done, stream) = self
+                        .run_on_demand_body_streaming(
+                            on_demand_cb,
+                            Some(emitter_supplier_id),
+                            stream,
+                        );
+                    if let Some(stream) = stream {
+                        // The tap callback died inside an `emit`: like Rakudo,
+                        // that error leaves `.tap` itself rather than quitting
+                        // the supply.
+                        if stream.failed
+                            && let Err(err) = callback_result
+                        {
+                            return Err(err);
+                        }
+                        streamed = stream.delivered;
+                        tap_stopped = stream.stopped;
+                    }
                     if let Err(err) = callback_result {
                         on_demand_quit = Some(
                             err.exception
@@ -1288,73 +1323,20 @@ impl Interpreter {
                 };
 
                 // Call do_callbacks and tap callback for each value
-                let do_cbs = attrs.get("do_callbacks").and_then(|v| {
-                    if let ValueView::Array(a, ..) = v.view() {
-                        Some(a.to_vec())
-                    } else {
-                        None
-                    }
-                });
-                let throttle_limit = attrs.get("throttle_limit").and_then(|v| {
-                    if let ValueView::Int(n) = v.view() {
-                        Some(n as usize)
-                    } else {
-                        None
-                    }
-                });
-                for (idx, v) in values.iter().enumerate() {
-                    if let Some(limit) = throttle_limit {
-                        if limit > 0 && idx % limit == 0 {
-                            Self::sleep_for_supply_delay(delay_seconds);
-                        }
-                    } else {
-                        Self::sleep_for_supply_delay(delay_seconds);
-                    }
-                    if let Some(ref cbs) = do_cbs {
-                        for cb in cbs {
-                            self.call_sub_value(cb.clone(), vec![v.clone()], true)?;
-                        }
-                    }
-                    if Self::supply_has_active_callback(&tap_cb) {
-                        // A `done`/`last` inside the tap callback completes the tap
-                        // cleanly: stop emitting and fall through to the done
-                        // callback. It must not surface as a runtime error (this is
-                        // how `(1..Inf).Supply.tap({ ...; done if ... })` terminates).
-                        // The `match` below handles `is_react_done()`/`is_last()`
-                        // raised anywhere in this call's dynamic extent — see
-                        // `runtime::react_done_handler_depth`.
-                        let _react_done_handler =
-                            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-                        // A `whenever` body driven by a chained on-demand
-                        // source is a stamped callback: make its own supply
-                        // block's emitter the innermost active one while it
-                        // runs, as `call_supply_tap` does, so a bare `emit` in
-                        // a sub the body calls reaches that block (TAP's
-                        // `parse-stream` emits from a nested `sub emit-reset`).
-                        let (own_emitter, stamped) = Self::whenever_tap_emitter(&tap_cb);
-                        let own_emitter = own_emitter.filter(|_| stamped);
-                        if let Some(ref e) = own_emitter {
-                            self.async_state.active_supply_emitters.push(e.clone());
-                        }
-                        let tap_result = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
-                        if own_emitter.is_some() {
-                            self.async_state.active_supply_emitters.pop();
-                        }
-                        drop(_react_done_handler);
-                        match tap_result {
-                            Ok(_) => {}
-                            Err(err)
-                                if err.is_react_done()
-                                    || err.is_last()
-                                    || err.is_supply_body_done() =>
-                            {
-                                break;
-                            }
-                            // `next` inside a whenever body (this tap callback is
-                            // the body when a chained on-demand supply drives it)
-                            // skips the rest of the body for THIS value only.
-                            Err(err) if err.is_next() => {}
-                            Err(err) => return Err(err),
+                if !tap_stopped {
+                    let do_cbs = Self::supply_do_callbacks(&attrs);
+                    let throttle_limit = Self::supply_throttle_limit(&attrs);
+                    for (idx, v) in values.iter().enumerate() {
+                        match self.deliver_tap_value(
+                            &tap_cb,
+                            &do_cbs,
+                            delay_seconds,
+                            throttle_limit,
+                            streamed + idx,
+                            v,
+                        )? {
+                            TapStep::Continue => {}
+                            TapStep::Stop => break,
                         }
                     }
                 }
@@ -1797,5 +1779,23 @@ impl Interpreter {
             method_name,
             method_name != "__mutsu_scheduled_done",
         )
+    }
+
+    /// A Supply's `.do` callbacks, run on each value before the tap.
+    // Cost: O(d), d = number of `do` callbacks.
+    fn supply_do_callbacks(attrs: &AttrMap) -> Vec<Value> {
+        match attrs.get("do_callbacks").map(Value::view) {
+            Some(ValueView::Array(a, ..)) => a.to_vec(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A Supply's `.throttle` limit: values delivered per delay period.
+    // Cost: O(1).
+    fn supply_throttle_limit(attrs: &AttrMap) -> Option<usize> {
+        match attrs.get("throttle_limit").map(Value::view) {
+            Some(ValueView::Int(n)) => Some(n as usize),
+            _ => None,
+        }
     }
 }
