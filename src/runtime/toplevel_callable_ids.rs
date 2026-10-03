@@ -86,9 +86,7 @@ impl Interpreter {
     pub(crate) fn note_registration_callable_id(&mut self, package: &str, name: &str) {
         let key = MetaNs::CallableId.key_pair_for_strs(package, name);
         let id = crate::value::next_instance_id() as i64;
-        if self
-            .module_toplevel_depth
-                .is_some_and(|depth| depth == self.current_toplevel_depth())
+        if self.at_module_toplevel()
             // An env marker for the same routine (an earlier lexical
             // registration still in scope) would shadow the table; overwrite
             // it in place rather than leave a stale id in front.
@@ -118,36 +116,5 @@ impl Interpreter {
             None => self.toplevel_callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
-    }
-
-    /// Whether binding the type object `storage` under the package-qualified
-    /// name `qualified` in the frame env would only repeat what the type
-    /// registry already answers. EXPERIMENT.
-    pub(crate) fn qualified_identity_binding_is_redundant(&self, qualified: &str, storage: &str) -> bool {
-        qualified == storage
-            && crate::runtime::utils::has_double_colon(qualified)
-            && self.at_module_toplevel()
-            && !self.env.contains_key(qualified)
-    }
-
-    /// Bind the package-qualified symbol `name`: in the module top-level
-    /// package-symbol table when a module's mainline makes it directly, else
-    /// in the frame env. EXPERIMENT.
-    pub(crate) fn bind_package_symbol(&mut self, name: String, value: Value) {
-        if self.at_module_toplevel() && !self.env.contains_key(&name) {
-            crate::runtime::cow_table_mut(&mut self.toplevel_package_symbols)
-                .insert(Symbol::intern(&name), value);
-            return;
-        }
-        self.env.insert(name, value);
-    }
-
-    /// A package-qualified symbol bound by [`Self::bind_package_symbol`]
-    /// into the module top-level table.
-    pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
-        if self.toplevel_package_symbols.is_empty() {
-            return None;
-        }
-        self.toplevel_package_symbols.get(&Symbol::intern(name))
     }
 }

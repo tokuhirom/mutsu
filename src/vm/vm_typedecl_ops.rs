@@ -1207,7 +1207,8 @@ impl Interpreter {
             // See `exec_register_class_op`: a declaration does not set the topic.
             if is_mangled {
                 self.bind_lexical_role_names(&qualified_name, &source_qualified_name, &name_str);
-            } else if !self.qualified_identity_binding_is_redundant(&qualified_name, &qualified_name)
+            } else if !self
+                .qualified_identity_binding_is_redundant(&qualified_name, &qualified_name)
             {
                 self.env_mut().insert(
                     qualified_name.clone(),
