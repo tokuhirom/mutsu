@@ -13139,6 +13139,15 @@ impl CompiledFunction {
                 declared.insert(alias.alias.resolve());
             }
         }
+        // A dynamic scalar (`$*X`, a parameter or a `my`) is bound under both
+        // env spellings, `*X` and `$*X` (`twigil_dynamic_alias`); the twin is
+        // as local as the name (#11348).
+        let twins: Vec<String> = declared
+            .iter()
+            .filter(|n| n.starts_with('*'))
+            .map(|n| format!("${n}"))
+            .collect();
+        declared.extend(twins);
         self.declared_locals = Some(declared.iter().map(|n| Symbol::intern(n)).collect());
     }
 
