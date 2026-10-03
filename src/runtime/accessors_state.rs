@@ -573,7 +573,15 @@ impl Interpreter {
     }
 
     /// Persist per-closure-instance captured-variable state (hot closure-call path).
+    ///
+    /// A package variable (`$P::x`) is global, not captured: a per-instance
+    /// copy would pin the closure to the value it last wrote and hide every
+    /// later write from elsewhere (User::Timezone's override), so it is never
+    /// persisted.
     pub(crate) fn set_closure_captured_state(&mut self, id: u64, name: Symbol, value: Value) {
+        if crate::qualified::is_package_var(name) {
+            return;
+        }
         self.closure_captured_state.insert((id, name), value);
     }
 
