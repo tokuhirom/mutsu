@@ -236,7 +236,13 @@ impl Interpreter {
             if !assigned_in_place {
                 match &cell {
                     Some(cell) => Value::store_through_cell(cell, &val),
-                    None if matches!(aggregate.view(), ValueView::Instance { .. }) => {
+                    // Only a container object (an `is Hash`/`is Array`
+                    // instance) is assignable; a plain object `self` stays
+                    // immutable (X::Assignment::RO).
+                    None if matches!(aggregate.view(), ValueView::Instance { attributes, .. }
+                        if attributes.as_map().contains_key("__mutsu_hash_storage")
+                            || attributes.as_map().contains_key("__mutsu_array_storage")) =>
+                    {
                         let stored =
                             self.try_compiled_method_or_interpret(current, "STORE", vec![val])?;
                         self.stack.push(stored);
