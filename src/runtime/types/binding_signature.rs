@@ -3835,8 +3835,14 @@ impl Interpreter {
             if pd.sigilless {
                 continue; // Sigilless params are raw aliases, always writable
             }
-            if pd.name.starts_with('!') || pd.name.starts_with('.') {
-                continue; // Attribute-binding params ($!attr, $.attr) are always writable
+            // Attribute-binding params ($!attr, $.attr, and the `&!code`
+            // spelling, which keeps its sigil in the name) are always writable.
+            if pd.name.starts_with('!')
+                || pd.name.starts_with('.')
+                || pd.name.starts_with("&!")
+                || pd.name.starts_with("&.")
+            {
+                continue;
             }
             let has_mutable_trait = pd
                 .traits
