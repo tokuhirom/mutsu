@@ -34,13 +34,23 @@ pub(super) fn type_constraint(
             };
             Ok(format!("{base}{}", if definite { ":D" } else { ":U" }))
         }
-        // `Int()`: a coercion with an explicit constraint (`Str(Int)`) is not
-        // one the converter renders, so it is not one this lowers either.
+        // `Int()` / `Int(Cool)`, spelled the way the parser records them.
         RakuAstClass::TypeCoercion => {
-            if type_node.fields.len() != 1 {
-                return Err(unsupported(owner));
-            }
-            Ok(format!("{}()", simple_base(owner, type_node)?))
+            let base = simple_base(owner, type_node)?;
+            let constraint = match type_node.fields.as_slice() {
+                [_] => String::new(),
+                [_, constraint] if constraint.name == Some("constraint") => {
+                    let RakuAstFieldValue::Node(value) = &constraint.value else {
+                        return Err(unsupported(owner));
+                    };
+                    let ValueView::RakuAst(constraint) = value.view() else {
+                        return Err(unsupported(owner));
+                    };
+                    type_constraint(owner, constraint)?
+                }
+                _ => return Err(unsupported(owner)),
+            };
+            Ok(format!("{base}({constraint})"))
         }
         // `Array[Int]` / `Hash[Str, Int]`, args joined the way the parser
         // spells them.

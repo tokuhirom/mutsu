@@ -939,6 +939,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 fields,
             })))
         }
+        Stmt::ProtoDecl {
+            name,
+            param_defs,
+            return_type,
+            body,
+            is_export,
+            export_tags,
+            custom_traits,
+            trait_args,
+            is_method,
+            is_our,
+            ..
+        } => Ok(Some(statement_expression(super::proto::convert(
+            super::proto::ProtoDecl {
+                name: *name,
+                param_defs,
+                return_type: return_type.as_deref(),
+                body,
+                is_export: *is_export,
+                export_tags,
+                has_traits: !custom_traits.is_empty() || !trait_args.is_empty(),
+                is_method: *is_method,
+                is_our: *is_our,
+            },
+        )?))),
         // `also does R;` in a package body.
         Stmt::DoesDecl {
             name,
@@ -1455,15 +1480,22 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
             ],
         });
     }
-    // `Int()` coercion -> Type::Coercion(base-type). A coercion with an explicit
-    // target (`Str(Int)`) is deferred.
-    if let Some(base) = t.strip_suffix("()") {
+    // `Int()` coercion -> Type::Coercion(base-type); `Int(Cool)` adds the
+    // `constraint` the value is coerced from.
+    if let Some(open) = t.find('(')
+        && let Some(inner) = t[open + 1..].strip_suffix(')')
+    {
+        let base = &t[..open];
         if !is_simple_type(base) {
             return Err(unsupported("coercion type over a non-simple base"));
         }
+        let mut fields = vec![node_field(Some("base-type"), simple_type_node(base))];
+        if !inner.is_empty() {
+            fields.push(node_field(Some("constraint"), build_type_node(inner)?));
+        }
         return Ok(RakuAstNode {
             class: RakuAstClass::TypeCoercion,
-            fields: vec![node_field(Some("base-type"), simple_type_node(base))],
+            fields,
         });
     }
     // `Array[Int]` / `Hash[Str, Int]` -> Type::Parameterized(base-type, args).
@@ -1574,6 +1606,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
+        // `{*}` in a proto body.
+        _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
+            class: RakuAstClass::OnlyStar,
+            fields: Vec::new(),
+        }),
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
         }
@@ -3293,7 +3330,7 @@ pub(super) enum ReturnSpelling {
 /// return type, and a body. A parameter-less routine with no `-->` return type
 /// omits the `signature` field; parameters carry the implicit
 /// `type => Type::Setting(Any)` (`type_setting = true`).
-fn routine_node(
+pub(super) fn routine_node(
     class: RakuAstClass,
     name: &str,
     param_defs: &[ParamDef],

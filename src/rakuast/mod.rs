@@ -25,6 +25,7 @@ mod lower;
 mod method_assign_decl;
 mod name_parts;
 mod named_param;
+mod proto;
 mod regex_char_class;
 mod regex_enumeration;
 mod regex_quantifier;
@@ -76,6 +77,7 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     StatementAlso,
+    OnlyStar,
     IntLiteral,
     NumLiteral,
     RatLiteral,
@@ -358,6 +360,7 @@ impl RakuAstClass {
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
             StatementAlso => "RakuAST::Statement::Also",
+            OnlyStar => "RakuAST::OnlyStar",
             IntLiteral => "RakuAST::IntLiteral",
             NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
@@ -587,6 +590,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorRightWordBoundary
                 | RakuAstClass::RegexMatchFrom
                 | RakuAstClass::RegexMatchTo
+                | RakuAstClass::OnlyStar
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexCharClass(_)
                 | RakuAstClass::RegexAssertionCharClass
@@ -710,6 +714,12 @@ impl RakuAstClass {
                 &["RakuAST::Regex"]
             }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
+            OnlyStar => &[
+                "RakuAST::Blockoid",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
             RegexMatchFrom | RegexMatchTo => {
                 &["RakuAST::Regex::Atom", "RakuAST::Regex::Term", "RakuAST::Regex"]
             }
@@ -997,6 +1007,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
     RakuAstClass::StatementAlso,
+    RakuAstClass::OnlyStar,
     RakuAstClass::IntLiteral,
     RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
@@ -2779,6 +2790,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
             RakuAstClass::RegexAnchorRightWordBoundary
         }
         ("RakuAST::Regex::MatchFrom", "new") => RakuAstClass::RegexMatchFrom,
+        ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
