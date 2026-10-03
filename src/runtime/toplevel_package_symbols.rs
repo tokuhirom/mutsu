@@ -42,15 +42,15 @@ impl Interpreter {
     /// registry answers: the two names agree, the name is qualified, a module
     /// mainline is declaring it directly, and the env does not already hold a
     /// binding the new one would have to replace.
-    // Cost: O(|qualified|) for the comparison and the `::` scan, plus one env
-    // probe.
+    // Cost: O(|qualified|) for the comparison and the intern (whether a
+    // symbol is qualified is classified once per symbol), plus one env probe.
     pub(crate) fn qualified_identity_binding_is_redundant(
         &self,
         qualified: &str,
         storage: &str,
     ) -> bool {
         qualified == storage
-            && crate::runtime::utils::has_double_colon(qualified)
+            && crate::qualified::is_qualified(Symbol::intern(qualified))
             && self.at_module_toplevel()
             && !self.env.contains_key(qualified)
     }
