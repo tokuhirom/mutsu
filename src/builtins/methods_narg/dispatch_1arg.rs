@@ -1573,7 +1573,7 @@ pub(crate) fn native_method_1arg(
                     // (e.g. -39 * 0.1 == -3.9000000000000004).
                     match scale_val.view() {
                         ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-                            k * crate::value::rat_to_f64(n, d)
+                            k * n as f64 / d as f64
                         }
                         ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
                             k * crate::builtins::arith::bigint_ratio_to_f64(n, d)
