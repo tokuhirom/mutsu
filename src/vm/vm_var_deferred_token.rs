@@ -71,7 +71,14 @@ impl Interpreter {
         // Indices, innermost (top of stack) first — the path order.
         let mut steps = Vec::with_capacity(depth);
         for (i, positional) in positional_flags.iter().enumerate() {
-            let idx = &self.stack[self.stack.len() - 1 - i];
+            let mut idx = self.stack[self.stack.len() - 1 - i].clone();
+            // A `WhateverCode` position (`c[*-0] = v`) counts from the end of
+            // a level that does not exist yet, i.e. of the empty Array the
+            // walk-create builds there.
+            if *positional && matches!(idx.view(), ValueView::Sub(_)) {
+                idx = self.resolve_whatever_index_for_target(idx, None);
+                Self::index_to_usize(&idx)?;
+            }
             // A slice / junction subscript names several elements at once; the
             // deferred path addresses exactly one.
             if matches!(
@@ -89,7 +96,7 @@ impl Interpreter {
             ) {
                 return None;
             }
-            steps.push(Self::deferred_path_step(idx, *positional));
+            steps.push(Self::deferred_path_step(&idx, *positional));
         }
 
         // Extend the token's path by the whole chain and write through it: the

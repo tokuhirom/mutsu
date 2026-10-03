@@ -566,11 +566,12 @@ impl NanBox {
     pub(in crate::value) fn dispatch_shape(&self) -> Option<crate::value::DispatchShape> {
         use crate::value::DispatchShape;
         match classify(self.0.get()) {
-            Classified::Kind(
-                Kind::ArrayList | Kind::ArrayArray | Kind::ArrayItemList | Kind::ArrayItemArray,
-            ) => Some(DispatchShape::Array),
+            Classified::Kind(Kind::ArrayList | Kind::ArrayItemList) => Some(DispatchShape::List),
+            Classified::Kind(Kind::ArrayArray | Kind::ArrayItemArray) => Some(DispatchShape::Array),
             Classified::Kind(Kind::HashPlain) => Some(DispatchShape::Hash),
             Classified::Kind(Kind::Str) => Some(DispatchShape::Str),
+            Classified::Num(_) => Some(DispatchShape::Num),
+            Classified::Kind(Kind::Rat) => Some(DispatchShape::Rat),
             _ => None,
         }
     }

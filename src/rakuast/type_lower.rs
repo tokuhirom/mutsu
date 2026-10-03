@@ -1,0 +1,91 @@
+//! Lowering a RakuAST type node back to the parser's type-constraint spelling.
+//!
+//! The inverse of `convert::build_type_node`: the parser keeps a type
+//! constraint as one string (`Int`, `Str:D`, `Int()`, `Hash[Str, Int]`), and
+//! the converter renders that string as `Type::Simple`, `Type::Definedness`,
+//! `Type::Coercion` or `Type::Parameterized`. Every lowering site that reads a
+//! `type`, a `returns` or a trait's type goes through [`type_constraint`], so
+//! a type spelling the converter can render is one every site can lower.
+
+use super::lower::{named_child, named_child_or_positional, unsupported};
+use super::name_parts::{self, NameShape};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
+use crate::value::{RuntimeError, ValueView};
+
+/// The parser's spelling of `type_node`; `owner` names the node a refusal
+/// reports.
+pub(super) fn type_constraint(
+    owner: &RakuAstNode,
+    type_node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
+    match type_node.class {
+        RakuAstClass::TypeSimple => {
+            match name_parts::name_shape(named_child_or_positional(type_node)?) {
+                Some(NameShape::Identifier(name)) => Ok(name),
+                _ => Err(unsupported(owner)),
+            }
+        }
+        // `Int:D` / `Int:U`.
+        RakuAstClass::TypeDefinedness => {
+            let base = simple_base(owner, type_node)?;
+            let definite = match named_bool(type_node, "definite") {
+                Some(definite) => definite,
+                None => return Err(unsupported(owner)),
+            };
+            Ok(format!("{base}{}", if definite { ":D" } else { ":U" }))
+        }
+        // `Int()`: a coercion with an explicit constraint (`Str(Int)`) is not
+        // one the converter renders, so it is not one this lowers either.
+        RakuAstClass::TypeCoercion => {
+            if type_node.fields.len() != 1 {
+                return Err(unsupported(owner));
+            }
+            Ok(format!("{}()", simple_base(owner, type_node)?))
+        }
+        // `Array[Int]` / `Hash[Str, Int]`, args joined the way the parser
+        // spells them.
+        RakuAstClass::TypeParameterized => {
+            let base = simple_base(owner, type_node)?;
+            let args = named_child(type_node, "args")?;
+            if args.class != RakuAstClass::ArgList || args.fields.is_empty() {
+                return Err(unsupported(owner));
+            }
+            let mut parts = Vec::with_capacity(args.fields.len());
+            for field in &args.fields {
+                let RakuAstFieldValue::Node(value) = &field.value else {
+                    return Err(unsupported(owner));
+                };
+                let ValueView::RakuAst(arg) = value.view() else {
+                    return Err(unsupported(owner));
+                };
+                if field.name.is_some() {
+                    return Err(unsupported(owner));
+                }
+                parts.push(type_constraint(owner, arg)?);
+            }
+            Ok(format!("{base}[{}]", parts.join(", ")))
+        }
+        _ => Err(unsupported(owner)),
+    }
+}
+
+/// The `base-type` of a definedness / coercion / parameterized type, which the
+/// converter only ever renders as a `Type::Simple`.
+fn simple_base(owner: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+    let base = named_child(type_node, "base-type")?;
+    if base.class != RakuAstClass::TypeSimple {
+        return Err(unsupported(owner));
+    }
+    type_constraint(owner, base)
+}
+
+fn named_bool(node: &RakuAstNode, name: &str) -> Option<bool> {
+    let field = node.fields.iter().find(|f| f.name == Some(name))?;
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    match value.view() {
+        ValueView::Bool(b) => Some(b),
+        _ => None,
+    }
+}

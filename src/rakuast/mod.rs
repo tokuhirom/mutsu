@@ -23,10 +23,12 @@ pub(crate) mod frontend;
 mod hash_literal;
 mod lower;
 mod name_parts;
+mod named_param;
 mod render;
 mod routine_traits;
 mod signature_decl;
 mod subscript_adverb;
+mod type_lower;
 mod use_stmt;
 
 pub use formatter::formatter_ast;
@@ -1588,6 +1590,19 @@ pub fn construct(
                 name: Some("type-captures"),
                 value: RakuAstFieldValue::List(type_captures),
             });
+        }
+        if let Some(invocant) = named_arg(args, "invocant") {
+            if !matches!(invocant.view(), ValueView::Bool(_)) {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects `invocant` to be Bool",
+                ));
+            }
+            if invocant.truthy() {
+                fields.push(RakuAstField {
+                    name: Some("invocant"),
+                    value: RakuAstFieldValue::Node(invocant),
+                });
+            }
         }
         if let Some(target) = target {
             fields.push(RakuAstField {

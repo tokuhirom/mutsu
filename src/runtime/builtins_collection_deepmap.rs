@@ -80,26 +80,19 @@ impl Interpreter {
                     with_func = Some(v.clone());
                 }
                 _ => {
-                    let mut values = super::utils::value_to_list(arg);
-                    if values.len() == 1
-                        && let Some(single) = values.first()
-                    {
-                        match single.view() {
-                            ValueView::Array(items, _) => {
-                                values = items.as_ref().clone().into_items();
-                            }
-                            ValueView::Seq(items) => {
-                                values = items.to_vec();
-                            }
-                            ValueView::Slip(items) => {
-                                values = items.as_ref().clone();
-                            }
-                            _ => {}
-                        }
-                    }
-                    lists.push(values);
+                    // Each argument is iterated as-is: a one-element list
+                    // holding a list (`[(0, 1),]`) contributes that list as
+                    // its single element.
+                    lists.push(super::utils::value_to_list(arg));
                 }
             }
+        }
+
+        // `cross(+lol)`'s single-argument rule: one positional argument is
+        // itself the list of lists (`cross(%h<>:v.map: *.flat)`).
+        if lists.len() == 1 {
+            let only = lists.pop().unwrap_or_default();
+            lists = only.iter().map(super::utils::value_to_list).collect();
         }
 
         if lists.is_empty() {

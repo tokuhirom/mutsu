@@ -8,6 +8,8 @@ use super::rng::builtin_rand;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
+pub(crate) mod cool_aggregate;
+use cool_aggregate::cool_aggregate_elems;
 pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
@@ -872,6 +874,31 @@ pub(crate) fn native_method_0arg(
             }
             _ => {}
         }
+    }
+    // The Cool aggregates (List/Array, Map/Hash) numify to their element
+    // count for Cool's numeric methods: `{a => 1, b => 2}.round` is 2 and
+    // `[1, 2, 3].floor` is 3, as in raku. `nodemap` relies on it -- it does
+    // not descend into a nested Hash, so `%h.nodemap(*.round)` rounds each
+    // inner Hash as a number.
+    if matches!(
+        method,
+        "abs"
+            | "sign"
+            | "exp"
+            | "log"
+            | "log2"
+            | "log10"
+            | "sqrt"
+            | "ceiling"
+            | "floor"
+            | "truncate"
+            | "round"
+            | "narrow"
+            | "is-int"
+            | "conj"
+    ) && let Some(count) = cool_aggregate_elems(target)
+    {
+        return native_method_0arg(&Value::int(count), method_sym);
     }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
@@ -2428,20 +2455,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 /// The eight method families [`dispatch_core`] ends in, without the
 /// receiver-shaped prologue in front of them.
 ///
-/// Split out so the zero-argument dispatch table (`builtins::fast_0arg`) has
-/// somewhere to jump to: for a `(shape, method)` pair that table authorizes,
-/// every guard between the VM's native entry and this point is known to
-/// decline, so the families alone decide the answer. Calling *them* rather
-/// than reimplementing the method is the whole point — the table says which
-/// calls may skip the walk, never what they evaluate to.
-///
 /// Each family returns `Option<Option<Result<..>>>`:
 ///   `None` = method not handled, try the next family;
 ///   `Some(inner)` = method matched, `inner` is the answer.
-pub(crate) fn dispatch_core_families(
-    target: &Value,
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
+fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     macro_rules! try_dispatch {
         ($module:ident) => {
             if let Some(result) = $module::dispatch(target, method) {

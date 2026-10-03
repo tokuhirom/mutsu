@@ -878,6 +878,20 @@ impl Interpreter {
         self.env
             .get(&qualified)
             .cloned()
+            // A module's top-level type or enum value is not bound in the env
+            // under its qualified name (ADR-0084 §2 group 2): the registry
+            // answers for the type, the package-symbol table for the value.
+            .or_else(|| {
+                if sigil.is_some() {
+                    return None;
+                }
+                self.toplevel_package_symbol(&qualified)
+                    .cloned()
+                    .or_else(|| {
+                        self.has_type_direct(&qualified)
+                            .then(|| Value::package(crate::symbol::Symbol::intern(&qualified)))
+                    })
+            })
             // The requested compunit path can differ from its declared unit
             // package. In that case the exported role/class value lives under
             // the declared package, even though its export metadata is also
@@ -1573,6 +1587,7 @@ impl Interpreter {
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
+        let package_symbols_before = self.module_toplevel.package_symbols.clone();
         // `need` withholds only the *import* into the caller's lexical
         // scope: the module's `is export` routines are still registered, so
         // its own `Mod::EXPORT::<tag>` stashes are populated as in Rakudo
@@ -1602,7 +1617,14 @@ impl Interpreter {
                     }
                 }
             }
-            for key in self.env.keys() {
+            // A module's top-level package-qualified symbols live off the env
+            // (ADR-0084 §2 group 2), so the new ones are scanned alongside.
+            let new_package_symbols = self
+                .module_toplevel
+                .package_symbols
+                .keys()
+                .filter(|k| !package_symbols_before.contains_key(*k));
+            for key in self.env.keys().chain(new_package_symbols) {
                 if env_snapshot.contains(key) {
                     continue;
                 }

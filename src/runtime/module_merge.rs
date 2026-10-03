@@ -431,7 +431,13 @@ impl Interpreter {
         let Some(sym) = Symbol::lookup(name) else {
             return false;
         };
-        !self.bare_name_visible_here(sym) && self.resolve_suppressed_type(name).is_none()
+        // A type the CURRENT package declares under the same short name is
+        // what the bareword means there, whatever module merely shares the
+        // spelling: inside `unit module TAP`, `Test` is `TAP::Test`, even in a
+        // program that also ran `use Test`.
+        !self.bare_name_visible_here(sym)
+            && self.resolve_suppressed_type(name).is_none()
+            && self.resolve_type_in_current_package(name).is_none()
     }
 
     /// Whether a block-level merge live here granted the package `top`

@@ -515,9 +515,11 @@ impl Compiler {
             }
             TokenKind::NotAndThen => {
                 self.compile_expr(left);
+                self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
                 self.code.emit(OpCode::CallDefined);
                 let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
+                self.code.emit(OpCode::RestoreTopic);
                 self.code.emit(OpCode::Pop);
                 // Skipping the RHS yields `Empty` -- an empty Slip -- exactly as
                 // the `andthen` arm above does. `Nil` here made `10 notandthen
@@ -526,8 +528,11 @@ impl Compiler {
                 self.code.emit(OpCode::LoadConst(empty_idx));
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
-                self.code.emit(OpCode::Pop);
+                // Like `orelse`, the undefined LHS is the RHS's topic:
+                // `Int notandthen $_.raku` is `"Int"`.
+                self.code.emit(OpCode::SetTopic);
                 self.compile_expr(right);
+                self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
                 return;
             }
